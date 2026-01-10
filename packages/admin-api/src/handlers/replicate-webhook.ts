@@ -1,6 +1,6 @@
 /**
  * Replicate Webhook Handler
- * Handles async video generation completion callbacks from Replicate
+ * Handles async media generation (image/video) completion callbacks from Replicate
  */
 import type {
   APIGatewayProxyEventV2,
@@ -11,6 +11,7 @@ import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { v4 as uuid } from 'uuid';
 import * as mediaJobs from '../services/media-jobs.js';
 import * as gallery from '../services/gallery.js';
+import type { MediaJob } from '../types.js';
 
 const s3Client = new S3Client({});
 const sqsClient = new SQSClient({});
@@ -22,11 +23,41 @@ const RESPONSE_QUEUE_URL = process.env.RESPONSE_QUEUE_URL;
 interface ReplicatePrediction {
   id: string;
   status: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
-  output?: string | string[];
+  output?: string | string[] | { uri?: string };
   error?: string;
   metrics?: {
     predict_time?: number;
   };
+}
+
+/**
+ * Get the output URL from different Replicate output formats
+ */
+function extractOutputUrl(output: ReplicatePrediction['output']): string | undefined {
+  if (Array.isArray(output)) {
+    return output[0];
+  } else if (typeof output === 'string') {
+    return output;
+  } else if (output && typeof output === 'object' && 'uri' in output) {
+    return output.uri;
+  }
+  return undefined;
+}
+
+/**
+ * Get file extension and content type based on job type
+ */
+function getMediaTypeInfo(jobType: MediaJob['type']): { extension: string; contentType: string; folder: string } {
+  switch (jobType) {
+    case 'image':
+      return { extension: 'png', contentType: 'image/png', folder: 'images' };
+    case 'video':
+      return { extension: 'mp4', contentType: 'video/mp4', folder: 'videos' };
+    case 'sticker':
+      return { extension: 'webp', contentType: 'image/webp', folder: 'stickers' };
+    default:
+      return { extension: 'bin', contentType: 'application/octet-stream', folder: 'media' };
+  }
 }
 
 /**
@@ -58,8 +89,8 @@ export async function handler(
 
     // Handle completion
     if (prediction.status === 'succeeded' && prediction.output) {
-      // Get the output URL (could be string or array)
-      const outputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+      // Get the output URL (handle different Replicate output formats)
+      const outputUrl = extractOutputUrl(prediction.output);
 
       if (!outputUrl) {
         await mediaJobs.updateJobStatus(jobId, 'failed', {
@@ -68,24 +99,29 @@ export async function handler(
         return { statusCode: 200, body: 'Processed (no output)' };
       }
 
-      // Download the video and store in S3
+      // Get media type info based on job type
+      const { extension, contentType, folder } = getMediaTypeInfo(job.type);
+
+      // Download the media and store in S3
       const response = await fetch(outputUrl);
       if (!response.ok) {
         await mediaJobs.updateJobStatus(jobId, 'failed', {
-          error: `Failed to download video: ${response.statusText}`,
+          error: `Failed to download ${job.type}: ${response.statusText}`,
         });
         return { statusCode: 200, body: 'Processed (download failed)' };
       }
 
-      const videoBuffer = Buffer.from(await response.arrayBuffer());
-      const videoId = uuid();
-      const s3Key = `agents/${job.agentId}/videos/${videoId}.mp4`;
+      const mediaBuffer = Buffer.from(await response.arrayBuffer());
+      const mediaId = uuid();
+      const s3Key = `agents/${job.agentId}/${folder}/${mediaId}.${extension}`;
+
+      console.log(`[Webhook] Uploading ${job.type} to S3: ${s3Key} (${mediaBuffer.length} bytes)`);
 
       await s3Client.send(new PutObjectCommand({
         Bucket: MEDIA_BUCKET,
         Key: s3Key,
-        Body: videoBuffer,
-        ContentType: 'video/mp4',
+        Body: mediaBuffer,
+        ContentType: contentType,
       }));
 
       const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
@@ -98,12 +134,12 @@ export async function handler(
 
       // Add to gallery
       await gallery.addToGallery(job.agentId, {
-        id: videoId,
-        type: 'video',
+        id: mediaId,
+        type: job.type,
         url: publicUrl,
         s3Key,
         prompt: job.prompt,
-        model: 'replicate-video',
+        model: `replicate-${job.type}`,
         platform: job.platform,
         metadata: {
           jobId,
@@ -117,21 +153,22 @@ export async function handler(
         await sqsClient.send(new SendMessageCommand({
           QueueUrl: RESPONSE_QUEUE_URL,
           MessageBody: JSON.stringify({
-            type: 'video_complete',
+            type: `${job.type}_complete`,
             agentId: job.agentId,
             platform: job.platform,
             conversationId: job.conversationId,
             replyToMessageId: job.replyToMessageId,
             result: {
               success: true,
-              videoUrl: publicUrl,
+              mediaUrl: publicUrl,
+              mediaType: job.type,
               prompt: job.prompt,
             },
           }),
         }));
       }
 
-      console.log(`Video generation complete: ${publicUrl}`);
+      console.log(`[Webhook] ${job.type} generation complete: ${publicUrl}`);
       return { statusCode: 200, body: 'Success' };
     }
 
@@ -147,7 +184,7 @@ export async function handler(
         await sqsClient.send(new SendMessageCommand({
           QueueUrl: RESPONSE_QUEUE_URL,
           MessageBody: JSON.stringify({
-            type: 'video_failed',
+            type: `${job.type}_failed`,
             agentId: job.agentId,
             platform: job.platform,
             conversationId: job.conversationId,
@@ -161,7 +198,7 @@ export async function handler(
         }));
       }
 
-      console.log(`Video generation failed: ${errorMessage}`);
+      console.log(`[Webhook] ${job.type} generation failed: ${errorMessage}`);
       return { statusCode: 200, body: 'Processed failure' };
     }
 

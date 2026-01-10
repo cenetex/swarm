@@ -416,6 +416,150 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
 }
 
 /**
+ * Options for async image generation
+ */
+interface GenerateImageAsyncOptions extends GenerateImageOptions {
+  conversationId: string;
+  replyToMessageId?: string;
+}
+
+/**
+ * Generate an image asynchronously
+ * Returns a job ID - image will be delivered via callback when complete
+ * Use this for long-running operations to avoid HTTP timeouts
+ */
+export async function generateImageAsync(options: GenerateImageAsyncOptions): Promise<MediaJob> {
+  const {
+    prompt,
+    agentId,
+    platform,
+    model,
+    referenceImageUrls = [],
+    resolution = '2K',
+    aspectRatio = '1:1',
+    conversationId,
+    replyToMessageId,
+  } = options;
+
+  // Check credits
+  const canUse = await credits.canUseTool(agentId, 'generate_image');
+  if (!canUse.allowed) {
+    throw new Error(`Rate limited: ${canUse.reason}`);
+  }
+
+  // Get Replicate API key
+  const apiKey = await getProviderApiKey(agentId, 'replicate');
+  if (!apiKey) {
+    throw new Error('No Replicate API key configured. Please set up an API key first.');
+  }
+
+  // Build the prompt with reference context if images provided
+  let finalPrompt = prompt;
+  if (referenceImageUrls.length > 0) {
+    finalPrompt = `${prompt}. Use the provided reference images to maintain visual consistency with the character's appearance, style, and features.`;
+  }
+
+  // Get model version for Replicate
+  const modelId = model || DEFAULT_IMAGE_MODEL;
+  const version = REPLICATE_MODEL_VERSIONS[modelId];
+
+  if (!version) {
+    throw new Error(`Unknown model: ${modelId}. Supported models: ${Object.keys(REPLICATE_MODEL_VERSIONS).join(', ')}`);
+  }
+
+  // Convert reference image URLs to publicly accessible URLs
+  const accessibleReferenceUrls = referenceImageUrls.length > 0
+    ? await makeUrlsAccessible(referenceImageUrls)
+    : [];
+
+  if (accessibleReferenceUrls.length > 0) {
+    console.log(`[Media] Reference images converted to accessible URLs: ${accessibleReferenceUrls.length}`);
+  }
+
+  // Build input based on model type
+  const isNanoBanana = modelId === 'google/nano-banana-pro';
+  const hasReferenceImages = accessibleReferenceUrls.length > 0;
+
+  // Build Nano Banana Pro input
+  const nanoBananaInput: Record<string, unknown> = {
+    prompt: finalPrompt,
+    resolution,
+    output_format: 'png',
+    safety_filter_level: 'block_only_high',
+  };
+
+  if (hasReferenceImages) {
+    nanoBananaInput.image_input = accessibleReferenceUrls.slice(0, 14);
+    nanoBananaInput.aspect_ratio = 'match_input_image';
+  } else {
+    nanoBananaInput.aspect_ratio = aspectRatio;
+  }
+
+  // Build Flux input (fallback)
+  const fluxInput: Record<string, unknown> = {
+    prompt: finalPrompt,
+    width: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
+    height: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
+    num_outputs: 1,
+    output_format: 'png',
+  };
+  if (accessibleReferenceUrls[0]) {
+    fluxInput.image = accessibleReferenceUrls[0];
+  }
+
+  // Create job record
+  const jobId = uuid();
+  const job = await mediaJobs.createJob({
+    jobId,
+    agentId,
+    type: 'image',
+    prompt,
+    conversationId,
+    platform: platform || 'unknown',
+    replyToMessageId,
+    provider: 'replicate',
+  });
+
+  console.log(`[Media] Starting async image generation: job=${jobId}, model=${modelId}, refs=${referenceImageUrls.length}`);
+
+  // Start Replicate prediction with webhook (async - don't wait)
+  const webhookUrl = process.env.REPLICATE_WEBHOOK_URL;
+
+  const response = await fetch(REPLICATE_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Token ${apiKey}`,
+      // Note: NOT using 'Prefer: wait' - we want async processing
+    },
+    body: JSON.stringify({
+      version,
+      input: isNanoBanana ? nanoBananaInput : fluxInput,
+      webhook: webhookUrl ? `${webhookUrl}?jobId=${jobId}` : undefined,
+      webhook_events_filter: ['completed'],
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    await mediaJobs.updateJobStatus(jobId, 'failed', { error });
+    throw new Error(`Image generation failed to start: ${error}`);
+  }
+
+  const prediction = await response.json() as { id: string };
+
+  // Update job with external ID
+  await mediaJobs.updateJobStatus(jobId, 'processing', { externalId: prediction.id });
+
+  // Consume credit
+  await credits.consumeCredit(agentId, 'generate_image');
+
+  console.log(`[Media] Async image job started: job=${jobId}, prediction=${prediction.id}`);
+
+  return job;
+}
+
+/**
  * Generate a video asynchronously
  * Returns a job ID - video will be delivered via callback
  */

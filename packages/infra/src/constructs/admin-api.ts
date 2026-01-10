@@ -393,6 +393,47 @@ export class AdminApiConstruct extends Construct {
       integration: healthIntegration,
     });
 
+    // Jobs handler - for polling media job status
+    const jobsHandler = new nodejs.NodejsFunction(this, 'JobsHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/jobs.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 256,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        CF_ACCESS_TEAM_DOMAIN: cloudflareTeamDomain,
+        ADMIN_EMAILS: adminEmails,
+        NODE_ENV: environment,
+        ALLOWED_ORIGINS: allowedOrigins.join(','),
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+    });
+
+    // Grant permissions to jobs handler
+    this.table.grantReadData(jobsHandler);
+
+    const jobsIntegration = new integrations.HttpLambdaIntegration(
+      'JobsIntegration',
+      jobsHandler
+    );
+
+    this.api.addRoutes({
+      path: '/jobs',
+      methods: [apigateway.HttpMethod.GET],
+      integration: jobsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/jobs/{jobId}',
+      methods: [apigateway.HttpMethod.GET],
+      integration: jobsIntegration,
+    });
+
     // Shared Telegram webhook handler - handles ALL agents dynamically
     const telegramWebhookHandler = new nodejs.NodejsFunction(this, 'TelegramWebhookHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,

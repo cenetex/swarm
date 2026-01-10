@@ -252,13 +252,28 @@ const AGENT_TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
-  // Check pending media jobs (video generation status)
+  // Check pending media jobs (image/video generation status)
   {
     type: 'function',
     function: {
       name: 'get_pending_jobs',
-      description: 'Check the status of pending video generation jobs. Videos are generated asynchronously.',
+      description: 'Check the status of pending media generation jobs. Images and videos are generated asynchronously.',
       parameters: { type: 'object', properties: {} },
+    },
+  },
+  // Get specific job status
+  {
+    type: 'function',
+    function: {
+      name: 'get_job_status',
+      description: 'Get the status of a specific media generation job by its ID.',
+      parameters: {
+        type: 'object',
+        properties: {
+          jobId: { type: 'string', description: 'The job ID to check status for' },
+        },
+        required: ['jobId'],
+      },
     },
   },
   // Profile image management
@@ -391,12 +406,12 @@ const AGENT_TOOLS = [
       },
     },
   },
-  // Image generation
+  // Image generation (async)
   {
     type: 'function',
     function: {
       name: 'generate_image',
-      description: 'Generate an image using Nano Banana Pro. By default uses my profile picture as reference for character consistency. Can also use gallery images as additional references (up to 14 total). The image will be saved to my gallery.',
+      description: 'Generate an image using Nano Banana Pro. This is async - returns a job ID immediately. The image will be saved to my gallery when complete. Check status with get_job_status or get_pending_jobs. By default uses my profile picture as reference for character consistency.',
       parameters: {
         type: 'object',
         properties: {
@@ -573,12 +588,14 @@ You have media generation capabilities:
   - source="upload" - Shows file picker for user to upload from their device (USE THIS when user wants to upload their own image!)
   - source="url" - Uses an image from a web URL
   - source="gallery" - Selects from existing gallery images
-- Generate images with AI (saved to your gallery)
-- Generate videos (async - check status with get_pending_jobs, saved to gallery when complete)
+- Generate images with AI (async - returns immediately, image saved to gallery when complete)
+- Generate videos (async - returns immediately, video saved to gallery when complete)
 - Generate stickers (with transparent backgrounds)
 - Browse and search your media gallery
-- Check pending video jobs for status updates
+- Check pending jobs with get_pending_jobs or get_job_status (for images AND videos)
 - Check your tool credits (rate limited to prevent abuse)
+
+**IMPORTANT**: Image and video generation are ASYNC. When you call generate_image or generate_video, you get a job ID back immediately. The actual media takes 30-60 seconds to generate. Tell the user to wait and check status with get_pending_jobs or get_job_status.
 
 ## IMPORTANT: When to Use Tools
 
@@ -925,7 +942,29 @@ async function executeTool(
             status: job.status,
             prompt: job.prompt,
             createdAt: new Date(job.createdAt).toISOString(),
+            resultUrl: job.resultUrl,
           })),
+        };
+        break;
+      }
+
+      // Get specific job status
+      case 'get_job_status': {
+        const job = await mediaJobs.getJob(args.jobId);
+        if (!job) {
+          result = { error: true, message: 'Job not found' };
+          break;
+        }
+        result = {
+          jobId: job.jobId,
+          type: job.type,
+          status: job.status,
+          prompt: job.prompt,
+          createdAt: new Date(job.createdAt).toISOString(),
+          updatedAt: new Date(job.updatedAt).toISOString(),
+          completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : undefined,
+          resultUrl: job.resultUrl,
+          error: job.error,
         };
         break;
       }
@@ -1066,7 +1105,7 @@ async function executeTool(
         break;
       }
 
-      // Image generation
+      // Image generation (async)
       case 'generate_image': {
         // Build array of reference images
         const referenceImageUrls: string[] = [];
@@ -1108,22 +1147,25 @@ async function executeTool(
           }
         }
 
-        const image = await media.generateImage({
+        // Use async image generation to avoid HTTP timeouts
+        const job = await media.generateImageAsync({
           prompt: args.prompt,
           agentId: agentId!,
           platform: 'admin-chat',
           referenceImageUrls,
           resolution: args.resolution || '2K',
           aspectRatio: args.aspectRatio || '1:1',
+          conversationId: 'admin-chat-' + Date.now(),
         });
 
         result = {
           success: true,
-          message: 'Image generated successfully!',
-          id: image.id,
-          url: image.url,
+          message: 'Image generation started! This may take 30-60 seconds.',
+          jobId: job.jobId,
+          status: job.status,
           prompt: args.prompt,
           usedReferences: referenceImageUrls.length,
+          note: 'Check status with get_job_status or get_pending_jobs. The image will be saved to your gallery when complete.',
         };
         break;
       }
