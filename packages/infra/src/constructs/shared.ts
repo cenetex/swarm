@@ -10,6 +10,13 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+// ESM __dirname equivalent
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 export interface SharedInfrastructureProps {
   /**
    * Environment name
@@ -117,13 +124,14 @@ export class SharedInfrastructure extends Construct {
 
     // Lambda layer with shared dependencies
     // Use local bundling to avoid Docker issues with pnpm workspaces
+    const layerPath = path.resolve(__dirname, '../../../layer');
     this.dependencyLayer = new lambda.LayerVersion(this, 'DependencyLayer', {
       layerVersionName: `swarm-deps-${environment}`,
       description: 'Shared dependencies for swarm handlers',
       compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
       code: layerCodePath 
         ? lambda.Code.fromAsset(layerCodePath)
-        : lambda.Code.fromAsset('../../layer', {
+        : lambda.Code.fromAsset(layerPath, {
             bundling: {
               image: lambda.Runtime.NODEJS_20_X.bundlingImage,
               local: {
@@ -131,14 +139,16 @@ export class SharedInfrastructure extends Construct {
                   // Use local bundling with npm (not pnpm) for layer
                   const { execSync } = require('child_process');
                   const fs = require('fs');
-                  const path = require('path');
+                  const pathMod = require('path');
                   
-                  const nodejsDir = path.join(outputDir, 'nodejs');
+                  const nodejsDir = pathMod.join(outputDir, 'nodejs');
                   fs.mkdirSync(nodejsDir, { recursive: true });
                   
                   // Copy layer package.json
-                  const layerPkgPath = path.resolve(__dirname, '../../../../layer/package.json');
-                  fs.copyFileSync(layerPkgPath, path.join(nodejsDir, 'package.json'));
+                  fs.copyFileSync(
+                    pathMod.join(layerPath, 'package.json'),
+                    pathMod.join(nodejsDir, 'package.json')
+                  );
                   
                   // Install with npm (not pnpm) to avoid workspace protocol issues
                   execSync('npm install --omit=dev --legacy-peer-deps', {
