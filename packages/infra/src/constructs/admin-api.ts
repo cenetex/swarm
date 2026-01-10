@@ -416,6 +416,9 @@ export class AdminApiConstruct extends Construct {
     }
     llmApiKey.grantRead(telegramWebhookHandler);
 
+    // Grant KMS decrypt for agent secrets
+    this.encryptionKey.grantDecrypt(telegramWebhookHandler);
+
     // Grant read access to agent secrets (bot tokens and webhook secrets)
     telegramWebhookHandler.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,

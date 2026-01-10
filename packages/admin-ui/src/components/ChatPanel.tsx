@@ -129,43 +129,76 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
     );
   }
 
-  // Handle tool submissions (secrets, confirmations, etc.)
+  // Handle tool submissions (secrets, confirmations, uploads, etc.)
   const handleToolSubmit = useCallback(
     async (toolCallId: string, result: unknown) => {
       if (!activeAgent) return;
 
-      // If it's a secret submission, save it and continue the chat
-      const secretResult = result as { secretKey?: string; value?: string };
-      if (secretResult.secretKey && secretResult.value) {
-        try {
-          await saveAgentSecret(activeAgent.id, secretResult.secretKey, secretResult.value);
-          
-          // Update the tool call status in the message
-          const currentMessages = useAgentStore.getState().chats[activeAgent.id] || [];
-          for (const msg of currentMessages) {
-            const toolCall = msg.toolCalls?.find(tc => tc.id === toolCallId);
-            if (toolCall) {
-              updateMessage(activeAgent.id, msg.id, {
-                toolCalls: msg.toolCalls?.map(tc => 
-                  tc.id === toolCallId 
-                    ? { ...tc, status: 'completed' as const, result }
-                    : tc
-                ),
-              });
-              break;
-            }
+      const resultObj = result as Record<string, unknown>;
+      
+      // Update the tool call status in the message
+      const updateToolCallStatus = () => {
+        const currentMessages = useAgentStore.getState().chats[activeAgent.id] || [];
+        for (const msg of currentMessages) {
+          const toolCall = msg.toolCalls?.find(tc => tc.id === toolCallId);
+          if (toolCall) {
+            updateMessage(activeAgent.id, msg.id, {
+              toolCalls: msg.toolCalls?.map(tc => 
+                tc.id === toolCallId 
+                  ? { ...tc, status: 'completed' as const, result }
+                  : tc
+              ),
+            });
+            break;
           }
+        }
+      };
+
+      // Handle secret submission
+      if (resultObj.secretKey && resultObj.value) {
+        try {
+          await saveAgentSecret(activeAgent.id, resultObj.secretKey as string, resultObj.value as string);
+          updateToolCallStatus();
           
           // Send a follow-up message to let the agent know the secret was stored
-          // This continues the conversation naturally
-          const followUpContent = `I've entered my ${secretResult.secretKey.replace(/_/g, ' ')}.`;
+          const followUpContent = `I've entered my ${(resultObj.secretKey as string).replace(/_/g, ' ')}.`;
           await handleSendMessage(followUpContent);
           
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to save secret';
           setError(errorMsg);
         }
+        return;
       }
+
+      // Handle image upload completion
+      if (resultObj.success && resultObj.s3Key && resultObj.publicUrl) {
+        try {
+          updateToolCallStatus();
+          
+          // Send a follow-up message to let the agent know the upload completed
+          const category = resultObj.category ? ` ${resultObj.category}` : '';
+          const filename = resultObj.filename ? ` (${resultObj.filename})` : '';
+          const followUpContent = `I've uploaded the${category} image${filename}. The s3Key is "${resultObj.s3Key}" and publicUrl is "${resultObj.publicUrl}". Please save it to my reference images.`;
+          await handleSendMessage(followUpContent);
+          
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Failed to process upload';
+          setError(errorMsg);
+        }
+        return;
+      }
+
+      // Handle confirmation response
+      if ('confirmed' in resultObj) {
+        updateToolCallStatus();
+        const followUpContent = resultObj.confirmed ? 'Yes, proceed.' : 'No, cancel that.';
+        await handleSendMessage(followUpContent);
+        return;
+      }
+
+      // Generic tool result - just update status
+      updateToolCallStatus();
     },
     [activeAgent, updateMessage, setError, handleSendMessage]
   );

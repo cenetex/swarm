@@ -2,9 +2,11 @@
  * Media Generation Service
  * Handles image, video, and sticker generation with multiple providers
  */
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, QueryCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { v4 as uuid } from 'uuid';
 import * as mediaJobs from './media-jobs.js';
 import * as gallery from './gallery.js';
@@ -14,10 +16,12 @@ import type { MediaJob, GalleryItem } from '../types.js';
 
 const s3Client = new S3Client({});
 const sqsClient = new SQSClient({});
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
 const MEDIA_QUEUE_URL = process.env.MEDIA_QUEUE_URL;
 const CDN_URL = process.env.CDN_URL;
+const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 // Provider configuration
 const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/images/generations';
@@ -55,6 +59,23 @@ interface GenerateStickerOptions {
 }
 
 /**
+ * Reference image categories
+ */
+export type ReferenceImageCategory = 
+  | 'profile'      // Agent's profile/avatar
+  | 'character'    // Character reference for consistency
+  | 'style'        // Style reference images
+  | 'background'   // Background/scene references
+  | 'other';       // Miscellaneous references
+
+interface ReferenceImageUploadResult {
+  uploadUrl: string;
+  s3Key: string;
+  publicUrl: string;
+  category: ReferenceImageCategory;
+}
+
+/**
  * Generate a signed URL for uploading a profile image
  */
 export async function getProfileImageUploadUrl(agentId: string): Promise<{
@@ -74,6 +95,33 @@ export async function getProfileImageUploadUrl(agentId: string): Promise<{
   const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
 
   return { uploadUrl, s3Key, publicUrl };
+}
+
+/**
+ * Generate a signed URL for uploading a reference image
+ */
+export async function getReferenceImageUploadUrl(
+  agentId: string,
+  category: ReferenceImageCategory,
+  filename?: string,
+  contentType: string = 'image/png'
+): Promise<ReferenceImageUploadResult> {
+  const extension = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg' : 'png';
+  const safeName = filename 
+    ? filename.replace(/[^a-zA-Z0-9-_]/g, '-').slice(0, 50) 
+    : uuid().slice(0, 8);
+  const s3Key = `agents/${agentId}/references/${category}/${safeName}-${uuid().slice(0, 8)}.${extension}`;
+
+  const command = new PutObjectCommand({
+    Bucket: MEDIA_BUCKET,
+    Key: s3Key,
+    ContentType: contentType,
+  });
+
+  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+
+  return { uploadUrl, s3Key, publicUrl, category };
 }
 
 /**
@@ -482,4 +530,121 @@ export async function queueMediaJob(job: {
   }));
 
   return jobId;
+}
+
+// ============================================================================
+// Reference Images Management
+// ============================================================================
+
+export interface ReferenceImage {
+  id: string;
+  agentId: string;
+  category: ReferenceImageCategory;
+  name: string;
+  description?: string;
+  url: string;
+  s3Key: string;
+  createdAt: number;
+}
+
+/**
+ * Save reference image metadata after upload
+ */
+export async function saveReferenceImage(
+  agentId: string,
+  category: ReferenceImageCategory,
+  s3Key: string,
+  publicUrl: string,
+  name: string,
+  description?: string
+): Promise<ReferenceImage> {
+  const id = uuid();
+  const now = Date.now();
+
+  const image: ReferenceImage = {
+    id,
+    agentId,
+    category,
+    name,
+    description,
+    url: publicUrl,
+    s3Key,
+    createdAt: now,
+  };
+
+  await dynamoClient.send(new PutCommand({
+    TableName: ADMIN_TABLE,
+    Item: {
+      pk: `AGENT#${agentId}`,
+      sk: `REFERENCE#${category}#${id}`,
+      ...image,
+    },
+  }));
+
+  return image;
+}
+
+/**
+ * List reference images for an agent
+ */
+export async function listReferenceImages(
+  agentId: string,
+  category?: ReferenceImageCategory
+): Promise<ReferenceImage[]> {
+  const skPrefix = category ? `REFERENCE#${category}#` : 'REFERENCE#';
+
+  const result = await dynamoClient.send(new QueryCommand({
+    TableName: ADMIN_TABLE,
+    KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+    ExpressionAttributeValues: {
+      ':pk': `AGENT#${agentId}`,
+      ':sk': skPrefix,
+    },
+  }));
+
+  return (result.Items || []).map(item => ({
+    id: item.id,
+    agentId: item.agentId,
+    category: item.category,
+    name: item.name,
+    description: item.description,
+    url: item.url,
+    s3Key: item.s3Key,
+    createdAt: item.createdAt,
+  }));
+}
+
+/**
+ * Delete a reference image
+ */
+export async function deleteReferenceImage(
+  agentId: string,
+  imageId: string
+): Promise<void> {
+  // First find the image to get its category and s3Key
+  const images = await listReferenceImages(agentId);
+  const image = images.find(img => img.id === imageId);
+
+  if (!image) {
+    throw new Error('Reference image not found');
+  }
+
+  // Delete from S3
+  try {
+    await s3Client.send(new DeleteObjectCommand({
+      Bucket: MEDIA_BUCKET,
+      Key: image.s3Key,
+    }));
+  } catch (err) {
+    console.warn('Failed to delete S3 object:', err);
+  }
+
+  // Delete from DynamoDB
+  await dynamoClient.send(new DeleteCommand({
+    TableName: ADMIN_TABLE,
+    Key: {
+      pk: `AGENT#${agentId}`,
+      sk: `REFERENCE#${image.category}#${imageId}`,
+    },
+  }));
 }

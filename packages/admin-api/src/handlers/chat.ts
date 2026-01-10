@@ -230,12 +230,88 @@ const AGENT_TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
+  // Reference image management
+  {
+    type: 'function',
+    function: {
+      name: 'get_reference_image_upload_url',
+      description: 'Get a signed URL to upload a reference image. Categories: profile (avatar), character (for consistency in generations), style (style references), background (scene references), other.',
+      parameters: {
+        type: 'object',
+        properties: {
+          category: {
+            type: 'string',
+            enum: ['profile', 'character', 'style', 'background', 'other'],
+            description: 'The category of reference image',
+          },
+          name: {
+            type: 'string',
+            description: 'A descriptive name for this reference image (e.g., "main character front view")',
+          },
+          description: {
+            type: 'string',
+            description: 'Optional description of what this reference shows or how to use it',
+          },
+        },
+        required: ['category', 'name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'save_reference_image',
+      description: 'Save the metadata for a reference image after it has been uploaded',
+      parameters: {
+        type: 'object',
+        properties: {
+          s3Key: { type: 'string', description: 'The S3 key returned from get_reference_image_upload_url' },
+          publicUrl: { type: 'string', description: 'The public URL returned from get_reference_image_upload_url' },
+          category: { type: 'string', enum: ['profile', 'character', 'style', 'background', 'other'] },
+          name: { type: 'string', description: 'Name for the reference image' },
+          description: { type: 'string', description: 'Optional description' },
+        },
+        required: ['s3Key', 'publicUrl', 'category', 'name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_reference_images',
+      description: 'List all reference images for this agent, optionally filtered by category',
+      parameters: {
+        type: 'object',
+        properties: {
+          category: {
+            type: 'string',
+            enum: ['profile', 'character', 'style', 'background', 'other'],
+            description: 'Filter by category (optional)',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_reference_image',
+      description: 'Delete a reference image by its ID',
+      parameters: {
+        type: 'object',
+        properties: {
+          imageId: { type: 'string', description: 'The ID of the reference image to delete' },
+        },
+        required: ['imageId'],
+      },
+    },
+  },
   // Image generation
   {
     type: 'function',
     function: {
       name: 'generate_image',
-      description: 'Generate an image from a text prompt. The image will be saved to my gallery.',
+      description: 'Generate an image from a text prompt. Can use reference images for character consistency. The image will be saved to my gallery.',
       parameters: {
         type: 'object',
         properties: {
@@ -247,6 +323,10 @@ const AGENT_TOOLS = [
             type: 'boolean',
             description: 'Use my profile image as a reference for character consistency',
           },
+          referenceImageId: {
+            type: 'string',
+            description: 'ID of a specific reference image to use (from list_reference_images)',
+          },
         },
         required: ['prompt'],
       },
@@ -257,7 +337,7 @@ const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'generate_video',
-      description: 'Generate a video from a text prompt. This is async - I will notify when complete.',
+      description: 'Generate a video from a text prompt. Can use reference images. This is async - I will notify when complete.',
       parameters: {
         type: 'object',
         properties: {
@@ -268,6 +348,10 @@ const AGENT_TOOLS = [
           useProfileAsReference: {
             type: 'boolean',
             description: 'Use my profile image as a reference for character consistency',
+          },
+          referenceImageId: {
+            type: 'string',
+            description: 'ID of a specific reference image to use (from list_reference_images)',
           },
         },
         required: ['prompt'],
@@ -639,11 +723,74 @@ async function executeTool(
         break;
       }
 
+      // Reference image management
+      case 'get_reference_image_upload_url': {
+        const uploadInfo = await media.getReferenceImageUploadUrl(
+          agentId!,
+          args.category,
+          args.name
+        );
+        result = {
+          type: 'upload_url',
+          uploadUrl: uploadInfo.uploadUrl,
+          s3Key: uploadInfo.s3Key,
+          publicUrl: uploadInfo.publicUrl,
+          category: uploadInfo.category,
+          instructions: `Upload your ${args.category} reference image using a PUT request to the uploadUrl. After uploading, call save_reference_image with the s3Key and publicUrl to register it.`,
+        };
+        break;
+      }
+
+      case 'save_reference_image': {
+        const refImage = await media.saveReferenceImage(
+          agentId!,
+          args.category,
+          args.s3Key,
+          args.publicUrl,
+          args.name,
+          args.description
+        );
+        result = {
+          success: true,
+          message: `Reference image "${args.name}" saved!`,
+          image: refImage,
+        };
+        break;
+      }
+
+      case 'list_reference_images': {
+        const images = await media.listReferenceImages(agentId!, args.category);
+        result = {
+          images,
+          count: images.length,
+          message: images.length === 0 
+            ? 'No reference images found. Upload some using get_reference_image_upload_url!'
+            : `Found ${images.length} reference image(s)`,
+        };
+        break;
+      }
+
+      case 'delete_reference_image': {
+        await media.deleteReferenceImage(agentId!, args.imageId);
+        result = {
+          success: true,
+          message: 'Reference image deleted',
+        };
+        break;
+      }
+
       // Image generation
       case 'generate_image': {
-        // Get agent's profile image for reference if requested
+        // Get reference image URL - priority: explicit ID > profile flag > none
         let referenceImageUrl: string | undefined;
-        if (args.useProfileAsReference) {
+        
+        if (args.referenceImageId) {
+          const images = await media.listReferenceImages(agentId!);
+          const refImage = images.find(img => img.id === args.referenceImageId);
+          if (refImage) {
+            referenceImageUrl = refImage.url;
+          }
+        } else if (args.useProfileAsReference) {
           const agent = await agents.getAgent(agentId!);
           referenceImageUrl = agent?.profileImage?.url;
         }
@@ -661,6 +808,7 @@ async function executeTool(
           id: image.id,
           url: image.url,
           prompt: args.prompt,
+          usedReference: !!referenceImageUrl,
         };
         break;
       }
@@ -668,7 +816,14 @@ async function executeTool(
       // Video generation (async)
       case 'generate_video': {
         let referenceImageUrl: string | undefined;
-        if (args.useProfileAsReference) {
+        
+        if (args.referenceImageId) {
+          const images = await media.listReferenceImages(agentId!);
+          const refImage = images.find(img => img.id === args.referenceImageId);
+          if (refImage) {
+            referenceImageUrl = refImage.url;
+          }
+        } else if (args.useProfileAsReference) {
           const agent = await agents.getAgent(agentId!);
           referenceImageUrl = agent?.profileImage?.url;
         }
