@@ -72,6 +72,41 @@ async function getLlmApiKey(): Promise<string> {
 }
 
 /**
+ * Sanitize conversation history to ensure valid message format
+ * Removes orphaned tool results and ensures proper message structure
+ */
+function sanitizeMessages(messages: AdminChatMessage[]): AdminChatMessage[] {
+  const sanitized: AdminChatMessage[] = [];
+  const validToolCallIds = new Set<string>();
+
+  // First pass: collect valid tool call IDs from assistant messages
+  for (const msg of messages) {
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        if (tc.id) {
+          validToolCallIds.add(tc.id);
+        }
+      }
+    }
+  }
+
+  // Second pass: filter and validate messages
+  for (const msg of messages) {
+    if (msg.role === 'tool') {
+      // Only include tool results that have a matching tool call
+      const toolCallId = (msg as ToolResult).tool_call_id;
+      if (!toolCallId || !validToolCallIds.has(toolCallId)) {
+        console.log('[Chat] Skipping orphaned tool result:', toolCallId);
+        continue;
+      }
+    }
+    sanitized.push(msg);
+  }
+
+  return sanitized;
+}
+
+/**
  * Define available tools for the agent chatbot
  * These tools are agent-centric - the agent configures ITSELF
  * No agentId parameter needed - uses agent context from the chat
@@ -1107,6 +1142,13 @@ async function executeTool(
 
       // Image generation (async)
       case 'generate_image': {
+        // Check credits before starting generation
+        const canUseImage = await credits.canUseTool(agentId!, 'generate_image');
+        if (!canUseImage.allowed) {
+          result = { success: false, error: `Rate limited: ${canUseImage.reason}` };
+          break;
+        }
+
         // Build array of reference images
         const referenceImageUrls: string[] = [];
 
@@ -1157,6 +1199,9 @@ async function executeTool(
           aspectRatio: args.aspectRatio || '1:1',
           conversationId: 'admin-chat-' + Date.now(),
         });
+
+        // Consume credit after successful job creation
+        await credits.consumeCredit(agentId!, 'generate_image');
 
         result = {
           success: true,
@@ -1307,6 +1352,7 @@ async function executeTool(
 
 /**
  * Call the LLM API
+ * Sanitizes messages to remove orphaned tool results that cause validation errors
  */
 async function callLLM(
   messages: AdminChatMessage[],
@@ -1317,6 +1363,9 @@ async function callLLM(
 }> {
   const apiKey = await getLlmApiKey();
   const systemPrompt = buildSystemPrompt(agent);
+  
+  // Sanitize messages to ensure valid format (remove orphaned tool results)
+  const sanitizedMessages = sanitizeMessages(messages);
   
   const response = await fetch(LLM_ENDPOINT, {
     method: 'POST',
@@ -1330,7 +1379,7 @@ async function callLLM(
       model: LLM_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
-        ...messages,
+        ...sanitizedMessages,
       ],
       tools: AGENT_TOOLS,
       tool_choice: 'auto',
@@ -1340,6 +1389,7 @@ async function callLLM(
 
   if (!response.ok) {
     const text = await response.text();
+    console.error('[Chat] LLM API error:', response.status, text.slice(0, 500));
     throw new Error(`LLM API error: ${response.status} ${text}`);
   }
 

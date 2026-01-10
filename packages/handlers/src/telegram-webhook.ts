@@ -166,7 +166,10 @@ export async function handler(
         isBot: envelope.sender.isBot,
         content: envelope.content.text || '[media]',
         timestamp: envelope.timestamp,
-      }
+      },
+      undefined,
+      envelope.metadata.chatType,
+      envelope.metadata.chatTitle
     );
 
     // Queue for response generation

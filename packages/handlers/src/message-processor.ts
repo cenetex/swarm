@@ -236,13 +236,6 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       // POST-RESPONSE STATE UPDATES
       // =========================================================
 
-      // Mark response sent - transitions to COOLDOWN and clears buffer
-      await stateService.markResponseSent(
-        getAgentId(),
-        envelope.conversationId,
-        `resp_${envelope.messageId}_${Date.now()}`
-      );
-
       // Set user cooldown if configured (legacy behavior)
       if (agentConfig.behavior.cooldownMinutes > 0) {
         await stateService.setUserCooldown({

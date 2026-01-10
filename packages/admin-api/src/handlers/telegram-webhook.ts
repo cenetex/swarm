@@ -13,7 +13,14 @@ import type {
   APIGatewayProxyResultV2,
 } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  PutCommand,
+  QueryCommand,
+  UpdateCommand,
+  DeleteCommand,
+} from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { isValidTelegramIP } from '../services/telegram.js';
 import { timingSafeEqual } from 'crypto';
@@ -36,6 +43,11 @@ const ENFORCE_IP_CHECK = process.env.ENFORCE_TELEGRAM_IP_CHECK !== 'false';
 // === CONFIG ===
 // NOTE: Channel-aware config is in services/channel-state.ts (CHANNEL_CONFIG)
 const DEDUP_TTL_SECONDS = 300; // 5 minutes - prevent reprocessing same message on retries
+const PROCESSING_TTL_SECONDS = 60; // 1 minute - allow retries after short processing failures
+const TELEGRAM_TIMEOUT_MS = 10_000;
+const TELEGRAM_RETRY_COUNT = 1;
+const LLM_TIMEOUT_MS = 20_000;
+const LLM_RETRY_COUNT = 2;
 
 // === TYPES ===
 interface TelegramUpdate {
@@ -46,6 +58,12 @@ interface TelegramUpdate {
     chat: { id: number; type: 'private' | 'group' | 'supergroup' | 'channel'; title?: string };
     date: number;
     text?: string;
+    caption?: string;
+    photo?: unknown;
+    video?: unknown;
+    animation?: unknown;
+    document?: unknown;
+    sticker?: { emoji?: string };
     reply_to_message?: { message_id: number; text?: string; from?: { id: number; username?: string } };
   };
 }
@@ -148,6 +166,56 @@ const TELEGRAM_TOOLS = [
 // === CACHES ===
 const secretsCache = new Map<string, string>();
 
+// === FETCH HELPERS ===
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+  retries: number
+): Promise<Response> {
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (attempt <= retries) {
+    try {
+      const response = await fetchWithTimeout(url, options, timeoutMs);
+      if (response.ok || response.status < 500) {
+        return response;
+      }
+      lastError = new Error(`HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+    }
+
+    attempt += 1;
+    if (attempt > retries) {
+      break;
+    }
+    await sleep(250 * attempt);
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Fetch failed');
+}
+
 // === HELPER FUNCTIONS ===
 async function getSecret(secretArn: string): Promise<string | null> {
   if (secretsCache.has(secretArn)) return secretsCache.get(secretArn)!;
@@ -215,14 +283,80 @@ async function getLlmApiKey(): Promise<string> {
 
 // === MESSAGE DEDUPLICATION ===
 // Prevents reprocessing the same message when Telegram retries due to Lambda timeout
-async function isMessageProcessed(agentId: string, updateId: number): Promise<boolean> {
+// Handles stale "processing" markers from timed-out Lambda invocations
+async function startMessageProcessing(agentId: string, updateId: number): Promise<boolean> {
+  const now = Date.now();
+  const ttl = Math.floor(now / 1000) + PROCESSING_TTL_SECONDS;
+  const pk = `TELEGRAM#${agentId}`;
+  const sk = `PROCESSED#${updateId}`;
+
   try {
-    const result = await dynamoClient.send(new GetCommand({
+    // Try to insert new processing marker
+    await dynamoClient.send(new PutCommand({
       TableName: ADMIN_TABLE,
-      Key: { pk: `TELEGRAM#${agentId}`, sk: `PROCESSED#${updateId}` },
+      Item: {
+        pk,
+        sk,
+        status: 'processing',
+        ttl,
+        startedAt: now,
+      },
+      ConditionExpression: 'attribute_not_exists(pk)',
     }));
-    return !!result.Item;
-  } catch {
+    return true;
+  } catch (err: unknown) {
+    if ((err as { name?: string }).name !== 'ConditionalCheckFailedException') {
+      throw err;
+    }
+
+    // Record exists - check if it's stale or already processed
+    const existing = await dynamoClient.send(new GetCommand({
+      TableName: ADMIN_TABLE,
+      Key: { pk, sk },
+    }));
+
+    if (!existing.Item) {
+      // Race condition - record was deleted, try again
+      return startMessageProcessing(agentId, updateId);
+    }
+
+    const { status, startedAt } = existing.Item;
+
+    // Already successfully processed - skip
+    if (status === 'processed') {
+      return false;
+    }
+
+    // Check if processing marker is stale (older than PROCESSING_TTL_SECONDS)
+    const staleThreshold = now - (PROCESSING_TTL_SECONDS * 1000);
+    if (status === 'processing' && startedAt && startedAt < staleThreshold) {
+      console.log(`[Telegram] Taking over stale processing marker (started ${Math.round((now - startedAt) / 1000)}s ago)`);
+      // Take over the stale processing marker
+      try {
+        await dynamoClient.send(new UpdateCommand({
+          TableName: ADMIN_TABLE,
+          Key: { pk, sk },
+          UpdateExpression: 'SET startedAt = :startedAt, #ttl = :ttl',
+          ConditionExpression: '#status = :processing AND startedAt = :oldStartedAt',
+          ExpressionAttributeNames: { '#status': 'status', '#ttl': 'ttl' },
+          ExpressionAttributeValues: {
+            ':startedAt': now,
+            ':ttl': ttl,
+            ':processing': 'processing',
+            ':oldStartedAt': startedAt,
+          },
+        }));
+        return true;
+      } catch (updateErr: unknown) {
+        if ((updateErr as { name?: string }).name === 'ConditionalCheckFailedException') {
+          // Another process took over - skip
+          return false;
+        }
+        throw updateErr;
+      }
+    }
+
+    // Processing marker is fresh - another Lambda is handling it
     return false;
   }
 }
@@ -230,13 +364,15 @@ async function isMessageProcessed(agentId: string, updateId: number): Promise<bo
 async function markMessageProcessed(agentId: string, updateId: number): Promise<void> {
   const ttl = Math.floor(Date.now() / 1000) + DEDUP_TTL_SECONDS;
   try {
-    await dynamoClient.send(new PutCommand({
+    await dynamoClient.send(new UpdateCommand({
       TableName: ADMIN_TABLE,
-      Item: {
-        pk: `TELEGRAM#${agentId}`,
-        sk: `PROCESSED#${updateId}`,
-        ttl,
-        processedAt: Date.now(),
+      Key: { pk: `TELEGRAM#${agentId}`, sk: `PROCESSED#${updateId}` },
+      UpdateExpression: 'SET #status = :status, processedAt = :processedAt, ttl = :ttl',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: {
+        ':status': 'processed',
+        ':processedAt': Date.now(),
+        ':ttl': ttl,
       },
     }));
   } catch (err) {
@@ -244,24 +380,45 @@ async function markMessageProcessed(agentId: string, updateId: number): Promise<
   }
 }
 
+async function clearMessageProcessing(agentId: string, updateId: number): Promise<void> {
+  try {
+    await dynamoClient.send(new DeleteCommand({
+      TableName: ADMIN_TABLE,
+      Key: { pk: `TELEGRAM#${agentId}`, sk: `PROCESSED#${updateId}` },
+    }));
+  } catch (err) {
+    console.warn('Failed to clear message processing marker:', err);
+  }
+}
+
 // === TELEGRAM API ===
 async function sendTelegramMessage(token: string, chatId: number, text: string, replyTo?: number): Promise<number | null> {
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: 'Markdown',
-      reply_to_message_id: replyTo,
-    }),
-  });
-  if (!response.ok) {
-    console.error('Telegram sendMessage error:', await response.text());
+  try {
+    const response = await fetchWithRetry(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          parse_mode: 'Markdown',
+          reply_to_message_id: replyTo,
+        }),
+      },
+      TELEGRAM_TIMEOUT_MS,
+      TELEGRAM_RETRY_COUNT
+    );
+    if (!response.ok) {
+      console.error('Telegram sendMessage error:', await response.text());
+      return null;
+    }
+    const data = await response.json() as { result?: { message_id: number } };
+    return data.result?.message_id || null;
+  } catch (error) {
+    console.error('Telegram sendMessage failed:', error);
     return null;
   }
-  const data = await response.json() as { result?: { message_id: number } };
-  return data.result?.message_id || null;
 }
 
 async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string, caption?: string, replyTo?: number): Promise<void> {
@@ -271,23 +428,37 @@ async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string
   // This is more reliable than letting Telegram fetch the URL (which may be private S3)
   // Same approach as solanafirehorse implementation
   try {
-    const imageResponse = await fetch(photoUrl);
+    const imageResponse = await fetchWithRetry(
+      photoUrl,
+      { method: 'GET' },
+      TELEGRAM_TIMEOUT_MS,
+      TELEGRAM_RETRY_COUNT
+    );
     if (!imageResponse.ok) {
       console.error(`[Telegram] Failed to download image: ${imageResponse.status}`);
       // Fall back to URL-based send (might work for public CDN URLs)
-      const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          photo: photoUrl,
-          caption: caption?.slice(0, 1024),
-          parse_mode: 'Markdown',
-          reply_to_message_id: replyTo,
-        }),
-      });
-      if (!response.ok) {
-        console.error(`[Telegram] sendPhoto (URL fallback) failed: ${response.status}`, await response.text());
+      try {
+        const response = await fetchWithRetry(
+          `https://api.telegram.org/bot${token}/sendPhoto`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              photo: photoUrl,
+              caption: caption?.slice(0, 1024),
+              parse_mode: 'Markdown',
+              reply_to_message_id: replyTo,
+            }),
+          },
+          TELEGRAM_TIMEOUT_MS,
+          TELEGRAM_RETRY_COUNT
+        );
+        if (!response.ok) {
+          console.error(`[Telegram] sendPhoto (URL fallback) failed: ${response.status}`, await response.text());
+        }
+      } catch (error) {
+        console.error('[Telegram] sendPhoto (URL fallback) failed:', error);
       }
       return;
     }
@@ -307,10 +478,15 @@ async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string
       form.append('reply_to_message_id', replyTo.toString());
     }
 
-    const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
-      method: 'POST',
-      body: form,
-    });
+    const response = await fetchWithRetry(
+      `https://api.telegram.org/bot${token}/sendPhoto`,
+      {
+        method: 'POST',
+        body: form,
+      },
+      TELEGRAM_TIMEOUT_MS,
+      TELEGRAM_RETRY_COUNT
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -324,28 +500,46 @@ async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string
 }
 
 async function sendTelegramVideo(token: string, chatId: number, videoUrl: string, caption?: string, replyTo?: number): Promise<void> {
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      video: videoUrl,
-      caption,
-      parse_mode: 'Markdown',
-      reply_to_message_id: replyTo,
-    }),
-  });
-  if (!response.ok) {
-    console.error('Telegram sendVideo error:', await response.text());
+  try {
+    const response = await fetchWithRetry(
+      `https://api.telegram.org/bot${token}/sendVideo`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          video: videoUrl,
+          caption,
+          parse_mode: 'Markdown',
+          reply_to_message_id: replyTo,
+        }),
+      },
+      TELEGRAM_TIMEOUT_MS,
+      TELEGRAM_RETRY_COUNT
+    );
+    if (!response.ok) {
+      console.error('Telegram sendVideo error:', await response.text());
+    }
+  } catch (error) {
+    console.error('Telegram sendVideo failed:', error);
   }
 }
 
 async function sendChatAction(token: string, chatId: number, action: string): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, action }),
-  });
+  try {
+    await fetchWithRetry(
+      `https://api.telegram.org/bot${token}/sendChatAction`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, action }),
+      },
+      TELEGRAM_TIMEOUT_MS,
+      TELEGRAM_RETRY_COUNT
+    );
+  } catch (error) {
+    console.warn('Telegram sendChatAction failed:', error);
+  }
 }
 
 // === TOOL EXECUTION ===
@@ -354,6 +548,23 @@ interface ToolResult {
   result?: unknown;
   error?: string;
   media?: { type: 'image' | 'video'; url: string; caption?: string };
+}
+
+function parseToolArgs(raw: string | undefined, toolName: string): { ok: boolean; args: Record<string, unknown>; error?: string } {
+  if (!raw) {
+    return { ok: true, args: {} };
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return { ok: true, args: parsed as Record<string, unknown> };
+    }
+    return { ok: true, args: {} };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, args: {}, error: `Invalid JSON for ${toolName}: ${message}` };
+  }
 }
 
 async function executeTool(
@@ -411,6 +622,10 @@ async function executeTool(
           // Use the actual CDN URL from the result
           // The media.generateImage() already returns the proper CDN URL
           console.log(`[Telegram] Image generated successfully: ${result.url}`);
+          const consumed = await credits.consumeCredit(agentId, 'generate_image');
+          if (!consumed) {
+            console.warn(`[Telegram] Failed to consume image credit for ${agentId}`);
+          }
           return {
             success: true,
             result: { id: result.id, url: result.url },
@@ -438,6 +653,10 @@ async function executeTool(
           platform: 'telegram',
           conversationId: `telegram-${chatId}`,
         });
+        const consumed = await credits.consumeCredit(agentId, 'generate_video');
+        if (!consumed) {
+          console.warn(`[Telegram] Failed to consume video credit for ${agentId}`);
+        }
         return {
           success: true,
           result: { jobId: job.jobId, status: 'started', message: 'Video generation started. I will send it when ready!' },
@@ -501,22 +720,27 @@ async function callLLM(
 ): Promise<{ content?: string; toolCalls?: ToolCall[] }> {
   const apiKey = await getLlmApiKey();
 
-  const response = await fetch(LLM_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://swarm.telegram',
-      'X-Title': `Swarm Agent: ${agent.name}`,
+  const response = await fetchWithRetry(
+    LLM_ENDPOINT,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://swarm.telegram',
+        'X-Title': `Swarm Agent: ${agent.name}`,
+      },
+      body: JSON.stringify({
+        model: agent.llmConfig.model || LLM_MODEL,
+        messages,
+        tools: tools?.length ? tools : undefined,
+        max_tokens: agent.llmConfig.maxTokens || 1024,
+        temperature: agent.llmConfig.temperature || 0.8,
+      }),
     },
-    body: JSON.stringify({
-      model: agent.llmConfig.model || LLM_MODEL,
-      messages,
-      tools: tools?.length ? tools : undefined,
-      max_tokens: agent.llmConfig.maxTokens || 1024,
-      temperature: agent.llmConfig.temperature || 0.8,
-    }),
-  });
+    LLM_TIMEOUT_MS,
+    LLM_RETRY_COUNT
+  );
 
   if (!response.ok) {
     throw new Error(`LLM API error: ${await response.text()}`);
@@ -547,7 +771,15 @@ async function processChannelMessage(
   const chatId = message.chat.id;
   const chatType = message.chat.type;
   const messageId = message.message_id;
-  const text = message.text || '';
+  const text = message.text || message.caption || '';
+  const hasMedia = Boolean(
+    message.photo ||
+    message.video ||
+    message.animation ||
+    message.document ||
+    message.sticker
+  );
+  const contentText = text || (hasMedia ? '[media]' : '');
   const userId = message.from?.id || 0;
   const userName = message.from?.first_name || 'User';
   const username = message.from?.username;
@@ -565,7 +797,7 @@ async function processChannelMessage(
     userId,
     userName,
     username,
-    text,
+    text: contentText,
     timestamp: Date.now(),
     replyToMessageId: message.reply_to_message?.message_id,
     replyToUserId: message.reply_to_message?.from?.id,
@@ -573,18 +805,12 @@ async function processChannelMessage(
     isReplyToBot,
   };
 
-  // Ensure channel state exists (will be created if needed by addMessageToBuffer)
-  await channelState.getOrCreateChannelState(
-    agentId,
-    chatId,
-    chatType,
-    message.chat.title
-  );
-
   // Add message to buffer and get updated state
   const updatedState = await channelState.addMessageToBuffer(
     agentId,
     chatId,
+    chatType,
+    message.chat.title,
     bufferedMessage
   );
 
@@ -738,8 +964,19 @@ async function processChannelResponse(
           continue;
         }
 
-        const args = JSON.parse(tc.function.arguments || '{}');
-        const result = await executeTool(agentId, toolName, args, token, chatId, agent);
+        const parsedArgs = parseToolArgs(tc.function.arguments, toolName);
+        if (!parsedArgs.ok) {
+          failedTools.add(toolName);
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            name: toolName,
+            content: JSON.stringify({ error: parsedArgs.error, doNotRetry: true }),
+          });
+          continue;
+        }
+
+        const result = await executeTool(agentId, toolName, parsedArgs.args, token, chatId, agent);
 
         if (!result.success) {
           failedTools.add(toolName);
@@ -828,8 +1065,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return ok();
     }
 
-    if (ENFORCE_IP_CHECK && clientIP && !isValidTelegramIP(clientIP)) {
-      console.warn(`Non-Telegram IP: ${clientIP}`);
+    if (ENFORCE_IP_CHECK) {
+      if (!clientIP || !isValidTelegramIP(clientIP)) {
+        console.warn(`Rejecting non-Telegram IP: ${clientIP || 'unknown'}`);
+        return { statusCode: 403, body: 'Forbidden' };
+      }
     }
 
     // Verify webhook secret
@@ -856,36 +1096,52 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // Parse update
     const update: TelegramUpdate = event.body ? JSON.parse(event.body) : {};
-    if (!update.message?.text) return ok();
-
-    // Deduplication: Check if we already processed this update (prevents infinite loops on Lambda timeout/retry)
-    if (await isMessageProcessed(agentId, update.update_id)) {
-      console.log(`[Telegram] Skipping already processed update: ${update.update_id}`);
-      return ok();
-    }
-    // Mark as processed BEFORE processing to prevent parallel executions
-    await markMessageProcessed(agentId, update.update_id);
-
     const message = update.message;
+    if (!message) return ok();
+
+    const hasContent = Boolean(
+      message.text ||
+      message.caption ||
+      message.photo ||
+      message.video ||
+      message.animation ||
+      message.document ||
+      message.sticker
+    );
+    if (!hasContent) return ok();
     const userId = message.from?.id;
 
     // Skip bot messages
     if (message.from?.username?.endsWith('bot')) return ok();
 
-    // Use channel-aware processing (Kyro-style architecture)
-    // This buffers messages and responds to the channel, not individual messages
-    const result = await processChannelMessage(agentId, agent, message, token);
+    // Deduplication: Check if we already processed this update (prevents infinite loops on Lambda timeout/retry)
+    const shouldProcess = await startMessageProcessing(agentId, update.update_id);
+    if (!shouldProcess) {
+      console.log(`[Telegram] Skipping already processed update: ${update.update_id}`);
+      return ok();
+    }
 
-    console.log('[Telegram] Channel processing result:', {
-      agentId,
-      chatId: message.chat.id,
-      fromUser: userId,
-      chatType: message.chat.type,
-      responded: result.responded,
-      reason: result.reason,
-    });
+    try {
+      // Use channel-aware processing (Kyro-style architecture)
+      // This buffers messages and responds to the channel, not individual messages
+      const result = await processChannelMessage(agentId, agent, message, token);
 
-    return ok();
+      await markMessageProcessed(agentId, update.update_id);
+
+      console.log('[Telegram] Channel processing result:', {
+        agentId,
+        chatId: message.chat.id,
+        fromUser: userId,
+        chatType: message.chat.type,
+        responded: result.responded,
+        reason: result.reason,
+      });
+
+      return ok();
+    } catch (error) {
+      await clearMessageProcessing(agentId, update.update_id);
+      throw error;
+    }
   } catch (error) {
     console.error('Webhook error:', error instanceof Error ? error.message : 'Unknown');
     return ok();

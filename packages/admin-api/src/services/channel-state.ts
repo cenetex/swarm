@@ -13,6 +13,7 @@ import {
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type {
   ChannelState,
@@ -132,53 +133,99 @@ export async function getOrCreateChannelState(
 export async function addMessageToBuffer(
   agentId: string,
   chatId: number,
+  chatType: 'private' | 'group' | 'supergroup' | 'channel',
+  chatTitle: string | undefined,
   message: BufferedMessage
 ): Promise<ChannelStateRecord> {
-  const state = await getOrCreateChannelState(
-    agentId,
-    chatId,
-    'supergroup' // Will be updated with actual type
-  );
-
   const now = Date.now();
   const ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
 
-  // Add message to buffer, trim if needed
-  const newBuffer = [...state.messageBuffer, message];
-  if (newBuffer.length > CHANNEL_CONFIG.MAX_BUFFER_SIZE) {
-    newBuffer.splice(0, newBuffer.length - CHANNEL_CONFIG.MAX_BUFFER_SIZE);
+  const isDirect = Boolean(message.isMention || message.isReplyToBot);
+  const updateParts = [
+    'messageBuffer = list_append(if_not_exists(messageBuffer, :emptyList), :newMessage)',
+    'bufferSize = if_not_exists(bufferSize, :zero) + :one',
+    'lastActivityAt = :now',
+    'updatedAt = :now',
+    'ttl = :ttl',
+    'agentId = if_not_exists(agentId, :agentId)',
+    'chatId = if_not_exists(chatId, :chatId)',
+    'chatType = :chatType',
+  ];
+
+  if (chatTitle) {
+    updateParts.push('chatTitle = :chatTitle');
   }
 
-  // Determine new state based on message
-  let newState: ChannelState = state.state;
-  let directEngagementAt = state.directEngagementAt;
-
-  if (message.isMention || message.isReplyToBot) {
-    // Direct engagement → ACTIVE immediately
-    newState = 'ACTIVE';
-    directEngagementAt = now;
-  } else if (state.state === 'IDLE') {
-    // Regular message in IDLE → stay IDLE (buffer only)
-    newState = 'IDLE';
-  } else if (state.state === 'COOLDOWN') {
-    // Message during cooldown → extend activity but stay in cooldown
-    newState = 'COOLDOWN';
+  if (isDirect) {
+    updateParts.push('#state = :active', 'stateChangedAt = :now', 'directEngagementAt = :now');
+  } else {
+    updateParts.push('#state = if_not_exists(#state, :idle)', 'stateChangedAt = if_not_exists(stateChangedAt, :now)');
   }
-  // ACTIVE stays ACTIVE
 
-  const updated: ChannelStateRecord = {
-    ...state,
-    messageBuffer: newBuffer,
-    bufferSize: newBuffer.length,
-    state: newState,
-    stateChangedAt: newState !== state.state ? now : state.stateChangedAt,
-    directEngagementAt,
-    lastActivityAt: now,
-    ttl,
-    updatedAt: now,
-  };
+  const response = await dynamoClient.send(new UpdateCommand({
+    TableName: ADMIN_TABLE,
+    Key: {
+      pk: `CHANNEL#${agentId}#${chatId}`,
+      sk: 'STATE',
+    },
+    UpdateExpression: `SET ${updateParts.join(', ')}`,
+    ExpressionAttributeNames: {
+      '#state': 'state',
+    },
+    ExpressionAttributeValues: {
+      ':emptyList': [],
+      ':newMessage': [message],
+      ':zero': 0,
+      ':one': 1,
+      ':now': now,
+      ':ttl': ttl,
+      ':agentId': agentId,
+      ':chatId': chatId,
+      ':chatType': chatType,
+      ...(chatTitle ? { ':chatTitle': chatTitle } : {}),
+      ...(isDirect ? { ':active': 'ACTIVE' } : { ':idle': 'IDLE' }),
+    },
+    ReturnValues: 'ALL_NEW',
+  }));
 
-  await saveChannelState(updated);
+  let updated = response.Attributes as ChannelStateRecord;
+
+  if ((updated.messageBuffer?.length || 0) > CHANNEL_CONFIG.MAX_BUFFER_SIZE) {
+    const trimmedBuffer = updated.messageBuffer.slice(-CHANNEL_CONFIG.MAX_BUFFER_SIZE);
+    const trimmedAt = Date.now();
+
+    try {
+      await dynamoClient.send(new UpdateCommand({
+        TableName: ADMIN_TABLE,
+        Key: {
+          pk: `CHANNEL#${agentId}#${chatId}`,
+          sk: 'STATE',
+        },
+        UpdateExpression: 'SET messageBuffer = :buffer, bufferSize = :size, updatedAt = :updatedAt, ttl = :ttl',
+        ConditionExpression: 'updatedAt = :expectedUpdatedAt',
+        ExpressionAttributeValues: {
+          ':buffer': trimmedBuffer,
+          ':size': trimmedBuffer.length,
+          ':updatedAt': trimmedAt,
+          ':ttl': ttl,
+          ':expectedUpdatedAt': updated.updatedAt,
+        },
+      }));
+
+      updated = {
+        ...updated,
+        messageBuffer: trimmedBuffer,
+        bufferSize: trimmedBuffer.length,
+        updatedAt: trimmedAt,
+        ttl,
+      };
+    } catch (err: unknown) {
+      if ((err as { name?: string }).name !== 'ConditionalCheckFailedException') {
+        console.warn('[ChannelState] Failed to trim channel buffer:', err);
+      }
+    }
+  }
+
   return updated;
 }
 

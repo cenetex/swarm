@@ -18,18 +18,20 @@ export class OutboundSender {
   /**
    * Execute all actions in a response
    */
-  async send(response: SwarmResponse): Promise<{ success: boolean; errors: string[] }> {
+  async send(response: SwarmResponse): Promise<{ success: boolean; errors: string[]; sentMessages: string[] }> {
     const adapter = this.platformRegistry.get(response.platform);
     
     if (!adapter) {
       return {
         success: false,
         errors: [`No adapter found for platform: ${response.platform}`],
+        sentMessages: [],
       };
     }
 
     const errors: string[] = [];
     let hasSuccessfulAction = false;
+    const sentMessages: string[] = [];
 
     for (const action of response.actions) {
       try {
@@ -59,6 +61,9 @@ export class OutboundSender {
 
         if (success) {
           hasSuccessfulAction = true;
+          if (action.type === 'send_message') {
+            sentMessages.push(action.text);
+          }
         } else {
           errors.push(`Action ${action.type} failed`);
         }
@@ -85,6 +90,7 @@ export class OutboundSender {
     return {
       success: hasSuccessfulAction || errors.length === 0,
       errors,
+      sentMessages,
     };
   }
 

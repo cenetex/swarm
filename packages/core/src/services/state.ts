@@ -16,6 +16,7 @@ import {
   PutCommand,
   DeleteCommand,
   ScanCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type {
   StateService,
@@ -193,58 +194,102 @@ export class DynamoDBStateService implements StateService {
     channelId: string,
     platform: Platform,
     message: ContextMessage,
-    maxMessages: number = CHANNEL_CONFIG.MAX_BUFFER_SIZE
+    maxMessages: number = CHANNEL_CONFIG.MAX_BUFFER_SIZE,
+    chatType?: 'private' | 'group' | 'supergroup' | 'channel',
+    chatTitle?: string
   ): Promise<ChannelState> {
-    // Get existing state
-    let state = await this.getChannelState(agentId, channelId);
-
     const now = Date.now();
+    const ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
+    const isDirect = Boolean(message.isMention || message.isReplyToBot);
 
-    if (!state) {
-      state = {
-        agentId,
-        channelId,
-        platform,
-        recentMessages: [],
-        lastActivityAt: now,
-        messageCount: 0,
-        state: 'IDLE',
-        stateChangedAt: now,
-      };
+    const updateParts = [
+      'recentMessages = list_append(if_not_exists(recentMessages, :emptyList), :newMessage)',
+      'messageCount = if_not_exists(messageCount, :zero) + :one',
+      'lastActivityAt = :now',
+      'updatedAt = :now',
+      'ttl = :ttl',
+      'agentId = if_not_exists(agentId, :agentId)',
+      'channelId = if_not_exists(channelId, :channelId)',
+      'platform = if_not_exists(platform, :platform)',
+    ];
+
+    if (chatType) {
+      updateParts.push('chatType = :chatType');
+    }
+    if (chatTitle) {
+      updateParts.push('chatTitle = :chatTitle');
     }
 
-    // Add message and trim to max
-    state.recentMessages.push(message);
-    if (state.recentMessages.length > maxMessages) {
-      state.recentMessages = state.recentMessages.slice(-maxMessages);
+    if (isDirect) {
+      updateParts.push('#state = :active', 'stateChangedAt = :now', 'directEngagementAt = :now');
+    } else {
+      updateParts.push('#state = if_not_exists(#state, :idle)', 'stateChangedAt = if_not_exists(stateChangedAt, :now)');
     }
 
-    state.lastActivityAt = now;
-    state.messageCount++;
+    const response = await this.docClient.send(new UpdateCommand({
+      TableName: this.tableName,
+      Key: {
+        pk: `AGENT#${agentId}`,
+        sk: `CHANNEL#${channelId}#STATE`,
+      },
+      UpdateExpression: `SET ${updateParts.join(', ')}`,
+      ExpressionAttributeNames: {
+        '#state': 'state',
+      },
+      ExpressionAttributeValues: {
+        ':emptyList': [],
+        ':newMessage': [message],
+        ':zero': 0,
+        ':one': 1,
+        ':now': now,
+        ':ttl': ttl,
+        ':agentId': agentId,
+        ':channelId': channelId,
+        ':platform': platform,
+        ...(chatType ? { ':chatType': chatType } : {}),
+        ...(chatTitle ? { ':chatTitle': chatTitle } : {}),
+        ...(isDirect ? { ':active': 'ACTIVE' } : { ':idle': 'IDLE' }),
+      },
+      ReturnValues: 'ALL_NEW',
+    }));
 
-    // Kyro-style state machine updates
-    const previousState = state.state;
+    let updated = response.Attributes as ChannelState;
 
-    if (message.isMention || message.isReplyToBot) {
-      // Direct engagement → ACTIVE immediately
-      state.state = 'ACTIVE';
-      state.directEngagementAt = now;
-    } else if (state.state === 'IDLE') {
-      // Regular message in IDLE → stay IDLE (buffer only)
-    } else if (state.state === 'COOLDOWN') {
-      // Message during cooldown → extend activity but stay in cooldown
+    if ((updated.recentMessages?.length || 0) > maxMessages) {
+      const trimmedMessages = updated.recentMessages.slice(-maxMessages);
+      const trimmedAt = Date.now();
+
+      try {
+        await this.docClient.send(new UpdateCommand({
+          TableName: this.tableName,
+          Key: {
+            pk: `AGENT#${agentId}`,
+            sk: `CHANNEL#${channelId}#STATE`,
+          },
+          UpdateExpression: 'SET recentMessages = :messages, updatedAt = :updatedAt, ttl = :ttl',
+          ConditionExpression: 'updatedAt = :expectedUpdatedAt',
+          ExpressionAttributeValues: {
+            ':messages': trimmedMessages,
+            ':updatedAt': trimmedAt,
+            ':ttl': ttl,
+            ':expectedUpdatedAt': updated.updatedAt,
+          },
+        }));
+
+        updated = {
+          ...updated,
+          recentMessages: trimmedMessages,
+          updatedAt: trimmedAt,
+          ttl,
+        };
+      } catch (err: unknown) {
+        if ((err as { name?: string }).name !== 'ConditionalCheckFailedException') {
+          console.warn('[State] Failed to trim channel messages:', err);
+        }
+      }
     }
-    // ACTIVE stays ACTIVE
 
-    if (state.state !== previousState) {
-      state.stateChangedAt = now;
-    }
-
-    // Update TTL
-    state.ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
-
-    await this.updateChannelState(state);
-    return state;
+    return updated;
   }
 
   // =====================================================================
