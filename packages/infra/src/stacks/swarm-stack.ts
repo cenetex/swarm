@@ -106,6 +106,7 @@ export class SwarmStack extends cdk.Stack {
         adminDomain,
         apiDomain,
         apiCertificateArn: adminCertificateArn, // Use same wildcard cert
+        stateTable: this.shared.stateTable,
       });
     }
 

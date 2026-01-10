@@ -48,8 +48,13 @@ export function ChatPanel() {
 
         history.push({ role: 'user', content });
 
-        // Send to API
-        const response = await sendChatMessage(content, history);
+        // Send to API with agent context
+        const response = await sendChatMessage(content, history, {
+          id: activeAgent.id,
+          name: activeAgent.name,
+          description: activeAgent.description,
+          persona: activeAgent.persona,
+        });
 
         // Update the loading message with the response
         const currentMessages = useAgentStore.getState().chats[activeAgent.id] || [];

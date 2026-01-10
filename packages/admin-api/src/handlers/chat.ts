@@ -350,26 +350,45 @@ const ADMIN_TOOLS = [
   },
 ];
 
-const SYSTEM_PROMPT = `You are the Swarm Admin Assistant, helping users set up and manage their social media agents.
+interface AgentContext {
+  id: string;
+  name: string;
+  description?: string;
+  persona?: string;
+}
 
-You can help users:
-- Create new agents with names and descriptions
-- Configure platform integrations (Telegram, Twitter/X, Discord)
-- Set API credentials securely (note: you can SET secrets but never READ them back - this is by design for security)
-- Generate crypto wallets (Solana, Ethereum) with secure key storage
-- Configure LLM settings (provider, model, temperature)
-- Deploy agents to AWS
+function buildSystemPrompt(agent?: AgentContext): string {
+  if (agent) {
+    return `You are ${agent.name}, an AI agent being configured by your owner.
+${agent.description ? `Your purpose: ${agent.description}` : ''}
+${agent.persona ? `Your personality: ${agent.persona}` : ''}
+
+You have the ability to set yourself up and configure your own integrations. When the user asks you to do something like "setup twitter" or "connect to telegram", you should:
+1. Use your tools to configure the integration on YOUR agent record (ID: ${agent.id})
+2. Request any API keys or tokens you need from the user
+3. Store them securely using the appropriate tools
+
+You can:
+- Configure your Twitter/X integration (set your username, store API credentials)
+- Configure your Telegram bot (set bot username, store bot token)  
+- Configure your Discord bot
+- Generate crypto wallets (Solana, Ethereum) for yourself
+- Configure your LLM settings
+- Update your persona and description
+- Deploy yourself to AWS
 
 Important security notes:
 1. All API keys and tokens are stored securely in AWS Secrets Manager with KMS encryption
 2. You can SET secrets but never READ their values - this is a write-only security pattern
-3. You can verify which secrets are configured by listing them
-4. Private keys for crypto wallets are generated in secure Lambda functions and stored encrypted
+3. Private keys for crypto wallets are generated securely and stored encrypted
 
-When users provide API keys or tokens, use the appropriate tool to store them immediately.
-Always confirm when secrets are successfully stored.
+When the user provides API keys or tokens, use the appropriate tool to store them immediately.
+Be friendly and helpful. Guide the user through setup step by step.`;
+  }
 
-Be friendly and helpful. Guide users through the setup process step by step if they're not sure what to do.`;
+  // Fallback for no agent context (shouldn't happen normally)
+  return `You are a Swarm agent assistant. The user should be chatting with a specific agent - something may be misconfigured.`;
+}
 
 /**
  * Execute a tool call
@@ -534,12 +553,14 @@ async function executeTool(
  * Call the LLM API
  */
 async function callLLM(
-  messages: AdminChatMessage[]
+  messages: AdminChatMessage[],
+  agent?: AgentContext
 ): Promise<{ 
   message?: string; 
   toolCalls?: ToolCall[]; 
 }> {
   const apiKey = await getLlmApiKey();
+  const systemPrompt = buildSystemPrompt(agent);
   
   const response = await fetch(LLM_ENDPOINT, {
     method: 'POST',
@@ -552,7 +573,7 @@ async function callLLM(
     body: JSON.stringify({
       model: LLM_MODEL,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         ...messages,
       ],
       tools: ADMIN_TOOLS,
@@ -592,7 +613,8 @@ async function callLLM(
 async function processChat(
   userMessage: string,
   conversationHistory: AdminChatMessage[],
-  session: UserSession
+  session: UserSession,
+  agent?: AgentContext
 ): Promise<{ 
   response: string; 
   history: AdminChatMessage[]; 
@@ -609,7 +631,7 @@ async function processChat(
   while (iterations < maxIterations) {
     iterations++;
     
-    const llmResponse = await callLLM(messages);
+    const llmResponse = await callLLM(messages, agent);
     
     if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
       // Add assistant message with tool calls

@@ -54,6 +54,11 @@ export interface AdminApiConstructProps {
    * ACM certificate ARN for the API custom domain
    */
   apiCertificateArn?: string;
+
+  /**
+   * Shared state table for syncing agent configs to handlers
+   */
+  stateTable?: dynamodb.ITable;
 }
 
 export class AdminApiConstruct extends Construct {
@@ -66,7 +71,7 @@ export class AdminApiConstruct extends Construct {
   constructor(scope: Construct, id: string, props: AdminApiConstructProps) {
     super(scope, id);
 
-    const { cloudflareTeamDomain, adminEmails, environment = 'development', adminDomain } = props;
+    const { cloudflareTeamDomain, adminEmails, environment = 'development', adminDomain, stateTable } = props;
 
     // Build CORS allowed origins
     const allowedOrigins = adminDomain 
@@ -121,6 +126,7 @@ export class AdminApiConstruct extends Construct {
       memorySize: 512,
       environment: {
         ADMIN_TABLE: this.table.tableName,
+        STATE_TABLE: stateTable?.tableName || '',
         SECRETS_PREFIX: 'swarm/',
         KMS_KEY_ID: this.encryptionKey.keyId,
         CF_ACCESS_TEAM_DOMAIN: cloudflareTeamDomain,
@@ -141,6 +147,11 @@ export class AdminApiConstruct extends Construct {
     this.table.grantReadWriteData(this.chatHandler);
     this.encryptionKey.grantEncryptDecrypt(this.chatHandler);
     llmApiKey.grantRead(this.chatHandler);
+
+    // Grant permissions to state table for agent config sync
+    if (stateTable) {
+      stateTable.grantReadWriteData(this.chatHandler);
+    }
 
     // Grant secrets manager permissions
     this.chatHandler.addToRolePolicy(new iam.PolicyStatement({

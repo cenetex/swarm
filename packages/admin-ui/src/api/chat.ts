@@ -10,12 +10,20 @@ interface ChatResponse {
   error?: string;
 }
 
+interface AgentContext {
+  id: string;
+  name: string;
+  description?: string;
+  persona?: string;
+}
+
 /**
  * Send a chat message to the admin API
  */
 export async function sendChatMessage(
   message: string,
-  history: Array<{ role: string; content: string }>
+  history: Array<{ role: string; content: string }>,
+  agent?: AgentContext
 ): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
@@ -30,6 +38,13 @@ export async function sendChatMessage(
         role: m.role,
         content: m.content,
       })),
+      // Pass agent context so the LLM knows which agent it IS
+      agent: agent ? {
+        id: agent.id,
+        name: agent.name,
+        description: agent.description,
+        persona: agent.persona,
+      } : undefined,
     }),
   });
 

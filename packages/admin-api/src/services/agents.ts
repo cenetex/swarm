@@ -11,6 +11,7 @@ import {
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { AgentRecord, UserSession } from '../types.js';
+import { syncAgentConfig } from './config-sync.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
@@ -66,6 +67,9 @@ export async function createAgent(
     ConditionExpression: 'attribute_not_exists(pk)',
   }));
 
+  // Sync to state table so handlers can access it
+  await syncAgentConfig(agent);
+
   return agent;
 }
 
@@ -108,6 +112,9 @@ export async function updateAgent(
     TableName: ADMIN_TABLE,
     Item: updated,
   }));
+
+  // Sync to state table so handlers can access it
+  await syncAgentConfig(updated);
 
   return updated;
 }
