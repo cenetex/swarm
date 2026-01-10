@@ -1,6 +1,6 @@
 # OpenRouter SDK + Zod Schema Refactor Plan
 
-Last updated: 2026-01-10 (audit against current `packages/admin-api/src/handlers/chat.ts`)
+Last updated: 2026-01-10 (repo scan: admin-api + core + handlers)
 
 ## Overview
 
@@ -14,6 +14,13 @@ Refactor `packages/admin-api/src/handlers/chat.ts` to use the OpenRouter SDK's `
 - Special handling for "pause-for-input" tools: `request_secret`, `request_model_selection`, `get_profile_upload_url`, `get_reference_image_upload_url`, `set_profile_image` with `source="upload"`
 - `processChat()` uses `pendingToolCall` to return upload URLs and wait for user input
 - Giant `switch` statement in `executeTool()` with 26 cases
+- Zod is already used for admin-api schemas in `packages/admin-api/src/types.ts` and Telegram webhook payload validation in `packages/admin-api/src/handlers/telegram-webhook.ts`, but admin chat tools are still JSON schema-based
+
+## Status Check (2026-01-10)
+
+- No `packages/admin-api/src/tools/` directory yet
+- No `@openrouter/sdk` tool usage found in `packages/admin-api/src/handlers/chat.ts`
+- `AGENT_TOOLS` + `executeTool()` remain the primary definitions/execution path
 
 ## Why Refactor?
 

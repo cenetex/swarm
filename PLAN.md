@@ -1074,11 +1074,11 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
    - [ ] Optional: wire custom domains in DNS/Cloudflare
 
 3. **Admin feature gaps**
-   - [ ] Add audit logging service to DynamoDB
-   - [x] Add wallet balance tool (Solana)
-   - [ ] Re-enable Ethereum wallet generation with ethers/viem
-   - [ ] OpenRouter SDK + Zod tool refactor (`ZOD_REFACTOR.md`)
-   - [ ] Preserve manual tool pause flows (`request_secret`, `request_model_selection`, upload URLs)
+- [ ] Add audit logging service to DynamoDB
+- [x] Add wallet balance tool (Solana)
+- [ ] Re-enable Ethereum wallet generation with ethers/viem
+- [ ] OpenRouter SDK + Zod tool refactor (`ZOD_REFACTOR.md`) - Zod groundwork exists (admin-api types + Telegram webhook), admin chat tools still JSON
+- [ ] Preserve manual tool pause flows (`request_secret`, `request_model_selection`, upload URLs)
    - [ ] Add agent config import/export (DB-backed templates; no repo files)
    - [ ] Define agent template schema + versioning for DB storage
    - [ ] Add validation/migration for template import payloads
