@@ -69,6 +69,13 @@ interface AgentConfig {
     temperature: number;
     maxTokens: number;
   };
+  wallets?: Array<{
+    name: string;
+    publicKey: string;
+  }>;
+  profileImage?: {
+    url: string;
+  };
 }
 
 // Cache for secrets
@@ -103,7 +110,24 @@ async function getAgentConfig(agentId: string): Promise<AgentConfig | null> {
     },
   }));
 
-  return result.Item as AgentConfig | null;
+  if (!result.Item) return null;
+
+  const config = result.Item as AgentConfig;
+
+  // Also fetch wallets
+  const walletsResult = await dynamoClient.send(new GetCommand({
+    TableName: ADMIN_TABLE,
+    Key: {
+      pk: `AGENT#${agentId}`,
+      sk: 'WALLETS',
+    },
+  }));
+
+  if (walletsResult.Item?.wallets) {
+    config.wallets = walletsResult.Item.wallets as AgentConfig['wallets'];
+  }
+
+  return config;
 }
 
 async function getTelegramToken(agentId: string): Promise<string | null> {
