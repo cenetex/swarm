@@ -97,7 +97,7 @@ export class SwarmStack extends cdk.Stack {
     if (cloudflareTeamDomain && adminEmails) {
       // Derive API domain from admin domain (admin-staging.x.com -> api-staging.x.com)
       const apiDomain = adminDomain?.replace('admin-', 'api-').replace('admin.', 'api.');
-      
+
       this.adminApi = new AdminApiConstruct(this, 'AdminApi', {
         cloudflareTeamDomain,
         adminEmails,
@@ -107,6 +107,9 @@ export class SwarmStack extends cdk.Stack {
         apiDomain,
         apiCertificateArn: adminCertificateArn, // Use same wildcard cert
         stateTable: this.shared.stateTable,
+        // Media infrastructure for image/video generation
+        mediaBucket: this.shared.mediaBucket,
+        mediaCdn: this.shared.distribution,
       });
     }
 

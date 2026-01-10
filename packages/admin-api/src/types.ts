@@ -86,6 +86,37 @@ export interface AgentRecord {
   name: string;
   description?: string;
   persona?: string;
+
+  // Profile image for character consistency
+  profileImage?: {
+    url: string;           // S3/CDN URL
+    s3Key: string;         // S3 key for reference
+    generatedPrompt?: string; // If AI-generated, the prompt used
+    updatedAt: number;
+  };
+
+  // Media configuration
+  mediaConfig?: {
+    image: {
+      provider: 'openrouter' | 'replicate' | 'dalle' | 'gemini';
+      model: string;
+    };
+    video?: {
+      provider: 'replicate';
+      model: string;
+    };
+    // Use profile image as reference for character consistency
+    useProfileAsReference: boolean;
+  };
+
+  // Telegram sticker pack (if created)
+  stickerPack?: {
+    name: string;          // e.g., "agent_name_by_botusername"
+    title: string;
+    stickerCount: number;
+    createdAt: number;
+  };
+
   platforms: {
     telegram?: { enabled: boolean; botUsername?: string };
     twitter?: { enabled: boolean; username?: string };
@@ -104,6 +135,70 @@ export interface AgentRecord {
   createdBy: string;
   updatedAt: number;
   updatedBy: string;
+}
+
+// Gallery item for tracking generated media
+export interface GalleryItem {
+  pk: string;              // AGENT#{agentId}
+  sk: string;              // GALLERY#{timestamp}#{id}
+  id: string;
+  agentId: string;
+  type: 'image' | 'video' | 'sticker';
+  url: string;
+  s3Key: string;
+  prompt: string;
+  caption?: string;
+  model: string;
+  platform?: string;       // Where it was generated for
+  postedToTwitter: boolean;
+  convertedToSticker: boolean;
+  createdAt: number;
+  metadata?: Record<string, unknown>;
+}
+
+// Media generation job for async operations
+export interface MediaJob {
+  pk: string;              // MEDIAJOB#{jobId}
+  sk: string;              // STATUS
+  jobId: string;
+  agentId: string;
+  type: 'image' | 'video' | 'sticker';
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  prompt: string;
+
+  // Callback info
+  conversationId: string;
+  platform: string;
+  replyToMessageId?: string;
+
+  // Provider tracking
+  provider: string;
+  externalId?: string;     // Replicate prediction ID, etc.
+
+  // Results
+  resultUrl?: string;
+  resultS3Key?: string;
+  error?: string;
+
+  // Timestamps
+  createdAt: number;
+  updatedAt: number;
+  completedAt?: number;
+  ttl: number;             // DynamoDB TTL for auto-cleanup
+}
+
+// Credit bucket for rate limiting
+export interface CreditBucket {
+  pk: string;              // AGENT#{agentId}
+  sk: string;              // CREDIT#{toolName}
+  agentId: string;
+  toolName: string;
+  credits: number;
+  maxCredits: number;
+  lastRefillAt: number;
+  dailyUsed: number;
+  dailyLimit: number;
+  dailyResetAt: number;
 }
 
 // Chat message for the admin chatbot

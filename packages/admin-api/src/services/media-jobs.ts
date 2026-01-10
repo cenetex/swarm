@@ -1,0 +1,164 @@
+/**
+ * Media Jobs Service
+ * Tracks async media generation jobs (video, long-running operations)
+ */
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  PutCommand,
+  GetCommand,
+  UpdateCommand,
+  QueryCommand,
+} from '@aws-sdk/lib-dynamodb';
+import type { MediaJob } from '../types.js';
+
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const ADMIN_TABLE = process.env.ADMIN_TABLE!;
+
+// TTL: 24 hours for job records
+const JOB_TTL_SECONDS = 24 * 60 * 60;
+
+/**
+ * Create a new media job
+ */
+export async function createJob(
+  job: Omit<MediaJob, 'pk' | 'sk' | 'status' | 'createdAt' | 'updatedAt' | 'ttl'>
+): Promise<MediaJob> {
+  const now = Date.now();
+  const mediaJob: MediaJob = {
+    pk: `MEDIAJOB#${job.jobId}`,
+    sk: 'STATUS',
+    ...job,
+    status: 'pending',
+    createdAt: now,
+    updatedAt: now,
+    ttl: Math.floor(now / 1000) + JOB_TTL_SECONDS,
+  };
+
+  await dynamoClient.send(new PutCommand({
+    TableName: ADMIN_TABLE,
+    Item: mediaJob,
+  }));
+
+  return mediaJob;
+}
+
+/**
+ * Get a job by ID
+ */
+export async function getJob(jobId: string): Promise<MediaJob | null> {
+  const result = await dynamoClient.send(new GetCommand({
+    TableName: ADMIN_TABLE,
+    Key: {
+      pk: `MEDIAJOB#${jobId}`,
+      sk: 'STATUS',
+    },
+  }));
+
+  return (result.Item as MediaJob) || null;
+}
+
+/**
+ * Update job status
+ */
+export async function updateJobStatus(
+  jobId: string,
+  status: MediaJob['status'],
+  updates?: Partial<Pick<MediaJob, 'resultUrl' | 'resultS3Key' | 'error' | 'externalId'>>
+): Promise<MediaJob | null> {
+  const now = Date.now();
+
+  const updateExpressions = ['#status = :status', 'updatedAt = :now'];
+  const expressionValues: Record<string, unknown> = {
+    ':status': status,
+    ':now': now,
+  };
+  const expressionNames: Record<string, string> = {
+    '#status': 'status',
+  };
+
+  if (status === 'completed' || status === 'failed') {
+    updateExpressions.push('completedAt = :completedAt');
+    expressionValues[':completedAt'] = now;
+  }
+
+  if (updates?.resultUrl) {
+    updateExpressions.push('resultUrl = :resultUrl');
+    expressionValues[':resultUrl'] = updates.resultUrl;
+  }
+
+  if (updates?.resultS3Key) {
+    updateExpressions.push('resultS3Key = :resultS3Key');
+    expressionValues[':resultS3Key'] = updates.resultS3Key;
+  }
+
+  if (updates?.error) {
+    updateExpressions.push('#error = :error');
+    expressionValues[':error'] = updates.error;
+    expressionNames['#error'] = 'error';
+  }
+
+  if (updates?.externalId) {
+    updateExpressions.push('externalId = :externalId');
+    expressionValues[':externalId'] = updates.externalId;
+  }
+
+  const result = await dynamoClient.send(new UpdateCommand({
+    TableName: ADMIN_TABLE,
+    Key: {
+      pk: `MEDIAJOB#${jobId}`,
+      sk: 'STATUS',
+    },
+    UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+    ExpressionAttributeValues: expressionValues,
+    ExpressionAttributeNames: expressionNames,
+    ReturnValues: 'ALL_NEW',
+  }));
+
+  return (result.Attributes as MediaJob) || null;
+}
+
+/**
+ * Get pending jobs for an agent (for status checking)
+ */
+export async function getPendingJobs(agentId: string): Promise<MediaJob[]> {
+  // Use GSI to query by agentId and status
+  // For now, scan with filter (not ideal for scale, but works for MVP)
+  const result = await dynamoClient.send(new QueryCommand({
+    TableName: ADMIN_TABLE,
+    IndexName: 'GSI1',
+    KeyConditionExpression: 'sk = :sk',
+    FilterExpression: 'agentId = :agentId AND (#status = :pending OR #status = :processing)',
+    ExpressionAttributeValues: {
+      ':sk': 'STATUS',
+      ':agentId': agentId,
+      ':pending': 'pending',
+      ':processing': 'processing',
+    },
+    ExpressionAttributeNames: {
+      '#status': 'status',
+    },
+  }));
+
+  return (result.Items || []) as MediaJob[];
+}
+
+/**
+ * Find job by external ID (e.g., Replicate prediction ID)
+ */
+export async function findByExternalId(externalId: string): Promise<MediaJob | null> {
+  // This requires a scan - in production, add a GSI on externalId
+  const result = await dynamoClient.send(new QueryCommand({
+    TableName: ADMIN_TABLE,
+    IndexName: 'GSI1',
+    KeyConditionExpression: 'sk = :sk',
+    FilterExpression: 'externalId = :externalId',
+    ExpressionAttributeValues: {
+      ':sk': 'STATUS',
+      ':externalId': externalId,
+    },
+    Limit: 1,
+  }));
+
+  return (result.Items?.[0] as MediaJob) || null;
+}

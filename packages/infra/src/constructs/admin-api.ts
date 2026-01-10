@@ -19,6 +19,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+
 export interface AdminApiConstructProps {
   /**
    * Cloudflare Access team domain (e.g., 'yourteam.cloudflareaccess.com')
@@ -59,6 +63,21 @@ export interface AdminApiConstructProps {
    * Shared state table for syncing agent configs to handlers
    */
   stateTable?: dynamodb.ITable;
+
+  /**
+   * Media bucket for storing generated images/videos
+   */
+  mediaBucket?: s3.IBucket;
+
+  /**
+   * CDN distribution for media
+   */
+  mediaCdn?: cloudfront.IDistribution;
+
+  /**
+   * Response queue for async callbacks
+   */
+  responseQueue?: sqs.IQueue;
 }
 
 export class AdminApiConstruct extends Construct {
@@ -71,7 +90,19 @@ export class AdminApiConstruct extends Construct {
   constructor(scope: Construct, id: string, props: AdminApiConstructProps) {
     super(scope, id);
 
-    const { cloudflareTeamDomain, adminEmails, environment = 'development', adminDomain, stateTable } = props;
+    const {
+      cloudflareTeamDomain,
+      adminEmails,
+      environment = 'development',
+      adminDomain,
+      stateTable,
+      mediaBucket,
+      mediaCdn,
+      responseQueue,
+    } = props;
+
+    // Build CDN URL from distribution
+    const cdnUrl = mediaCdn ? `https://${mediaCdn.distributionDomainName}` : undefined;
 
     // Build CORS allowed origins
     const allowedOrigins = adminDomain 
@@ -117,6 +148,11 @@ export class AdminApiConstruct extends Construct {
           description: 'API key for the admin chatbot LLM',
         });
 
+    // Build webhook URL for Replicate callbacks
+    const replicateWebhookUrl = props.apiDomain
+      ? `https://${props.apiDomain}/webhook/replicate`
+      : ''; // Will be set after API is created
+
     // Lambda function for chat handler
     this.chatHandler = new nodejs.NodejsFunction(this, 'ChatHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
@@ -136,6 +172,12 @@ export class AdminApiConstruct extends Construct {
         LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
         API_DOMAIN: props.apiDomain || '',
         NODE_ENV: environment,
+        // Media generation config
+        MEDIA_BUCKET: mediaBucket?.bucketName || '',
+        CDN_URL: cdnUrl || '',
+        REPLICATE_WEBHOOK_URL: replicateWebhookUrl,
+        RESPONSE_QUEUE_URL: responseQueue?.queueUrl || '',
+        ALLOWED_ORIGINS: allowedOrigins.join(','),
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],
@@ -152,6 +194,16 @@ export class AdminApiConstruct extends Construct {
     // Grant permissions to state table for agent config sync
     if (stateTable) {
       stateTable.grantReadWriteData(this.chatHandler);
+    }
+
+    // Grant S3 permissions for media operations
+    if (mediaBucket) {
+      mediaBucket.grantReadWrite(this.chatHandler);
+    }
+
+    // Grant SQS permissions for async callbacks
+    if (responseQueue) {
+      responseQueue.grantSendMessages(this.chatHandler);
     }
 
     // Grant secrets manager permissions
@@ -325,6 +377,48 @@ export class AdminApiConstruct extends Construct {
       path: '/webhook/telegram/{agentId}',
       methods: [apigateway.HttpMethod.POST],
       integration: telegramIntegration,
+    });
+
+    // Replicate webhook handler - for async video generation callbacks
+    const replicateWebhookHandler = new nodejs.NodejsFunction(this, 'ReplicateWebhookHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/replicate-webhook.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 512,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        MEDIA_BUCKET: mediaBucket?.bucketName || '',
+        CDN_URL: cdnUrl || '',
+        RESPONSE_QUEUE_URL: responseQueue?.queueUrl || '',
+        NODE_ENV: environment,
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+    });
+
+    // Grant permissions to Replicate webhook handler
+    this.table.grantReadWriteData(replicateWebhookHandler);
+    if (mediaBucket) {
+      mediaBucket.grantReadWrite(replicateWebhookHandler);
+    }
+    if (responseQueue) {
+      responseQueue.grantSendMessages(replicateWebhookHandler);
+    }
+
+    const replicateIntegration = new integrations.HttpLambdaIntegration(
+      'ReplicateWebhookIntegration',
+      replicateWebhookHandler
+    );
+
+    // Webhook route: /webhook/replicate (with jobId query param)
+    this.api.addRoutes({
+      path: '/webhook/replicate',
+      methods: [apigateway.HttpMethod.POST],
+      integration: replicateIntegration,
     });
 
     // Custom domain configuration (for Cloudflare Access proxy)

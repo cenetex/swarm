@@ -12,6 +12,9 @@ import * as agents from '../services/agents.js';
 import * as secrets from '../services/secrets.js';
 import * as wallets from '../services/wallets.js';
 import * as telegram from '../services/telegram.js';
+import * as media from '../services/media.js';
+import * as gallery from '../services/gallery.js';
+import * as credits from '../services/credits.js';
 import type {
   AdminChatMessage,
   ToolCall,
@@ -185,14 +188,171 @@ const AGENT_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          environment: { 
-            type: 'string', 
+          environment: {
+            type: 'string',
             enum: ['staging', 'production'],
-            description: 'Environment to deploy to' 
+            description: 'Environment to deploy to'
           },
         },
         required: ['environment'],
       },
+    },
+  },
+  // Profile image management
+  {
+    type: 'function',
+    function: {
+      name: 'set_profile_image',
+      description: 'Set my profile image. Can generate a new one, use a URL, or select from my gallery.',
+      parameters: {
+        type: 'object',
+        properties: {
+          source: {
+            type: 'string',
+            enum: ['generate', 'url', 'gallery'],
+            description: 'How to set the profile image',
+          },
+          prompt: {
+            type: 'string',
+            description: 'For generate: description of the profile image to create'
+          },
+          url: {
+            type: 'string',
+            description: 'For url: the image URL to use'
+          },
+          imageId: {
+            type: 'string',
+            description: 'For gallery: ID of an image from my gallery'
+          },
+        },
+        required: ['source'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_profile_upload_url',
+      description: 'Get a signed URL for the user to upload a profile image directly',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  // Image generation
+  {
+    type: 'function',
+    function: {
+      name: 'generate_image',
+      description: 'Generate an image from a text prompt. The image will be saved to my gallery.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description: 'Description of the image to generate'
+          },
+          useProfileAsReference: {
+            type: 'boolean',
+            description: 'Use my profile image as a reference for character consistency',
+          },
+        },
+        required: ['prompt'],
+      },
+    },
+  },
+  // Video generation (async)
+  {
+    type: 'function',
+    function: {
+      name: 'generate_video',
+      description: 'Generate a video from a text prompt. This is async - I will notify when complete.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description: 'Description of the video to generate'
+          },
+          useProfileAsReference: {
+            type: 'boolean',
+            description: 'Use my profile image as a reference for character consistency',
+          },
+        },
+        required: ['prompt'],
+      },
+    },
+  },
+  // Sticker generation
+  {
+    type: 'function',
+    function: {
+      name: 'generate_sticker',
+      description: 'Generate a sticker (transparent background image). Can create new or convert existing.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description: 'Description of the sticker to generate (if creating new)'
+          },
+          sourceImageId: {
+            type: 'string',
+            description: 'ID of an existing gallery image to convert to sticker'
+          },
+        },
+      },
+    },
+  },
+  // Gallery management
+  {
+    type: 'function',
+    function: {
+      name: 'get_my_gallery',
+      description: 'View my generated images, videos, and stickers',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['image', 'video', 'sticker'],
+            description: 'Filter by media type'
+          },
+          limit: {
+            type: 'number',
+            description: 'Max items to return (default 20)'
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_gallery',
+      description: 'Search my gallery by description or prompt keywords',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Search terms'
+          },
+          type: {
+            type: 'string',
+            enum: ['image', 'video', 'sticker'],
+            description: 'Filter by media type'
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  // Credit status
+  {
+    type: 'function',
+    function: {
+      name: 'get_tool_credits',
+      description: 'Check my available credits for media generation tools',
+      parameters: { type: 'object', properties: {} },
     },
   },
 ];
@@ -231,6 +391,26 @@ You can update your profile:
 
 You can deploy yourself:
 - Trigger deployment to staging or production via GitHub Actions
+
+You have media generation capabilities:
+- Set your profile image (generate, upload, or select from gallery)
+- Generate images with AI (saved to your gallery)
+- Generate videos (async - you'll notify when complete)
+- Generate stickers (with transparent backgrounds)
+- Browse and search your media gallery
+- Check your tool credits (rate limited to prevent abuse)
+
+Your profile image is used for character consistency - when generating images/videos, you can reference it to maintain your visual identity.
+
+## Tool Credits
+
+Media tools are rate-limited with a credit system:
+- generate_image: 20 credits max, refills 10/hour
+- generate_video: 3 credits max, refills 1/hour
+- generate_sticker: 5 credits max, refills 2/hour
+- set_profile_image: 3 credits max, refills 1/hour
+
+Each also has daily limits. Check with get_tool_credits to see your current status.
 
 ## How to Request Secrets
 
@@ -394,7 +574,7 @@ async function executeTool(
       // Deploy myself via GitHub Actions
       case 'deploy_myself':
         // TODO: Trigger GitHub Actions workflow
-        result = { 
+        result = {
           type: 'deploy_request',
           environment: args.environment,
           agentId,
@@ -402,7 +582,178 @@ async function executeTool(
           note: 'GitHub Actions integration pending'
         };
         break;
-        
+
+      // Profile image management
+      case 'set_profile_image': {
+        let source: { type: 'url'; url: string } | { type: 'generate'; prompt: string } | { type: 'gallery'; imageId: string };
+
+        if (args.source === 'generate') {
+          if (!args.prompt) throw new Error('Prompt required for generating profile image');
+          source = { type: 'generate', prompt: args.prompt };
+        } else if (args.source === 'url') {
+          if (!args.url) throw new Error('URL required when using url source');
+          source = { type: 'url', url: args.url };
+        } else if (args.source === 'gallery') {
+          if (!args.imageId) throw new Error('imageId required when using gallery source');
+          source = { type: 'gallery', imageId: args.imageId };
+        } else {
+          throw new Error(`Invalid source type: ${args.source}`);
+        }
+
+        const profileResult = await media.setProfileImage(agentId!, source);
+
+        // Update agent record with new profile image
+        await agents.updateAgent(agentId!, {
+          profileImage: {
+            url: profileResult.url,
+            s3Key: profileResult.s3Key,
+            generatedPrompt: args.source === 'generate' ? args.prompt : undefined,
+            updatedAt: Date.now(),
+          }
+        }, session);
+
+        result = {
+          success: true,
+          message: 'Profile image updated!',
+          url: profileResult.url,
+        };
+        break;
+      }
+
+      case 'get_profile_upload_url': {
+        const uploadInfo = await media.getProfileImageUploadUrl(agentId!);
+        result = {
+          type: 'upload_url',
+          uploadUrl: uploadInfo.uploadUrl,
+          s3Key: uploadInfo.s3Key,
+          publicUrl: uploadInfo.publicUrl,
+          instructions: 'Use PUT request to upload PNG image to uploadUrl. After upload, the image will be available at publicUrl.',
+        };
+        break;
+      }
+
+      // Image generation
+      case 'generate_image': {
+        // Get agent's profile image for reference if requested
+        let referenceImageUrl: string | undefined;
+        if (args.useProfileAsReference) {
+          const agent = await agents.getAgent(agentId!);
+          referenceImageUrl = agent?.profileImage?.url;
+        }
+
+        const image = await media.generateImage({
+          prompt: args.prompt,
+          agentId: agentId!,
+          platform: 'admin-chat',
+          referenceImageUrl,
+        });
+
+        result = {
+          success: true,
+          message: 'Image generated successfully!',
+          id: image.id,
+          url: image.url,
+          prompt: args.prompt,
+        };
+        break;
+      }
+
+      // Video generation (async)
+      case 'generate_video': {
+        let referenceImageUrl: string | undefined;
+        if (args.useProfileAsReference) {
+          const agent = await agents.getAgent(agentId!);
+          referenceImageUrl = agent?.profileImage?.url;
+        }
+
+        const job = await media.generateVideo({
+          prompt: args.prompt,
+          agentId: agentId!,
+          platform: 'admin-chat',
+          conversationId: 'admin-chat-' + Date.now(),
+          referenceImageUrl,
+        });
+
+        result = {
+          success: true,
+          message: 'Video generation started! This may take a few minutes.',
+          jobId: job.jobId,
+          status: job.status,
+          note: 'The video will be saved to your gallery when complete.',
+        };
+        break;
+      }
+
+      // Sticker generation
+      case 'generate_sticker': {
+        if (!args.prompt && !args.sourceImageId) {
+          throw new Error('Either prompt or sourceImageId is required');
+        }
+
+        const sticker = await media.generateSticker({
+          prompt: args.prompt || 'sticker',
+          agentId: agentId!,
+          platform: 'admin-chat',
+          sourceImageId: args.sourceImageId,
+        });
+
+        result = {
+          success: true,
+          message: args.sourceImageId
+            ? 'Sticker created from existing image!'
+            : 'New sticker generated!',
+          id: sticker.id,
+          url: sticker.url,
+        };
+        break;
+      }
+
+      // Gallery management
+      case 'get_my_gallery': {
+        const items = await gallery.getGallery(agentId!, {
+          type: args.type,
+          limit: args.limit || 20,
+        });
+
+        result = {
+          count: items.length,
+          items: items.map(item => ({
+            id: item.id,
+            type: item.type,
+            url: item.url,
+            prompt: item.prompt,
+            createdAt: new Date(item.createdAt).toISOString(),
+            postedToTwitter: item.postedToTwitter,
+            convertedToSticker: item.convertedToSticker,
+          })),
+        };
+        break;
+      }
+
+      case 'search_gallery': {
+        const items = await gallery.findByDescription(agentId!, args.query, args.type);
+
+        result = {
+          query: args.query,
+          count: items.length,
+          items: items.map(item => ({
+            id: item.id,
+            type: item.type,
+            url: item.url,
+            prompt: item.prompt,
+            createdAt: new Date(item.createdAt).toISOString(),
+          })),
+        };
+        break;
+      }
+
+      // Credit status
+      case 'get_tool_credits': {
+        const status = await credits.getToolStatus(agentId!);
+        result = { status };
+        break;
+      }
+
       default:
         throw new Error(`Unknown tool: ${name}`);
     }

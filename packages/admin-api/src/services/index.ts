@@ -2,3 +2,8 @@ export * from './secrets.js';
 export * from './wallets.js';
 export * from './agents.js';
 export * from './config-sync.js';
+export * from './gallery.js';
+export * from './media-jobs.js';
+export * from './credits.js';
+export * from './media.js';
+export * from './telegram-stickers.js';
