@@ -215,6 +215,24 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  packages/layer:
+    dependencies:
+      '@aws-sdk/client-dynamodb':
+        specifier: ^3.700.0
+        version: 3.966.0
+      '@aws-sdk/client-s3':
+        specifier: ^3.700.0
+        version: 3.966.0
+      '@aws-sdk/client-secrets-manager':
+        specifier: ^3.700.0
+        version: 3.966.0
+      '@aws-sdk/lib-dynamodb':
+        specifier: ^3.700.0
+        version: 3.966.0(@aws-sdk/client-dynamodb@3.966.0)
+      openai:
+        specifier: ^4.70.0
+        version: 4.104.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)
+
 packages:
 
   '@alloc/quick-lru@5.2.0':
@@ -2338,6 +2356,18 @@ packages:
 
   obliterator@1.6.1:
     resolution: {integrity: sha512-9WXswnqINnnhOG/5SLimUlzuU1hFJUc8zkwyD59Sd+dPOMf05PmnYG/d6Q7HZ+KmgkZJa1PxRso6QdM3sTNHig==}
+
+  openai@4.104.0:
+    resolution: {integrity: sha512-p99EFNsA/yX6UhVO93f5kJsDRLAg+CTA2RBqdHK4RtK8u5IJw32Hyb2dTGKbnnFmnuoBv5r7Z2CURI9sGZpSuA==}
+    hasBin: true
+    peerDependencies:
+      ws: ^8.18.0
+      zod: ^3.23.8
+    peerDependenciesMeta:
+      ws:
+        optional: true
+      zod:
+        optional: true
 
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
@@ -5740,6 +5770,21 @@ snapshots:
   object-hash@3.0.0: {}
 
   obliterator@1.6.1: {}
+
+  openai@4.104.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76):
+    dependencies:
+      '@types/node': 18.19.130
+      '@types/node-fetch': 2.6.13
+      abort-controller: 3.0.0
+      agentkeepalive: 4.6.0
+      form-data-encoder: 1.7.2
+      formdata-node: 4.4.1
+      node-fetch: 2.7.0
+    optionalDependencies:
+      ws: 8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - encoding
 
   optionator@0.9.4:
     dependencies:

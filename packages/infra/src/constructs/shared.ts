@@ -116,23 +116,40 @@ export class SharedInfrastructure extends Construct {
     }
 
     // Lambda layer with shared dependencies
+    // Use local bundling to avoid Docker issues with pnpm workspaces
     this.dependencyLayer = new lambda.LayerVersion(this, 'DependencyLayer', {
       layerVersionName: `swarm-deps-${environment}`,
       description: 'Shared dependencies for swarm handlers',
       compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
       code: layerCodePath 
         ? lambda.Code.fromAsset(layerCodePath)
-        : lambda.Code.fromAsset('.', {
+        : lambda.Code.fromAsset('../../layer', {
             bundling: {
               image: lambda.Runtime.NODEJS_20_X.bundlingImage,
-              command: [
-                'bash', '-c', [
-                  'mkdir -p /asset-output/nodejs',
-                  'cp package.json /asset-output/nodejs/',
-                  'cd /asset-output/nodejs',
-                  'npm install --omit=dev',
-                ].join(' && '),
-              ],
+              local: {
+                tryBundle(outputDir: string): boolean {
+                  // Use local bundling with npm (not pnpm) for layer
+                  const { execSync } = require('child_process');
+                  const fs = require('fs');
+                  const path = require('path');
+                  
+                  const nodejsDir = path.join(outputDir, 'nodejs');
+                  fs.mkdirSync(nodejsDir, { recursive: true });
+                  
+                  // Copy layer package.json
+                  const layerPkgPath = path.resolve(__dirname, '../../../../layer/package.json');
+                  fs.copyFileSync(layerPkgPath, path.join(nodejsDir, 'package.json'));
+                  
+                  // Install with npm (not pnpm) to avoid workspace protocol issues
+                  execSync('npm install --omit=dev --legacy-peer-deps', {
+                    cwd: nodejsDir,
+                    stdio: 'inherit',
+                  });
+                  
+                  return true;
+                },
+              },
+              command: ['echo', 'Docker bundling not used'],
             },
           }),
     });

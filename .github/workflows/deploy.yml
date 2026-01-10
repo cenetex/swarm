@@ -95,8 +95,6 @@ jobs:
             npx cdk deploy --all --require-approval never -c environment=$CDK_ENV
           fi
 
-      - name: Output Stack Info
-        working-directory: packages/infra
       - name: Get Stack Outputs
         id: stack-outputs
         working-directory: packages/infra
