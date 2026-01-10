@@ -536,11 +536,13 @@ async function processChat(
 export async function handler(
   event: APIGatewayProxyEventV2
 ): Promise<APIGatewayProxyResultV2> {
-  // CORS headers
+  // CORS headers - restricted to configured admin domain
+  const allowedOrigin = process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173';
   const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, CF-Access-JWT-Assertion',
+    'Access-Control-Allow-Credentials': 'true',
   };
 
   // Handle preflight

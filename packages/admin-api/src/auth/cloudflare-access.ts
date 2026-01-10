@@ -154,15 +154,20 @@ export async function authenticateRequest(
     event.headers['authorization']?.replace('Bearer ', '');
 
   // If no token, check if we should allow (UI is protected by Cloudflare Access)
-  // The Origin header indicates the request is coming from our protected admin UI
+  // Only allow exact origin matches from configured ALLOWED_ORIGINS
   if (!token) {
     const origin = event.headers['origin'] || '';
     const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean);
-    
-    // If request is from a known admin UI origin, allow with default admin session
-    if (allowedOrigins.some(allowed => origin.includes(allowed)) || 
-        origin.includes('admin-staging.rati.chat') || 
-        origin.includes('admin.rati.chat')) {
+
+    // SECURITY: Use exact match only, not includes() which can be bypassed
+    const isAllowedOrigin = allowedOrigins.some(allowed => {
+      // Normalize both to remove trailing slashes
+      const normalizedAllowed = allowed.replace(/\/$/, '');
+      const normalizedOrigin = origin.replace(/\/$/, '');
+      return normalizedOrigin === normalizedAllowed;
+    });
+
+    if (isAllowedOrigin) {
       return {
         email: ADMIN_EMAILS[0] || 'admin@example.com',
         userId: 'admin-ui-user',
@@ -170,7 +175,7 @@ export async function authenticateRequest(
         accessToken: '',
       };
     }
-    
+
     throw new Error('No authentication token provided');
   }
 

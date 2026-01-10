@@ -9,10 +9,13 @@ import type {
 import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js';
 import * as agentService from '../services/agents.js';
 
+// CORS headers - restricted to configured admin domain
+const allowedOrigin = process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173';
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': allowedOrigin,
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, CF-Access-JWT-Assertion',
+  'Access-Control-Allow-Credentials': 'true',
 };
 
 /**
