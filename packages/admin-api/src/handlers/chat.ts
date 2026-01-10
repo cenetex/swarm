@@ -731,13 +731,28 @@ async function executeTool(
       }
         
       // Update my profile
-      case 'update_my_profile':
-        result = await agents.updateAgent(agentId!, {
-          name: args.name,
-          description: args.description,
-          persona: args.persona,
-        }, session);
+      case 'update_my_profile': {
+        // Only include fields that are actually provided (not undefined)
+        const profileUpdates: Record<string, string> = {};
+        if (args.name !== undefined) profileUpdates.name = args.name;
+        if (args.description !== undefined) profileUpdates.description = args.description;
+        if (args.persona !== undefined) profileUpdates.persona = args.persona;
+
+        if (Object.keys(profileUpdates).length === 0) {
+          result = { success: false, message: 'No fields provided to update' };
+          break;
+        }
+
+        const updatedAgent = await agents.updateAgent(agentId!, profileUpdates as any, session);
+        result = {
+          success: true,
+          message: `Profile updated! ${Object.keys(profileUpdates).join(', ')} changed.`,
+          name: updatedAgent.name,
+          description: updatedAgent.description,
+          persona: updatedAgent.persona ? (updatedAgent.persona.slice(0, 100) + (updatedAgent.persona.length > 100 ? '...' : '')) : undefined,
+        };
         break;
+      }
 
       // List available LLM models from OpenRouter
       case 'list_available_models': {

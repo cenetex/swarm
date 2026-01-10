@@ -101,9 +101,14 @@ export async function updateAgent(
     throw new Error(`Agent not found: ${agentId}`);
   }
 
+  // Filter out undefined values to avoid overwriting existing fields
+  const cleanUpdates = Object.fromEntries(
+    Object.entries(updates).filter(([, v]) => v !== undefined)
+  );
+
   const updated: AgentRecord = {
     ...existing,
-    ...updates,
+    ...cleanUpdates,
     updatedAt: Date.now(),
     updatedBy: session.email,
   };
