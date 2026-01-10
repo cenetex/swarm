@@ -8,6 +8,7 @@ import {
   UpdateSecretCommand,
   DeleteSecretCommand,
   DescribeSecretCommand,
+  GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager';
 import {
   DynamoDBClient,
@@ -325,4 +326,27 @@ export async function getSecretArn(
   }));
 
   return (result.Item as SecretMetadata)?.secretArn || null;
+}
+
+/**
+ * Get secret value (for internal use only - e.g., agent using its own Helius key)
+ * This should only be called for the agent's own secrets
+ */
+export async function getSecretValue(
+  agentId: string,
+  secretType: SecretType,
+  name: string
+): Promise<string | null> {
+  const secretArn = await getSecretArn(agentId, secretType, name);
+  if (!secretArn) return null;
+
+  try {
+    const response = await secretsClient.send(new GetSecretValueCommand({
+      SecretId: secretArn,
+    }));
+    return response.SecretString || null;
+  } catch (error) {
+    console.error('Error retrieving secret:', error);
+    return null;
+  }
 }

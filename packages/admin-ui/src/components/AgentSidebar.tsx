@@ -87,10 +87,15 @@ interface AgentSidebarProps {
 }
 
 export function AgentSidebar({ className }: AgentSidebarProps) {
-  const { agents, activeAgentId, createAgent, setActiveAgent } = useAgentStore();
+  const { agents, activeAgentId, createAgent, setActiveAgent, isLoading, error } = useAgentStore();
 
-  const handleCreateAgent = () => {
-    createAgent();
+  const handleCreateAgent = async () => {
+    try {
+      await createAgent();
+    } catch (e) {
+      // Error is already set in store
+      console.error('Failed to create agent:', e);
+    }
   };
 
   return (
@@ -101,29 +106,53 @@ export function AgentSidebar({ className }: AgentSidebarProps) {
           <h2 className="font-semibold text-dark-100">Agents</h2>
           <button
             onClick={handleCreateAgent}
-            className="w-8 h-8 flex items-center justify-center rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-400 hover:text-white transition-colors"
+            disabled={isLoading}
+            className={`w-8 h-8 flex items-center justify-center rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-400 hover:text-white transition-colors ${
+              isLoading ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
             title="Create new agent"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              className="w-5 h-5"
-            >
-              <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-            </svg>
+            {isLoading ? (
+              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            ) : (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="w-5 h-5"
+              >
+                <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+              </svg>
+            )}
           </button>
         </div>
+        {error && (
+          <div className="mt-2 text-xs text-red-400 bg-red-900/20 rounded px-2 py-1">
+            {error}
+          </div>
+        )}
       </div>
 
       {/* Agent List */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {agents.length === 0 ? (
+        {isLoading && agents.length === 0 ? (
+          <div className="text-center py-8 text-dark-500">
+            <svg className="w-6 h-6 animate-spin mx-auto mb-2" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            <p className="text-sm">Loading agents...</p>
+          </div>
+        ) : agents.length === 0 ? (
           <div className="text-center py-8 text-dark-500">
             <p className="text-sm">No agents yet</p>
             <button
               onClick={handleCreateAgent}
-              className="mt-2 text-primary-400 hover:text-primary-300 text-sm"
+              disabled={isLoading}
+              className="mt-2 text-primary-400 hover:text-primary-300 text-sm disabled:opacity-50"
             >
               Create your first agent
             </button>

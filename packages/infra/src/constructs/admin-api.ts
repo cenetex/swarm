@@ -182,6 +182,8 @@ export class AdminApiConstruct extends Construct {
         allowMethods: [
           apigateway.CorsHttpMethod.GET,
           apigateway.CorsHttpMethod.POST,
+          apigateway.CorsHttpMethod.PUT,
+          apigateway.CorsHttpMethod.DELETE,
           apigateway.CorsHttpMethod.OPTIONS,
         ],
         allowHeaders: ['Content-Type', 'Authorization', 'CF-Access-JWT-Assertion'],
@@ -200,6 +202,51 @@ export class AdminApiConstruct extends Construct {
       path: '/chat',
       methods: [apigateway.HttpMethod.POST],
       integration: chatIntegration,
+    });
+
+    // Agents handler - for CRUD operations on agents
+    const agentsHandler = new nodejs.NodejsFunction(this, 'AgentsHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/agents.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        STATE_TABLE: stateTable?.tableName || '',
+        CF_ACCESS_TEAM_DOMAIN: cloudflareTeamDomain,
+        ADMIN_EMAILS: adminEmails,
+        NODE_ENV: environment,
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+    });
+
+    // Grant permissions to agents handler
+    this.table.grantReadWriteData(agentsHandler);
+    if (stateTable) {
+      stateTable.grantReadWriteData(agentsHandler);
+    }
+
+    const agentsIntegration = new integrations.HttpLambdaIntegration(
+      'AgentsIntegration',
+      agentsHandler
+    );
+
+    // Agent routes
+    this.api.addRoutes({
+      path: '/agents',
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.POST],
+      integration: agentsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/agents/{agentId}',
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.PUT, apigateway.HttpMethod.DELETE],
+      integration: agentsIntegration,
     });
 
     // Health check endpoint

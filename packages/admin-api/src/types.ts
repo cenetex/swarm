@@ -40,6 +40,7 @@ export const SecretType = z.enum([
   'anthropic_api_key',
   'replicate_api_key',
   'openai_api_key',
+  'helius_api_key',
   'solana_wallet_key',
   'ethereum_wallet_key',
   'custom',

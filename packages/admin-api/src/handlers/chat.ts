@@ -11,13 +11,12 @@ import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js'
 import * as agents from '../services/agents.js';
 import * as secrets from '../services/secrets.js';
 import * as wallets from '../services/wallets.js';
-import type { 
-  AdminChatMessage, 
-  ToolCall, 
-  ToolResult, 
+import type {
+  AdminChatMessage,
+  ToolCall,
+  ToolResult,
   UserSession,
   SecretType,
-  AgentRecord,
 } from '../types.js';
 
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
@@ -56,19 +55,90 @@ async function getLlmApiKey(): Promise<string> {
 }
 
 /**
- * Define available tools for the admin chatbot
+ * Define available tools for the agent chatbot
+ * These tools are agent-centric - the agent configures ITSELF
+ * No agentId parameter needed - uses agent context from the chat
  */
-const ADMIN_TOOLS = [
+const AGENT_TOOLS = [
+  // Request secrets from user (shown as inline prompts in UI)
   {
     type: 'function',
     function: {
-      name: 'create_agent',
-      description: 'Create a new agent/bot that can be configured to work across platforms',
+      name: 'request_secret',
+      description: 'Request a secret value from the user. This will display a secure input field in the UI. Use this to collect API keys, tokens, and other sensitive credentials.',
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Display name for the agent' },
-          description: { type: 'string', description: 'Brief description of what the agent does' },
+          secretType: { 
+            type: 'string', 
+            enum: [
+              'telegram_bot_token',
+              'discord_bot_token',
+              'twitter_api_key', 'twitter_api_secret', 'twitter_access_token', 
+              'twitter_access_secret', 'twitter_bearer_token',
+              'helius_api_key', 'openrouter_api_key', 'anthropic_api_key', 'openai_api_key',
+            ],
+            description: 'Type of secret being requested' 
+          },
+          label: { type: 'string', description: 'Human-readable label for the input field' },
+          instructions: { type: 'string', description: 'Brief instructions on how to get this secret' },
+        },
+        required: ['secretType', 'label'],
+      },
+    },
+  },
+  // Store a secret after user provides it
+  {
+    type: 'function',
+    function: {
+      name: 'store_secret',
+      description: 'Store a secret value securely. Use after receiving a secret from request_secret.',
+      parameters: {
+        type: 'object',
+        properties: {
+          secretType: { 
+            type: 'string', 
+            enum: [
+              'telegram_bot_token',
+              'discord_bot_token',
+              'twitter_api_key', 'twitter_api_secret', 'twitter_access_token', 
+              'twitter_access_secret', 'twitter_bearer_token',
+              'helius_api_key', 'openrouter_api_key', 'anthropic_api_key', 'openai_api_key',
+            ],
+            description: 'Type of secret' 
+          },
+          value: { type: 'string', description: 'The secret value to store' },
+        },
+        required: ['secretType', 'value'],
+      },
+    },
+  },
+  // Update my profile
+  {
+    type: 'function',
+    function: {
+      name: 'update_my_profile',
+      description: 'Update my name, description, or persona',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'My display name' },
+          description: { type: 'string', description: 'Brief description of what I do' },
+          persona: { type: 'string', description: 'My personality/system prompt' },
+        },
+      },
+    },
+  },
+  // Solana wallet management
+  {
+    type: 'function',
+    function: {
+      name: 'create_solana_wallet',
+      description: 'Create a new Solana wallet for myself. The private key is stored securely.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Name for the wallet (e.g., "main", "tips", "treasury")' },
         },
         required: ['name'],
       },
@@ -77,274 +147,50 @@ const ADMIN_TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'list_agents',
-      description: 'List all agents in the swarm',
+      name: 'get_my_wallets',
+      description: 'List all my Solana wallets with their public keys and balances',
       parameters: { type: 'object', properties: {} },
     },
   },
   {
     type: 'function',
     function: {
-      name: 'get_agent',
-      description: 'Get details about a specific agent',
+      name: 'get_wallet_balance',
+      description: 'Get the SOL balance and token balances for a specific wallet',
       parameters: {
         type: 'object',
         properties: {
-          agentId: { type: 'string', description: 'ID of the agent' },
+          publicKey: { type: 'string', description: 'The wallet public key/address' },
         },
-        required: ['agentId'],
+        required: ['publicKey'],
       },
     },
   },
+  // List my configured secrets (not values, just what's set)
   {
     type: 'function',
     function: {
-      name: 'update_agent',
-      description: 'Update agent settings like name, description, or persona',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'ID of the agent to update' },
-          name: { type: 'string', description: 'New name' },
-          description: { type: 'string', description: 'New description' },
-          persona: { type: 'string', description: 'Persona/system prompt for the agent' },
-        },
-        required: ['agentId'],
-      },
+      name: 'get_my_secrets',
+      description: 'List which secrets I have configured (not the values, just which types are set)',
+      parameters: { type: 'object', properties: {} },
     },
   },
+  // Deploy myself via GitHub Actions
   {
     type: 'function',
     function: {
-      name: 'configure_telegram',
-      description: 'Enable and configure Telegram for an agent. The bot token should be set separately using set_telegram_token.',
+      name: 'deploy_myself',
+      description: 'Deploy myself to production. Triggers a GitHub Actions workflow to deploy my configuration.',
       parameters: {
         type: 'object',
         properties: {
-          agentId: { type: 'string', description: 'ID of the agent' },
-          botUsername: { type: 'string', description: 'The Telegram bot username (without @)' },
-        },
-        required: ['agentId', 'botUsername'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'set_telegram_token',
-      description: 'Set the Telegram bot token for an agent. This is a write-only operation - the token cannot be read back.',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'ID of the agent' },
-          botToken: { type: 'string', description: 'The Telegram bot token from BotFather' },
-        },
-        required: ['agentId', 'botToken'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'configure_twitter',
-      description: 'Enable and configure Twitter/X for an agent. API credentials should be set separately.',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'ID of the agent' },
-          username: { type: 'string', description: 'The Twitter username (without @)' },
-        },
-        required: ['agentId', 'username'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'set_twitter_credentials',
-      description: 'Set Twitter API credentials for an agent. This is a write-only operation.',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'ID of the agent' },
-          apiKey: { type: 'string', description: 'Twitter API Key' },
-          apiSecret: { type: 'string', description: 'Twitter API Secret' },
-          accessToken: { type: 'string', description: 'Twitter Access Token' },
-          accessSecret: { type: 'string', description: 'Twitter Access Token Secret' },
-          bearerToken: { type: 'string', description: 'Twitter Bearer Token' },
-        },
-        required: ['agentId', 'apiKey', 'apiSecret', 'accessToken', 'accessSecret'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'configure_discord',
-      description: 'Enable and configure Discord for an agent. Bot credentials should be set separately.',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'ID of the agent' },
-          guildId: { type: 'string', description: 'Discord server ID (optional, for single-server bots)' },
-        },
-        required: ['agentId'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'set_discord_credentials',
-      description: 'Set Discord bot credentials for an agent. This is a write-only operation.',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'ID of the agent' },
-          botToken: { type: 'string', description: 'Discord bot token' },
-          clientId: { type: 'string', description: 'Discord application client ID' },
-          clientSecret: { type: 'string', description: 'Discord application client secret' },
-        },
-        required: ['agentId', 'botToken'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'set_ai_provider_key',
-      description: 'Set an AI provider API key. Can be global (for all agents) or per-agent (for cost tracking).',
-      parameters: {
-        type: 'object',
-        properties: {
-          provider: { 
+          environment: { 
             type: 'string', 
-            enum: ['openrouter', 'anthropic', 'openai', 'replicate'],
-            description: 'The AI provider' 
-          },
-          apiKey: { type: 'string', description: 'The API key' },
-          agentId: { type: 'string', description: 'Optional agent ID for per-agent keys. Omit for global key.' },
-        },
-        required: ['provider', 'apiKey'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'configure_llm',
-      description: 'Configure LLM settings for an agent',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'ID of the agent' },
-          provider: { 
-            type: 'string', 
-            enum: ['openrouter', 'bedrock', 'anthropic', 'openai'],
-            description: 'LLM provider to use' 
-          },
-          model: { type: 'string', description: 'Model name (e.g., anthropic/claude-sonnet-4)' },
-          temperature: { type: 'number', description: 'Temperature (0-1)' },
-          maxTokens: { type: 'number', description: 'Max tokens to generate' },
-          useGlobalKey: { type: 'boolean', description: 'Whether to use global API key or agent-specific' },
-        },
-        required: ['agentId'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'generate_solana_wallet',
-      description: 'Generate a new Solana wallet for an agent. Private key is stored securely and cannot be read.',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'ID of the agent' },
-          name: { type: 'string', description: 'Name for the wallet (e.g., "main", "tips")' },
-        },
-        required: ['agentId', 'name'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'generate_ethereum_wallet',
-      description: 'Generate a new Ethereum wallet for an agent. Private key is stored securely and cannot be read.',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'ID of the agent' },
-          name: { type: 'string', description: 'Name for the wallet (e.g., "main", "tips")' },
-        },
-        required: ['agentId', 'name'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'list_wallets',
-      description: 'List wallets for an agent. Only shows public addresses, not private keys.',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'ID of the agent' },
-        },
-        required: ['agentId'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'list_secrets',
-      description: 'List configured secrets for an agent. Shows which secrets are set, but NOT their values.',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'Optional agent ID. Omit to list global secrets.' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'delete_secret',
-      description: 'Delete a secret from an agent configuration',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'Agent ID (omit for global secrets)' },
-          secretType: { 
-            type: 'string', 
-            enum: [
-              'telegram_bot_token',
-              'twitter_api_key', 'twitter_api_secret', 'twitter_access_token', 
-              'twitter_access_secret', 'twitter_bearer_token',
-              'discord_bot_token', 'discord_client_id', 'discord_client_secret',
-              'openrouter_api_key', 'anthropic_api_key', 'openai_api_key', 'replicate_api_key',
-            ],
-            description: 'Type of secret to delete' 
+            enum: ['staging', 'production'],
+            description: 'Environment to deploy to' 
           },
         },
-        required: ['secretType'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'deploy_agent',
-      description: 'Deploy an agent to AWS. This will create the necessary infrastructure.',
-      parameters: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'ID of the agent to deploy' },
-        },
-        required: ['agentId'],
+        required: ['environment'],
       },
     },
   },
@@ -363,166 +209,153 @@ function buildSystemPrompt(agent?: AgentContext): string {
 ${agent.description ? `Your purpose: ${agent.description}` : ''}
 ${agent.persona ? `Your personality: ${agent.persona}` : ''}
 
-You have the ability to set yourself up and configure your own integrations. When the user asks you to do something like "setup twitter" or "connect to telegram", you should:
-1. Use your tools to configure the integration on YOUR agent record (ID: ${agent.id})
-2. Request any API keys or tokens you need from the user
-3. Store them securely using the appropriate tools
+You are setting yourself up. The user is your owner who is helping configure you.
 
-You can:
-- Configure your Twitter/X integration (set your username, store API credentials)
-- Configure your Telegram bot (set bot username, store bot token)  
-- Configure your Discord bot
-- Generate crypto wallets (Solana, Ethereum) for yourself
-- Configure your LLM settings
-- Update your persona and description
-- Deploy yourself to AWS
+## Your Capabilities
 
-Important security notes:
-1. All API keys and tokens are stored securely in AWS Secrets Manager with KMS encryption
-2. You can SET secrets but never READ their values - this is a write-only security pattern
-3. Private keys for crypto wallets are generated securely and stored encrypted
+You can request and store secrets for various integrations:
+- **Telegram**: Request bot token from @BotFather
+- **Discord**: Request bot token from Discord Developer Portal
+- **Twitter/X**: Request API credentials
+- **Helius**: Request API key for Solana RPC (for wallet balance lookups)
+- **AI Providers**: OpenRouter, Anthropic, OpenAI API keys
 
-When the user provides API keys or tokens, use the appropriate tool to store them immediately.
-Be friendly and helpful. Guide the user through setup step by step.`;
+You can manage your Solana wallets:
+- Create new wallets (private keys stored securely, you only see public keys)
+- Check balances of your wallets (SOL and tokens)
+- Share your public wallet addresses
+
+You can update your profile:
+- Change your name, description, and persona
+
+You can deploy yourself:
+- Trigger deployment to staging or production via GitHub Actions
+
+## How to Request Secrets
+
+When the user wants to set up an integration (e.g., "setup telegram"), use the request_secret tool to prompt them for the credentials. This shows a secure input field in the UI. After they submit, use store_secret to save it.
+
+Example flow:
+1. User: "set up telegram"
+2. You: Use request_secret with secretType="telegram_bot_token"
+3. UI shows secure input
+4. User submits token
+5. You: Use store_secret to save it
+6. Confirm success
+
+## Security Notes
+- Secrets are stored in AWS Secrets Manager with KMS encryption
+- You can SET secrets but never READ their values
+- Wallet private keys are generated securely and stored encrypted
+- You can only see public keys and balances
+
+Be friendly, helpful, and guide your owner through setup step by step.`;
   }
 
-  // Fallback for no agent context (shouldn't happen normally)
-  return `You are a Swarm agent assistant. The user should be chatting with a specific agent - something may be misconfigured.`;
+  // Fallback for no agent context
+  return `You are a Swarm agent assistant. Please select an agent to chat with.`;
 }
 
 /**
  * Execute a tool call
+ * Agent-centric: all operations use the agent's own ID from context
  */
 async function executeTool(
   toolCall: ToolCall,
-  session: UserSession
+  session: UserSession,
+  agentContext?: AgentContext
 ): Promise<ToolResult> {
   const { name, arguments: argsString } = toolCall.function;
-  
+
   try {
     const args = JSON.parse(argsString);
-    let result: unknown;
     
+    // Most tools require agent context
+    if (!agentContext && !['request_secret'].includes(name)) {
+      throw new Error('Agent context required for this operation');
+    }
+    
+    const agentId = agentContext?.id;
+    let result: unknown;
+
     switch (name) {
-      case 'create_agent':
-        result = await agents.createAgent(args.name, session, args.description);
+      // Request a secret from the user - returns a prompt for the UI
+      case 'request_secret':
+        result = { 
+          type: 'secret_request',
+          secretType: args.secretType,
+          label: args.label,
+          instructions: args.instructions,
+          agentId,
+        };
         break;
         
-      case 'list_agents':
-        result = await agents.listAgents();
+      // Store a secret securely
+      case 'store_secret':
+        await secrets.storeSecret(
+          agentId!,
+          args.secretType as SecretType,
+          'default',
+          args.value,
+          session,
+          `${args.secretType} for agent ${agentId}`
+        );
+        result = { success: true, message: `${args.secretType} stored securely` };
         break;
         
-      case 'get_agent':
-        result = await agents.getAgent(args.agentId);
-        if (!result) throw new Error(`Agent not found: ${args.agentId}`);
-        break;
-        
-      case 'update_agent':
-        result = await agents.updateAgent(args.agentId, {
+      // Update my profile
+      case 'update_my_profile':
+        result = await agents.updateAgent(agentId!, {
           name: args.name,
           description: args.description,
           persona: args.persona,
         }, session);
         break;
         
-      case 'configure_telegram':
-        result = await agents.configureTelegram(args.agentId, args.botUsername, session);
+      // Create a Solana wallet
+      case 'create_solana_wallet':
+        result = await wallets.generateSolanaWallet(agentId!, args.name, session);
         break;
         
-      case 'set_telegram_token':
-        await secrets.storeTelegramSecrets(args.agentId, args.botToken, session);
-        result = { success: true, message: 'Telegram bot token stored securely' };
-        break;
-        
-      case 'configure_twitter':
-        result = await agents.configureTwitter(args.agentId, args.username, session);
-        break;
-        
-      case 'set_twitter_credentials':
-        await secrets.storeTwitterSecrets(
-          args.agentId,
-          {
-            apiKey: args.apiKey,
-            apiSecret: args.apiSecret,
-            accessToken: args.accessToken,
-            accessSecret: args.accessSecret,
-            bearerToken: args.bearerToken,
-          },
-          session
+      // List my wallets
+      case 'get_my_wallets': {
+        const walletList = await wallets.listWallets(agentId!);
+        // Enrich with balances
+        const enriched = await Promise.all(
+          walletList
+            .filter(w => w.walletType === 'solana')
+            .map(async (w) => {
+              try {
+                const balance = await wallets.getSolanaBalance(w.publicKey, agentId);
+                return { ...w, balance };
+              } catch {
+                return { ...w, balance: null };
+              }
+            })
         );
-        result = { success: true, message: 'Twitter credentials stored securely' };
+        result = enriched;
+        break;
+      }
+        
+      // Get specific wallet balance
+      case 'get_wallet_balance':
+        result = await wallets.getSolanaBalance(args.publicKey, agentId);
         break;
         
-      case 'configure_discord':
-        result = await agents.configureDiscord(args.agentId, args.guildId, session);
+      // List my configured secrets
+      case 'get_my_secrets':
+        result = await secrets.listSecrets(agentId!);
         break;
         
-      case 'set_discord_credentials':
-        await secrets.storeDiscordSecrets(
-          args.agentId,
-          {
-            botToken: args.botToken,
-            clientId: args.clientId,
-            clientSecret: args.clientSecret,
-          },
-          session
-        );
-        result = { success: true, message: 'Discord credentials stored securely' };
-        break;
-        
-      case 'set_ai_provider_key':
-        await secrets.storeAIProviderKey(args.provider, args.apiKey, session, args.agentId);
+      // Deploy myself via GitHub Actions
+      case 'deploy_myself':
+        // TODO: Trigger GitHub Actions workflow
         result = { 
-          success: true, 
-          message: args.agentId 
-            ? `${args.provider} API key stored for agent ${args.agentId}`
-            : `Global ${args.provider} API key stored`
-        };
-        break;
-        
-      case 'configure_llm':
-        const llmConfig: Record<string, unknown> = {};
-        if (args.provider) llmConfig.provider = args.provider;
-        if (args.model) llmConfig.model = args.model;
-        if (args.temperature !== undefined) llmConfig.temperature = args.temperature;
-        if (args.maxTokens !== undefined) llmConfig.maxTokens = args.maxTokens;
-        if (args.useGlobalKey !== undefined) llmConfig.useGlobalKey = args.useGlobalKey;
-        
-        const existing = await agents.getAgent(args.agentId);
-        if (!existing) throw new Error(`Agent not found: ${args.agentId}`);
-        
-        result = await agents.updateAgent(args.agentId, {
-          llmConfig: { ...existing.llmConfig, ...llmConfig } as AgentRecord['llmConfig'],
-        }, session);
-        break;
-        
-      case 'generate_solana_wallet':
-        result = await wallets.generateSolanaWallet(args.agentId, args.name, session);
-        break;
-        
-      case 'generate_ethereum_wallet':
-        result = await wallets.generateEthereumWallet(args.agentId, args.name, session);
-        break;
-        
-      case 'list_wallets':
-        result = await wallets.listWallets(args.agentId);
-        break;
-        
-      case 'list_secrets':
-        result = await secrets.listSecrets(args.agentId);
-        break;
-        
-      case 'delete_secret':
-        await secrets.deleteSecret(args.agentId || null, args.secretType as SecretType, args.secretType, session);
-        result = { success: true, message: `Secret ${args.secretType} deleted` };
-        break;
-        
-      case 'deploy_agent':
-        // TODO: Trigger CDK deployment
-        result = { 
-          success: true, 
-          message: 'Agent deployment initiated. Check AWS console for status.',
-          note: 'CDK deployment integration pending'
+          type: 'deploy_request',
+          environment: args.environment,
+          agentId,
+          message: `Deployment to ${args.environment} will be triggered via GitHub Actions`,
+          note: 'GitHub Actions integration pending'
         };
         break;
         
@@ -576,7 +409,7 @@ async function callLLM(
         { role: 'system', content: systemPrompt },
         ...messages,
       ],
-      tools: ADMIN_TOOLS,
+      tools: AGENT_TOOLS,
       tool_choice: 'auto',
       max_tokens: 2048,
     }),
@@ -643,7 +476,7 @@ async function processChat(
 
       // Execute all tool calls
       const toolResults = await Promise.all(
-        llmResponse.toolCalls.map(tc => executeTool(tc, session))
+        llmResponse.toolCalls.map(tc => executeTool(tc, session, agent))
       );
 
       // Add tool results

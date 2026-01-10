@@ -1,16 +1,19 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAgentStore } from './store';
 import { AgentSidebar, ChatPanel } from './components';
 
 function App() {
-  const { agents, createAgent } = useAgentStore();
+  const { agents, fetchAgents } = useAgentStore();
+  const [initialized, setInitialized] = useState(false);
 
-  // Create initial agent if none exist
+  // Fetch agents from backend on mount
   useEffect(() => {
-    if (agents.length === 0) {
-      createAgent('Swarm Assistant');
+    if (!initialized) {
+      fetchAgents()
+        .catch(console.error)
+        .finally(() => setInitialized(true));
     }
-  }, [agents.length, createAgent]);
+  }, [initialized, fetchAgents]);
 
   return (
     <div className="h-screen flex bg-dark-950">
