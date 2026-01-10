@@ -702,7 +702,7 @@ export async function handler(
 
     // Parse request body
     const body = JSON.parse(event.body || '{}');
-    const { message, history = [] } = body;
+    const { message, history = [], agent } = body;
 
     if (!message || typeof message !== 'string') {
       return {
@@ -712,8 +712,8 @@ export async function handler(
       };
     }
 
-    // Process the chat
-    const result = await processChat(message, history, session);
+    // Process the chat with agent context
+    const result = await processChat(message, history, session, agent);
 
     return {
       statusCode: 200,
