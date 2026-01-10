@@ -18,8 +18,8 @@
     "@aws-cdk/core:target-partitions": ["aws"],
     "environments": {
       "staging": {
-        "adminDomain": null,
-        "adminCertificateArn": null
+        "adminDomain": "admin-staging.rati.chat",
+        "adminCertificateArn": "arn:aws:acm:us-east-1:022118847419:certificate/650197e7-b727-4f82-b892-35110c6484cc"
       },
       "prod": {
         "adminDomain": "admin.rati.chat",
