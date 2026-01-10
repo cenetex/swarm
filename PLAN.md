@@ -93,10 +93,9 @@
 
 ### Remaining Issues
 
-7. **Platform adapters incomplete**
-   - `TwitterAdapter` - stub only, needs full implementation
-   - `WebAdapter` - stub only, needs full implementation
-   - `DiscordAdapter` - completely missing
+7. **Discord adapter missing**
+   - `DiscordAdapter` - needs implementation
+   - Requires decision: Gateway (requires ECS) vs Interaction webhooks (Lambda-compatible)
 
 8. **Media service minimal**
    - Image/video generation not fully implemented
@@ -949,8 +948,8 @@ aws-swarm/
 │       │   ├── base.ts                  # [x] DONE - PlatformAdapter + Registry
 │       │   ├── index.ts                 # [x] DONE
 │       │   ├── telegram.ts              # [x] DONE - Full implementation
-│       │   ├── twitter.ts               # [~] STUB - Needs implementation
-│       │   ├── web.ts                   # [~] STUB - Needs implementation
+│       │   ├── twitter.ts               # [x] DONE - Tweet posting, mentions, media
+│       │   ├── web.ts                   # [x] DONE - CORS, token gating, wallet auth
 │       │   └── discord.ts               # [ ] MISSING
 │       ├── processors/
 │       │   ├── index.ts                 # [x] DONE
@@ -981,8 +980,9 @@ aws-swarm/
         ├── telegram-webhook.ts          # [x] DONE - Full implementation
         ├── message-processor.ts         # [x] DONE - Full implementation with tools
         ├── response-sender.ts           # [x] DONE - Full implementation
-        ├── tweet-poster.ts              # [~] STUB
-        └── web-chat.ts                  # [~] STUB
+        ├── tweet-poster.ts              # [x] DONE - Scheduled tweets with LLM
+        ├── twitter-mention-poller.ts    # [x] DONE - Polls mentions every 5 min
+        └── web-chat.ts                  # [x] DONE - Sync chat with token gating
 ```
 
 **Legend:** `[x]` Done | `[~]` Partial/Stub | `[ ]` Not Started
@@ -1038,7 +1038,9 @@ aws-swarm/
 - Lambda: `{agentId}-response-sender`
 - Lambda: `{agentId}-web-chat` (if enabled)
 - Lambda: `{agentId}-tweet-poster` (if scheduled)
+- Lambda: `{agentId}-twitter-mention-poller` (if mention_replies enabled)
 - EventBridge rule for tweet schedule
+- EventBridge rule for mention polling (every 5 min)
 - Secrets Manager: `swarm/{agentId}/secrets`
 
 ---
@@ -1085,42 +1087,39 @@ aws-swarm/
 
 ### Medium-term (Polish)
 
-7. **Complete Twitter Adapter**
-   - [ ] Implement `parseIncomingMessage()`
-   - [ ] Implement `executeAction()` for tweets, replies, retweets
-   - [ ] Implement mention polling handler
-   - [ ] Test scheduled tweets
+7. **Twitter & Web Adapters** *(COMPLETE)*
+   - [x] TwitterAdapter - full implementation with twitter-api-v2
+   - [x] Tweet posting with media support
+   - [x] Mention polling handler (twitter-mention-poller.ts)
+   - [x] WebAdapter - full implementation
+   - [x] Token gating with Solana wallet verification
+   - [x] CORS handling
+   - [ ] End-to-end testing
 
-8. **Complete Web Adapter**
-   - [ ] Implement `parseIncomingMessage()`
-   - [ ] Implement `executeAction()`
-   - [ ] Add token gating logic (Solana)
-   - [ ] Test web chat endpoint
-
-9. **Media Generation**
+8. **Media Generation**
    - [ ] Implement OpenRouter image generation
    - [ ] Implement Replicate video generation
    - [ ] Create media-processor handler
 
-10. **Testing**
-    - [ ] Unit tests for MessageEvaluator
-    - [ ] Unit tests for ResponseGenerator
-    - [ ] Integration tests with local DynamoDB
-    - [ ] End-to-end test script
+9. **Testing**
+   - [ ] Unit tests for MessageEvaluator
+   - [ ] Unit tests for ResponseGenerator
+   - [ ] Integration tests with local DynamoDB
+   - [ ] End-to-end test script
 
 ### Long-term (Additional Platforms)
 
-11. **Discord Adapter**
+10. **Discord Adapter**
     - [ ] Create DiscordAdapter class
     - [ ] Decide: Interaction webhooks vs Gateway (ECS Fargate)
     - [ ] Implement slash commands
 
-12. **Observability**
+11. **Observability**
     - [ ] CloudWatch dashboards
     - [ ] X-Ray tracing
     - [ ] CloudWatch alarms
 
-13. **CLI Tool**
+12. **CLI Tool**
     - [ ] `swarm agent create <name>`
     - [ ] `swarm agent deploy <name>`
     - [ ] `swarm secrets set <agent> <key> <value>`

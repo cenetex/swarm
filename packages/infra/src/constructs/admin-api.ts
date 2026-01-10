@@ -53,8 +53,8 @@ export class AdminApiConstruct extends Construct {
 
     // KMS key for encrypting secrets
     this.encryptionKey = new kms.Key(this, 'AdminEncryptionKey', {
-      alias: 'swarm/admin-secrets',
-      description: 'KMS key for encrypting Swarm admin secrets',
+      alias: `swarm/admin-secrets-${environment}`,
+      description: `KMS key for encrypting Swarm admin secrets (${environment})`,
       enableKeyRotation: true,
       removalPolicy: environment === 'production' 
         ? cdk.RemovalPolicy.RETAIN 
@@ -63,7 +63,7 @@ export class AdminApiConstruct extends Construct {
 
     // DynamoDB table for admin data
     this.table = new dynamodb.Table(this, 'AdminTable', {
-      tableName: 'SwarmAdmin',
+      tableName: `SwarmAdmin-${environment}`,
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -142,8 +142,8 @@ export class AdminApiConstruct extends Construct {
 
     // HTTP API Gateway
     this.api = new apigateway.HttpApi(this, 'AdminApi', {
-      apiName: 'SwarmAdminApi',
-      description: 'API for Swarm admin interface',
+      apiName: `SwarmAdminApi-${environment}`,
+      description: `API for Swarm admin interface (${environment})`,
       corsPreflight: {
         allowOrigins: ['*'],
         allowMethods: [
