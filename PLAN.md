@@ -4,7 +4,7 @@
 
 ## Implementation Status
 
-> **Last Updated:** 2026-01-09
+> **Last Updated:** 2026-01-10
 
 ### Overall Progress
 
@@ -14,36 +14,36 @@
 | Core Types | ✅ DONE | Comprehensive type definitions |
 | Platform Adapters | ✅ DONE | Telegram, Twitter, Web complete. Discord missing. |
 | Processors | ✅ DONE | Evaluator, Generator, OutboundSender complete |
-| Services | ✅ DONE | State, Activity, LLM (with retry), Secrets complete |
-| Handlers | ✅ DONE | All handlers implemented |
-| Infrastructure (CDK) | ✅ DONE | Full stack with shared + per-agent resources |
+| Services | ✅ DONE | State, Activity, LLM (with retry), Secrets, Media, Solana (NFT mint placeholder) |
+| Handlers | ✅ DONE | Telegram webhook, message-processor, response-sender, web-chat, tweet-poster, mention poller |
+| Infrastructure (CDK) | ✅ DONE | Shared/per-agent stacks plus admin API/UI constructs |
 | **Lambda Layer** | ✅ DONE | `@swarm/layer` - AWS SDK, OpenAI deps |
 | Agent Templates | ✅ DONE | Template config.yaml and persona.md |
 | Agent Configs | ⏳ NOT STARTED | No real agents configured yet |
 | **Admin API** | ✅ DONE | `@swarm/admin-api` - Chat handler, services, auth |
 | **Admin UI** | ✅ DONE | `@swarm/admin-ui` - React chat interface with multi-agent support |
-| **Admin Infra** | ✅ DONE | CDK construct with custom domain support (admin-staging.rati.chat) |
+| **Admin Infra** | ✅ DONE | CDK constructs with optional custom domains |
 | **CI/CD** | ✅ DONE | GitHub Actions with layer bundling, CDK deploy, S3 sync |
 | **Secrets Management** | ✅ DONE | Write-only secrets with KMS encryption |
-| **Wallet Generation** | ✅ DONE | Solana/Ethereum key generation in Lambda |
-| Tests | ⏳ NOT STARTED | No test coverage |
+| **Wallet Generation** | 🟡 PARTIAL | Solana implemented; Ethereum disabled pending ethers/viem |
+| Tests | 🟡 PARTIAL | Vitest coverage in admin-api/core; no end-to-end tests |
 
 ### Admin Interface Features
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| Cloudflare Access Auth | ✅ | JWT verification, fingerprint/SSO login |
+| Cloudflare Access Auth | ✅ | JWT verification in handlers; policies managed in Cloudflare |
 | Conversational Setup | ✅ | LLM-powered chat for agent configuration |
 | Agent CRUD | ✅ | Create, list, update, delete agents |
-| Platform Config | ✅ | Telegram, Twitter, Discord setup |
+| Platform Config | ✅ | Telegram/Twitter supported; Discord fields only |
 | Secret Storage | ✅ | Write-only, KMS-encrypted, Secrets Manager |
 | Global API Keys | ✅ | Shared keys with per-agent override |
-| Wallet Generation | ✅ | Solana & Ethereum keypair generation |
-| Deploy Trigger | ⚠️ | Placeholder (CDK deploy integration pending) |
+| Wallet Generation | 🟡 | Solana only; Ethereum disabled |
+| Deploy Trigger | ❌ | Not implemented (no deploy hook yet) |
 | **Multi-Agent UI** | ✅ | Discord-like sidebar with agent list |
 | **Agent Avatars** | ✅ | DiceBear auto-generated avatars |
 | **Local Persistence** | ✅ | Zustand with localStorage persistence |
-| **Custom Domain** | ✅ | admin-staging.rati.chat working |
+| **Custom Domain** | 🟡 | Supported in CDK; deployment-dependent |
 
 ### Critical Path to MVP
 
@@ -93,12 +93,26 @@
 
 ### Remaining Issues
 
-7. **Discord adapter missing**
-   - `DiscordAdapter` - needs implementation
-   - Requires decision: Gateway (requires ECS) vs Interaction webhooks (Lambda-compatible)
+7. **Telegram IP enforcement only logs**
+   - `ENFORCE_TELEGRAM_IP_CHECK` does not short-circuit non-Telegram IPs.
 
-8. **Media service minimal**
-   - Image/video generation not fully implemented
+8. **Dedup marker set before processing**
+   - `markMessageProcessed` runs before `processChannelMessage`; failures drop updates.
+
+9. **Credits not consumed for generation tools**
+   - `generate_image`/`generate_video` check credits but never `consumeCredit`.
+
+10. **Channel buffer writes are non-atomic**
+   - `addMessageToBuffer` overwrites full state; concurrent updates can lose messages.
+
+11. **No HTTP timeout/retry for admin Telegram/LLM calls**
+   - `fetch` calls can hang; no AbortController or retry policy.
+
+12. **Ethereum wallet generation disabled**
+   - `generateEthereumWallet` throws; needs ethers/viem implementation.
+
+13. **Discord adapter missing**
+   - Requires implementation and gateway vs interaction decision.
 
 ---
 
@@ -125,7 +139,7 @@ A web-based conversational interface for managing agents, secrets, and wallets. 
 │                                      │                                            │
 │                                      ▼                                            │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐ │
-│  │                      ADMIN WEB APP (packages/admin)                          │ │
+│  │                      ADMIN WEB APP (packages/admin-ui)                       │ │
 │  │                                                                               │ │
 │  │  ┌───────────────────────────────────────────────────────────────────────┐  │ │
 │  │  │                    CONVERSATIONAL INTERFACE                            │  │ │
@@ -147,14 +161,14 @@ A web-based conversational interface for managing agents, secrets, and wallets. 
 │  ┌─────────────────────────────────────────────────────────────────────────────┐ │
 │  │                      ADMIN API (Lambda + API Gateway)                        │ │
 │  │                                                                               │ │
-│  │  POST /admin/chat              → Conversational agent endpoint              │ │
-│  │  POST /admin/agents            → Create agent                               │ │
-│  │  GET  /admin/agents            → List agents (no secrets)                   │ │
-│  │  POST /admin/secrets/set       → Set secret (write-only)                    │ │
-│  │  POST /admin/secrets/verify    → Verify secret exists (no read)             │ │
-│  │  POST /admin/wallets/generate  → Generate new wallet                        │ │
-│  │  GET  /admin/wallets           → List wallets (public keys only)            │ │
-│  │  POST /admin/deploy            → Trigger CDK deployment                     │ │
+│  │  POST /chat                    → Conversational agent endpoint              │ │
+│  │  GET  /agents                  → List agents (no secrets)                   │ │
+│  │  POST /agents                  → Create agent                               │ │
+│  │  GET/PUT/DELETE /agents/{id}   → Manage agent config                        │ │
+│  │  GET/POST /agents/{id}/secrets → List/store secrets (no values)             │ │
+│  │  POST /webhook/telegram/{id}   → Shared Telegram webhook                    │ │
+│  │  POST /webhook/replicate       → Replicate callbacks (video jobs)           │ │
+│  │  GET  /health                  → Health check                               │ │
 │  │                                                                               │ │
 │  │  Auth: Cloudflare Access JWT validation                                     │ │
 │  └─────────────────────────────────────────────────────────────────────────────┘ │
@@ -964,9 +978,9 @@ aws-swarm/
 │       │   ├── llm/
 │       │   │   └── index.ts             # [x] DONE - Bedrock, OpenRouter, Anthropic + retry
 │       │   ├── media/
-│       │   │   └── index.ts             # [~] STUB - Minimal implementation
+│       │   │   └── index.ts             # [x] DONE - OpenRouter/Replicate/DALL-E
 │       │   └── solana/
-│       │       └── index.ts             # [~] STUB - Minimal implementation
+│       │       └── index.ts             # [x] DONE - Balance/transfer; NFT mint placeholder
 │       └── utils/
 │           ├── index.ts                 # [x] DONE
 │           ├── logger.ts                # [x] DONE
@@ -991,7 +1005,7 @@ aws-swarm/
 
 ## What's Working
 
-### Complete Pipeline (Telegram)
+### Runtime Pipeline (Telegram via SQS)
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -1017,6 +1031,9 @@ aws-swarm/
                         │    (Lambda)     │     │      API        │
                         └─────────────────┘     └─────────────────┘
 ```
+
+Admin API also exposes a shared Telegram webhook (`/webhook/telegram/{agentId}`) that
+performs channel-aware buffering and calls the LLM/tools directly without the SQS pipeline.
 
 ### CDK Resources Created
 
@@ -1047,82 +1064,115 @@ aws-swarm/
 
 ## Next Steps (Prioritized)
 
-### Immediate (Domain & Deployment)
+### Immediate (Reliability + Security)
 
-1. **Setup admin.rati.chat Domain** *(STAGING DONE)*
-   - [x] Add rati.chat domain to Cloudflare
-   - [x] Create Cloudflare Access application (cenetex.cloudflareaccess.com)
-   - [x] Configure ACM certificate (us-east-1)
-   - [x] Deploy admin UI to S3 + CloudFront (admin-staging.rati.chat)
-   - [ ] Configure Cloudflare Access policies (fingerprint/WebAuthn, Google, GitHub)
-   - [ ] Point admin.rati.chat (prod) to CloudFront via CNAME
+1. **Fix Telegram webhook enforcement and reliability**
+   - [ ] Reject non-Telegram IPs when `ENFORCE_TELEGRAM_IP_CHECK` is on
+   - [ ] Move dedup marker after successful processing (or track status)
+   - [ ] Consume credits on successful `generate_image`/`generate_video`
+   - [ ] Make channel-state updates atomic (UpdateCommand/list_append)
+   - [ ] Add timeouts/retries for LLM + Telegram fetch calls
 
-2. **Deploy Admin API** *(STAGING DONE)*
-   - [x] Set OpenRouter API key in Secrets Manager
-   - [x] Deploy AdminApiConstruct via CDK
-   - [x] GitHub Actions workflow deploys automatically
-   - [ ] Test /health endpoint
-   - [ ] Test /chat endpoint with Cloudflare Access
+2. **Admin deployment verification**
+   - [ ] Configure Cloudflare Access policies
+   - [ ] Deploy Admin UI/API via GitHub Actions
+   - [ ] Verify `/health` and `/chat` endpoints
+   - [ ] Optional: wire custom domains in DNS/Cloudflare
 
-3. **Improvements to Admin (from review)**
+3. **Admin feature gaps**
    - [ ] Add audit logging service to DynamoDB
-   - [ ] Improve Ethereum wallet generation (use ethers.js for proper addresses)
-   - [ ] Add `trigger_deploy` integration with CodePipeline/CodeBuild
-   - [ ] Add wallet balance checking tool
+   - [ ] Add wallet balance tool (Solana)
+   - [ ] Re-enable Ethereum wallet generation with ethers/viem
+   - [ ] Optional: deploy trigger integration (CodePipeline/Actions)
 
 ### Short-term (First Agent)
 
-4. **Create First Agent via Admin UI**
-   - [ ] Access admin.rati.chat
-   - [ ] Create "firehorse" agent via chat
+4. **Create first agent via Admin UI**
+   - [ ] Use local UI or deployed UI to create agent
    - [ ] Configure Telegram platform and set bot token
    - [ ] Set global OpenRouter API key
    - [ ] Generate Solana wallet for agent
 
-5. **Deploy Agent**
-   - [ ] `pnpm install && pnpm build`
-   - [ ] `cd packages/infra && cdk deploy --context environment=dev --context agents=firehorse`
-   - [ ] Set Telegram webhook URL
-   - [ ] Test end-to-end flow
+5. **Deploy and verify**
+   - [ ] Push to `main` to trigger GitHub Actions deploy
+   - [ ] Register Telegram webhook URL
+   - [ ] Run end-to-end Telegram test
 
 ### Medium-term (Polish)
 
-7. **Twitter & Web Adapters** *(COMPLETE)*
-   - [x] TwitterAdapter - full implementation with twitter-api-v2
-   - [x] Tweet posting with media support
-   - [x] Mention polling handler (twitter-mention-poller.ts)
-   - [x] WebAdapter - full implementation
-   - [x] Token gating with Solana wallet verification
-   - [x] CORS handling
+6. **Twitter & Web adapters**
+   - [x] TwitterAdapter, tweet posting, mention poller
+   - [x] WebAdapter with token gating
    - [ ] End-to-end testing
 
-8. **Media Generation**
-   - [ ] Implement OpenRouter image generation
-   - [ ] Implement Replicate video generation
-   - [ ] Create media-processor handler
+7. **Media generation in runtime pipeline**
+   - [ ] Wire handler tool execution to media service
+   - [ ] Add media-processor Lambda for queued jobs (if using `MEDIA_QUEUE_URL`)
+   - [ ] Add async video callback handling for runtime pipeline
 
-9. **Testing**
-   - [ ] Unit tests for MessageEvaluator
-   - [ ] Unit tests for ResponseGenerator
-   - [ ] Integration tests with local DynamoDB
-   - [ ] End-to-end test script
+8. **Testing**
+   - [ ] Expand unit tests for MessageEvaluator/ResponseGenerator
+   - [ ] Add integration tests with local DynamoDB
+   - [ ] End-to-end test scripts for Telegram/Twitter/Web
 
 ### Long-term (Additional Platforms)
 
-10. **Discord Adapter**
-    - [ ] Create DiscordAdapter class
-    - [ ] Decide: Interaction webhooks vs Gateway (ECS Fargate)
-    - [ ] Implement slash commands
+9. **Discord adapter**
+   - [ ] Create DiscordAdapter class
+   - [ ] Decide: Interaction webhooks vs Gateway (ECS Fargate)
+   - [ ] Implement slash commands
 
-11. **Observability**
+10. **Observability**
+    - [ ] Consolidated logs endpoint: `rati.chat/agents/<agent_id>/logs`
+    - [ ] Log filtering by `level` and `subsystem`
     - [ ] CloudWatch dashboards
     - [ ] X-Ray tracing
     - [ ] CloudWatch alarms
 
-12. **CLI Tool**
+11. **CLI Tool**
     - [ ] `swarm agent create <name>`
     - [ ] `swarm agent deploy <name>`
     - [ ] `swarm secrets set <agent> <key> <value>`
+
+---
+
+## Consolidated Logging (Agent Logs UI)
+
+**Goal:** Provide a single, authenticated endpoint at `rati.chat/agents/<agent_id>/logs`
+that returns everything for that agent (human UI + AI agents can `curl` one URL).
+Support optional filters for `level` and `subsystem`.
+
+### Data Sources
+- **CloudWatch Logs** for all Lambdas (admin API, handlers, media/replicate webhooks).
+- Optional: **S3 log archive** for long-term retention and low-cost search.
+
+### Log Schema (JSON Structured)
+Include these fields in every log event:
+- `agentId`, `platform`, `conversationId`, `messageId`
+- `service` (admin-api | handlers | infra), `component` (telegram-webhook | message-processor | response-sender)
+- `requestId` (Lambda request ID), `traceId` (if tracing is enabled)
+- `level`, `timestamp`, `event`, `error`
+
+### Aggregation + Query Path
+- **Short-term (fastest):** Use CloudWatch Logs Insights queries filtered by `agentId`.
+- **Mid-term:** Add a CloudWatch Logs subscription to **OpenSearch** for indexed search.
+- **Long-term:** Export to **S3** on a schedule for compliance and replay.
+
+### UI + API
+- Add an **Admin API endpoint** (e.g., `GET /agents/{agentId}/logs`) that:
+  - Proxies CloudWatch Logs Insights results (or OpenSearch results).
+  - Enforces Cloudflare Access auth + admin role.
+  - Supports filters: time range, `level`, `subsystem/component`, free-text search.
+  - Accepts query params like `?level=error&subsystem=telegram-webhook&since=1h`.
+- Admin UI route: `rati.chat/agents/<agent_id>/logs` with:
+  - Live tail mode (polling) and history query mode.
+  - Filters and quick presets (errors only, last 15m, by subsystem).
+
+### Implementation Steps
+1. Standardize JSON logging in all Lambdas (shared logger helper).
+2. Add agentId-aware log fields to handlers and admin API.
+3. Create admin-api log query handler + UI view.
+4. Optionally enable tracing (`traceId`) and OpenSearch indexing.
 
 ---
 
@@ -1133,16 +1183,12 @@ aws-swarm/
 pnpm install
 pnpm build
 
-# Deploy to dev
-cd packages/infra
-cdk bootstrap  # First time only
-cdk deploy --context environment=dev
+# Deploy via GitHub Actions (preferred)
+git push origin main
 
-# Deploy specific agent
-cdk deploy --context environment=dev --context agents=firehorse
-
-# Deploy to prod
-cdk deploy --context environment=prod
+# Optional manual deploy (only if explicitly requested)
+pnpm deploy:dev
+pnpm deploy:prod
 
 # Set Telegram webhook (after deploy)
 curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
@@ -1174,7 +1220,7 @@ curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
 │  │                       PLATFORM ADAPTERS (Shared)                              ││
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       ││
 │  │  │ Telegram │  │ Discord  │  │ X/Twitter│  │   Web    │  │ Farcaster│       ││
-│  │  │ [DONE]   │  │ [TODO]   │  │  [STUB]  │  │  [STUB]  │  │ [FUTURE] │       ││
+│  │  │ [DONE]   │  │ [TODO]   │  │  [DONE]  │  │  [DONE]  │  │ [FUTURE] │       ││
 │  │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────────┘       ││
 │  └───────┼─────────────┼─────────────┼─────────────┼────────────────────────────┘│
 │          │             │             │             │                              │
@@ -1242,11 +1288,19 @@ Table: swarm-activity-{env}
 ## API Routes
 
 ```
-POST /webhook/telegram/{agentId}     → telegram-webhook Lambda
-POST /webhook/twitter/{agentId}      → twitter-webhook Lambda (TODO)
-POST /chat                           → web-chat Lambda
+# Admin API (admin-api)
+POST /chat
+GET/POST /agents
+GET/PUT/DELETE /agents/{agentId}
+GET/POST /agents/{agentId}/secrets
+POST /webhook/telegram/{agentId}
+POST /webhook/replicate
+GET /health
 
-GET  /health                         → health check
+# Runtime (handlers)
+POST /webhook/telegram/{agentId}
+POST /chat
+GET /health
 ```
 
 ---
