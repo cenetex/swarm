@@ -17,7 +17,7 @@ on:
         type: string
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-${{ github.ref }}-${{ inputs.environment }}
   cancel-in-progress: false
 
 env:
@@ -29,11 +29,10 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
-    name: Deploy to AWS
+  # Build job runs in parallel with early AWS setup
+  build:
+    name: Build
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || 'production' }}
-    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,7 +52,15 @@ jobs:
       - name: Build all packages
         run: pnpm -r build
 
+      - name: Cache Lambda Layer
+        id: cache-layer
+        uses: actions/cache@v4
+        with:
+          path: packages/layer/nodejs
+          key: lambda-layer-${{ hashFiles('packages/layer/package.json') }}
+
       - name: Build Lambda Layer
+        if: steps.cache-layer.outputs.cache-hit != 'true'
         run: |
           cd packages/layer
           mkdir -p nodejs
@@ -62,30 +69,49 @@ jobs:
           npm install --omit=dev --legacy-peer-deps
           cd ..
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+          path: |
+            packages/*/dist
+            packages/layer/nodejs
+          retention-days: 1
+
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    needs: build
+    environment: ${{ inputs.environment || 'production' }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+          path: packages
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-deploy
-
-      - name: CDK Diff
-        working-directory: packages/infra
-        run: |
-          ENV_NAME="${{ inputs.environment || 'production' }}"
-          # Map GitHub environment names to CDK environment names
-          if [ "$ENV_NAME" = "production" ]; then
-            CDK_ENV="prod"
-          else
-            CDK_ENV="$ENV_NAME"
-          fi
-          
-          if [ -n "${{ inputs.stack }}" ]; then
-            npx cdk diff ${{ inputs.stack }} -c environment=$CDK_ENV
-          else
-            npx cdk diff --all -c environment=$CDK_ENV
-          fi
-        continue-on-error: true
 
       - name: CDK Deploy
         working-directory: packages/infra
@@ -156,12 +182,18 @@ jobs:
   deploy-admin-ui:
     name: Deploy Admin UI
     runs-on: ubuntu-latest
-    needs: deploy
+    needs: [build, deploy]
     environment: ${{ inputs.environment || 'production' }}
     
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+          path: packages
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -175,7 +207,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Admin UI
+      - name: Rebuild Admin UI with API URL
         working-directory: packages/admin-ui
         run: pnpm build
         env:
