@@ -63,6 +63,17 @@ export interface SwarmStackProps extends cdk.StackProps {
    * OpenRouter API key secret ARN
    */
   openRouterApiKeyArn?: string;
+
+  /**
+   * Custom domain for gallery CDN (e.g., 'gallery.rati.chat' or 'gallery-staging.rati.chat')
+   * Images will be served from https://{galleryDomain}/agents/{agentId}/images/{imageId}.png
+   */
+  galleryDomain?: string;
+
+  /**
+   * ACM certificate ARN for gallery CDN (must be in us-east-1, can be same wildcard cert)
+   */
+  galleryCertificateArn?: string;
 }
 
 export class SwarmStack extends cdk.Stack {
@@ -85,12 +96,16 @@ export class SwarmStack extends cdk.Stack {
       cloudflareTeamDomain,
       adminEmails,
       openRouterApiKeyArn,
+      galleryDomain,
+      galleryCertificateArn,
     } = props;
 
     // Create shared infrastructure
     this.shared = new SharedInfrastructure(this, 'Shared', {
       environment,
       enableCdn,
+      cdnDomain: galleryDomain,
+      cdnCertificateArn: galleryCertificateArn,
     });
 
     // Create Admin API if Cloudflare Access is configured
@@ -110,6 +125,7 @@ export class SwarmStack extends cdk.Stack {
         // Media infrastructure for image/video generation
         mediaBucket: this.shared.mediaBucket,
         mediaCdn: this.shared.distribution,
+        cdnUrl: this.shared.cdnUrl, // Use custom domain if configured
       });
     }
 

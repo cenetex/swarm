@@ -30,7 +30,6 @@ const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
 const ENFORCE_IP_CHECK = process.env.ENFORCE_TELEGRAM_IP_CHECK !== 'false';
-const API_DOMAIN = process.env.API_DOMAIN || 'api-staging.rati.chat';
 
 // === CONFIG ===
 const ATTENTION_DURATION_SECONDS = 300;
@@ -386,23 +385,61 @@ async function sendTelegramMessage(token: string, chatId: number, text: string, 
 async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string, caption?: string, replyTo?: number): Promise<void> {
   console.log(`[Telegram] Sending photo to chat ${chatId}: ${photoUrl.slice(0, 80)}...`);
 
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      photo: photoUrl,
-      caption: caption?.slice(0, 1024), // Telegram caption limit
-      parse_mode: 'Markdown',
-      reply_to_message_id: replyTo,
-    }),
-  });
+  // Download the image first, then send as buffer
+  // This is more reliable than letting Telegram fetch the URL (which may be private S3)
+  // Same approach as solanafirehorse implementation
+  try {
+    const imageResponse = await fetch(photoUrl);
+    if (!imageResponse.ok) {
+      console.error(`[Telegram] Failed to download image: ${imageResponse.status}`);
+      // Fall back to URL-based send (might work for public CDN URLs)
+      const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          photo: photoUrl,
+          caption: caption?.slice(0, 1024),
+          parse_mode: 'Markdown',
+          reply_to_message_id: replyTo,
+        }),
+      });
+      if (!response.ok) {
+        console.error(`[Telegram] sendPhoto (URL fallback) failed: ${response.status}`, await response.text());
+      }
+      return;
+    }
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[Telegram] sendPhoto failed: ${response.status}`, errorText);
-  } else {
-    console.log(`[Telegram] Photo sent successfully to chat ${chatId}`);
+    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+    console.log(`[Telegram] Downloaded image: ${imageBuffer.length} bytes, sending as buffer`);
+
+    // Send as multipart form data with the buffer
+    const FormData = (await import('form-data')).default;
+    const form = new FormData();
+    form.append('chat_id', chatId.toString());
+    form.append('photo', imageBuffer, { filename: 'image.png', contentType: 'image/png' });
+    if (caption) {
+      form.append('caption', caption.slice(0, 1024));
+      form.append('parse_mode', 'Markdown');
+    }
+    if (replyTo) {
+      form.append('reply_to_message_id', replyTo.toString());
+    }
+
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+      method: 'POST',
+      body: form as any,
+      headers: form.getHeaders(),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Telegram] sendPhoto (buffer) failed: ${response.status}`, errorText);
+    } else {
+      console.log(`[Telegram] Photo sent successfully to chat ${chatId}`);
+    }
+  } catch (err) {
+    console.error(`[Telegram] Error sending photo:`, err);
   }
 }
 
@@ -491,13 +528,13 @@ async function executeTool(
             referenceImageUrls,
           });
 
-          // Use public gallery URL for Telegram (S3 URLs may not be accessible)
-          const publicUrl = `https://${API_DOMAIN}/gallery/${agentId}/${result.id}`;
-          console.log(`[Telegram] Image generated successfully: ${publicUrl}`);
+          // Use the actual CDN URL from the result
+          // The media.generateImage() already returns the proper CDN URL
+          console.log(`[Telegram] Image generated successfully: ${result.url}`);
           return {
             success: true,
-            result: { id: result.id, url: publicUrl },
-            media: { type: 'image', url: publicUrl, caption: prompt },
+            result: { id: result.id, url: result.url },
+            media: { type: 'image', url: result.url, caption: prompt },
           };
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : 'Unknown error';

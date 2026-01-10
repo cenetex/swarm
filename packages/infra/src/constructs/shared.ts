@@ -8,6 +8,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import { Construct } from 'constructs';
 
 import * as path from 'path';
@@ -32,6 +33,17 @@ export interface SharedInfrastructureProps {
    * Path to Lambda layers
    */
   layerCodePath?: string;
+
+  /**
+   * Custom domain for CDN (e.g., 'rati.chat')
+   * If set, images will be served from https://{cdnDomain}/agents/{agentId}/images/{imageId}.png
+   */
+  cdnDomain?: string;
+
+  /**
+   * ACM certificate ARN for the CDN custom domain (must be in us-east-1)
+   */
+  cdnCertificateArn?: string;
 }
 
 export class SharedInfrastructure extends Construct {
@@ -40,11 +52,12 @@ export class SharedInfrastructure extends Construct {
   public readonly mediaBucket: s3.Bucket;
   public readonly distribution?: cloudfront.Distribution;
   public readonly dependencyLayer: lambda.LayerVersion;
+  public readonly cdnUrl?: string;
 
   constructor(scope: Construct, id: string, props: SharedInfrastructureProps) {
     super(scope, id);
 
-    const { environment, enableCdn = true, layerCodePath } = props;
+    const { environment, enableCdn = true, layerCodePath, cdnDomain, cdnCertificateArn } = props;
 
     // State table (multi-tenant)
     this.stateTable = new dynamodb.Table(this, 'StateTable', {
@@ -113,6 +126,21 @@ export class SharedInfrastructure extends Construct {
     // CloudFront CDN - REQUIRED for media to be accessible
     // S3 bucket is private, only CloudFront can access it via OAI
     if (enableCdn) {
+      // Configure custom domain if provided
+      const domainConfig: {
+        domainNames?: string[];
+        certificate?: acm.ICertificate;
+      } = {};
+
+      if (cdnDomain && cdnCertificateArn) {
+        domainConfig.domainNames = [cdnDomain];
+        domainConfig.certificate = acm.Certificate.fromCertificateArn(
+          this,
+          'CdnCertificate',
+          cdnCertificateArn
+        );
+      }
+
       this.distribution = new cloudfront.Distribution(this, 'MediaCdn', {
         defaultBehavior: {
           origin: new origins.S3Origin(this.mediaBucket),
@@ -120,14 +148,28 @@ export class SharedInfrastructure extends Construct {
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         },
         comment: `Swarm media CDN (${environment})`,
+        ...domainConfig,
       });
+
+      // Set cdnUrl - use custom domain if configured, otherwise use CloudFront domain
+      this.cdnUrl = cdnDomain
+        ? `https://${cdnDomain}`
+        : `https://${this.distribution.distributionDomainName}`;
 
       // Output the CDN URL for debugging
       new cdk.CfnOutput(this, 'MediaCdnUrl', {
-        value: `https://${this.distribution.distributionDomainName}`,
+        value: this.cdnUrl,
         description: 'CloudFront CDN URL for media files',
         exportName: `swarm-cdn-url-${environment}`,
       });
+
+      if (cdnDomain) {
+        new cdk.CfnOutput(this, 'CdnCnameTarget', {
+          value: this.distribution.distributionDomainName,
+          description: `Create CNAME: ${cdnDomain} -> this value`,
+          exportName: `swarm-cdn-cname-target-${environment}`,
+        });
+      }
     } else {
       console.warn('WARNING: enableCdn is false! Media files will NOT be accessible.');
     }
