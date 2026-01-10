@@ -19,13 +19,14 @@ function extractImagesFromToolCalls(toolCalls?: ChatMessageType['toolCalls']): s
     if (tc.result && typeof tc.result === 'object') {
       const result = tc.result as Record<string, unknown>;
       // Check for image URL in result - any URL from successful generation
-      if (result.url && typeof result.url === 'string') {
+      // Support both 'url' and 'resultUrl' fields (from get_job_status)
+      const url = (result.url || result.resultUrl) as string | undefined;
+      if (url && typeof url === 'string') {
         // Include URLs that are images (by extension or by being from our CDN/S3)
-        const url = result.url as string;
         const isImage = url.includes('.png') || url.includes('.jpg') ||
                         url.includes('.webp') || url.includes('.jpeg') ||
                         url.includes('/images/') || url.includes('cloudfront.net') ||
-                        url.includes('s3.amazonaws.com');
+                        url.includes('s3.amazonaws.com') || url.includes('rati.chat');
         if (isImage) {
           images.push(url);
         }

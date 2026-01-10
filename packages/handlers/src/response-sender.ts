@@ -4,6 +4,7 @@
  */
 import type { SQSEvent, SQSHandler, Context } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { randomUUID } from 'crypto';
 import {
   TelegramAdapter,
   TwitterAdapter,
@@ -123,16 +124,15 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       if (mediaActions.length > 0 && MEDIA_QUEUE_URL) {
         // Queue media generation and wait
         for (const action of mediaActions) {
+          const jobId = randomUUID();
           await sqs.send(new SendMessageCommand({
             QueueUrl: MEDIA_QUEUE_URL,
             MessageBody: JSON.stringify({
+              jobId,
               agentId: AGENT_ID,
               conversationId: response.conversationId,
               action,
-              callback: {
-                queueUrl: process.env.AWS_LAMBDA_FUNCTION_NAME, // Self-invoke for callback
-                response,
-              },
+              response,
             }),
           }));
         }

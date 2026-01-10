@@ -1018,6 +1018,9 @@ async function executeTool(
             prompt: job.prompt,
             createdAt: new Date(job.createdAt).toISOString(),
             resultUrl: job.resultUrl,
+            // Add 'url' alias and success flag for consistency
+            url: job.resultUrl,
+            success: job.status === 'completed' && !!job.resultUrl,
           })),
         };
         break;
@@ -1049,6 +1052,10 @@ async function executeTool(
           updatedAt: new Date(job.updatedAt).toISOString(),
           completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : undefined,
           resultUrl: job.resultUrl,
+          // Add 'url' alias so extractMediaFromToolResults and frontend can find it
+          url: job.resultUrl,
+          // Mark as successful if completed with a URL
+          success: job.status === 'completed' && !!job.resultUrl,
           error: job.error,
         };
         break;
@@ -1505,21 +1512,26 @@ function extractMediaFromToolResults(toolResults: ToolResult[]): MediaItem[] {
     try {
       const parsed = JSON.parse(result.content);
 
-      // Direct image/media generation result (check for success + url)
-      if (parsed.success && parsed.url && typeof parsed.url === 'string') {
-        // Determine type from context or file extension
-        let mediaType: 'image' | 'video' | 'sticker' = 'image';
-        if (parsed.url.includes('.mp4') || parsed.url.includes('.webm') || parsed.url.includes('/video')) {
+      // Get URL from either 'url' or 'resultUrl' field
+      const mediaUrl = parsed.url || parsed.resultUrl;
+
+      // Direct image/media generation result (check for success + url/resultUrl)
+      // Also check for status === 'completed' as alternative success indicator
+      const isSuccess = parsed.success || (parsed.status === 'completed' && mediaUrl);
+      if (isSuccess && mediaUrl && typeof mediaUrl === 'string') {
+        // Determine type from context, parsed.type, or file extension
+        let mediaType: 'image' | 'video' | 'sticker' = parsed.type || 'image';
+        if (mediaUrl.includes('.mp4') || mediaUrl.includes('.webm') || mediaUrl.includes('/video')) {
           mediaType = 'video';
-        } else if (parsed.url.includes('/sticker')) {
+        } else if (mediaUrl.includes('/sticker')) {
           mediaType = 'sticker';
         }
 
         media.push({
           type: mediaType,
-          url: parsed.url,
+          url: mediaUrl,
           prompt: parsed.prompt,
-          id: parsed.id,
+          id: parsed.id || parsed.jobId,
         });
       }
 
@@ -1579,23 +1591,25 @@ async function processChat(
     const llmResponse = await callLLM(messages, agent);
     
     if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
-      // Check if any tool call is a request_secret - these need user input
-      const secretRequest = llmResponse.toolCalls.find(tc => tc.function.name === 'request_secret');
-      
-      if (secretRequest) {
-        // Don't execute request_secret - return it to the frontend for user input
+      // Check for manual/pause tools that need user input
+      const manualTool = llmResponse.toolCalls.find(tc =>
+        tc.function.name === 'request_secret'
+      );
+
+      if (manualTool) {
+        // Don't execute manual tools - return to the frontend for user input
         let args: Record<string, unknown> = {};
         try {
-          args = JSON.parse(secretRequest.function.arguments || '{}');
+          args = JSON.parse(manualTool.function.arguments || '{}');
         } catch (e) {
-          console.error('Failed to parse request_secret arguments:', e);
+          console.error(`Failed to parse ${manualTool.function.name} arguments:`, e);
         }
         pendingToolCall = {
-          id: secretRequest.id,
-          name: 'request_secret',
+          id: manualTool.id,
+          name: manualTool.function.name,
           arguments: args,
         };
-        
+
         // Add the assistant message with the tool call (but not executed)
         response = llmResponse.message || '';
         messages.push({
@@ -1609,7 +1623,8 @@ async function processChat(
       // Check for upload URL tools - these need user interaction to upload
       const uploadUrlTool = llmResponse.toolCalls.find(tc => {
         if (tc.function.name === 'get_profile_upload_url' || 
-            tc.function.name === 'get_reference_image_upload_url') {
+            tc.function.name === 'get_reference_image_upload_url' ||
+            tc.function.name === 'request_model_selection') {
           return true;
         }
         // Also check for set_profile_image with source='upload'

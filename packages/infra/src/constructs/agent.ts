@@ -249,6 +249,23 @@ export class AgentConstruct extends Construct {
       batchSize: 1,
     }));
 
+    // Media processor (SQS triggered)
+    const mediaProcessor = new lambda.Function(this, 'MediaProcessor', {
+      functionName: `${config.id}-media-processor`,
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'media-processor.handler',
+      code: lambda.Code.fromAsset(handlersCodePath),
+      layers: [dependencyLayer],
+      role: lambdaRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 1024,
+      environment: commonEnv,
+    });
+
+    mediaProcessor.addEventSource(new lambdaEventSources.SqsEventSource(this.mediaQueue, {
+      batchSize: 1,
+    }));
+
     // Scheduled tweet poster
     const scheduledTweet = config.scheduling.tweets?.[0];
     if (config.platforms.twitter?.enabled && scheduledTweet) {
