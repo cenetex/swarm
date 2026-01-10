@@ -463,6 +463,21 @@ async function executeTool(
         if (agent?.profileImage?.url) {
           referenceImageUrls.push(agent.profileImage.url);
           console.log(`[Telegram] Using profile image as reference: ${agent.profileImage.url.slice(0, 50)}...`);
+        } else {
+          // Fallback: check for reference images with 'profile' or 'character' category
+          console.log(`[Telegram] No profile image set, checking reference images...`);
+          const refImages = await media.listReferenceImages(agentId);
+          const profileRef = refImages.find(img => img.category === 'profile');
+          const characterRef = refImages.find(img => img.category === 'character');
+          if (profileRef?.url) {
+            referenceImageUrls.push(profileRef.url);
+            console.log(`[Telegram] Using 'profile' reference image: ${profileRef.url.slice(0, 50)}...`);
+          } else if (characterRef?.url) {
+            referenceImageUrls.push(characterRef.url);
+            console.log(`[Telegram] Using 'character' reference image: ${characterRef.url.slice(0, 50)}...`);
+          } else {
+            console.log(`[Telegram] No profile or character reference images found`);
+          }
         }
 
         await sendChatAction(token, chatId, 'upload_photo');

@@ -1113,9 +1113,18 @@ async function executeTool(
           if (refImage) {
             referenceImageUrl = refImage.url;
           }
-        } else if (args.useProfileAsReference) {
+        } else if (args.useProfileAsReference !== false) {
+          // Default to using profile image
           const agent = await agents.getAgent(agentId!);
-          referenceImageUrl = agent?.profileImage?.url;
+          if (agent?.profileImage?.url) {
+            referenceImageUrl = agent.profileImage.url;
+          } else {
+            // Fallback to reference images
+            const refImages = await media.listReferenceImages(agentId!);
+            const profileRef = refImages.find(img => img.category === 'profile');
+            const characterRef = refImages.find(img => img.category === 'character');
+            referenceImageUrl = profileRef?.url || characterRef?.url;
+          }
         }
 
         const job = await media.generateVideo({
