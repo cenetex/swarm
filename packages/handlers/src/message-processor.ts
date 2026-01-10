@@ -10,11 +10,11 @@ import {
   createLLMService,
   createResponseGenerator,
   logger,
+  publicTools,
+  defaultAgentTools,
   type AgentConfig,
   type MessageQueueItem,
-  type ToolDefinition,
 } from '@swarm/core';
-import { z } from 'zod';
 
 const sqs = new SQSClient({});
 
