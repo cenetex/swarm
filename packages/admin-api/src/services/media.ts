@@ -2,7 +2,7 @@
  * Media Generation Service
  * Handles image, video, and sticker generation with multiple providers
  */
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -28,6 +28,49 @@ if (!CDN_URL) {
   console.warn('[Media] WARNING: CDN_URL is not set! S3 bucket is private, images will not be accessible via direct S3 URLs.');
 } else {
   console.log(`[Media] CDN configured: ${CDN_URL}`);
+}
+
+/**
+ * Convert an S3 URL to a publicly accessible URL.
+ * If CDN is configured, returns CDN URL.
+ * Otherwise, generates a signed S3 URL (valid for 1 hour).
+ */
+async function makeUrlAccessible(url: string): Promise<string> {
+  // If it's already a CDN URL or external URL, return as-is
+  if (!url.includes('.s3.amazonaws.com') && !url.includes('.s3.us-')) {
+    return url;
+  }
+
+  // If CDN is configured, convert S3 URL to CDN URL
+  if (CDN_URL) {
+    // Extract the key from S3 URL
+    const s3UrlPattern = /https:\/\/[^\/]+\.s3[^\/]*\.amazonaws\.com\/(.+)/;
+    const match = url.match(s3UrlPattern);
+    if (match) {
+      return `${CDN_URL}/${match[1]}`;
+    }
+    return url;
+  }
+
+  // No CDN - generate a signed URL for temporary public access
+  console.log(`[Media] No CDN, generating signed URL for: ${url.slice(0, 50)}...`);
+  const s3UrlPattern = /https:\/\/([^\.]+)\.s3[^\/]*\.amazonaws\.com\/(.+)/;
+  const match = url.match(s3UrlPattern);
+  if (match) {
+    const [, bucket, key] = match;
+    const command = new GetObjectCommand({ Bucket: bucket, Key: decodeURIComponent(key) });
+    const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+    return signedUrl;
+  }
+
+  return url;
+}
+
+/**
+ * Make multiple URLs accessible for external services like Replicate
+ */
+async function makeUrlsAccessible(urls: string[]): Promise<string[]> {
+  return Promise.all(urls.map(url => makeUrlAccessible(url)));
 }
 
 // Provider configuration
@@ -200,9 +243,19 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     throw new Error(`Unknown model: ${modelId}. Supported models: ${Object.keys(REPLICATE_MODEL_VERSIONS).join(', ')}`);
   }
 
+  // Convert reference image URLs to publicly accessible URLs
+  // (CDN URLs if available, otherwise signed S3 URLs)
+  const accessibleReferenceUrls = referenceImageUrls.length > 0
+    ? await makeUrlsAccessible(referenceImageUrls)
+    : [];
+
+  if (accessibleReferenceUrls.length > 0) {
+    console.log(`[Media] Reference images converted to accessible URLs: ${accessibleReferenceUrls.length}`);
+  }
+
   // Build input based on model type
   const isNanoBanana = modelId === 'google/nano-banana-pro';
-  const hasReferenceImages = referenceImageUrls.length > 0;
+  const hasReferenceImages = accessibleReferenceUrls.length > 0;
 
   // Build Nano Banana Pro input
   const nanoBananaInput: Record<string, unknown> = {
@@ -214,7 +267,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
 
   // Only add image_input if we have reference images
   if (hasReferenceImages) {
-    nanoBananaInput.image_input = referenceImageUrls.slice(0, 14);
+    nanoBananaInput.image_input = accessibleReferenceUrls.slice(0, 14);
     nanoBananaInput.aspect_ratio = 'match_input_image';
   } else {
     nanoBananaInput.aspect_ratio = aspectRatio;
@@ -228,8 +281,8 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     num_outputs: 1,
     output_format: 'png',
   };
-  if (referenceImageUrls[0]) {
-    fluxInput.image = referenceImageUrls[0];
+  if (accessibleReferenceUrls[0]) {
+    fluxInput.image = accessibleReferenceUrls[0];
   }
 
   console.log(`Generating image with ${modelId}, refs: ${referenceImageUrls.length}, prompt: ${prompt.slice(0, 50)}...`);
