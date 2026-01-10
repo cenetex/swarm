@@ -198,9 +198,15 @@ async function fetchWithRetry(
   while (attempt <= retries) {
     try {
       const response = await fetchWithTimeout(url, options, timeoutMs);
-      if (response.ok || response.status < 500) {
+      if (response.ok) {
         return response;
       }
+
+      const shouldRetry = response.status === 429 || response.status >= 500;
+      if (!shouldRetry) {
+        return response;
+      }
+
       lastError = new Error(`HTTP ${response.status}`);
     } catch (error) {
       lastError = error;

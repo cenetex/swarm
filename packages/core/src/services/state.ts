@@ -253,11 +253,12 @@ export class DynamoDBStateService implements StateService {
       ReturnValues: 'ALL_NEW',
     }));
 
-    let updated = response.Attributes as ChannelState;
+    let updated = response.Attributes as ChannelState & { updatedAt?: number };
 
     if ((updated.recentMessages?.length || 0) > maxMessages) {
       const trimmedMessages = updated.recentMessages.slice(-maxMessages);
       const trimmedAt = Date.now();
+      const expectedUpdatedAt = updated.updatedAt ?? now;
 
       try {
         await this.docClient.send(new UpdateCommand({
@@ -272,7 +273,7 @@ export class DynamoDBStateService implements StateService {
             ':messages': trimmedMessages,
             ':updatedAt': trimmedAt,
             ':ttl': ttl,
-            ':expectedUpdatedAt': updated.updatedAt,
+            ':expectedUpdatedAt': expectedUpdatedAt,
           },
         }));
 

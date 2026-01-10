@@ -163,7 +163,10 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
         getAgentId(),
         envelope.conversationId,
         envelope.platform,
-        envelopeToContextMessage(envelope)
+        envelopeToContextMessage(envelope),
+        undefined,
+        envelope.metadata.chatType,
+        envelope.metadata.chatTitle
       );
 
       logger.info('Channel state updated', {
