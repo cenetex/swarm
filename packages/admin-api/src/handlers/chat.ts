@@ -34,6 +34,13 @@ import {
   executeTool as executeToolWithValidation,
   type ToolDefinition,
 } from '../tools/tool-helper.js';
+import {
+  buildGalleryContext,
+  buildWalletContext,
+  injectContext,
+  type GalleryContextItem,
+  type WalletContextItem,
+} from '../tools/context-builder.js';
 import type { ZodObject, ZodRawShape } from 'zod';
 
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
@@ -465,6 +472,17 @@ function buildToolServices(
         createdAt: item.createdAt,
       }));
     },
+    getGalleryItem: async (imageId: string) => {
+      const item = await gallery.getGalleryItem(agentId, imageId);
+      if (!item) return null;
+      return {
+        id: item.id,
+        type: item.type,
+        url: item.url,
+        prompt: item.prompt,
+        createdAt: item.createdAt,
+      };
+    },
 
     // Reference images
     getReferenceUploadUrl: async (category: string, name: string, _description?: string) => {
@@ -878,7 +896,66 @@ async function processChat(
   const agentTools = agentId && services
     ? createAgentTools(agentId, session, services)
     : [];
-  const openAITools = toOpenAITools(agentTools as ToolDefinition<ZodObject<ZodRawShape>, unknown>[]);
+  let openAITools = toOpenAITools(agentTools as ToolDefinition<ZodObject<ZodRawShape>, unknown>[]);
+
+  // Inject dynamic context into tool descriptions
+  if (agentId && services) {
+    try {
+      // Fetch gallery items and wallets for context
+      const [galleryItems, walletItems] = await Promise.all([
+        services.listGallery(undefined, 10),
+        services.listWallets(),
+      ]);
+
+      // Build context for gallery and wallet tools
+      const galleryContext = buildGalleryContext(
+        galleryItems.map(g => ({
+          id: g.id,
+          type: g.type as 'image' | 'video' | 'sticker',
+          prompt: g.prompt,
+          url: g.url,
+        })) as GalleryContextItem[],
+        'summary'
+      );
+      const walletContext = buildWalletContext(
+        (walletItems as Array<{ publicKey: string; name?: string; solBalance?: number }>).map(w => ({
+          publicKey: w.publicKey,
+          label: w.name,
+          solBalance: (w as { balance?: { sol?: number } }).balance?.sol,
+        })) as WalletContextItem[],
+        'summary'
+      );
+
+      // Inject context into relevant tool descriptions
+      openAITools = openAITools.map(tool => {
+        const name = tool.function.name;
+        let description = tool.function.description;
+
+        if (name === 'send_gallery_image' || name === 'get_my_gallery' || name === 'search_gallery') {
+          description = injectContext(description, galleryContext);
+        } else if (name === 'get_my_wallets' || name === 'get_wallet_balance') {
+          description = injectContext(description, walletContext);
+        }
+
+        return {
+          ...tool,
+          function: { ...tool.function, description },
+        };
+      });
+
+      console.log(JSON.stringify({
+        level: 'DEBUG',
+        subsystem: 'chat',
+        event: 'context_injected',
+        agentId,
+        galleryCount: galleryItems.length,
+        walletCount: walletItems.length,
+      }));
+    } catch (e) {
+      console.error('[Chat] Failed to build context for tools:', e);
+      // Continue with base tool descriptions
+    }
+  }
 
   // Log tools available for debugging
   console.log(JSON.stringify({
@@ -899,6 +976,7 @@ async function processChat(
   let pendingToolCall: { id: string; name: string; arguments: Record<string, unknown> } | undefined;
   const allMedia: MediaItem[] = [];
   const pendingJobs: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string }> = [];
+  const failedTools = new Set<string>(); // Track failed tools to prevent infinite retry loops
   let iterations = 0;
   const maxIterations = 10; // Prevent infinite loops
 
@@ -990,9 +1068,49 @@ async function processChat(
         tool_calls: llmResponse.toolCalls,
       });
 
-      // Execute all tool calls
+      // Execute all tool calls, but skip already-failed tools
       const toolResults = await Promise.all(
-        llmResponse.toolCalls.map(tc => executeTool(tc, session, agentTools as ToolDefinition<ZodObject<ZodRawShape>, unknown>[], agent))
+        llmResponse.toolCalls.map(async (tc) => {
+          const toolName = tc.function.name;
+          
+          // Skip tools that have already failed to prevent infinite loops
+          if (failedTools.has(toolName)) {
+            console.log(`[Chat] Skipping retry of failed tool: ${toolName}`);
+            return {
+              tool_call_id: tc.id,
+              role: 'tool' as const,
+              content: JSON.stringify({ 
+                error: true, 
+                message: 'This tool already failed. Please inform the user and do not retry.' 
+              }),
+            };
+          }
+          
+          const result = await executeTool(tc, session, agentTools as ToolDefinition<ZodObject<ZodRawShape>, unknown>[], agent);
+          
+          // Track failed tools, but not transient errors
+          try {
+            const parsed = JSON.parse(result.content);
+            if (parsed.error) {
+              const errorMsg = parsed.message || '';
+              const isTransientError = 
+                errorMsg.includes('Rate limited') ||
+                errorMsg.includes('not found') ||
+                errorMsg.includes('Gallery is empty');
+              
+              if (!isTransientError) {
+                failedTools.add(toolName);
+                console.log(`[Chat] Tool ${toolName} added to failedTools: ${errorMsg}`);
+              } else {
+                console.log(`[Chat] Tool ${toolName} failed with transient error (not blocking): ${errorMsg}`);
+              }
+            }
+          } catch {
+            // Not JSON, skip
+          }
+          
+          return result;
+        })
       );
 
       // Extract any media from the tool results

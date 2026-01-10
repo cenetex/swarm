@@ -577,28 +577,80 @@ async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string
 }
 
 async function sendTelegramVideo(token: string, chatId: number, videoUrl: string, caption?: string, replyTo?: number): Promise<void> {
+  console.log(`[Telegram] Sending video to chat ${chatId}: ${videoUrl.slice(0, 80)}...`);
+
+  // Download the video first, then send as buffer
+  // This is more reliable than letting Telegram fetch the URL (which may be private S3)
+  // Same approach as photo sending
   try {
+    const videoResponse = await fetchWithRetry(
+      videoUrl,
+      { method: 'GET' },
+      TELEGRAM_TIMEOUT_MS * 2, // Videos may be larger, give more time
+      TELEGRAM_RETRY_COUNT
+    );
+    if (!videoResponse.ok) {
+      console.error(`[Telegram] Failed to download video: ${videoResponse.status}`);
+      // Fall back to URL-based send (might work for public CDN URLs)
+      try {
+        const response = await fetchWithRetry(
+          `https://api.telegram.org/bot${token}/sendVideo`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              video: videoUrl,
+              caption: caption?.slice(0, 1024),
+              parse_mode: 'Markdown',
+              reply_to_message_id: replyTo,
+            }),
+          },
+          TELEGRAM_TIMEOUT_MS,
+          TELEGRAM_RETRY_COUNT
+        );
+        if (!response.ok) {
+          console.error(`[Telegram] sendVideo (URL fallback) failed: ${response.status}`, await response.text());
+        }
+      } catch (error) {
+        console.error('[Telegram] sendVideo (URL fallback) failed:', error);
+      }
+      return;
+    }
+
+    const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
+    console.log(`[Telegram] Downloaded video: ${videoBuffer.length} bytes, sending as buffer`);
+
+    // Use native FormData (Node.js 18+) with Blob
+    const form = new FormData();
+    form.append('chat_id', chatId.toString());
+    form.append('video', new Blob([videoBuffer], { type: 'video/mp4' }), 'video.mp4');
+    if (caption) {
+      form.append('caption', caption.slice(0, 1024));
+      form.append('parse_mode', 'Markdown');
+    }
+    if (replyTo) {
+      form.append('reply_to_message_id', replyTo.toString());
+    }
+
     const response = await fetchWithRetry(
       `https://api.telegram.org/bot${token}/sendVideo`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          video: videoUrl,
-          caption,
-          parse_mode: 'Markdown',
-          reply_to_message_id: replyTo,
-        }),
+        body: form,
       },
-      TELEGRAM_TIMEOUT_MS,
+      TELEGRAM_TIMEOUT_MS * 2, // Videos may be larger
       TELEGRAM_RETRY_COUNT
     );
+
     if (!response.ok) {
-      console.error('Telegram sendVideo error:', await response.text());
+      const errorText = await response.text();
+      console.error(`[Telegram] sendVideo (buffer) failed: ${response.status} ${errorText}`);
+    } else {
+      console.log(`[Telegram] Video sent successfully to chat ${chatId}`);
     }
-  } catch (error) {
-    console.error('Telegram sendVideo failed:', error);
+  } catch (err) {
+    console.error(`[Telegram] Error sending video:`, err);
   }
 }
 

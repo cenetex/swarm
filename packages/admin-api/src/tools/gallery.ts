@@ -171,3 +171,29 @@ export const searchGallery = (
     };
   },
 });
+
+/**
+ * Send gallery image to the chat
+ * Returns the image for display in the conversation
+ */
+export const sendGalleryImage = (
+  _agentId: string,
+  getItemFn: (imageId: string) => Promise<GalleryItem | null>
+) => defineTool({
+  name: 'send_gallery_image',
+  description: 'Send an image from my gallery to the chat. Use this when the user asks to see a specific image from the gallery.',
+  inputSchema: z.object({
+    imageId: z.string().describe('ID of the gallery image to send'),
+  }),
+  execute: async ({ imageId }) => {
+    const item = await getItemFn(imageId);
+    if (!item) {
+      return { success: false, error: 'Image not found in gallery' };
+    }
+    return {
+      success: true,
+      result: { id: item.id, url: item.url, prompt: item.prompt },
+      media: { type: 'image', url: item.url, caption: item.prompt },
+    };
+  },
+});

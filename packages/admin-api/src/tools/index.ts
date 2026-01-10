@@ -61,6 +61,7 @@ import {
   deleteReferenceImage,
   getMyGallery,
   searchGallery,
+  sendGalleryImage,
 } from './gallery.js';
 
 /**
@@ -135,6 +136,13 @@ export interface ToolServices {
     prompt?: string;
     createdAt: number;
   }>>;
+  getGalleryItem: (imageId: string) => Promise<{
+    id: string;
+    type: string;
+    url: string;
+    prompt?: string;
+    createdAt: number;
+  } | null>;
 
   // Reference images
   getReferenceUploadUrl: (category: string, name: string, description?: string) => Promise<{
@@ -224,6 +232,7 @@ export function createAgentTools(
     // Gallery
     getMyGallery(agentId, services.listGallery),
     searchGallery(agentId, services.searchGallery),
+    sendGalleryImage(agentId, services.getGalleryItem),
 
     // Reference images
     getReferenceImageUploadUrl(services.getReferenceUploadUrl),
