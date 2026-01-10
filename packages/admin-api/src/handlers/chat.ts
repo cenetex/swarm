@@ -712,6 +712,22 @@ async function callLLM(
   // Sanitize messages to ensure valid format (remove orphaned tool results)
   const sanitizedMessages = sanitizeMessages(messages);
 
+  // Build request body - only include tools if there are any
+  const requestBody: Record<string, unknown> = {
+    model: LLM_MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...sanitizedMessages,
+    ],
+    max_tokens: 2048,
+  };
+
+  // Only add tools to request if we have some (empty array causes 400 errors)
+  if (tools.length > 0) {
+    requestBody.tools = tools;
+    requestBody.tool_choice = 'auto';
+  }
+
   const response = await fetchWithTimeout(
     LLM_ENDPOINT,
     {
@@ -722,16 +738,7 @@ async function callLLM(
         'HTTP-Referer': 'https://swarm.admin',
         'X-Title': 'Swarm Admin',
       },
-      body: JSON.stringify({
-        model: LLM_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...sanitizedMessages,
-        ],
-        tools,
-        tool_choice: 'auto',
-        max_tokens: 2048,
-      }),
+      body: JSON.stringify(requestBody),
     },
     LLM_TIMEOUT_MS
   );
@@ -1073,6 +1080,10 @@ export async function handler(
     // Parse and validate request body
     const parseResult = ChatRequestSchema.safeParse(JSON.parse(event.body || '{}'));
     if (!parseResult.success) {
+      console.error('[Chat] Validation error:', JSON.stringify({
+        errors: parseResult.error.errors,
+        body: event.body?.substring(0, 500), // Log first 500 chars of body for debugging
+      }));
       return {
         statusCode: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -228,7 +228,7 @@ export const ToolResultSchema = z.object({
 // Agent context in chat request
 export const AgentContextSchema = z.object({
   id: z.string(),
-  name: z.string(),
+  name: z.string().optional(),
   description: z.string().optional(),
   persona: z.string().optional(),
 });
