@@ -346,3 +346,69 @@ export const AdminTools = {
 };
 
 export type AdminToolName = keyof typeof AdminTools;
+
+// === CHANNEL STATE (Kyro-style architecture) ===
+
+// Channel state machine states
+export type ChannelState = 'IDLE' | 'ACTIVE' | 'COOLDOWN';
+
+// Buffered message in a channel
+export interface BufferedMessage {
+  messageId: number;
+  userId: number;
+  userName: string;
+  username?: string;
+  text: string;
+  timestamp: number;
+  replyToMessageId?: number;
+  replyToUserId?: number;
+  isMention?: boolean;
+  isReplyToBot?: boolean;
+}
+
+// Channel state record stored in DynamoDB
+export interface ChannelStateRecord {
+  pk: string;              // CHANNEL#{agentId}#{chatId}
+  sk: string;              // STATE
+  agentId: string;
+  chatId: number;
+  chatType: 'private' | 'group' | 'supergroup' | 'channel';
+  chatTitle?: string;
+
+  // State machine
+  state: ChannelState;
+  stateChangedAt: number;
+
+  // Message buffer (last N messages)
+  messageBuffer: BufferedMessage[];
+  bufferSize: number;
+
+  // Response tracking
+  lastResponseAt?: number;
+  lastResponseMessageId?: number;
+  pendingResponseAt?: number;  // Scheduled response time
+
+  // Engagement tracking
+  directEngagementAt?: number;  // Last mention/reply
+  lastActivityAt: number;
+
+  // TTL for cleanup
+  ttl: number;
+  updatedAt: number;
+}
+
+// Response trigger types
+export type ResponseTrigger =
+  | 'direct_engagement'    // Mention or reply to bot
+  | 'message_threshold'    // N messages accumulated
+  | 'conversation_gap'     // Silence after activity
+  | 'scheduled'            // Scheduled evaluation
+  | 'private_chat';        // Always respond in private
+
+// Response decision
+export interface ResponseDecision {
+  shouldRespond: boolean;
+  trigger: ResponseTrigger | 'none';
+  delay: number;           // Delay in ms before responding (0 = immediate)
+  priority: 'high' | 'normal' | 'low';
+}

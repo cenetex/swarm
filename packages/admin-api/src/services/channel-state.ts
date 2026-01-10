@@ -1,0 +1,478 @@
+/**
+ * Channel State Service
+ * Kyro-style channel-aware messaging with message buffering and state machine
+ *
+ * Architecture:
+ * - Messages are buffered per channel (not responded to individually)
+ * - State machine: IDLE → ACTIVE → COOLDOWN
+ * - Response triggers: direct engagement, message threshold, conversation gap
+ * - Responds to CHANNEL with full context, not individual messages
+ */
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  PutCommand,
+} from '@aws-sdk/lib-dynamodb';
+import type {
+  ChannelState,
+  ChannelStateRecord,
+  BufferedMessage,
+  ResponseDecision,
+} from '../types.js';
+
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const ADMIN_TABLE = process.env.ADMIN_TABLE!;
+
+// === CONFIGURATION ===
+export const CHANNEL_CONFIG = {
+  // Buffer settings
+  MAX_BUFFER_SIZE: 50,           // Max messages to keep in buffer
+  BUFFER_TTL_SECONDS: 3600,      // 1 hour TTL for channel state
+
+  // State machine timings
+  COOLDOWN_DURATION_MS: 10000,   // 10 seconds cooldown after response
+  ACTIVE_TIMEOUT_MS: 60000,      // 60 seconds before ACTIVE → IDLE
+
+  // Response triggers
+  DIRECT_ENGAGEMENT_DELAY_MS: 0,      // Immediate for mentions/replies
+  MESSAGE_THRESHOLD: 5,                // Respond after N messages accumulated
+  CONVERSATION_GAP_MS: 30000,          // 30 seconds of silence triggers response
+
+  // Response timing
+  MIN_RESPONSE_DELAY_MS: 500,     // Minimum delay to seem natural
+  MAX_RESPONSE_DELAY_MS: 3000,    // Maximum random delay
+};
+
+// === CHANNEL STATE MANAGEMENT ===
+
+/**
+ * Get channel state from DynamoDB
+ */
+export async function getChannelState(
+  agentId: string,
+  chatId: number
+): Promise<ChannelStateRecord | null> {
+  try {
+    const result = await dynamoClient.send(new GetCommand({
+      TableName: ADMIN_TABLE,
+      Key: {
+        pk: `CHANNEL#${agentId}#${chatId}`,
+        sk: 'STATE',
+      },
+    }));
+
+    if (!result.Item) return null;
+
+    // Check TTL
+    const record = result.Item as ChannelStateRecord;
+    if (record.ttl && Date.now() / 1000 > record.ttl) {
+      return null;
+    }
+
+    return record;
+  } catch (err) {
+    console.warn('[ChannelState] Failed to get channel state:', err);
+    return null;
+  }
+}
+
+/**
+ * Create or get channel state
+ */
+export async function getOrCreateChannelState(
+  agentId: string,
+  chatId: number,
+  chatType: 'private' | 'group' | 'supergroup' | 'channel',
+  chatTitle?: string
+): Promise<ChannelStateRecord> {
+  const existing = await getChannelState(agentId, chatId);
+  if (existing) return existing;
+
+  const now = Date.now();
+  const ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
+
+  const newState: ChannelStateRecord = {
+    pk: `CHANNEL#${agentId}#${chatId}`,
+    sk: 'STATE',
+    agentId,
+    chatId,
+    chatType,
+    chatTitle,
+    state: 'IDLE',
+    stateChangedAt: now,
+    messageBuffer: [],
+    bufferSize: 0,
+    lastActivityAt: now,
+    ttl,
+    updatedAt: now,
+  };
+
+  try {
+    await dynamoClient.send(new PutCommand({
+      TableName: ADMIN_TABLE,
+      Item: newState,
+      ConditionExpression: 'attribute_not_exists(pk)',
+    }));
+  } catch (err: unknown) {
+    // If already exists (race condition), fetch it
+    if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
+      const fetched = await getChannelState(agentId, chatId);
+      if (fetched) return fetched;
+    }
+    throw err;
+  }
+
+  return newState;
+}
+
+/**
+ * Add message to channel buffer
+ */
+export async function addMessageToBuffer(
+  agentId: string,
+  chatId: number,
+  message: BufferedMessage
+): Promise<ChannelStateRecord> {
+  const state = await getOrCreateChannelState(
+    agentId,
+    chatId,
+    'supergroup' // Will be updated with actual type
+  );
+
+  const now = Date.now();
+  const ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
+
+  // Add message to buffer, trim if needed
+  const newBuffer = [...state.messageBuffer, message];
+  if (newBuffer.length > CHANNEL_CONFIG.MAX_BUFFER_SIZE) {
+    newBuffer.splice(0, newBuffer.length - CHANNEL_CONFIG.MAX_BUFFER_SIZE);
+  }
+
+  // Determine new state based on message
+  let newState: ChannelState = state.state;
+  let directEngagementAt = state.directEngagementAt;
+
+  if (message.isMention || message.isReplyToBot) {
+    // Direct engagement → ACTIVE immediately
+    newState = 'ACTIVE';
+    directEngagementAt = now;
+  } else if (state.state === 'IDLE') {
+    // Regular message in IDLE → stay IDLE (buffer only)
+    newState = 'IDLE';
+  } else if (state.state === 'COOLDOWN') {
+    // Message during cooldown → extend activity but stay in cooldown
+    newState = 'COOLDOWN';
+  }
+  // ACTIVE stays ACTIVE
+
+  const updated: ChannelStateRecord = {
+    ...state,
+    messageBuffer: newBuffer,
+    bufferSize: newBuffer.length,
+    state: newState,
+    stateChangedAt: newState !== state.state ? now : state.stateChangedAt,
+    directEngagementAt,
+    lastActivityAt: now,
+    ttl,
+    updatedAt: now,
+  };
+
+  await saveChannelState(updated);
+  return updated;
+}
+
+/**
+ * Save channel state to DynamoDB
+ */
+export async function saveChannelState(
+  state: ChannelStateRecord
+): Promise<void> {
+  try {
+    await dynamoClient.send(new PutCommand({
+      TableName: ADMIN_TABLE,
+      Item: state,
+    }));
+  } catch (err) {
+    console.warn('[ChannelState] Failed to save channel state:', err);
+    throw err;
+  }
+}
+
+/**
+ * Transition channel state
+ */
+export async function transitionState(
+  agentId: string,
+  chatId: number,
+  newState: ChannelState
+): Promise<ChannelStateRecord | null> {
+  const current = await getChannelState(agentId, chatId);
+  if (!current) return null;
+
+  const now = Date.now();
+  const updated: ChannelStateRecord = {
+    ...current,
+    state: newState,
+    stateChangedAt: now,
+    updatedAt: now,
+    ttl: Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS,
+  };
+
+  await saveChannelState(updated);
+  return updated;
+}
+
+/**
+ * Mark response sent - transitions to COOLDOWN and clears relevant state
+ */
+export async function markResponseSent(
+  agentId: string,
+  chatId: number,
+  responseMessageId: number
+): Promise<ChannelStateRecord | null> {
+  const current = await getChannelState(agentId, chatId);
+  if (!current) return null;
+
+  const now = Date.now();
+
+  // Clear the buffer of messages we've responded to
+  // Keep only messages after the current response
+  const updated: ChannelStateRecord = {
+    ...current,
+    state: 'COOLDOWN',
+    stateChangedAt: now,
+    lastResponseAt: now,
+    lastResponseMessageId: responseMessageId,
+    pendingResponseAt: undefined,
+    messageBuffer: [],  // Clear buffer after response
+    bufferSize: 0,
+    updatedAt: now,
+    ttl: Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS,
+  };
+
+  await saveChannelState(updated);
+  return updated;
+}
+
+/**
+ * Check if cooldown has expired
+ */
+export function isCooldownExpired(state: ChannelStateRecord): boolean {
+  if (state.state !== 'COOLDOWN') return true;
+  const elapsed = Date.now() - state.stateChangedAt;
+  return elapsed > CHANNEL_CONFIG.COOLDOWN_DURATION_MS;
+}
+
+/**
+ * Check if active state has timed out
+ */
+export function isActiveTimedOut(state: ChannelStateRecord): boolean {
+  if (state.state !== 'ACTIVE') return false;
+  const elapsed = Date.now() - state.lastActivityAt;
+  return elapsed > CHANNEL_CONFIG.ACTIVE_TIMEOUT_MS;
+}
+
+// === RESPONSE DECISION LOGIC ===
+
+/**
+ * Evaluate whether to respond to this channel
+ * Returns decision with trigger type and delay
+ */
+export function evaluateResponseTrigger(
+  state: ChannelStateRecord,
+  _botUsername?: string,
+  _botId?: number
+): ResponseDecision {
+  // _botUsername and _botId reserved for future use (e.g., name-based triggers)
+  void _botUsername;
+  void _botId;
+  const now = Date.now();
+
+  // Private chats always get immediate response
+  if (state.chatType === 'private') {
+    return {
+      shouldRespond: true,
+      trigger: 'private_chat',
+      delay: 0,
+      priority: 'high',
+    };
+  }
+
+  // In COOLDOWN - don't respond unless there's new direct engagement
+  if (state.state === 'COOLDOWN' && !isCooldownExpired(state)) {
+    // Check if there's a new direct engagement since cooldown started
+    const hasNewEngagement = state.messageBuffer.some(
+      m => (m.isMention || m.isReplyToBot) && m.timestamp > state.stateChangedAt
+    );
+
+    if (hasNewEngagement) {
+      return {
+        shouldRespond: true,
+        trigger: 'direct_engagement',
+        delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
+        priority: 'high',
+      };
+    }
+
+    return {
+      shouldRespond: false,
+      trigger: 'none',
+      delay: 0,
+      priority: 'low',
+    };
+  }
+
+  // Check for direct engagement (mention/reply)
+  const hasDirectEngagement = state.messageBuffer.some(
+    m => m.isMention || m.isReplyToBot
+  );
+
+  if (hasDirectEngagement) {
+    return {
+      shouldRespond: true,
+      trigger: 'direct_engagement',
+      delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
+      priority: 'high',
+    };
+  }
+
+  // In IDLE state, check other triggers
+  if (state.state === 'IDLE' || isCooldownExpired(state)) {
+    // Message threshold trigger
+    if (state.bufferSize >= CHANNEL_CONFIG.MESSAGE_THRESHOLD) {
+      return {
+        shouldRespond: true,
+        trigger: 'message_threshold',
+        delay: randomDelay(),
+        priority: 'normal',
+      };
+    }
+
+    // Conversation gap trigger (activity followed by silence)
+    const timeSinceActivity = now - state.lastActivityAt;
+    if (
+      state.bufferSize > 0 &&
+      timeSinceActivity > CHANNEL_CONFIG.CONVERSATION_GAP_MS
+    ) {
+      return {
+        shouldRespond: true,
+        trigger: 'conversation_gap',
+        delay: 0,
+        priority: 'normal',
+      };
+    }
+  }
+
+  // ACTIVE state but no trigger met yet
+  if (state.state === 'ACTIVE') {
+    // If we've been active for a while with messages, consider responding
+    if (state.bufferSize >= 2) {
+      return {
+        shouldRespond: true,
+        trigger: 'message_threshold',
+        delay: randomDelay(),
+        priority: 'normal',
+      };
+    }
+  }
+
+  return {
+    shouldRespond: false,
+    trigger: 'none',
+    delay: 0,
+    priority: 'low',
+  };
+}
+
+/**
+ * Generate a natural-feeling random delay
+ */
+function randomDelay(): number {
+  return Math.floor(
+    CHANNEL_CONFIG.MIN_RESPONSE_DELAY_MS +
+    Math.random() * (CHANNEL_CONFIG.MAX_RESPONSE_DELAY_MS - CHANNEL_CONFIG.MIN_RESPONSE_DELAY_MS)
+  );
+}
+
+// === CONTEXT BUILDING ===
+
+/**
+ * Build conversation context from buffered messages
+ * Formats all messages in buffer for LLM context
+ */
+export function buildConversationContext(
+  state: ChannelStateRecord,
+  maxTokens: number = 4000
+): string {
+  if (state.messageBuffer.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = [];
+  let approxTokens = 0;
+
+  // Process messages oldest to newest
+  for (const msg of state.messageBuffer) {
+    const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+    const userLabel = msg.username ? `@${msg.username}` : msg.userName;
+    const line = `[${timestamp}] ${userLabel}: ${msg.text}`;
+
+    // Rough token estimate (4 chars = 1 token)
+    const lineTokens = Math.ceil(line.length / 4);
+
+    if (approxTokens + lineTokens > maxTokens) {
+      break;
+    }
+
+    lines.push(line);
+    approxTokens += lineTokens;
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Get the most recent message that triggered response (for reply targeting)
+ */
+export function getResponseTarget(
+  state: ChannelStateRecord
+): BufferedMessage | null {
+  // Find the last direct engagement message
+  for (let i = state.messageBuffer.length - 1; i >= 0; i--) {
+    const msg = state.messageBuffer[i];
+    if (msg.isMention || msg.isReplyToBot) {
+      return msg;
+    }
+  }
+
+  // Otherwise return the most recent message
+  return state.messageBuffer[state.messageBuffer.length - 1] || null;
+}
+
+/**
+ * Get users actively participating in the conversation
+ * Useful for the LLM to know who's talking
+ */
+export function getActiveParticipants(
+  state: ChannelStateRecord
+): Array<{ userId: number; userName: string; username?: string; messageCount: number }> {
+  const participants = new Map<number, { userName: string; username?: string; messageCount: number }>();
+
+  for (const msg of state.messageBuffer) {
+    const existing = participants.get(msg.userId);
+    if (existing) {
+      existing.messageCount++;
+    } else {
+      participants.set(msg.userId, {
+        userName: msg.userName,
+        username: msg.username,
+        messageCount: 1,
+      });
+    }
+  }
+
+  return Array.from(participants.entries())
+    .map(([userId, data]) => ({ userId, ...data }))
+    .sort((a, b) => b.messageCount - a.messageCount);
+}

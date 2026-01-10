@@ -13,7 +13,7 @@ import type {
   APIGatewayProxyResultV2,
 } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { isValidTelegramIP } from '../services/telegram.js';
 import { timingSafeEqual } from 'crypto';
@@ -21,6 +21,8 @@ import * as media from '../services/media.js';
 import * as gallery from '../services/gallery.js';
 import * as wallets from '../services/wallets.js';
 import * as credits from '../services/credits.js';
+import * as channelState from '../services/channel-state.js';
+import type { BufferedMessage, ChannelStateRecord } from '../types.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const secretsClient = new SecretsManagerClient({});
@@ -32,13 +34,7 @@ const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
 const ENFORCE_IP_CHECK = process.env.ENFORCE_TELEGRAM_IP_CHECK !== 'false';
 
 // === CONFIG ===
-const ATTENTION_DURATION_SECONDS = 300;
-const INITIAL_ATTENTION = 1.0;
-const ATTENTION_DECAY = 0.7;
-const MIN_ATTENTION_THRESHOLD = 0.2;
-const RANDOM_REPLY_CHANCE = 0.05;
-const MAX_HISTORY_MESSAGES = 20;
-const HISTORY_TTL_SECONDS = 3600; // 1 hour
+// NOTE: Channel-aware config is in services/channel-state.ts (CHANNEL_CONFIG)
 const DEDUP_TTL_SECONDS = 300; // 5 minutes - prevent reprocessing same message on retries
 
 // === TYPES ===
@@ -217,47 +213,6 @@ async function getLlmApiKey(): Promise<string> {
   }
 }
 
-// === CONVERSATION HISTORY ===
-async function getConversationHistory(agentId: string, chatId: number): Promise<ChatMessage[]> {
-  try {
-    const result = await dynamoClient.send(new GetCommand({
-      TableName: ADMIN_TABLE,
-      Key: { pk: `TELEGRAM#${agentId}#${chatId}`, sk: 'HISTORY' },
-    }));
-    if (!result.Item?.messages) return [];
-    // Check TTL
-    if (result.Item.ttl && Date.now() / 1000 > result.Item.ttl) return [];
-    return result.Item.messages as ChatMessage[];
-  } catch {
-    return [];
-  }
-}
-
-async function saveConversationHistory(
-  agentId: string,
-  chatId: number,
-  messages: ChatMessage[]
-): Promise<void> {
-  // Keep only recent messages
-  const trimmed = messages.slice(-MAX_HISTORY_MESSAGES);
-  const ttl = Math.floor(Date.now() / 1000) + HISTORY_TTL_SECONDS;
-
-  try {
-    await dynamoClient.send(new PutCommand({
-      TableName: ADMIN_TABLE,
-      Item: {
-        pk: `TELEGRAM#${agentId}#${chatId}`,
-        sk: 'HISTORY',
-        messages: trimmed,
-        ttl,
-        updatedAt: Date.now(),
-      },
-    }));
-  } catch (err) {
-    console.warn('Failed to save conversation history:', err);
-  }
-}
-
 // === MESSAGE DEDUPLICATION ===
 // Prevents reprocessing the same message when Telegram retries due to Lambda timeout
 async function isMessageProcessed(agentId: string, updateId: number): Promise<boolean> {
@@ -287,111 +242,6 @@ async function markMessageProcessed(agentId: string, updateId: number): Promise<
   } catch (err) {
     console.warn('Failed to mark message as processed:', err);
   }
-}
-
-// === ATTENTION TRACKING ===
-async function getAttention(agentId: string, chatId: number, userId: number): Promise<number> {
-  try {
-    const result = await dynamoClient.send(new GetCommand({
-      TableName: ADMIN_TABLE,
-      Key: { pk: `ATTENTION#${agentId}#${chatId}`, sk: `USER#${userId}` },
-    }));
-    if (!result.Item) return 0;
-    if (Date.now() / 1000 > (result.Item.ttl as number)) return 0;
-    return result.Item.attention as number;
-  } catch {
-    return 0;
-  }
-}
-
-async function setAttention(agentId: string, chatId: number, userId: number, attention: number): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
-  try {
-    await dynamoClient.send(new PutCommand({
-      TableName: ADMIN_TABLE,
-      Item: {
-        pk: `ATTENTION#${agentId}#${chatId}`,
-        sk: `USER#${userId}`,
-        attention,
-        lastInteraction: now,
-        ttl: now + ATTENTION_DURATION_SECONDS,
-      },
-    }));
-  } catch (err) {
-    console.warn('Failed to set attention:', err);
-  }
-}
-
-async function decayAttention(agentId: string, chatId: number, userId: number): Promise<void> {
-  try {
-    await dynamoClient.send(new UpdateCommand({
-      TableName: ADMIN_TABLE,
-      Key: { pk: `ATTENTION#${agentId}#${chatId}`, sk: `USER#${userId}` },
-      UpdateExpression: 'SET attention = attention * :decay, lastInteraction = :now',
-      ExpressionAttributeValues: { ':decay': ATTENTION_DECAY, ':now': Math.floor(Date.now() / 1000) },
-      ConditionExpression: 'attribute_exists(pk)',
-    }));
-  } catch {
-    // Ignore
-  }
-}
-
-function isBotMentioned(text: string, botUsername?: string): boolean {
-  if (!botUsername) return false;
-  return new RegExp(`@${botUsername}\\b`, 'i').test(text);
-}
-
-async function shouldRespond(
-  agentId: string,
-  message: NonNullable<TelegramUpdate['message']>,
-  agent: AgentConfig
-): Promise<{ respond: boolean; reason: string; setAttention?: boolean }> {
-  const chatType = message.chat.type;
-  const userId = message.from?.id;
-  const text = message.text || '';
-  const botUsername = agent.platforms.telegram?.botUsername;
-  const botId = agent.platforms.telegram?.botId;
-
-  // Always respond to DMs
-  if (chatType === 'private') {
-    return { respond: true, reason: 'private_chat' };
-  }
-
-  // Always respond to direct mentions
-  if (isBotMentioned(text, botUsername)) {
-    return { respond: true, reason: 'mentioned', setAttention: true };
-  }
-
-  // Check if replying to bot's message
-  if (message.reply_to_message) {
-    const replyToId = message.reply_to_message.from?.id;
-    const replyToUsername = message.reply_to_message.from?.username;
-    if ((botId && replyToId === botId) || (botUsername && replyToUsername === botUsername)) {
-      return { respond: true, reason: 'reply_to_bot', setAttention: true };
-    }
-    // Has attention and replying
-    if (userId) {
-      const attention = await getAttention(agentId, message.chat.id, userId);
-      if (attention > MIN_ATTENTION_THRESHOLD) {
-        return { respond: true, reason: 'reply_with_attention' };
-      }
-    }
-  }
-
-  // Check attention level
-  if (userId) {
-    const attention = await getAttention(agentId, message.chat.id, userId);
-    if (attention >= MIN_ATTENTION_THRESHOLD) {
-      return { respond: true, reason: 'has_attention' };
-    }
-  }
-
-  // Random chance
-  if (Math.random() < RANDOM_REPLY_CHANCE) {
-    return { respond: true, reason: 'random' };
-  }
-
-  return { respond: false, reason: 'no_trigger' };
 }
 
 // === TELEGRAM API ===
@@ -680,25 +530,154 @@ async function callLLM(
   return { content: choice?.content || undefined, toolCalls: choice?.tool_calls };
 }
 
-// === MAIN PROCESSING ===
-async function processMessage(
+// === CHANNEL-AWARE PROCESSING ===
+
+/**
+ * Process a message using channel-aware architecture
+ * - Buffers message in channel state
+ * - Evaluates if response should be triggered
+ * - Responds to CHANNEL with full context (not individual messages)
+ */
+async function processChannelMessage(
   agentId: string,
   agent: AgentConfig,
   message: NonNullable<TelegramUpdate['message']>,
   token: string
-): Promise<void> {
+): Promise<{ responded: boolean; reason: string }> {
   const chatId = message.chat.id;
-  const text = message.text || '';
+  const chatType = message.chat.type;
   const messageId = message.message_id;
+  const text = message.text || '';
+  const userId = message.from?.id || 0;
   const userName = message.from?.first_name || 'User';
+  const username = message.from?.username;
+  const botUsername = agent.platforms.telegram?.botUsername;
+  const botId = agent.platforms.telegram?.botId;
 
-  // Get conversation history
-  const history = await getConversationHistory(agentId, chatId);
+  // Check if this is a mention or reply to bot
+  const isMention = botUsername ? new RegExp(`@${botUsername}\\b`, 'i').test(text) : false;
+  const isReplyToBot = !!(message.reply_to_message?.from?.id === botId ||
+    (botUsername && message.reply_to_message?.from?.username === botUsername));
+
+  // Create buffered message
+  const bufferedMessage: BufferedMessage = {
+    messageId,
+    userId,
+    userName,
+    username,
+    text,
+    timestamp: Date.now(),
+    replyToMessageId: message.reply_to_message?.message_id,
+    replyToUserId: message.reply_to_message?.from?.id,
+    isMention,
+    isReplyToBot,
+  };
+
+  // Ensure channel state exists (will be created if needed by addMessageToBuffer)
+  await channelState.getOrCreateChannelState(
+    agentId,
+    chatId,
+    chatType,
+    message.chat.title
+  );
+
+  // Add message to buffer and get updated state
+  const updatedState = await channelState.addMessageToBuffer(
+    agentId,
+    chatId,
+    bufferedMessage
+  );
+
+  console.log('[Telegram] Channel state:', {
+    agentId,
+    chatId,
+    chatType,
+    state: updatedState.state,
+    bufferSize: updatedState.bufferSize,
+    isMention,
+    isReplyToBot,
+  });
+
+  // Evaluate if we should respond
+  const decision = channelState.evaluateResponseTrigger(updatedState, botUsername, botId);
+
+  console.log('[Telegram] Response decision:', {
+    chatId,
+    shouldRespond: decision.shouldRespond,
+    trigger: decision.trigger,
+    delay: decision.delay,
+    priority: decision.priority,
+  });
+
+  if (!decision.shouldRespond) {
+    return { responded: false, reason: `no_trigger:${updatedState.state}` };
+  }
+
+  // Apply delay if specified (makes responses feel more natural)
+  if (decision.delay > 0) {
+    await new Promise(resolve => setTimeout(resolve, decision.delay));
+  }
+
+  // Transition to ACTIVE state
+  await channelState.transitionState(agentId, chatId, 'ACTIVE');
+
+  // Process and respond to the channel
+  const responseMessageId = await processChannelResponse(
+    agentId,
+    agent,
+    updatedState,
+    token,
+    decision.trigger
+  );
+
+  if (responseMessageId) {
+    // Mark response sent and transition to COOLDOWN
+    await channelState.markResponseSent(agentId, chatId, responseMessageId);
+    return { responded: true, reason: decision.trigger };
+  }
+
+  return { responded: false, reason: 'response_failed' };
+}
+
+/**
+ * Generate and send response to the channel
+ * Uses full channel context (all buffered messages)
+ */
+async function processChannelResponse(
+  agentId: string,
+  agent: AgentConfig,
+  state: ChannelStateRecord,
+  token: string,
+  trigger: string
+): Promise<number | null> {
+  const chatId = state.chatId;
+
+  // Build conversation context from buffered messages
+  const conversationContext = channelState.buildConversationContext(state);
+  const participants = channelState.getActiveParticipants(state);
+  const responseTarget = channelState.getResponseTarget(state);
 
   // Build system prompt
   let systemPrompt = agent.persona || `You are ${agent.name}, a helpful AI assistant on Telegram.`;
   systemPrompt += `\n\nYou are chatting on Telegram. Keep responses concise and conversational.`;
   systemPrompt += `\nYou can generate images and videos when asked. Just use the tools available to you.`;
+
+  // Add channel context
+  systemPrompt += `\n\n## Current Conversation`;
+  systemPrompt += `\nYou're in a ${state.chatType === 'private' ? 'private chat' : `group chat${state.chatTitle ? ` called "${state.chatTitle}"` : ''}`}.`;
+
+  if (participants.length > 0) {
+    systemPrompt += `\n\nActive participants:`;
+    for (const p of participants.slice(0, 5)) {
+      systemPrompt += `\n- ${p.username ? `@${p.username}` : p.userName} (${p.messageCount} messages)`;
+    }
+  }
+
+  if (trigger === 'direct_engagement') {
+    systemPrompt += `\n\nSomeone just mentioned you or replied to you - respond to them directly!`;
+  } else if (trigger === 'message_threshold') {
+    systemPrompt += `\n\nThe conversation has been active - feel free to chime in naturally if you have something to add.`;
+  }
 
   if (agent.wallets?.length) {
     systemPrompt += `\n\n## Your Solana Wallets\n`;
@@ -709,19 +688,33 @@ async function processMessage(
     systemPrompt += `\n\n## Your Profile Image\n${agent.profileImage.url}`;
   }
 
-  // Build messages
+  // Build messages array with conversation context
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
-    ...history,
-    { role: 'user', content: `${userName}: ${text}` },
   ];
+
+  // Add conversation history as a single user message with context
+  if (conversationContext) {
+    messages.push({
+      role: 'user',
+      content: `Here's the recent conversation:\n\n${conversationContext}\n\nRespond to the conversation naturally. If someone asked you a question or mentioned you, address them directly.`,
+    });
+  } else {
+    messages.push({
+      role: 'user',
+      content: 'Start a conversation!',
+    });
+  }
+
+  // Determine which message to reply to
+  const replyToMessageId = responseTarget?.messageId;
 
   // Tool loop
   let iterations = 0;
   const maxIterations = 5;
   const mediasToSend: Array<{ type: 'image' | 'video'; url: string; caption?: string }> = [];
-  const failedTools = new Set<string>(); // Track failed tools to prevent retry loops
-  let hasResponse = false;
+  const failedTools = new Set<string>();
+  let responseMessageId: number | null = null;
 
   while (iterations++ < maxIterations) {
     await sendChatAction(token, chatId, 'typing');
@@ -729,14 +722,11 @@ async function processMessage(
     const llmResponse = await callLLM(messages, agent, TELEGRAM_TOOLS);
 
     if (llmResponse.toolCalls?.length) {
-      // Add assistant message with tool calls
       messages.push({ role: 'assistant', content: '', tool_calls: llmResponse.toolCalls });
 
-      // Execute tools
       for (const tc of llmResponse.toolCalls) {
         const toolName = tc.function.name;
 
-        // Skip tools that already failed in this conversation (prevents retry loops)
         if (failedTools.has(toolName)) {
           console.log(`[Telegram] Skipping retry of failed tool: ${toolName}`);
           messages.push({
@@ -751,12 +741,10 @@ async function processMessage(
         const args = JSON.parse(tc.function.arguments || '{}');
         const result = await executeTool(agentId, toolName, args, token, chatId, agent);
 
-        // Track failed tools
         if (!result.success) {
           failedTools.add(toolName);
         }
 
-        // Add tool result
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
@@ -764,24 +752,20 @@ async function processMessage(
           content: JSON.stringify(result.success ? result.result : { error: result.error, doNotRetry: true }),
         });
 
-        // Collect media to send
         if (result.media) {
           mediasToSend.push(result.media);
         }
       }
-
-      // Continue loop to get final response
       continue;
     }
 
-    // No tool calls - we have final response
+    // Final response
     if (llmResponse.content) {
       messages.push({ role: 'assistant', content: llmResponse.content });
-      await sendTelegramMessage(token, chatId, llmResponse.content, messageId);
-      hasResponse = true;
+      responseMessageId = await sendTelegramMessage(token, chatId, llmResponse.content, replyToMessageId);
     }
 
-    // Send any collected media
+    // Send media
     for (const m of mediasToSend) {
       if (m.type === 'image') {
         await sendTelegramPhoto(token, chatId, m.url, m.caption);
@@ -789,21 +773,19 @@ async function processMessage(
         await sendTelegramVideo(token, chatId, m.url, m.caption);
       }
     }
-    mediasToSend.length = 0; // Clear after sending
-
+    mediasToSend.length = 0;
     break;
   }
 
-  // If we exited due to max iterations without sending a response, send a fallback
-  if (!hasResponse && iterations >= maxIterations) {
+  // Fallback if max iterations reached
+  if (!responseMessageId && iterations >= maxIterations) {
     console.warn(`[Telegram] Max iterations reached for chat ${chatId}`);
-    await sendTelegramMessage(
+    responseMessageId = await sendTelegramMessage(
       token,
       chatId,
       "Sorry, I ran into some issues processing your request. Please try again!",
-      messageId
+      replyToMessageId
     );
-    // Still send any pending media
     for (const m of mediasToSend) {
       if (m.type === 'image') {
         await sendTelegramPhoto(token, chatId, m.url, m.caption);
@@ -813,8 +795,7 @@ async function processMessage(
     }
   }
 
-  // Save updated history (excluding system prompt)
-  await saveConversationHistory(agentId, chatId, messages.slice(1));
+  return responseMessageId;
 }
 
 // === SECURITY ===
@@ -891,32 +872,18 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // Skip bot messages
     if (message.from?.username?.endsWith('bot')) return ok();
 
-    // Check if should respond
-    const decision = await shouldRespond(agentId, message, agent);
+    // Use channel-aware processing (Kyro-style architecture)
+    // This buffers messages and responds to the channel, not individual messages
+    const result = await processChannelMessage(agentId, agent, message, token);
 
-    console.log('Message decision:', {
+    console.log('[Telegram] Channel processing result:', {
       agentId,
       chatId: message.chat.id,
       fromUser: userId,
       chatType: message.chat.type,
-      decision: decision.reason,
-      willRespond: decision.respond,
+      responded: result.responded,
+      reason: result.reason,
     });
-
-    if (!decision.respond) return ok();
-
-    // Set attention if triggered by mention/reply
-    if (decision.setAttention && userId) {
-      await setAttention(agentId, message.chat.id, userId, INITIAL_ATTENTION);
-    }
-
-    // Process message with tools
-    await processMessage(agentId, agent, message, token);
-
-    // Decay attention
-    if (userId && decision.reason !== 'private_chat') {
-      await decayAttention(agentId, message.chat.id, userId);
-    }
 
     return ok();
   } catch (error) {
