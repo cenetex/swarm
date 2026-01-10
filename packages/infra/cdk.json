@@ -20,14 +20,14 @@
       "staging": {
         "adminDomain": "admin-staging.rati.chat",
         "adminCertificateArn": "arn:aws:acm:us-east-1:022118847419:certificate/b7d8f8c6-c042-45d0-88fa-4893e1e3cfea",
-        "cloudflareTeamDomain": "cenetex.cloudflareaccess.com",
+        "cloudflareTeamDomain": "ratimics",
         "adminEmails": "jonathan@cenetex.com",
         "openRouterApiKeyArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:kyro/dev/openrouter-DR3vg8"
       },
       "prod": {
         "adminDomain": "admin.rati.chat",
         "adminCertificateArn": "arn:aws:acm:us-east-1:022118847419:certificate/b7d8f8c6-c042-45d0-88fa-4893e1e3cfea",
-        "cloudflareTeamDomain": "cenetex.cloudflareaccess.com",
+        "cloudflareTeamDomain": "ratimics",
         "adminEmails": "jonathan@cenetex.com",
         "openRouterApiKeyArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:kyro/prod/openrouter-KchUEq"
       }
