@@ -327,7 +327,7 @@ export async function generateVideo(options: GenerateVideoOptions): Promise<Medi
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      'Authorization': `Token ${apiKey}`,
     },
     body: JSON.stringify({
       model: model || DEFAULT_VIDEO_MODEL,
@@ -404,7 +404,7 @@ export async function generateSticker(options: GenerateStickerOptions): Promise<
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      'Authorization': `Token ${apiKey}`,
     },
     body: JSON.stringify({
       // Using rembg model for background removal
@@ -427,7 +427,7 @@ export async function generateSticker(options: GenerateStickerOptions): Promise<
   while (result.status === 'starting' || result.status === 'processing') {
     await new Promise(resolve => setTimeout(resolve, 1000));
     const pollResponse = await fetch(`${REPLICATE_ENDPOINT}/${result.id}`, {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Authorization': `Token ${apiKey}` },
     });
     result = await pollResponse.json() as typeof prediction;
   }

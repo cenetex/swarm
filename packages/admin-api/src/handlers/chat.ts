@@ -1273,7 +1273,12 @@ async function processChat(
       
       if (secretRequest) {
         // Don't execute request_secret - return it to the frontend for user input
-        const args = JSON.parse(secretRequest.function.arguments);
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(secretRequest.function.arguments || '{}');
+        } catch (e) {
+          console.error('Failed to parse request_secret arguments:', e);
+        }
         pendingToolCall = {
           id: secretRequest.id,
           name: 'request_secret',
@@ -1299,7 +1304,12 @@ async function processChat(
       if (uploadUrlTool) {
         // Execute the tool to get the upload URL
         const uploadResult = await executeTool(uploadUrlTool, session, agent);
-        const uploadArgs = JSON.parse(uploadResult.content);
+        let uploadArgs: Record<string, unknown> = {};
+        try {
+          uploadArgs = JSON.parse(uploadResult.content || '{}');
+        } catch (e) {
+          console.error('Failed to parse upload URL result:', e);
+        }
 
         // Add assistant message with tool calls
         messages.push({
