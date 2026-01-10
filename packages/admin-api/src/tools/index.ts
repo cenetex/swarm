@@ -177,11 +177,11 @@ export interface ToolServices {
  * @param services - Service dependencies
  * @returns Array of configured tools
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createAgentTools(
   agentId: string,
   session: UserSession,
   services: ToolServices
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): ToolDefinition<any, any>[] {
   return [
     // Manual tools (no execute function, return to UI)

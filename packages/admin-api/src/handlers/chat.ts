@@ -1040,6 +1040,7 @@ export async function handler(
   try {
     // Authenticate the request
     const session = await authenticateRequest(event);
+    const requestId = event.requestContext.requestId;
     
     // Require admin access
     if (!requireAdmin(session)) {
@@ -1080,9 +1081,14 @@ export async function handler(
     // Parse and validate request body
     const parseResult = ChatRequestSchema.safeParse(JSON.parse(event.body || '{}'));
     if (!parseResult.success) {
-      console.error('[Chat] Validation error:', JSON.stringify({
+      console.error(JSON.stringify({
+        level: 'ERROR',
+        subsystem: 'chat',
+        event: 'validation_error',
+        agentId: JSON.parse(event.body || '{}').agent?.id,
+        requestId,
         errors: parseResult.error.errors,
-        body: event.body?.substring(0, 500), // Log first 500 chars of body for debugging
+        bodyPreview: event.body?.substring(0, 500),
       }));
       return {
         statusCode: 400,
@@ -1094,6 +1100,17 @@ export async function handler(
       };
     }
     const { message, history, agent } = parseResult.data;
+
+    // Log request entry
+    console.log(JSON.stringify({
+      level: 'INFO',
+      subsystem: 'chat',
+      event: 'request_received',
+      agentId: agent?.id,
+      requestId,
+      messageLength: message.length,
+      historyLength: history.length,
+    }));
 
     // Process the chat with agent context
     const result = await processChat(message, history, session, agent);
@@ -1114,7 +1131,14 @@ export async function handler(
       }),
     };
   } catch (error) {
-    console.error('Chat handler error:', error);
+    console.error(JSON.stringify({
+      level: 'ERROR',
+      subsystem: 'chat',
+      event: 'handler_error',
+      requestId: event.requestContext.requestId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    }));
     
     return {
       statusCode: 500,

@@ -160,6 +160,12 @@ export class AdminApiConstruct extends Construct {
       ? `https://${props.apiDomain}/webhook/replicate`
       : ''; // Will be set after API is created
 
+    // Internal test key for direct API testing (only in non-production)
+    // Generate a random key if not in production
+    const internalTestKey = environment !== 'production' 
+      ? process.env.INTERNAL_TEST_KEY || `test-${Date.now()}-${Math.random().toString(36).substring(2)}`
+      : '';
+
     // Lambda function for chat handler
     this.chatHandler = new nodejs.NodejsFunction(this, 'ChatHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
@@ -185,6 +191,8 @@ export class AdminApiConstruct extends Construct {
         REPLICATE_WEBHOOK_URL: replicateWebhookUrl,
         RESPONSE_QUEUE_URL: responseQueue?.queueUrl || '',
         ALLOWED_ORIGINS: allowedOrigins.join(','),
+        // Internal testing (non-production only)
+        INTERNAL_TEST_KEY: internalTestKey,
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],

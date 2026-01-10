@@ -1088,8 +1088,18 @@ function getClientIP(event: APIGatewayProxyEventV2): string | null {
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
   const agentId = event.pathParameters?.agentId;
   const clientIP = getClientIP(event);
+  const requestId = event.requestContext.requestId;
 
-  console.log('Telegram webhook:', { agentId, clientIP, method: event.requestContext.http.method });
+  // Structured log for request entry - queryable by /logs API
+  console.log(JSON.stringify({
+    level: 'INFO',
+    subsystem: 'telegram',
+    event: 'request_received',
+    agentId,
+    clientIP,
+    method: event.requestContext.http.method,
+    requestId,
+  }));
 
   const ok = () => ({ statusCode: 200, body: 'OK' });
 
@@ -1169,14 +1179,19 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
       await markMessageProcessed(agentId, update.update_id);
 
-      console.log('[Telegram] Channel processing result:', {
+      console.log(JSON.stringify({
+        level: 'INFO',
+        subsystem: 'telegram',
+        event: 'channel_processed',
         agentId,
         chatId: message.chat.id,
         fromUser: userId,
         chatType: message.chat.type,
+        updateId: update.update_id,
         responded: result.responded,
         reason: result.reason,
-      });
+        requestId,
+      }));
 
       return ok();
     } catch (error) {
@@ -1184,7 +1199,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       throw error;
     }
   } catch (error) {
-    console.error('Webhook error:', error instanceof Error ? error.message : 'Unknown');
+    console.error(JSON.stringify({
+      level: 'ERROR',
+      subsystem: 'telegram',
+      event: 'webhook_error',
+      agentId,
+      requestId,
+      error: error instanceof Error ? error.message : 'Unknown',
+      stack: error instanceof Error ? error.stack : undefined,
+    }));
     return ok();
   }
 }

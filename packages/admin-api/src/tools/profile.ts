@@ -119,7 +119,7 @@ export const setProfileImage = (
         }
         return handlers.fromGallery(params.imageId);
 
-      case 'upload':
+      case 'upload': {
         // Returns upload widget info - UI will show file picker
         const uploadInfo = await handlers.getUploadUrl();
         return {
@@ -127,6 +127,7 @@ export const setProfileImage = (
           ...uploadInfo,
           purpose: 'profile',
         };
+      }
     }
   },
 });

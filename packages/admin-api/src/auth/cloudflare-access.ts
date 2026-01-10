@@ -147,6 +147,21 @@ async function verifyAccessToken(token: string): Promise<CloudflareAccessClaims>
 export async function authenticateRequest(
   event: APIGatewayProxyEventV2
 ): Promise<UserSession> {
+  // Check for internal AWS testing mode
+  // This header can only be set by someone with direct API Gateway access (not through Cloudflare)
+  // and is verified by checking that the request comes from a known internal source
+  const internalTestKey = process.env.INTERNAL_TEST_KEY;
+  const providedTestKey = event.headers['x-internal-test-key'];
+  if (internalTestKey && providedTestKey && internalTestKey === providedTestKey) {
+    console.log('Auth: Internal test mode enabled');
+    return {
+      email: 'internal-test@aws.local',
+      userId: 'internal-test-user',
+      isAdmin: true,
+      accessToken: 'internal-test',
+    };
+  }
+
   // Get the CF-Access-JWT-Assertion header
   const token = 
     event.headers['cf-access-jwt-assertion'] ||

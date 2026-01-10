@@ -56,7 +56,7 @@ export function toOpenAITool<TInput extends ZodObject<ZodRawShape>>(
   const jsonSchema = zodToJsonSchema(tool.inputSchema, { $refStrategy: 'none' });
 
   // Remove the $schema property that zodToJsonSchema adds
-  const { $schema, ...parameters } = jsonSchema as Record<string, unknown>;
+  const { $schema: _schema, ...parameters } = jsonSchema as Record<string, unknown>;
 
   return {
     type: 'function',
