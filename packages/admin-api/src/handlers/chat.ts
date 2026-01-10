@@ -1217,8 +1217,15 @@ async function executeTool(
 
       // Video generation (async)
       case 'generate_video': {
+        // Check credits before starting generation
+        const canUseVideo = await credits.canUseTool(agentId!, 'generate_video');
+        if (!canUseVideo.allowed) {
+          result = { success: false, error: `Rate limited: ${canUseVideo.reason}` };
+          break;
+        }
+
         let referenceImageUrl: string | undefined;
-        
+
         if (args.referenceImageId) {
           const images = await media.listReferenceImages(agentId!);
           const refImage = images.find(img => img.id === args.referenceImageId);
@@ -1247,6 +1254,9 @@ async function executeTool(
           referenceImageUrl,
         });
 
+        // Consume credit after successful job creation
+        await credits.consumeCredit(agentId!, 'generate_video');
+
         result = {
           success: true,
           message: 'Video generation started! This may take a few minutes.',
@@ -1259,6 +1269,13 @@ async function executeTool(
 
       // Sticker generation
       case 'generate_sticker': {
+        // Check credits before starting generation
+        const canUseSticker = await credits.canUseTool(agentId!, 'generate_sticker');
+        if (!canUseSticker.allowed) {
+          result = { success: false, error: `Rate limited: ${canUseSticker.reason}` };
+          break;
+        }
+
         if (!args.prompt && !args.sourceImageId) {
           throw new Error('Either prompt or sourceImageId is required');
         }
@@ -1269,6 +1286,9 @@ async function executeTool(
           platform: 'admin-chat',
           sourceImageId: args.sourceImageId,
         });
+
+        // Consume credit after successful generation
+        await credits.consumeCredit(agentId!, 'generate_sticker');
 
         result = {
           success: true,

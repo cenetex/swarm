@@ -205,10 +205,19 @@ export class OpenRouterLLMService implements LLMService {
 
     if (choice.message.tool_calls) {
       for (const tc of choice.message.tool_calls) {
+        let parsedArgs: unknown = {};
+        try {
+          parsedArgs = JSON.parse(tc.function.arguments);
+        } catch (error) {
+          console.warn('Failed to parse tool arguments:', {
+            tool: tc.function.name,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
         toolCalls.push({
           id: tc.id,
           name: tc.function.name,
-          input: JSON.parse(tc.function.arguments),
+          input: parsedArgs,
         });
       }
     }

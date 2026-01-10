@@ -110,6 +110,11 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       const mediaActions = response.actions.filter(
         (a: ResponseAction) => a.type === 'take_selfie' || a.type === 'generate_video'
       );
+      const hasSendMessageAction = response.actions.some(
+        (a: ResponseAction) => a.type === 'send_message'
+      );
+      let sentMessages: string[] = [];
+      let sendSuccess = false;
 
       if (mediaActions.length > 0 && MEDIA_QUEUE_URL) {
         // Queue media generation and wait
@@ -129,7 +134,9 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
         }
 
         logger.info('Media generation queued', { count: mediaActions.length });
-        
+
+        sendSuccess = true;
+
         // For now, send text response without media
         // Media will be sent when generation completes via callback
         const textActions = response.actions.filter(
@@ -139,6 +146,8 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
         if (textActions.length > 0) {
           const textResponse = { ...response, actions: textActions };
           const result = await outboundSender.send(textResponse);
+          sentMessages = result.sentMessages;
+          sendSuccess = result.success;
           
           if (result.errors.length > 0) {
             logger.warn('Some actions failed', { errors: result.errors });
@@ -147,6 +156,8 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       } else {
         // No media actions, send directly
         const result = await outboundSender.send(response);
+        sentMessages = result.sentMessages;
+        sendSuccess = result.success;
 
         if (result.errors.length > 0) {
           logger.warn('Some actions failed', { errors: result.errors });
@@ -154,22 +165,28 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       }
 
       // Update channel state with bot's response
-      const sendActions = response.actions.filter((a: ResponseAction) => a.type === 'send_message');
-      for (const action of sendActions) {
-        if (action.type === 'send_message') {
-          await stateService.addMessageToChannel(
-            AGENT_ID,
-            response.conversationId,
-            response.platform,
-            {
-              messageId: `bot_${Date.now()}`,
-              sender: agentConfig.name,
-              isBot: true,
-              content: action.text,
-              timestamp: Date.now(),
-            }
-          );
-        }
+      for (const text of sentMessages) {
+        await stateService.addMessageToChannel(
+          AGENT_ID,
+          response.conversationId,
+          response.platform,
+          {
+            messageId: `bot_${Date.now()}`,
+            sender: agentConfig.name,
+            isBot: true,
+            content: text,
+            timestamp: Date.now(),
+          }
+        );
+      }
+
+      const shouldMarkResponse = hasSendMessageAction ? sentMessages.length > 0 : sendSuccess;
+      if (shouldMarkResponse) {
+        await stateService.markResponseSent(
+          AGENT_ID,
+          response.conversationId,
+          `resp_${response.replyToMessageId || Date.now()}_${Date.now()}`
+        );
       }
 
       logger.info('Response sent successfully');
