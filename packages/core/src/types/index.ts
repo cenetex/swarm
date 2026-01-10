@@ -549,3 +549,439 @@ export interface NFTMetadata {
   image: string;
   attributes?: Array<{ trait_type: string; value: string | number }>;
 }
+
+// =============================================================================
+// ZOD SCHEMAS
+// =============================================================================
+
+// Platform Configs
+export const TelegramConfigSchema = z.object({
+  enabled: z.boolean(),
+  botUsername: z.string(),
+  webhookPath: z.string(),
+  allowedChatTypes: z.array(z.enum(['private', 'group', 'supergroup', 'channel'])).optional(),
+});
+
+export const DiscordConfigSchema = z.object({
+  enabled: z.boolean(),
+  applicationId: z.string(),
+  publicKey: z.string(),
+  useGateway: z.boolean(),
+});
+
+export const TwitterConfigSchema = z.object({
+  enabled: z.boolean(),
+  username: z.string(),
+  features: z.array(z.enum(['scheduled_tweets', 'mention_replies', 'dm_responses'])),
+});
+
+export const WebConfigSchema = z.object({
+  enabled: z.boolean(),
+  corsOrigins: z.array(z.string()),
+  rateLimit: z.object({
+    windowMs: z.number(),
+    maxRequests: z.number(),
+  }),
+  tokenGated: z.object({
+    enabled: z.boolean(),
+    tokenMint: z.string(),
+    minBalance: z.number(),
+  }).optional(),
+});
+
+export const PlatformConfigsSchema = z.object({
+  telegram: TelegramConfigSchema.optional(),
+  discord: DiscordConfigSchema.optional(),
+  twitter: TwitterConfigSchema.optional(),
+  web: WebConfigSchema.optional(),
+});
+
+export const LLMConfigSchema = z.object({
+  provider: z.enum(['bedrock', 'openrouter', 'anthropic']),
+  model: z.string(),
+  fallbackModel: z.string().optional(),
+  temperature: z.number(),
+  maxTokens: z.number(),
+});
+
+export const MediaConfigSchema = z.object({
+  image: z.object({
+    provider: z.enum(['openrouter', 'replicate', 'dalle']),
+    model: z.string(),
+  }),
+  video: z.object({
+    provider: z.literal('replicate'),
+    model: z.string(),
+  }).optional(),
+});
+
+export const ScheduledTweetSchema = z.object({
+  cron: z.string(),
+  template: z.string(),
+  enabled: z.boolean(),
+});
+
+export const SchedulingConfigSchema = z.object({
+  tweets: z.array(ScheduledTweetSchema).optional(),
+  mentionCheck: z.object({ cron: z.string() }).optional(),
+  maintenance: z.object({ cron: z.string() }).optional(),
+});
+
+export const BehaviorConfigSchema = z.object({
+  responseDelayMs: z.tuple([z.number(), z.number()]),
+  typingIndicator: z.boolean(),
+  ignoreBots: z.boolean(),
+  cooldownMinutes: z.number(),
+  maxContextMessages: z.number(),
+});
+
+export const SolanaFeatureSchema = z.enum([
+  'token_gating',
+  'nft_generation',
+  'token_transfers',
+  'balance_queries',
+  'wallet_verification',
+]);
+
+export const SolanaConfigSchema = z.object({
+  enabled: z.boolean(),
+  network: z.enum(['mainnet-beta', 'devnet', 'testnet']),
+  rpcUrl: z.string(),
+  tokenMint: z.string().optional(),
+  walletSecretName: z.string(),
+  features: z.array(SolanaFeatureSchema),
+});
+
+export const AgentConfigSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  version: z.string(),
+  persona: z.string(),
+  platforms: PlatformConfigsSchema,
+  llm: LLMConfigSchema,
+  media: MediaConfigSchema,
+  scheduling: SchedulingConfigSchema,
+  behavior: BehaviorConfigSchema,
+  solana: SolanaConfigSchema.optional(),
+  tools: z.array(z.string()),
+  secrets: z.array(z.string()),
+});
+
+// Message Envelope Schemas
+export const MediaAttachmentSchema = z.object({
+  type: z.enum(['photo', 'video', 'audio', 'document', 'animation']),
+  url: z.string().optional(),
+  fileId: z.string().optional(),
+  mimeType: z.string().optional(),
+  size: z.number().optional(),
+});
+
+export const StickerInfoSchema = z.object({
+  fileId: z.string(),
+  emoji: z.string().optional(),
+  setName: z.string().optional(),
+  isAnimated: z.boolean(),
+});
+
+export const CommandInfoSchema = z.object({
+  command: z.string(),
+  args: z.array(z.string()),
+  raw: z.string(),
+});
+
+export const MessageContentSchema = z.object({
+  text: z.string().optional(),
+  media: z.array(MediaAttachmentSchema).optional(),
+  sticker: StickerInfoSchema.optional(),
+  command: CommandInfoSchema.optional(),
+});
+
+export const MentionSchema = z.object({
+  userId: z.string(),
+  username: z.string().optional(),
+  offset: z.number(),
+  length: z.number(),
+});
+
+export const SenderInfoSchema = z.object({
+  id: z.string(),
+  username: z.string().optional(),
+  displayName: z.string().optional(),
+  isBot: z.boolean(),
+  platform: PlatformSchema,
+  platformUserId: z.string(),
+  walletAddress: z.string().optional(),
+  tokenBalance: z.number().optional(),
+  nftHoldings: z.array(z.string()).optional(),
+});
+
+export const EnvelopeMetadataSchema = z.object({
+  receivedAt: z.number(),
+  processedAt: z.number().optional(),
+  shouldRespond: z.boolean().optional(),
+  responseReason: z.string().optional(),
+  priority: z.enum(['high', 'normal', 'low']),
+  userCooldownUntil: z.number().optional(),
+  idempotencyKey: z.string(),
+  isMention: z.boolean().optional(),
+  isReplyToBot: z.boolean().optional(),
+  chatType: z.enum(['private', 'group', 'supergroup', 'channel']).optional(),
+  chatTitle: z.string().optional(),
+  platformUpdateId: z.union([z.string(), z.number()]).optional(),
+});
+
+export const SwarmEnvelopeSchema = z.object({
+  agentId: z.string(),
+  platform: PlatformSchema,
+  messageId: z.string(),
+  conversationId: z.string(),
+  timestamp: z.number(),
+  sender: SenderInfoSchema,
+  content: MessageContentSchema,
+  replyTo: z.string().optional(),
+  mentions: z.array(MentionSchema),
+  raw: z.unknown(),
+  metadata: EnvelopeMetadataSchema,
+});
+
+// Response Action Schemas
+export const GeneratedMediaSchema = z.object({
+  type: z.enum(['image', 'video', 'sticker']),
+  url: z.string(),
+  s3Key: z.string().optional(),
+  prompt: z.string(),
+  model: z.string(),
+});
+
+export const SendMessageActionSchema = z.object({
+  type: z.literal('send_message'),
+  text: z.string(),
+  media: z.array(GeneratedMediaSchema).optional(),
+  replyToMessageId: z.string().optional(),
+});
+
+export const SendMediaActionSchema = z.object({
+  type: z.literal('send_media'),
+  mediaType: z.enum(['image', 'video', 'animation']),
+  url: z.string(),
+  caption: z.string().optional(),
+  replyToMessageId: z.string().optional(),
+});
+
+export const SendStickerActionSchema = z.object({
+  type: z.literal('send_sticker'),
+  emoji: z.string(),
+  stickerId: z.string().optional(),
+});
+
+export const ReactActionSchema = z.object({
+  type: z.literal('react'),
+  emoji: z.string(),
+  messageId: z.string(),
+});
+
+export const TakeSelfieActionSchema = z.object({
+  type: z.literal('take_selfie'),
+  prompt: z.string(),
+  style: z.string().optional(),
+});
+
+export const GenerateVideoActionSchema = z.object({
+  type: z.literal('generate_video'),
+  prompt: z.string(),
+  duration: z.number().optional(),
+});
+
+export const WaitActionSchema = z.object({
+  type: z.literal('wait'),
+  durationMs: z.number(),
+  reason: z.string().optional(),
+});
+
+export const IgnoreActionSchema = z.object({
+  type: z.literal('ignore'),
+  reason: z.string(),
+});
+
+export const SolanaActionSchema = z.object({
+  type: z.literal('solana'),
+  operation: z.enum(['transfer', 'mint_nft', 'verify_balance', 'airdrop']),
+  params: z.record(z.unknown()),
+});
+
+export const ResponseActionSchema = z.discriminatedUnion('type', [
+  SendMessageActionSchema,
+  SendMediaActionSchema,
+  SendStickerActionSchema,
+  ReactActionSchema,
+  TakeSelfieActionSchema,
+  GenerateVideoActionSchema,
+  WaitActionSchema,
+  IgnoreActionSchema,
+  SolanaActionSchema,
+]);
+
+export const SwarmResponseSchema = z.object({
+  agentId: z.string(),
+  platform: PlatformSchema,
+  conversationId: z.string(),
+  replyToMessageId: z.string().optional(),
+  actions: z.array(ResponseActionSchema),
+  generatedAt: z.number(),
+  llmModel: z.string(),
+  tokensUsed: z.number(),
+});
+
+// Queue Message Schemas
+export const MessageQueueItemSchema = z.object({
+  envelope: SwarmEnvelopeSchema,
+  enqueuedAt: z.number(),
+  attempts: z.number(),
+  maxAttempts: z.number(),
+});
+
+export const ResponseQueueItemSchema = z.object({
+  agentId: z.string(),
+  envelope: SwarmEnvelopeSchema,
+  enqueuedAt: z.number(),
+  priority: z.enum(['high', 'normal', 'low']),
+});
+
+export const MediaQueueItemSchema = z.object({
+  agentId: z.string(),
+  conversationId: z.string(),
+  action: z.union([TakeSelfieActionSchema, GenerateVideoActionSchema]),
+  callbackUrl: z.string().optional(),
+  enqueuedAt: z.number(),
+});
+
+// State Schemas
+export const ChannelStateMachineSchema = z.enum(['IDLE', 'ACTIVE', 'COOLDOWN']);
+
+export const ResponseTriggerSchema = z.enum([
+  'direct_engagement',
+  'message_threshold',
+  'conversation_gap',
+  'scheduled',
+  'private_chat',
+  'none',
+]);
+
+export const ResponseDecisionSchema = z.object({
+  shouldRespond: z.boolean(),
+  trigger: ResponseTriggerSchema,
+  delay: z.number(),
+  priority: z.enum(['high', 'normal', 'low']),
+});
+
+export const ContextMessageSchema = z.object({
+  messageId: z.string(),
+  sender: z.string(),
+  isBot: z.boolean(),
+  content: z.string(),
+  timestamp: z.number(),
+  userId: z.string().optional(),
+  username: z.string().optional(),
+  isMention: z.boolean().optional(),
+  isReplyToBot: z.boolean().optional(),
+  replyToMessageId: z.string().optional(),
+});
+
+export const ChannelStateSchema = z.object({
+  agentId: z.string(),
+  channelId: z.string(),
+  platform: PlatformSchema,
+  recentMessages: z.array(ContextMessageSchema),
+  summary: z.string().optional(),
+  summaryUpdatedAt: z.number().optional(),
+  lastActivityAt: z.number(),
+  messageCount: z.number(),
+  state: ChannelStateMachineSchema.optional(),
+  stateChangedAt: z.number().optional(),
+  chatType: z.enum(['private', 'group', 'supergroup', 'channel']).optional(),
+  chatTitle: z.string().optional(),
+  lastResponseAt: z.number().optional(),
+  lastResponseMessageId: z.string().optional(),
+  pendingResponseAt: z.number().optional(),
+  directEngagementAt: z.number().optional(),
+  ttl: z.number().optional(),
+});
+
+export const UserCooldownSchema = z.object({
+  agentId: z.string(),
+  platform: PlatformSchema,
+  userId: z.string(),
+  cooldownUntil: z.number(),
+  reason: z.string().optional(),
+});
+
+// LLM Schemas
+export const LLMMessageSchema = z.object({
+  role: z.enum(['user', 'assistant', 'system']),
+  content: z.string(),
+});
+
+export const ToolCallSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  input: z.unknown(),
+});
+
+export const LLMResponseSchema = z.object({
+  content: z.string(),
+  toolCalls: z.array(ToolCallSchema).optional(),
+  model: z.string(),
+  tokensUsed: z.number(),
+  finishReason: z.enum(['end_turn', 'tool_use', 'max_tokens', 'error']),
+});
+
+export const ToolResultSchema = z.object({
+  success: z.boolean(),
+  data: z.unknown().optional(),
+  error: z.string().optional(),
+});
+
+export const NFTMetadataSchema = z.object({
+  name: z.string(),
+  symbol: z.string(),
+  description: z.string(),
+  image: z.string(),
+  attributes: z.array(z.object({
+    trait_type: z.string(),
+    value: z.union([z.string(), z.number()]),
+  })).optional(),
+});
+
+// =============================================================================
+// SCHEMA VALIDATION HELPERS
+// =============================================================================
+
+/**
+ * Parse and validate JSON with a Zod schema, returning a Result type
+ */
+export function safeParseJson<T>(
+  json: string,
+  schema: z.ZodSchema<T>
+): { success: true; data: T } | { success: false; error: z.ZodError } {
+  try {
+    const parsed = JSON.parse(json);
+    return schema.safeParse(parsed);
+  } catch {
+    return {
+      success: false,
+      error: new z.ZodError([{
+        code: 'custom',
+        message: 'Invalid JSON',
+        path: [],
+      }]),
+    };
+  }
+}
+
+/**
+ * Parse JSON with a Zod schema, throwing on error
+ */
+export function parseJson<T>(json: string, schema: z.ZodSchema<T>): T {
+  const parsed = JSON.parse(json);
+  return schema.parse(parsed);
+}

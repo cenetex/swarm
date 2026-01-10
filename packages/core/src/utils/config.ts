@@ -4,7 +4,229 @@
  */
 import { readFileSync, existsSync } from 'fs';
 import { parse as parseYaml } from 'yaml';
+import { z } from 'zod';
 import type { AgentConfig } from '../types/index.js';
+
+// =============================================================================
+// CONFIG FILE SCHEMAS (with defaults and snake_case support)
+// =============================================================================
+
+const TelegramConfigFileSchema = z.object({
+  enabled: z.boolean().default(true),
+  bot_username: z.string().optional(),
+  botUsername: z.string().optional(),
+  webhook_path: z.string().optional(),
+  webhookPath: z.string().optional(),
+  allowed_chat_types: z.array(z.enum(['private', 'group', 'supergroup', 'channel'])).optional(),
+  allowedChatTypes: z.array(z.enum(['private', 'group', 'supergroup', 'channel'])).optional(),
+}).transform((val) => ({
+  enabled: val.enabled,
+  botUsername: val.botUsername || val.bot_username || '',
+  webhookPath: val.webhookPath || val.webhook_path || '',
+  allowedChatTypes: val.allowedChatTypes || val.allowed_chat_types,
+}));
+
+const DiscordConfigFileSchema = z.object({
+  enabled: z.boolean().default(true),
+  application_id: z.string().optional(),
+  applicationId: z.string().optional(),
+  public_key: z.string().optional(),
+  publicKey: z.string().optional(),
+  use_gateway: z.boolean().optional(),
+  useGateway: z.boolean().optional(),
+}).transform((val) => ({
+  enabled: val.enabled,
+  applicationId: val.applicationId || val.application_id || '',
+  publicKey: val.publicKey || val.public_key || '',
+  useGateway: val.useGateway ?? val.use_gateway ?? false,
+}));
+
+const TwitterConfigFileSchema = z.object({
+  enabled: z.boolean().default(true),
+  username: z.string(),
+  features: z.array(z.enum(['scheduled_tweets', 'mention_replies', 'dm_responses'])).default(['scheduled_tweets', 'mention_replies']),
+}).transform((val) => ({
+  enabled: val.enabled,
+  username: val.username,
+  features: val.features,
+}));
+
+// Rate limit schema with snake_case/camelCase support
+const RateLimitFileSchema = z.object({
+  window_ms: z.number().optional(),
+  windowMs: z.number().optional(),
+  max_requests: z.number().optional(),
+  maxRequests: z.number().optional(),
+});
+
+// Token gating schema with snake_case/camelCase support
+const TokenGatedFileSchema = z.object({
+  enabled: z.boolean(),
+  token_mint: z.string().optional(),
+  tokenMint: z.string().optional(),
+  min_balance: z.number().optional(),
+  minBalance: z.number().optional(),
+});
+
+const WebConfigFileSchema = z.object({
+  enabled: z.boolean().default(true),
+  cors_origins: z.array(z.string()).optional(),
+  corsOrigins: z.array(z.string()).optional(),
+  rate_limit: RateLimitFileSchema.optional(),
+  rateLimit: RateLimitFileSchema.optional(),
+  token_gated: TokenGatedFileSchema.optional(),
+  tokenGated: TokenGatedFileSchema.optional(),
+}).transform((val) => {
+  const rateLimit = val.rateLimit || val.rate_limit;
+  const tokenGated = val.tokenGated || val.token_gated;
+  return {
+    enabled: val.enabled,
+    corsOrigins: val.corsOrigins || val.cors_origins || ['*'],
+    rateLimit: {
+      windowMs: rateLimit?.windowMs || rateLimit?.window_ms || 60000,
+      maxRequests: rateLimit?.maxRequests || rateLimit?.max_requests || 20,
+    },
+    tokenGated: tokenGated ? {
+      enabled: tokenGated.enabled,
+      tokenMint: tokenGated.tokenMint || tokenGated.token_mint || '',
+      minBalance: tokenGated.minBalance ?? tokenGated.min_balance ?? 0,
+    } : undefined,
+  };
+});
+
+const PlatformConfigsFileSchema = z.object({
+  telegram: TelegramConfigFileSchema.optional(),
+  discord: DiscordConfigFileSchema.optional(),
+  twitter: TwitterConfigFileSchema.optional(),
+  web: WebConfigFileSchema.optional(),
+}).default({});
+
+const LLMConfigFileSchema = z.object({
+  provider: z.enum(['bedrock', 'openrouter', 'anthropic']).default('openrouter'),
+  model: z.string().default('anthropic/claude-sonnet-4'),
+  fallback_model: z.string().optional(),
+  fallbackModel: z.string().optional(),
+  temperature: z.number().default(0.8),
+  max_tokens: z.number().optional(),
+  maxTokens: z.number().optional(),
+}).transform((val) => ({
+  provider: val.provider,
+  model: val.model,
+  fallbackModel: val.fallbackModel || val.fallback_model,
+  temperature: val.temperature,
+  maxTokens: val.maxTokens ?? val.max_tokens ?? 1024,
+}));
+
+const MediaConfigFileSchema = z.object({
+  image: z.object({
+    provider: z.enum(['openrouter', 'replicate', 'dalle']).default('openrouter'),
+    model: z.string().default('openai/dall-e-3'),
+  }).default({ provider: 'openrouter', model: 'openai/dall-e-3' }),
+  video: z.object({
+    provider: z.literal('replicate').default('replicate'),
+    model: z.string().default('minimax/video-01'),
+  }).optional(),
+}).default({ image: { provider: 'openrouter', model: 'openai/dall-e-3' } });
+
+const ScheduledTweetFileSchema = z.object({
+  cron: z.string(),
+  template: z.string(),
+  enabled: z.boolean().default(true),
+});
+
+const SchedulingConfigFileSchema = z.object({
+  tweets: z.array(ScheduledTweetFileSchema).optional(),
+  mention_check: z.object({ cron: z.string() }).optional(),
+  mentionCheck: z.object({ cron: z.string() }).optional(),
+  maintenance: z.object({ cron: z.string() }).optional(),
+}).transform((val) => ({
+  tweets: val.tweets,
+  mentionCheck: val.mentionCheck || val.mention_check,
+  maintenance: val.maintenance,
+})).default({});
+
+const BehaviorConfigFileSchema = z.object({
+  response_delay_ms: z.tuple([z.number(), z.number()]).optional(),
+  responseDelayMs: z.tuple([z.number(), z.number()]).optional(),
+  typing_indicator: z.boolean().optional(),
+  typingIndicator: z.boolean().optional(),
+  ignore_bots: z.boolean().optional(),
+  ignoreBots: z.boolean().optional(),
+  cooldown_minutes: z.number().optional(),
+  cooldownMinutes: z.number().optional(),
+  max_context_messages: z.number().optional(),
+  maxContextMessages: z.number().optional(),
+}).transform((val) => ({
+  responseDelayMs: val.responseDelayMs || val.response_delay_ms || [1000, 3000] as [number, number],
+  typingIndicator: val.typingIndicator ?? val.typing_indicator ?? true,
+  ignoreBots: val.ignoreBots ?? val.ignore_bots ?? true,
+  cooldownMinutes: val.cooldownMinutes ?? val.cooldown_minutes ?? 5,
+  maxContextMessages: val.maxContextMessages ?? val.max_context_messages ?? 20,
+})).default({});
+
+const SolanaFeatureFileSchema = z.enum([
+  'token_gating',
+  'nft_generation',
+  'token_transfers',
+  'balance_queries',
+  'wallet_verification',
+]);
+
+const SolanaConfigFileSchema = z.object({
+  enabled: z.boolean().default(true),
+  network: z.enum(['mainnet-beta', 'devnet', 'testnet']).default('mainnet-beta'),
+  rpc_url: z.string().optional(),
+  rpcUrl: z.string().optional(),
+  token_mint: z.string().optional(),
+  tokenMint: z.string().optional(),
+  wallet_secret_name: z.string().optional(),
+  walletSecretName: z.string().optional(),
+  features: z.array(SolanaFeatureFileSchema).default([]),
+}).transform((val) => ({
+  enabled: val.enabled,
+  network: val.network,
+  rpcUrl: val.rpcUrl || val.rpc_url || '',
+  tokenMint: val.tokenMint || val.token_mint,
+  walletSecretName: val.walletSecretName || val.wallet_secret_name || '',
+  features: val.features,
+}));
+
+const AgentConfigFileSchema = z.object({
+  agent: z.object({
+    id: z.string(),
+    name: z.string().optional(),
+    version: z.string().default('1.0.0'),
+    persona: z.string().default(''),
+  }).optional(),
+  id: z.string().optional(),
+  name: z.string().optional(),
+  version: z.string().optional(),
+  persona: z.string().optional(),
+  platforms: PlatformConfigsFileSchema,
+  llm: LLMConfigFileSchema,
+  media: MediaConfigFileSchema,
+  scheduling: SchedulingConfigFileSchema,
+  behavior: BehaviorConfigFileSchema,
+  solana: SolanaConfigFileSchema.optional(),
+  tools: z.array(z.string()).default(['send_message', 'ignore']),
+  secrets: z.array(z.string()).default([]),
+}).transform((val): AgentConfig => {
+  const agent = val.agent || { id: val.id || 'unknown', name: val.name, version: val.version, persona: val.persona };
+  return {
+    id: agent.id || val.id || 'unknown',
+    name: agent.name || val.name || agent.id || val.id || 'Unknown Agent',
+    version: agent.version || val.version || '1.0.0',
+    persona: agent.persona || val.persona || '',
+    platforms: val.platforms,
+    llm: val.llm,
+    media: val.media,
+    scheduling: val.scheduling,
+    behavior: val.behavior,
+    solana: val.solana,
+    tools: val.tools,
+    secrets: val.secrets,
+  };
+});
 
 /**
  * Load agent configuration from a YAML file
@@ -17,7 +239,12 @@ export function loadAgentConfigFromFile(filePath: string): AgentConfig {
   const content = readFileSync(filePath, 'utf-8');
   const parsed = parseYaml(content);
 
-  return normalizeAgentConfig(parsed);
+  const result = AgentConfigFileSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error(`Invalid agent config: ${result.error.message}`);
+  }
+
+  return result.data;
 }
 
 /**
@@ -25,9 +252,13 @@ export function loadAgentConfigFromFile(filePath: string): AgentConfig {
  */
 export function loadAgentConfigFromEnv(agentId: string): AgentConfig {
   const configJson = process.env[`AGENT_CONFIG_${agentId.toUpperCase()}`];
-  
+
   if (configJson) {
-    return normalizeAgentConfig(JSON.parse(configJson));
+    const result = AgentConfigFileSchema.safeParse(JSON.parse(configJson));
+    if (!result.success) {
+      throw new Error(`Invalid agent config from env: ${result.error.message}`);
+    }
+    return result.data;
   }
 
   // Build minimal config from individual env vars
@@ -82,79 +313,12 @@ export function loadAgentConfigFromEnv(agentId: string): AgentConfig {
 }
 
 /**
- * Normalize parsed config to ensure all required fields
- */
-function normalizeAgentConfig(parsed: Record<string, unknown>): AgentConfig {
-  const agent = parsed.agent as Record<string, unknown> || parsed;
-
-  return {
-    id: (agent.id as string) || 'unknown',
-    name: (agent.name as string) || agent.id as string || 'Unknown Agent',
-    version: (agent.version as string) || '1.0.0',
-    persona: (agent.persona as string) || '',
-    platforms: normalizePlatforms(parsed.platforms as Record<string, unknown> || {}),
-    llm: normalizeLLM(parsed.llm as Record<string, unknown> || {}),
-    media: normalizeMedia(parsed.media as Record<string, unknown> || {}),
-    scheduling: (parsed.scheduling as AgentConfig['scheduling']) || {},
-    behavior: normalizeBehavior(parsed.behavior as Record<string, unknown> || {}),
-    solana: parsed.solana as AgentConfig['solana'],
-    tools: (parsed.tools as string[]) || ['send_message', 'ignore'],
-    secrets: (parsed.secrets as string[]) || [],
-  };
-}
-
-function normalizePlatforms(platforms: Record<string, unknown>): AgentConfig['platforms'] {
-  return {
-    telegram: platforms.telegram as AgentConfig['platforms']['telegram'],
-    discord: platforms.discord as AgentConfig['platforms']['discord'],
-    twitter: platforms.twitter as AgentConfig['platforms']['twitter'],
-    web: platforms.web as AgentConfig['platforms']['web'],
-  };
-}
-
-function normalizeLLM(llm: Record<string, unknown>): AgentConfig['llm'] {
-  return {
-    provider: (llm.provider as 'bedrock' | 'openrouter' | 'anthropic') || 'openrouter',
-    model: (llm.model as string) || 'anthropic/claude-sonnet-4',
-    fallbackModel: llm.fallback_model as string,
-    temperature: (llm.temperature as number) ?? 0.8,
-    maxTokens: (llm.max_tokens as number) || 1024,
-  };
-}
-
-function normalizeMedia(media: Record<string, unknown>): AgentConfig['media'] {
-  const image = media.image as Record<string, unknown> || {};
-  const video = media.video as Record<string, unknown>;
-
-  return {
-    image: {
-      provider: (image.provider as 'openrouter' | 'replicate' | 'dalle') || 'openrouter',
-      model: (image.model as string) || 'openai/dall-e-3',
-    },
-    video: video ? {
-      provider: 'replicate',
-      model: (video.model as string) || 'minimax/video-01',
-    } : undefined,
-  };
-}
-
-function normalizeBehavior(behavior: Record<string, unknown>): AgentConfig['behavior'] {
-  return {
-    responseDelayMs: (behavior.response_delay_ms as [number, number]) || [1000, 3000],
-    typingIndicator: (behavior.typing_indicator as boolean) ?? true,
-    ignoreBots: (behavior.ignore_bots as boolean) ?? true,
-    cooldownMinutes: (behavior.cooldown_minutes as number) ?? 5,
-    maxContextMessages: (behavior.max_context_messages as number) ?? 20,
-  };
-}
-
-/**
  * Merge multiple configs with later configs overriding earlier ones
  */
 export function mergeAgentConfigs(...configs: Partial<AgentConfig>[]): AgentConfig {
   // Start with an empty object and merge each config
   let result: Record<string, unknown> = {};
-  
+
   for (const config of configs) {
     result = {
       ...result,
@@ -167,5 +331,14 @@ export function mergeAgentConfigs(...configs: Partial<AgentConfig>[]): AgentConf
     };
   }
 
-  return result as unknown as AgentConfig;
+  // Validate the merged config
+  const parseResult = AgentConfigFileSchema.safeParse(result);
+  if (!parseResult.success) {
+    throw new Error(`Invalid merged agent config: ${parseResult.error.message}`);
+  }
+
+  return parseResult.data;
 }
+
+// Export the config file schema for use in other parts of the codebase
+export { AgentConfigFileSchema };

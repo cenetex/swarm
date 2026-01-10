@@ -6,23 +6,27 @@ import type { SQSEvent, SQSHandler, Context } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { z } from 'zod';
 import {
   createMediaService,
   createSecretsService,
   createStateService,
   logger,
+  ResponseActionSchema,
+  SwarmResponseSchema,
   type AgentConfig,
   type ResponseAction,
   type SwarmResponse,
 } from '@swarm/core';
 
-interface MediaQueueItem {
-  jobId: string;
-  agentId: string;
-  conversationId: string;
-  action: ResponseAction;
-  response: SwarmResponse;
-}
+// Schema for media queue items
+const MediaQueueItemSchema = z.object({
+  jobId: z.string(),
+  agentId: z.string(),
+  conversationId: z.string(),
+  action: ResponseActionSchema,
+  response: SwarmResponseSchema,
+});
 
 const sqs = new SQSClient({});
 const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -157,7 +161,12 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
   await initialize();
 
   for (const record of event.Records) {
-    const item: MediaQueueItem = JSON.parse(record.body);
+    const parseResult = MediaQueueItemSchema.safeParse(JSON.parse(record.body));
+    if (!parseResult.success) {
+      logger.error('Invalid media queue item', { error: parseResult.error.message });
+      continue;
+    }
+    const item = parseResult.data;
 
     logger.setContext({
       jobId: item.jobId,
@@ -166,10 +175,6 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
     });
 
     try {
-      if (!item.jobId) {
-        logger.warn('Missing media jobId; skipping');
-        continue;
-      }
 
       if (item.agentId && item.agentId !== getAgentId()) {
         logger.warn('Media job agentId mismatch', {

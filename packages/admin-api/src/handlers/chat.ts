@@ -17,12 +17,13 @@ import * as gallery from '../services/gallery.js';
 import * as credits from '../services/credits.js';
 import * as mediaJobs from '../services/media-jobs.js';
 import * as chatHistory from '../services/chat-history.js';
-import type {
-  AdminChatMessage,
-  ToolCall,
-  ToolResult,
-  UserSession,
-  SecretType,
+import {
+  ChatRequestSchema,
+  type AdminChatMessage,
+  type ToolCall,
+  type ToolResult,
+  type UserSession,
+  type SecretType,
 } from '../types.js';
 
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
@@ -607,14 +608,14 @@ const AGENT_TOOLS = [
 
 interface AgentContext {
   id: string;
-  name: string;
+  name?: string;
   description?: string;
   persona?: string;
 }
 
 function buildSystemPrompt(agent?: AgentContext): string {
   if (agent) {
-    return `You are ${agent.name}, an AI agent being configured by your owner.
+    return `You are ${agent.name || 'an AI agent'}, an AI agent being configured by your owner.
 ${agent.description ? `Your purpose: ${agent.description}` : ''}
 ${agent.persona ? `Your personality: ${agent.persona}` : ''}
 
@@ -1794,17 +1795,19 @@ export async function handler(
     }
 
     // POST /chat - Send a message
-    // Parse request body
-    const body = JSON.parse(event.body || '{}');
-    const { message, history = [], agent } = body;
-
-    if (!message || typeof message !== 'string') {
+    // Parse and validate request body
+    const parseResult = ChatRequestSchema.safeParse(JSON.parse(event.body || '{}'));
+    if (!parseResult.success) {
       return {
         statusCode: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ error: 'Message is required' }),
+        body: JSON.stringify({
+          error: 'Invalid request',
+          details: parseResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`),
+        }),
       };
     }
+    const { message, history, agent } = parseResult.data;
 
     // Process the chat with agent context
     const result = await processChat(message, history, session, agent);

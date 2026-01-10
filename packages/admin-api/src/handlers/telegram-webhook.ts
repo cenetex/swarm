@@ -22,6 +22,7 @@ import {
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { z } from 'zod';
 import { isValidTelegramIP } from '../services/telegram.js';
 import { timingSafeEqual } from 'crypto';
 import * as media from '../services/media.js';
@@ -51,25 +52,47 @@ const TELEGRAM_RETRY_COUNT = 1;
 const LLM_TIMEOUT_MS = 20_000;
 const LLM_RETRY_COUNT = 2;
 
-// === TYPES ===
-interface TelegramUpdate {
-  update_id: number;
-  message?: {
-    message_id: number;
-    from?: { id: number; first_name: string; last_name?: string; username?: string };
-    chat: { id: number; type: 'private' | 'group' | 'supergroup' | 'channel'; title?: string };
-    date: number;
-    text?: string;
-    caption?: string;
-    photo?: unknown;
-    video?: unknown;
-    animation?: unknown;
-    document?: unknown;
-    sticker?: { emoji?: string };
-    reply_to_message?: { message_id: number; text?: string; from?: { id: number; username?: string } };
-  };
-}
+// === SCHEMAS ===
+const TelegramUserSchema = z.object({
+  id: z.number(),
+  first_name: z.string(),
+  last_name: z.string().optional(),
+  username: z.string().optional(),
+});
 
+const TelegramChatSchema = z.object({
+  id: z.number(),
+  type: z.enum(['private', 'group', 'supergroup', 'channel']),
+  title: z.string().optional(),
+});
+
+const TelegramMessageSchema = z.object({
+  message_id: z.number(),
+  from: TelegramUserSchema.optional(),
+  chat: TelegramChatSchema,
+  date: z.number(),
+  text: z.string().optional(),
+  caption: z.string().optional(),
+  photo: z.unknown().optional(),
+  video: z.unknown().optional(),
+  animation: z.unknown().optional(),
+  document: z.unknown().optional(),
+  sticker: z.object({ emoji: z.string().optional() }).optional(),
+  reply_to_message: z.object({
+    message_id: z.number(),
+    text: z.string().optional(),
+    from: z.object({ id: z.number(), username: z.string().optional() }).optional(),
+  }).optional(),
+});
+
+const TelegramUpdateSchema = z.object({
+  update_id: z.number(),
+  message: TelegramMessageSchema.optional(),
+});
+
+type TelegramUpdate = z.infer<typeof TelegramUpdateSchema>;
+
+// Agent config (internal use)
 interface AgentConfig {
   agentId: string;
   name: string;
@@ -83,19 +106,22 @@ interface AgentConfig {
   profileImage?: { url: string };
 }
 
-interface ChatMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
-  tool_calls?: ToolCall[];
-  tool_call_id?: string;
-  name?: string;
-}
+const ToolCallSchema = z.object({
+  id: z.string(),
+  type: z.literal('function'),
+  function: z.object({ name: z.string(), arguments: z.string() }),
+});
 
-interface ToolCall {
-  id: string;
-  type: 'function';
-  function: { name: string; arguments: string };
-}
+const ChatMessageSchema = z.object({
+  role: z.enum(['system', 'user', 'assistant', 'tool']),
+  content: z.string(),
+  tool_calls: z.array(ToolCallSchema).optional(),
+  tool_call_id: z.string().optional(),
+  name: z.string().optional(),
+});
+
+type ChatMessage = z.infer<typeof ChatMessageSchema>;
+type ToolCall = z.infer<typeof ToolCallSchema>;
 
 // === TOOLS FOR TELEGRAM ===
 const TELEGRAM_TOOLS = [
@@ -375,8 +401,8 @@ async function markMessageProcessed(agentId: string, updateId: number): Promise<
     await dynamoClient.send(new UpdateCommand({
       TableName: ADMIN_TABLE,
       Key: { pk: `TELEGRAM#${agentId}`, sk: `PROCESSED#${updateId}` },
-      UpdateExpression: 'SET #status = :status, processedAt = :processedAt, ttl = :ttl',
-      ExpressionAttributeNames: { '#status': 'status' },
+      UpdateExpression: 'SET #status = :status, processedAt = :processedAt, #ttl = :ttl',
+      ExpressionAttributeNames: { '#status': 'status', '#ttl': 'ttl' },
       ExpressionAttributeValues: {
         ':status': 'processed',
         ':processedAt': Date.now(),
@@ -1102,8 +1128,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return ok();
     }
 
-    // Parse update
-    const update: TelegramUpdate = event.body ? JSON.parse(event.body) : {};
+    // Parse and validate update
+    const parseResult = TelegramUpdateSchema.safeParse(
+      event.body ? JSON.parse(event.body) : {}
+    );
+    if (!parseResult.success) {
+      console.warn('Invalid Telegram update:', parseResult.error.message);
+      return ok();
+    }
+    const update = parseResult.data;
     const message = update.message;
     if (!message) return ok();
 

@@ -203,9 +203,15 @@ importers:
 
   packages/handlers:
     dependencies:
+      '@aws-sdk/client-dynamodb':
+        specifier: ^3.700.0
+        version: 3.966.0
       '@aws-sdk/client-sqs':
         specifier: ^3.700.0
         version: 3.966.0
+      '@aws-sdk/lib-dynamodb':
+        specifier: ^3.700.0
+        version: 3.966.0(@aws-sdk/client-dynamodb@3.966.0)
       '@swarm/core':
         specifier: workspace:*
         version: link:../core

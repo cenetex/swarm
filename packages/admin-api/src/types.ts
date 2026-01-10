@@ -202,28 +202,49 @@ export interface CreditBucket {
   dailyResetAt: number;
 }
 
-// Chat message for the admin chatbot
-export interface AdminChatMessage {
-  role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string;
-  tool_calls?: ToolCall[];
-  tool_call_id?: string;
-}
+// Chat message schemas for the admin chatbot
+export const ToolCallSchema = z.object({
+  id: z.string(),
+  type: z.literal('function'),
+  function: z.object({
+    name: z.string(),
+    arguments: z.string(),
+  }),
+});
 
-export interface ToolCall {
-  id: string;
-  type: 'function';
-  function: {
-    name: string;
-    arguments: string;
-  };
-}
+export const AdminChatMessageSchema = z.object({
+  role: z.enum(['user', 'assistant', 'system', 'tool']),
+  content: z.string(),
+  tool_calls: z.array(ToolCallSchema).optional(),
+  tool_call_id: z.string().optional(),
+});
 
-export interface ToolResult {
-  tool_call_id: string;
-  role: 'tool';
-  content: string;
-}
+export const ToolResultSchema = z.object({
+  tool_call_id: z.string(),
+  role: z.literal('tool'),
+  content: z.string(),
+});
+
+// Agent context in chat request
+export const AgentContextSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  persona: z.string().optional(),
+});
+
+// Chat request body schema
+export const ChatRequestSchema = z.object({
+  message: z.string().min(1),
+  history: z.array(AdminChatMessageSchema).default([]),
+  agent: AgentContextSchema.optional(),
+});
+
+// Infer types from schemas
+export type AdminChatMessage = z.infer<typeof AdminChatMessageSchema>;
+export type ToolCall = z.infer<typeof ToolCallSchema>;
+export type ToolResult = z.infer<typeof ToolResultSchema>;
+export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 
 // Admin chatbot tool definitions
 export const AdminTools = {

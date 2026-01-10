@@ -17,8 +17,8 @@ import {
   logger,
   publicTools,
   defaultAgentTools,
+  MessageQueueItemSchema,
   type AgentConfig,
-  type MessageQueueItem,
   type ContextMessage,
   type SwarmEnvelope,
 } from '@swarm/core';
@@ -129,8 +129,13 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
 
   for (const record of event.Records) {
     try {
-      const item: MessageQueueItem = JSON.parse(record.body);
-      const envelope = item.envelope;
+      const parseResult = MessageQueueItemSchema.safeParse(JSON.parse(record.body));
+      if (!parseResult.success) {
+        logger.error('Invalid message queue item', { error: parseResult.error.message });
+        continue; // Skip invalid messages
+      }
+      const item = parseResult.data;
+      const envelope = item.envelope as SwarmEnvelope;
 
       logger.setContext({
         messageId: envelope.messageId,

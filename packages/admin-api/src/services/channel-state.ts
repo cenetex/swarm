@@ -148,7 +148,7 @@ export async function addMessageToBuffer(
     'bufferSize = if_not_exists(bufferSize, :zero) + :one',
     'lastActivityAt = :now',
     'updatedAt = :now',
-    'ttl = :ttl',
+    '#ttl = :ttl',
     'agentId = if_not_exists(agentId, :agentId)',
     'chatId = if_not_exists(chatId, :chatId)',
     'chatType = :chatType',
@@ -173,6 +173,7 @@ export async function addMessageToBuffer(
     UpdateExpression: `SET ${updateParts.join(', ')}`,
     ExpressionAttributeNames: {
       '#state': 'state',
+      '#ttl': 'ttl',
     },
     ExpressionAttributeValues: {
       ':emptyList': [],
@@ -203,8 +204,11 @@ export async function addMessageToBuffer(
           pk: `CHANNEL#${agentId}#${chatId}`,
           sk: 'STATE',
         },
-        UpdateExpression: 'SET messageBuffer = :buffer, bufferSize = :size, updatedAt = :updatedAt, ttl = :ttl',
+        UpdateExpression: 'SET messageBuffer = :buffer, bufferSize = :size, updatedAt = :updatedAt, #ttl = :ttl',
         ConditionExpression: 'updatedAt = :expectedUpdatedAt',
+        ExpressionAttributeNames: {
+          '#ttl': 'ttl',
+        },
         ExpressionAttributeValues: {
           ':buffer': trimmedBuffer,
           ':size': trimmedBuffer.length,

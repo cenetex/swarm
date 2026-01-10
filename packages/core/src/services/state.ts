@@ -207,7 +207,7 @@ export class DynamoDBStateService implements StateService {
       'messageCount = if_not_exists(messageCount, :zero) + :one',
       'lastActivityAt = :now',
       'updatedAt = :now',
-      'ttl = :ttl',
+      '#ttl = :ttl',
       'agentId = if_not_exists(agentId, :agentId)',
       'channelId = if_not_exists(channelId, :channelId)',
       'platform = if_not_exists(platform, :platform)',
@@ -235,6 +235,7 @@ export class DynamoDBStateService implements StateService {
       UpdateExpression: `SET ${updateParts.join(', ')}`,
       ExpressionAttributeNames: {
         '#state': 'state',
+        '#ttl': 'ttl',
       },
       ExpressionAttributeValues: {
         ':emptyList': [],
@@ -267,8 +268,11 @@ export class DynamoDBStateService implements StateService {
             pk: `AGENT#${agentId}`,
             sk: `CHANNEL#${channelId}#STATE`,
           },
-          UpdateExpression: 'SET recentMessages = :messages, updatedAt = :updatedAt, ttl = :ttl',
+          UpdateExpression: 'SET recentMessages = :messages, updatedAt = :updatedAt, #ttl = :ttl',
           ConditionExpression: 'updatedAt = :expectedUpdatedAt',
+          ExpressionAttributeNames: {
+            '#ttl': 'ttl',
+          },
           ExpressionAttributeValues: {
             ':messages': trimmedMessages,
             ':updatedAt': trimmedAt,
