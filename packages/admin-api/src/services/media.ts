@@ -27,13 +27,14 @@ const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
 
 // Default models (Replicate model identifiers)
-const DEFAULT_IMAGE_MODEL = 'black-forest-labs/flux-schnell';
+const DEFAULT_IMAGE_MODEL = 'google/nano-banana-pro';
 const DEFAULT_VIDEO_MODEL = 'minimax/video-01';
 
 // Replicate model versions (required for predictions API)
 const REPLICATE_MODEL_VERSIONS: Record<string, string> = {
+  'google/nano-banana-pro': 'eefce837d77048ccc736cd660d4f178d223b2d99aeb5ef856741eb81941c9ed2',
   'black-forest-labs/flux-schnell': 'f2ab8a5bfe79f02f0789a146cf5e73d2a4ff2684a98c2b303d1e1ff3814271db',
-  'black-forest-labs/flux-dev': 'a8a9b47a5f6c7f2e06b5d4f0e6a5d4f0e6a5d4f0e6a5d4f0e6a5d4f0e6a5d4f0', // placeholder
+  'black-forest-labs/flux-dev': 'a8a9b47a5f6c7f2e06b5d4f0e6a5d4f0e6a5d4f0e6a5d4f0e6a5d4f0e6a5d4f0',
 };
 
 interface GenerateImageOptions {
@@ -41,9 +42,9 @@ interface GenerateImageOptions {
   agentId: string;
   platform?: string;
   model?: string;
-  referenceImageUrl?: string; // For character consistency
-  width?: number;
-  height?: number;
+  referenceImageUrls?: string[]; // Array of reference images (profile, gallery, etc.)
+  resolution?: '1K' | '2K' | '4K';
+  aspectRatio?: 'match_input_image' | '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9';
 }
 
 interface GenerateVideoOptions {
@@ -152,10 +153,19 @@ async function getProviderApiKey(
 
 /**
  * Generate an image synchronously using Replicate
+ * Supports multiple reference images for character/style consistency
  * Returns immediately with the generated image URL
  */
 export async function generateImage(options: GenerateImageOptions): Promise<GalleryItem> {
-  const { prompt, agentId, platform, model, referenceImageUrl, width = 1024, height = 1024 } = options;
+  const {
+    prompt,
+    agentId,
+    platform,
+    model,
+    referenceImageUrls = [],
+    resolution = '2K',
+    aspectRatio = '1:1',
+  } = options;
 
   // Check credits
   const canUse = await credits.canUseTool(agentId, 'generate_image');
@@ -169,10 +179,10 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     throw new Error('No Replicate API key configured. Please set up an API key first.');
   }
 
-  // Build the prompt with reference if available
+  // Build the prompt with reference context if images provided
   let finalPrompt = prompt;
-  if (referenceImageUrl) {
-    finalPrompt = `${prompt}. Maintain visual consistency with the reference character.`;
+  if (referenceImageUrls.length > 0) {
+    finalPrompt = `${prompt}. Use the provided reference images to maintain visual consistency with the character's appearance, style, and features.`;
   }
 
   // Get model version for Replicate
@@ -182,6 +192,9 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
   if (!version) {
     throw new Error(`Unknown model: ${modelId}. Supported models: ${Object.keys(REPLICATE_MODEL_VERSIONS).join(', ')}`);
   }
+
+  // Build input based on model type
+  const isNanoBanana = modelId === 'google/nano-banana-pro';
 
   // Start Replicate prediction
   const response = await fetch(REPLICATE_ENDPOINT, {
@@ -193,13 +206,22 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     },
     body: JSON.stringify({
       version,
-      input: {
+      input: isNanoBanana ? {
+        // Nano Banana Pro format
         prompt: finalPrompt,
-        width,
-        height,
+        image_input: referenceImageUrls.slice(0, 14), // Max 14 reference images
+        resolution,
+        aspect_ratio: aspectRatio,
+        output_format: 'png',
+        safety_filter_level: 'block_only_high',
+      } : {
+        // Flux format (fallback)
+        prompt: finalPrompt,
+        width: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
+        height: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
         num_outputs: 1,
         output_format: 'png',
-        ...(referenceImageUrl && { image: referenceImageUrl }),
+        ...(referenceImageUrls[0] && { image: referenceImageUrls[0] }),
       },
     }),
   });
@@ -386,8 +408,8 @@ export async function generateSticker(options: GenerateStickerOptions): Promise<
       prompt: `${prompt}, simple clean design suitable for sticker, transparent background style`,
       agentId,
       platform,
-      width: 512,
-      height: 512,
+      resolution: '1K',
+      aspectRatio: '1:1',
     });
     imageUrl = image.url;
     originalS3Key = image.s3Key;
@@ -507,8 +529,8 @@ export async function setProfileImage(
       prompt: `${source.prompt}, professional profile picture, centered subject, clean background`,
       agentId,
       platform: 'profile',
-      width: 512,
-      height: 512,
+      resolution: '1K',
+      aspectRatio: '1:1',
     });
 
     // Download from our storage

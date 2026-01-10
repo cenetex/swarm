@@ -52,12 +52,22 @@ async function getLlmApiKey(): Promise<string> {
   // Parse JSON secret (handles {"api_key": "..."} format)
   try {
     const parsed = JSON.parse(response.SecretString);
-    cachedApiKey = parsed.api_key || parsed.apiKey || parsed.API_KEY || response.SecretString;
-  } catch {
-    // Plain string secret
-    cachedApiKey = response.SecretString;
+    cachedApiKey = parsed.api_key || parsed.apiKey || parsed.API_KEY;
+    if (!cachedApiKey) {
+      console.error('LLM API key not found in parsed secret. Keys available:', Object.keys(parsed));
+      throw new Error('api_key not found in secret');
+    }
+  } catch (e) {
+    // Plain string secret - check if it looks like an API key
+    if (response.SecretString.startsWith('sk-')) {
+      cachedApiKey = response.SecretString;
+    } else {
+      console.error('Failed to parse LLM secret:', e);
+      throw new Error('Invalid LLM API key format');
+    }
   }
 
+  console.log('LLM API key loaded, starts with:', cachedApiKey.substring(0, 10));
   return cachedApiKey!;
 }
 
@@ -371,7 +381,7 @@ const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'generate_image',
-      description: 'Generate an image from a text prompt. Can use reference images for character consistency. The image will be saved to my gallery.',
+      description: 'Generate an image using Nano Banana Pro. By default uses my profile picture as reference for character consistency. Can also use gallery images as additional references (up to 14 total). The image will be saved to my gallery.',
       parameters: {
         type: 'object',
         properties: {
@@ -381,11 +391,26 @@ const AGENT_TOOLS = [
           },
           useProfileAsReference: {
             type: 'boolean',
-            description: 'Use my profile image as a reference for character consistency',
+            description: 'Use my profile image as a reference (default: true)',
+          },
+          galleryImageIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Array of gallery image IDs to use as additional references (get IDs from get_my_gallery)',
           },
           referenceImageId: {
             type: 'string',
             description: 'ID of a specific reference image to use (from list_reference_images)',
+          },
+          resolution: {
+            type: 'string',
+            enum: ['1K', '2K', '4K'],
+            description: 'Output resolution (default: 2K)',
+          },
+          aspectRatio: {
+            type: 'string',
+            enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
+            description: 'Image aspect ratio (default: 1:1)',
           },
         },
         required: ['prompt'],
@@ -968,25 +993,43 @@ async function executeTool(
 
       // Image generation
       case 'generate_image': {
-        // Get reference image URL - priority: explicit ID > profile flag > none
-        let referenceImageUrl: string | undefined;
-        
+        // Build array of reference images
+        const referenceImageUrls: string[] = [];
+
+        // Always include profile image first if useProfileAsReference is true (default)
+        if (args.useProfileAsReference !== false) {
+          const agent = await agents.getAgent(agentId!);
+          if (agent?.profileImage?.url) {
+            referenceImageUrls.push(agent.profileImage.url);
+          }
+        }
+
+        // Add specific gallery images if provided
+        if (args.galleryImageIds && Array.isArray(args.galleryImageIds)) {
+          for (const imageId of args.galleryImageIds) {
+            const item = await gallery.getGalleryItem(agentId!, imageId);
+            if (item?.url) {
+              referenceImageUrls.push(item.url);
+            }
+          }
+        }
+
+        // Add specific reference image if provided
         if (args.referenceImageId) {
           const images = await media.listReferenceImages(agentId!);
           const refImage = images.find(img => img.id === args.referenceImageId);
-          if (refImage) {
-            referenceImageUrl = refImage.url;
+          if (refImage?.url) {
+            referenceImageUrls.push(refImage.url);
           }
-        } else if (args.useProfileAsReference) {
-          const agent = await agents.getAgent(agentId!);
-          referenceImageUrl = agent?.profileImage?.url;
         }
 
         const image = await media.generateImage({
           prompt: args.prompt,
           agentId: agentId!,
           platform: 'admin-chat',
-          referenceImageUrl,
+          referenceImageUrls,
+          resolution: args.resolution || '2K',
+          aspectRatio: args.aspectRatio || '1:1',
         });
 
         result = {
@@ -995,7 +1038,7 @@ async function executeTool(
           id: image.id,
           url: image.url,
           prompt: args.prompt,
-          usedReference: !!referenceImageUrl,
+          usedReferences: referenceImageUrls.length,
         };
         break;
       }
@@ -1197,21 +1240,29 @@ interface MediaItem {
  */
 function extractMediaFromToolResults(toolResults: ToolResult[]): MediaItem[] {
   const media: MediaItem[] = [];
-  
+
   for (const result of toolResults) {
     try {
       const parsed = JSON.parse(result.content);
-      
-      // Direct image generation result
-      if (parsed.url && (parsed.url.includes('.png') || parsed.url.includes('.jpg') || parsed.url.includes('.webp'))) {
+
+      // Direct image/media generation result (check for success + url)
+      if (parsed.success && parsed.url && typeof parsed.url === 'string') {
+        // Determine type from context or file extension
+        let mediaType: 'image' | 'video' | 'sticker' = 'image';
+        if (parsed.url.includes('.mp4') || parsed.url.includes('.webm') || parsed.url.includes('/video')) {
+          mediaType = 'video';
+        } else if (parsed.url.includes('/sticker')) {
+          mediaType = 'sticker';
+        }
+
         media.push({
-          type: 'image',
+          type: mediaType,
           url: parsed.url,
           prompt: parsed.prompt,
           id: parsed.id,
         });
       }
-      
+
       // Gallery items
       if (Array.isArray(parsed.items)) {
         for (const item of parsed.items) {
@@ -1229,7 +1280,7 @@ function extractMediaFromToolResults(toolResults: ToolResult[]): MediaItem[] {
       // Not JSON, skip
     }
   }
-  
+
   return media;
 }
 

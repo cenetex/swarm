@@ -12,16 +12,23 @@ interface ChatMessageProps {
  */
 function extractImagesFromToolCalls(toolCalls?: ChatMessageType['toolCalls']): string[] {
   if (!toolCalls) return [];
-  
+
   const images: string[] = [];
-  
+
   for (const tc of toolCalls) {
     if (tc.result && typeof tc.result === 'object') {
       const result = tc.result as Record<string, unknown>;
-      // Check for image URL in result
-      if (result.url && typeof result.url === 'string' && 
-          (result.url.includes('.png') || result.url.includes('.jpg') || result.url.includes('.webp'))) {
-        images.push(result.url);
+      // Check for image URL in result - any URL from successful generation
+      if (result.url && typeof result.url === 'string') {
+        // Include URLs that are images (by extension or by being from our CDN/S3)
+        const url = result.url as string;
+        const isImage = url.includes('.png') || url.includes('.jpg') ||
+                        url.includes('.webp') || url.includes('.jpeg') ||
+                        url.includes('/images/') || url.includes('cloudfront.net') ||
+                        url.includes('s3.amazonaws.com');
+        if (isImage) {
+          images.push(url);
+        }
       }
       // Check for gallery items
       if (Array.isArray(result.items)) {
@@ -33,7 +40,7 @@ function extractImagesFromToolCalls(toolCalls?: ChatMessageType['toolCalls']): s
       }
     }
   }
-  
+
   return images;
 }
 

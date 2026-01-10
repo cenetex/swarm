@@ -437,7 +437,8 @@ async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
   token: string,
-  chatId: number
+  chatId: number,
+  agent?: AgentConfig
 ): Promise<ToolResult> {
   try {
     switch (toolName) {
@@ -448,8 +449,19 @@ async function executeTool(
           return { success: false, error: `Rate limited: ${canUse.reason}` };
         }
 
+        // Build reference images array - always include profile image
+        const referenceImageUrls: string[] = [];
+        if (agent?.profileImage?.url) {
+          referenceImageUrls.push(agent.profileImage.url);
+        }
+
         await sendChatAction(token, chatId, 'upload_photo');
-        const result = await media.generateImage({ prompt, agentId, platform: 'telegram' });
+        const result = await media.generateImage({
+          prompt,
+          agentId,
+          platform: 'telegram',
+          referenceImageUrls,
+        });
         return {
           success: true,
           result: { id: result.id, url: result.url },
@@ -617,7 +629,7 @@ async function processMessage(
       // Execute tools
       for (const tc of llmResponse.toolCalls) {
         const args = JSON.parse(tc.function.arguments || '{}');
-        const result = await executeTool(agentId, tc.function.name, args, token, chatId);
+        const result = await executeTool(agentId, tc.function.name, args, token, chatId, agent);
 
         // Add tool result
         messages.push({
