@@ -211,8 +211,8 @@ jobs:
         working-directory: packages/admin-ui
         run: pnpm build
         env:
-          # Use Cloudflare-proxied API URL based on environment
-          VITE_API_URL: ${{ inputs.environment == 'staging' && 'https://api-staging.rati.chat' || 'https://api.rati.chat' }}
+          # Use the direct API Gateway URL (custom domain requires ACM cert setup)
+          VITE_API_URL: ${{ needs.deploy.outputs.admin-api-url }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
