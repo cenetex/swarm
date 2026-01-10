@@ -1,7 +1,7 @@
 /**
  * Core Module Tests
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 describe('Platform Message Normalization', () => {
   describe('Telegram Message Extraction', () => {
@@ -149,7 +149,7 @@ describe('LLM Message Format', () => {
     });
 
     it('should format system prompt correctly', () => {
-      const agentName = 'TestBot';
+      const _agentName = 'TestBot';
       const persona = 'You are a helpful AI assistant.';
       
       let systemPrompt = persona;

@@ -8,6 +8,7 @@ import {
   Transaction,
   sendAndConfirmTransaction,
   LAMPORTS_PER_SOL,
+  SystemProgram,
 } from '@solana/web3.js';
 import {
   getAssociatedTokenAddress,
@@ -96,7 +97,7 @@ export class SwarmSolanaService implements SolanaService {
     if (!tokenMint) {
       // Transfer SOL
       const transaction = new Transaction().add(
-        require('@solana/web3.js').SystemProgram.transfer({
+        SystemProgram.transfer({
           fromPubkey: this.wallet.publicKey,
           toPubkey: toPublicKey,
           lamports: amount * LAMPORTS_PER_SOL,

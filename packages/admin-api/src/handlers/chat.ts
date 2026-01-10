@@ -1640,13 +1640,13 @@ async function processChat(
       });
 
       if (uploadUrlTool) {
-        // Execute the tool to get the upload URL
-        const uploadResult = await executeTool(uploadUrlTool, session, agent);
-        let uploadArgs: Record<string, unknown> = {};
+        // Execute the tool to get the UI payload (upload URL or model selector)
+        const toolResult = await executeTool(uploadUrlTool, session, agent);
+        let toolArgs: Record<string, unknown> = {};
         try {
-          uploadArgs = JSON.parse(uploadResult.content || '{}');
+          toolArgs = JSON.parse(toolResult.content || '{}');
         } catch (e) {
-          console.error('Failed to parse upload URL result:', e);
+          console.error('Failed to parse tool result:', e);
         }
 
         // Add assistant message with tool calls
@@ -1660,7 +1660,7 @@ async function processChat(
         pendingToolCall = {
           id: uploadUrlTool.id,
           name: uploadUrlTool.function.name,
-          arguments: uploadArgs,
+          arguments: toolArgs,
         };
         response = llmResponse.message || 'Please upload your image:';
         break;
