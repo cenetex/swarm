@@ -80,6 +80,24 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
             result: { url: m.url, id: m.id, prompt: m.prompt },
           })) || [];
 
+          // Check for pending jobs from the response (explicit pendingJobs array)
+          const pendingJobsList = response.pendingJobs || [];
+          
+          // Also try to extract job IDs from the response text as fallback
+          const responseText = response.response;
+          const jobIdMatch = responseText.match(/jobId[:\s]+["']?([a-f0-9-]{36})["']?/i);
+          if (jobIdMatch && !pendingJobsList.find(j => j.jobId === jobIdMatch[1])) {
+            pendingJobsList.push({ jobId: jobIdMatch[1], type: 'image' });
+          }
+
+          // Convert pending jobs to PendingJob format for display
+          const pendingJobsForState = pendingJobsList.map(j => ({
+            jobId: j.jobId,
+            type: (j.type || 'image') as 'image' | 'video' | 'sticker',
+            status: 'pending' as const,
+            prompt: undefined,
+          }));
+
           updateMessage(activeAgent.id, loadingMessage.id, {
             content: response.response,
             isLoading: false,
@@ -90,17 +108,9 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
               arguments: pendingToolCall.arguments,
               status: 'pending' as const,
             }] : mediaToolCalls.length > 0 ? mediaToolCalls : undefined,
+            // Track pending jobs for status display
+            pendingJobs: pendingJobsForState.length > 0 ? pendingJobsForState : undefined,
           });
-
-          // Check for pending jobs from the response (explicit pendingJobs array)
-          const pendingJobsList = response.pendingJobs || [];
-          
-          // Also try to extract job IDs from the response text as fallback
-          const responseText = response.response;
-          const jobIdMatch = responseText.match(/jobId[:\s]+["']?([a-f0-9-]{36})["']?/i);
-          if (jobIdMatch && !pendingJobsList.find(j => j.jobId === jobIdMatch[1])) {
-            pendingJobsList.push({ jobId: jobIdMatch[1], type: 'image' });
-          }
           
           // Start polling for all pending jobs
           for (const pendingJob of pendingJobsList) {
@@ -114,35 +124,74 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
               pollJobCompletion(jobId, {
                 intervalMs: 3000,
                 onProgress: (status: JobStatus) => {
+                  const currentMsgs = useAgentStore.getState().chats[agentIdForPolling] || [];
+                  const msg = currentMsgs.find(m => m.id === messageId);
+                  if (!msg) return;
+
                   const mediaUrl = status.resultUrl || status.url;
+                  
+                  // Update pendingJobs status for this job
+                  const updatedPendingJobs = (msg.pendingJobs || []).map(j => 
+                    j.jobId === jobId 
+                      ? { 
+                          ...j, 
+                          status: status.status as 'pending' | 'processing' | 'completed' | 'failed',
+                          prompt: status.prompt,
+                          resultUrl: mediaUrl,
+                          error: status.error,
+                        }
+                      : j
+                  );
+
                   if (status.status === 'completed' && mediaUrl) {
-                    // Update the message with the completed image
-                    const currentMsgs = useAgentStore.getState().chats[agentIdForPolling] || [];
-                    const msg = currentMsgs.find(m => m.id === messageId);
-                    if (msg) {
-                      const existingToolCalls = msg.toolCalls || [];
-                      updateMessage(agentIdForPolling, messageId, {
-                        toolCalls: [
-                          ...existingToolCalls,
-                          {
-                            id: `job-${jobId}`,
-                            name: status.type === 'image' ? 'generate_image' : 'generate_video',
-                            arguments: { prompt: status.prompt },
-                            status: 'completed' as const,
-                            result: {
-                              url: mediaUrl,
-                              prompt: status.prompt,
-                              jobId: status.jobId,
-                            },
+                    // Job completed - update status and add to toolCalls for image display
+                    const existingToolCalls = msg.toolCalls || [];
+                    updateMessage(agentIdForPolling, messageId, {
+                      pendingJobs: updatedPendingJobs,
+                      toolCalls: [
+                        ...existingToolCalls,
+                        {
+                          id: `job-${jobId}`,
+                          name: status.type === 'image' ? 'generate_image' : 'generate_video',
+                          arguments: { prompt: status.prompt },
+                          status: 'completed' as const,
+                          result: {
+                            url: mediaUrl,
+                            prompt: status.prompt,
+                            jobId: status.jobId,
                           },
-                        ],
-                      });
-                    }
+                        },
+                      ],
+                    });
                     activePollers.delete(jobId);
+                  } else if (status.status === 'failed') {
+                    // Job failed - update status
+                    updateMessage(agentIdForPolling, messageId, {
+                      pendingJobs: updatedPendingJobs,
+                    });
+                    activePollers.delete(jobId);
+                  } else {
+                    // Job still processing - update status
+                    updateMessage(agentIdForPolling, messageId, {
+                      pendingJobs: updatedPendingJobs,
+                    });
                   }
                 },
               }).catch((err) => {
                 console.error('Job polling failed:', err);
+                // Update job to failed state on error
+                const currentMsgs = useAgentStore.getState().chats[agentIdForPolling] || [];
+                const msg = currentMsgs.find(m => m.id === messageId);
+                if (msg) {
+                  const updatedPendingJobs = (msg.pendingJobs || []).map(j => 
+                    j.jobId === jobId 
+                      ? { ...j, status: 'failed' as const, error: err.message }
+                      : j
+                  );
+                  updateMessage(agentIdForPolling, messageId, {
+                    pendingJobs: updatedPendingJobs,
+                  });
+                }
                 activePollers.delete(jobId);
               });
             }

@@ -584,6 +584,8 @@ You have media generation capabilities:
 
 **IMPORTANT**: Image and video generation are ASYNC. When you call generate_image or generate_video, you get a job ID back immediately. The actual media takes 30-60 seconds to generate. Tell the user to wait and check status with get_pending_jobs or get_job_status.
 
+**RATE LIMITING**: Only generate ONE image or video per user message. If the user asks for multiple images, generate the first one and tell them to ask again for more after the first completes. Do NOT call generate_image multiple times in a single response.
+
 ## IMPORTANT: When to Use Tools
 
 When the user asks you to generate/create/make an image, you MUST call the generate_image tool. Do NOT just say you'll make an image - actually call the tool!
