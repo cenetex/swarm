@@ -33,17 +33,17 @@ let _stateTable: string | undefined;
 let _agentId: string | undefined;
 
 function getResponseQueueUrl(): string {
-  if (!_responseQueueUrl) _responseQueueUrl = getRequiredEnv('getResponseQueueUrl()');
+  if (!_responseQueueUrl) _responseQueueUrl = getRequiredEnv('RESPONSE_QUEUE_URL');
   return _responseQueueUrl;
 }
 
 function getStateTable(): string {
-  if (!_stateTable) _stateTable = getRequiredEnv('getStateTable()');
+  if (!_stateTable) _stateTable = getRequiredEnv('STATE_TABLE');
   return _stateTable;
 }
 
 function getAgentId(): string {
-  if (!_agentId) _agentId = getRequiredEnv('getAgentId()');
+  if (!_agentId) _agentId = getRequiredEnv('AGENT_ID');
   return _agentId;
 }
 
@@ -53,63 +53,13 @@ let secretsService: ReturnType<typeof createSecretsService>;
 let secrets: Record<string, string>;
 let agentConfig: AgentConfig;
 
-/**
- * Standard tool definitions
- */
-const standardTools: ToolDefinition[] = [
-  {
-    name: 'send_message',
-    description: 'Send a text message response to the user',
-    parameters: z.object({
-      text: z.string().describe('The message text to send'),
-      reply_to: z.string().optional().describe('Message ID to reply to'),
-    }),
-    execute: async () => ({ success: true }),
-  },
-  {
-    name: 'react',
-    description: 'React to a message with an emoji',
-    parameters: z.object({
-      emoji: z.string().describe('The emoji to react with'),
-      message_id: z.string().describe('The message ID to react to'),
-    }),
-    execute: async () => ({ success: true }),
-  },
-  {
-    name: 'take_selfie',
-    description: 'Generate a selfie image of yourself based on a prompt',
-    parameters: z.object({
-      prompt: z.string().describe('Description of the selfie to generate'),
-      style: z.string().optional().describe('Art style for the image'),
-    }),
-    execute: async () => ({ success: true }),
-  },
-  {
-    name: 'wait',
-    description: 'Wait before responding to simulate thinking',
-    parameters: z.object({
-      seconds: z.number().describe('Number of seconds to wait'),
-      reason: z.string().optional().describe('Reason for waiting'),
-    }),
-    execute: async () => ({ success: true }),
-  },
-  {
-    name: 'ignore',
-    description: 'Choose not to respond to this message',
-    parameters: z.object({
-      reason: z.string().describe('Reason for not responding'),
-    }),
-    execute: async () => ({ success: true }),
-  },
-];
-
 async function initialize(): Promise<void> {
   if (stateService) return;
 
   stateService = createStateService(getStateTable());
   secretsService = createSecretsService();
 
-  // Load agent config
+  // Load agent config from state (set via admin dashboard)
   agentConfig = await stateService.getAgentConfig(getAgentId()) || {
     id: getAgentId(),
     name: process.env.AGENT_NAME || getAgentId(),
@@ -123,7 +73,7 @@ async function initialize(): Promise<void> {
       maxTokens: 1024,
     },
     media: {
-      image: { provider: 'openrouter', model: 'openai/dall-e-3' },
+      image: { provider: 'replicate', model: 'f2ab8a5bfe79f02f0789a146cf5e73d2a4ff2684a98c2b303d1e1ff3814271db' }, // flux-schnell
     },
     scheduling: {},
     behavior: {
@@ -133,8 +83,8 @@ async function initialize(): Promise<void> {
       cooldownMinutes: 5,
       maxContextMessages: 20,
     },
-    tools: ['send_message', 'react', 'ignore', 'wait', 'take_selfie'],
-    secrets: ['OPENROUTER_API_KEY'],
+    tools: defaultAgentTools,
+    secrets: ['OPENROUTER_API_KEY', 'REPLICATE_API_KEY'],
   };
 
   // Load secrets
@@ -170,8 +120,8 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       // Create LLM service
       const llmService = createLLMService(agentConfig.llm, secrets);
 
-      // Filter tools based on agent config
-      const enabledTools = standardTools.filter(t => 
+      // Get enabled tools from the public tool set
+      const enabledTools = publicTools.filter(t => 
         agentConfig.tools.includes(t.name)
       );
 

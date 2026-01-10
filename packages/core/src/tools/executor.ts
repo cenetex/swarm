@@ -27,7 +27,8 @@ export async function executeToolCall(
   toolCall: ToolCall,
   deps: ToolExecutorDependencies
 ): Promise<ToolExecutionResult> {
-  const { name, arguments: args } = toolCall;
+  const { name, input } = toolCall;
+  const args = (input || {}) as Record<string, unknown>;
 
   try {
     switch (name) {

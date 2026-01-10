@@ -242,6 +242,7 @@ If the message doesn't warrant a response, use the ignore tool.
         };
 
       case 'take_selfie':
+      case 'generate_image':
         return {
           type: 'take_selfie',
           prompt: input.prompt as string,
@@ -253,6 +254,12 @@ If the message doesn't warrant a response, use the ignore tool.
           type: 'generate_video',
           prompt: input.prompt as string,
           duration: input.duration as number | undefined,
+        };
+
+      case 'send_sticker':
+        return {
+          type: 'send_sticker',
+          emoji: input.emoji as string,
         };
 
       case 'wait':
@@ -267,6 +274,15 @@ If the message doesn't warrant a response, use the ignore tool.
           type: 'ignore',
           reason: input.reason as string || 'No response needed',
         };
+
+      // Wallet tools - these don't produce actions, they return data
+      case 'get_my_wallet':
+      case 'check_wallet_balance':
+      case 'remember':
+      case 'recall':
+        // These tools need to execute and return data to the LLM
+        // For now, return null (will be handled by tool executor)
+        return null;
 
       default:
         console.warn(`Unknown tool: ${call.name}`);

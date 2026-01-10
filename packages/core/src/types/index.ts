@@ -253,6 +253,8 @@ export interface SwarmResponse {
 
 export type ResponseAction = 
   | SendMessageAction
+  | SendMediaAction
+  | SendStickerAction
   | ReactAction
   | TakeSelfieAction
   | GenerateVideoAction
@@ -265,6 +267,20 @@ export interface SendMessageAction {
   text: string;
   media?: GeneratedMedia[];
   replyToMessageId?: string;
+}
+
+export interface SendMediaAction {
+  type: 'send_media';
+  mediaType: 'image' | 'video' | 'animation';
+  url: string;
+  caption?: string;
+  replyToMessageId?: string;
+}
+
+export interface SendStickerAction {
+  type: 'send_sticker';
+  emoji: string;
+  stickerId?: string;
 }
 
 export interface ReactAction {

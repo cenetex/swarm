@@ -103,15 +103,49 @@ export class TelegramAdapter extends PlatformAdapter {
       throw new Error('Telegram bot not initialized');
     }
 
+    const chatId = parseInt(conversationId);
+    const replyParams = replyToMessageId ? { reply_to_message_id: parseInt(replyToMessageId) } : {};
+
     try {
       switch (action.type) {
         case 'send_message':
           await this.sendMessage(conversationId, action.text, action.media, replyToMessageId);
           break;
 
+        case 'send_media':
+          // Send a media file (image, video, animation)
+          if (action.mediaType === 'image') {
+            await this.bot.api.sendPhoto(chatId, action.url, {
+              caption: action.caption,
+              ...replyParams,
+            });
+          } else if (action.mediaType === 'video') {
+            await this.bot.api.sendVideo(chatId, action.url, {
+              caption: action.caption,
+              ...replyParams,
+            });
+          } else if (action.mediaType === 'animation') {
+            await this.bot.api.sendAnimation(chatId, action.url, {
+              caption: action.caption,
+              ...replyParams,
+            });
+          }
+          break;
+
+        case 'send_sticker':
+          // Send sticker by emoji or ID
+          // If we have a sticker ID, use it; otherwise try to find one by emoji
+          if (action.stickerId) {
+            await this.bot.api.sendSticker(chatId, action.stickerId, replyParams);
+          } else {
+            // Fallback: send the emoji as text
+            await this.bot.api.sendMessage(chatId, action.emoji, replyParams);
+          }
+          break;
+
         case 'react':
           await this.bot.api.setMessageReaction(
-            parseInt(conversationId),
+            chatId,
             parseInt(action.messageId),
             [{ type: 'emoji', emoji: action.emoji as '👍' }]
           );
