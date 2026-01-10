@@ -45,10 +45,43 @@ function extractImagesFromToolCalls(toolCalls?: ChatMessageType['toolCalls']): s
   return images;
 }
 
+/**
+ * Extract images from completed pending jobs
+ */
+function extractImagesFromPendingJobs(pendingJobs?: ChatMessageType['pendingJobs']): string[] {
+  if (!pendingJobs) return [];
+  return pendingJobs
+    .filter(job => job.status === 'completed' && job.resultUrl)
+    .map(job => job.resultUrl!)
+    .filter(url => url.includes('.png') || url.includes('.jpg') || 
+                   url.includes('.webp') || url.includes('.jpeg') ||
+                   url.includes('/images/') || url.includes('rati.chat'));
+}
+
+/**
+ * Get pending/processing jobs that should show status indicator
+ */
+function getActiveJobs(pendingJobs?: ChatMessageType['pendingJobs']) {
+  if (!pendingJobs) return [];
+  return pendingJobs.filter(job => job.status === 'pending' || job.status === 'processing');
+}
+
+/**
+ * Get failed jobs that should show error
+ */
+function getFailedJobs(pendingJobs?: ChatMessageType['pendingJobs']) {
+  if (!pendingJobs) return [];
+  return pendingJobs.filter(job => job.status === 'failed');
+}
+
 export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const hasPendingTools = message.toolCalls?.some(tc => tc.status === 'pending');
-  const images = extractImagesFromToolCalls(message.toolCalls);
+  const imagesFromTools = extractImagesFromToolCalls(message.toolCalls);
+  const imagesFromJobs = extractImagesFromPendingJobs(message.pendingJobs);
+  const images = [...imagesFromTools, ...imagesFromJobs];
+  const activeJobs = getActiveJobs(message.pendingJobs);
+  const failedJobs = getFailedJobs(message.pendingJobs);
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3 lg:mb-4`}>
@@ -110,6 +143,37 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
                 ))}
               </div>
             )}
+
+            {/* Render pending job indicators */}
+            {activeJobs.length > 0 && (
+              <div className={`${message.content || images.length > 0 ? 'mt-3' : ''}`}>
+                {activeJobs.map((job) => (
+                  <div key={job.jobId} className="flex items-center gap-2 text-sm text-dark-300 bg-dark-900 rounded-lg px-3 py-2">
+                    <div className="animate-spin w-4 h-4 border-2 border-primary-400 border-t-transparent rounded-full" />
+                    <span>
+                      {job.status === 'processing' ? 'Generating' : 'Starting'} {job.type}...
+                      {job.prompt && <span className="text-dark-500 ml-1">"{job.prompt.slice(0, 50)}{job.prompt.length > 50 ? '...' : ''}"</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Render failed job errors */}
+            {failedJobs.length > 0 && (
+              <div className={`${message.content || images.length > 0 || activeJobs.length > 0 ? 'mt-3' : ''}`}>
+                {failedJobs.map((job) => (
+                  <div key={job.jobId} className="flex items-center gap-2 text-sm text-red-400 bg-red-900/20 rounded-lg px-3 py-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                    </svg>
+                    <span>
+                      {job.type} generation failed{job.error && `: ${job.error}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
         
@@ -125,6 +189,9 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
             })}
             {hasPendingTools && (
               <span className="ml-2 text-yellow-400">• Waiting for input</span>
+            )}
+            {activeJobs.length > 0 && (
+              <span className="ml-2 text-primary-400">• Generating {activeJobs.length} {activeJobs.length === 1 ? 'image' : 'images'}</span>
             )}
           </div>
         )}

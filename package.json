@@ -18,7 +18,8 @@
     "deploy:prod": "pnpm --filter @swarm/infra cdk deploy -c environment=prod",
     "synth": "pnpm --filter @swarm/infra synth",
     "cdk": "pnpm --filter @swarm/infra cdk",
-    "test:persona": "node scripts/test-persona.mjs"
+    "test:persona": "node scripts/test-persona.mjs",
+    "prepare": "husky"
   },
   "keywords": [
     "aws",
@@ -31,12 +32,19 @@
   ],
   "author": "",
   "license": "MIT",
+  "lint-staged": {
+    "packages/*/src/**/*.{ts,tsx}": [
+      "eslint --fix"
+    ]
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/node": "^22.0.0",
     "esbuild": "^0.27.2",
     "eslint": "^9.0.0",
     "globals": "^17.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "prettier": "^3.0.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.52.0",

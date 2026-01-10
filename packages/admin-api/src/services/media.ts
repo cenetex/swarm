@@ -599,21 +599,35 @@ export async function generateVideo(options: GenerateVideoOptions): Promise<Medi
   // Start Replicate prediction with webhook
   const webhookUrl = process.env.REPLICATE_WEBHOOK_URL;
 
-  const response = await fetch(REPLICATE_ENDPOINT, {
+  // Replicate requires a specific model version, not just model name
+  // For minimax/video-01, we need to get the latest version or use the deployment API
+  const videoModel = model || DEFAULT_VIDEO_MODEL;
+  
+  // Use the deployments API endpoint for official models
+  // Format: https://api.replicate.com/v1/models/{owner}/{name}/predictions
+  const modelEndpoint = `https://api.replicate.com/v1/models/${videoModel}/predictions`;
+
+  const requestBody: Record<string, unknown> = {
+    input: {
+      prompt,
+      ...(referenceImageUrl && { first_frame_image: referenceImageUrl }),
+    },
+  };
+
+  // Only include webhook config when webhook URL is configured
+  if (webhookUrl) {
+    requestBody.webhook = `${webhookUrl}?jobId=${jobId}`;
+    requestBody.webhook_events_filter = ['completed'];
+  }
+
+  const response = await fetch(modelEndpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Token ${apiKey}`,
+      'Authorization': `Bearer ${apiKey}`,  // Use Bearer for model predictions API
+      'Prefer': 'wait=5',  // Short wait to get initial status
     },
-    body: JSON.stringify({
-      model: model || DEFAULT_VIDEO_MODEL,
-      input: {
-        prompt,
-        ...(referenceImageUrl && { image: referenceImageUrl }),
-      },
-      webhook: webhookUrl ? `${webhookUrl}?jobId=${jobId}` : undefined,
-      webhook_events_filter: ['completed'],
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {

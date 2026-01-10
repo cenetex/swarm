@@ -38,6 +38,18 @@ export interface ToolCall {
   result?: unknown;
 }
 
+/**
+ * Pending job for async media generation
+ */
+export interface PendingJob {
+  jobId: string;
+  type: 'image' | 'video' | 'sticker';
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  prompt?: string;
+  error?: string;
+  resultUrl?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -47,6 +59,8 @@ export interface ChatMessage {
   error?: string;
   /** Tool calls that need user interaction */
   toolCalls?: ToolCall[];
+  /** Pending async jobs (image/video generation) */
+  pendingJobs?: PendingJob[];
 }
 
 export interface AgentChat {

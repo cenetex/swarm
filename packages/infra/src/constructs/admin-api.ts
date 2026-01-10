@@ -304,6 +304,8 @@ export class AdminApiConstruct extends Construct {
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         KMS_KEY_ID: this.encryptionKey.keyId,
         SECRET_PREFIX: 'swarm',
+        // Internal testing (non-production only)
+        INTERNAL_TEST_KEY: internalTestKey,
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],
@@ -563,9 +565,14 @@ export class AdminApiConstruct extends Construct {
       integration: replicateIntegration,
     });
 
-    // Avoid cross-Lambda environment references to prevent circular dependencies
+    // Configure log group prefixes for the consolidated logs endpoint
+    // This allows querying logs across all admin API handlers for a given agent
+    const stackPrefix = cdk.Stack.of(this).stackName;
     agentsHandler.addEnvironment('ADMIN_LOG_GROUPS', '');
     agentsHandler.addEnvironment('LOG_GROUP_PREFIX', '/aws/lambda/');
+    agentsHandler.addEnvironment('ADMIN_LOG_GROUP_PREFIXES', [
+      `/aws/lambda/${stackPrefix}-AdminApi`,  // All admin API handlers (chat, agents, telegram)
+    ].join(','));
 
     // Custom domain configuration (for Cloudflare Access proxy)
     if (props.apiDomain && props.apiCertificateArn) {

@@ -728,6 +728,16 @@ async function callLLM(
     requestBody.tool_choice = 'auto';
   }
 
+  console.log(JSON.stringify({
+    level: 'DEBUG',
+    subsystem: 'chat',
+    event: 'llm_request',
+    model: LLM_MODEL,
+    messageCount: sanitizedMessages.length,
+    toolsIncluded: tools.length > 0,
+    toolChoice: tools.length > 0 ? 'auto' : 'none',
+  }));
+
   const response = await fetchWithTimeout(
     LLM_ENDPOINT,
     {
@@ -762,6 +772,16 @@ async function callLLM(
   if (!choice) {
     throw new Error('No response from LLM');
   }
+
+  console.log(JSON.stringify({
+    level: 'DEBUG',
+    subsystem: 'chat',
+    event: 'llm_response',
+    hasContent: !!choice.message?.content,
+    contentPreview: choice.message?.content?.slice(0, 100),
+    toolCallCount: choice.message?.tool_calls?.length || 0,
+    toolNames: choice.message?.tool_calls?.map(tc => tc.function?.name) || [],
+  }));
 
   return {
     message: choice.message?.content,
@@ -857,6 +877,16 @@ async function processChat(
     ? createAgentTools(agentId, session, services)
     : [];
   const openAITools = toOpenAITools(agentTools as ToolDefinition<ZodObject<ZodRawShape>, unknown>[]);
+
+  // Log tools available for debugging
+  console.log(JSON.stringify({
+    level: 'DEBUG',
+    subsystem: 'chat',
+    event: 'tools_created',
+    agentId,
+    toolCount: openAITools.length,
+    toolNames: openAITools.map(t => t.function.name),
+  }));
 
   const messages: AdminChatMessage[] = [
     ...conversationHistory,

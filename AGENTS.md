@@ -45,7 +45,7 @@ Each agent has a logs endpoint: `GET /agents/{agentId}/logs`
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `level` | string | Filter by log level (`ERROR`, `WARN`, `INFO`, `DEBUG`) |
-| `subsystem` | string | Filter by component (`telegram`, `llm`, `state`, etc.) |
+| `subsystem` | string | Filter by component (`telegram`, `chat`, `llm`, `state`, etc.) |
 | `since` | string | Relative time (e.g., `30m`, `2h`, `1d`) |
 | `start` | number | Start timestamp (ms since epoch) |
 | `end` | number | End timestamp (ms since epoch) |
@@ -59,6 +59,9 @@ curl "https://api.rati.chat/agents/my-agent/logs?level=ERROR&since=30m"
 
 # Search for specific text in last hour
 curl "https://api.rati.chat/agents/my-agent/logs?query=timeout&since=1h"
+
+# Filter by subsystem (telegram, chat, llm)
+curl "https://api.rati.chat/agents/my-agent/logs?subsystem=telegram&since=1h"
 ```
 
 **Response:**
@@ -73,6 +76,37 @@ curl "https://api.rati.chat/agents/my-agent/logs?query=timeout&since=1h"
     { "timestamp": "2026-01-10T19:07:12.531Z", "message": "...", "logGroup": "...", "logStream": "..." }
   ]
 }
+```
+
+### Structured Log Format
+Handlers log structured JSON for queryability:
+```json
+{
+  "level": "INFO|WARN|ERROR",
+  "subsystem": "telegram|chat|llm",
+  "event": "request_received|channel_processed|validation_error|handler_error",
+  "agentId": "agent-id",
+  "requestId": "aws-request-id",
+  ...
+}
+```
+
+### Direct API Testing (Internal)
+For testing API endpoints directly (bypassing Cloudflare Access):
+```bash
+# Use the test script (requires AWS credentials)
+./scripts/test-api.sh staging chat '{"message":"hello","history":[]}'
+./scripts/test-api.sh staging agents GET
+
+# Or manually with the internal test key from Lambda env:
+INTERNAL_TEST_KEY=$(aws lambda get-function-configuration \
+  --function-name "SwarmStack-staging-AdminApiChatHandler..." \
+  --query "Environment.Variables.INTERNAL_TEST_KEY" --output text)
+
+curl "https://g5wetlu97i.execute-api.us-east-1.amazonaws.com/chat" \
+  -H "x-internal-test-key: $INTERNAL_TEST_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"test","history":[]}'
 ```
 
 ### AWS CLI Log Commands
@@ -91,9 +125,15 @@ aws logs filter-log-events \
   --log-group-name "/aws/lambda/..." \
   --filter-pattern "ERROR" \
   --limit 20
+
+# Search for structured logs by agentId
+aws logs filter-log-events \
+  --log-group-name "/aws/lambda/..." \
+  --filter-pattern '{ $.agentId = "my-agent" }' \
+  --limit 20
 ```
 
 ### Common Issues
-- **400 on `/chat`**: Check Zod validation - request body must have `message` (string) and `history` (array)
+- **400 on `/chat`**: Check Zod validation - request body must have `message` (string) and `history` (array). If sending `agent`, it needs at least `id`.
 - **403 Forbidden**: Cloudflare Access JWT missing or invalid; check `CF-Access-JWT-Assertion` header
 - **DynamoDB reserved keywords**: Use expression attribute names for reserved words like `ttl` → `#ttl`
