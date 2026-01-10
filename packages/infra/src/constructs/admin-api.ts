@@ -253,7 +253,7 @@ export class AdminApiConstruct extends Construct {
 
     this.api.addRoutes({
       path: '/chat',
-      methods: [apigateway.HttpMethod.POST],
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.POST, apigateway.HttpMethod.DELETE],
       integration: chatIntegration,
     });
 
@@ -295,16 +295,22 @@ export class AdminApiConstruct extends Construct {
         'secretsmanager:CreateSecret',
         'secretsmanager:UpdateSecret',
         'secretsmanager:PutSecretValue',
+        'secretsmanager:DeleteSecret',
         'secretsmanager:DescribeSecret',
+        'secretsmanager:GetSecretValue',
         'secretsmanager:ListSecrets',
         'secretsmanager:TagResource',
       ],
+      resources: [
+        `arn:aws:secretsmanager:*:${cdk.Stack.of(this).account}:secret:swarm/*`,
+      ],
+    }));
+
+    // ListSecrets doesn't support resource-level permissions
+    agentsHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['secretsmanager:ListSecrets'],
       resources: ['*'],
-      conditions: {
-        'StringLike': {
-          'secretsmanager:Name': 'swarm/*',
-        },
-      },
     }));
 
     const agentsIntegration = new integrations.HttpLambdaIntegration(

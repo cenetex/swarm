@@ -16,6 +16,7 @@ import * as media from '../services/media.js';
 import * as gallery from '../services/gallery.js';
 import * as credits from '../services/credits.js';
 import * as mediaJobs from '../services/media-jobs.js';
+import * as chatHistory from '../services/chat-history.js';
 import type {
   AdminChatMessage,
   ToolCall,
@@ -27,6 +28,7 @@ import type {
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
+
 
 // Cache the API key after first fetch
 let cachedApiKey: string | null = null;
@@ -928,7 +930,7 @@ export async function handler(
   const allowedOrigin = process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173';
   const corsHeaders = {
     'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, CF-Access-JWT-Assertion',
     'Access-Control-Allow-Credentials': 'true',
   };
@@ -951,6 +953,33 @@ export async function handler(
       };
     }
 
+    const method = event.requestContext.http.method;
+
+    // GET /chat?agentId=xxx - Retrieve chat history
+    if (method === 'GET') {
+      const agentId = event.queryStringParameters?.agentId;
+      const history = await chatHistory.getChatHistory(session, agentId);
+      
+      return {
+        statusCode: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history }),
+      };
+    }
+
+    // DELETE /chat?agentId=xxx - Clear chat history
+    if (method === 'DELETE') {
+      const agentId = event.queryStringParameters?.agentId;
+      await chatHistory.clearChatHistory(session, agentId);
+      
+      return {
+        statusCode: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ success: true }),
+      };
+    }
+
+    // POST /chat - Send a message
     // Parse request body
     const body = JSON.parse(event.body || '{}');
     const { message, history = [], agent } = body;
@@ -965,6 +994,9 @@ export async function handler(
 
     // Process the chat with agent context
     const result = await processChat(message, history, session, agent);
+
+    // Save the updated history to DynamoDB for cross-device sync
+    await chatHistory.saveChatHistory(session, result.history, agent?.id);
 
     return {
       statusCode: 200,

@@ -127,3 +127,46 @@ export async function checkAuth(): Promise<{ authenticated: boolean; user?: stri
     return { authenticated: false };
   }
 }
+
+/**
+ * Fetch chat history from backend (for cross-device sync)
+ */
+export async function fetchChatHistory(
+  agentId?: string
+): Promise<Array<{ role: string; content: string }>> {
+  const params = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+  const response = await fetch(`${API_BASE}/chat${params}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.history || [];
+}
+
+/**
+ * Clear chat history on the backend
+ */
+export async function clearChatHistory(agentId?: string): Promise<void> {
+  const params = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+  const response = await fetch(`${API_BASE}/chat${params}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+}
