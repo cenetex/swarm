@@ -195,6 +195,37 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
 
   // Build input based on model type
   const isNanoBanana = modelId === 'google/nano-banana-pro';
+  const hasReferenceImages = referenceImageUrls.length > 0;
+
+  // Build Nano Banana Pro input
+  const nanoBananaInput: Record<string, unknown> = {
+    prompt: finalPrompt,
+    resolution,
+    output_format: 'png',
+    safety_filter_level: 'block_only_high',
+  };
+
+  // Only add image_input if we have reference images
+  if (hasReferenceImages) {
+    nanoBananaInput.image_input = referenceImageUrls.slice(0, 14);
+    nanoBananaInput.aspect_ratio = 'match_input_image';
+  } else {
+    nanoBananaInput.aspect_ratio = aspectRatio;
+  }
+
+  // Build Flux input (fallback)
+  const fluxInput: Record<string, unknown> = {
+    prompt: finalPrompt,
+    width: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
+    height: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
+    num_outputs: 1,
+    output_format: 'png',
+  };
+  if (referenceImageUrls[0]) {
+    fluxInput.image = referenceImageUrls[0];
+  }
+
+  console.log(`Generating image with ${modelId}, refs: ${referenceImageUrls.length}, prompt: ${prompt.slice(0, 50)}...`);
 
   // Start Replicate prediction
   const response = await fetch(REPLICATE_ENDPOINT, {
@@ -206,45 +237,34 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     },
     body: JSON.stringify({
       version,
-      input: isNanoBanana ? {
-        // Nano Banana Pro format
-        prompt: finalPrompt,
-        image_input: referenceImageUrls.slice(0, 14), // Max 14 reference images
-        resolution,
-        aspect_ratio: aspectRatio,
-        output_format: 'png',
-        safety_filter_level: 'block_only_high',
-      } : {
-        // Flux format (fallback)
-        prompt: finalPrompt,
-        width: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
-        height: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
-        num_outputs: 1,
-        output_format: 'png',
-        ...(referenceImageUrls[0] && { image: referenceImageUrls[0] }),
-      },
+      input: isNanoBanana ? nanoBananaInput : fluxInput,
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
     const status = response.status;
+    console.error(`Replicate API error: ${status}`, errorText);
     throw new Error(`Image generation failed: HTTP ${status} - ${errorText || 'Empty response from Replicate'}`);
   }
 
-  // Poll for completion (Flux is usually fast - 5-15 seconds)
+  // Parse initial response
   let prediction = await response.json() as {
     id: string;
     status: string;
-    output?: string | string[];
+    output?: string | string[] | { uri?: string };
     error?: string;
   };
 
-  const maxAttempts = 60; // 60 seconds max
+  console.log(`Prediction started: ${prediction.id}, status: ${prediction.status}`);
+
+  // Poll for completion
+  const maxAttempts = 120; // 120 seconds max for slower models
   let attempts = 0;
 
   while (prediction.status === 'starting' || prediction.status === 'processing') {
     if (attempts++ >= maxAttempts) {
+      console.error(`Prediction ${prediction.id} timed out after ${attempts} seconds`);
       throw new Error('Image generation timed out');
     }
 
@@ -254,9 +274,16 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
       headers: { 'Authorization': `Token ${apiKey}` },
     });
     prediction = await pollResponse.json() as typeof prediction;
+
+    if (attempts % 10 === 0) {
+      console.log(`Prediction ${prediction.id} still ${prediction.status} after ${attempts}s`);
+    }
   }
 
+  console.log(`Prediction ${prediction.id} completed with status: ${prediction.status}`);
+
   if (prediction.status === 'failed') {
+    console.error(`Prediction failed:`, prediction.error);
     throw new Error(`Image generation failed: ${prediction.error || 'Unknown error'}`);
   }
 
@@ -264,35 +291,55 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     throw new Error(`Unexpected prediction status: ${prediction.status}`);
   }
 
-  // Get output URL (can be string or array)
-  const outputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+  // Get output URL - handle different output formats
+  let outputUrl: string | undefined;
+  if (Array.isArray(prediction.output)) {
+    outputUrl = prediction.output[0];
+  } else if (typeof prediction.output === 'string') {
+    outputUrl = prediction.output;
+  } else if (prediction.output && typeof prediction.output === 'object' && 'uri' in prediction.output) {
+    outputUrl = prediction.output.uri;
+  }
 
   if (!outputUrl) {
+    console.error('No output URL in prediction:', JSON.stringify(prediction));
     throw new Error('No image returned from Replicate');
   }
 
-  // Download and store in S3
+  console.log(`Image generated by Replicate: ${outputUrl}`);
+
+  // Download from Replicate
+  console.log(`Downloading image from Replicate...`);
   const imageResponse = await fetch(outputUrl);
   if (!imageResponse.ok) {
+    console.error(`Failed to download from Replicate: ${imageResponse.status} ${imageResponse.statusText}`);
     throw new Error(`Failed to download generated image: ${imageResponse.status}`);
   }
-  const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
 
+  const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+  console.log(`Downloaded image: ${imageBuffer.length} bytes`);
+
+  // Upload to S3
   const imageId = uuid();
   const s3Key = `agents/${agentId}/images/${imageId}.png`;
 
+  console.log(`Uploading to S3: bucket=${MEDIA_BUCKET}, key=${s3Key}`);
   await s3Client.send(new PutObjectCommand({
     Bucket: MEDIA_BUCKET,
     Key: s3Key,
     Body: imageBuffer,
     ContentType: 'image/png',
   }));
+  console.log(`S3 upload successful`);
 
   // Consume credit
   await credits.consumeCredit(agentId, 'generate_image');
 
-  // Add to gallery
+  // Construct public URL
+  // IMPORTANT: CDN_URL should be set to your CloudFront distribution URL
+  // If not set, falls back to direct S3 URL (which requires public bucket)
   const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+  console.log(`Public URL: ${publicUrl} (CDN_URL=${CDN_URL || 'NOT SET'})`);
 
   const galleryItem = await gallery.addToGallery(agentId, {
     id: imageId,
@@ -304,6 +351,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     platform,
   });
 
+  console.log(`Gallery item created: ${galleryItem.id}`);
   return galleryItem;
 }
 

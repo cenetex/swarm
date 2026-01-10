@@ -383,19 +383,25 @@ async function sendTelegramMessage(token: string, chatId: number, text: string, 
 }
 
 async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string, caption?: string, replyTo?: number): Promise<void> {
+  console.log(`[Telegram] Sending photo to chat ${chatId}: ${photoUrl.slice(0, 80)}...`);
+
   const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: chatId,
       photo: photoUrl,
-      caption,
+      caption: caption?.slice(0, 1024), // Telegram caption limit
       parse_mode: 'Markdown',
       reply_to_message_id: replyTo,
     }),
   });
+
   if (!response.ok) {
-    console.error('Telegram sendPhoto error:', await response.text());
+    const errorText = await response.text();
+    console.error(`[Telegram] sendPhoto failed: ${response.status}`, errorText);
+  } else {
+    console.log(`[Telegram] Photo sent successfully to chat ${chatId}`);
   }
 }
 
@@ -444,8 +450,11 @@ async function executeTool(
     switch (toolName) {
       case 'generate_image': {
         const prompt = args.prompt as string;
+        console.log(`[Telegram] generate_image called with prompt: ${prompt.slice(0, 50)}...`);
+
         const canUse = await credits.canUseTool(agentId, 'generate_image');
         if (!canUse.allowed) {
+          console.log(`[Telegram] Rate limited: ${canUse.reason}`);
           return { success: false, error: `Rate limited: ${canUse.reason}` };
         }
 
@@ -453,20 +462,30 @@ async function executeTool(
         const referenceImageUrls: string[] = [];
         if (agent?.profileImage?.url) {
           referenceImageUrls.push(agent.profileImage.url);
+          console.log(`[Telegram] Using profile image as reference: ${agent.profileImage.url.slice(0, 50)}...`);
         }
 
         await sendChatAction(token, chatId, 'upload_photo');
-        const result = await media.generateImage({
-          prompt,
-          agentId,
-          platform: 'telegram',
-          referenceImageUrls,
-        });
-        return {
-          success: true,
-          result: { id: result.id, url: result.url },
-          media: { type: 'image', url: result.url, caption: prompt },
-        };
+
+        try {
+          const result = await media.generateImage({
+            prompt,
+            agentId,
+            platform: 'telegram',
+            referenceImageUrls,
+          });
+
+          console.log(`[Telegram] Image generated successfully: ${result.url.slice(0, 50)}...`);
+          return {
+            success: true,
+            result: { id: result.id, url: result.url },
+            media: { type: 'image', url: result.url, caption: prompt },
+          };
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+          console.error(`[Telegram] Image generation failed:`, errorMsg);
+          return { success: false, error: `Image generation failed: ${errorMsg}` };
+        }
       }
 
       case 'generate_video': {

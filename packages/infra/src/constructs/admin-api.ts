@@ -391,8 +391,8 @@ export class AdminApiConstruct extends Construct {
       runtime: lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../../admin-api/src/handlers/telegram-webhook.ts'),
       handler: 'handler',
-      timeout: cdk.Duration.seconds(30),
-      memorySize: 256,
+      timeout: cdk.Duration.seconds(120), // Increased for image generation
+      memorySize: 512, // Increased for image processing
       environment: {
         ADMIN_TABLE: this.table.tableName,
         STATE_TABLE: stateTable?.tableName || '',
@@ -401,6 +401,9 @@ export class AdminApiConstruct extends Construct {
         LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
         API_DOMAIN: props.apiDomain || '',
         NODE_ENV: environment,
+        // Media generation config - REQUIRED for image/video generation
+        MEDIA_BUCKET: mediaBucket?.bucketName || '',
+        CDN_URL: cdnUrl || '',
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],
@@ -410,7 +413,7 @@ export class AdminApiConstruct extends Construct {
     });
 
     // Grant permissions to telegram handler
-    this.table.grantReadData(telegramWebhookHandler);
+    this.table.grantReadWriteData(telegramWebhookHandler); // Need write for conversation history
     if (stateTable) {
       stateTable.grantReadData(telegramWebhookHandler);
     }
@@ -418,6 +421,11 @@ export class AdminApiConstruct extends Construct {
 
     // Grant KMS decrypt for agent secrets
     this.encryptionKey.grantDecrypt(telegramWebhookHandler);
+
+    // Grant S3 permissions for media operations
+    if (mediaBucket) {
+      mediaBucket.grantReadWrite(telegramWebhookHandler);
+    }
 
     // Grant read access to agent secrets (bot tokens and webhook secrets)
     telegramWebhookHandler.addToRolePolicy(new iam.PolicyStatement({
