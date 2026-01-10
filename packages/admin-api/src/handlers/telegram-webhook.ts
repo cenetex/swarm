@@ -25,20 +25,13 @@ import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-sec
 import { z } from 'zod';
 import { isValidTelegramIP } from '../services/telegram.js';
 import { timingSafeEqual } from 'crypto';
-import * as media from '../services/media.js';
-import * as gallery from '../services/gallery.js';
-import * as wallets from '../services/wallets.js';
-import * as credits from '../services/credits.js';
 import * as channelState from '../services/channel-state.js';
-import * as agents from '../services/agents.js';
 import {
-  buildGalleryContext,
-  buildWalletContext,
-  injectContext,
-  type ContextLevel,
-  type GalleryContextItem,
-  type WalletContextItem,
-} from '../tools/context-builder.js';
+  ToolRegistry,
+  createToolClient,
+  registerAllTools,
+} from '@swarm/mcp-server';
+import { createTelegramMCPServices } from '../services/mcp-adapter.js';
 import type { BufferedMessage, ChannelStateRecord } from '../types.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -132,135 +125,16 @@ const _ChatMessageSchema = z.object({
 type ChatMessage = z.infer<typeof _ChatMessageSchema>;
 type ToolCall = z.infer<typeof ToolCallSchema>;
 
-// === CONTEXTUAL TOOL DEFINITIONS ===
+// === MCP TOOL CLIENT SETUP ===
 
 /**
- * Agent context for building dynamic tools
+ * Create a ToolClient for Telegram with context-enhanced descriptions
  */
-interface ToolContext {
-  galleryItems: GalleryContextItem[];
-  wallets: WalletContextItem[];
-  contextLevel: ContextLevel;
-}
-
-/**
- * Build tools with dynamic context injected into descriptions
- * This gives the LLM situational awareness without extra tool calls
- */
-function buildContextualTools(context?: ToolContext) {
-  const level = context?.contextLevel || 'summary';
-  
-  // Build context summaries
-  const galleryContext = context?.galleryItems 
-    ? buildGalleryContext(context.galleryItems, level)
-    : undefined;
-  const walletContext = context?.wallets
-    ? buildWalletContext(context.wallets, level)
-    : undefined;
-
-  return [
-    {
-      type: 'function',
-      function: {
-        name: 'generate_image',
-        description: 'Generate an image from a text prompt. The image will be sent to the chat.',
-        parameters: {
-          type: 'object',
-          properties: {
-            prompt: { type: 'string', description: 'Description of the image to generate' },
-          },
-          required: ['prompt'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'generate_video',
-        description: 'Generate a short video from a text prompt. This takes time - I will send it when ready.',
-        parameters: {
-          type: 'object',
-          properties: {
-            prompt: { type: 'string', description: 'Description of the video to generate' },
-          },
-          required: ['prompt'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'get_my_gallery',
-        description: injectContext(
-          'View my generated images and videos',
-          galleryContext
-        ),
-        parameters: {
-          type: 'object',
-          properties: {
-            type: { type: 'string', enum: ['image', 'video', 'sticker'], description: 'Filter by type' },
-            limit: { type: 'number', description: 'Max items (default 5)' },
-          },
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'get_my_wallets',
-        description: injectContext(
-          'Get my Solana wallet addresses and balances',
-          walletContext
-        ),
-        parameters: { type: 'object', properties: {} },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'send_gallery_image',
-        description: injectContext(
-          'Send an image from my gallery to the chat. Use an ID from my gallery.',
-          galleryContext
-        ),
-        parameters: {
-          type: 'object',
-          properties: {
-            imageId: { type: 'string', description: 'ID of the gallery image to send' },
-          },
-          required: ['imageId'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'list_available_models',
-        description: 'List available AI models I can use. Returns model IDs and context lengths.',
-        parameters: {
-          type: 'object',
-          properties: {
-            family: { type: 'string', description: 'Filter by model family (e.g., "claude", "gpt", "gemini")' },
-          },
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'change_my_model',
-        description: 'Change which AI model I use. Model ID must be from list_available_models.',
-        parameters: {
-          type: 'object',
-          properties: {
-            model: { type: 'string', description: 'The model ID to use (e.g., "anthropic/claude-sonnet-4")' },
-            temperature: { type: 'number', description: 'Creativity level 0.0-2.0 (default 0.8)' },
-          },
-          required: ['model'],
-        },
-      },
-    },
-  ];
+async function createTelegramToolClient(agentId: string) {
+  const registry = new ToolRegistry();
+  const services = createTelegramMCPServices(agentId);
+  registerAllTools(registry, services);
+  return createToolClient(registry, 'telegram');
 }
 
 // === CACHES ===
@@ -725,235 +599,70 @@ function parseToolArgs(raw: string | undefined, toolName: string): { ok: boolean
   }
 }
 
+/**
+ * Execute a tool using the MCP ToolClient
+ * Converts MCP result format to Telegram handler format
+ */
 async function executeTool(
   agentId: string,
   toolName: string,
   args: Record<string, unknown>,
   token: string,
   chatId: number,
-  agent?: AgentConfig
+  toolClient: ReturnType<typeof createToolClient>
 ): Promise<ToolResult> {
   try {
-    switch (toolName) {
-      case 'generate_image': {
-        const prompt = args.prompt as string;
-        console.log(`[Telegram] generate_image called with prompt: ${prompt.slice(0, 50)}...`);
-
-        const canUse = await credits.canUseTool(agentId, 'generate_image');
-        if (!canUse.allowed) {
-          console.log(`[Telegram] Rate limited: ${canUse.reason}`);
-          return { success: false, error: `Rate limited: ${canUse.reason}` };
-        }
-
-        // Build reference images array - always include profile image
-        const referenceImageUrls: string[] = [];
-        if (agent?.profileImage?.url) {
-          referenceImageUrls.push(agent.profileImage.url);
-          console.log(`[Telegram] Using profile image as reference: ${agent.profileImage.url.slice(0, 50)}...`);
-        } else {
-          // Fallback: check for reference images with 'profile' or 'character' category
-          console.log(`[Telegram] No profile image set, checking reference images...`);
-          const refImages = await media.listReferenceImages(agentId);
-          const profileRef = refImages.find(img => img.category === 'profile');
-          const characterRef = refImages.find(img => img.category === 'character');
-          if (profileRef?.url) {
-            referenceImageUrls.push(profileRef.url);
-            console.log(`[Telegram] Using 'profile' reference image: ${profileRef.url.slice(0, 50)}...`);
-          } else if (characterRef?.url) {
-            referenceImageUrls.push(characterRef.url);
-            console.log(`[Telegram] Using 'character' reference image: ${characterRef.url.slice(0, 50)}...`);
-          } else {
-            console.log(`[Telegram] No profile or character reference images found`);
-          }
-        }
-
-        await sendChatAction(token, chatId, 'upload_photo');
-
-        try {
-          const result = await media.generateImage({
-            prompt,
-            agentId,
-            platform: 'telegram',
-            referenceImageUrls,
-          });
-
-          // Use the actual CDN URL from the result
-          // The media.generateImage() already returns the proper CDN URL
-          console.log(`[Telegram] Image generated successfully: ${result.url}`);
-          const consumed = await credits.consumeCredit(agentId, 'generate_image');
-          if (!consumed) {
-            console.warn(`[Telegram] Failed to consume image credit for ${agentId}`);
-          }
-          return {
-            success: true,
-            result: { id: result.id, url: result.url },
-            media: { type: 'image', url: result.url, caption: prompt },
-          };
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-          console.error(`[Telegram] Image generation failed:`, errorMsg);
-          return { success: false, error: `Image generation failed: ${errorMsg}` };
-        }
-      }
-
-      case 'generate_video': {
-        const prompt = args.prompt as string;
-        const canUse = await credits.canUseTool(agentId, 'generate_video');
-        if (!canUse.allowed) {
-          return { success: false, error: `Rate limited: ${canUse.reason}` };
-        }
-
-        // Video generation is async - just start it
-        await sendChatAction(token, chatId, 'upload_video');
-        const job = await media.generateVideo({
-          prompt,
-          agentId,
-          platform: 'telegram',
-          conversationId: `telegram-${chatId}`,
-        });
-        const consumed = await credits.consumeCredit(agentId, 'generate_video');
-        if (!consumed) {
-          console.warn(`[Telegram] Failed to consume video credit for ${agentId}`);
-        }
-        return {
-          success: true,
-          result: { jobId: job.jobId, status: 'started', message: 'Video generation started. I will send it when ready!' },
-        };
-      }
-
-      case 'get_my_gallery': {
-        const type = args.type as 'image' | 'video' | 'sticker' | undefined;
-        const limit = (args.limit as number) || 5;
-        const items = await gallery.getGallery(agentId, { type, limit });
-        return {
-          success: true,
-          result: items.map(i => ({ id: i.id, type: i.type, url: i.url, prompt: i.prompt })),
-        };
-      }
-
-      case 'get_my_wallets': {
-        const walletList = await wallets.listWallets(agentId);
-        const enriched = await Promise.all(
-          walletList
-            .filter(w => w.walletType === 'solana')
-            .map(async (w) => {
-              try {
-                const balance = await wallets.getSolanaBalance(w.publicKey, agentId);
-                return { ...w, solBalance: balance.solBalance };
-              } catch {
-                return { ...w, solBalance: null };
-              }
-            })
-        );
-        return { success: true, result: enriched };
-      }
-
-      case 'send_gallery_image': {
-        const imageId = args.imageId as string;
-        const item = await gallery.getGalleryItem(agentId, imageId);
-        if (!item) {
-          return { success: false, error: 'Image not found in gallery' };
-        }
-        return {
-          success: true,
-          result: { id: item.id, url: item.url },
-          media: { type: 'image', url: item.url, caption: item.prompt },
-        };
-      }
-
-      case 'list_available_models': {
-        const family = args.family as string | undefined;
-        try {
-          const response = await fetchWithTimeout(
-            'https://openrouter.ai/api/v1/models',
-            { headers: { 'Content-Type': 'application/json' } },
-            10_000
-          );
-          
-          if (!response.ok) {
-            return { success: false, error: 'Failed to fetch models' };
-          }
-          
-          const data = await response.json() as {
-            data: Array<{
-              id: string;
-              name: string;
-              context_length: number;
-            }>;
-          };
-          
-          let models = data.data || [];
-          
-          if (family) {
-            const f = family.toLowerCase();
-            models = models.filter(m => m.id.toLowerCase().includes(f));
-          }
-          
-          // Return top models sorted by name
-          const topModels = models
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .slice(0, 20)
-            .map(m => ({ id: m.id, name: m.name, contextLength: m.context_length }));
-          
-          return { success: true, result: topModels };
-        } catch (e) {
-          return { success: false, error: `Failed to fetch models: ${e}` };
-        }
-      }
-
-      case 'change_my_model': {
-        const model = args.model as string;
-        const temperature = args.temperature as number | undefined;
-        
-        try {
-          const agent = await agents.getAgent(agentId);
-          if (!agent) {
-            return { success: false, error: 'Agent not found' };
-          }
-          
-          const newLlmConfig = {
-            ...agent.llmConfig,
-            model,
-            ...(temperature !== undefined ? { temperature } : {}),
-          };
-          
-          // Use the agents service to update
-          await agents.updateAgent(agentId, { llmConfig: newLlmConfig }, { 
-            email: 'telegram-user@telegram.bot', 
-            userId: 'telegram-' + agentId,
-            isAdmin: false,
-            accessToken: '',
-          });
-          
-          return { 
-            success: true, 
-            result: { 
-              message: `Model changed to ${model}`,
-              newConfig: newLlmConfig,
-            },
-          };
-        } catch (e) {
-          return { success: false, error: `Failed to change model: ${e}` };
-        }
-      }
-
-      default:
-        return { success: false, error: `Unknown tool: ${toolName}` };
+    // Send typing indicator for media-heavy tools
+    if (toolName === 'generate_image') {
+      await sendChatAction(token, chatId, 'upload_photo');
+    } else if (toolName === 'generate_video') {
+      await sendChatAction(token, chatId, 'upload_video');
     }
+
+    // Execute via MCP ToolClient
+    const mcpResult = await toolClient.execute(toolName, args, { agentId });
+
+    // Convert MCP result to Telegram handler format
+    if (!mcpResult.success) {
+      return { success: false, error: mcpResult.error || 'Unknown error' };
+    }
+
+    const result: ToolResult = {
+      success: true,
+      result: mcpResult.data,
+    };
+
+    // Handle media from MCP result
+    if (mcpResult.media) {
+      result.media = {
+        type: mcpResult.media.type === 'video' ? 'video' : 'image',
+        url: mcpResult.media.url,
+        caption: mcpResult.media.caption,
+      };
+    }
+
+    return result;
   } catch (error) {
-    console.error(`Tool ${toolName} error:`, error);
+    console.error(`[Telegram] Tool ${toolName} error:`, error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
-// Tool type for LLM calls
-type TelegramTool = ReturnType<typeof buildContextualTools>[number];
+// OpenAI tool type for LLM calls
+type OpenAITool = {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
 
 // === LLM CALL WITH TOOLS ===
 async function callLLM(
   messages: ChatMessage[],
   agent: AgentConfig,
-  tools?: TelegramTool[]
+  tools?: OpenAITool[]
 ): Promise<{ content?: string; toolCalls?: ToolCall[] }> {
   const apiKey = await getLlmApiKey();
 
@@ -1115,22 +824,10 @@ async function processChannelResponse(
 ): Promise<number | null> {
   const chatId = state.chatId;
 
-  // === FETCH DYNAMIC CONTEXT FOR TOOLS ===
-  // This gives the LLM situational awareness without extra tool calls
-  const [galleryItems, walletList] = await Promise.all([
-    gallery.getGallery(agentId, { limit: 5, type: 'image' }).catch(() => []),
-    wallets.listWallets(agentId).catch(() => []),
-  ]);
-
-  const toolContext: ToolContext = {
-    galleryItems: galleryItems.map(g => ({ id: g.id, type: g.type, prompt: g.prompt })),
-    wallets: walletList
-      .filter(w => w.walletType === 'solana')
-      .map(w => ({ publicKey: w.publicKey, label: w.name })),
-    contextLevel: 'summary', // Use summary for token efficiency
-  };
-
-  const contextualTools = buildContextualTools(toolContext);
+  // === CREATE MCP TOOL CLIENT ===
+  // Tools get context injected into descriptions automatically
+  const toolClient = await createTelegramToolClient(agentId);
+  const contextualTools = await toolClient.getOpenAIToolsWithContext(agentId);
 
   // Build conversation context from buffered messages
   const conversationContext = channelState.buildConversationContext(state);
@@ -1230,7 +927,7 @@ async function processChannelResponse(
           continue;
         }
 
-        const result = await executeTool(agentId, toolName, parsedArgs.args, token, chatId, agent);
+        const result = await executeTool(agentId, toolName, parsedArgs.args, token, chatId, toolClient);
 
         // Only add to failedTools for permanent failures, not rate limits or transient errors
         // Rate limits and "not found" errors should not block future attempts

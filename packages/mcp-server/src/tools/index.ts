@@ -10,6 +10,7 @@ export { createModelTools, type ModelServices, type ModelInfo } from './models.j
 export { createProfileTools, type ProfileServices } from './profile.js';
 export { createSecretTools, type SecretServices, type SecretType, type SecretInfo } from './secrets.js';
 export { createJobTools, type JobServices, type JobInfo, type CreditServices as JobCreditServices, type CreditStatus } from './jobs.js';
+export { createReferenceImageTools, type ReferenceImageServices, type ReferenceImage, type ReferenceImageCategory } from './reference.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';
 import { createGalleryTools } from './gallery.js';
@@ -18,6 +19,7 @@ import { createModelTools } from './models.js';
 import { createProfileTools } from './profile.js';
 import { createSecretTools } from './secrets.js';
 import { createJobTools, type CreditServices as JobCreditServices } from './jobs.js';
+import { createReferenceImageTools } from './reference.js';
 import type { ToolRegistry } from '../registry.js';
 
 /**
@@ -33,6 +35,7 @@ export interface AllServices {
   profile: import('./profile.js').ProfileServices;
   secrets: import('./secrets.js').SecretServices;
   jobs: import('./jobs.js').JobServices;
+  reference: import('./reference.js').ReferenceImageServices;
 }
 
 /**
@@ -49,4 +52,5 @@ export function registerAllTools(
   registry.registerAll(createProfileTools(services.profile));
   registry.registerAll(createSecretTools(services.secrets));
   registry.registerAll(createJobTools(services.jobs, services.jobCredits));
+  registry.registerAll(createReferenceImageTools(services.reference));
 }

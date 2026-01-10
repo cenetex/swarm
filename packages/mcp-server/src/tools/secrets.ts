@@ -10,22 +10,11 @@ import { defineTool, defineManualTool, type ToolResult } from '../registry.js';
 // Service Interface
 // ============================================================================
 
-export type SecretType = 
-  | 'telegram_bot_token'
-  | 'telegram_webhook_secret'
-  | 'twitter_api_key'
-  | 'twitter_api_secret'
-  | 'twitter_access_token'
-  | 'twitter_access_secret'
-  | 'replicate_api_key'
-  | 'openai_api_key'
-  | 'anthropic_api_key'
-  | 'helius_api_key'
-  | 'discord_bot_token'
-  | 'custom';
+// Be flexible with secret types - actual implementations may have more types
+export type SecretType = string;
 
 export interface SecretInfo {
-  secretType: SecretType;
+  secretType: string;
   name: string;
   description?: string;
   lastUpdated?: number;
@@ -37,7 +26,7 @@ export interface SecretServices {
   
   storeSecret: (
     agentId: string,
-    secretType: SecretType,
+    secretType: string,
     name: string,
     value: string,
     description?: string
@@ -45,7 +34,7 @@ export interface SecretServices {
   
   validateTelegramToken?: (token: string) => Promise<{
     valid: boolean;
-    botInfo?: { username: string };
+    botInfo?: { username?: string };
     error?: string;
   }>;
 }

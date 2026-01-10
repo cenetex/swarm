@@ -8,14 +8,6 @@ import type {
 } from 'aws-lambda';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js';
-import * as agents from '../services/agents.js';
-import * as secrets from '../services/secrets.js';
-import * as wallets from '../services/wallets.js';
-import * as telegram from '../services/telegram.js';
-import * as media from '../services/media.js';
-import * as gallery from '../services/gallery.js';
-import * as credits from '../services/credits.js';
-import * as mediaJobs from '../services/media-jobs.js';
 import * as chatHistory from '../services/chat-history.js';
 import {
   ChatRequestSchema,
@@ -23,25 +15,13 @@ import {
   type ToolCall,
   type ToolResult,
   type UserSession,
-  type SecretType,
 } from '../types.js';
 import {
-  createAgentTools,
-  type ToolServices,
-} from '../tools/index.js';
-import {
-  toOpenAITools,
-  executeTool as executeToolWithValidation,
-  type ToolDefinition,
-} from '../tools/tool-helper.js';
-import {
-  buildGalleryContext,
-  buildWalletContext,
-  injectContext,
-  type GalleryContextItem,
-  type WalletContextItem,
-} from '../tools/context-builder.js';
-import type { ZodObject, ZodRawShape } from 'zod';
+  ToolRegistry,
+  createToolClient,
+  registerAllTools,
+} from '@swarm/mcp-server';
+import { createMCPServices } from '../services/mcp-adapter.js';
 
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
@@ -49,7 +29,6 @@ const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
 
 // Timeout settings
 const LLM_TIMEOUT_MS = 60_000; // 60 seconds for LLM calls (can be slow)
-const API_TIMEOUT_MS = 10_000; // 10 seconds for other API calls
 
 /**
  * Fetch with timeout using AbortController
@@ -143,415 +122,6 @@ function sanitizeMessages(messages: AdminChatMessage[]): AdminChatMessage[] {
   }
 
   return sanitized;
-}
-
-/**
- * Build tool services for a specific agent context
- * These services encapsulate all business logic for tool execution
- */
-function buildToolServices(
-  agentId: string,
-  session: UserSession
-): ToolServices {
-  return {
-    // Agent config
-    getAgentConfig: async () => {
-      const agent = await agents.getAgent(agentId);
-      if (!agent) return { error: 'Agent not found' };
-      return {
-        model: agent.llmConfig?.model || 'anthropic/claude-sonnet-4',
-        temperature: agent.llmConfig?.temperature ?? 0.8,
-        maxTokens: agent.llmConfig?.maxTokens || 1024,
-        provider: agent.llmConfig?.provider || 'openrouter',
-      };
-    },
-    updateAgentConfig: async (updates: unknown) => {
-      await agents.updateAgent(agentId, updates as Record<string, unknown>, session);
-    },
-
-    // Wallets
-    listWallets: async () => {
-      const walletList = await wallets.listWallets(agentId);
-      // Enrich with balances
-      const enriched = await Promise.all(
-        walletList
-          .filter(w => w.walletType === 'solana')
-          .map(async (w) => {
-            try {
-              const balance = await wallets.getSolanaBalance(w.publicKey, agentId);
-              return { ...w, balance };
-            } catch {
-              return { ...w, balance: null };
-            }
-          })
-      );
-      return enriched;
-    },
-    createWallet: async (name: string) => {
-      const result = await wallets.generateSolanaWallet(agentId, name, session);
-      return { publicKey: result.publicKey, address: result.address };
-    },
-    getBalance: async (publicKey: string) => {
-      const balance = await wallets.getSolanaBalance(publicKey, agentId);
-      return { sol: (balance as { sol?: number })?.sol || 0, tokens: (balance as { tokens?: unknown[] })?.tokens || [] };
-    },
-
-    // Secrets
-    listSecrets: async () => secrets.listSecrets(agentId),
-    storeSecret: async (
-      agentId: string,
-      secretType: string,
-      name: string,
-      value: string,
-      session: UserSession,
-      description?: string
-    ) => {
-      await secrets.storeSecret(agentId, secretType as SecretType, name, value, session, description);
-
-      // Special handling for Telegram bot tokens
-      if (secretType === 'telegram_bot_token') {
-        const validation = await telegram.validateTelegramToken(value);
-        if (validation.valid) {
-          // Enable Telegram platform on the agent
-          await agents.updateAgent(agentId, {
-            platforms: {
-              telegram: {
-                enabled: true,
-                botUsername: validation.botInfo?.username
-              }
-            }
-          }, session);
-
-          // Register the webhook
-          const webhookResult = await telegram.registerTelegramWebhook(value, agentId);
-          if (webhookResult.success && webhookResult.secretToken) {
-            // Store the webhook secret
-            await secrets.storeSecret(
-              agentId,
-              'telegram_webhook_secret',
-              'default',
-              webhookResult.secretToken,
-              session,
-              `Telegram webhook secret for ${agentId}`
-            );
-          }
-        }
-      }
-    },
-    validateTelegramToken: telegram.validateTelegramToken,
-
-    // Media jobs
-    listPendingJobs: async () => {
-      let pendingJobs = await mediaJobs.getPendingJobs(agentId);
-
-      // Poll Replicate for processing jobs
-      if (pendingJobs.length > 0) {
-        const replicateKey = await media.getProviderApiKey(agentId, 'replicate');
-        if (replicateKey) {
-          for (const job of pendingJobs) {
-            if ((job.status === 'processing' || job.status === 'pending') && job.externalId) {
-              await mediaJobs.pollAndCompleteJob(job.jobId, replicateKey);
-            }
-          }
-          pendingJobs = await mediaJobs.getPendingJobs(agentId);
-        }
-      }
-
-      return pendingJobs.map(job => ({
-        jobId: job.jobId,
-        type: job.type,
-        status: job.status,
-        prompt: job.prompt,
-        createdAt: new Date(job.createdAt).toISOString(),
-        resultUrl: job.resultUrl,
-        url: job.resultUrl,
-        success: job.status === 'completed' && !!job.resultUrl,
-      }));
-    },
-    getJob: async (jobId: string) => {
-      let job = await mediaJobs.getJob(jobId);
-      if (!job) return null;
-
-      // Poll if still processing
-      if ((job.status === 'processing' || job.status === 'pending') && job.externalId) {
-        const replicateKey = await media.getProviderApiKey(job.agentId, 'replicate');
-        if (replicateKey) {
-          const polledJob = await mediaJobs.pollAndCompleteJob(job.jobId, replicateKey);
-          if (polledJob) job = polledJob;
-        }
-      }
-
-      return {
-        jobId: job.jobId,
-        type: job.type,
-        status: job.status,
-        prompt: job.prompt,
-        createdAt: new Date(job.createdAt).toISOString(),
-        updatedAt: new Date(job.updatedAt).toISOString(),
-        completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : undefined,
-        resultUrl: job.resultUrl,
-        url: job.resultUrl,
-        success: job.status === 'completed' && !!job.resultUrl,
-        error: job.error,
-      };
-    },
-    getCredits: async () => credits.getToolStatus(agentId),
-
-    // Profile
-    updateProfile: async (updates) => {
-      await agents.updateAgent(agentId, updates, session);
-    },
-    getProfileUploadUrl: async () => media.getProfileImageUploadUrl(agentId),
-    saveProfileImage: async (s3Key: string, publicUrl: string) => {
-      await agents.updateAgent(agentId, {
-        profileImage: { url: publicUrl, s3Key, updatedAt: Date.now() }
-      }, session);
-    },
-    setProfileFromUrl: async (url: string) => {
-      const result = await media.setProfileImage(agentId, { type: 'url', url });
-      await agents.updateAgent(agentId, {
-        profileImage: { url: result.url, s3Key: result.s3Key, updatedAt: Date.now() }
-      }, session);
-      return { success: true, url: result.url };
-    },
-    setProfileFromGallery: async (imageId: string) => {
-      const result = await media.setProfileImage(agentId, { type: 'gallery', imageId });
-      await agents.updateAgent(agentId, {
-        profileImage: { url: result.url, s3Key: result.s3Key, updatedAt: Date.now() }
-      }, session);
-      return { success: true, url: result.url };
-    },
-    generateProfileImage: async (prompt: string) => {
-      const result = await media.setProfileImage(agentId, { type: 'generate', prompt });
-      // setProfileImage returns url/s3Key for generate, so we create a synthetic job response
-      return { jobId: 'profile-' + Date.now(), status: result.url ? 'completed' : 'pending' };
-    },
-
-    // Media generation
-    generateImage: async (params) => {
-      // Check credits
-      const canUse = await credits.canUseTool(agentId, 'generate_image');
-      if (!canUse.allowed) {
-        throw new Error(`Rate limited: ${canUse.reason}`);
-      }
-
-      // Build reference images
-      const referenceImageUrls: string[] = [];
-
-      if (params.useProfileAsReference !== false) {
-        const agent = await agents.getAgent(agentId);
-        if (agent?.profileImage?.url) {
-          referenceImageUrls.push(agent.profileImage.url);
-        } else {
-          const refImages = await media.listReferenceImages(agentId);
-          const profileRef = refImages.find(img => img.category === 'profile');
-          const characterRef = refImages.find(img => img.category === 'character');
-          if (profileRef?.url) referenceImageUrls.push(profileRef.url);
-          else if (characterRef?.url) referenceImageUrls.push(characterRef.url);
-        }
-      }
-
-      if (params.galleryImageIds) {
-        for (const imageId of params.galleryImageIds) {
-          const item = await gallery.getGalleryItem(agentId, imageId);
-          if (item?.url) referenceImageUrls.push(item.url);
-        }
-      }
-
-      if (params.referenceImageId) {
-        const images = await media.listReferenceImages(agentId);
-        const refImage = images.find(img => img.id === params.referenceImageId);
-        if (refImage?.url) referenceImageUrls.push(refImage.url);
-      }
-
-      const job = await media.generateImageAsync({
-        prompt: params.prompt,
-        agentId,
-        platform: 'admin-chat',
-        referenceImageUrls,
-        resolution: (params.resolution || '2K') as '1K' | '2K' | '4K',
-        aspectRatio: (params.aspectRatio || '1:1') as '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9',
-        conversationId: 'admin-chat-' + Date.now(),
-      });
-
-      await credits.consumeCredit(agentId, 'generate_image');
-
-      return {
-        jobId: job.jobId,
-        status: job.status as 'pending' | 'processing' | 'completed' | 'failed',
-        resultUrl: undefined,
-      };
-    },
-    generateVideo: async (params) => {
-      const canUse = await credits.canUseTool(agentId, 'generate_video');
-      if (!canUse.allowed) {
-        throw new Error(`Rate limited: ${canUse.reason}`);
-      }
-
-      let referenceImageUrl: string | undefined;
-
-      if (params.referenceImageId) {
-        const images = await media.listReferenceImages(agentId);
-        const refImage = images.find(img => img.id === params.referenceImageId);
-        if (refImage) referenceImageUrl = refImage.url;
-      } else if (params.useProfileAsReference !== false) {
-        const agent = await agents.getAgent(agentId);
-        if (agent?.profileImage?.url) {
-          referenceImageUrl = agent.profileImage.url;
-        } else {
-          const refImages = await media.listReferenceImages(agentId);
-          const profileRef = refImages.find(img => img.category === 'profile');
-          const characterRef = refImages.find(img => img.category === 'character');
-          referenceImageUrl = profileRef?.url || characterRef?.url;
-        }
-      }
-
-      const job = await media.generateVideo({
-        prompt: params.prompt,
-        agentId,
-        platform: 'admin-chat',
-        conversationId: 'admin-chat-' + Date.now(),
-        referenceImageUrl,
-      });
-
-      await credits.consumeCredit(agentId, 'generate_video');
-
-      return {
-        jobId: job.jobId,
-        status: job.status as 'pending' | 'processing' | 'completed' | 'failed',
-        resultUrl: undefined,
-      };
-    },
-    generateSticker: async (params) => {
-      const canUse = await credits.canUseTool(agentId, 'generate_sticker');
-      if (!canUse.allowed) {
-        throw new Error(`Rate limited: ${canUse.reason}`);
-      }
-
-      const sticker = await media.generateSticker({
-        prompt: params.prompt || 'sticker',
-        agentId,
-        platform: 'admin-chat',
-        sourceImageId: params.sourceImageId,
-      });
-
-      await credits.consumeCredit(agentId, 'generate_sticker');
-
-      return {
-        jobId: sticker.id || 'direct',
-        status: 'completed' as const,
-        resultUrl: sticker.url,
-      };
-    },
-
-    // Gallery
-    listGallery: async (type?: string, limit?: number) => {
-      const items = await gallery.getGallery(agentId, {
-        type: type as 'image' | 'video' | 'sticker' | undefined,
-        limit: limit || 20,
-      });
-      return items.map(item => ({
-        id: item.id,
-        type: item.type,
-        url: item.url,
-        prompt: item.prompt,
-        createdAt: item.createdAt,
-      }));
-    },
-    searchGallery: async (query: string, type?: string) => {
-      const items = await gallery.findByDescription(
-        agentId,
-        query,
-        type as 'image' | 'video' | 'sticker' | undefined
-      );
-      return items.map(item => ({
-        id: item.id,
-        type: item.type,
-        url: item.url,
-        prompt: item.prompt,
-        createdAt: item.createdAt,
-      }));
-    },
-    getGalleryItem: async (imageId: string) => {
-      const item = await gallery.getGalleryItem(agentId, imageId);
-      if (!item) return null;
-      return {
-        id: item.id,
-        type: item.type,
-        url: item.url,
-        prompt: item.prompt,
-        createdAt: item.createdAt,
-      };
-    },
-
-    // Reference images
-    getReferenceUploadUrl: async (category: string, name: string, _description?: string) => {
-      type ReferenceCategory = 'profile' | 'character' | 'style' | 'background' | 'other';
-      const result = await media.getReferenceImageUploadUrl(agentId, category as ReferenceCategory, name);
-      return { uploadUrl: result.uploadUrl, s3Key: result.s3Key, publicUrl: result.publicUrl };
-    },
-    saveReferenceImage: async (data) => {
-      type ReferenceCategory = 'profile' | 'character' | 'style' | 'background' | 'other';
-      const result = await media.saveReferenceImage(
-        agentId,
-        data.category as ReferenceCategory,
-        data.s3Key,
-        data.publicUrl,
-        data.name,
-        data.description
-      );
-      return { id: result.id };
-    },
-    listReferenceImages: async (category?: string) => {
-      type ReferenceCategory = 'profile' | 'character' | 'style' | 'background' | 'other';
-      const images = await media.listReferenceImages(agentId, category as ReferenceCategory | undefined);
-      return images.map(img => ({
-        id: img.id,
-        category: img.category,
-        name: img.name,
-        url: img.url,
-        description: img.description,
-      }));
-    },
-    deleteReferenceImage: async (imageId: string) => {
-      await media.deleteReferenceImage(agentId, imageId);
-    },
-
-    // Models
-    fetchModels: async (family?: string) => {
-      const response = await fetchWithTimeout(
-        'https://openrouter.ai/api/v1/models',
-        { headers: { 'Content-Type': 'application/json' } },
-        API_TIMEOUT_MS
-      );
-
-      if (!response.ok) return [];
-
-      const data = await response.json() as {
-        data: Array<{
-          id: string;
-          name: string;
-          pricing: { prompt: string; completion: string };
-          context_length: number;
-          top_provider?: { max_completion_tokens?: number };
-        }>;
-      };
-
-      let models = data.data || [];
-
-      if (family) {
-        const f = family.toLowerCase();
-        models = models.filter(m => m.id.toLowerCase().startsWith(f + '/'));
-      }
-
-      return models.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 50);
-    },
-    updateModelConfig: async (config) => {
-      const agent = await agents.getAgent(agentId);
-      const newLlmConfig = { ...agent?.llmConfig, ...config };
-      await agents.updateAgent(agentId, { llmConfig: newLlmConfig } as Record<string, unknown>, session);
-    },
-  };
 }
 
 interface AgentContext {
@@ -652,13 +222,12 @@ Be friendly, helpful, and guide your owner through setup step by step.`;
 }
 
 /**
- * Execute a tool call using Zod-based tools
+ * Execute a tool call using MCP ToolClient
  * Agent-centric: all operations use the agent's own ID from context
  */
 async function executeTool(
   toolCall: ToolCall,
-  _session: UserSession,
-  agentTools: ToolDefinition<ZodObject<ZodRawShape>, unknown>[],
+  toolClient: ReturnType<typeof createToolClient>,
   agentContext?: AgentContext
 ): Promise<ToolResult> {
   const { name, arguments: argsString } = toolCall.function;
@@ -674,33 +243,37 @@ async function executeTool(
 
     const agentId = agentContext?.id;
 
-    // Find the matching tool definition
-    const tool = agentTools.find(t => t.name === name);
-    if (!tool) {
-      throw new Error(`Unknown tool: ${name}`);
-    }
-
-    // Handle manual tools (execute === false)
-    if (tool.execute === false) {
-      // Manual tools return data for UI interaction
+    // Handle manual tools that need UI interaction (request_secret, set_profile_image with upload)
+    if (name === 'request_secret') {
       return {
         tool_call_id: toolCall.id,
         role: 'tool',
         content: JSON.stringify({
-          type: name === 'request_secret' ? 'secret_request' : 'manual_tool',
+          type: 'secret_request',
           ...args,
           agentId,
         }, null, 2),
       };
     }
 
-    // Execute the tool with validated input
-    const result = await executeToolWithValidation(tool, args);
+    if (name === 'set_profile_image' && args.source === 'upload') {
+      return {
+        tool_call_id: toolCall.id,
+        role: 'tool',
+        content: JSON.stringify({
+          type: 'profile_upload_request',
+          agentId,
+        }, null, 2),
+      };
+    }
+
+    // Execute via MCP ToolClient
+    const mcpResult = await toolClient.execute(name, args, { agentId: agentId || '' });
 
     return {
       tool_call_id: toolCall.id,
       role: 'tool',
-      content: JSON.stringify(result, null, 2),
+      content: JSON.stringify(mcpResult.success ? mcpResult.data : { error: true, message: mcpResult.error }, null, 2),
     };
   } catch (error) {
     return {
@@ -890,70 +463,25 @@ async function processChat(
     arguments: Record<string, unknown>;
   };
 }> {
-  // Create tools for this agent context
+  // Create MCP ToolClient for this agent context
   const agentId = agent?.id;
-  const services = agentId ? buildToolServices(agentId, session) : null;
-  const agentTools = agentId && services
-    ? createAgentTools(agentId, session, services)
-    : [];
-  let openAITools = toOpenAITools(agentTools as ToolDefinition<ZodObject<ZodRawShape>, unknown>[]);
-
-  // Inject dynamic context into tool descriptions
-  if (agentId && services) {
+  let toolClient: ReturnType<typeof createToolClient> | null = null;
+  
+  if (agentId) {
+    const registry = new ToolRegistry();
+    const mcpServices = createMCPServices(agentId, session);
+    registerAllTools(registry, mcpServices);
+    toolClient = createToolClient(registry, 'admin-ui');
+  }
+  
+  // Get OpenAI-formatted tools with injected context
+  let openAITools: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> = [];
+  if (toolClient && agentId) {
     try {
-      // Fetch gallery items and wallets for context
-      const [galleryItems, walletItems] = await Promise.all([
-        services.listGallery(undefined, 10),
-        services.listWallets(),
-      ]);
-
-      // Build context for gallery and wallet tools
-      const galleryContext = buildGalleryContext(
-        galleryItems.map(g => ({
-          id: g.id,
-          type: g.type as 'image' | 'video' | 'sticker',
-          prompt: g.prompt,
-          url: g.url,
-        })) as GalleryContextItem[],
-        'summary'
-      );
-      const walletContext = buildWalletContext(
-        (walletItems as Array<{ publicKey: string; name?: string; solBalance?: number }>).map(w => ({
-          publicKey: w.publicKey,
-          label: w.name,
-          solBalance: (w as { balance?: { sol?: number } }).balance?.sol,
-        })) as WalletContextItem[],
-        'summary'
-      );
-
-      // Inject context into relevant tool descriptions
-      openAITools = openAITools.map(tool => {
-        const name = tool.function.name;
-        let description = tool.function.description;
-
-        if (name === 'send_gallery_image' || name === 'get_my_gallery' || name === 'search_gallery') {
-          description = injectContext(description, galleryContext);
-        } else if (name === 'get_my_wallets' || name === 'get_wallet_balance') {
-          description = injectContext(description, walletContext);
-        }
-
-        return {
-          ...tool,
-          function: { ...tool.function, description },
-        };
-      });
-
-      console.log(JSON.stringify({
-        level: 'DEBUG',
-        subsystem: 'chat',
-        event: 'context_injected',
-        agentId,
-        galleryCount: galleryItems.length,
-        walletCount: walletItems.length,
-      }));
+      openAITools = await toolClient.getOpenAIToolsWithContext(agentId);
     } catch (e) {
-      console.error('[Chat] Failed to build context for tools:', e);
-      // Continue with base tool descriptions
+      console.error('[Chat] Failed to get tools with context:', e);
+      openAITools = toolClient.getOpenAITools();
     }
   }
 
@@ -1036,7 +564,10 @@ async function processChat(
 
       if (uploadUrlTool) {
         // Execute the tool to get the UI payload (upload URL or model selector)
-        const toolResult = await executeTool(uploadUrlTool, session, agentTools as ToolDefinition<ZodObject<ZodRawShape>, unknown>[], agent);
+        if (!toolClient) {
+          throw new Error('Tool client not initialized');
+        }
+        const toolResult = await executeTool(uploadUrlTool, toolClient, agent);
         let toolArgs: Record<string, unknown> = {};
         try {
           toolArgs = JSON.parse(toolResult.content || '{}');
@@ -1086,7 +617,14 @@ async function processChat(
             };
           }
           
-          const result = await executeTool(tc, session, agentTools as ToolDefinition<ZodObject<ZodRawShape>, unknown>[], agent);
+          if (!toolClient) {
+            return {
+              tool_call_id: tc.id,
+              role: 'tool' as const,
+              content: JSON.stringify({ error: true, message: 'Tool client not initialized' }),
+            };
+          }
+          const result = await executeTool(tc, toolClient, agent);
           
           // Track failed tools, but not transient errors
           try {

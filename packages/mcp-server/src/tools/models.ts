@@ -15,8 +15,8 @@ export interface ModelInfo {
   name: string;
   contextLength: number;
   pricing?: {
-    prompt: string;
-    completion: string;
+    prompt: number | string;
+    completion: number | string;
   };
 }
 
@@ -27,7 +27,7 @@ export interface ModelServices {
     model: string;
     temperature: number;
     maxTokens: number;
-    provider: string;
+    provider?: string;
   }>;
   
   updateConfig: (agentId: string, config: {

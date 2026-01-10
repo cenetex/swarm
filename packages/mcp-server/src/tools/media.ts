@@ -21,13 +21,14 @@ export interface MediaServices {
     referenceImageUrls?: string[];
     resolution?: '1K' | '2K' | '4K';
     aspectRatio?: string;
-  }) => Promise<{ jobId: string; status: string; url?: string; id?: string }>;
+  }) => Promise<{ url: string; id: string } | { jobId: string; status: string; url?: string; id?: string }>;
 
   generateVideo: (params: {
     prompt: string;
     agentId: string;
     platform: string;
     referenceImageUrl?: string;
+    conversationId?: string;
   }) => Promise<{ jobId: string; status: string }>;
 
   generateSticker: (params: {
@@ -107,7 +108,7 @@ export const createMediaTools = (
       }
 
       // If synchronous result with URL
-      if (result.url) {
+      if ('url' in result && result.url) {
         return {
           success: true,
           data: { id: result.id, url: result.url },
@@ -115,16 +116,21 @@ export const createMediaTools = (
         };
       }
 
-      // Async job
-      return {
-        success: true,
-        data: { jobId: result.jobId, status: result.status },
-        pendingJob: {
-          jobId: result.jobId,
-          type: 'image',
-          prompt: input.prompt,
-        },
-      };
+      // Async job - use 'in' check for proper narrowing
+      if ('jobId' in result && result.jobId) {
+        return {
+          success: true,
+          data: { jobId: result.jobId, status: result.status },
+          pendingJob: {
+            jobId: result.jobId,
+            type: 'image',
+            prompt: input.prompt,
+          },
+        };
+      }
+
+      // Fallback - shouldn't happen
+      return { success: false, error: 'Unexpected response from image generation' };
     },
   }),
 

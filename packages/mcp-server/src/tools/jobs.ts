@@ -30,10 +30,11 @@ export interface CreditStatus {
   generate_image: { used: number; limit: number; remaining: number };
   generate_video: { used: number; limit: number; remaining: number };
   generate_sticker: { used: number; limit: number; remaining: number };
+  [key: string]: { used: number; limit: number; remaining: number };
 }
 
 export interface CreditServices {
-  getToolStatus: (agentId: string) => Promise<CreditStatus>;
+  getToolStatus: (agentId: string) => Promise<CreditStatus | Record<string, unknown>>;
 }
 
 // ============================================================================

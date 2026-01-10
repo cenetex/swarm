@@ -35,6 +35,8 @@ export interface ProfileServices {
     s3Key: string;
     publicUrl: string;
   }>;
+  
+  saveProfileImage: (agentId: string, s3Key: string, publicUrl: string) => Promise<void>;
 }
 
 // ============================================================================
@@ -144,6 +146,28 @@ export const createProfileTools = (services: ProfileServices) => [
         uiAction: {
           type: 'upload_widget',
           payload: uploadInfo,
+        },
+      };
+    },
+  }),
+
+  defineTool({
+    name: 'save_uploaded_profile_image',
+    description: 'Save an already-uploaded image as my profile picture.',
+    category: 'profile',
+    platforms: ['admin-ui'],
+    inputSchema: z.object({
+      s3Key: z.string().describe('The S3 key of the uploaded image'),
+      publicUrl: z.string().describe('The public URL of the uploaded image'),
+    }),
+    execute: async (input, context): Promise<ToolResult> => {
+      await services.saveProfileImage(context.agentId, input.s3Key, input.publicUrl);
+
+      return {
+        success: true,
+        data: {
+          message: 'Profile image saved!',
+          url: input.publicUrl,
         },
       };
     },

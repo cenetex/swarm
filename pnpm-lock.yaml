@@ -80,6 +80,9 @@ importers:
       '@swarm/core':
         specifier: workspace:*
         version: link:../core
+      '@swarm/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
       bs58:
         specifier: ^6.0.0
         version: 6.0.0

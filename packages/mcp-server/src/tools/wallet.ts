@@ -22,12 +22,13 @@ export interface WalletServices {
   
   createWallet: (agentId: string, name: string) => Promise<{
     publicKey: string;
-    address: string;
+    address?: string;
   }>;
   
   getBalance: (publicKey: string, agentId: string) => Promise<{
     solBalance: number;
-    tokens?: Array<{ mint: string; balance: number }>;
+    solBalanceLamports?: number;
+    tokens?: unknown[];
   }>;
 }
 
