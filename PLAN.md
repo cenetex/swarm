@@ -114,6 +114,15 @@
 13. **Discord adapter missing**
    - Requires implementation and gateway vs interaction decision.
 
+14. **Response state updated before delivery**
+    - `markResponseSent` runs after enqueueing, not after the response is actually sent; failures clear the buffer and enter cooldown anyway.
+
+15. **Tool-call JSON parsing is unguarded**
+    - Invalid tool arguments from LLM output can throw and abort the tool loop.
+
+16. **Admin Telegram webhook ignores non-text messages**
+    - Updates with captions/media/stickers are dropped because `message.text` is required.
+
 ---
 
 ## Admin Interface (Conversational Setup)
@@ -1072,6 +1081,9 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
    - [ ] Consume credits on successful `generate_image`/`generate_video`
    - [ ] Make channel-state updates atomic (UpdateCommand/list_append)
    - [ ] Add timeouts/retries for LLM + Telegram fetch calls
+   - [ ] Defer channel cooldown/response marking until send is confirmed
+   - [ ] Guard tool-call JSON parsing (reject/repair invalid tool args)
+   - [ ] Accept non-text Telegram updates (caption/media) in admin webhook
 
 2. **Admin deployment verification**
    - [ ] Configure Cloudflare Access policies

@@ -555,15 +555,8 @@ export class AdminApiConstruct extends Construct {
       integration: replicateIntegration,
     });
 
-    const adminLogGroups = [
-      this.chatHandler.logGroup.logGroupName,
-      agentsHandler.logGroup.logGroupName,
-      telegramWebhookHandler.logGroup.logGroupName,
-      replicateWebhookHandler.logGroup.logGroupName,
-      healthHandler.logGroup.logGroupName,
-    ].join(',');
-
-    agentsHandler.addEnvironment('ADMIN_LOG_GROUPS', adminLogGroups);
+    // Avoid cross-Lambda environment references to prevent circular dependencies
+    agentsHandler.addEnvironment('ADMIN_LOG_GROUPS', '');
     agentsHandler.addEnvironment('LOG_GROUP_PREFIX', '/aws/lambda/');
 
     // Custom domain configuration (for Cloudflare Access proxy)

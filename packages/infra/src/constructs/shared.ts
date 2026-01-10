@@ -143,7 +143,7 @@ export class SharedInfrastructure extends Construct {
 
       this.distribution = new cloudfront.Distribution(this, 'MediaCdn', {
         defaultBehavior: {
-          origin: new origins.S3Origin(this.mediaBucket),
+          origin: new origins.S3BucketOrigin(this.mediaBucket),
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         },
