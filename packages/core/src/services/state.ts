@@ -223,19 +223,22 @@ export class DynamoDBStateService implements StateService {
     state.messageCount++;
 
     // Kyro-style state machine updates
+    const previousState = state.state;
+
     if (message.isMention || message.isReplyToBot) {
       // Direct engagement → ACTIVE immediately
       state.state = 'ACTIVE';
       state.directEngagementAt = now;
-      if (state.state !== 'ACTIVE') {
-        state.stateChangedAt = now;
-      }
     } else if (state.state === 'IDLE') {
       // Regular message in IDLE → stay IDLE (buffer only)
     } else if (state.state === 'COOLDOWN') {
       // Message during cooldown → extend activity but stay in cooldown
     }
     // ACTIVE stays ACTIVE
+
+    if (state.state !== previousState) {
+      state.stateChangedAt = now;
+    }
 
     // Update TTL
     state.ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
