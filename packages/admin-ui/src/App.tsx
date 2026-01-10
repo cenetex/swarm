@@ -3,7 +3,7 @@ import { useAgentStore } from './store';
 import { AgentSidebar, ChatPanel } from './components';
 
 function App() {
-  const { fetchAgents, activeAgentId } = useAgentStore();
+  const { fetchAgents, activeAgentId, syncChatHistory, chats } = useAgentStore();
   const [initialized, setInitialized] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -15,6 +15,20 @@ function App() {
         .finally(() => setInitialized(true));
     }
   }, [initialized, fetchAgents]);
+
+  // Sync chat history from backend when agent is selected
+  useEffect(() => {
+    if (activeAgentId && initialized) {
+      // Check if we only have the welcome message (local state not synced yet)
+      const currentChat = chats[activeAgentId] || [];
+      const isEmptyOrWelcomeOnly = currentChat.length <= 1 && 
+        (currentChat.length === 0 || currentChat[0]?.id === 'welcome');
+      
+      if (isEmptyOrWelcomeOnly) {
+        syncChatHistory(activeAgentId).catch(console.error);
+      }
+    }
+  }, [activeAgentId, initialized, syncChatHistory, chats]);
 
   // Close sidebar when agent is selected on mobile
   useEffect(() => {

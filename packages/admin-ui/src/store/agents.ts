@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Agent, ChatMessage } from '../types';
 import * as api from '../api/agents';
+import { fetchChatHistory as apiFetchChatHistory, clearChatHistory as apiClearChatHistory } from '../api/chat';
 
 // Generate a unique ID
 const generateId = () => crypto.randomUUID();
@@ -48,6 +49,8 @@ interface AgentState {
   updateMessage: (agentId: string, messageId: string, updates: Partial<ChatMessage>) => void;
   removeMessage: (agentId: string, messageId: string) => void;
   clearChat: (agentId: string) => void;
+  syncChatHistory: (agentId: string) => Promise<void>;
+  setChat: (agentId: string, messages: ChatMessage[]) => void;
 
   // UI state
   setLoading: (loading: boolean) => void;
@@ -244,7 +247,14 @@ export const useAgentStore = create<AgentState>()(
         }));
       },
 
-      clearChat: (agentId) => {
+      clearChat: async (agentId) => {
+        // Clear on backend too
+        try {
+          await apiClearChatHistory(agentId);
+        } catch (error) {
+          console.error('Failed to clear chat on backend:', error);
+        }
+        
         set((state) => ({
           chats: {
             ...state.chats,
@@ -254,6 +264,40 @@ export const useAgentStore = create<AgentState>()(
               content: `Chat cleared! How can I help you?`,
               timestamp: Date.now(),
             }],
+          },
+        }));
+      },
+
+      syncChatHistory: async (agentId) => {
+        try {
+          const history = await apiFetchChatHistory(agentId);
+          
+          if (history.length > 0) {
+            // Convert backend history to ChatMessage format
+            const messages: ChatMessage[] = history.map((msg, index) => ({
+              id: `synced-${index}`,
+              role: msg.role as 'user' | 'assistant',
+              content: msg.content,
+              timestamp: Date.now() - (history.length - index) * 1000,
+            }));
+            
+            set((state) => ({
+              chats: {
+                ...state.chats,
+                [agentId]: messages,
+              },
+            }));
+          }
+        } catch (error) {
+          console.error('Failed to sync chat history:', error);
+        }
+      },
+
+      setChat: (agentId, messages) => {
+        set((state) => ({
+          chats: {
+            ...state.chats,
+            [agentId]: messages,
           },
         }));
       },
