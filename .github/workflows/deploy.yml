@@ -124,10 +124,17 @@ jobs:
             CDK_ENV="$ENV_NAME"
           fi
           
+          # Use hotswap for faster Lambda deployments in staging
+          HOTSWAP_FLAG=""
+          if [ "$CDK_ENV" = "staging" ]; then
+            HOTSWAP_FLAG="--hotswap-fallback"
+          fi
+          
+          # Deploy with concurrency for faster multi-stack deploys
           if [ -n "${{ inputs.stack }}" ]; then
-            npx cdk deploy ${{ inputs.stack }} --require-approval never -c environment=$CDK_ENV
+            npx cdk deploy ${{ inputs.stack }} --require-approval never --concurrency 10 $HOTSWAP_FLAG -c environment=$CDK_ENV
           else
-            npx cdk deploy --all --require-approval never -c environment=$CDK_ENV
+            npx cdk deploy --all --require-approval never --concurrency 10 $HOTSWAP_FLAG -c environment=$CDK_ENV
           fi
 
       - name: Get Stack Outputs
