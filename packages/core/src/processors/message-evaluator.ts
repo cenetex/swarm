@@ -5,8 +5,6 @@
 import type {
   SwarmEnvelope,
   AgentConfig,
-  ChannelState,
-  UserCooldown,
   StateService,
 } from '../types/index.js';
 
@@ -174,7 +172,7 @@ export class MessageEvaluator {
   /**
    * Twitter-specific evaluation (for mentions/replies)
    */
-  private evaluateTwitter(envelope: SwarmEnvelope): EvaluationResult {
+  private evaluateTwitter(_envelope: SwarmEnvelope): EvaluationResult {
     // Twitter messages are usually pre-filtered to mentions
     // So if we got here, we should probably respond
     return {
@@ -239,9 +237,52 @@ export class MessageEvaluator {
    * Check if message is a reply to the bot
    */
   private async isReplyToBot(envelope: SwarmEnvelope): Promise<boolean> {
-    // This would require looking up the original message
-    // For now, assume replies to bot are handled at the platform level
-    // TODO: Implement message lookup
+    if (!envelope.replyTo) {
+      return false;
+    }
+
+    // Get channel state to check recent messages
+    const channelState = await this.stateService.getChannelState(
+      envelope.agentId,
+      envelope.conversationId
+    );
+
+    if (!channelState?.recentMessages) {
+      return false;
+    }
+
+    // Look for the replied-to message in recent messages
+    const repliedMessage = channelState.recentMessages.find(
+      msg => msg.messageId === envelope.replyTo
+    );
+
+    // If found, check if it was from the bot
+    if (repliedMessage) {
+      return repliedMessage.isBot;
+    }
+
+    // Message not found in recent history - could be older
+    // For Telegram, we can check the raw update for reply info
+    if (envelope.platform === 'telegram') {
+      const raw = envelope.raw as {
+        message?: {
+          reply_to_message?: {
+            from?: { is_bot?: boolean; username?: string };
+          };
+        };
+      };
+
+      const replyFrom = raw?.message?.reply_to_message?.from;
+      if (replyFrom) {
+        // Check if it's a bot and matches our bot username
+        if (replyFrom.is_bot && replyFrom.username) {
+          return this.evaluatorConfig.botUsernames.some(
+            name => name.toLowerCase() === replyFrom.username?.toLowerCase()
+          );
+        }
+      }
+    }
+
     return false;
   }
 

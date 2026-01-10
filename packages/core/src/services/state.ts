@@ -9,9 +9,8 @@ import {
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
-  QueryCommand,
-  UpdateCommand,
   DeleteCommand,
+  ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type {
   StateService,
@@ -206,9 +205,11 @@ export class DynamoDBStateService implements StateService {
   }
 
   async listAgents(): Promise<string[]> {
-    const result = await this.docClient.send(new QueryCommand({
+    // Note: Using Scan because begins_with() cannot be used on partition keys in Query.
+    // For better performance at scale, consider adding a GSI with entityType as PK.
+    const result = await this.docClient.send(new ScanCommand({
       TableName: this.tableName,
-      KeyConditionExpression: 'begins_with(pk, :prefix) AND sk = :sk',
+      FilterExpression: 'begins_with(pk, :prefix) AND sk = :sk',
       ExpressionAttributeValues: {
         ':prefix': 'AGENT#',
         ':sk': 'CONFIG',
@@ -216,7 +217,7 @@ export class DynamoDBStateService implements StateService {
       ProjectionExpression: 'pk',
     }));
 
-    return (result.Items || []).map(item => 
+    return (result.Items || []).map(item =>
       (item.pk as string).replace('AGENT#', '')
     );
   }

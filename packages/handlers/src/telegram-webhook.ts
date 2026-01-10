@@ -12,7 +12,6 @@ import {
   createMessageEvaluator,
   logger,
   type AgentConfig,
-  type SwarmEnvelope,
 } from '@swarm/core';
 
 const sqs = new SQSClient({});

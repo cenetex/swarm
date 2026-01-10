@@ -7,8 +7,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'yaml';
 import { Construct } from 'constructs';
-import { SharedInfrastructure } from './constructs/shared.js';
-import { AgentConstruct } from './constructs/agent.js';
+import { SharedInfrastructure } from '../constructs/shared.js';
+import { AgentConstruct } from '../constructs/agent.js';
 import type { AgentConfig } from '@swarm/core';
 
 export interface SwarmStackProps extends cdk.StackProps {

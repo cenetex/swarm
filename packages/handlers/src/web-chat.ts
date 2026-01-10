@@ -15,6 +15,7 @@ import {
   type AgentConfig,
   type ToolDefinition,
   type WebChatMessage,
+  type ResponseAction,
 } from '@swarm/core';
 import { z } from 'zod';
 
@@ -183,7 +184,7 @@ export async function handler(
     const response = await generator.generate(envelope);
 
     // Extract text response
-    const messageAction = response.actions.find(a => a.type === 'send_message');
+    const messageAction = response.actions.find((a: ResponseAction) => a.type === 'send_message');
     const responseText = messageAction && 'text' in messageAction 
       ? messageAction.text 
       : 'I apologize, but I was unable to generate a response.';

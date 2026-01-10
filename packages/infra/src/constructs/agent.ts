@@ -250,7 +250,8 @@ export class AgentConstruct extends Construct {
     }));
 
     // Scheduled tweet poster
-    if (config.platforms.twitter?.enabled && config.scheduling.tweet) {
+    const scheduledTweet = config.scheduling.tweets?.[0];
+    if (config.platforms.twitter?.enabled && scheduledTweet) {
       const tweetPoster = new lambda.Function(this, 'TweetPoster', {
         functionName: `${config.id}-tweet-poster`,
         runtime: lambda.Runtime.NODEJS_20_X,
@@ -262,16 +263,25 @@ export class AgentConstruct extends Construct {
         memorySize: 512,
         environment: {
           ...commonEnv,
-          TWEET_TEMPLATE: config.scheduling.tweet.template || 'general',
+          TWEET_TEMPLATE: scheduledTweet.template || 'general',
         },
       });
 
-      // Schedule rule
+      // Schedule rule - parse cron string or use default
+      const cronParts = scheduledTweet.cron?.split(' ') || [];
       new events.Rule(this, 'TweetSchedule', {
-        schedule: events.Schedule.cron({
-          hour: config.scheduling.tweet.hoursUtc?.join(',') || '12,18',
-          minute: '0',
-        }),
+        schedule: cronParts.length >= 5
+          ? events.Schedule.cron({
+              minute: cronParts[0] || '0',
+              hour: cronParts[1] || '12',
+              day: cronParts[2] || '*',
+              month: cronParts[3] || '*',
+              weekDay: cronParts[4] || '*',
+            })
+          : events.Schedule.cron({
+              hour: '12,18',
+              minute: '0',
+            }),
         targets: [new targets.LambdaFunction(tweetPoster)],
       });
     }

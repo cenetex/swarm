@@ -1,68 +1,306 @@
 # AWS Social Media Agent Swarm - Architecture Plan
 
-## Current State Analysis
+---
 
-You have **4 distinct bot projects** on AWS (us-east-1) with overlapping patterns:
+## Implementation Status
 
-| Project | Language | Platforms | Key Features |
-|---------|----------|-----------|--------------|
-| **FireHorse** | TypeScript/Node | Telegram, X/Twitter | Image gen (OpenRouter), Video gen (Replicate), Memory synthesis, Scheduled tweets |
-| **Kyro** | Python | Discord, Telegram, X, Web | Tool-based responses, Token-gated, SQS message queues, Bedrock LLM |
-| **Ratibot** | Python | X/Twitter | NFT generation, Airdrops, Ecosystem cycles, Irys storage |
-| **Mirquo** | TypeScript | Telegram, X | Agent-based, DynamoDB memories, Embeddings |
+> **Last Updated:** 2025-01-09
 
-### Shared Patterns Identified
+### Overall Progress
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Monorepo Setup | DONE | pnpm workspaces, TypeScript configs |
+| Core Types | DONE | Comprehensive type definitions |
+| Platform Adapters | PARTIAL | Telegram done, Twitter/Web stubs, Discord missing |
+| Processors | DONE | Evaluator, Generator, OutboundSender complete |
+| Services | DONE | State, Activity, LLM (with retry), Secrets complete |
+| Handlers | DONE | All handlers implemented |
+| Infrastructure (CDK) | DONE | Full stack with shared + per-agent resources |
+| Agent Templates | DONE | Template config.yaml and persona.md |
+| Agent Configs | NOT STARTED | No real agents configured yet |
+| Tests | NOT STARTED | No test coverage |
+
+### Critical Path to MVP
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                        COMMON ARCHITECTURE PATTERN                                │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                   │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐        │
-│  │  Platform   │    │   Message   │    │  Response   │    │   Media     │        │
-│  │  Webhook    │───▶│  Processor  │───▶│  Generator  │───▶│  Processor  │        │
-│  │  Handler    │    │   (Queue)   │    │   (LLM)     │    │ (Images/Vid)│        │
-│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘        │
-│        │                   │                  │                  │                │
-│        ▼                   ▼                  ▼                  ▼                │
-│  ┌─────────────────────────────────────────────────────────────────────┐         │
-│  │                         SHARED SERVICES                              │         │
-│  │  • State (DynamoDB)    • Secrets Manager    • S3 (media)            │         │
-│  │  • Cooldowns           • Rate Limiting      • Activity Feed          │         │
-│  └─────────────────────────────────────────────────────────────────────┘         │
-└──────────────────────────────────────────────────────────────────────────────────┘
+[x] Types & Interfaces
+[x] Telegram Adapter
+[x] Message Evaluator
+[x] Response Generator
+[x] State Service (DynamoDB)
+[x] LLM Service (Bedrock, OpenRouter, Anthropic + retry)
+[x] Message Processor Handler (SQS consumer)
+[x] Outbound Sender (execute response actions)
+[x] Response Sender Handler
+[x] CDK Infrastructure (SharedInfrastructure + AgentConstruct)
+[x] Tool Definitions (send_message, react, ignore, wait, take_selfie)
+[x] Agent Template
+[ ] First real agent config (firehorse, kyro, etc.)
+[ ] End-to-end Telegram test
+[ ] Deploy to AWS
 ```
-
-### Current AWS Resources
-
-**Compute:**
-- 30+ Lambda functions across projects
-- ECS Fargate (Discord Gateway)
-
-**Storage:**
-- 12 DynamoDB tables (state, activity, cooldowns, memories)
-- 12 S3 buckets (images, static assets, artifacts)
-
-**Messaging:**
-- 6 SQS queues (message queues, response jobs, media jobs, DLQs)
-
-**Scheduling:**
-- 14 EventBridge rules (tweets, maintenance, monitoring)
-
-**Secrets:**
-- 24 Secrets Manager entries (API keys, tokens, wallets)
 
 ---
 
-## Proposed Swarm Architecture
+## Known Issues & Bugs
 
-### Design Principles
+### Resolved
 
-1. **Agent-First**: Each agent has a persona file + configuration
-2. **Platform Adapters**: Plug-in architecture for Telegram/Discord/X/Web
-3. **Shared Core**: Common LLM, media, storage, and queue infrastructure
-4. **Multi-Tenant**: Single deployment serves multiple agents
-5. **Cost-Efficient**: Shared resources, pay-per-use Lambda
+1. ~~**`state.ts` - Invalid DynamoDB Query**~~ **FIXED**
+   - Changed from Query to Scan with FilterExpression
+   - GSI added in CDK infrastructure for better performance
+
+2. ~~**`llm/index.ts` - Placeholder Zod Schema Conversion**~~ **FIXED**
+   - Added `zod-to-json-schema` package
+   - Proper schema conversion implemented
+
+3. ~~**`llm/index.ts` - Wrong Anthropic Provider**~~ **FIXED**
+   - Dedicated `AnthropicLLMService` using `@anthropic-ai/sdk`
+
+4. ~~**No retry/fallback logic for LLM calls**~~ **FIXED**
+   - `RetryableLLMService` wrapper with exponential backoff + jitter
+
+5. ~~**`isReplyToBot()` always returns false**~~ **FIXED**
+   - Channel state lookup + Telegram raw message parsing
+
+6. ~~**Missing DLQ handling**~~ **FIXED**
+   - DLQ configured in CDK AgentConstruct for all queues
+
+### Remaining Issues
+
+7. **Platform adapters incomplete**
+   - `TwitterAdapter` - stub only, needs full implementation
+   - `WebAdapter` - stub only, needs full implementation
+   - `DiscordAdapter` - completely missing
+
+8. **Media service minimal**
+   - Image/video generation not fully implemented
+
+---
+
+## File Structure with Status
+
+```
+aws-swarm/
+├── README.md                            # [ ] NOT CREATED
+├── package.json                         # [x] DONE
+├── pnpm-workspace.yaml                  # [x] DONE
+├── tsconfig.base.json                   # [x] DONE
+│
+├── agents/
+│   └── .template/                       # [x] DONE
+│       ├── config.yaml                  # Template for agent config
+│       ├── persona.md                   # Template for agent persona
+│       └── README.md
+│
+├── packages/infra/                      # [x] DONE
+│   ├── package.json                     # [x] DONE
+│   ├── tsconfig.json                    # [x] DONE
+│   ├── bin/
+│   │   └── swarm.ts                     # [x] DONE - CDK entry point
+│   └── src/
+│       ├── index.ts                     # [x] DONE
+│       ├── stacks/
+│       │   ├── index.ts                 # [x] DONE
+│       │   └── swarm-stack.ts           # [x] DONE - Main stack
+│       └── constructs/
+│           ├── index.ts                 # [x] DONE
+│           ├── shared.ts                # [x] DONE - DynamoDB, S3, CloudFront, Layer
+│           └── agent.ts                 # [x] DONE - SQS, API Gateway, Lambdas
+│
+├── packages/core/
+│   ├── package.json                     # [x] DONE
+│   ├── tsconfig.json                    # [x] DONE
+│   └── src/
+│       ├── index.ts                     # [x] DONE
+│       ├── types/
+│       │   └── index.ts                 # [x] DONE - Comprehensive types
+│       ├── platforms/
+│       │   ├── base.ts                  # [x] DONE - PlatformAdapter + Registry
+│       │   ├── index.ts                 # [x] DONE
+│       │   ├── telegram.ts              # [x] DONE - Full implementation
+│       │   ├── twitter.ts               # [~] STUB - Needs implementation
+│       │   ├── web.ts                   # [~] STUB - Needs implementation
+│       │   └── discord.ts               # [ ] MISSING
+│       ├── processors/
+│       │   ├── index.ts                 # [x] DONE
+│       │   ├── message-evaluator.ts     # [x] DONE
+│       │   ├── response-generator.ts    # [x] DONE
+│       │   └── outbound-sender.ts       # [x] DONE
+│       ├── services/
+│       │   ├── index.ts                 # [x] DONE
+│       │   ├── state.ts                 # [x] DONE
+│       │   ├── activity.ts              # [x] DONE
+│       │   ├── secrets.ts               # [x] DONE
+│       │   ├── llm/
+│       │   │   └── index.ts             # [x] DONE - Bedrock, OpenRouter, Anthropic + retry
+│       │   ├── media/
+│       │   │   └── index.ts             # [~] STUB - Minimal implementation
+│       │   └── solana/
+│       │       └── index.ts             # [~] STUB - Minimal implementation
+│       └── utils/
+│           ├── index.ts                 # [x] DONE
+│           ├── logger.ts                # [x] DONE
+│           └── config.ts                # [x] DONE
+│
+└── packages/handlers/
+    ├── package.json                     # [x] DONE
+    ├── tsconfig.json                    # [x] DONE
+    └── src/
+        ├── index.ts                     # [x] DONE
+        ├── telegram-webhook.ts          # [x] DONE - Full implementation
+        ├── message-processor.ts         # [x] DONE - Full implementation with tools
+        ├── response-sender.ts           # [x] DONE - Full implementation
+        ├── tweet-poster.ts              # [~] STUB
+        └── web-chat.ts                  # [~] STUB
+```
+
+**Legend:** `[x]` Done | `[~]` Partial/Stub | `[ ]` Not Started
+
+---
+
+## What's Working
+
+### Complete Pipeline (Telegram)
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   API Gateway   │────▶│ telegram-webhook│────▶│  message-queue  │
+│  POST /webhook  │     │    (Lambda)     │     │   (SQS FIFO)    │
+└─────────────────┘     └─────────────────┘     └────────┬────────┘
+                                                         │
+                        ┌─────────────────┐              │
+                        │message-processor│◀─────────────┘
+                        │    (Lambda)     │
+                        │ - Load config   │
+                        │ - Call LLM      │
+                        │ - Generate resp │
+                        └────────┬────────┘
+                                 │
+                        ┌────────▼────────┐
+                        │ response-queue  │
+                        │   (SQS FIFO)    │
+                        └────────┬────────┘
+                                 │
+                        ┌────────▼────────┐     ┌─────────────────┐
+                        │ response-sender │────▶│    Telegram     │
+                        │    (Lambda)     │     │      API        │
+                        └─────────────────┘     └─────────────────┘
+```
+
+### CDK Resources Created
+
+**Shared (per environment):**
+- DynamoDB: `swarm-state-{env}` (with GSI)
+- DynamoDB: `swarm-activity-{env}`
+- S3: `swarm-media-{env}-{account}`
+- CloudFront distribution (prod only)
+- Lambda Layer with dependencies
+
+**Per Agent:**
+- SQS: `{agentId}-messages.fifo`
+- SQS: `{agentId}-responses.fifo`
+- SQS: `{agentId}-media`
+- SQS: `{agentId}-dlq.fifo`
+- API Gateway: `{agentId}-api`
+- Lambda: `{agentId}-telegram-webhook`
+- Lambda: `{agentId}-message-processor`
+- Lambda: `{agentId}-response-sender`
+- Lambda: `{agentId}-web-chat` (if enabled)
+- Lambda: `{agentId}-tweet-poster` (if scheduled)
+- EventBridge rule for tweet schedule
+- Secrets Manager: `swarm/{agentId}/secrets`
+
+---
+
+## Next Steps (Prioritized)
+
+### Immediate (Deploy First Agent)
+
+1. **Create First Agent Config**
+   - [ ] Copy `.template/` to `agents/firehorse/`
+   - [ ] Customize config.yaml with real values
+   - [ ] Write persona.md with character definition
+   - [ ] Create secrets in AWS Secrets Manager
+
+2. **Build & Deploy**
+   - [ ] `pnpm install && pnpm build`
+   - [ ] `cd packages/infra && cdk deploy --context environment=dev`
+   - [ ] Set Telegram webhook URL
+   - [ ] Test end-to-end flow
+
+### Short-term (Polish)
+
+3. **Complete Twitter Adapter**
+   - [ ] Implement `parseIncomingMessage()`
+   - [ ] Implement `executeAction()` for tweets, replies, retweets
+   - [ ] Implement mention polling handler
+   - [ ] Test scheduled tweets
+
+4. **Complete Web Adapter**
+   - [ ] Implement `parseIncomingMessage()`
+   - [ ] Implement `executeAction()`
+   - [ ] Add token gating logic (Solana)
+   - [ ] Test web chat endpoint
+
+5. **Media Generation**
+   - [ ] Implement OpenRouter image generation
+   - [ ] Implement Replicate video generation
+   - [ ] Create media-processor handler
+
+6. **Testing**
+   - [ ] Unit tests for MessageEvaluator
+   - [ ] Unit tests for ResponseGenerator
+   - [ ] Integration tests with local DynamoDB
+   - [ ] End-to-end test script
+
+### Medium-term (Additional Platforms)
+
+7. **Discord Adapter**
+   - [ ] Create DiscordAdapter class
+   - [ ] Decide: Interaction webhooks vs Gateway (ECS Fargate)
+   - [ ] Implement slash commands
+
+8. **Observability**
+   - [ ] CloudWatch dashboards
+   - [ ] X-Ray tracing
+   - [ ] CloudWatch alarms
+
+9. **CLI Tool**
+   - [ ] `swarm agent create <name>`
+   - [ ] `swarm agent deploy <name>`
+   - [ ] `swarm secrets set <agent> <key> <value>`
+
+---
+
+## Deployment Commands
+
+```bash
+# Build everything
+pnpm install
+pnpm build
+
+# Deploy to dev
+cd packages/infra
+cdk bootstrap  # First time only
+cdk deploy --context environment=dev
+
+# Deploy specific agent
+cdk deploy --context environment=dev --context agents=firehorse
+
+# Deploy to prod
+cdk deploy --context environment=prod
+
+# Set Telegram webhook (after deploy)
+curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "<API_GATEWAY_URL>/webhook/telegram/<AGENT_ID>"}'
+```
+
+---
+
+## Architecture Diagrams
 
 ### High-Level Architecture
 
@@ -84,7 +322,7 @@ You have **4 distinct bot projects** on AWS (us-east-1) with overlapping pattern
 │  │                       PLATFORM ADAPTERS (Shared)                              ││
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       ││
 │  │  │ Telegram │  │ Discord  │  │ X/Twitter│  │   Web    │  │ Farcaster│       ││
-│  │  │ Webhook  │  │ Gateway  │  │ Webhook  │  │   Chat   │  │  (Future)│       ││
+│  │  │ [DONE]   │  │ [TODO]   │  │  [STUB]  │  │  [STUB]  │  │ [FUTURE] │       ││
 │  │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────────┘       ││
 │  └───────┼─────────────┼─────────────┼─────────────┼────────────────────────────┘│
 │          │             │             │             │                              │
@@ -99,17 +337,16 @@ You have **4 distinct bot projects** on AWS (us-east-1) with overlapping pattern
 │  │                         PROCESSING PIPELINE                                  │ │
 │  │                                                                               │ │
 │  │  ┌───────────────┐    ┌───────────────┐    ┌───────────────┐                │ │
-│  │  │ message-queue │───▶│ response-jobs │───▶│  media-jobs   │                │ │
-│  │  │     (SQS)     │    │    (SQS)      │    │    (SQS)      │                │ │
+│  │  │ message-queue │───▶│ response-queue│───▶│  media-queue  │                │ │
+│  │  │  (SQS FIFO)   │    │  (SQS FIFO)   │    │    (SQS)      │                │ │
 │  │  └───────┬───────┘    └───────┬───────┘    └───────┬───────┘                │ │
 │  │          │                    │                    │                         │ │
 │  │          ▼                    ▼                    ▼                         │ │
 │  │  ┌───────────────┐    ┌───────────────┐    ┌───────────────┐                │ │
-│  │  │   Evaluator   │    │  LLM Engine   │    │ Media Engine  │                │ │
-│  │  │   (Lambda)    │    │   (Lambda)    │    │   (Lambda)    │                │ │
-│  │  │ - Should reply│    │ - Bedrock     │    │ - OpenRouter  │                │ │
-│  │  │ - Rate limit  │    │ - OpenRouter  │    │ - Replicate   │                │ │
-│  │  │ - Cooldowns   │    │ - Tools       │    │ - DALL-E      │                │ │
+│  │  │   Evaluator   │    │ ResponseSender│    │ MediaProcessor│                │ │
+│  │  │   + LLM Gen   │    │   (Lambda)    │    │   (Lambda)    │                │ │
+│  │  │   (Lambda)    │    │ [DONE]        │    │ [TODO]        │                │ │
+│  │  │ [DONE]        │    │               │    │               │                │ │
 │  │  └───────────────┘    └───────────────┘    └───────────────┘                │ │
 │  └─────────────────────────────────────────────────────────────────────────────┘ │
 │                                      │                                            │
@@ -118,287 +355,142 @@ You have **4 distinct bot projects** on AWS (us-east-1) with overlapping pattern
 │  │                         SHARED SERVICES                                      │ │
 │  │                                                                               │ │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │ │
-│  │  │   State     │  │   Memory    │  │   Media     │  │  Activity   │         │ │
-│  │  │ (DynamoDB)  │  │ (DynamoDB)  │  │    (S3)     │  │   Feed      │         │ │
-│  │  │ swarm-state │  │swarm-memory │  │swarm-media  │  │(DynamoDB)   │         │ │
+│  │  │   State     │  │   Activity  │  │   Media     │  │   Secrets   │         │ │
+│  │  │ (DynamoDB)  │  │ (DynamoDB)  │  │    (S3)     │  │  Manager    │         │ │
+│  │  │ [DONE]      │  │ [DONE]      │  │ [DONE]      │  │ [DONE]      │         │ │
 │  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘         │ │
-│  │                                                                               │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                          │ │
-│  │  │  Secrets    │  │  Personas   │  │   Config    │                          │ │
-│  │  │  Manager    │  │    (S3)     │  │   Store     │                          │ │
-│  │  │ swarm/*     │  │ personas/   │  │  (SSM/Env)  │                          │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘                          │ │
-│  └─────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                   │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐ │
-│  │                         SCHEDULED TASKS                                      │ │
-│  │  EventBridge Rules → Lambda                                                  │ │
-│  │  • Tweet Scheduler (per agent, configurable times)                          │ │
-│  │  • Mention Reply (periodic poll for X)                                       │ │
-│  │  • Memory Maintenance (cleanup, synthesis)                                   │ │
-│  │  • Health Checks                                                             │ │
 │  └─────────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Implementation Plan
-
-### Phase 1: Core Framework (Week 1-2)
-
-Create the shared infrastructure and abstractions.
+## DynamoDB Schema
 
 ```
-aws-swarm/
-├── README.md
-├── package.json / pyproject.toml       # Monorepo setup
-├── infra/
-│   ├── lib/
-│   │   ├── swarm-stack.ts              # Main CDK stack
-│   │   ├── constructs/
-│   │   │   ├── agent-construct.ts      # Per-agent resources
-│   │   │   ├── platform-webhook.ts     # API Gateway + Lambda
-│   │   │   ├── processing-pipeline.ts  # SQS + Processors
-│   │   │   ├── storage-layer.ts        # DynamoDB + S3
-│   │   │   └── scheduling.ts           # EventBridge rules
-│   │   └── config/
-│   │       └── agents.ts               # Agent registry
-│   └── bin/
-│       └── swarm.ts                    # CDK app entry
-├── core/
-│   ├── src/
-│   │   ├── types/
-│   │   │   ├── envelope.ts             # Universal message envelope
-│   │   │   ├── agent.ts                # Agent configuration type
-│   │   │   └── platform.ts             # Platform types
-│   │   ├── platforms/
-│   │   │   ├── base.ts                 # Abstract platform adapter
-│   │   │   ├── telegram.ts             # Telegram adapter
-│   │   │   ├── discord.ts              # Discord adapter
-│   │   │   ├── twitter.ts              # X/Twitter adapter
-│   │   │   └── web.ts                  # Web chat adapter
-│   │   ├── processors/
-│   │   │   ├── message-evaluator.ts    # Should-reply logic
-│   │   │   ├── response-generator.ts   # LLM response generation
-│   │   │   ├── media-generator.ts      # Image/video generation
-│   │   │   └── outbound-sender.ts      # Send to platforms
-│   │   ├── services/
-│   │   │   ├── llm/
-│   │   │   │   ├── bedrock.ts          # AWS Bedrock client
-│   │   │   │   ├── openrouter.ts       # OpenRouter client
-│   │   │   │   └── anthropic.ts        # Direct Anthropic
-│   │   │   ├── media/
-│   │   │   │   ├── openrouter-image.ts # OpenRouter image gen
-│   │   │   │   ├── replicate.ts        # Replicate video gen
-│   │   │   │   └── dalle.ts            # DALL-E integration
-│   │   │   ├── state.ts                # DynamoDB state service
-│   │   │   ├── memory.ts               # Memory/context service
-│   │   │   ├── secrets.ts              # Secrets Manager wrapper
-│   │   │   ├── cooldown.ts             # Rate limiting
-│   │   │   └── activity.ts             # Activity feed
-│   │   └── utils/
-│   │       ├── logger.ts
-│   │       └── config.ts
-│   └── handlers/
-│       ├── webhook.ts                  # Universal webhook handler
-│       ├── message-processor.ts        # SQS message processor
-│       ├── response-generator.ts       # SQS response processor
-│       ├── media-processor.ts          # SQS media processor
-│       ├── tweet-poster.ts             # Scheduled tweet handler
-│       └── health-check.ts             # Health check endpoint
-└── agents/
-    ├── firehorse/
-    │   ├── persona.md                  # Personality definition
-    │   ├── config.yaml                 # Agent configuration
-    │   └── tools.ts                    # Agent-specific tools
-    ├── kyro/
-    │   ├── persona.md
-    │   ├── config.yaml
-    │   └── tools.ts
-    ├── ratibot/
-    │   ├── persona.md
-    │   ├── config.yaml
-    │   └── tools.ts
-    └── mirquo/
-        ├── persona.md
-        ├── config.yaml
-        └── tools.ts
+Table: swarm-state-{env}
+  PK: AGENT#{agentId}
+  SK: Various patterns
+    - CONFIG                          # Agent configuration
+    - PLATFORM#{platform}#CONFIG      # Platform-specific config
+    - CHANNEL#{channelId}#STATE       # Channel state + recent messages
+    - USER#{userId}#COOLDOWN          # User cooldowns
+
+  GSI1 (gsi1pk, gsi1sk):
+    - For listing entities by type
+
+Table: swarm-activity-{env}
+  PK: AGENT#{agentId}
+  SK: {timestamp}
+  TTL: 24 hours (configurable)
 ```
 
-### Phase 2: Agent Configuration System (Week 2-3)
+---
 
-Define a standard agent configuration format:
+## API Routes
+
+```
+POST /webhook/telegram/{agentId}     → telegram-webhook Lambda
+POST /webhook/twitter/{agentId}      → twitter-webhook Lambda (TODO)
+POST /chat                           → web-chat Lambda
+
+GET  /health                         → health check
+```
+
+---
+
+## Configuration Reference
+
+### Agent config.yaml
 
 ```yaml
-# agents/firehorse/config.yaml
-agent:
-  id: firehorse
-  name: "Fire Horse"
-  version: "1.0.0"
+id: my-agent
+name: My Agent
+version: 1.0.0
 
 platforms:
   telegram:
     enabled: true
-    bot_username: "fire_horse_bot"
-    webhook_path: "/telegram/firehorse"
+    botUsername: my_agent_bot
   twitter:
-    enabled: true
-    username: "FireHorseAI"
-    features:
-      - scheduled_tweets
-      - mention_replies
-  discord:
+    enabled: false
+  web:
     enabled: false
 
 llm:
-  provider: openrouter
+  provider: openrouter  # openrouter | bedrock | anthropic
   model: anthropic/claude-sonnet-4
-  fallback_model: anthropic/claude-3-haiku
   temperature: 0.8
-  max_tokens: 1024
+  maxTokens: 1024
 
 media:
   image:
     provider: openrouter
     model: openai/dall-e-3
-  video:
-    provider: replicate
-    model: minimax/video-01
 
 scheduling:
-  tweets:
-    - cron: "0 13 * * ?"  # 6 AM PT
-      template: morning_tweet
-    - cron: "0 17 * * ?"  # 10 AM PT
-      template: midday_tweet
-    - cron: "0 21 * * ?"  # 2 PM PT
-      template: afternoon_tweet
-    - cron: "0 1 * * ?"   # 6 PM PT
-      template: evening_tweet
-  mention_check:
-    rate: "30 */8 * * ?"
+  tweet:
+    hoursUtc: [12, 18]
+    template: general
 
 behavior:
-  response_delay_ms: [1000, 3000]  # Random delay range
-  typing_indicator: true
-  ignore_bots: true
-  cooldown_minutes: 5
+  responseDelayMs: [1000, 3000]
+  typingIndicator: true
+  ignoreBots: true
+  cooldownMinutes: 5
+  maxContextMessages: 20
 
 tools:
   - send_message
   - react
-  - take_selfie
   - ignore
   - wait
-  # Agent-specific tools
-  - generate_horse_video
+  - take_selfie
 
 secrets:
   - TELEGRAM_BOT_TOKEN
-  - TWITTER_API_KEY
-  - TWITTER_API_SECRET
   - OPENROUTER_API_KEY
-  - REPLICATE_API_TOKEN
 ```
 
-### Phase 3: Migrate Existing Bots (Week 3-4)
+### Required Secrets (per agent)
 
-1. **Extract shared code** from existing projects into `core/`
-2. **Create agent configs** for FireHorse, Kyro, Ratibot, Mirquo
-3. **Deploy shared infrastructure** via CDK
-4. **Point webhooks** to new unified API Gateway
-5. **Sunset old stacks** after validation
+Store in AWS Secrets Manager as `swarm/{agentId}/secrets`:
 
-### Phase 4: Agent CLI & Dashboard (Week 4-5)
-
-```bash
-# CLI for managing agents
-swarm agent create catboy-2025 --template kyro
-swarm agent deploy firehorse --env prod
-swarm agent logs kyro --platform telegram
-swarm agent status --all
-swarm secrets set firehorse TWITTER_API_KEY "xxx"
+```json
+{
+  "TELEGRAM_BOT_TOKEN": "...",
+  "OPENROUTER_API_KEY": "...",
+  "TWITTER_API_KEY": "...",
+  "TWITTER_API_SECRET": "...",
+  "TWITTER_ACCESS_TOKEN": "...",
+  "TWITTER_ACCESS_SECRET": "..."
+}
 ```
 
 ---
 
-## DynamoDB Schema (Multi-Tenant)
+## Cost Estimation
 
-```
-Table: swarm-state
-  PK: AGENT#{agentId}
-  SK: Various patterns
-    - CONFIG                          # Agent configuration
-    - PLATFORM#{platform}#CONFIG      # Platform-specific config
-    - CHANNEL#{channelId}#STATE       # Channel state
-    - USER#{userId}#COOLDOWN          # User cooldowns
-    - SCHEDULE#{scheduleId}           # Scheduled tasks
+| Resource | Monthly Cost (estimate) |
+|----------|------------------------|
+| DynamoDB (on-demand) | $5-20 |
+| Lambda (per 1M invocations) | $0.20 |
+| SQS (per 1M requests) | $0.40 |
+| S3 (per GB) | $0.023 |
+| CloudFront (per GB) | $0.085 |
+| Secrets Manager (per secret) | $0.40 |
+| API Gateway (per 1M requests) | $1.00 |
 
-Table: swarm-messages  
-  PK: AGENT#{agentId}#CHANNEL#{channelId}
-  SK: MSG#{timestamp}#{messageId}
-  TTL: 7 days
-
-Table: swarm-memory
-  PK: AGENT#{agentId}
-  SK: MEM#{memoryId}
-  Attributes: embedding, importance, decay, type
-
-Table: swarm-activity
-  PK: AGENT#{agentId}
-  SK: ACT#{timestamp}
-  TTL: 24 hours
-```
+**Estimated total for 4 agents with moderate traffic: $20-50/month**
 
 ---
 
-## API Gateway Routes
+## Decisions Made
 
-```
-POST /webhook/telegram/{agentId}     → telegram-handler Lambda
-POST /webhook/discord/{agentId}      → discord-handler Lambda  
-POST /webhook/twitter/{agentId}      → twitter-handler Lambda
-POST /webhook/replicate/{agentId}    → replicate-callback Lambda
-
-GET  /api/agents                     → list agents
-GET  /api/agents/{agentId}/activity  → activity feed
-GET  /api/agents/{agentId}/health    → health check
-POST /api/agents/{agentId}/message   → web chat
-
-GET  /api/admin/stats                → aggregate stats (auth required)
-```
-
----
-
-## Cost Optimization
-
-| Resource | Current (4 separate) | Swarm (shared) |
-|----------|---------------------|----------------|
-| DynamoDB Tables | 12 | 4 |
-| S3 Buckets | 12 | 3 |
-| Lambda Functions | 30+ | ~10 (shared) |
-| Secrets | 24 | ~10 (per-agent) |
-| API Gateways | 10+ | 1 |
-
-**Estimated savings: 40-60% on base infrastructure costs**
-
----
-
-## Next Steps
-
-1. **Confirm language preference**: TypeScript (like FireHorse/Mirquo) or Python (like Kyro/Ratibot)?
-   - Recommendation: **TypeScript** for Lambda cold start performance
-
-2. **Prioritize platform adapters**: Which platforms are most critical?
-   - Telegram + X seem most used
-
-3. **Agent migration order**: 
-   - Start with FireHorse (cleanest TypeScript codebase)
-   - Then Mirquo (similar stack)
-   - Then Kyro/Ratibot (Python → TypeScript port or keep Python handlers)
-
-4. **Decide on monorepo vs multi-repo**:
-   - Recommendation: **Monorepo with pnpm workspaces**
-
-Ready to start implementation when you confirm the approach!
+- **Language:** TypeScript (better Lambda cold starts than Python)
+- **Monorepo:** pnpm workspaces
+- **CDK:** TypeScript CDK for infrastructure
+- **Platform priority:** Telegram first, then Twitter/Web, Discord later
+- **LLM default:** OpenRouter (multi-model access, fallback support)
+- **Queues:** SQS FIFO for message ordering, standard for media
+- **State:** Single DynamoDB table with composite keys (multi-tenant)

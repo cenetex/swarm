@@ -54,7 +54,7 @@ export class TwitterAdapter extends PlatformAdapter {
     return `Twitter @${this.config.username}`;
   }
 
-  async verifyRequest(body: Buffer, headers: Record<string, string>): Promise<boolean> {
+  async verifyRequest(_body: Buffer, _headers: Record<string, string>): Promise<boolean> {
     // Twitter uses CRC token verification for webhooks
     // For Account Activity API, implement CRC validation
     // For polling-based approach, this isn't used
@@ -96,7 +96,7 @@ export class TwitterAdapter extends PlatformAdapter {
 
   async executeAction(
     action: ResponseAction,
-    conversationId: string,
+    _conversationId: string,
     replyToMessageId?: string
   ): Promise<boolean> {
     if (!this.client) {

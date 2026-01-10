@@ -1,0 +1,108 @@
+# Agent Configuration
+# Copy this template and customize for your agent
+
+# Unique identifier (should match folder name)
+id: my-agent
+
+# Display name
+name: My Agent
+
+# Version
+version: 1.0.0
+
+# Platform configurations
+platforms:
+  telegram:
+    enabled: true
+    botUsername: my_agent_bot
+    webhookPath: /webhook/telegram/my-agent
+    
+  twitter:
+    enabled: false
+    username: my_agent
+    features:
+      - replies
+      - mentions
+      - scheduled_tweets
+      
+  web:
+    enabled: false
+    corsOrigins:
+      - https://mysite.com
+    rateLimit:
+      windowMs: 60000
+      maxRequests: 20
+    # Token gating (optional)
+    # tokenGated:
+    #   enabled: true
+    #   tokenMint: "TokenMintAddress..."
+    #   minBalance: 100
+
+# LLM configuration
+llm:
+  provider: openrouter  # openrouter | bedrock | anthropic
+  model: anthropic/claude-sonnet-4
+  temperature: 0.8
+  maxTokens: 1024
+
+# Media generation
+media:
+  image:
+    provider: openrouter  # openrouter | replicate | dalle
+    model: openai/dall-e-3
+  # video:
+  #   provider: replicate
+  #   model: minimax/video-01
+
+# Solana integration (optional)
+# solana:
+#   enabled: true
+#   cluster: mainnet-beta
+#   walletSecretKey: SOLANA_WALLET_KEY  # Secret name
+#   tokenMint: "TokenMintAddress..."
+
+# Scheduled tasks
+scheduling:
+  # Scheduled tweets
+  # tweet:
+  #   enabled: true
+  #   hoursUtc: [12, 18]  # Post at 12:00 and 18:00 UTC
+  #   template: general
+
+# Behavior settings
+behavior:
+  # Response delay range (ms) to feel natural
+  responseDelayMs: [1000, 3000]
+  
+  # Show typing indicator
+  typingIndicator: true
+  
+  # Ignore messages from bots
+  ignoreBots: true
+  
+  # Cooldown per user (minutes)
+  cooldownMinutes: 5
+  
+  # Max messages to include in context
+  maxContextMessages: 20
+
+# Enabled tools
+tools:
+  - send_message
+  - react
+  - ignore
+  - wait
+  - take_selfie
+  # - generate_video
+  # - transfer_tokens
+  # - mint_nft
+
+# Required secrets (stored in AWS Secrets Manager)
+secrets:
+  - TELEGRAM_BOT_TOKEN
+  - OPENROUTER_API_KEY
+  # - TWITTER_API_KEY
+  # - TWITTER_API_SECRET
+  # - TWITTER_ACCESS_TOKEN
+  # - TWITTER_ACCESS_SECRET
+  # - SOLANA_WALLET_KEY

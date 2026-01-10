@@ -152,15 +152,20 @@ function normalizeBehavior(behavior: Record<string, unknown>): AgentConfig['beha
  * Merge multiple configs with later configs overriding earlier ones
  */
 export function mergeAgentConfigs(...configs: Partial<AgentConfig>[]): AgentConfig {
-  const merged = configs.reduce((acc, config) => ({
-    ...acc,
-    ...config,
-    platforms: { ...acc.platforms, ...config.platforms },
-    llm: { ...acc.llm, ...config.llm },
-    media: { ...acc.media, ...config.media },
-    behavior: { ...acc.behavior, ...config.behavior },
-    solana: config.solana || acc.solana,
-  }), {} as AgentConfig);
+  // Start with an empty object and merge each config
+  let result: Record<string, unknown> = {};
+  
+  for (const config of configs) {
+    result = {
+      ...result,
+      ...config,
+      platforms: { ...(result.platforms as object), ...config.platforms },
+      llm: { ...(result.llm as object), ...config.llm },
+      media: { ...(result.media as object), ...config.media },
+      behavior: { ...(result.behavior as object), ...config.behavior },
+      solana: config.solana || result.solana,
+    };
+  }
 
-  return merged;
+  return result as unknown as AgentConfig;
 }

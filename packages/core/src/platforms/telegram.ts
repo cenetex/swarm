@@ -2,7 +2,7 @@
  * Telegram Platform Adapter
  * Handles Telegram Bot API webhooks and message sending
  */
-import { Bot, Context, webhookCallback } from 'grammy';
+import { Bot, webhookCallback } from 'grammy';
 import type { Message, Update } from 'grammy/types';
 import { PlatformAdapter } from './base.js';
 import type {

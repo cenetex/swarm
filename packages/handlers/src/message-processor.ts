@@ -7,12 +7,10 @@ import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import {
   createStateService,
   createSecretsService,
-  createActivityService,
   createLLMService,
   createResponseGenerator,
   logger,
   type AgentConfig,
-  type SwarmEnvelope,
   type MessageQueueItem,
   type ToolDefinition,
 } from '@swarm/core';
@@ -23,12 +21,10 @@ const sqs = new SQSClient({});
 // Environment variables
 const RESPONSE_QUEUE_URL = process.env.RESPONSE_QUEUE_URL!;
 const STATE_TABLE = process.env.STATE_TABLE!;
-const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE!;
 const AGENT_ID = process.env.AGENT_ID!;
 
 // Services (lazy initialized)
 let stateService: ReturnType<typeof createStateService>;
-let activityService: ReturnType<typeof createActivityService>;
 let secretsService: ReturnType<typeof createSecretsService>;
 let secrets: Record<string, string>;
 let agentConfig: AgentConfig;
@@ -87,7 +83,6 @@ async function initialize(): Promise<void> {
   if (stateService) return;
 
   stateService = createStateService(STATE_TABLE);
-  activityService = createActivityService(ACTIVITY_TABLE);
   secretsService = createSecretsService();
 
   // Load agent config

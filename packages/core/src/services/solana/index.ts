@@ -23,7 +23,7 @@ export class SwarmSolanaService implements SolanaService {
 
   constructor(
     private readonly config: SolanaConfig,
-    private readonly walletSecret?: string
+    walletSecret?: string
   ) {
     this.connection = new Connection(config.rpcUrl, 'confirmed');
     

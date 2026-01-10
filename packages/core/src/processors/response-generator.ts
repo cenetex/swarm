@@ -206,7 +206,7 @@ If the message doesn't warrant a response, use the ignore tool.
    */
   private async processToolCalls(
     toolCalls: ToolCall[],
-    envelope: SwarmEnvelope
+    _envelope: SwarmEnvelope
   ): Promise<ResponseAction[]> {
     const actions: ResponseAction[] = [];
 

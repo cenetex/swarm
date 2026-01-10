@@ -134,7 +134,7 @@ Respond with ONLY the image prompt, nothing else.`,
         
         logger.info('Image generated', { url: mediaUrl });
       } catch (error) {
-        logger.warn('Image generation failed, posting without image', error);
+        logger.warn('Image generation failed, posting without image', error instanceof Error ? { error: error.message } : undefined);
       }
     }
 

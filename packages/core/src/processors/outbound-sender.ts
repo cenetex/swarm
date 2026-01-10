@@ -4,11 +4,9 @@
  */
 import type {
   SwarmResponse,
-  ResponseAction,
-  AgentConfig,
   Platform,
 } from '../types/index.js';
-import type { PlatformAdapter, PlatformRegistry } from '../platforms/base.js';
+import type { PlatformRegistry } from '../platforms/base.js';
 import type { ActivityService } from '../services/activity.js';
 
 export class OutboundSender {
@@ -94,7 +92,7 @@ export class OutboundSender {
    * Send a simple text message
    */
   async sendMessage(
-    agentId: string,
+    _agentId: string,
     platform: Platform,
     conversationId: string,
     text: string,

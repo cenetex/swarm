@@ -61,7 +61,7 @@ export class WebAdapter extends PlatformAdapter {
     return 'Web Chat';
   }
 
-  async verifyRequest(body: Buffer, headers: Record<string, string>): Promise<boolean> {
+  async verifyRequest(_body: Buffer, headers: Record<string, string>): Promise<boolean> {
     // Check CORS origin
     const origin = headers['origin'] || headers['Origin'];
     if (origin && this.config.corsOrigins.length > 0) {
@@ -97,7 +97,7 @@ export class WebAdapter extends PlatformAdapter {
   async executeAction(
     action: ResponseAction,
     conversationId: string,
-    replyToMessageId?: string
+    _replyToMessageId?: string
   ): Promise<boolean> {
     // Web chat responses are returned directly via the API
     // This method is used for async processing scenarios

@@ -13,7 +13,6 @@ import {
   createSecretsService,
   createActivityService,
   createOutboundSender,
-  createMediaService,
   logger,
   type AgentConfig,
   type SwarmResponse,
@@ -26,8 +25,6 @@ const sqs = new SQSClient({});
 const MEDIA_QUEUE_URL = process.env.MEDIA_QUEUE_URL;
 const STATE_TABLE = process.env.STATE_TABLE!;
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE!;
-const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
-const CDN_DOMAIN = process.env.CDN_DOMAIN;
 const AGENT_ID = process.env.AGENT_ID!;
 
 // Services
@@ -111,7 +108,7 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
 
       // Check for media generation actions - queue them first
       const mediaActions = response.actions.filter(
-        a => a.type === 'take_selfie' || a.type === 'generate_video'
+        (a: ResponseAction) => a.type === 'take_selfie' || a.type === 'generate_video'
       );
 
       if (mediaActions.length > 0 && MEDIA_QUEUE_URL) {
@@ -136,7 +133,7 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
         // For now, send text response without media
         // Media will be sent when generation completes via callback
         const textActions = response.actions.filter(
-          a => a.type !== 'take_selfie' && a.type !== 'generate_video'
+          (a: ResponseAction) => a.type !== 'take_selfie' && a.type !== 'generate_video'
         );
 
         if (textActions.length > 0) {
@@ -157,7 +154,7 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       }
 
       // Update channel state with bot's response
-      const sendActions = response.actions.filter(a => a.type === 'send_message');
+      const sendActions = response.actions.filter((a: ResponseAction) => a.type === 'send_message');
       for (const action of sendActions) {
         if (action.type === 'send_message') {
           await stateService.addMessageToChannel(
