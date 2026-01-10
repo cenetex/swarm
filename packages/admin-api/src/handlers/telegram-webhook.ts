@@ -39,6 +39,7 @@ const MIN_ATTENTION_THRESHOLD = 0.2;
 const RANDOM_REPLY_CHANCE = 0.05;
 const MAX_HISTORY_MESSAGES = 20;
 const HISTORY_TTL_SECONDS = 3600; // 1 hour
+const DEDUP_TTL_SECONDS = 300; // 5 minutes - prevent reprocessing same message on retries
 
 // === TYPES ===
 interface TelegramUpdate {
@@ -254,6 +255,37 @@ async function saveConversationHistory(
     }));
   } catch (err) {
     console.warn('Failed to save conversation history:', err);
+  }
+}
+
+// === MESSAGE DEDUPLICATION ===
+// Prevents reprocessing the same message when Telegram retries due to Lambda timeout
+async function isMessageProcessed(agentId: string, updateId: number): Promise<boolean> {
+  try {
+    const result = await dynamoClient.send(new GetCommand({
+      TableName: ADMIN_TABLE,
+      Key: { pk: `TELEGRAM#${agentId}`, sk: `PROCESSED#${updateId}` },
+    }));
+    return !!result.Item;
+  } catch {
+    return false;
+  }
+}
+
+async function markMessageProcessed(agentId: string, updateId: number): Promise<void> {
+  const ttl = Math.floor(Date.now() / 1000) + DEDUP_TTL_SECONDS;
+  try {
+    await dynamoClient.send(new PutCommand({
+      TableName: ADMIN_TABLE,
+      Item: {
+        pk: `TELEGRAM#${agentId}`,
+        sk: `PROCESSED#${updateId}`,
+        ttl,
+        processedAt: Date.now(),
+      },
+    }));
+  } catch (err) {
+    console.warn('Failed to mark message as processed:', err);
   }
 }
 
@@ -688,6 +720,8 @@ async function processMessage(
   let iterations = 0;
   const maxIterations = 5;
   const mediasToSend: Array<{ type: 'image' | 'video'; url: string; caption?: string }> = [];
+  const failedTools = new Set<string>(); // Track failed tools to prevent retry loops
+  let hasResponse = false;
 
   while (iterations++ < maxIterations) {
     await sendChatAction(token, chatId, 'typing');
@@ -700,15 +734,34 @@ async function processMessage(
 
       // Execute tools
       for (const tc of llmResponse.toolCalls) {
+        const toolName = tc.function.name;
+
+        // Skip tools that already failed in this conversation (prevents retry loops)
+        if (failedTools.has(toolName)) {
+          console.log(`[Telegram] Skipping retry of failed tool: ${toolName}`);
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            name: toolName,
+            content: JSON.stringify({ error: 'This tool already failed. Please inform the user and do not retry.' }),
+          });
+          continue;
+        }
+
         const args = JSON.parse(tc.function.arguments || '{}');
-        const result = await executeTool(agentId, tc.function.name, args, token, chatId, agent);
+        const result = await executeTool(agentId, toolName, args, token, chatId, agent);
+
+        // Track failed tools
+        if (!result.success) {
+          failedTools.add(toolName);
+        }
 
         // Add tool result
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
-          name: tc.function.name,
-          content: JSON.stringify(result.success ? result.result : { error: result.error }),
+          name: toolName,
+          content: JSON.stringify(result.success ? result.result : { error: result.error, doNotRetry: true }),
         });
 
         // Collect media to send
@@ -724,21 +777,40 @@ async function processMessage(
     // No tool calls - we have final response
     if (llmResponse.content) {
       messages.push({ role: 'assistant', content: llmResponse.content });
-
-      // Send text response
       await sendTelegramMessage(token, chatId, llmResponse.content, messageId);
-
-      // Send any collected media
-      for (const m of mediasToSend) {
-        if (m.type === 'image') {
-          await sendTelegramPhoto(token, chatId, m.url, m.caption);
-        } else if (m.type === 'video') {
-          await sendTelegramVideo(token, chatId, m.url, m.caption);
-        }
-      }
+      hasResponse = true;
     }
 
+    // Send any collected media
+    for (const m of mediasToSend) {
+      if (m.type === 'image') {
+        await sendTelegramPhoto(token, chatId, m.url, m.caption);
+      } else if (m.type === 'video') {
+        await sendTelegramVideo(token, chatId, m.url, m.caption);
+      }
+    }
+    mediasToSend.length = 0; // Clear after sending
+
     break;
+  }
+
+  // If we exited due to max iterations without sending a response, send a fallback
+  if (!hasResponse && iterations >= maxIterations) {
+    console.warn(`[Telegram] Max iterations reached for chat ${chatId}`);
+    await sendTelegramMessage(
+      token,
+      chatId,
+      "Sorry, I ran into some issues processing your request. Please try again!",
+      messageId
+    );
+    // Still send any pending media
+    for (const m of mediasToSend) {
+      if (m.type === 'image') {
+        await sendTelegramPhoto(token, chatId, m.url, m.caption);
+      } else if (m.type === 'video') {
+        await sendTelegramVideo(token, chatId, m.url, m.caption);
+      }
+    }
   }
 
   // Save updated history (excluding system prompt)
@@ -804,6 +876,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // Parse update
     const update: TelegramUpdate = event.body ? JSON.parse(event.body) : {};
     if (!update.message?.text) return ok();
+
+    // Deduplication: Check if we already processed this update (prevents infinite loops on Lambda timeout/retry)
+    if (await isMessageProcessed(agentId, update.update_id)) {
+      console.log(`[Telegram] Skipping already processed update: ${update.update_id}`);
+      return ok();
+    }
+    // Mark as processed BEFORE processing to prevent parallel executions
+    await markMessageProcessed(agentId, update.update_id);
 
     const message = update.message;
     const userId = message.from?.id;
