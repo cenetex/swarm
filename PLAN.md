@@ -27,6 +27,10 @@
 | **Secrets Management** | ✅ DONE | Write-only secrets with KMS encryption |
 | **Wallet Generation** | 🟡 PARTIAL | Solana implemented; Ethereum disabled pending ethers/viem |
 | **Logs API** | 🟡 PARTIAL | `GET /agents/{id}/logs` exists; UI + standardized log schema pending. |
+| **MCP Tool Registry + Server** | 🟡 PARTIAL | Registry package created; agent scoping + registration workflow pending. |
+| **Billing + Entitlements** | ⏳ NOT STARTED | Paid plan gating and subscription lifecycle. |
+| **Usage Metering** | ⏳ NOT STARTED | Per-agent usage tracking for billing and spend controls. |
+| **Privacy + Retention Defaults** | ⏳ NOT STARTED | Stateless free tier and opt-in durable memory. |
 | Tests | 🟡 PARTIAL | Vitest coverage in admin-api/core; no end-to-end tests |
 
 ### Admin Interface Features
@@ -62,6 +66,12 @@
 [x] Response Sender Handler
 [x] CDK Infrastructure (SharedInfrastructure + AgentConstruct)
 [x] Tool Definitions (send_message, react, ignore, wait, take_selfie)
+[ ] Billing + entitlements (paid plans, subscription lifecycle)
+[ ] Usage metering + spend controls (per-agent/tool usage tracking)
+[ ] Memory opt-in + retention defaults (stateless free tier)
+[ ] Deploy trigger from admin UI/API
+[ ] Logs schema + correlation IDs + logs UI
+[ ] Media callback contract (idempotent async jobs)
 [ ] Agent template workflow (DB-backed; import/export optional)
 [ ] First real agent config (firehorse, kyro, etc.)
 [ ] End-to-end Telegram test
@@ -69,6 +79,60 @@
 ```
 
 ---
+
+## MVP Definition (Paid Platform)
+
+To count as an MVP platform service, the system must let a user pay, activate a plan, and receive the corresponding runtime entitlements.
+
+**Acceptance Criteria**
+- Self-serve flow: create agent → connect Telegram → purchase plan → deploy → verify with logs.
+- Paid entitlements enforced in runtime (memory opt-in, higher limits, premium tools).
+- Free tier is stateless beyond request processing; paid tier explicitly enables durable memory.
+- Usage metering for messages/tools/media with spend limits and exportable records.
+- Telegram path is stable with an end-to-end test and canary playbook.
+
+---
+
+## Prioritized Plan (Next)
+
+1) **Billing + Entitlements (MVP gate)**
+   - Choose billing provider and plan model.
+   - Implement subscription lifecycle and plan gating in runtime.
+
+2) **Usage Metering + Spend Controls**
+   - Track per-agent usage across handlers.
+   - Enforce limits and expose usage in admin UI/API.
+
+3) **Memory Opt-In + Retention**
+   - Stateless free tier default.
+   - Paid opt-in durable memory with retention windows and deletion/export flows.
+
+4) **Control Plane Productization**
+   - Deploy trigger from admin UI/API.
+   - Template import/export + agent config versioning.
+
+5) **Reliability + Observability**
+   - Standardized logs + correlation IDs.
+   - Media callback contract with idempotency + retries.
+   - End-to-end Telegram test + canary rollout.
+
+6) **Platform Expansion**
+   - Harden X/Twitter adapter and complete Discord adapter.
+
+## MCP Registration Plan
+
+1) **Agent Scope Enforcement**
+   - Require `agentId` in MCP metadata.
+   - Reject requests missing agent scope.
+   - Ensure tools/services enforce agent-scoped reads and writes.
+
+2) **Client Registration**
+   - Document MCP client setup (command, args, env, metadata).
+   - Provide reference config for target clients (Claude Desktop, etc.).
+
+3) **Deployment Mode**
+   - Local stdio for dev; hosted MCP service for shared access.
+   - Add rate limits and audit logging for MCP calls.
 
 ## Known Issues & Bugs
 
