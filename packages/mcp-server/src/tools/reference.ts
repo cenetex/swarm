@@ -158,6 +158,7 @@ export const createReferenceImageTools = (services: ReferenceImageServices) => [
     name: 'list_reference_images',
     description: 'List all reference images, optionally filtered by category.',
     category: 'gallery',
+    platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       category: ReferenceImageCategorySchema.optional().describe('Filter by category'),
     }),
@@ -187,6 +188,7 @@ export const createReferenceImageTools = (services: ReferenceImageServices) => [
     name: 'delete_reference_image',
     description: 'Delete a reference image by its ID.',
     category: 'gallery',
+    platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       imageId: z.string().describe('The ID of the reference image to delete'),
     }),

@@ -164,6 +164,7 @@ export const createMediaTools = (
         agentId: context.agentId,
         platform: context.platform,
         referenceImageUrl,
+        conversationId: context.conversationId,
       });
 
       const consumed = await credits.consumeCredit(context.agentId, 'generate_video');

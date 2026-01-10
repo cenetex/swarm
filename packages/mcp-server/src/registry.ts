@@ -28,6 +28,8 @@ export interface ToolContext {
   platform: 'telegram' | 'discord' | 'twitter' | 'admin-ui' | 'api';
   /** User or chat identifier */
   userId?: string;
+  /** Conversation/chat ID for async callbacks */
+  conversationId?: string;
   /** Session data for auth/permissions */
   session?: {
     email?: string;

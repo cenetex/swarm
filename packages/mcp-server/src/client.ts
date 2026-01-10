@@ -31,7 +31,7 @@ export class ToolClient {
   async execute<T = unknown>(
     toolName: string,
     args: Record<string, unknown>,
-    context: { agentId: string; userId?: string; session?: { email?: string; isAdmin?: boolean } }
+    context: { agentId: string; userId?: string; conversationId?: string; session?: { email?: string; isAdmin?: boolean } }
   ): Promise<ToolResult<T>> {
     const fullContext: ToolContext = {
       ...context,

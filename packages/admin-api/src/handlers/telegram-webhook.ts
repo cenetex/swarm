@@ -579,7 +579,7 @@ interface ToolResult {
   success: boolean;
   result?: unknown;
   error?: string;
-  media?: { type: 'image' | 'video'; url: string; caption?: string };
+  media?: { type: 'image' | 'video' | 'sticker'; url: string; caption?: string };
 }
 
 function parseToolArgs(raw: string | undefined, toolName: string): { ok: boolean; args: Record<string, unknown>; error?: string } {
@@ -619,8 +619,11 @@ async function executeTool(
       await sendChatAction(token, chatId, 'upload_video');
     }
 
-    // Execute via MCP ToolClient
-    const mcpResult = await toolClient.execute(toolName, args, { agentId });
+    // Execute via MCP ToolClient with conversationId for async callbacks
+    const mcpResult = await toolClient.execute(toolName, args, { 
+      agentId,
+      conversationId: `telegram:${chatId}`,
+    });
 
     // Convert MCP result to Telegram handler format
     if (!mcpResult.success) {
@@ -634,8 +637,9 @@ async function executeTool(
 
     // Handle media from MCP result
     if (mcpResult.media) {
+      const mediaType = mcpResult.media.type;
       result.media = {
-        type: mcpResult.media.type === 'video' ? 'video' : 'image',
+        type: mediaType === 'video' ? 'video' : mediaType === 'sticker' ? 'sticker' : 'image',
         url: mcpResult.media.url,
         caption: mcpResult.media.caption,
       };
@@ -889,7 +893,7 @@ async function processChannelResponse(
   // Tool loop
   let iterations = 0;
   const maxIterations = 5;
-  const mediasToSend: Array<{ type: 'image' | 'video'; url: string; caption?: string }> = [];
+  const mediasToSend: Array<{ type: 'image' | 'video' | 'sticker'; url: string; caption?: string }> = [];
   const failedTools = new Set<string>();
   let responseMessageId: number | null = null;
 
@@ -971,6 +975,9 @@ async function processChannelResponse(
         await sendTelegramPhoto(token, chatId, m.url, m.caption);
       } else if (m.type === 'video') {
         await sendTelegramVideo(token, chatId, m.url, m.caption);
+      } else if (m.type === 'sticker') {
+        // Stickers sent as photos for now (Telegram requires sticker format conversion)
+        await sendTelegramPhoto(token, chatId, m.url, m.caption);
       }
     }
     mediasToSend.length = 0;
@@ -991,6 +998,8 @@ async function processChannelResponse(
         await sendTelegramPhoto(token, chatId, m.url, m.caption);
       } else if (m.type === 'video') {
         await sendTelegramVideo(token, chatId, m.url, m.caption);
+      } else if (m.type === 'sticker') {
+        await sendTelegramPhoto(token, chatId, m.url, m.caption);
       }
     }
   }

@@ -221,6 +221,52 @@ export async function consumeCredit(
 }
 
 /**
+ * Structured credit status for a single tool
+ */
+export interface ToolCreditStatus {
+  used: number;
+  limit: number;
+  remaining: number;
+  dailyUsed: number;
+  dailyLimit: number;
+  dailyRemaining: number;
+}
+
+/**
+ * Get structured credit status for all tools
+ */
+export async function getToolStatusStructured(
+  agentId: string
+): Promise<Record<string, ToolCreditStatus>> {
+  const result: Record<string, ToolCreditStatus> = {};
+
+  for (const [toolName, config] of Object.entries(TOOL_CREDITS)) {
+    const bucket = await getOrCreateBucket(agentId, toolName);
+    const now = Date.now();
+
+    // Calculate current credits
+    const currentCredits = calculateRefill(bucket, config);
+
+    // Check daily reset
+    let dailyRemaining = config.dailyLimit - bucket.dailyUsed;
+    if (now >= bucket.dailyResetAt) {
+      dailyRemaining = config.dailyLimit;
+    }
+
+    result[toolName] = {
+      used: config.maxCredits - currentCredits,
+      limit: config.maxCredits,
+      remaining: currentCredits,
+      dailyUsed: bucket.dailyUsed,
+      dailyLimit: config.dailyLimit,
+      dailyRemaining,
+    };
+  }
+
+  return result;
+}
+
+/**
  * Get credit status for all tools (for AI prompt injection)
  */
 export async function getToolStatus(agentId: string): Promise<string> {

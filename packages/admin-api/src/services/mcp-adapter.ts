@@ -107,9 +107,9 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
     // =========================================================================
     jobCredits: {
       getToolStatus: async (agentId) => {
-        // The service returns a formatted string, wrap it in a structure
-        const statusString = await credits.getToolStatus(agentId);
-        return { summary: statusString } as Record<string, unknown>;
+        // Return structured credit data
+        const status = await credits.getToolStatusStructured(agentId);
+        return status;
       },
     },
 
@@ -187,7 +187,7 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
 
       createWallet: async (agentId, name) => {
         const result = await wallets.generateSolanaWallet(agentId, name, session);
-        return { publicKey: result.publicKey };
+        return { publicKey: result.publicKey, address: result.address };
       },
 
       getBalance: async (publicKey, agentId) => {
