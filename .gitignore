@@ -9,6 +9,9 @@ dist/
 *.js.map
 !jest.config.js
 !vitest.config.js
+!postcss.config.js
+!tailwind.config.js
+!packages/admin-ui/src/vite-env.d.ts
 
 # CDK
 cdk.out/
