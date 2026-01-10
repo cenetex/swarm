@@ -36,7 +36,7 @@ new SwarmStack(app, `SwarmStack-${environment}`, {
   environment,
   agentsPath,
   handlersPath,
-  enableCdn: environment === 'prod',
+  enableCdn: true, // CDN required for media to be accessible (S3 bucket is private)
   agentIds,
   adminDomain,
   adminCertificateArn,
