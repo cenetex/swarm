@@ -286,6 +286,28 @@ export class AgentConstruct extends Construct {
       });
     }
 
+    // Twitter mention poller - polls for mentions every 5 minutes
+    const twitterMentions = config.platforms.twitter?.features?.includes('mention_replies');
+    if (config.platforms.twitter?.enabled && twitterMentions) {
+      const mentionPoller = new lambda.Function(this, 'TwitterMentionPoller', {
+        functionName: `${config.id}-twitter-mention-poller`,
+        runtime: lambda.Runtime.NODEJS_20_X,
+        handler: 'twitter-mention-poller.handler',
+        code: lambda.Code.fromAsset(handlersCodePath),
+        layers: [dependencyLayer],
+        role: lambdaRole,
+        timeout: cdk.Duration.seconds(60),
+        memorySize: 512,
+        environment: commonEnv,
+      });
+
+      // Poll every 5 minutes
+      new events.Rule(this, 'MentionPollSchedule', {
+        schedule: events.Schedule.rate(cdk.Duration.minutes(5)),
+        targets: [new targets.LambdaFunction(mentionPoller)],
+      });
+    }
+
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: this.api.url,

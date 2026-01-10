@@ -20,11 +20,20 @@
     "cdk": "pnpm --filter @swarm/infra cdk",
     "test:persona": "node scripts/test-persona.mjs"
   },
-  "keywords": ["aws", "lambda", "telegram", "twitter", "ai", "agents", "solana"],
+  "keywords": [
+    "aws",
+    "lambda",
+    "telegram",
+    "twitter",
+    "ai",
+    "agents",
+    "solana"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "esbuild": "^0.27.2",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
     "typescript": "^5.7.0",

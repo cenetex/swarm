@@ -12,7 +12,7 @@
 |-----------|--------|-------|
 | Monorepo Setup | ✅ DONE | pnpm workspaces, TypeScript configs |
 | Core Types | ✅ DONE | Comprehensive type definitions |
-| Platform Adapters | ⚠️ PARTIAL | Telegram done, Twitter/Web stubs, Discord missing |
+| Platform Adapters | ✅ DONE | Telegram, Twitter, Web complete. Discord missing. |
 | Processors | ✅ DONE | Evaluator, Generator, OutboundSender complete |
 | Services | ✅ DONE | State, Activity, LLM (with retry), Secrets complete |
 | Handlers | ✅ DONE | All handlers implemented |
