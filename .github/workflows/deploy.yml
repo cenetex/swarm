@@ -97,6 +97,9 @@ jobs:
 
       - name: Output Stack Info
         working-directory: packages/infra
+      - name: Get Stack Outputs
+        id: stack-outputs
+        working-directory: packages/infra
         run: |
           ENV_NAME="${{ inputs.environment || 'production' }}"
           if [ "$ENV_NAME" = "production" ]; then
@@ -105,11 +108,35 @@ jobs:
             CDK_ENV="$ENV_NAME"
           fi
           
+          # Get Admin UI bucket and distribution from CloudFormation
+          STACK_NAME="SwarmStack-$CDK_ENV"
+          
+          ADMIN_BUCKET=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
+            --query "Stacks[0].Outputs[?ExportName=='swarm-admin-ui-bucket-$CDK_ENV'].OutputValue" \
+            --output text)
+          
+          ADMIN_DISTRIBUTION=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
+            --query "Stacks[0].Outputs[?ExportName=='swarm-admin-ui-distribution-$CDK_ENV'].OutputValue" \
+            --output text)
+          
+          ADMIN_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
+            --query "Stacks[0].Outputs[?ExportName=='swarm-admin-ui-url-$CDK_ENV'].OutputValue" \
+            --output text)
+          
+          echo "bucket=$ADMIN_BUCKET" >> $GITHUB_OUTPUT
+          echo "distribution=$ADMIN_DISTRIBUTION" >> $GITHUB_OUTPUT
+          echo "url=$ADMIN_URL" >> $GITHUB_OUTPUT
+          
           echo "## Deployed Stacks ($ENV_NAME)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Stack: \`SwarmStack-$CDK_ENV\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          npx cdk list -c environment=$CDK_ENV >> $GITHUB_STEP_SUMMARY
+          echo "Stack: \`$STACK_NAME\`" >> $GITHUB_STEP_SUMMARY
+          echo "Admin UI Bucket: \`$ADMIN_BUCKET\`" >> $GITHUB_STEP_SUMMARY
+          echo "Admin UI URL: $ADMIN_URL" >> $GITHUB_STEP_SUMMARY
+
+    outputs:
+      admin-bucket: ${{ steps.stack-outputs.outputs.bucket }}
+      admin-distribution: ${{ steps.stack-outputs.outputs.distribution }}
+      admin-url: ${{ steps.stack-outputs.outputs.url }}
 
   deploy-admin-ui:
     name: Deploy Admin UI
@@ -148,20 +175,27 @@ jobs:
 
       - name: Deploy to S3
         run: |
-          aws s3 sync packages/admin-ui/dist s3://${{ secrets.ADMIN_UI_BUCKET }} \
+          aws s3 sync packages/admin-ui/dist s3://${{ needs.deploy.outputs.admin-bucket }} \
             --delete \
             --cache-control "max-age=31536000,immutable" \
             --exclude "index.html" \
             --exclude "*.json"
           
-          aws s3 cp packages/admin-ui/dist/index.html s3://${{ secrets.ADMIN_UI_BUCKET }}/index.html \
+          aws s3 cp packages/admin-ui/dist/index.html s3://${{ needs.deploy.outputs.admin-bucket }}/index.html \
             --cache-control "no-cache,no-store,must-revalidate"
 
       - name: Invalidate CloudFront
         run: |
-          if [ -n "${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}" ]; then
+          DISTRIBUTION_ID="${{ needs.deploy.outputs.admin-distribution }}"
+          if [ -n "$DISTRIBUTION_ID" ]; then
             aws cloudfront create-invalidation \
-              --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+              --distribution-id $DISTRIBUTION_ID \
               --paths "/*"
+            echo "CloudFront cache invalidated for distribution: $DISTRIBUTION_ID"
           fi
-        continue-on-error: true
+
+      - name: Summary
+        run: |
+          echo "## Admin UI Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ needs.deploy.outputs.admin-url }}" >> $GITHUB_STEP_SUMMARY

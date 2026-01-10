@@ -9,6 +9,7 @@ import * as yaml from 'yaml';
 import { Construct } from 'constructs';
 import { SharedInfrastructure } from '../constructs/shared.js';
 import { AgentConstruct } from '../constructs/agent.js';
+import { AdminUi } from '../constructs/admin-ui.js';
 import type { AgentConfig } from '@swarm/core';
 
 export interface SwarmStackProps extends cdk.StackProps {
@@ -36,21 +37,47 @@ export interface SwarmStackProps extends cdk.StackProps {
    * Specific agents to deploy (default: all)
    */
   agentIds?: string[];
+
+  /**
+   * Custom domain for Admin UI (e.g., 'admin-staging.rati.chat')
+   */
+  adminDomain?: string;
+
+  /**
+   * ACM certificate ARN for Admin UI custom domain (must be in us-east-1)
+   */
+  adminCertificateArn?: string;
 }
 
 export class SwarmStack extends cdk.Stack {
   public readonly shared: SharedInfrastructure;
+  public readonly adminUi: AdminUi;
   public readonly agents: Map<string, AgentConstruct> = new Map();
 
   constructor(scope: Construct, id: string, props: SwarmStackProps) {
     super(scope, id, props);
 
-    const { environment, agentsPath, handlersPath, enableCdn = true, agentIds } = props;
+    const { 
+      environment, 
+      agentsPath, 
+      handlersPath, 
+      enableCdn = true, 
+      agentIds,
+      adminDomain,
+      adminCertificateArn,
+    } = props;
 
     // Create shared infrastructure
     this.shared = new SharedInfrastructure(this, 'Shared', {
       environment,
       enableCdn,
+    });
+
+    // Create Admin UI with CloudFront
+    this.adminUi = new AdminUi(this, 'AdminUi', {
+      environment,
+      domainName: adminDomain,
+      certificateArn: adminCertificateArn,
     });
 
     // Load and deploy agents

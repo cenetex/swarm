@@ -15,6 +15,14 @@
   "context": {
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
-    "@aws-cdk/core:target-partitions": ["aws"]
+    "@aws-cdk/core:target-partitions": ["aws"],
+    "environments": {
+      "staging": {
+        "adminDomain": "admin-staging.rati.chat"
+      },
+      "prod": {
+        "adminDomain": "admin.rati.chat"
+      }
+    }
   }
 }

@@ -18,6 +18,12 @@ const app = new cdk.App();
 const environment = app.node.tryGetContext('environment') || 'dev';
 const agentIds = app.node.tryGetContext('agents')?.split(',');
 
+// Get environment-specific config
+const environments = app.node.tryGetContext('environments') || {};
+const envConfig = environments[environment] || {};
+const adminDomain = app.node.tryGetContext('adminDomain') || envConfig.adminDomain;
+const adminCertificateArn = app.node.tryGetContext('adminCertificateArn') || envConfig.adminCertificateArn;
+
 // Resolve paths relative to monorepo root
 const monorepoRoot = path.resolve(__dirname, '../../../..');
 const agentsPath = path.join(monorepoRoot, 'agents');
@@ -29,6 +35,8 @@ new SwarmStack(app, `SwarmStack-${environment}`, {
   handlersPath,
   enableCdn: environment === 'prod',
   agentIds,
+  adminDomain,
+  adminCertificateArn,
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
