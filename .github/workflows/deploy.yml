@@ -63,30 +63,53 @@ jobs:
       - name: CDK Diff
         working-directory: packages/infra
         run: |
-          if [ -n "${{ inputs.stack }}" ]; then
-            npx cdk diff ${{ inputs.stack }}
+          ENV_NAME="${{ inputs.environment || 'production' }}"
+          # Map GitHub environment names to CDK environment names
+          if [ "$ENV_NAME" = "production" ]; then
+            CDK_ENV="prod"
           else
-            npx cdk diff --all
+            CDK_ENV="$ENV_NAME"
+          fi
+          
+          if [ -n "${{ inputs.stack }}" ]; then
+            npx cdk diff ${{ inputs.stack }} -c environment=$CDK_ENV
+          else
+            npx cdk diff --all -c environment=$CDK_ENV
           fi
         continue-on-error: true
 
       - name: CDK Deploy
         working-directory: packages/infra
         run: |
-          if [ -n "${{ inputs.stack }}" ]; then
-            npx cdk deploy ${{ inputs.stack }} --require-approval never
+          ENV_NAME="${{ inputs.environment || 'production' }}"
+          # Map GitHub environment names to CDK environment names
+          if [ "$ENV_NAME" = "production" ]; then
+            CDK_ENV="prod"
           else
-            npx cdk deploy --all --require-approval never
+            CDK_ENV="$ENV_NAME"
           fi
-        env:
-          ENVIRONMENT: ${{ inputs.environment || 'production' }}
+          
+          if [ -n "${{ inputs.stack }}" ]; then
+            npx cdk deploy ${{ inputs.stack }} --require-approval never -c environment=$CDK_ENV
+          else
+            npx cdk deploy --all --require-approval never -c environment=$CDK_ENV
+          fi
 
       - name: Output Stack Info
         working-directory: packages/infra
         run: |
-          echo "## Deployed Stacks" >> $GITHUB_STEP_SUMMARY
+          ENV_NAME="${{ inputs.environment || 'production' }}"
+          if [ "$ENV_NAME" = "production" ]; then
+            CDK_ENV="prod"
+          else
+            CDK_ENV="$ENV_NAME"
+          fi
+          
+          echo "## Deployed Stacks ($ENV_NAME)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          npx cdk list >> $GITHUB_STEP_SUMMARY
+          echo "Stack: \`SwarmStack-$CDK_ENV\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          npx cdk list -c environment=$CDK_ENV >> $GITHUB_STEP_SUMMARY
 
   deploy-admin-ui:
     name: Deploy Admin UI
