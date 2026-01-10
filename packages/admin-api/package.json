@@ -8,7 +8,7 @@
     "build": "tsc",
     "watch": "tsc --watch",
     "test": "vitest run",
-    "lint": "eslint src/ --config ../../eslint.config.js"
+    "lint": "eslint src/"
   },
   "dependencies": {
     "@aws-sdk/client-cloudwatch-logs": "^3.966.0",

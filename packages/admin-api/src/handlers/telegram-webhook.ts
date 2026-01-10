@@ -112,7 +112,7 @@ const ToolCallSchema = z.object({
   function: z.object({ name: z.string(), arguments: z.string() }),
 });
 
-const ChatMessageSchema = z.object({
+const _ChatMessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
   content: z.string(),
   tool_calls: z.array(ToolCallSchema).optional(),
@@ -120,7 +120,7 @@ const ChatMessageSchema = z.object({
   name: z.string().optional(),
 });
 
-type ChatMessage = z.infer<typeof ChatMessageSchema>;
+type ChatMessage = z.infer<typeof _ChatMessageSchema>;
 type ToolCall = z.infer<typeof ToolCallSchema>;
 
 // === TOOLS FOR TELEGRAM ===
