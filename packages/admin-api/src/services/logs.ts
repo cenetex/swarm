@@ -82,13 +82,16 @@ function buildInsightsQuery(agentId: string, options: LogQueryOptions, limit: nu
   const filters: string[] = [];
   const escapedAgent = escapeRegex(agentId);
   filters.push(
-    `(@message like /"agentId"\\s*:\\s*"${escapedAgent}"/ or @message like /agentId=${escapedAgent}/)`
+    `(@message like /"agentId"\\s*:\\s*"${escapedAgent}"/ or @message like /agentId=${escapedAgent}/ or @message like /agentId:\\s*['"]?${escapedAgent}/)`
   );
 
   if (options.level) {
-    const escapedLevel = escapeRegex(options.level);
+    const upperLevel = options.level.toUpperCase();
+    const lowerLevel = options.level.toLowerCase();
+    const escapedUpper = escapeRegex(upperLevel);
+    const escapedLower = escapeRegex(lowerLevel);
     filters.push(
-      `(@message like /"level"\\s*:\\s*"${escapedLevel}"/ or @message like /level=${escapedLevel}/)`
+      `(@message like /"level"\\s*:\\s*"${escapedUpper}"/ or @message like /"level"\\s*:\\s*"${escapedLower}"/ or @message like /level=${escapedLower}/ or @message like /level=${escapedUpper}/)`
     );
   }
 
