@@ -237,17 +237,25 @@ cp -r agents/.template agents/myagent
 
 ### Deploying
 
+**All deployments happen through GitHub Actions by pushing to main.** Do NOT run `cdk deploy` locally.
+
 ```bash
-# Deploy everything (local)
-cd packages/infra
-cdk deploy --all
+# Commit and push to trigger deployment
+git add .
+git commit -m "feat(infra): your change description"
+git push origin main
 
-# Deploy specific agent
-cdk deploy --context agents=myagent
-
-# Via GitHub Actions
-# Go to Actions > Deploy Agent > Run workflow
+# GitHub Actions will:
+# 1. Build all packages
+# 2. Deploy infra to staging automatically
+# 3. Deploy admin UI to staging automatically
+# 4. Production requires manual approval
 ```
+
+To deploy manually via GitHub Actions:
+1. Go to Actions > Deploy Staging (or Deploy Production)
+2. Click "Run workflow"
+3. Select branch and confirm
 
 ### Adding a New Tool to Admin Agent
 
@@ -301,6 +309,18 @@ sam local invoke -e event.json
 4. **Cloudflare Access** - Zero-trust authentication for admin
 5. **Least privilege IAM** - Lambda roles have minimal permissions
 6. **Audit logging** - All admin actions are logged
+
+### Telegram Webhook Security
+
+The Telegram webhook handler implements multiple security layers:
+
+1. **Secret Token Verification** - Each agent has a unique `telegram_webhook_secret` stored in Secrets Manager. Telegram sends this in the `X-Telegram-Bot-Api-Secret-Token` header, which we verify using timing-safe comparison.
+
+2. **IP Verification** - Requests are checked against Telegram's official IP ranges (149.154.160.0/20, 91.108.4.0/22). This is a secondary check and can be disabled for proxied setups.
+
+3. **No Information Disclosure** - All error cases return 200 OK to prevent enumeration of valid agent IDs.
+
+4. **Sanitized Logging** - Message content is never logged; only metadata (chat ID, message ID, text length) is recorded.
 
 ## Resources
 
