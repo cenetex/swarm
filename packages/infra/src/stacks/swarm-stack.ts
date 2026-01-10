@@ -80,46 +80,50 @@ export class SwarmStack extends cdk.Stack {
       certificateArn: adminCertificateArn,
     });
 
-    // Load and deploy agents
-    const agentDirs = fs.readdirSync(agentsPath)
-      .filter(f => {
-        const fullPath = path.join(agentsPath, f);
-        return fs.statSync(fullPath).isDirectory() && !f.startsWith('.') && f !== 'node_modules';
-      })
-      .filter(f => !agentIds || agentIds.includes(f));
+    // Load and deploy agents (skip if agents directory doesn't exist)
+    if (!fs.existsSync(agentsPath)) {
+      console.log(`Agents directory not found at ${agentsPath}, skipping agent deployment`);
+    } else {
+      const agentDirs = fs.readdirSync(agentsPath)
+        .filter(f => {
+          const fullPath = path.join(agentsPath, f);
+          return fs.statSync(fullPath).isDirectory() && !f.startsWith('.') && f !== 'node_modules';
+        })
+        .filter(f => !agentIds || agentIds.includes(f));
 
-    for (const agentDir of agentDirs) {
-      const configPath = path.join(agentsPath, agentDir, 'config.yaml');
-      
-      if (!fs.existsSync(configPath)) {
-        console.warn(`Skipping ${agentDir}: no config.yaml found`);
-        continue;
+      for (const agentDir of agentDirs) {
+        const configPath = path.join(agentsPath, agentDir, 'config.yaml');
+        
+        if (!fs.existsSync(configPath)) {
+          console.warn(`Skipping ${agentDir}: no config.yaml found`);
+          continue;
+        }
+
+        const configYaml = fs.readFileSync(configPath, 'utf-8');
+        const config: AgentConfig = yaml.parse(configYaml);
+
+        // Ensure agent ID matches directory name
+        config.id = agentDir;
+
+        // Read persona file if exists
+        const personaPath = path.join(agentsPath, agentDir, 'persona.md');
+        if (fs.existsSync(personaPath)) {
+          config.persona = fs.readFileSync(personaPath, 'utf-8');
+        }
+
+        // Create agent
+        const agent = new AgentConstruct(this, `Agent-${agentDir}`, {
+          config,
+          stateTable: this.shared.stateTable,
+          activityTable: this.shared.activityTable,
+          mediaBucket: this.shared.mediaBucket,
+          dependencyLayer: this.shared.dependencyLayer,
+          handlersCodePath: handlersPath,
+          environment,
+        });
+
+        this.agents.set(agentDir, agent);
       }
-
-      const configYaml = fs.readFileSync(configPath, 'utf-8');
-      const config: AgentConfig = yaml.parse(configYaml);
-
-      // Ensure agent ID matches directory name
-      config.id = agentDir;
-
-      // Read persona file if exists
-      const personaPath = path.join(agentsPath, agentDir, 'persona.md');
-      if (fs.existsSync(personaPath)) {
-        config.persona = fs.readFileSync(personaPath, 'utf-8');
-      }
-
-      // Create agent
-      const agent = new AgentConstruct(this, `Agent-${agentDir}`, {
-        config,
-        stateTable: this.shared.stateTable,
-        activityTable: this.shared.activityTable,
-        mediaBucket: this.shared.mediaBucket,
-        dependencyLayer: this.shared.dependencyLayer,
-        handlersCodePath: handlersPath,
-        environment,
-      });
-
-      this.agents.set(agentDir, agent);
     }
 
     // Stack outputs
