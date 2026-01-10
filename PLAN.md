@@ -4,22 +4,40 @@
 
 ## Implementation Status
 
-> **Last Updated:** 2025-01-09
+> **Last Updated:** 2025-01-10
 
 ### Overall Progress
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Monorepo Setup | DONE | pnpm workspaces, TypeScript configs |
-| Core Types | DONE | Comprehensive type definitions |
-| Platform Adapters | PARTIAL | Telegram done, Twitter/Web stubs, Discord missing |
-| Processors | DONE | Evaluator, Generator, OutboundSender complete |
-| Services | DONE | State, Activity, LLM (with retry), Secrets complete |
-| Handlers | DONE | All handlers implemented |
-| Infrastructure (CDK) | DONE | Full stack with shared + per-agent resources |
-| Agent Templates | DONE | Template config.yaml and persona.md |
-| Agent Configs | NOT STARTED | No real agents configured yet |
-| Tests | NOT STARTED | No test coverage |
+| Monorepo Setup | ✅ DONE | pnpm workspaces, TypeScript configs |
+| Core Types | ✅ DONE | Comprehensive type definitions |
+| Platform Adapters | ⚠️ PARTIAL | Telegram done, Twitter/Web stubs, Discord missing |
+| Processors | ✅ DONE | Evaluator, Generator, OutboundSender complete |
+| Services | ✅ DONE | State, Activity, LLM (with retry), Secrets complete |
+| Handlers | ✅ DONE | All handlers implemented |
+| Infrastructure (CDK) | ✅ DONE | Full stack with shared + per-agent resources |
+| Agent Templates | ✅ DONE | Template config.yaml and persona.md |
+| Agent Configs | ⏳ NOT STARTED | No real agents configured yet |
+| **Admin API** | ✅ DONE | `@swarm/admin-api` - Chat handler, services, auth |
+| **Admin UI** | ✅ DONE | `@swarm/admin-ui` - React chat interface |
+| **Admin Infra** | ✅ DONE | CDK construct for admin API deployment |
+| **Secrets Management** | ✅ DONE | Write-only secrets with KMS encryption |
+| **Wallet Generation** | ✅ DONE | Solana/Ethereum key generation in Lambda |
+| Tests | ⏳ NOT STARTED | No test coverage |
+
+### Admin Interface Features
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Cloudflare Access Auth | ✅ | JWT verification, fingerprint/SSO login |
+| Conversational Setup | ✅ | LLM-powered chat for agent configuration |
+| Agent CRUD | ✅ | Create, list, update, delete agents |
+| Platform Config | ✅ | Telegram, Twitter, Discord setup |
+| Secret Storage | ✅ | Write-only, KMS-encrypted, Secrets Manager |
+| Global API Keys | ✅ | Shared keys with per-agent override |
+| Wallet Generation | ✅ | Solana & Ethereum keypair generation |
+| Deploy Trigger | ⚠️ | Placeholder (CDK deploy integration pending) |
 
 ### Critical Path to MVP
 
@@ -79,11 +97,800 @@
 
 ---
 
+## Admin Interface (Conversational Setup)
+
+### Overview
+
+A web-based conversational interface for managing agents, secrets, and wallets. Protected by Cloudflare Access for secure authentication.
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                         ADMIN INTERFACE ARCHITECTURE                              │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                   │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐ │
+│  │                      CLOUDFLARE ACCESS (Zero Trust)                          │ │
+│  │  • Fingerprint / WebAuthn                                                    │ │
+│  │  • Google / GitHub / SAML SSO                                                │ │
+│  │  • Hardware keys (YubiKey)                                                   │ │
+│  │  • Access policies per user/group                                            │ │
+│  └─────────────────────────────────────────────────────────────────────────────┘ │
+│                                      │                                            │
+│                                      ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐ │
+│  │                      ADMIN WEB APP (packages/admin)                          │ │
+│  │                                                                               │ │
+│  │  ┌───────────────────────────────────────────────────────────────────────┐  │ │
+│  │  │                    CONVERSATIONAL INTERFACE                            │  │ │
+│  │  │                                                                        │  │ │
+│  │  │  User: "Create a new agent called firehorse"                          │  │ │
+│  │  │  Bot:  "I'll create firehorse. What platforms should it support?"     │  │ │
+│  │  │  User: "Telegram and Twitter"                                          │  │ │
+│  │  │  Bot:  "Great! I need the Telegram bot token. Please paste it:"       │  │ │
+│  │  │  User: [pastes token]                                                  │  │ │
+│  │  │  Bot:  "Token saved securely. Now for Twitter API keys..."            │  │ │
+│  │  │                                                                        │  │ │
+│  │  └───────────────────────────────────────────────────────────────────────┘  │ │
+│  │                                                                               │ │
+│  │  Frontend: React + Tailwind (or simple HTML/HTMX)                           │ │
+│  │  Hosted: CloudFront + S3 (static) or Lambda@Edge                            │ │
+│  └─────────────────────────────────────────────────────────────────────────────┘ │
+│                                      │                                            │
+│                                      ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐ │
+│  │                      ADMIN API (Lambda + API Gateway)                        │ │
+│  │                                                                               │ │
+│  │  POST /admin/chat              → Conversational agent endpoint              │ │
+│  │  POST /admin/agents            → Create agent                               │ │
+│  │  GET  /admin/agents            → List agents (no secrets)                   │ │
+│  │  POST /admin/secrets/set       → Set secret (write-only)                    │ │
+│  │  POST /admin/secrets/verify    → Verify secret exists (no read)             │ │
+│  │  POST /admin/wallets/generate  → Generate new wallet                        │ │
+│  │  GET  /admin/wallets           → List wallets (public keys only)            │ │
+│  │  POST /admin/deploy            → Trigger CDK deployment                     │ │
+│  │                                                                               │ │
+│  │  Auth: Cloudflare Access JWT validation                                     │ │
+│  └─────────────────────────────────────────────────────────────────────────────┘ │
+│                                      │                                            │
+│                                      ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐ │
+│  │                      ADMIN AGENT (LLM with Tools)                            │ │
+│  │                                                                               │ │
+│  │  System Prompt:                                                              │ │
+│  │  "You are a setup assistant for the Swarm agent platform. Help users        │ │
+│  │   configure agents, set secrets, and manage wallets. Be helpful and         │ │
+│  │   guide them through the process step by step."                             │ │
+│  │                                                                               │ │
+│  │  Tools (write-only for secrets):                                            │ │
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │ │
+│  │  │ create_agent    │  │ set_secret      │  │ generate_wallet │             │ │
+│  │  │ list_agents     │  │ verify_secret   │  │ list_wallets    │             │ │
+│  │  │ update_agent    │  │ delete_secret   │  │ get_balance     │             │ │
+│  │  │ delete_agent    │  │ list_secret_keys│  │ request_airdrop │             │ │
+│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘             │ │
+│  │                                                                               │ │
+│  │  IMPORTANT: Agent can SET secrets but NEVER READ them                       │ │
+│  └─────────────────────────────────────────────────────────────────────────────┘ │
+│                                      │                                            │
+│                                      ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐ │
+│  │                      SECURE STORAGE                                          │ │
+│  │                                                                               │ │
+│  │  AWS Secrets Manager                    AWS KMS                              │ │
+│  │  ┌─────────────────────────────┐       ┌─────────────────────────────┐      │ │
+│  │  │ swarm/shared/               │       │ swarm-master-key            │      │ │
+│  │  │   OPENROUTER_API_KEY        │       │ (Customer Managed CMK)      │      │ │
+│  │  │   REPLICATE_API_TOKEN       │       │ • Encrypt secrets           │      │ │
+│  │  │                             │       │ • Encrypt wallet keys       │      │ │
+│  │  │ swarm/{agentId}/secrets     │       │ • Key rotation enabled      │      │ │
+│  │  │   TELEGRAM_BOT_TOKEN        │       └─────────────────────────────┘      │ │
+│  │  │   TWITTER_API_KEY           │                                            │ │
+│  │  │   (overrides shared)        │       DynamoDB (encrypted at rest)         │ │
+│  │  │                             │       ┌─────────────────────────────┐      │ │
+│  │  │ swarm/{agentId}/wallet      │       │ Agent configs               │      │ │
+│  │  │   SOLANA_PRIVATE_KEY        │       │ Wallet metadata (no keys)   │      │ │
+│  │  │   (encrypted with KMS)      │       │ Audit logs                  │      │ │
+│  │  └─────────────────────────────┘       └─────────────────────────────┘      │ │
+│  └─────────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Admin Agent Tools
+
+```typescript
+// Tools available to the admin conversational agent
+// SECURITY: Secrets are WRITE-ONLY - agent can set but never read values
+
+const adminTools = [
+  // ─────────────────────────────────────────────────────────────────
+  // AGENT MANAGEMENT
+  // ─────────────────────────────────────────────────────────────────
+  {
+    name: 'create_agent',
+    description: 'Create a new agent with basic configuration',
+    parameters: {
+      id: 'Unique agent ID (lowercase, no spaces)',
+      name: 'Display name',
+      platforms: 'Array of platforms: telegram, twitter, discord, web',
+    },
+  },
+  {
+    name: 'list_agents',
+    description: 'List all configured agents',
+    // Returns: id, name, platforms, status (no secrets)
+  },
+  {
+    name: 'update_agent_config',
+    description: 'Update agent configuration (persona, behavior, etc)',
+    parameters: {
+      agentId: 'Agent to update',
+      config: 'Partial config to merge',
+    },
+  },
+  {
+    name: 'delete_agent',
+    description: 'Delete an agent (requires confirmation)',
+    parameters: { agentId: 'Agent to delete' },
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // SECRETS MANAGEMENT (WRITE-ONLY)
+  // ─────────────────────────────────────────────────────────────────
+  {
+    name: 'set_secret',
+    description: 'Set a secret value. WRITE-ONLY - cannot read back.',
+    parameters: {
+      scope: '"shared" or agent ID',
+      key: 'Secret key name (e.g., TELEGRAM_BOT_TOKEN)',
+      value: 'Secret value (will be encrypted)',
+    },
+  },
+  {
+    name: 'verify_secret_exists',
+    description: 'Check if a secret exists (does not reveal value)',
+    parameters: {
+      scope: '"shared" or agent ID',
+      key: 'Secret key name',
+    },
+    // Returns: { exists: boolean, lastUpdated: timestamp }
+  },
+  {
+    name: 'delete_secret',
+    description: 'Delete a secret',
+    parameters: {
+      scope: '"shared" or agent ID',
+      key: 'Secret key name',
+    },
+  },
+  {
+    name: 'list_secret_keys',
+    description: 'List secret key names (not values) for an agent',
+    parameters: { scope: '"shared" or agent ID' },
+    // Returns: ['TELEGRAM_BOT_TOKEN', 'TWITTER_API_KEY', ...]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // WALLET MANAGEMENT
+  // ─────────────────────────────────────────────────────────────────
+  {
+    name: 'generate_wallet',
+    description: 'Generate a new Solana wallet. Private key stored in Secrets Manager.',
+    parameters: {
+      agentId: 'Agent this wallet belongs to',
+      label: 'Wallet label (e.g., "treasury", "tips")',
+      cluster: 'mainnet-beta | devnet',
+    },
+    // Returns: { publicKey: '...', label: '...' } - NEVER returns private key
+  },
+  {
+    name: 'list_wallets',
+    description: 'List wallets for an agent (public keys only)',
+    parameters: { agentId: 'Agent ID' },
+    // Returns: [{ publicKey, label, cluster, balance }]
+  },
+  {
+    name: 'get_wallet_balance',
+    description: 'Get SOL and token balances for a wallet',
+    parameters: {
+      agentId: 'Agent ID',
+      label: 'Wallet label',
+    },
+  },
+  {
+    name: 'request_devnet_airdrop',
+    description: 'Request SOL airdrop on devnet for testing',
+    parameters: {
+      agentId: 'Agent ID',
+      label: 'Wallet label',
+      amount: 'SOL amount (max 2)',
+    },
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // DEPLOYMENT
+  // ─────────────────────────────────────────────────────────────────
+  {
+    name: 'trigger_deploy',
+    description: 'Trigger CDK deployment for agent(s)',
+    parameters: {
+      agentIds: 'Array of agent IDs to deploy (or "all")',
+      environment: 'dev | staging | prod',
+    },
+  },
+  {
+    name: 'get_deploy_status',
+    description: 'Check deployment status',
+    parameters: { deploymentId: 'Deployment ID from trigger_deploy' },
+  },
+];
+```
+
+### Secrets Hierarchy
+
+```
+swarm/
+├── shared/                          # Global defaults (all agents can use)
+│   ├── OPENROUTER_API_KEY          # Default AI API key
+│   ├── REPLICATE_API_TOKEN         # Default media generation
+│   └── ANTHROPIC_API_KEY           # Optional fallback
+│
+├── {agentId}/
+│   ├── secrets                      # Agent-specific overrides
+│   │   ├── TELEGRAM_BOT_TOKEN      # Required for Telegram
+│   │   ├── TWITTER_API_KEY         # Required for Twitter
+│   │   ├── TWITTER_API_SECRET
+│   │   ├── TWITTER_ACCESS_TOKEN
+│   │   ├── TWITTER_ACCESS_SECRET
+│   │   ├── DISCORD_BOT_TOKEN       # Required for Discord
+│   │   ├── OPENROUTER_API_KEY      # Override for cost tracking
+│   │   └── ...
+│   │
+│   └── wallets/
+│       ├── treasury                 # Main wallet
+│       │   ├── publicKey
+│       │   └── privateKey (encrypted with KMS)
+│       └── tips                     # Tip collection wallet
+│           ├── publicKey
+│           └── privateKey (encrypted)
+```
+
+### Security Measures
+
+#### 1. Authentication (Cloudflare Access)
+```yaml
+# Cloudflare Access Configuration
+application:
+  name: swarm-admin
+  domain: admin.swarm.example.com
+
+policies:
+  - name: admin-access
+    decision: allow
+    include:
+      - email_domain: yourdomain.com
+      # Or specific emails
+      - email:
+          - admin@example.com
+    require:
+      # Require second factor
+      - authentication_method:
+          auth_method: mfa
+      # Or specific methods
+      - login_method:
+          - otp
+          - webauthn  # Fingerprint, face, hardware key
+          - google
+          - github
+```
+
+#### 2. API Security
+```typescript
+// Lambda middleware for Cloudflare Access JWT validation
+async function validateCloudflareAccess(event: APIGatewayEvent): Promise<{
+  valid: boolean;
+  email?: string;
+  error?: string;
+}> {
+  const cfHeader = event.headers['cf-access-jwt-assertion'];
+  if (!cfHeader) {
+    return { valid: false, error: 'Missing CF Access token' };
+  }
+
+  // Verify JWT with Cloudflare's public keys
+  const certsUrl = `https://${CF_TEAM_DOMAIN}/cdn-cgi/access/certs`;
+  const certs = await fetch(certsUrl).then(r => r.json());
+
+  try {
+    const decoded = jwt.verify(cfHeader, certs.public_certs[0].cert, {
+      audience: CF_AUD_TAG,
+      issuer: `https://${CF_TEAM_DOMAIN}`,
+    });
+    return { valid: true, email: decoded.email };
+  } catch (err) {
+    return { valid: false, error: 'Invalid token' };
+  }
+}
+```
+
+#### 3. Secrets Write-Only Enforcement
+```typescript
+// Secrets service for admin - WRITE-ONLY for values
+class AdminSecretsService {
+  private client: SecretsManagerClient;
+  private kmsKeyId: string;
+
+  // ✅ ALLOWED - Set secret (write)
+  async setSecret(scope: string, key: string, value: string): Promise<void> {
+    const secretId = scope === 'shared'
+      ? `swarm/shared/${key}`
+      : `swarm/${scope}/secrets`;
+
+    // If storing in a JSON blob
+    const existing = await this.getSecretStructure(secretId);
+    existing[key] = value;
+
+    await this.client.send(new PutSecretValueCommand({
+      SecretId: secretId,
+      SecretString: JSON.stringify(existing),
+    }));
+
+    // Audit log
+    await this.logAudit('SET_SECRET', { scope, key, timestamp: Date.now() });
+  }
+
+  // ✅ ALLOWED - Verify exists (no value)
+  async verifySecretExists(scope: string, key: string): Promise<{
+    exists: boolean;
+    lastUpdated?: number;
+  }> {
+    // Implementation returns boolean only
+  }
+
+  // ✅ ALLOWED - List keys (no values)
+  async listSecretKeys(scope: string): Promise<string[]> {
+    // Implementation returns key names only
+  }
+
+  // ✅ ALLOWED - Delete
+  async deleteSecret(scope: string, key: string): Promise<void> {
+    // Implementation
+  }
+
+  // ❌ NEVER IMPLEMENTED - No read method exists
+  // getSecretValue() - DOES NOT EXIST
+  // This is intentional - admin agent cannot read secrets
+}
+```
+
+#### 4. Wallet Key Generation (In-Lambda)
+```typescript
+// Wallet generation happens entirely in Lambda
+// Private keys NEVER leave AWS
+class WalletService {
+  private secretsClient: SecretsManagerClient;
+  private kmsKeyId: string;
+
+  async generateWallet(agentId: string, label: string, cluster: Cluster): Promise<{
+    publicKey: string;
+  }> {
+    // Generate keypair IN LAMBDA (key never transmitted)
+    const keypair = Keypair.generate();
+    const publicKey = keypair.publicKey.toBase58();
+    const privateKey = bs58.encode(keypair.secretKey);
+
+    // Encrypt private key with KMS before storing
+    const kmsClient = new KMSClient({});
+    const encrypted = await kmsClient.send(new EncryptCommand({
+      KeyId: this.kmsKeyId,
+      Plaintext: Buffer.from(privateKey),
+    }));
+
+    // Store in Secrets Manager (already encrypted by KMS)
+    await this.secretsClient.send(new CreateSecretCommand({
+      Name: `swarm/${agentId}/wallets/${label}`,
+      SecretString: JSON.stringify({
+        publicKey,
+        privateKey: encrypted.CiphertextBlob.toString('base64'),
+        cluster,
+        createdAt: Date.now(),
+      }),
+      KmsKeyId: this.kmsKeyId,
+    }));
+
+    // Return ONLY public key
+    return { publicKey };
+  }
+
+  // For agent runtime - decrypts in Lambda, never exposes
+  async getWalletKeypair(agentId: string, label: string): Promise<Keypair> {
+    const secret = await this.secretsClient.send(new GetSecretValueCommand({
+      SecretId: `swarm/${agentId}/wallets/${label}`,
+    }));
+
+    const { privateKey: encryptedKey } = JSON.parse(secret.SecretString!);
+
+    // Decrypt with KMS
+    const kmsClient = new KMSClient({});
+    const decrypted = await kmsClient.send(new DecryptCommand({
+      KeyId: this.kmsKeyId,
+      CiphertextBlob: Buffer.from(encryptedKey, 'base64'),
+    }));
+
+    const privateKey = Buffer.from(decrypted.Plaintext!).toString();
+    return Keypair.fromSecretKey(bs58.decode(privateKey));
+  }
+}
+```
+
+#### 5. Audit Logging
+```typescript
+// All admin actions are logged
+interface AuditLog {
+  timestamp: number;
+  action: string;
+  user: string;      // From Cloudflare Access JWT
+  scope: string;     // Agent ID or 'shared'
+  key?: string;      // Secret key (not value)
+  metadata?: Record<string, unknown>;
+}
+
+// Stored in DynamoDB with TTL (90 days)
+// PK: AUDIT#{year-month}
+// SK: {timestamp}#{action}#{user}
+```
+
+### CDK Infrastructure for Admin
+
+```typescript
+// packages/infra/src/constructs/admin.ts
+
+export class AdminConstruct extends Construct {
+  constructor(scope: Construct, id: string, props: AdminConstructProps) {
+    super(scope, id);
+
+    // KMS key for encrypting secrets and wallet keys
+    const masterKey = new kms.Key(this, 'MasterKey', {
+      alias: 'swarm-master-key',
+      enableKeyRotation: true,
+      description: 'Master key for Swarm secrets and wallet encryption',
+    });
+
+    // Admin API
+    const adminApi = new apigateway.RestApi(this, 'AdminApi', {
+      restApiName: 'swarm-admin-api',
+      description: 'Admin API for Swarm management',
+    });
+
+    // Admin chat handler (conversational agent)
+    const chatHandler = new lambda.Function(this, 'AdminChat', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'admin-chat.handler',
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 1024,
+      environment: {
+        CLOUDFLARE_TEAM_DOMAIN: props.cloudflareTeamDomain,
+        CLOUDFLARE_AUD_TAG: props.cloudflareAudTag,
+        KMS_KEY_ID: masterKey.keyId,
+      },
+    });
+
+    // Grant permissions
+    masterKey.grantEncryptDecrypt(chatHandler);
+    // Grant Secrets Manager write (but admin tools won't expose read)
+    chatHandler.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'secretsmanager:CreateSecret',
+        'secretsmanager:PutSecretValue',
+        'secretsmanager:DeleteSecret',
+        'secretsmanager:DescribeSecret',
+        'secretsmanager:ListSecrets',
+        // Note: GetSecretValue is NOT granted to admin API
+        // Only agent runtime Lambdas get read access
+      ],
+      resources: ['arn:aws:secretsmanager:*:*:secret:swarm/*'],
+    }));
+
+    // Static frontend (S3 + CloudFront)
+    const adminBucket = new s3.Bucket(this, 'AdminFrontend', {
+      websiteIndexDocument: 'index.html',
+      publicReadAccess: false,
+    });
+
+    const oai = new cloudfront.OriginAccessIdentity(this, 'AdminOAI');
+    adminBucket.grantRead(oai);
+
+    // CloudFront distribution (Cloudflare Access sits in front)
+    new cloudfront.Distribution(this, 'AdminCdn', {
+      defaultBehavior: {
+        origin: new origins.S3Origin(adminBucket, { originAccessIdentity: oai }),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      },
+      defaultRootObject: 'index.html',
+    });
+  }
+}
+```
+
+### Implementation Checklist
+
+#### Admin Interface
+- [x] Create `packages/admin-api/` - API handlers and services
+- [x] Create `packages/admin-ui/` - React chat frontend
+- [x] Implement admin API Lambda handlers (chat.ts)
+- [x] Create admin agent with tools (20 tools implemented)
+- [x] Add Cloudflare Access JWT validation
+- [ ] Deploy static frontend to S3/CloudFront
+- [ ] Configure admin.rati.chat domain
+
+#### Secrets Management
+- [x] Add `AdminSecretsService` (write-only)
+- [x] Create KMS master key in CDK
+- [x] Update secrets hierarchy for shared/agent-specific
+- [ ] Add audit logging to DynamoDB
+- [x] Remove read capability from admin tools
+
+#### Wallet Management
+- [x] Create `WalletService` for key generation
+- [x] Implement in-Lambda keypair generation (Solana + Ethereum)
+- [x] KMS encryption for private keys
+- [ ] Add wallet balance checking tool
+- [ ] Add devnet airdrop tool
+- [ ] Improve Ethereum generation with ethers.js
+
+#### Security
+- [ ] Configure Cloudflare Access application
+- [ ] Setup access policies (WebAuthn/fingerprint, Google, GitHub)
+- [x] Validate JWT in Lambda handler
+- [ ] Add audit logging for all admin actions
+- [ ] Penetration testing
+
+---
+
+## Domain Setup: admin.rati.chat
+
+### Overview
+
+The admin interface will be available at `https://admin.rati.chat` with Cloudflare Access providing zero-trust authentication.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                  │
+│   User Browser                                                                   │
+│       │                                                                          │
+│       ▼                                                                          │
+│   ┌─────────────────────────────────────────────────────────────────────────┐   │
+│   │            Cloudflare (DNS + Access + CDN)                               │   │
+│   │                                                                          │   │
+│   │   rati.chat (Zone)                                                       │   │
+│   │     └── admin.rati.chat (CNAME → CloudFront)                            │   │
+│   │                                                                          │   │
+│   │   Cloudflare Access Application                                          │   │
+│   │     • Name: Swarm Admin                                                  │   │
+│   │     • Domain: admin.rati.chat                                            │   │
+│   │     • Auth Methods: WebAuthn, Google, GitHub                             │   │
+│   │     • Policy: Require MFA + Email allowlist                              │   │
+│   └─────────────────────────────────────────────────────────────────────────┘   │
+│       │                                                                          │
+│       │ CF-Access-JWT-Assertion header                                          │
+│       ▼                                                                          │
+│   ┌─────────────────────────────────────────────────────────────────────────┐   │
+│   │            AWS (CloudFront + API Gateway)                                │   │
+│   │                                                                          │   │
+│   │   CloudFront Distribution                                                │   │
+│   │     └── admin.rati.chat/* → S3 (static React app)                       │   │
+│   │                                                                          │   │
+│   │   API Gateway (HTTP API)                                                 │   │
+│   │     └── /chat → Lambda (admin-chat handler)                             │   │
+│   │     └── /health → Lambda (health check)                                  │   │
+│   └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Step 1: Cloudflare DNS Setup
+
+If rati.chat is already on Cloudflare:
+
+```bash
+# Add CNAME record for admin subdomain
+# This will point to CloudFront after deployment
+
+# Record Type: CNAME
+# Name: admin
+# Target: <cloudfront-distribution-id>.cloudfront.net
+# Proxy: Yes (orange cloud)
+# TTL: Auto
+```
+
+If rati.chat is NOT on Cloudflare:
+1. Add site to Cloudflare (Free plan works)
+2. Update nameservers at your registrar
+3. Wait for propagation (up to 24h)
+
+### Step 2: Cloudflare Access Configuration
+
+Go to: `dash.cloudflare.com` → `Zero Trust` → `Access` → `Applications`
+
+**Create Application:**
+```yaml
+Application:
+  name: "Swarm Admin"
+  type: "Self-hosted"
+  session_duration: "24h"
+
+Domain:
+  - admin.rati.chat
+
+Identity Providers:
+  # Enable these in Zero Trust → Settings → Authentication
+  - One-time PIN (email)
+  - WebAuthn (fingerprint/face/hardware key)
+  - Google
+  - GitHub
+
+Access Policies:
+  - name: "Admin Access"
+    action: "Allow"
+    include:
+      - Email:
+          - "your-email@example.com"  # Add your email
+    require:
+      - Authentication Method: "mfa"  # Require 2FA
+```
+
+**Get Configuration Values:**
+```bash
+# After creating the application, note these values:
+# 1. Team Domain: <your-team>.cloudflareaccess.com
+# 2. Application Audience (AUD) tag: Found in Application settings
+
+# These go into CDK environment variables:
+CF_ACCESS_TEAM_DOMAIN=your-team
+CF_ACCESS_AUD=32-character-audience-tag
+ADMIN_EMAILS=your-email@example.com
+```
+
+### Step 3: Deploy Admin Infrastructure
+
+```bash
+cd packages/infra
+
+# First, store the OpenRouter API key
+aws secretsmanager create-secret \
+  --name swarm/admin/llm-api-key \
+  --secret-string "sk-or-your-openrouter-key-here"
+
+# Deploy with Cloudflare configuration
+cdk deploy SwarmAdminStack \
+  --context cloudflareTeamDomain=your-team \
+  --context adminEmails=your-email@example.com \
+  --context environment=production
+```
+
+### Step 4: Deploy Admin UI to S3
+
+```bash
+cd packages/admin-ui
+
+# Build the React app
+pnpm build
+
+# Get the S3 bucket name from CDK output
+BUCKET_NAME=$(aws cloudformation describe-stacks \
+  --stack-name SwarmAdminStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`AdminBucketName`].OutputValue' \
+  --output text)
+
+# Deploy to S3
+aws s3 sync dist/ s3://$BUCKET_NAME/ --delete
+
+# Invalidate CloudFront cache
+DISTRIBUTION_ID=$(aws cloudformation describe-stacks \
+  --stack-name SwarmAdminStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`AdminDistributionId`].OutputValue' \
+  --output text)
+
+aws cloudfront create-invalidation \
+  --distribution-id $DISTRIBUTION_ID \
+  --paths "/*"
+```
+
+### Step 5: Update Cloudflare CNAME
+
+After deployment, get the CloudFront domain:
+
+```bash
+CLOUDFRONT_DOMAIN=$(aws cloudformation describe-stacks \
+  --stack-name SwarmAdminStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`AdminDistributionDomain`].OutputValue' \
+  --output text)
+
+echo "Add this CNAME in Cloudflare:"
+echo "  Name: admin"
+echo "  Target: $CLOUDFRONT_DOMAIN"
+```
+
+### Step 6: Configure UI API Endpoint
+
+Update the admin UI to point to the API Gateway:
+
+```typescript
+// packages/admin-ui/src/api/chat.ts
+const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT
+  || 'https://api-id.execute-api.us-east-1.amazonaws.com';
+```
+
+Create `.env.production`:
+```env
+VITE_API_ENDPOINT=https://your-api-gateway-url.amazonaws.com
+```
+
+### Verification
+
+After setup, test the flow:
+
+1. **DNS:** `dig admin.rati.chat` should resolve to Cloudflare IPs
+2. **Access:** Visit `https://admin.rati.chat` → Should show Cloudflare login
+3. **Auth:** Log in with your configured method (fingerprint/Google/etc)
+4. **API:** Send a chat message → Should get LLM response
+
+### Environment Variables Reference
+
+| Variable | Where | Value |
+|----------|-------|-------|
+| `CF_ACCESS_TEAM_DOMAIN` | CDK | Your Cloudflare team (e.g., `acme`) |
+| `CF_ACCESS_AUD` | CDK | Application audience tag |
+| `ADMIN_EMAILS` | CDK | Comma-separated admin emails |
+| `LLM_API_KEY` | Secrets Manager | OpenRouter API key |
+| `VITE_API_ENDPOINT` | Admin UI | API Gateway URL |
+
+---
+
 ## File Structure with Status
 
 ```
 aws-swarm/
 ├── README.md                            # [ ] NOT CREATED
+│
+├── packages/admin-api/                  # [x] DONE - Admin API Backend
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── src/
+│       ├── index.ts
+│       ├── types.ts                     # Type definitions
+│       ├── auth/
+│       │   ├── index.ts
+│       │   └── cloudflare-access.ts     # JWT validation
+│       ├── services/
+│       │   ├── index.ts
+│       │   ├── agents.ts                # Agent CRUD
+│       │   ├── secrets.ts               # Write-only secrets
+│       │   └── wallets.ts               # Wallet generation
+│       └── handlers/
+│           ├── index.ts
+│           └── chat.ts                  # LLM chatbot with 20 tools
+│
+├── packages/admin-ui/                   # [x] DONE - Admin React Frontend
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tailwind.config.js
+│   └── src/
+│       ├── main.tsx
+│       ├── App.tsx                      # Main chat interface
+│       ├── api/
+│       │   ├── index.ts
+│       │   └── chat.ts                  # API client
+│       ├── store/
+│       │   ├── index.ts
+│       │   └── chatStore.ts             # Zustand state
+│       └── components/
+│           ├── index.ts
+│           ├── Header.tsx
+│           ├── ChatInput.tsx
+│           └── ChatMessage.tsx
+│
 ├── package.json                         # [x] DONE
 ├── pnpm-workspace.yaml                  # [x] DONE
 ├── tsconfig.base.json                   # [x] DONE
@@ -107,7 +914,8 @@ aws-swarm/
 │       └── constructs/
 │           ├── index.ts                 # [x] DONE
 │           ├── shared.ts                # [x] DONE - DynamoDB, S3, CloudFront, Layer
-│           └── agent.ts                 # [x] DONE - SQS, API Gateway, Lambdas
+│           ├── agent.ts                 # [x] DONE - SQS, API Gateway, Lambdas
+│           └── admin-api.ts             # [x] DONE - Admin API, KMS, DynamoDB
 │
 ├── packages/core/
 │   ├── package.json                     # [x] DONE
@@ -216,61 +1024,83 @@ aws-swarm/
 
 ## Next Steps (Prioritized)
 
-### Immediate (Deploy First Agent)
+### Immediate (Domain & Deployment)
 
-1. **Create First Agent Config**
-   - [ ] Copy `.template/` to `agents/firehorse/`
-   - [ ] Customize config.yaml with real values
-   - [ ] Write persona.md with character definition
-   - [ ] Create secrets in AWS Secrets Manager
+1. **Setup admin.rati.chat Domain**
+   - [ ] Add rati.chat domain to Cloudflare (if not already)
+   - [ ] Create Cloudflare Access application for admin.rati.chat
+   - [ ] Configure authentication methods (fingerprint/WebAuthn, Google, GitHub)
+   - [ ] Deploy admin UI to S3 + CloudFront
+   - [ ] Point admin.rati.chat to CloudFront via CNAME
 
-2. **Build & Deploy**
+2. **Deploy Admin API**
+   - [ ] Set OpenRouter API key in Secrets Manager
+   - [ ] Deploy AdminApiConstruct via CDK
+   - [ ] Test /health endpoint
+   - [ ] Test /chat endpoint with Cloudflare Access
+
+3. **Improvements to Admin (from review)**
+   - [ ] Add audit logging service to DynamoDB
+   - [ ] Improve Ethereum wallet generation (use ethers.js for proper addresses)
+   - [ ] Add `trigger_deploy` integration with CodePipeline/CodeBuild
+   - [ ] Add wallet balance checking tool
+
+### Short-term (First Agent)
+
+4. **Create First Agent via Admin UI**
+   - [ ] Access admin.rati.chat
+   - [ ] Create "firehorse" agent via chat
+   - [ ] Configure Telegram platform and set bot token
+   - [ ] Set global OpenRouter API key
+   - [ ] Generate Solana wallet for agent
+
+5. **Deploy Agent**
    - [ ] `pnpm install && pnpm build`
-   - [ ] `cd packages/infra && cdk deploy --context environment=dev`
+   - [ ] `cd packages/infra && cdk deploy --context environment=dev --context agents=firehorse`
    - [ ] Set Telegram webhook URL
    - [ ] Test end-to-end flow
 
-### Short-term (Polish)
+### Medium-term (Polish)
 
-3. **Complete Twitter Adapter**
+7. **Complete Twitter Adapter**
    - [ ] Implement `parseIncomingMessage()`
    - [ ] Implement `executeAction()` for tweets, replies, retweets
    - [ ] Implement mention polling handler
    - [ ] Test scheduled tweets
 
-4. **Complete Web Adapter**
+8. **Complete Web Adapter**
    - [ ] Implement `parseIncomingMessage()`
    - [ ] Implement `executeAction()`
    - [ ] Add token gating logic (Solana)
    - [ ] Test web chat endpoint
 
-5. **Media Generation**
+9. **Media Generation**
    - [ ] Implement OpenRouter image generation
    - [ ] Implement Replicate video generation
    - [ ] Create media-processor handler
 
-6. **Testing**
-   - [ ] Unit tests for MessageEvaluator
-   - [ ] Unit tests for ResponseGenerator
-   - [ ] Integration tests with local DynamoDB
-   - [ ] End-to-end test script
+10. **Testing**
+    - [ ] Unit tests for MessageEvaluator
+    - [ ] Unit tests for ResponseGenerator
+    - [ ] Integration tests with local DynamoDB
+    - [ ] End-to-end test script
 
-### Medium-term (Additional Platforms)
+### Long-term (Additional Platforms)
 
-7. **Discord Adapter**
-   - [ ] Create DiscordAdapter class
-   - [ ] Decide: Interaction webhooks vs Gateway (ECS Fargate)
-   - [ ] Implement slash commands
+11. **Discord Adapter**
+    - [ ] Create DiscordAdapter class
+    - [ ] Decide: Interaction webhooks vs Gateway (ECS Fargate)
+    - [ ] Implement slash commands
 
-8. **Observability**
-   - [ ] CloudWatch dashboards
-   - [ ] X-Ray tracing
-   - [ ] CloudWatch alarms
+12. **Observability**
+    - [ ] CloudWatch dashboards
+    - [ ] X-Ray tracing
+    - [ ] CloudWatch alarms
 
-9. **CLI Tool**
-   - [ ] `swarm agent create <name>`
-   - [ ] `swarm agent deploy <name>`
-   - [ ] `swarm secrets set <agent> <key> <value>`
+13. **CLI Tool**
+    - [ ] `swarm agent create <name>`
+    - [ ] `swarm agent deploy <name>`
+    - [ ] `swarm secrets set <agent> <key> <value>`
 
 ---
 
@@ -487,6 +1317,7 @@ Store in AWS Secrets Manager as `swarm/{agentId}/secrets`:
 
 ## Decisions Made
 
+### Core Architecture
 - **Language:** TypeScript (better Lambda cold starts than Python)
 - **Monorepo:** pnpm workspaces
 - **CDK:** TypeScript CDK for infrastructure
@@ -494,3 +1325,16 @@ Store in AWS Secrets Manager as `swarm/{agentId}/secrets`:
 - **LLM default:** OpenRouter (multi-model access, fallback support)
 - **Queues:** SQS FIFO for message ordering, standard for media
 - **State:** Single DynamoDB table with composite keys (multi-tenant)
+
+### Admin Interface
+- **Auth:** Cloudflare Access (Zero Trust) with WebAuthn/fingerprint, Google, GitHub SSO
+- **Interface:** Conversational chatbot (agentic) with admin tools
+- **Secrets model:** Write-only in admin (agent can SET but never READ values)
+- **Frontend:** React + Tailwind, hosted on S3 + CloudFront behind Cloudflare
+
+### Security
+- **Encryption:** AWS KMS CMK for all secrets and wallet keys
+- **Wallet keys:** Generated IN Lambda, never leave AWS, encrypted at rest
+- **API keys:** Shared defaults with per-agent overrides (for cost tracking)
+- **Audit:** All admin actions logged to DynamoDB with 90-day TTL
+- **IAM:** Admin API has no `secretsmanager:GetSecretValue` permission - only runtime Lambdas can read

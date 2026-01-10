@@ -1,0 +1,330 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM OIDC Provider and Role for GitHub Actions deployments'
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Description: GitHub organization or username
+    Default: atimics
+  
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository name
+    Default: aws-swarm
+  
+  OIDCProviderArn:
+    Type: String
+    Description: ARN of existing GitHub OIDC provider (leave empty to create new)
+    Default: ''
+
+Conditions:
+  CreateOIDCProvider: !Equals [!Ref OIDCProviderArn, '']
+
+Resources:
+  # GitHub OIDC Identity Provider
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  # IAM Role for GitHub Actions
+  GitHubActionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${GitHubRepo}-github-actions'
+      Description: !Sub 'Role for GitHub Actions to deploy ${GitHubOrg}/${GitHubRepo}'
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOIDCProvider
+                - !GetAtt GitHubOIDCProvider.Arn
+                - !Ref OIDCProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+              StringLike:
+                'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubOrg}/${GitHubRepo}:*'
+      
+      Policies:
+        # CDK Bootstrap permissions
+        - PolicyName: CDKBootstrap
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AssumeBootstrapRoles
+                Effect: Allow
+                Action: sts:AssumeRole
+                Resource:
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/cdk-*'
+        
+        # CloudFormation permissions
+        - PolicyName: CloudFormation
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: CloudFormationFullAccess
+                Effect: Allow
+                Action:
+                  - cloudformation:*
+                Resource: '*'
+              - Sid: DescribeStacks
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ListStacks
+                Resource: '*'
+        
+        # S3 permissions for CDK assets and Admin UI
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: CDKAssets
+                Effect: Allow
+                Action:
+                  - s3:GetObject*
+                  - s3:PutObject*
+                  - s3:DeleteObject*
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub 'arn:aws:s3:::cdk-*-assets-${AWS::AccountId}-${AWS::Region}'
+                  - !Sub 'arn:aws:s3:::cdk-*-assets-${AWS::AccountId}-${AWS::Region}/*'
+              - Sid: AdminUIBucket
+                Effect: Allow
+                Action:
+                  - s3:GetObject*
+                  - s3:PutObject*
+                  - s3:DeleteObject*
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub 'arn:aws:s3:::swarm-admin-ui-*'
+                  - !Sub 'arn:aws:s3:::swarm-admin-ui-*/*'
+        
+        # ECR permissions (if using container images)
+        - PolicyName: ECRAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ECRAuth
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Sid: ECRPush
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cdk-*'
+        
+        # SSM Parameter Store (for CDK bootstrap version)
+        - PolicyName: SSMAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SSMRead
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cdk-bootstrap/*'
+        
+        # CloudFront invalidation
+        - PolicyName: CloudFrontAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: InvalidateCache
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                  - cloudfront:GetInvalidation
+                Resource: '*'
+        
+        # Lambda permissions (for deploying functions)
+        - PolicyName: LambdaAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: LambdaManagement
+                Effect: Allow
+                Action:
+                  - lambda:*
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:Swarm*'
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:swarm*'
+        
+        # API Gateway permissions
+        - PolicyName: APIGatewayAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: APIGateway
+                Effect: Allow
+                Action:
+                  - apigateway:*
+                Resource:
+                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/*'
+        
+        # DynamoDB permissions
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DynamoDB
+                Effect: Allow
+                Action:
+                  - dynamodb:*
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Swarm*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/swarm*'
+        
+        # SQS permissions
+        - PolicyName: SQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SQS
+                Effect: Allow
+                Action:
+                  - sqs:*
+                Resource:
+                  - !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:Swarm*'
+                  - !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:swarm*'
+        
+        # Secrets Manager permissions
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SecretsManager
+                Effect: Allow
+                Action:
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:UpdateSecret
+                  - secretsmanager:DeleteSecret
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:TagResource
+                Resource:
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:swarm/*'
+        
+        # KMS permissions
+        - PolicyName: KMSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: KMS
+                Effect: Allow
+                Action:
+                  - kms:Create*
+                  - kms:Describe*
+                  - kms:Enable*
+                  - kms:List*
+                  - kms:Put*
+                  - kms:Update*
+                  - kms:Revoke*
+                  - kms:Disable*
+                  - kms:Get*
+                  - kms:Delete*
+                  - kms:TagResource
+                  - kms:UntagResource
+                  - kms:ScheduleKeyDeletion
+                  - kms:CancelKeyDeletion
+                Resource: '*'
+                Condition:
+                  StringLike:
+                    'kms:RequestAlias': 'alias/swarm/*'
+        
+        # IAM permissions (for creating roles)
+        - PolicyName: IAMAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: IAMRoles
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:PassRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:UpdateRole
+                  - iam:UpdateRoleDescription
+                Resource:
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/Swarm*'
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/swarm*'
+              - Sid: IAMServiceLinkedRoles
+                Effect: Allow
+                Action:
+                  - iam:CreateServiceLinkedRole
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'iam:AWSServiceName':
+                      - lambda.amazonaws.com
+                      - apigateway.amazonaws.com
+        
+        # Logs permissions
+        - PolicyName: LogsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:PutRetentionPolicy
+                  - logs:DeleteRetentionPolicy
+                  - logs:TagLogGroup
+                  - logs:UntagLogGroup
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/Swarm*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/swarm*'
+
+      Tags:
+        - Key: Project
+          Value: aws-swarm
+        - Key: ManagedBy
+          Value: CloudFormation
+
+Outputs:
+  RoleArn:
+    Description: ARN of the GitHub Actions role (add this to GitHub secrets as AWS_ROLE_ARN)
+    Value: !GetAtt GitHubActionsRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RoleArn'
+  
+  OIDCProviderArn:
+    Description: ARN of the GitHub OIDC provider
+    Value: !If
+      - CreateOIDCProvider
+      - !GetAtt GitHubOIDCProvider.Arn
+      - !Ref OIDCProviderArn
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCProviderArn'

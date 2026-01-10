@@ -1,0 +1,70 @@
+name: Task
+description: A development task or chore
+title: "[Task]: "
+labels: ["type:chore"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for development tasks, refactoring, or chores.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Task Type
+      description: What kind of task is this?
+      options:
+        - refactor - Code improvement
+        - chore - Maintenance task
+        - ci - CI/CD changes
+        - docs - Documentation
+        - test - Testing
+        - deps - Dependencies
+    validations:
+      required: true
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      description: Which package does this affect?
+      options:
+        - core
+        - handlers
+        - admin-api
+        - admin-ui
+        - infra
+        - multiple/all
+        - none
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be done?
+      placeholder: We need to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know when this is done?
+      placeholder: |
+        - [ ] Criteria 1
+        - [ ] Criteria 2
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional Notes
+      description: Any other context
+    validations:
+      required: false

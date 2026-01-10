@@ -1,0 +1,148 @@
+name: Issue Management
+
+on:
+  issues:
+    types: [opened, labeled, assigned]
+  pull_request:
+    types: [opened, closed]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  # Auto-label issues based on title
+  auto-label:
+    name: Auto Label Issues
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+
+    steps:
+      - name: Add package labels based on title
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.issue.title.toLowerCase();
+            const labels = [];
+
+            // Package labels
+            if (title.includes('core') || title.includes('adapter') || title.includes('processor')) {
+              labels.push('package:core');
+            }
+            if (title.includes('admin') || title.includes('ui') || title.includes('chat')) {
+              labels.push('package:admin');
+            }
+            if (title.includes('infra') || title.includes('cdk') || title.includes('lambda')) {
+              labels.push('package:infra');
+            }
+            if (title.includes('handler') || title.includes('webhook')) {
+              labels.push('package:handlers');
+            }
+
+            // Priority based on keywords
+            if (title.includes('urgent') || title.includes('critical') || title.includes('broken')) {
+              labels.push('priority:high');
+            }
+
+            // Security
+            if (title.includes('security') || title.includes('secret') || title.includes('auth')) {
+              labels.push('type:security');
+            }
+
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                labels: labels
+              });
+            }
+
+  # Mark issue as in-progress when assigned
+  mark-in-progress:
+    name: Mark In Progress
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' && github.event.action == 'assigned'
+
+    steps:
+      - name: Add in-progress label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              labels: ['status:in-progress']
+            });
+
+  # Link PRs to issues and update status
+  link-pr:
+    name: Link PR to Issue
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+
+    steps:
+      - name: Find and link issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            const title = context.payload.pull_request.title || '';
+
+            // Find issue references (Closes #X, Fixes #X, Related to #X)
+            const issuePattern = /(?:closes|fixes|resolves|related to)\s+#(\d+)/gi;
+            const matches = [...body.matchAll(issuePattern), ...title.matchAll(issuePattern)];
+
+            for (const match of matches) {
+              const issueNumber = parseInt(match[1]);
+
+              // Add comment to issue
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: `PR #${context.payload.pull_request.number} has been opened for this issue.`
+              });
+            }
+
+  # Close issues when PR is merged
+  close-issues:
+    name: Close Linked Issues
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+
+    steps:
+      - name: Process merged PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+
+            // Find "Closes #X" patterns
+            const closePattern = /(?:closes|fixes|resolves)\s+#(\d+)/gi;
+            const matches = [...body.matchAll(closePattern)];
+
+            for (const match of matches) {
+              const issueNumber = parseInt(match[1]);
+
+              // Remove in-progress label
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  name: 'status:in-progress'
+                });
+              } catch (e) {
+                // Label might not exist
+              }
+
+              // Add comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: `Closed by PR #${context.payload.pull_request.number}`
+              });
+            }

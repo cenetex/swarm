@@ -1,0 +1,72 @@
+name: Feature Request
+description: Suggest a new feature for AWS Swarm
+title: "[Feature]: "
+labels: ["type:feature", "priority:medium"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a feature!
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      description: Which package does this feature relate to?
+      options:
+        - core
+        - handlers
+        - admin-api
+        - admin-ui
+        - infra
+        - multiple/other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature Description
+      description: A clear description of the feature you'd like
+      placeholder: I would like to be able to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Why do you need this feature? What problem does it solve?
+      placeholder: This would help me...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: If you have ideas on how to implement this, share them here
+      placeholder: I think we could...
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions you've considered?
+      placeholder: I also thought about...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I am willing to help implement this feature
+          required: false

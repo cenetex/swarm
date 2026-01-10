@@ -1,0 +1,151 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - staging
+          - production
+      stack:
+        description: 'Stack to deploy (leave empty for all)'
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '10'
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'production' }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm -r build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-deploy
+
+      - name: CDK Diff
+        working-directory: packages/infra
+        run: |
+          if [ -n "${{ inputs.stack }}" ]; then
+            npx cdk diff ${{ inputs.stack }}
+          else
+            npx cdk diff --all
+          fi
+        continue-on-error: true
+
+      - name: CDK Deploy
+        working-directory: packages/infra
+        run: |
+          if [ -n "${{ inputs.stack }}" ]; then
+            npx cdk deploy ${{ inputs.stack }} --require-approval never
+          else
+            npx cdk deploy --all --require-approval never
+          fi
+        env:
+          ENVIRONMENT: ${{ inputs.environment || 'production' }}
+
+      - name: Output Stack Info
+        working-directory: packages/infra
+        run: |
+          echo "## Deployed Stacks" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          npx cdk list >> $GITHUB_STEP_SUMMARY
+
+  deploy-admin-ui:
+    name: Deploy Admin UI
+    runs-on: ubuntu-latest
+    needs: deploy
+    environment: ${{ inputs.environment || 'production' }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Admin UI
+        working-directory: packages/admin-ui
+        run: pnpm build
+        env:
+          VITE_API_URL: ${{ secrets.ADMIN_API_URL }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-deploy-ui
+
+      - name: Deploy to S3
+        run: |
+          aws s3 sync packages/admin-ui/dist s3://${{ secrets.ADMIN_UI_BUCKET }} \
+            --delete \
+            --cache-control "max-age=31536000,immutable" \
+            --exclude "index.html" \
+            --exclude "*.json"
+          
+          aws s3 cp packages/admin-ui/dist/index.html s3://${{ secrets.ADMIN_UI_BUCKET }}/index.html \
+            --cache-control "no-cache,no-store,must-revalidate"
+
+      - name: Invalidate CloudFront
+        run: |
+          if [ -n "${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+              --paths "/*"
+          fi
+        continue-on-error: true

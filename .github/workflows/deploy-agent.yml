@@ -1,0 +1,101 @@
+name: Deploy Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent_id:
+        description: 'Agent ID to deploy'
+        required: true
+        type: string
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - staging
+          - production
+
+concurrency:
+  group: deploy-agent-${{ inputs.agent_id }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '10'
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-agent:
+    name: Deploy ${{ inputs.agent_id }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate agent exists
+        run: |
+          if [ ! -d "agents/${{ inputs.agent_id }}" ]; then
+            echo "::error::Agent '${{ inputs.agent_id }}' not found in agents/ directory"
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm -r build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-deploy-agent
+
+      - name: Deploy Agent Stack
+        working-directory: packages/infra
+        run: |
+          npx cdk deploy SwarmAgent-${{ inputs.agent_id }} \
+            --require-approval never \
+            --context agentId=${{ inputs.agent_id }}
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+
+      - name: Get Stack Outputs
+        id: outputs
+        working-directory: packages/infra
+        run: |
+          WEBHOOK_URL=$(aws cloudformation describe-stacks \
+            --stack-name SwarmAgent-${{ inputs.agent_id }} \
+            --query "Stacks[0].Outputs[?OutputKey=='TelegramWebhookUrl'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+          
+          echo "webhook_url=$WEBHOOK_URL" >> $GITHUB_OUTPUT
+
+      - name: Summary
+        run: |
+          echo "## Agent Deployed: ${{ inputs.agent_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.outputs.outputs.webhook_url }}" ]; then
+            echo "**Webhook URL:** \`${{ steps.outputs.outputs.webhook_url }}\`" >> $GITHUB_STEP_SUMMARY
+          fi

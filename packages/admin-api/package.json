@@ -1,0 +1,28 @@
+{
+  "name": "@swarm/admin-api",
+  "version": "1.0.0",
+  "description": "Admin API for swarm agent management",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@swarm/core": "workspace:*",
+    "@aws-sdk/client-secrets-manager": "^3.700.0",
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "@aws-sdk/client-kms": "^3.700.0",
+    "@solana/web3.js": "^1.98.0",
+    "tweetnacl": "^1.0.3",
+    "bs58": "^6.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}
