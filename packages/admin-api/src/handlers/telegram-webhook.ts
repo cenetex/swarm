@@ -30,6 +30,7 @@ const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
 const ENFORCE_IP_CHECK = process.env.ENFORCE_TELEGRAM_IP_CHECK !== 'false';
+const API_DOMAIN = process.env.API_DOMAIN || 'api-staging.rati.chat';
 
 // === CONFIG ===
 const ATTENTION_DURATION_SECONDS = 300;
@@ -490,11 +491,13 @@ async function executeTool(
             referenceImageUrls,
           });
 
-          console.log(`[Telegram] Image generated successfully: ${result.url.slice(0, 50)}...`);
+          // Use public gallery URL for Telegram (S3 URLs may not be accessible)
+          const publicUrl = `https://${API_DOMAIN}/gallery/${agentId}/${result.id}`;
+          console.log(`[Telegram] Image generated successfully: ${publicUrl}`);
           return {
             success: true,
-            result: { id: result.id, url: result.url },
-            media: { type: 'image', url: result.url, caption: prompt },
+            result: { id: result.id, url: publicUrl },
+            media: { type: 'image', url: publicUrl, caption: prompt },
           };
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : 'Unknown error';

@@ -490,6 +490,40 @@ export class AdminApiConstruct extends Construct {
       integration: replicateIntegration,
     });
 
+    // Public Gallery Handler - serves gallery images at public URLs
+    // Used by Telegram and other platforms that can't access S3 directly
+    const publicGalleryHandler = new nodejs.NodejsFunction(this, 'PublicGalleryHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/public-gallery.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 256,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        NODE_ENV: environment,
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+    });
+
+    // Grant read-only access to gallery data
+    this.table.grantReadData(publicGalleryHandler);
+
+    const publicGalleryIntegration = new integrations.HttpLambdaIntegration(
+      'PublicGalleryIntegration',
+      publicGalleryHandler
+    );
+
+    // Public gallery route: /gallery/{agentId}/{itemId}
+    this.api.addRoutes({
+      path: '/gallery/{agentId}/{itemId}',
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.HEAD, apigateway.HttpMethod.OPTIONS],
+      integration: publicGalleryIntegration,
+    });
+
     // Custom domain configuration (for Cloudflare Access proxy)
     if (props.apiDomain && props.apiCertificateArn) {
       const certificate = acm.Certificate.fromCertificateArn(
