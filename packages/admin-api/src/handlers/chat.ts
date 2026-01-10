@@ -25,6 +25,16 @@ import {
   type UserSession,
   type SecretType,
 } from '../types.js';
+import {
+  createAgentTools,
+  type ToolServices,
+} from '../tools/index.js';
+import {
+  toOpenAITools,
+  executeTool as executeToolWithValidation,
+  type ToolDefinition,
+} from '../tools/tool-helper.js';
+import type { ZodObject, ZodRawShape } from 'zod';
 
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
@@ -129,482 +139,402 @@ function sanitizeMessages(messages: AdminChatMessage[]): AdminChatMessage[] {
 }
 
 /**
- * Define available tools for the agent chatbot
- * These tools are agent-centric - the agent configures ITSELF
- * No agentId parameter needed - uses agent context from the chat
+ * Build tool services for a specific agent context
+ * These services encapsulate all business logic for tool execution
  */
-const AGENT_TOOLS = [
-  // Request secrets from user (shown as inline prompts in UI)
-  {
-    type: 'function',
-    function: {
-      name: 'request_secret',
-      description: 'Request a secret value from the user. This will display a secure input field in the UI. Use this to collect API keys, tokens, and other sensitive credentials.',
-      parameters: {
-        type: 'object',
-        properties: {
-          secretType: {
-            type: 'string',
-            enum: [
-              'telegram_bot_token',
-              'discord_bot_token',
-              'twitter_api_key', 'twitter_api_secret', 'twitter_access_token',
-              'twitter_access_secret', 'twitter_bearer_token',
-              'helius_api_key', 'replicate_api_key', 'openrouter_api_key', 'anthropic_api_key', 'openai_api_key',
-            ],
-            description: 'Type of secret being requested'
-          },
-          label: { type: 'string', description: 'Human-readable label for the input field' },
-          instructions: { type: 'string', description: 'Brief instructions on how to get this secret' },
-        },
-        required: ['secretType', 'label'],
-      },
+function buildToolServices(
+  agentId: string,
+  session: UserSession
+): ToolServices {
+  return {
+    // Agent config
+    getAgentConfig: async () => {
+      const agent = await agents.getAgent(agentId);
+      if (!agent) return { error: 'Agent not found' };
+      return {
+        model: agent.llmConfig?.model || 'anthropic/claude-sonnet-4',
+        temperature: agent.llmConfig?.temperature ?? 0.8,
+        maxTokens: agent.llmConfig?.maxTokens || 1024,
+        provider: agent.llmConfig?.provider || 'openrouter',
+      };
     },
-  },
-  // Store a secret after user provides it
-  {
-    type: 'function',
-    function: {
-      name: 'store_secret',
-      description: 'Store a secret value securely. Use after receiving a secret from request_secret.',
-      parameters: {
-        type: 'object',
-        properties: {
-          secretType: {
-            type: 'string',
-            enum: [
-              'telegram_bot_token',
-              'discord_bot_token',
-              'twitter_api_key', 'twitter_api_secret', 'twitter_access_token',
-              'twitter_access_secret', 'twitter_bearer_token',
-              'helius_api_key', 'replicate_api_key', 'openrouter_api_key', 'anthropic_api_key', 'openai_api_key',
-            ],
-            description: 'Type of secret'
-          },
-          value: { type: 'string', description: 'The secret value to store' },
-        },
-        required: ['secretType', 'value'],
-      },
+    updateAgentConfig: async (updates: unknown) => {
+      await agents.updateAgent(agentId, updates as Record<string, unknown>, session);
     },
-  },
-  // Update my profile
-  {
-    type: 'function',
-    function: {
-      name: 'update_my_profile',
-      description: 'Update my name, description, or persona',
-      parameters: {
-        type: 'object',
-        properties: {
-          name: { type: 'string', description: 'My display name' },
-          description: { type: 'string', description: 'Brief description of what I do' },
-          persona: { type: 'string', description: 'My personality/system prompt' },
-        },
-      },
+
+    // Wallets
+    listWallets: async () => {
+      const walletList = await wallets.listWallets(agentId);
+      // Enrich with balances
+      const enriched = await Promise.all(
+        walletList
+          .filter(w => w.walletType === 'solana')
+          .map(async (w) => {
+            try {
+              const balance = await wallets.getSolanaBalance(w.publicKey, agentId);
+              return { ...w, balance };
+            } catch {
+              return { ...w, balance: null };
+            }
+          })
+      );
+      return enriched;
     },
-  },
-  // LLM Model management
-  {
-    type: 'function',
-    function: {
-      name: 'list_available_models',
-      description: 'List available LLM models from OpenRouter that I can switch to. Returns model IDs, names, pricing, and context lengths.',
-      parameters: {
-        type: 'object',
-        properties: {
-          family: {
-            type: 'string',
-            description: 'Filter by model family (e.g., "anthropic", "openai", "google", "meta-llama"). Leave empty for all.',
-          },
-        },
-      },
+    createWallet: async (name: string) => {
+      const result = await wallets.generateSolanaWallet(agentId, name, session);
+      return { publicKey: result.publicKey, address: result.address };
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_my_model_config',
-      description: 'Get my current LLM model configuration (model, temperature, max tokens)',
-      parameters: { type: 'object', properties: {} },
+    getBalance: async (publicKey: string) => {
+      const balance = await wallets.getSolanaBalance(publicKey, agentId);
+      return { sol: (balance as { sol?: number })?.sol || 0, tokens: (balance as { tokens?: unknown[] })?.tokens || [] };
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'change_my_model',
-      description: 'Change my LLM model or settings. Use list_available_models first to see options.',
-      parameters: {
-        type: 'object',
-        properties: {
-          model: { type: 'string', description: 'Model ID from OpenRouter (e.g., "anthropic/claude-sonnet-4", "openai/gpt-4o")' },
-          temperature: { type: 'number', description: 'Temperature (0.0-2.0). Lower = more focused, higher = more creative.' },
-          maxTokens: { type: 'number', description: 'Maximum response tokens (e.g., 1024, 4096)' },
-        },
-      },
+
+    // Secrets
+    listSecrets: async () => secrets.listSecrets(agentId),
+    storeSecret: async (
+      agentId: string,
+      secretType: string,
+      name: string,
+      value: string,
+      session: UserSession,
+      description?: string
+    ) => {
+      await secrets.storeSecret(agentId, secretType as SecretType, name, value, session, description);
+
+      // Special handling for Telegram bot tokens
+      if (secretType === 'telegram_bot_token') {
+        const validation = await telegram.validateTelegramToken(value);
+        if (validation.valid) {
+          // Enable Telegram platform on the agent
+          await agents.updateAgent(agentId, {
+            platforms: {
+              telegram: {
+                enabled: true,
+                botUsername: validation.botInfo?.username
+              }
+            }
+          }, session);
+
+          // Register the webhook
+          const webhookResult = await telegram.registerTelegramWebhook(value, agentId);
+          if (webhookResult.success && webhookResult.secretToken) {
+            // Store the webhook secret
+            await secrets.storeSecret(
+              agentId,
+              'telegram_webhook_secret',
+              'default',
+              webhookResult.secretToken,
+              session,
+              `Telegram webhook secret for ${agentId}`
+            );
+          }
+        }
+      }
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'request_model_selection',
-      description: 'Show the user a dropdown to select a model. Use this when the user wants to choose interactively.',
-      parameters: {
-        type: 'object',
-        properties: {
-          family: {
-            type: 'string',
-            description: 'Pre-filter by family (e.g., "anthropic", "openai"). Leave empty to show all.',
-          },
-          currentModel: {
-            type: 'string',
-            description: 'Current model ID to show as selected',
-          },
-        },
-      },
+    validateTelegramToken: telegram.validateTelegramToken,
+
+    // Media jobs
+    listPendingJobs: async () => {
+      let pendingJobs = await mediaJobs.getPendingJobs(agentId);
+
+      // Poll Replicate for processing jobs
+      if (pendingJobs.length > 0) {
+        const replicateKey = await media.getProviderApiKey(agentId, 'replicate');
+        if (replicateKey) {
+          for (const job of pendingJobs) {
+            if ((job.status === 'processing' || job.status === 'pending') && job.externalId) {
+              await mediaJobs.pollAndCompleteJob(job.jobId, replicateKey);
+            }
+          }
+          pendingJobs = await mediaJobs.getPendingJobs(agentId);
+        }
+      }
+
+      return pendingJobs.map(job => ({
+        jobId: job.jobId,
+        type: job.type,
+        status: job.status,
+        prompt: job.prompt,
+        createdAt: new Date(job.createdAt).toISOString(),
+        resultUrl: job.resultUrl,
+        url: job.resultUrl,
+        success: job.status === 'completed' && !!job.resultUrl,
+      }));
     },
-  },
-  // Solana wallet management
-  {
-    type: 'function',
-    function: {
-      name: 'create_solana_wallet',
-      description: 'Create a new Solana wallet for myself. The private key is stored securely.',
-      parameters: {
-        type: 'object',
-        properties: {
-          name: { type: 'string', description: 'Name for the wallet (e.g., "main", "tips", "treasury")' },
-        },
-        required: ['name'],
-      },
+    getJob: async (jobId: string) => {
+      let job = await mediaJobs.getJob(jobId);
+      if (!job) return null;
+
+      // Poll if still processing
+      if ((job.status === 'processing' || job.status === 'pending') && job.externalId) {
+        const replicateKey = await media.getProviderApiKey(job.agentId, 'replicate');
+        if (replicateKey) {
+          const polledJob = await mediaJobs.pollAndCompleteJob(job.jobId, replicateKey);
+          if (polledJob) job = polledJob;
+        }
+      }
+
+      return {
+        jobId: job.jobId,
+        type: job.type,
+        status: job.status,
+        prompt: job.prompt,
+        createdAt: new Date(job.createdAt).toISOString(),
+        updatedAt: new Date(job.updatedAt).toISOString(),
+        completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : undefined,
+        resultUrl: job.resultUrl,
+        url: job.resultUrl,
+        success: job.status === 'completed' && !!job.resultUrl,
+        error: job.error,
+      };
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_my_wallets',
-      description: 'List all my Solana wallets with their public keys and balances',
-      parameters: { type: 'object', properties: {} },
+    getCredits: async () => credits.getToolStatus(agentId),
+
+    // Profile
+    updateProfile: async (updates) => {
+      await agents.updateAgent(agentId, updates, session);
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_wallet_balance',
-      description: 'Get the SOL balance and token balances for a specific wallet',
-      parameters: {
-        type: 'object',
-        properties: {
-          publicKey: { type: 'string', description: 'The wallet public key/address' },
-        },
-        required: ['publicKey'],
-      },
+    getProfileUploadUrl: async () => media.getProfileImageUploadUrl(agentId),
+    saveProfileImage: async (s3Key: string, publicUrl: string) => {
+      await agents.updateAgent(agentId, {
+        profileImage: { url: publicUrl, s3Key, updatedAt: Date.now() }
+      }, session);
     },
-  },
-  // List my configured secrets (not values, just what's set)
-  {
-    type: 'function',
-    function: {
-      name: 'get_my_secrets',
-      description: 'List which secrets I have configured (not the values, just which types are set)',
-      parameters: { type: 'object', properties: {} },
+    setProfileFromUrl: async (url: string) => {
+      const result = await media.setProfileImage(agentId, { type: 'url', url });
+      await agents.updateAgent(agentId, {
+        profileImage: { url: result.url, s3Key: result.s3Key, updatedAt: Date.now() }
+      }, session);
+      return { success: true, url: result.url };
     },
-  },
-  // Check pending media jobs (image/video generation status)
-  {
-    type: 'function',
-    function: {
-      name: 'get_pending_jobs',
-      description: 'Check the status of pending media generation jobs. Images and videos are generated asynchronously.',
-      parameters: { type: 'object', properties: {} },
+    setProfileFromGallery: async (imageId: string) => {
+      const result = await media.setProfileImage(agentId, { type: 'gallery', imageId });
+      await agents.updateAgent(agentId, {
+        profileImage: { url: result.url, s3Key: result.s3Key, updatedAt: Date.now() }
+      }, session);
+      return { success: true, url: result.url };
     },
-  },
-  // Get specific job status
-  {
-    type: 'function',
-    function: {
-      name: 'get_job_status',
-      description: 'Get the status of a specific media generation job by its ID.',
-      parameters: {
-        type: 'object',
-        properties: {
-          jobId: { type: 'string', description: 'The job ID to check status for' },
-        },
-        required: ['jobId'],
-      },
+    generateProfileImage: async (prompt: string) => {
+      const result = await media.setProfileImage(agentId, { type: 'generate', prompt });
+      // setProfileImage returns url/s3Key for generate, so we create a synthetic job response
+      return { jobId: 'profile-' + Date.now(), status: result.url ? 'completed' : 'pending' };
     },
-  },
-  // Profile image management
-  {
-    type: 'function',
-    function: {
-      name: 'set_profile_image',
-      description: 'Set my profile image. Can generate a new one, use a URL, select from gallery, or request the user to upload a file. For user uploads, use source="upload" which will show a file picker in the UI.',
-      parameters: {
-        type: 'object',
-        properties: {
-          source: {
-            type: 'string',
-            enum: ['generate', 'url', 'gallery', 'upload'],
-            description: 'How to set the profile image: generate (AI creates one), url (from a web URL), gallery (from existing images), upload (user selects a file from their device)',
-          },
-          prompt: {
-            type: 'string',
-            description: 'For generate: description of the profile image to create'
-          },
-          url: {
-            type: 'string',
-            description: 'For url: the image URL to use'
-          },
-          imageId: {
-            type: 'string',
-            description: 'For gallery: ID of an image from my gallery'
-          },
-        },
-        required: ['source'],
-      },
+
+    // Media generation
+    generateImage: async (params) => {
+      // Check credits
+      const canUse = await credits.canUseTool(agentId, 'generate_image');
+      if (!canUse.allowed) {
+        throw new Error(`Rate limited: ${canUse.reason}`);
+      }
+
+      // Build reference images
+      const referenceImageUrls: string[] = [];
+
+      if (params.useProfileAsReference !== false) {
+        const agent = await agents.getAgent(agentId);
+        if (agent?.profileImage?.url) {
+          referenceImageUrls.push(agent.profileImage.url);
+        } else {
+          const refImages = await media.listReferenceImages(agentId);
+          const profileRef = refImages.find(img => img.category === 'profile');
+          const characterRef = refImages.find(img => img.category === 'character');
+          if (profileRef?.url) referenceImageUrls.push(profileRef.url);
+          else if (characterRef?.url) referenceImageUrls.push(characterRef.url);
+        }
+      }
+
+      if (params.galleryImageIds) {
+        for (const imageId of params.galleryImageIds) {
+          const item = await gallery.getGalleryItem(agentId, imageId);
+          if (item?.url) referenceImageUrls.push(item.url);
+        }
+      }
+
+      if (params.referenceImageId) {
+        const images = await media.listReferenceImages(agentId);
+        const refImage = images.find(img => img.id === params.referenceImageId);
+        if (refImage?.url) referenceImageUrls.push(refImage.url);
+      }
+
+      const job = await media.generateImageAsync({
+        prompt: params.prompt,
+        agentId,
+        platform: 'admin-chat',
+        referenceImageUrls,
+        resolution: (params.resolution || '2K') as '1K' | '2K' | '4K',
+        aspectRatio: (params.aspectRatio || '1:1') as '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9',
+        conversationId: 'admin-chat-' + Date.now(),
+      });
+
+      await credits.consumeCredit(agentId, 'generate_image');
+
+      return {
+        jobId: job.jobId,
+        status: job.status as 'pending' | 'processing' | 'completed' | 'failed',
+        resultUrl: undefined,
+      };
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_profile_upload_url',
-      description: 'Get a signed URL for the user to upload a profile image directly. Prefer using set_profile_image with source="upload" instead.',
-      parameters: { type: 'object', properties: {} },
+    generateVideo: async (params) => {
+      const canUse = await credits.canUseTool(agentId, 'generate_video');
+      if (!canUse.allowed) {
+        throw new Error(`Rate limited: ${canUse.reason}`);
+      }
+
+      let referenceImageUrl: string | undefined;
+
+      if (params.referenceImageId) {
+        const images = await media.listReferenceImages(agentId);
+        const refImage = images.find(img => img.id === params.referenceImageId);
+        if (refImage) referenceImageUrl = refImage.url;
+      } else if (params.useProfileAsReference !== false) {
+        const agent = await agents.getAgent(agentId);
+        if (agent?.profileImage?.url) {
+          referenceImageUrl = agent.profileImage.url;
+        } else {
+          const refImages = await media.listReferenceImages(agentId);
+          const profileRef = refImages.find(img => img.category === 'profile');
+          const characterRef = refImages.find(img => img.category === 'character');
+          referenceImageUrl = profileRef?.url || characterRef?.url;
+        }
+      }
+
+      const job = await media.generateVideo({
+        prompt: params.prompt,
+        agentId,
+        platform: 'admin-chat',
+        conversationId: 'admin-chat-' + Date.now(),
+        referenceImageUrl,
+      });
+
+      await credits.consumeCredit(agentId, 'generate_video');
+
+      return {
+        jobId: job.jobId,
+        status: job.status as 'pending' | 'processing' | 'completed' | 'failed',
+        resultUrl: undefined,
+      };
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'save_uploaded_profile_image',
-      description: 'Save an already-uploaded image as my profile picture. Use this after the user has uploaded an image via the upload widget.',
-      parameters: {
-        type: 'object',
-        properties: {
-          s3Key: { type: 'string', description: 'The S3 key of the uploaded image' },
-          publicUrl: { type: 'string', description: 'The public URL of the uploaded image' },
-        },
-        required: ['s3Key', 'publicUrl'],
-      },
+    generateSticker: async (params) => {
+      const canUse = await credits.canUseTool(agentId, 'generate_sticker');
+      if (!canUse.allowed) {
+        throw new Error(`Rate limited: ${canUse.reason}`);
+      }
+
+      const sticker = await media.generateSticker({
+        prompt: params.prompt || 'sticker',
+        agentId,
+        platform: 'admin-chat',
+        sourceImageId: params.sourceImageId,
+      });
+
+      await credits.consumeCredit(agentId, 'generate_sticker');
+
+      return {
+        jobId: sticker.id || 'direct',
+        status: 'completed' as const,
+        resultUrl: sticker.url,
+      };
     },
-  },
-  // Reference image management
-  {
-    type: 'function',
-    function: {
-      name: 'get_reference_image_upload_url',
-      description: 'Get a signed URL to upload a reference image. Categories: profile (avatar), character (for consistency in generations), style (style references), background (scene references), other.',
-      parameters: {
-        type: 'object',
-        properties: {
-          category: {
-            type: 'string',
-            enum: ['profile', 'character', 'style', 'background', 'other'],
-            description: 'The category of reference image',
-          },
-          name: {
-            type: 'string',
-            description: 'A descriptive name for this reference image (e.g., "main character front view")',
-          },
-          description: {
-            type: 'string',
-            description: 'Optional description of what this reference shows or how to use it',
-          },
-        },
-        required: ['category', 'name'],
-      },
+
+    // Gallery
+    listGallery: async (type?: string, limit?: number) => {
+      const items = await gallery.getGallery(agentId, {
+        type: type as 'image' | 'video' | 'sticker' | undefined,
+        limit: limit || 20,
+      });
+      return items.map(item => ({
+        id: item.id,
+        type: item.type,
+        url: item.url,
+        prompt: item.prompt,
+        createdAt: item.createdAt,
+      }));
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'save_reference_image',
-      description: 'Save the metadata for a reference image after it has been uploaded',
-      parameters: {
-        type: 'object',
-        properties: {
-          s3Key: { type: 'string', description: 'The S3 key returned from get_reference_image_upload_url' },
-          publicUrl: { type: 'string', description: 'The public URL returned from get_reference_image_upload_url' },
-          category: { type: 'string', enum: ['profile', 'character', 'style', 'background', 'other'] },
-          name: { type: 'string', description: 'Name for the reference image' },
-          description: { type: 'string', description: 'Optional description' },
-        },
-        required: ['s3Key', 'publicUrl', 'category', 'name'],
-      },
+    searchGallery: async (query: string, type?: string) => {
+      const items = await gallery.findByDescription(
+        agentId,
+        query,
+        type as 'image' | 'video' | 'sticker' | undefined
+      );
+      return items.map(item => ({
+        id: item.id,
+        type: item.type,
+        url: item.url,
+        prompt: item.prompt,
+        createdAt: item.createdAt,
+      }));
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'list_reference_images',
-      description: 'List all reference images for this agent, optionally filtered by category',
-      parameters: {
-        type: 'object',
-        properties: {
-          category: {
-            type: 'string',
-            enum: ['profile', 'character', 'style', 'background', 'other'],
-            description: 'Filter by category (optional)',
-          },
-        },
-      },
+
+    // Reference images
+    getReferenceUploadUrl: async (category: string, name: string, _description?: string) => {
+      type ReferenceCategory = 'profile' | 'character' | 'style' | 'background' | 'other';
+      const result = await media.getReferenceImageUploadUrl(agentId, category as ReferenceCategory, name);
+      return { uploadUrl: result.uploadUrl, s3Key: result.s3Key, publicUrl: result.publicUrl };
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'delete_reference_image',
-      description: 'Delete a reference image by its ID',
-      parameters: {
-        type: 'object',
-        properties: {
-          imageId: { type: 'string', description: 'The ID of the reference image to delete' },
-        },
-        required: ['imageId'],
-      },
+    saveReferenceImage: async (data) => {
+      type ReferenceCategory = 'profile' | 'character' | 'style' | 'background' | 'other';
+      const result = await media.saveReferenceImage(
+        agentId,
+        data.category as ReferenceCategory,
+        data.s3Key,
+        data.publicUrl,
+        data.name,
+        data.description
+      );
+      return { id: result.id };
     },
-  },
-  // Image generation (async)
-  {
-    type: 'function',
-    function: {
-      name: 'generate_image',
-      description: 'Generate an image using Nano Banana Pro. This is async - returns a job ID immediately. The image will be saved to my gallery when complete. Check status with get_job_status or get_pending_jobs. By default uses my profile picture as reference for character consistency.',
-      parameters: {
-        type: 'object',
-        properties: {
-          prompt: {
-            type: 'string',
-            description: 'Description of the image to generate'
-          },
-          useProfileAsReference: {
-            type: 'boolean',
-            description: 'Use my profile image as a reference (default: true)',
-          },
-          galleryImageIds: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Array of gallery image IDs to use as additional references (get IDs from get_my_gallery)',
-          },
-          referenceImageId: {
-            type: 'string',
-            description: 'ID of a specific reference image to use (from list_reference_images)',
-          },
-          resolution: {
-            type: 'string',
-            enum: ['1K', '2K', '4K'],
-            description: 'Output resolution (default: 2K)',
-          },
-          aspectRatio: {
-            type: 'string',
-            enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
-            description: 'Image aspect ratio (default: 1:1)',
-          },
-        },
-        required: ['prompt'],
-      },
+    listReferenceImages: async (category?: string) => {
+      type ReferenceCategory = 'profile' | 'character' | 'style' | 'background' | 'other';
+      const images = await media.listReferenceImages(agentId, category as ReferenceCategory | undefined);
+      return images.map(img => ({
+        id: img.id,
+        category: img.category,
+        name: img.name,
+        url: img.url,
+        description: img.description,
+      }));
     },
-  },
-  // Video generation (async)
-  {
-    type: 'function',
-    function: {
-      name: 'generate_video',
-      description: 'Generate a video from a text prompt. Can use reference images. This is async - I will notify when complete.',
-      parameters: {
-        type: 'object',
-        properties: {
-          prompt: {
-            type: 'string',
-            description: 'Description of the video to generate'
-          },
-          useProfileAsReference: {
-            type: 'boolean',
-            description: 'Use my profile image as a reference for character consistency',
-          },
-          referenceImageId: {
-            type: 'string',
-            description: 'ID of a specific reference image to use (from list_reference_images)',
-          },
-        },
-        required: ['prompt'],
-      },
+    deleteReferenceImage: async (imageId: string) => {
+      await media.deleteReferenceImage(agentId, imageId);
     },
-  },
-  // Sticker generation
-  {
-    type: 'function',
-    function: {
-      name: 'generate_sticker',
-      description: 'Generate a sticker (transparent background image). Can create new or convert existing.',
-      parameters: {
-        type: 'object',
-        properties: {
-          prompt: {
-            type: 'string',
-            description: 'Description of the sticker to generate (if creating new)'
-          },
-          sourceImageId: {
-            type: 'string',
-            description: 'ID of an existing gallery image to convert to sticker'
-          },
-        },
-      },
+
+    // Models
+    fetchModels: async (family?: string) => {
+      const response = await fetchWithTimeout(
+        'https://openrouter.ai/api/v1/models',
+        { headers: { 'Content-Type': 'application/json' } },
+        API_TIMEOUT_MS
+      );
+
+      if (!response.ok) return [];
+
+      const data = await response.json() as {
+        data: Array<{
+          id: string;
+          name: string;
+          pricing: { prompt: string; completion: string };
+          context_length: number;
+          top_provider?: { max_completion_tokens?: number };
+        }>;
+      };
+
+      let models = data.data || [];
+
+      if (family) {
+        const f = family.toLowerCase();
+        models = models.filter(m => m.id.toLowerCase().startsWith(f + '/'));
+      }
+
+      return models.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 50);
     },
-  },
-  // Gallery management
-  {
-    type: 'function',
-    function: {
-      name: 'get_my_gallery',
-      description: 'View my generated images, videos, and stickers',
-      parameters: {
-        type: 'object',
-        properties: {
-          type: {
-            type: 'string',
-            enum: ['image', 'video', 'sticker'],
-            description: 'Filter by media type'
-          },
-          limit: {
-            type: 'number',
-            description: 'Max items to return (default 20)'
-          },
-        },
-      },
+    updateModelConfig: async (config) => {
+      const agent = await agents.getAgent(agentId);
+      const newLlmConfig = { ...agent?.llmConfig, ...config };
+      await agents.updateAgent(agentId, { llmConfig: newLlmConfig } as Record<string, unknown>, session);
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'search_gallery',
-      description: 'Search my gallery by description or prompt keywords',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'Search terms'
-          },
-          type: {
-            type: 'string',
-            enum: ['image', 'video', 'sticker'],
-            description: 'Filter by media type'
-          },
-        },
-        required: ['query'],
-      },
-    },
-  },
-  // Credit status
-  {
-    type: 'function',
-    function: {
-      name: 'get_tool_credits',
-      description: 'Check my available credits for media generation tools',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-];
+  };
+}
 
 interface AgentContext {
   id: string;
@@ -702,12 +632,13 @@ Be friendly, helpful, and guide your owner through setup step by step.`;
 }
 
 /**
- * Execute a tool call
+ * Execute a tool call using Zod-based tools
  * Agent-centric: all operations use the agent's own ID from context
  */
 async function executeTool(
   toolCall: ToolCall,
-  session: UserSession,
+  _session: UserSession,
+  agentTools: ToolDefinition<ZodObject<ZodRawShape>, unknown>[],
   agentContext?: AgentContext
 ): Promise<ToolResult> {
   const { name, arguments: argsString } = toolCall.function;
@@ -715,700 +646,37 @@ async function executeTool(
   try {
     // Handle empty or undefined arguments (common for tools with no parameters)
     const args = argsString && argsString.trim() ? JSON.parse(argsString) : {};
-    
+
     // Most tools require agent context
     if (!agentContext && !['request_secret'].includes(name)) {
       throw new Error('Agent context required for this operation');
     }
-    
+
     const agentId = agentContext?.id;
-    let result: unknown;
 
-    switch (name) {
-      // Request a secret from the user - returns a prompt for the UI
-      case 'request_secret':
-        result = { 
-          type: 'secret_request',
-          secretType: args.secretType,
-          label: args.label,
-          instructions: args.instructions,
-          agentId,
-        };
-        break;
-        
-      // Store a secret securely
-      case 'store_secret': {
-        const secretType = args.secretType as SecretType;
-        
-        // Store the secret first
-        await secrets.storeSecret(
-          agentId!,
-          secretType,
-          'default',
-          args.value,
-          session,
-          `${secretType} for agent ${agentId}`
-        );
-        
-        // Special handling for platform secrets
-        if (secretType === 'telegram_bot_token') {
-          // Validate the token
-          const validation = await telegram.validateTelegramToken(args.value);
-          if (!validation.valid) {
-            result = { 
-              success: false, 
-              message: `Token stored, but validation failed: ${validation.error}. The bot may not work.` 
-            };
-            break;
-          }
-          
-          // Enable Telegram platform on the agent
-          await agents.updateAgent(agentId!, {
-            platforms: {
-              telegram: {
-                enabled: true,
-                botUsername: validation.botInfo?.username
-              }
-            }
-          }, session);
-
-          // Generate and register the webhook with a secret token for security
-          const webhookResult = await telegram.registerTelegramWebhook(args.value, agentId!);
-          if (!webhookResult.success) {
-            result = {
-              success: true,
-              message: `Token stored and validated (bot: @${validation.botInfo?.username}), but webhook registration failed: ${webhookResult.message}. You may need to manually configure the webhook.`
-            };
-            break;
-          }
-
-          // Store the webhook secret for request verification
-          if (webhookResult.secretToken && agentId) {
-            await secrets.storeSecret(
-              agentId,
-              'telegram_webhook_secret',
-              'default',
-              webhookResult.secretToken,
-              session,
-              `Telegram webhook secret for ${agentId}`
-            );
-          }
-
-          result = {
-            success: true,
-            message: `Telegram bot @${validation.botInfo?.username} is now live! Webhook registered at ${webhookResult.webhookUrl} with secure token verification. You can message the bot and it will respond.`
-          };
-        } else {
-          result = { success: true, message: `${secretType} stored securely` };
-        }
-        break;
-      }
-        
-      // Update my profile
-      case 'update_my_profile': {
-        // Only include fields that are actually provided (not undefined)
-        const profileUpdates: Record<string, string> = {};
-        if (args.name !== undefined) profileUpdates.name = args.name;
-        if (args.description !== undefined) profileUpdates.description = args.description;
-        if (args.persona !== undefined) profileUpdates.persona = args.persona;
-
-        if (Object.keys(profileUpdates).length === 0) {
-          result = { success: false, message: 'No fields provided to update' };
-          break;
-        }
-
-        const updatedAgent = await agents.updateAgent(agentId!, profileUpdates as any, session);
-        result = {
-          success: true,
-          message: `Profile updated! ${Object.keys(profileUpdates).join(', ')} changed.`,
-          name: updatedAgent.name,
-          description: updatedAgent.description,
-          persona: updatedAgent.persona ? (updatedAgent.persona.slice(0, 100) + (updatedAgent.persona.length > 100 ? '...' : '')) : undefined,
-        };
-        break;
-      }
-
-      // List available LLM models from OpenRouter
-      case 'list_available_models': {
-        const modelsResponse = await fetchWithTimeout(
-          'https://openrouter.ai/api/v1/models',
-          { headers: { 'Content-Type': 'application/json' } },
-          API_TIMEOUT_MS
-        );
-
-        if (!modelsResponse.ok) {
-          result = { error: 'Failed to fetch models from OpenRouter' };
-          break;
-        }
-
-        const modelsData = await modelsResponse.json() as {
-          data: Array<{
-            id: string;
-            name: string;
-            pricing: { prompt: string; completion: string };
-            context_length: number;
-            top_provider?: { max_completion_tokens?: number };
-          }>;
-        };
-
-        let models = modelsData.data || [];
-
-        // Filter by family if specified
-        if (args.family) {
-          const family = args.family.toLowerCase();
-          models = models.filter(m => m.id.toLowerCase().startsWith(family + '/'));
-        }
-
-        // Sort by name and limit to reasonable number
-        models = models
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .slice(0, 50);
-
-        result = {
-          models: models.map(m => ({
-            id: m.id,
-            name: m.name,
-            contextLength: m.context_length,
-            maxCompletionTokens: m.top_provider?.max_completion_tokens,
-            pricing: {
-              prompt: `$${parseFloat(m.pricing.prompt) * 1000000}/M tokens`,
-              completion: `$${parseFloat(m.pricing.completion) * 1000000}/M tokens`,
-            },
-          })),
-          count: models.length,
-          tip: 'Use change_my_model with a model ID to switch, or request_model_selection to show the user a dropdown.',
-        };
-        break;
-      }
-
-      // Get my current model config
-      case 'get_my_model_config': {
-        const agent = await agents.getAgent(agentId!);
-        result = {
-          model: agent?.llmConfig?.model || 'anthropic/claude-sonnet-4',
-          temperature: agent?.llmConfig?.temperature ?? 0.8,
-          maxTokens: agent?.llmConfig?.maxTokens || 1024,
-          provider: agent?.llmConfig?.provider || 'openrouter',
-        };
-        break;
-      }
-
-      // Change my model or settings
-      case 'change_my_model': {
-        const updates: Record<string, unknown> = {};
-
-        if (args.model) updates.model = args.model;
-        if (args.temperature !== undefined) updates.temperature = args.temperature;
-        if (args.maxTokens !== undefined) updates.maxTokens = args.maxTokens;
-
-        if (Object.keys(updates).length === 0) {
-          result = { error: 'No changes specified. Provide model, temperature, or maxTokens.' };
-          break;
-        }
-
-        const agent = await agents.getAgent(agentId!);
-        const newLlmConfig = {
-          ...agent?.llmConfig,
-          ...updates,
-        };
-
-        await agents.updateAgent(agentId!, { llmConfig: newLlmConfig } as any, session);
-
-        result = {
-          success: true,
-          message: `Model configuration updated!`,
-          newConfig: newLlmConfig,
-        };
-        break;
-      }
-
-      // Request model selection dropdown
-      case 'request_model_selection': {
-        // Fetch models for the dropdown
-        const modelsResponse = await fetchWithTimeout(
-          'https://openrouter.ai/api/v1/models',
-          { headers: { 'Content-Type': 'application/json' } },
-          API_TIMEOUT_MS
-        );
-
-        let models: Array<{ id: string; name: string }> = [];
-
-        if (modelsResponse.ok) {
-          const modelsData = await modelsResponse.json() as {
-            data: Array<{ id: string; name: string }>;
-          };
-          models = modelsData.data || [];
-
-          // Filter by family if specified
-          if (args.family) {
-            const family = args.family.toLowerCase();
-            models = models.filter(m => m.id.toLowerCase().startsWith(family + '/'));
-          }
-
-          models = models.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 100);
-        }
-
-        result = {
-          type: 'model_selector',
-          models: models.map(m => ({ id: m.id, name: m.name })),
-          currentModel: args.currentModel || 'anthropic/claude-sonnet-4',
-          instructions: 'Please select a model from the dropdown above.',
-        };
-        break;
-      }
-
-      // Create a Solana wallet
-      case 'create_solana_wallet':
-        result = await wallets.generateSolanaWallet(agentId!, args.name, session);
-        break;
-        
-      // List my wallets
-      case 'get_my_wallets': {
-        const walletList = await wallets.listWallets(agentId!);
-        // Enrich with balances
-        const enriched = await Promise.all(
-          walletList
-            .filter(w => w.walletType === 'solana')
-            .map(async (w) => {
-              try {
-                const balance = await wallets.getSolanaBalance(w.publicKey, agentId);
-                return { ...w, balance };
-              } catch {
-                return { ...w, balance: null };
-              }
-            })
-        );
-        result = enriched;
-        break;
-      }
-        
-      // Get specific wallet balance
-      case 'get_wallet_balance':
-        result = await wallets.getSolanaBalance(args.publicKey, agentId);
-        break;
-        
-      // List my configured secrets
-      case 'get_my_secrets':
-        result = await secrets.listSecrets(agentId!);
-        break;
-        
-      // Check pending media jobs
-      case 'get_pending_jobs': {
-        let pendingJobs = await mediaJobs.getPendingJobs(agentId!);
-
-        // Poll Replicate for any processing jobs (fallback if webhooks aren't working)
-        if (pendingJobs.length > 0) {
-          const replicateKey = await media.getProviderApiKey(agentId!, 'replicate');
-          if (replicateKey) {
-            for (const job of pendingJobs) {
-              if ((job.status === 'processing' || job.status === 'pending') && job.externalId) {
-                await mediaJobs.pollAndCompleteJob(job.jobId, replicateKey);
-              }
-            }
-            // Refresh the list after polling
-            pendingJobs = await mediaJobs.getPendingJobs(agentId!);
-          }
-        }
-
-        result = {
-          count: pendingJobs.length,
-          jobs: pendingJobs.map(job => ({
-            jobId: job.jobId,
-            type: job.type,
-            status: job.status,
-            prompt: job.prompt,
-            createdAt: new Date(job.createdAt).toISOString(),
-            resultUrl: job.resultUrl,
-            // Add 'url' alias and success flag for consistency
-            url: job.resultUrl,
-            success: job.status === 'completed' && !!job.resultUrl,
-          })),
-        };
-        break;
-      }
-
-      // Get specific job status (polls Replicate if still processing)
-      case 'get_job_status': {
-        let job = await mediaJobs.getJob(args.jobId);
-        if (!job) {
-          result = { error: true, message: 'Job not found' };
-          break;
-        }
-
-        // Poll Replicate if job is still processing (fallback if webhooks aren't working)
-        if ((job.status === 'processing' || job.status === 'pending') && job.externalId) {
-          const replicateKey = await media.getProviderApiKey(job.agentId, 'replicate');
-          if (replicateKey) {
-            const polledJob = await mediaJobs.pollAndCompleteJob(job.jobId, replicateKey);
-            if (polledJob) job = polledJob;
-          }
-        }
-
-        result = {
-          jobId: job.jobId,
-          type: job.type,
-          status: job.status,
-          prompt: job.prompt,
-          createdAt: new Date(job.createdAt).toISOString(),
-          updatedAt: new Date(job.updatedAt).toISOString(),
-          completedAt: job.completedAt ? new Date(job.completedAt).toISOString() : undefined,
-          resultUrl: job.resultUrl,
-          // Add 'url' alias so extractMediaFromToolResults and frontend can find it
-          url: job.resultUrl,
-          // Mark as successful if completed with a URL
-          success: job.status === 'completed' && !!job.resultUrl,
-          error: job.error,
-        };
-        break;
-      }
-
-      // Profile image management
-      case 'set_profile_image': {
-        // Handle 'upload' source - return upload URL for user to select a file
-        if (args.source === 'upload') {
-          const uploadInfo = await media.getProfileImageUploadUrl(agentId!);
-          result = {
-            type: 'upload_url',
-            uploadUrl: uploadInfo.uploadUrl,
-            s3Key: uploadInfo.s3Key,
-            publicUrl: uploadInfo.publicUrl,
-            instructions: 'Please select a profile image from your device. After upload, it will be set as your profile picture.',
-          };
-          break;
-        }
-
-        let source: { type: 'url'; url: string } | { type: 'generate'; prompt: string } | { type: 'gallery'; imageId: string };
-
-        if (args.source === 'generate') {
-          if (!args.prompt) throw new Error('Prompt required for generating profile image');
-          source = { type: 'generate', prompt: args.prompt };
-        } else if (args.source === 'url') {
-          if (!args.url) throw new Error('URL required when using url source');
-          source = { type: 'url', url: args.url };
-        } else if (args.source === 'gallery') {
-          if (!args.imageId) throw new Error('imageId required when using gallery source');
-          source = { type: 'gallery', imageId: args.imageId };
-        } else {
-          throw new Error(`Invalid source type: ${args.source}`);
-        }
-
-        const profileResult = await media.setProfileImage(agentId!, source);
-
-        // Update agent record with new profile image
-        await agents.updateAgent(agentId!, {
-          profileImage: {
-            url: profileResult.url,
-            s3Key: profileResult.s3Key,
-            generatedPrompt: args.source === 'generate' ? args.prompt : undefined,
-            updatedAt: Date.now(),
-          }
-        }, session);
-
-        result = {
-          success: true,
-          message: 'Profile image updated!',
-          url: profileResult.url,
-        };
-        break;
-      }
-
-      case 'get_profile_upload_url': {
-        const uploadInfo = await media.getProfileImageUploadUrl(agentId!);
-        result = {
-          type: 'upload_url',
-          uploadUrl: uploadInfo.uploadUrl,
-          s3Key: uploadInfo.s3Key,
-          publicUrl: uploadInfo.publicUrl,
-          instructions: 'Use PUT request to upload PNG image to uploadUrl. After upload, the image will be available at publicUrl.',
-        };
-        break;
-      }
-
-      case 'save_uploaded_profile_image': {
-        // Directly update the agent record with the uploaded image
-        await agents.updateAgent(agentId!, {
-          profileImage: {
-            url: args.publicUrl,
-            s3Key: args.s3Key,
-            updatedAt: Date.now(),
-          }
-        }, session);
-
-        result = {
-          success: true,
-          message: 'Profile image updated!',
-          url: args.publicUrl,
-        };
-        break;
-      }
-
-      // Reference image management
-      case 'get_reference_image_upload_url': {
-        const uploadInfo = await media.getReferenceImageUploadUrl(
-          agentId!,
-          args.category,
-          args.name
-        );
-        result = {
-          type: 'upload_url',
-          uploadUrl: uploadInfo.uploadUrl,
-          s3Key: uploadInfo.s3Key,
-          publicUrl: uploadInfo.publicUrl,
-          category: uploadInfo.category,
-          instructions: `Upload your ${args.category} reference image using a PUT request to the uploadUrl. After uploading, call save_reference_image with the s3Key and publicUrl to register it.`,
-        };
-        break;
-      }
-
-      case 'save_reference_image': {
-        const refImage = await media.saveReferenceImage(
-          agentId!,
-          args.category,
-          args.s3Key,
-          args.publicUrl,
-          args.name,
-          args.description
-        );
-        result = {
-          success: true,
-          message: `Reference image "${args.name}" saved!`,
-          image: refImage,
-        };
-        break;
-      }
-
-      case 'list_reference_images': {
-        const images = await media.listReferenceImages(agentId!, args.category);
-        result = {
-          images,
-          count: images.length,
-          message: images.length === 0 
-            ? 'No reference images found. Upload some using get_reference_image_upload_url!'
-            : `Found ${images.length} reference image(s)`,
-        };
-        break;
-      }
-
-      case 'delete_reference_image': {
-        await media.deleteReferenceImage(agentId!, args.imageId);
-        result = {
-          success: true,
-          message: 'Reference image deleted',
-        };
-        break;
-      }
-
-      // Image generation (async)
-      case 'generate_image': {
-        // Check credits before starting generation
-        const canUseImage = await credits.canUseTool(agentId!, 'generate_image');
-        if (!canUseImage.allowed) {
-          result = { success: false, error: `Rate limited: ${canUseImage.reason}` };
-          break;
-        }
-
-        // Build array of reference images
-        const referenceImageUrls: string[] = [];
-
-        // Always include profile image first if useProfileAsReference is true (default)
-        if (args.useProfileAsReference !== false) {
-          const agent = await agents.getAgent(agentId!);
-          if (agent?.profileImage?.url) {
-            referenceImageUrls.push(agent.profileImage.url);
-          } else {
-            // Fallback: check for reference images with 'profile' or 'character' category
-            const refImages = await media.listReferenceImages(agentId!);
-            const profileRef = refImages.find(img => img.category === 'profile');
-            const characterRef = refImages.find(img => img.category === 'character');
-            if (profileRef?.url) {
-              referenceImageUrls.push(profileRef.url);
-            } else if (characterRef?.url) {
-              referenceImageUrls.push(characterRef.url);
-            }
-          }
-        }
-
-        // Add specific gallery images if provided
-        if (args.galleryImageIds && Array.isArray(args.galleryImageIds)) {
-          for (const imageId of args.galleryImageIds) {
-            const item = await gallery.getGalleryItem(agentId!, imageId);
-            if (item?.url) {
-              referenceImageUrls.push(item.url);
-            }
-          }
-        }
-
-        // Add specific reference image if provided
-        if (args.referenceImageId) {
-          const images = await media.listReferenceImages(agentId!);
-          const refImage = images.find(img => img.id === args.referenceImageId);
-          if (refImage?.url) {
-            referenceImageUrls.push(refImage.url);
-          }
-        }
-
-        // Use async image generation to avoid HTTP timeouts
-        const job = await media.generateImageAsync({
-          prompt: args.prompt,
-          agentId: agentId!,
-          platform: 'admin-chat',
-          referenceImageUrls,
-          resolution: args.resolution || '2K',
-          aspectRatio: args.aspectRatio || '1:1',
-          conversationId: 'admin-chat-' + Date.now(),
-        });
-
-        // Consume credit after successful job creation
-        await credits.consumeCredit(agentId!, 'generate_image');
-
-        result = {
-          success: true,
-          message: 'Image generation started! This may take 30-60 seconds.',
-          jobId: job.jobId,
-          status: job.status,
-          prompt: args.prompt,
-          usedReferences: referenceImageUrls.length,
-          note: 'Check status with get_job_status or get_pending_jobs. The image will be saved to your gallery when complete.',
-        };
-        break;
-      }
-
-      // Video generation (async)
-      case 'generate_video': {
-        // Check credits before starting generation
-        const canUseVideo = await credits.canUseTool(agentId!, 'generate_video');
-        if (!canUseVideo.allowed) {
-          result = { success: false, error: `Rate limited: ${canUseVideo.reason}` };
-          break;
-        }
-
-        let referenceImageUrl: string | undefined;
-
-        if (args.referenceImageId) {
-          const images = await media.listReferenceImages(agentId!);
-          const refImage = images.find(img => img.id === args.referenceImageId);
-          if (refImage) {
-            referenceImageUrl = refImage.url;
-          }
-        } else if (args.useProfileAsReference !== false) {
-          // Default to using profile image
-          const agent = await agents.getAgent(agentId!);
-          if (agent?.profileImage?.url) {
-            referenceImageUrl = agent.profileImage.url;
-          } else {
-            // Fallback to reference images
-            const refImages = await media.listReferenceImages(agentId!);
-            const profileRef = refImages.find(img => img.category === 'profile');
-            const characterRef = refImages.find(img => img.category === 'character');
-            referenceImageUrl = profileRef?.url || characterRef?.url;
-          }
-        }
-
-        const job = await media.generateVideo({
-          prompt: args.prompt,
-          agentId: agentId!,
-          platform: 'admin-chat',
-          conversationId: 'admin-chat-' + Date.now(),
-          referenceImageUrl,
-        });
-
-        // Consume credit after successful job creation
-        await credits.consumeCredit(agentId!, 'generate_video');
-
-        result = {
-          success: true,
-          message: 'Video generation started! This may take a few minutes.',
-          jobId: job.jobId,
-          status: job.status,
-          note: 'The video will be saved to your gallery when complete.',
-        };
-        break;
-      }
-
-      // Sticker generation
-      case 'generate_sticker': {
-        // Check credits before starting generation
-        const canUseSticker = await credits.canUseTool(agentId!, 'generate_sticker');
-        if (!canUseSticker.allowed) {
-          result = { success: false, error: `Rate limited: ${canUseSticker.reason}` };
-          break;
-        }
-
-        if (!args.prompt && !args.sourceImageId) {
-          throw new Error('Either prompt or sourceImageId is required');
-        }
-
-        const sticker = await media.generateSticker({
-          prompt: args.prompt || 'sticker',
-          agentId: agentId!,
-          platform: 'admin-chat',
-          sourceImageId: args.sourceImageId,
-        });
-
-        // Consume credit after successful generation
-        await credits.consumeCredit(agentId!, 'generate_sticker');
-
-        result = {
-          success: true,
-          message: args.sourceImageId
-            ? 'Sticker created from existing image!'
-            : 'New sticker generated!',
-          id: sticker.id,
-          url: sticker.url,
-        };
-        break;
-      }
-
-      // Gallery management
-      case 'get_my_gallery': {
-        const items = await gallery.getGallery(agentId!, {
-          type: args.type,
-          limit: args.limit || 20,
-        });
-
-        result = {
-          count: items.length,
-          items: items.map(item => ({
-            id: item.id,
-            type: item.type,
-            url: item.url,
-            prompt: item.prompt,
-            createdAt: new Date(item.createdAt).toISOString(),
-            postedToTwitter: item.postedToTwitter,
-            convertedToSticker: item.convertedToSticker,
-          })),
-        };
-        break;
-      }
-
-      case 'search_gallery': {
-        const items = await gallery.findByDescription(agentId!, args.query, args.type);
-
-        result = {
-          query: args.query,
-          count: items.length,
-          items: items.map(item => ({
-            id: item.id,
-            type: item.type,
-            url: item.url,
-            prompt: item.prompt,
-            createdAt: new Date(item.createdAt).toISOString(),
-          })),
-        };
-        break;
-      }
-
-      // Credit status
-      case 'get_tool_credits': {
-        const status = await credits.getToolStatus(agentId!);
-        result = { status };
-        break;
-      }
-
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+    // Find the matching tool definition
+    const tool = agentTools.find(t => t.name === name);
+    if (!tool) {
+      throw new Error(`Unknown tool: ${name}`);
     }
-    
+
+    // Handle manual tools (execute === false)
+    if (tool.execute === false) {
+      // Manual tools return data for UI interaction
+      return {
+        tool_call_id: toolCall.id,
+        role: 'tool',
+        content: JSON.stringify({
+          type: name === 'request_secret' ? 'secret_request' : 'manual_tool',
+          ...args,
+          agentId,
+        }, null, 2),
+      };
+    }
+
+    // Execute the tool with validated input
+    const result = await executeToolWithValidation(tool, args);
+
     return {
       tool_call_id: toolCall.id,
       role: 'tool',
@@ -1418,15 +686,13 @@ async function executeTool(
     return {
       tool_call_id: toolCall.id,
       role: 'tool',
-      content: JSON.stringify({ 
-        error: true, 
-        message: error instanceof Error ? error.message : 'Unknown error' 
+      content: JSON.stringify({
+        error: true,
+        message: error instanceof Error ? error.message : 'Unknown error'
       }),
     };
   }
 }
-
-// Import type for LLM config moved to top
 
 /**
  * Call the LLM API
@@ -1434,17 +700,18 @@ async function executeTool(
  */
 async function callLLM(
   messages: AdminChatMessage[],
+  tools: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }>,
   agent?: AgentContext
-): Promise<{ 
-  message?: string; 
-  toolCalls?: ToolCall[]; 
+): Promise<{
+  message?: string;
+  toolCalls?: ToolCall[];
 }> {
   const apiKey = await getLlmApiKey();
   const systemPrompt = buildSystemPrompt(agent);
-  
+
   // Sanitize messages to ensure valid format (remove orphaned tool results)
   const sanitizedMessages = sanitizeMessages(messages);
-  
+
   const response = await fetchWithTimeout(
     LLM_ENDPOINT,
     {
@@ -1461,7 +728,7 @@ async function callLLM(
           { role: 'system', content: systemPrompt },
           ...sanitizedMessages,
         ],
-        tools: AGENT_TOOLS,
+        tools,
         tool_choice: 'auto',
         max_tokens: 2048,
       }),
@@ -1565,8 +832,8 @@ async function processChat(
   conversationHistory: AdminChatMessage[],
   session: UserSession,
   agent?: AgentContext
-): Promise<{ 
-  response: string; 
+): Promise<{
+  response: string;
   history: AdminChatMessage[];
   media?: MediaItem[];
   pendingJobs?: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string }>;
@@ -1576,6 +843,14 @@ async function processChat(
     arguments: Record<string, unknown>;
   };
 }> {
+  // Create tools for this agent context
+  const agentId = agent?.id;
+  const services = agentId ? buildToolServices(agentId, session) : null;
+  const agentTools = agentId && services
+    ? createAgentTools(agentId, session, services)
+    : [];
+  const openAITools = toOpenAITools(agentTools as ToolDefinition<ZodObject<ZodRawShape>, unknown>[]);
+
   const messages: AdminChatMessage[] = [
     ...conversationHistory,
     { role: 'user', content: userMessage },
@@ -1590,8 +865,8 @@ async function processChat(
 
   while (iterations < maxIterations) {
     iterations++;
-    
-    const llmResponse = await callLLM(messages, agent);
+
+    const llmResponse = await callLLM(messages, openAITools, agent);
     
     if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
       // Check for manual/pause tools that need user input
@@ -1644,7 +919,7 @@ async function processChat(
 
       if (uploadUrlTool) {
         // Execute the tool to get the UI payload (upload URL or model selector)
-        const toolResult = await executeTool(uploadUrlTool, session, agent);
+        const toolResult = await executeTool(uploadUrlTool, session, agentTools as ToolDefinition<ZodObject<ZodRawShape>, unknown>[], agent);
         let toolArgs: Record<string, unknown> = {};
         try {
           toolArgs = JSON.parse(toolResult.content || '{}');
@@ -1678,7 +953,7 @@ async function processChat(
 
       // Execute all tool calls
       const toolResults = await Promise.all(
-        llmResponse.toolCalls.map(tc => executeTool(tc, session, agent))
+        llmResponse.toolCalls.map(tc => executeTool(tc, session, agentTools as ToolDefinition<ZodObject<ZodRawShape>, unknown>[], agent))
       );
 
       // Extract any media from the tool results

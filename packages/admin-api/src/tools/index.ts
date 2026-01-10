@@ -17,7 +17,6 @@ export * from './gallery.js';
 
 import type { UserSession } from '../types.js';
 import type { ToolDefinition } from './tool-helper.js';
-import type { ZodObject, ZodRawShape } from 'zod';
 
 // Import all tool creators
 import {
@@ -110,20 +109,32 @@ export interface ToolServices {
     referenceImageId?: string;
     resolution?: string;
     aspectRatio?: string;
-  }) => Promise<{ jobId: string; status: string }>;
+  }) => Promise<{ jobId: string; status: 'pending' | 'processing' | 'completed' | 'failed'; resultUrl?: string }>;
   generateVideo: (params: {
     prompt: string;
     useProfileAsReference?: boolean;
     referenceImageId?: string;
-  }) => Promise<{ jobId: string; status: string }>;
+  }) => Promise<{ jobId: string; status: 'pending' | 'processing' | 'completed' | 'failed'; resultUrl?: string }>;
   generateSticker: (params: {
     prompt?: string;
     sourceImageId?: string;
-  }) => Promise<{ jobId: string; status: string }>;
+  }) => Promise<{ jobId: string; status: 'pending' | 'processing' | 'completed' | 'failed'; resultUrl?: string }>;
 
   // Gallery
-  listGallery: (type?: string, limit?: number) => Promise<unknown[]>;
-  searchGallery: (query: string, type?: string) => Promise<unknown[]>;
+  listGallery: (type?: string, limit?: number) => Promise<Array<{
+    id: string;
+    type: string;
+    url: string;
+    prompt?: string;
+    createdAt: number;
+  }>>;
+  searchGallery: (query: string, type?: string) => Promise<Array<{
+    id: string;
+    type: string;
+    url: string;
+    prompt?: string;
+    createdAt: number;
+  }>>;
 
   // Reference images
   getReferenceUploadUrl: (category: string, name: string, description?: string) => Promise<{
@@ -138,7 +149,13 @@ export interface ToolServices {
     name: string;
     description?: string;
   }) => Promise<{ id: string }>;
-  listReferenceImages: (category?: string) => Promise<unknown[]>;
+  listReferenceImages: (category?: string) => Promise<Array<{
+    id: string;
+    category: string;
+    name: string;
+    url: string;
+    description?: string;
+  }>>;
   deleteReferenceImage: (imageId: string) => Promise<void>;
 
   // Models
@@ -160,11 +177,12 @@ export interface ToolServices {
  * @param services - Service dependencies
  * @returns Array of configured tools
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createAgentTools(
   agentId: string,
   session: UserSession,
   services: ToolServices
-): ToolDefinition<ZodObject<ZodRawShape>, unknown>[] {
+): ToolDefinition<any, any>[] {
   return [
     // Manual tools (no execute function, return to UI)
     requestSecret,
