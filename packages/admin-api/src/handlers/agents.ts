@@ -8,6 +8,7 @@ import type {
 } from 'aws-lambda';
 import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js';
 import * as agentService from '../services/agents.js';
+import * as secretsService from '../services/secrets.js';
 
 // CORS headers - restricted to configured admin domain
 const allowedOrigin = process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173';
@@ -119,6 +120,49 @@ export async function handler(
       return {
         statusCode: 204,
         headers: corsHeaders,
+      };
+    }
+
+    // POST /agents/{id}/secrets - Save a secret for an agent
+    const secretsMatch = path.match(/^\/agents\/([^/]+)\/secrets$/);
+    if (method === 'POST' && secretsMatch) {
+      const agentId = secretsMatch[1];
+      const body = JSON.parse(event.body || '{}');
+      const { key, value } = body;
+
+      if (!key || !value) {
+        return {
+          statusCode: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ error: 'key and value are required' }),
+        };
+      }
+
+      await secretsService.storeSecret(
+        agentId,
+        key,
+        'default',
+        value,
+        session,
+        `${key} for agent ${agentId}`
+      );
+
+      return {
+        statusCode: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ success: true, message: `${key} stored securely` }),
+      };
+    }
+
+    // GET /agents/{id}/secrets - List secrets (not values)
+    if (method === 'GET' && secretsMatch) {
+      const agentId = secretsMatch[1];
+      const secrets = await secretsService.listSecrets(agentId);
+
+      return {
+        statusCode: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify(secrets),
       };
     }
 

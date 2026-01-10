@@ -153,11 +153,20 @@ export async function authenticateRequest(
     event.headers['CF-Access-JWT-Assertion'] ||
     event.headers['authorization']?.replace('Bearer ', '');
 
-  // If no token, check if we should allow (UI is protected by Cloudflare Access)
+  // If no token, check if we should allow (UI is already protected by Cloudflare Access)
   // Only allow exact origin matches from configured ALLOWED_ORIGINS
   if (!token) {
-    const origin = event.headers['origin'] || '';
+    const origin = event.headers['origin'] || event.headers['Origin'] || '';
+    const referer = event.headers['referer'] || event.headers['Referer'] || '';
     const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean);
+
+    console.log('Auth debug:', { 
+      origin, 
+      referer,
+      allowedOrigins, 
+      hasToken: !!token,
+      headers: Object.keys(event.headers)
+    });
 
     // SECURITY: Use exact match only, not includes() which can be bypassed
     const isAllowedOrigin = allowedOrigins.some(allowed => {
@@ -167,7 +176,12 @@ export async function authenticateRequest(
       return normalizedOrigin === normalizedAllowed;
     });
 
-    if (isAllowedOrigin) {
+    // Also check referer as fallback (some browsers don't send origin on same-site)
+    const isAllowedReferer = !isAllowedOrigin && referer && allowedOrigins.some(allowed => {
+      return referer.startsWith(allowed);
+    });
+
+    if (isAllowedOrigin || isAllowedReferer) {
       return {
         email: ADMIN_EMAILS[0] || 'admin@example.com',
         userId: 'admin-ui-user',

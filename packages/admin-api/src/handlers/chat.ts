@@ -15,6 +15,7 @@ import * as telegram from '../services/telegram.js';
 import * as media from '../services/media.js';
 import * as gallery from '../services/gallery.js';
 import * as credits from '../services/credits.js';
+import * as mediaJobs from '../services/media-jobs.js';
 import type {
   AdminChatMessage,
   ToolCall,
@@ -179,23 +180,13 @@ const AGENT_TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
-  // Deploy myself via GitHub Actions
+  // Check pending media jobs (video generation status)
   {
     type: 'function',
     function: {
-      name: 'deploy_myself',
-      description: 'Deploy myself to production. Triggers a GitHub Actions workflow to deploy my configuration.',
-      parameters: {
-        type: 'object',
-        properties: {
-          environment: {
-            type: 'string',
-            enum: ['staging', 'production'],
-            description: 'Environment to deploy to'
-          },
-        },
-        required: ['environment'],
-      },
+      name: 'get_pending_jobs',
+      description: 'Check the status of pending video generation jobs. Videos are generated asynchronously.',
+      parameters: { type: 'object', properties: {} },
     },
   },
   // Profile image management
@@ -389,15 +380,13 @@ You can manage your Solana wallets:
 You can update your profile:
 - Change your name, description, and persona
 
-You can deploy yourself:
-- Trigger deployment to staging or production via GitHub Actions
-
 You have media generation capabilities:
 - Set your profile image (generate, upload, or select from gallery)
 - Generate images with AI (saved to your gallery)
-- Generate videos (async - you'll notify when complete)
+- Generate videos (async - check status with get_pending_jobs, saved to gallery when complete)
 - Generate stickers (with transparent backgrounds)
 - Browse and search your media gallery
+- Check pending video jobs for status updates
 - Check your tool credits (rate limited to prevent abuse)
 
 Your profile image is used for character consistency - when generating images/videos, you can reference it to maintain your visual identity.
@@ -571,17 +560,21 @@ async function executeTool(
         result = await secrets.listSecrets(agentId!);
         break;
         
-      // Deploy myself via GitHub Actions
-      case 'deploy_myself':
-        // TODO: Trigger GitHub Actions workflow
+      // Check pending media jobs
+      case 'get_pending_jobs': {
+        const pendingJobs = await mediaJobs.getPendingJobs(agentId!);
         result = {
-          type: 'deploy_request',
-          environment: args.environment,
-          agentId,
-          message: `Deployment to ${args.environment} will be triggered via GitHub Actions`,
-          note: 'GitHub Actions integration pending'
+          count: pendingJobs.length,
+          jobs: pendingJobs.map(job => ({
+            jobId: job.jobId,
+            type: job.type,
+            status: job.status,
+            prompt: job.prompt,
+            createdAt: new Date(job.createdAt).toISOString(),
+          })),
         };
         break;
+      }
 
       // Profile image management
       case 'set_profile_image': {

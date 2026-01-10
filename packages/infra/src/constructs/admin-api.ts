@@ -270,6 +270,9 @@ export class AdminApiConstruct extends Construct {
         CF_ACCESS_TEAM_DOMAIN: cloudflareTeamDomain,
         ADMIN_EMAILS: adminEmails,
         NODE_ENV: environment,
+        ALLOWED_ORIGINS: allowedOrigins.join(','),
+        KMS_KEY_ID: this.encryptionKey.keyId,
+        SECRETS_PREFIX: 'swarm/',
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],
@@ -280,9 +283,29 @@ export class AdminApiConstruct extends Construct {
 
     // Grant permissions to agents handler
     this.table.grantReadWriteData(agentsHandler);
+    this.encryptionKey.grantEncryptDecrypt(agentsHandler);
     if (stateTable) {
       stateTable.grantReadWriteData(agentsHandler);
     }
+
+    // Grant secrets manager permissions to agents handler
+    agentsHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'secretsmanager:CreateSecret',
+        'secretsmanager:UpdateSecret',
+        'secretsmanager:PutSecretValue',
+        'secretsmanager:DescribeSecret',
+        'secretsmanager:ListSecrets',
+        'secretsmanager:TagResource',
+      ],
+      resources: ['*'],
+      conditions: {
+        'StringLike': {
+          'secretsmanager:Name': 'swarm/*',
+        },
+      },
+    }));
 
     const agentsIntegration = new integrations.HttpLambdaIntegration(
       'AgentsIntegration',
@@ -299,6 +322,12 @@ export class AdminApiConstruct extends Construct {
     this.api.addRoutes({
       path: '/agents/{agentId}',
       methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.PUT, apigateway.HttpMethod.DELETE],
+      integration: agentsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/agents/{agentId}/secrets',
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.POST],
       integration: agentsIntegration,
     });
 
