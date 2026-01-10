@@ -42,6 +42,52 @@ export async function sendChatMessage(
 }
 
 /**
+ * Submit a tool call result (e.g., secret input)
+ */
+export async function submitToolResult(
+  agentId: string,
+  toolCallId: string,
+  result: unknown
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/agents/${agentId}/tools/${toolCallId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ result }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+}
+
+/**
+ * Save a secret for an agent
+ */
+export async function saveAgentSecret(
+  agentId: string,
+  secretKey: string,
+  secretValue: string
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/agents/${agentId}/secrets`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ key: secretKey, value: secretValue }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+}
+
+/**
  * Check if user is authenticated
  */
 export async function checkAuth(): Promise<{ authenticated: boolean; user?: string }> {

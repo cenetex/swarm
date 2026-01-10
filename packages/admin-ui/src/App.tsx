@@ -1,11 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useAgentStore } from './store';
-import { AgentSidebar, AgentConfigModal, ChatPanel } from './components';
-import type { Agent } from './types';
+import { AgentSidebar, ChatPanel } from './components';
 
 function App() {
   const { agents, createAgent } = useAgentStore();
-  const [configAgent, setConfigAgent] = useState<Agent | null>(null);
 
   // Create initial agent if none exist
   useEffect(() => {
@@ -17,19 +15,10 @@ function App() {
   return (
     <div className="h-screen flex bg-dark-950">
       {/* Sidebar */}
-      <AgentSidebar onConfigureAgent={setConfigAgent} />
+      <AgentSidebar />
 
       {/* Main Chat Area */}
-      <ChatPanel onConfigureAgent={setConfigAgent} />
-
-      {/* Config Modal */}
-      {configAgent && (
-        <AgentConfigModal
-          agent={configAgent}
-          isOpen={!!configAgent}
-          onClose={() => setConfigAgent(null)}
-        />
-      )}
+      <ChatPanel />
     </div>
   );
 }
