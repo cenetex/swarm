@@ -10,7 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.700.0",
     "@swarm/core": "workspace:*",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
     "@aws-sdk/client-sqs": "^3.700.0",
     "zod": "^3.24.0"
   },

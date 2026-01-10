@@ -46,7 +46,7 @@ async function makeUrlAccessible(url: string): Promise<string> {
   // If CDN is configured, convert S3 URL to CDN URL
   if (CDN_URL) {
     // Extract the key from S3 URL
-    const s3UrlPattern = /https:\/\/[^\/]+\.s3[^\/]*\.amazonaws\.com\/(.+)/;
+    const s3UrlPattern = /https:\/\/[^/]+\.s3[^/]*\.amazonaws\.com\/(.+)/;
     const match = url.match(s3UrlPattern);
     if (match) {
       return `${CDN_URL}/${match[1]}`;
@@ -56,7 +56,7 @@ async function makeUrlAccessible(url: string): Promise<string> {
 
   // No CDN - generate a signed URL for temporary public access
   console.log(`[Media] No CDN, generating signed URL for: ${url.slice(0, 50)}...`);
-  const s3UrlPattern = /https:\/\/([^\.]+)\.s3[^\/]*\.amazonaws\.com\/(.+)/;
+  const s3UrlPattern = /https:\/\/([^.]+)\.s3[^/]*\.amazonaws\.com\/(.+)/;
   const match = url.match(s3UrlPattern);
   if (match) {
     const [, bucket, key] = match;

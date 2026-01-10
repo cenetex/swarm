@@ -4,6 +4,8 @@
  */
 import type { SQSEvent, SQSHandler, Context } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import {
   createMediaService,
   createSecretsService,
@@ -23,6 +25,11 @@ interface MediaQueueItem {
 }
 
 const sqs = new SQSClient({});
+const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: { removeUndefinedValues: true },
+});
+
+const IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
 
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
@@ -55,6 +62,30 @@ function getAgentId(): string {
 function getMediaBucket(): string {
   if (!_mediaBucket) _mediaBucket = getRequiredEnv('MEDIA_BUCKET');
   return _mediaBucket;
+}
+
+async function claimJob(jobId: string): Promise<boolean> {
+  const now = Date.now();
+  const ttl = Math.floor(now / 1000) + IDEMPOTENCY_TTL_SECONDS;
+
+  try {
+    await dynamo.send(new PutCommand({
+      TableName: getStateTable(),
+      Item: {
+        pk: `AGENT#${getAgentId()}`,
+        sk: `MEDIAJOB#${jobId}`,
+        createdAt: now,
+        ttl,
+      },
+      ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)',
+    }));
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ConditionalCheckFailedException') {
+      return false;
+    }
+    throw error;
+  }
 }
 
 let stateService: ReturnType<typeof createStateService>;
@@ -135,6 +166,25 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
     });
 
     try {
+      if (!item.jobId) {
+        logger.warn('Missing media jobId; skipping');
+        continue;
+      }
+
+      if (item.agentId && item.agentId !== getAgentId()) {
+        logger.warn('Media job agentId mismatch', {
+          jobAgentId: item.agentId,
+          handlerAgentId: getAgentId(),
+        });
+        continue;
+      }
+
+      const claimed = await claimJob(item.jobId);
+      if (!claimed) {
+        logger.info('Media job already claimed', { jobId: item.jobId });
+        continue;
+      }
+
       let mediaAction: ResponseAction | null = null;
 
       if (item.action.type === 'take_selfie') {

@@ -13,6 +13,7 @@ import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import { Construct } from 'constructs';
 import type { AgentConfig } from '@swarm/core';
 
@@ -265,6 +266,99 @@ export class AgentConstruct extends Construct {
     mediaProcessor.addEventSource(new lambdaEventSources.SqsEventSource(this.mediaQueue, {
       batchSize: 1,
     }));
+
+    const alarmPrefix = `${config.id}-${environment}`;
+
+    // Queue depth alarms
+    new cloudwatch.Alarm(this, 'MessageQueueDepthAlarm', {
+      alarmName: `${alarmPrefix}-messages-queue-depth`,
+      metric: this.messageQueue.metricApproximateNumberOfMessagesVisible({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 10,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    new cloudwatch.Alarm(this, 'ResponseQueueDepthAlarm', {
+      alarmName: `${alarmPrefix}-responses-queue-depth`,
+      metric: this.responseQueue.metricApproximateNumberOfMessagesVisible({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 10,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    new cloudwatch.Alarm(this, 'MediaQueueDepthAlarm', {
+      alarmName: `${alarmPrefix}-media-queue-depth`,
+      metric: this.mediaQueue.metricApproximateNumberOfMessagesVisible({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 5,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // DLQ alarms
+    new cloudwatch.Alarm(this, 'DlqDepthAlarm', {
+      alarmName: `${alarmPrefix}-dlq-depth`,
+      metric: dlq.metricApproximateNumberOfMessagesVisible({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    new cloudwatch.Alarm(this, 'DlqAgeAlarm', {
+      alarmName: `${alarmPrefix}-dlq-age`,
+      metric: dlq.metricApproximateAgeOfOldestMessage({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 300,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // Lambda error alarms
+    new cloudwatch.Alarm(this, 'MessageProcessorErrorsAlarm', {
+      alarmName: `${alarmPrefix}-message-processor-errors`,
+      metric: messageProcessor.metricErrors({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    new cloudwatch.Alarm(this, 'ResponseSenderErrorsAlarm', {
+      alarmName: `${alarmPrefix}-response-sender-errors`,
+      metric: responseSender.metricErrors({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    new cloudwatch.Alarm(this, 'MediaProcessorErrorsAlarm', {
+      alarmName: `${alarmPrefix}-media-processor-errors`,
+      metric: mediaProcessor.metricErrors({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
 
     // Scheduled tweet poster
     const scheduledTweet = config.scheduling.tweets?.[0];

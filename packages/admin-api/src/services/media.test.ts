@@ -59,7 +59,7 @@ describe('Media URL Generation', () => {
       const expectedCdnUrl = 'https://media.example.com/agents/agent-1/images/test.png';
 
       // The conversion logic
-      const s3UrlPattern = /https:\/\/[^\/]+\.s3[^\/]*\.amazonaws\.com\/(.+)/;
+      const s3UrlPattern = /https:\/\/[^/]+\.s3[^/]*\.amazonaws\.com\/(.+)/;
       const match = s3Url.match(s3UrlPattern);
       expect(match).toBeTruthy();
       
@@ -83,7 +83,7 @@ describe('Media URL Generation', () => {
         },
       ];
 
-      const s3UrlPattern = /https:\/\/[^\/]+\.s3[^\/]*\.amazonaws\.com\/(.+)/;
+      const s3UrlPattern = /https:\/\/[^/]+\.s3[^/]*\.amazonaws\.com\/(.+)/;
 
       for (const { input, expectedKey } of testCases) {
         const match = input.match(s3UrlPattern);
@@ -99,7 +99,7 @@ describe('Media URL Generation', () => {
         'https://media.rati.chat/agents/test.png',
       ];
 
-      const s3UrlPattern = /https:\/\/[^\/]+\.s3[^\/]*\.amazonaws\.com\/(.+)/;
+      const s3UrlPattern = /https:\/\/[^/]+\.s3[^/]*\.amazonaws\.com\/(.+)/;
 
       for (const url of externalUrls) {
         const match = url.match(s3UrlPattern);
