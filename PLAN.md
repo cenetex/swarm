@@ -93,35 +93,11 @@
 
 ### Remaining Issues
 
-7. **Telegram IP enforcement only logs**
-   - `ENFORCE_TELEGRAM_IP_CHECK` does not short-circuit non-Telegram IPs.
+7. **Ethereum wallet generation disabled**
+    - `generateEthereumWallet` throws; needs ethers/viem implementation.
 
-8. **Dedup marker set before processing**
-   - `markMessageProcessed` runs before `processChannelMessage`; failures drop updates.
-
-9. **Credits not consumed for generation tools**
-   - `generate_image`/`generate_video` check credits but never `consumeCredit`.
-
-10. **Channel buffer writes are non-atomic**
-   - `addMessageToBuffer` overwrites full state; concurrent updates can lose messages.
-
-11. **No HTTP timeout/retry for admin Telegram/LLM calls**
-   - `fetch` calls can hang; no AbortController or retry policy.
-
-12. **Ethereum wallet generation disabled**
-   - `generateEthereumWallet` throws; needs ethers/viem implementation.
-
-13. **Discord adapter missing**
-   - Requires implementation and gateway vs interaction decision.
-
-14. **Response state updated before delivery**
-    - `markResponseSent` runs after enqueueing, not after the response is actually sent; failures clear the buffer and enter cooldown anyway.
-
-15. **Tool-call JSON parsing is unguarded**
-    - Invalid tool arguments from LLM output can throw and abort the tool loop.
-
-16. **Admin Telegram webhook ignores non-text messages**
-    - Updates with captions/media/stickers are dropped because `message.text` is required.
+8. **Discord adapter missing**
+    - Requires implementation and gateway vs interaction decision.
 
 ---
 
@@ -1076,14 +1052,14 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
 ### Immediate (Reliability + Security)
 
 1. **Fix Telegram webhook enforcement and reliability**
-   - [ ] Reject non-Telegram IPs when `ENFORCE_TELEGRAM_IP_CHECK` is on
-   - [ ] Move dedup marker after successful processing (or track status)
-   - [ ] Consume credits on successful `generate_image`/`generate_video`
-   - [ ] Make channel-state updates atomic (UpdateCommand/list_append)
-   - [ ] Add timeouts/retries for LLM + Telegram fetch calls
-   - [ ] Defer channel cooldown/response marking until send is confirmed
-   - [ ] Guard tool-call JSON parsing (reject/repair invalid tool args)
-   - [ ] Accept non-text Telegram updates (caption/media) in admin webhook
+   - [x] Reject non-Telegram IPs when `ENFORCE_TELEGRAM_IP_CHECK` is on
+   - [x] Move dedup marker after successful processing (or track status)
+   - [x] Consume credits on successful `generate_image`/`generate_video`
+   - [x] Make channel-state updates atomic (UpdateCommand/list_append)
+   - [x] Add timeouts/retries for LLM + Telegram fetch calls
+   - [x] Defer channel cooldown/response marking until send is confirmed
+   - [x] Guard tool-call JSON parsing (reject/repair invalid tool args)
+   - [x] Accept non-text Telegram updates (caption/media) in admin webhook
 
 2. **Admin deployment verification**
    - [ ] Configure Cloudflare Access policies
