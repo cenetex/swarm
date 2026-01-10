@@ -300,6 +300,21 @@ const AGENT_TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'save_uploaded_profile_image',
+      description: 'Save an already-uploaded image as my profile picture. Use this after the user has uploaded an image via the upload widget.',
+      parameters: {
+        type: 'object',
+        properties: {
+          s3Key: { type: 'string', description: 'The S3 key of the uploaded image' },
+          publicUrl: { type: 'string', description: 'The public URL of the uploaded image' },
+        },
+        required: ['s3Key', 'publicUrl'],
+      },
+    },
+  },
   // Reference image management
   {
     type: 'function',
@@ -948,6 +963,24 @@ async function executeTool(
           s3Key: uploadInfo.s3Key,
           publicUrl: uploadInfo.publicUrl,
           instructions: 'Use PUT request to upload PNG image to uploadUrl. After upload, the image will be available at publicUrl.',
+        };
+        break;
+      }
+
+      case 'save_uploaded_profile_image': {
+        // Directly update the agent record with the uploaded image
+        await agents.updateAgent(agentId!, {
+          profileImage: {
+            url: args.publicUrl,
+            s3Key: args.s3Key,
+            updatedAt: Date.now(),
+          }
+        }, session);
+
+        result = {
+          success: true,
+          message: 'Profile image updated!',
+          url: args.publicUrl,
         };
         break;
       }

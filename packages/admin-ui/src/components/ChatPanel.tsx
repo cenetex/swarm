@@ -146,10 +146,21 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
 
       const resultObj = result as Record<string, unknown>;
       
+      // Find the tool call to get its name
+      const currentMessages = useAgentStore.getState().chats[activeAgent.id] || [];
+      let toolName: string | undefined;
+      for (const msg of currentMessages) {
+        const tc = msg.toolCalls?.find(tc => tc.id === toolCallId);
+        if (tc) {
+          toolName = tc.name;
+          break;
+        }
+      }
+      
       // Update the tool call status in the message
       const updateToolCallStatus = () => {
-        const currentMessages = useAgentStore.getState().chats[activeAgent.id] || [];
-        for (const msg of currentMessages) {
+        const msgs = useAgentStore.getState().chats[activeAgent.id] || [];
+        for (const msg of msgs) {
           const toolCall = msg.toolCalls?.find(tc => tc.id === toolCallId);
           if (toolCall) {
             updateMessage(activeAgent.id, msg.id, {
@@ -186,10 +197,24 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
         try {
           updateToolCallStatus();
           
-          // Send a follow-up message to let the agent know the upload completed
-          const category = resultObj.category ? ` ${resultObj.category}` : '';
+          // Build follow-up message based on the tool type
+          let followUpContent: string;
           const filename = resultObj.filename ? ` (${resultObj.filename})` : '';
-          const followUpContent = `I've uploaded the${category} image${filename}. The s3Key is "${resultObj.s3Key}" and publicUrl is "${resultObj.publicUrl}". Please save it to my reference images.`;
+          
+          // Check if this was a profile image upload (from set_profile_image or get_profile_upload_url)
+          const isProfileUpload = toolName === 'set_profile_image' || 
+                                   toolName === 'get_profile_upload_url' ||
+                                   !resultObj.category;
+          
+          if (isProfileUpload) {
+            // For profile images, ask the LLM to update the agent's profile
+            followUpContent = `I've uploaded my new profile image${filename}. The URL is "${resultObj.publicUrl}" and s3Key is "${resultObj.s3Key}". Please update my profile image with this.`;
+          } else {
+            // For reference images, ask to save to reference images
+            const category = resultObj.category ? ` ${resultObj.category}` : '';
+            followUpContent = `I've uploaded the${category} image${filename}. The s3Key is "${resultObj.s3Key}" and publicUrl is "${resultObj.publicUrl}". Please save it to my reference images.`;
+          }
+          
           await handleSendMessage(followUpContent);
           
         } catch (error) {
