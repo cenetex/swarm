@@ -123,7 +123,7 @@ export class AdminApiConstruct extends Construct {
         ADMIN_TABLE: this.table.tableName,
         SECRETS_PREFIX: 'swarm/',
         KMS_KEY_ID: this.encryptionKey.keyId,
-        CF_TEAM_DOMAIN: cloudflareTeamDomain,
+        CF_ACCESS_TEAM_DOMAIN: cloudflareTeamDomain,
         ADMIN_EMAILS: adminEmails,
         LLM_ENDPOINT: 'https://openrouter.ai/api/v1/chat/completions',
         LLM_MODEL: 'anthropic/claude-sonnet-4',
