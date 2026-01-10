@@ -3,16 +3,20 @@
  */
 import { useEffect, useRef, useCallback } from 'react';
 import { useAgentStore, useActiveAgent, useActiveChat } from '../store/agents';
-import { sendChatMessage, saveAgentSecret } from '../api';
+import { sendChatMessage, saveAgentSecret, pollJobCompletion, type JobStatus } from '../api';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { AgentAvatar } from './AgentSidebar';
 
+// Track active polling jobs to avoid duplicate polling
+const activePollers = new Set<string>();
+
 interface ChatPanelProps {
   onMenuClick?: () => void;
+  onOpenLogs?: (agentId: string) => void;
 }
 
-export function ChatPanel({ onMenuClick }: ChatPanelProps) {
+export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
   const activeAgent = useActiveAgent();
   const messages = useActiveChat();
   const { addMessage, updateMessage, removeMessage, clearChat, isLoading, setLoading, setError } = useAgentStore();
@@ -75,7 +79,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
             status: 'completed' as const,
             result: { url: m.url, id: m.id, prompt: m.prompt },
           })) || [];
-          
+
           updateMessage(activeAgent.id, loadingMessage.id, {
             content: response.response,
             isLoading: false,
@@ -87,6 +91,54 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
               status: 'pending' as const,
             }] : mediaToolCalls.length > 0 ? mediaToolCalls : undefined,
           });
+
+          // Check if the response contains a job ID that needs polling
+          // Job IDs are returned when generate_image or generate_video is called
+          const responseText = response.response;
+          const jobIdMatch = responseText.match(/jobId[:\s]+["']?([a-f0-9-]{36})["']?/i);
+          if (jobIdMatch) {
+            const jobId = jobIdMatch[1];
+            if (!activePollers.has(jobId)) {
+              activePollers.add(jobId);
+              const messageId = loadingMessage.id;
+              const agentIdForPolling = activeAgent.id;
+
+              // Poll in background - don't await
+              pollJobCompletion(jobId, {
+                intervalMs: 3000,
+                onProgress: (status: JobStatus) => {
+                  if (status.status === 'completed' && status.resultUrl) {
+                    // Update the message with the completed image
+                    const currentMsgs = useAgentStore.getState().chats[agentIdForPolling] || [];
+                    const msg = currentMsgs.find(m => m.id === messageId);
+                    if (msg) {
+                      const existingToolCalls = msg.toolCalls || [];
+                      updateMessage(agentIdForPolling, messageId, {
+                        toolCalls: [
+                          ...existingToolCalls,
+                          {
+                            id: `job-${jobId}`,
+                            name: status.type === 'image' ? 'generate_image' : 'generate_video',
+                            arguments: { prompt: status.prompt },
+                            status: 'completed' as const,
+                            result: {
+                              url: status.resultUrl,
+                              prompt: status.prompt,
+                              jobId: status.jobId,
+                            },
+                          },
+                        ],
+                      });
+                    }
+                    activePollers.delete(jobId);
+                  }
+                },
+              }).catch((err) => {
+                console.error('Job polling failed:', err);
+                activePollers.delete(jobId);
+              });
+            }
+          }
         }
       } catch (error) {
         const currentMessages = useAgentStore.getState().chats[activeAgent.id] || [];
@@ -274,6 +326,14 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
               </svg>
             </button>
           </div>
+          {onOpenLogs && (
+            <button
+              onClick={() => onOpenLogs(activeAgent.id)}
+              className="px-3 py-2 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-200 text-xs font-medium transition-colors"
+            >
+              View logs
+            </button>
+          )}
         </div>
       </header>
 

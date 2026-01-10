@@ -346,6 +346,17 @@ export class AdminApiConstruct extends Construct {
       resources: ['*'],
     }));
 
+    // CloudWatch Logs access for consolidated agent logs
+    agentsHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'logs:StartQuery',
+        'logs:GetQueryResults',
+        'logs:DescribeLogGroups',
+      ],
+      resources: ['*'],
+    }));
+
     const agentsIntegration = new integrations.HttpLambdaIntegration(
       'AgentsIntegration',
       agentsHandler
@@ -367,6 +378,12 @@ export class AdminApiConstruct extends Construct {
     this.api.addRoutes({
       path: '/agents/{agentId}/secrets',
       methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.POST],
+      integration: agentsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/agents/{agentId}/logs',
+      methods: [apigateway.HttpMethod.GET],
       integration: agentsIntegration,
     });
 
@@ -537,6 +554,17 @@ export class AdminApiConstruct extends Construct {
       methods: [apigateway.HttpMethod.POST],
       integration: replicateIntegration,
     });
+
+    const adminLogGroups = [
+      this.chatHandler.logGroup.logGroupName,
+      agentsHandler.logGroup.logGroupName,
+      telegramWebhookHandler.logGroup.logGroupName,
+      replicateWebhookHandler.logGroup.logGroupName,
+      healthHandler.logGroup.logGroupName,
+    ].join(',');
+
+    agentsHandler.addEnvironment('ADMIN_LOG_GROUPS', adminLogGroups);
+    agentsHandler.addEnvironment('LOG_GROUP_PREFIX', '/aws/lambda/');
 
     // Custom domain configuration (for Cloudflare Access proxy)
     if (props.apiDomain && props.apiCertificateArn) {

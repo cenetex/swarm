@@ -178,3 +178,95 @@ export async function clearChatHistory(agentId?: string): Promise<void> {
     throw new Error(error.error || `HTTP ${response.status}`);
   }
 }
+
+// ============================================================================
+// Job Status Polling (for async image/video generation)
+// ============================================================================
+
+export interface JobStatus {
+  jobId: string;
+  type: 'image' | 'video' | 'sticker';
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  prompt: string;
+  createdAt: number;
+  updatedAt: number;
+  completedAt?: number;
+  resultUrl?: string;
+  error?: string;
+}
+
+/**
+ * Get the status of a specific job
+ */
+export async function getJobStatus(jobId: string): Promise<JobStatus> {
+  const response = await fetch(`${API_BASE}/jobs/${encodeURIComponent(jobId)}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get all pending jobs for an agent
+ */
+export async function getPendingJobs(agentId: string): Promise<{ count: number; jobs: JobStatus[] }> {
+  const response = await fetch(`${API_BASE}/jobs?agentId=${encodeURIComponent(agentId)}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Poll for job completion
+ * Returns the completed job status or throws if the job fails
+ */
+export async function pollJobCompletion(
+  jobId: string,
+  options: {
+    maxAttempts?: number;
+    intervalMs?: number;
+    onProgress?: (status: JobStatus) => void;
+  } = {}
+): Promise<JobStatus> {
+  const { maxAttempts = 120, intervalMs = 2000, onProgress } = options;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const status = await getJobStatus(jobId);
+
+    if (onProgress) {
+      onProgress(status);
+    }
+
+    if (status.status === 'completed') {
+      return status;
+    }
+
+    if (status.status === 'failed') {
+      throw new Error(status.error || 'Job failed');
+    }
+
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error('Job timed out');
+}

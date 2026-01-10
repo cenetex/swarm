@@ -9,6 +9,7 @@ import type {
 import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js';
 import * as agentService from '../services/agents.js';
 import * as secretsService from '../services/secrets.js';
+import * as logsService from '../services/logs.js';
 
 // CORS headers - restricted to configured admin domain
 const allowedOrigin = process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173';
@@ -163,6 +164,35 @@ export async function handler(
         statusCode: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify(secrets),
+      };
+    }
+
+    // GET /agents/{id}/logs - Query consolidated logs for an agent
+    const logsMatch = path.match(/^\/agents\/([^/]+)\/logs$/);
+    if (method === 'GET' && logsMatch) {
+      const agentId = logsMatch[1];
+      const params = event.queryStringParameters || {};
+
+      const limit = params.limit ? Number.parseInt(params.limit, 10) : undefined;
+      const startTimeRaw = params.start ? Number.parseInt(params.start, 10) : undefined;
+      const endTimeRaw = params.end ? Number.parseInt(params.end, 10) : undefined;
+      const startTime = Number.isFinite(startTimeRaw) ? startTimeRaw : undefined;
+      const endTime = Number.isFinite(endTimeRaw) ? endTimeRaw : undefined;
+
+      const result = await logsService.queryAgentLogs(agentId, {
+        level: params.level,
+        subsystem: params.subsystem || params.component,
+        since: params.since,
+        limit,
+        startTime,
+        endTime,
+        query: params.query,
+      });
+
+      return {
+        statusCode: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify(result),
       };
     }
 

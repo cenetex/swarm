@@ -1,11 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAgentStore } from './store';
-import { AgentSidebar, ChatPanel } from './components';
+import { AgentSidebar, AgentLogsPanel, ChatPanel } from './components';
+
+function getLogsAgentId(pathname: string): string | null {
+  const match = pathname.match(/^\/agents\/([^/]+)\/logs\/?$/);
+  return match?.[1] || null;
+}
 
 function App() {
   const { fetchAgents, activeAgentId, syncChatHistory } = useAgentStore();
   const [initialized, setInitialized] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [logsAgentId, setLogsAgentId] = useState<string | null>(
+    () => getLogsAgentId(window.location.pathname)
+  );
+
+  const isLogsRoute = useMemo(() => Boolean(logsAgentId), [logsAgentId]);
 
   // Fetch agents from backend on mount
   useEffect(() => {
@@ -19,11 +29,11 @@ function App() {
   // Sync chat history from backend when agent is selected
   // ALWAYS sync on agent change to ensure cross-device consistency
   useEffect(() => {
-    if (activeAgentId && initialized) {
+    if (activeAgentId && initialized && !isLogsRoute) {
       // Always sync from backend - it's the source of truth for cross-device
       syncChatHistory(activeAgentId).catch(console.error);
     }
-  }, [activeAgentId, initialized, syncChatHistory]);
+  }, [activeAgentId, initialized, isLogsRoute, syncChatHistory]);
 
   // Close sidebar when agent is selected on mobile
   useEffect(() => {
@@ -31,6 +41,26 @@ function App() {
       setSidebarOpen(false);
     }
   }, [activeAgentId]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setLogsAgentId(getLogsAgentId(window.location.pathname));
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const openLogs = useCallback((agentId: string) => {
+    const nextPath = `/agents/${agentId}/logs`;
+    window.history.pushState({}, '', nextPath);
+    setLogsAgentId(agentId);
+  }, []);
+
+  const openChat = useCallback(() => {
+    window.history.pushState({}, '', '/');
+    setLogsAgentId(null);
+  }, []);
 
   return (
     <div className="h-screen flex bg-dark-950 relative">
@@ -52,10 +82,20 @@ function App() {
       </div>
 
       {/* Main Chat Area */}
-      <ChatPanel onMenuClick={() => setSidebarOpen(true)} />
+      {isLogsRoute && logsAgentId ? (
+        <AgentLogsPanel
+          agentId={logsAgentId}
+          onMenuClick={() => setSidebarOpen(true)}
+          onBack={openChat}
+        />
+      ) : (
+        <ChatPanel
+          onMenuClick={() => setSidebarOpen(true)}
+          onOpenLogs={openLogs}
+        />
+      )}
     </div>
   );
 }
 
 export default App;
-
