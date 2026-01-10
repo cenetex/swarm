@@ -11,6 +11,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as apigateway from 'aws-cdk-lib/aws-apigatewayv2';
 import * as integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -43,10 +44,21 @@ export interface AdminApiConstructProps {
    * Admin UI domain for CORS (e.g., 'admin.example.com')
    */
   adminDomain?: string;
+
+  /**
+   * Custom domain for the API (e.g., 'api.example.com')
+   */
+  apiDomain?: string;
+
+  /**
+   * ACM certificate ARN for the API custom domain
+   */
+  apiCertificateArn?: string;
 }
 
 export class AdminApiConstruct extends Construct {
   public readonly api: apigateway.HttpApi;
+  public readonly customDomain?: apigateway.DomainName;
   public readonly table: dynamodb.Table;
   public readonly encryptionKey: kms.Key;
   public readonly chatHandler: lambda.Function;
@@ -202,10 +214,40 @@ export class AdminApiConstruct extends Construct {
       integration: healthIntegration,
     });
 
+    // Custom domain configuration (for Cloudflare Access proxy)
+    if (props.apiDomain && props.apiCertificateArn) {
+      const certificate = acm.Certificate.fromCertificateArn(
+        this, 'ApiCertificate', props.apiCertificateArn
+      );
+
+      this.customDomain = new apigateway.DomainName(this, 'ApiDomain', {
+        domainName: props.apiDomain,
+        certificate,
+      });
+
+      new apigateway.ApiMapping(this, 'ApiMapping', {
+        api: this.api,
+        domainName: this.customDomain,
+      });
+
+      new cdk.CfnOutput(this, 'ApiCustomDomain', {
+        value: props.apiDomain,
+        description: 'Admin API custom domain',
+        exportName: `swarm-admin-api-domain-${environment}`,
+      });
+
+      new cdk.CfnOutput(this, 'ApiDomainTarget', {
+        value: this.customDomain.regionalDomainName,
+        description: 'Target for CNAME record',
+        exportName: `swarm-admin-api-target-${environment}`,
+      });
+    }
+
     // Outputs
     new cdk.CfnOutput(this, 'ApiEndpoint', {
-      value: this.api.apiEndpoint,
+      value: props.apiDomain ? `https://${props.apiDomain}` : this.api.apiEndpoint,
       description: 'Admin API endpoint URL',
+      exportName: `swarm-admin-api-url-${environment}`,
     });
 
     new cdk.CfnOutput(this, 'AdminTableName', {

@@ -95,12 +95,17 @@ export class SwarmStack extends cdk.Stack {
 
     // Create Admin API if Cloudflare Access is configured
     if (cloudflareTeamDomain && adminEmails) {
+      // Derive API domain from admin domain (admin-staging.x.com -> api-staging.x.com)
+      const apiDomain = adminDomain?.replace('admin-', 'api-').replace('admin.', 'api.');
+      
       this.adminApi = new AdminApiConstruct(this, 'AdminApi', {
         cloudflareTeamDomain,
         adminEmails,
         openRouterApiKeyArn,
         environment,
         adminDomain,
+        apiDomain,
+        apiCertificateArn: adminCertificateArn, // Use same wildcard cert
       });
     }
 
