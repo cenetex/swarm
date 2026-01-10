@@ -1075,15 +1075,27 @@ async function processChannelResponse(
 
         const result = await executeTool(agentId, toolName, parsedArgs.args, token, chatId, agent);
 
-        if (!result.success) {
-          failedTools.add(toolName);
+        // Only add to failedTools for permanent failures, not rate limits or transient errors
+        // Rate limits and "not found" errors should not block future attempts
+        if (!result.success && result.error) {
+          const isTransientError = 
+            result.error.includes('Rate limited') ||
+            result.error.includes('not found') ||
+            result.error.includes('Gallery is empty');
+          
+          if (!isTransientError) {
+            failedTools.add(toolName);
+            console.log(`[Telegram] Tool ${toolName} added to failedTools: ${result.error}`);
+          } else {
+            console.log(`[Telegram] Tool ${toolName} failed with transient error (not blocking): ${result.error}`);
+          }
         }
 
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
           name: toolName,
-          content: JSON.stringify(result.success ? result.result : { error: result.error, doNotRetry: true }),
+          content: JSON.stringify(result.success ? result.result : { error: result.error }),
         });
 
         if (result.media) {
