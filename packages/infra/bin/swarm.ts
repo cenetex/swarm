@@ -5,7 +5,12 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { SwarmStack } from '../src/stacks/swarm-stack.js';
+
+// ESM equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = new cdk.App();
 
