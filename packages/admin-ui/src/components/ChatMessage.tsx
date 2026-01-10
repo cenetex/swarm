@@ -7,9 +7,40 @@ interface ChatMessageProps {
   onToolSubmit?: (toolCallId: string, result: unknown) => void;
 }
 
+/**
+ * Extract image URLs from tool call results
+ */
+function extractImagesFromToolCalls(toolCalls?: ChatMessageType['toolCalls']): string[] {
+  if (!toolCalls) return [];
+  
+  const images: string[] = [];
+  
+  for (const tc of toolCalls) {
+    if (tc.result && typeof tc.result === 'object') {
+      const result = tc.result as Record<string, unknown>;
+      // Check for image URL in result
+      if (result.url && typeof result.url === 'string' && 
+          (result.url.includes('.png') || result.url.includes('.jpg') || result.url.includes('.webp'))) {
+        images.push(result.url);
+      }
+      // Check for gallery items
+      if (Array.isArray(result.items)) {
+        for (const item of result.items) {
+          if (item && typeof item === 'object' && 'url' in item && typeof item.url === 'string') {
+            images.push(item.url);
+          }
+        }
+      }
+    }
+  }
+  
+  return images;
+}
+
 export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const hasPendingTools = message.toolCalls?.some(tc => tc.status === 'pending');
+  const images = extractImagesFromToolCalls(message.toolCalls);
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3 lg:mb-4`}>
@@ -34,9 +65,33 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
               </div>
             )}
             
+            {/* Render generated images inline */}
+            {images.length > 0 && (
+              <div className={`grid gap-2 ${message.content ? 'mt-3' : ''} ${
+                images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+              }`}>
+                {images.slice(0, 4).map((url, idx) => (
+                  <a 
+                    key={idx} 
+                    href={url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="block rounded-lg overflow-hidden hover:opacity-90 transition-opacity"
+                  >
+                    <img 
+                      src={url} 
+                      alt={`Generated image ${idx + 1}`}
+                      className="w-full h-auto max-h-64 object-cover"
+                      loading="lazy"
+                    />
+                  </a>
+                ))}
+              </div>
+            )}
+            
             {/* Render tool prompts inline */}
             {message.toolCalls && message.toolCalls.length > 0 && (
-              <div className={`space-y-3 ${message.content ? 'mt-3' : ''}`}>
+              <div className={`space-y-3 ${message.content || images.length > 0 ? 'mt-3' : ''}`}>
                 {message.toolCalls.map((toolCall) => (
                   <ToolPrompt
                     key={toolCall.id}
