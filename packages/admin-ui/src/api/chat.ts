@@ -6,6 +6,13 @@ interface PendingToolCall {
   arguments: Record<string, unknown>;
 }
 
+interface MediaItem {
+  type: 'image' | 'video' | 'sticker';
+  url: string;
+  prompt?: string;
+  id?: string;
+}
+
 interface ChatResponse {
   response: string;
   history: Array<{
@@ -13,6 +20,7 @@ interface ChatResponse {
     content: string;
     tool_calls?: unknown[];
   }>;
+  media?: MediaItem[];
   pendingToolCall?: PendingToolCall;
   error?: string;
 }

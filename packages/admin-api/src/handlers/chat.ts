@@ -1184,6 +1184,55 @@ async function callLLM(
   };
 }
 
+/** Media item generated during chat */
+interface MediaItem {
+  type: 'image' | 'video' | 'sticker';
+  url: string;
+  prompt?: string;
+  id?: string;
+}
+
+/**
+ * Extract media URLs from tool results
+ */
+function extractMediaFromToolResults(toolResults: ToolResult[]): MediaItem[] {
+  const media: MediaItem[] = [];
+  
+  for (const result of toolResults) {
+    try {
+      const parsed = JSON.parse(result.content);
+      
+      // Direct image generation result
+      if (parsed.url && (parsed.url.includes('.png') || parsed.url.includes('.jpg') || parsed.url.includes('.webp'))) {
+        media.push({
+          type: 'image',
+          url: parsed.url,
+          prompt: parsed.prompt,
+          id: parsed.id,
+        });
+      }
+      
+      // Gallery items
+      if (Array.isArray(parsed.items)) {
+        for (const item of parsed.items) {
+          if (item.url) {
+            media.push({
+              type: item.type || 'image',
+              url: item.url,
+              prompt: item.prompt,
+              id: item.id,
+            });
+          }
+        }
+      }
+    } catch {
+      // Not JSON, skip
+    }
+  }
+  
+  return media;
+}
+
 /**
  * Process a chat message, executing tools as needed
  */
@@ -1195,6 +1244,7 @@ async function processChat(
 ): Promise<{ 
   response: string; 
   history: AdminChatMessage[];
+  media?: MediaItem[];
   pendingToolCall?: {
     id: string;
     name: string;
@@ -1208,6 +1258,7 @@ async function processChat(
 
   let response: string | undefined;
   let pendingToolCall: { id: string; name: string; arguments: Record<string, unknown> } | undefined;
+  const allMedia: MediaItem[] = [];
   let iterations = 0;
   const maxIterations = 10; // Prevent infinite loops
 
@@ -1279,6 +1330,10 @@ async function processChat(
         llmResponse.toolCalls.map(tc => executeTool(tc, session, agent))
       );
 
+      // Extract any media from the tool results
+      const mediaFromResults = extractMediaFromToolResults(toolResults);
+      allMedia.push(...mediaFromResults);
+
       // Add tool results
       for (const result of toolResults) {
         messages.push(result as AdminChatMessage);
@@ -1299,7 +1354,7 @@ async function processChat(
     messages.push({ role: 'assistant', content: response });
   }
 
-  return { response, history: messages, pendingToolCall };
+  return { response, history: messages, media: allMedia.length > 0 ? allMedia : undefined, pendingToolCall };
 }
 
 /**
@@ -1386,6 +1441,8 @@ export async function handler(
       body: JSON.stringify({
         response: result.response,
         history: result.history,
+        // Include media generated during this response
+        media: result.media,
         // Include pending tool call if one needs user input
         pendingToolCall: result.pendingToolCall,
       }),

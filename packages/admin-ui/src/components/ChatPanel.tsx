@@ -66,16 +66,26 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
         if (loadingMessage) {
           // Check if there's a pending tool call that needs user input
           const pendingToolCall = response.pendingToolCall;
+          
+          // Convert media to tool calls for display
+          const mediaToolCalls = response.media?.map((m, idx) => ({
+            id: `media-${Date.now()}-${idx}`,
+            name: m.type === 'image' ? 'generate_image' : m.type === 'video' ? 'generate_video' : 'get_my_gallery',
+            arguments: { prompt: m.prompt },
+            status: 'completed' as const,
+            result: { url: m.url, id: m.id, prompt: m.prompt },
+          })) || [];
+          
           updateMessage(activeAgent.id, loadingMessage.id, {
             content: response.response,
             isLoading: false,
-            // Add tool call for rendering if there's a pending one
+            // Add tool calls for rendering - pending ones or completed media
             toolCalls: pendingToolCall ? [{
               id: pendingToolCall.id,
               name: pendingToolCall.name,
               arguments: pendingToolCall.arguments,
               status: 'pending' as const,
-            }] : undefined,
+            }] : mediaToolCalls.length > 0 ? mediaToolCalls : undefined,
           });
         }
       } catch (error) {

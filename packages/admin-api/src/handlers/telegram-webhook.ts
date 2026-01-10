@@ -7,13 +7,19 @@
  * - IP address verification (Telegram server ranges)
  * - Minimal error disclosure
  * - Sanitized logging
+ *
+ * Response logic:
+ * - Always responds to DMs
+ * - Always responds to @mentions
+ * - Responds to users with active attention (from recent mentions)
+ * - Small random chance to respond to other messages
  */
 import type {
   APIGatewayProxyEventV2,
   APIGatewayProxyResultV2,
 } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { isValidTelegramIP } from '../services/telegram.js';
 import { timingSafeEqual } from 'crypto';
@@ -28,6 +34,13 @@ const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
 
 // Whether to enforce IP verification (disable for testing behind proxies)
 const ENFORCE_IP_CHECK = process.env.ENFORCE_TELEGRAM_IP_CHECK !== 'false';
+
+// === ATTENTION TRACKING CONFIG ===
+const ATTENTION_DURATION_SECONDS = 300; // 5 minutes
+const INITIAL_ATTENTION = 1.0;
+const ATTENTION_DECAY = 0.7;
+const MIN_ATTENTION_THRESHOLD = 0.2;
+const RANDOM_REPLY_CHANCE = 0.05; // 5%
 
 interface TelegramUpdate {
   update_id: number;
@@ -131,7 +144,6 @@ async function getAgentConfig(agentId: string): Promise<AgentConfig | null> {
 }
 
 async function getTelegramToken(agentId: string): Promise<string | null> {
-  // Look up the secret ARN from the secrets metadata
   const result = await dynamoClient.send(new GetCommand({
     TableName: ADMIN_TABLE,
     Key: {
@@ -148,7 +160,6 @@ async function getTelegramToken(agentId: string): Promise<string | null> {
 }
 
 async function getWebhookSecret(agentId: string): Promise<string | null> {
-  // Look up the webhook secret for this agent
   const result = await dynamoClient.send(new GetCommand({
     TableName: ADMIN_TABLE,
     Key: {
@@ -164,35 +175,140 @@ async function getWebhookSecret(agentId: string): Promise<string | null> {
   return getSecret(result.Item.secretArn);
 }
 
-/**
- * Timing-safe comparison of secret tokens to prevent timing attacks
- */
+// === ATTENTION TRACKING ===
+
+async function getAttention(agentId: string, chatId: number, userId: number): Promise<number> {
+  try {
+    const result = await dynamoClient.send(new GetCommand({
+      TableName: ADMIN_TABLE,
+      Key: {
+        pk: `ATTENTION#${agentId}#${chatId}`,
+        sk: `USER#${userId}`,
+      },
+    }));
+
+    if (!result.Item) return 0;
+
+    // Check if expired (backup for TTL)
+    if (Date.now() / 1000 > (result.Item.ttl as number)) return 0;
+
+    return result.Item.attention as number;
+  } catch {
+    return 0;
+  }
+}
+
+async function setAttention(
+  agentId: string,
+  chatId: number,
+  userId: number,
+  attention: number
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  const ttl = now + ATTENTION_DURATION_SECONDS;
+
+  try {
+    await dynamoClient.send(new PutCommand({
+      TableName: ADMIN_TABLE,
+      Item: {
+        pk: `ATTENTION#${agentId}#${chatId}`,
+        sk: `USER#${userId}`,
+        attention,
+        lastInteraction: now,
+        ttl,
+      },
+    }));
+  } catch (err) {
+    console.warn('Failed to set attention:', err);
+  }
+}
+
+async function decayAttention(agentId: string, chatId: number, userId: number): Promise<void> {
+  try {
+    await dynamoClient.send(new UpdateCommand({
+      TableName: ADMIN_TABLE,
+      Key: {
+        pk: `ATTENTION#${agentId}#${chatId}`,
+        sk: `USER#${userId}`,
+      },
+      UpdateExpression: 'SET attention = attention * :decay, lastInteraction = :now',
+      ExpressionAttributeValues: {
+        ':decay': ATTENTION_DECAY,
+        ':now': Math.floor(Date.now() / 1000),
+      },
+      ConditionExpression: 'attribute_exists(pk)',
+    }));
+  } catch {
+    // Ignore - record may not exist
+  }
+}
+
+function isBotMentioned(text: string, botUsername?: string): boolean {
+  if (!botUsername) return false;
+  const mentionPattern = new RegExp(`@${botUsername}\\b`, 'i');
+  return mentionPattern.test(text);
+}
+
+async function shouldRespond(
+  agentId: string,
+  message: NonNullable<TelegramUpdate['message']>,
+  botUsername?: string
+): Promise<{ respond: boolean; reason: string; setAttention?: boolean }> {
+  const chatType = message.chat.type;
+  const userId = message.from?.id;
+  const text = message.text || '';
+
+  // Always respond to DMs
+  if (chatType === 'private') {
+    return { respond: true, reason: 'private_chat' };
+  }
+
+  // Always respond to direct mentions
+  if (isBotMentioned(text, botUsername)) {
+    return { respond: true, reason: 'mentioned', setAttention: true };
+  }
+
+  // Check if replying and has attention
+  if (message.reply_to_message && userId) {
+    const attention = await getAttention(agentId, message.chat.id, userId);
+    if (attention > MIN_ATTENTION_THRESHOLD) {
+      return { respond: true, reason: 'reply_with_attention' };
+    }
+  }
+
+  // Check attention level for ongoing conversations
+  if (userId) {
+    const attention = await getAttention(agentId, message.chat.id, userId);
+    if (attention >= MIN_ATTENTION_THRESHOLD) {
+      return { respond: true, reason: 'has_attention' };
+    }
+  }
+
+  // Random chance to reply (for engagement)
+  if (Math.random() < RANDOM_REPLY_CHANCE) {
+    return { respond: true, reason: 'random' };
+  }
+
+  return { respond: false, reason: 'no_trigger' };
+}
+
 function verifySecretToken(provided: string | undefined, expected: string): boolean {
   if (!provided) return false;
 
-  // Convert to buffers for timing-safe comparison
   const providedBuf = Buffer.from(provided);
   const expectedBuf = Buffer.from(expected);
 
-  // Length check (this leaks length info, but Telegram tokens are fixed format)
   if (providedBuf.length !== expectedBuf.length) return false;
 
   return timingSafeEqual(providedBuf, expectedBuf);
 }
 
-/**
- * Extract client IP from request (handles proxies like Cloudflare, API Gateway)
- */
 function getClientIP(event: APIGatewayProxyEventV2): string | null {
-  // X-Forwarded-For can have multiple IPs: client, proxy1, proxy2
-  // The rightmost trusted proxy's left neighbor is the real client
-  // For API Gateway behind Cloudflare, CF-Connecting-IP is most reliable
   const cfConnectingIP = event.headers['cf-connecting-ip'];
   if (cfConnectingIP) return cfConnectingIP;
 
   const forwardedFor = event.headers['x-forwarded-for'];
   if (forwardedFor) {
-    // Take the first (leftmost) IP as client IP
     return forwardedFor.split(',')[0].trim();
   }
 
@@ -209,7 +325,6 @@ async function getLlmApiKey(): Promise<string> {
     throw new Error('Failed to get LLM API key');
   }
 
-  // Parse JSON secret format
   try {
     const parsed = JSON.parse(value);
     return parsed.api_key || parsed.apiKey || value;
@@ -225,7 +340,7 @@ async function sendTelegramMessage(
   replyToMessageId?: number
 ): Promise<void> {
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
-  
+
   const body: Record<string, unknown> = {
     chat_id: chatId,
     text,
@@ -255,10 +370,8 @@ async function generateResponse(
 ): Promise<string> {
   const apiKey = await getLlmApiKey();
 
-  // Build system prompt with persona and capabilities
   let systemPrompt = agent.persona || `You are ${agent.name}, a helpful AI assistant.`;
 
-  // Add agent's wallet info if available
   if (agent.wallets && agent.wallets.length > 0) {
     systemPrompt += `\n\n## Your Solana Wallets\n`;
     for (const wallet of agent.wallets) {
@@ -267,7 +380,6 @@ async function generateResponse(
     systemPrompt += `\nYou can share your wallet address when users ask about tipping, donations, or your wallet.`;
   }
 
-  // Add profile image info
   if (agent.profileImage?.url) {
     systemPrompt += `\n\n## Your Profile\n- Profile image: ${agent.profileImage.url}`;
   }
@@ -313,7 +425,6 @@ async function generateResponse(
 export async function handler(
   event: APIGatewayProxyEventV2
 ): Promise<APIGatewayProxyResultV2> {
-  // Sanitized logging - only log metadata, never message content
   const agentId = event.pathParameters?.agentId;
   const clientIP = getClientIP(event);
   console.log('Telegram webhook:', {
@@ -323,64 +434,49 @@ export async function handler(
     method: event.requestContext.http.method,
   });
 
-  // Always return 200 to prevent Telegram retries, even on auth failures
-  // This prevents information leakage about which agents exist
   const ok = () => ({ statusCode: 200, body: 'OK' });
 
   try {
-    // === SECURITY CHECK 1: Validate agent ID format ===
     if (!agentId || !/^[a-zA-Z0-9_-]+$/.test(agentId)) {
       console.warn('Invalid agent ID format');
       return ok();
     }
 
-    // === SECURITY CHECK 2: IP verification (if enabled) ===
     if (ENFORCE_IP_CHECK && clientIP) {
       if (!isValidTelegramIP(clientIP)) {
         console.warn(`Request from non-Telegram IP: ${clientIP}`);
-        // Don't immediately reject - could be legitimate proxy
-        // But log for monitoring
       }
     }
 
-    // === SECURITY CHECK 3: Get webhook secret and verify ===
     const webhookSecret = await getWebhookSecret(agentId);
     const providedSecret = event.headers['x-telegram-bot-api-secret-token'];
 
     if (webhookSecret) {
-      // Secret is configured - verify it
       if (!verifySecretToken(providedSecret, webhookSecret)) {
         console.warn(`Invalid secret token for agent: ${agentId}`);
-        return ok(); // Silent failure to prevent enumeration
+        return ok();
       }
     } else {
-      // No secret configured - log warning but allow (for backwards compatibility)
-      // TODO: Make this a hard failure once all agents have secrets configured
       console.warn(`No webhook secret configured for agent: ${agentId}`);
     }
 
-    // === Load agent config ===
     const agent = await getAgentConfig(agentId);
     if (!agent) {
-      // Don't reveal agent doesn't exist
       console.warn(`Agent not found: ${agentId}`);
       return ok();
     }
 
-    // Check if Telegram is enabled
     if (!agent.platforms.telegram?.enabled) {
       console.warn(`Telegram not enabled for agent: ${agentId}`);
       return ok();
     }
 
-    // Get Telegram token
     const token = await getTelegramToken(agentId);
     if (!token) {
       console.error(`Telegram token not configured for agent: ${agentId}`);
       return ok();
     }
 
-    // Parse the update
     const body = event.body ? JSON.parse(event.body) : null;
     if (!body) {
       return ok();
@@ -388,43 +484,61 @@ export async function handler(
 
     const update: TelegramUpdate = body;
 
-    // Only handle text messages for now
     if (!update.message?.text) {
       return ok();
     }
 
     const message = update.message;
     const chatId = message.chat.id;
-    const text = message.text!;  // Guaranteed by check above
+    const text = message.text!;
     const messageId = message.message_id;
 
-    // Skip if message is from a bot
     if (message.from?.username?.endsWith('bot')) {
       return ok();
     }
 
-    // Sanitized log - don't log message content
+    const botUsername = agent.platforms.telegram?.botUsername;
+    const userId = message.from?.id;
+
+    // Check if we should respond
+    const decision = await shouldRespond(agentId, message, botUsername);
+
     console.log('Processing message:', {
       agentId,
       chatId,
       messageId,
-      fromUser: message.from?.id,
+      fromUser: userId,
       textLength: text.length,
+      chatType: message.chat.type,
+      decision: decision.reason,
+      willRespond: decision.respond,
     });
 
-    // Generate response
+    if (!decision.respond) {
+      return ok();
+    }
+
+    // Set attention if mentioned
+    if (decision.setAttention && userId) {
+      await setAttention(agentId, chatId, userId, INITIAL_ATTENTION);
+    }
+
+    // Generate and send response
     const response = await generateResponse(
       agent,
       text,
       message.reply_to_message?.text
     );
 
-    // Send response
     await sendTelegramMessage(token, chatId, response, messageId);
+
+    // Decay attention after responding (not in DMs)
+    if (userId && decision.reason !== 'private_chat') {
+      await decayAttention(agentId, chatId, userId);
+    }
 
     return ok();
   } catch (error) {
-    // Log error but don't expose details
     console.error('Webhook handler error:', error instanceof Error ? error.message : 'Unknown');
     return ok();
   }
