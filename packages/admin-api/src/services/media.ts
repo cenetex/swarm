@@ -188,7 +188,8 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      'Authorization': `Token ${apiKey}`,
+      'Prefer': 'wait', // Wait for completion (up to 60s for fast models)
     },
     body: JSON.stringify({
       version,
@@ -204,8 +205,9 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Image generation failed to start: ${error}`);
+    const errorText = await response.text();
+    const status = response.status;
+    throw new Error(`Image generation failed: HTTP ${status} - ${errorText || 'Empty response from Replicate'}`);
   }
 
   // Poll for completion (Flux is usually fast - 5-15 seconds)
@@ -227,7 +229,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     const pollResponse = await fetch(`${REPLICATE_ENDPOINT}/${prediction.id}`, {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Authorization': `Token ${apiKey}` },
     });
     prediction = await pollResponse.json() as typeof prediction;
   }
