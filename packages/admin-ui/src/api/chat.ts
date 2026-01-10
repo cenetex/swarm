@@ -1,5 +1,11 @@
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
+interface PendingToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
 interface ChatResponse {
   response: string;
   history: Array<{
@@ -7,6 +13,7 @@ interface ChatResponse {
     content: string;
     tool_calls?: unknown[];
   }>;
+  pendingToolCall?: PendingToolCall;
   error?: string;
 }
 

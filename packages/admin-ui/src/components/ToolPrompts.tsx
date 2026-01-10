@@ -20,11 +20,19 @@ export function SecretPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   
-  const { secretKey, secretName, description } = toolCall.arguments as {
-    secretKey: string;
+  // Handle both old and new argument structures
+  const args = toolCall.arguments as {
+    secretKey?: string;
     secretName?: string;
+    secretType?: string;
+    label?: string;
     description?: string;
+    instructions?: string;
   };
+  
+  const secretKey = args.secretType || args.secretKey || 'secret';
+  const secretName = args.label || args.secretName || secretKey;
+  const description = args.instructions || args.description;
 
   const handleSubmit = async () => {
     if (!value.trim() || isSubmitting) return;
@@ -46,7 +54,7 @@ export function SecretPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
         <span className="text-green-300">
-          {secretName || secretKey} saved securely
+          {secretName} saved securely
         </span>
       </div>
     );
@@ -62,7 +70,7 @@ export function SecretPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
         </div>
         <div className="flex-1">
           <h4 className="font-medium text-white">
-            {secretName || secretKey}
+            {secretName}
           </h4>
           {description && (
             <p className="text-sm text-dark-300 mt-1">{description}</p>

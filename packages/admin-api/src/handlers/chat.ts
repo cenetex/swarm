@@ -450,7 +450,12 @@ async function processChat(
   agent?: AgentContext
 ): Promise<{ 
   response: string; 
-  history: AdminChatMessage[]; 
+  history: AdminChatMessage[];
+  pendingToolCall?: {
+    id: string;
+    name: string;
+    arguments: Record<string, unknown>;
+  };
 }> {
   const messages: AdminChatMessage[] = [
     ...conversationHistory,
@@ -458,6 +463,7 @@ async function processChat(
   ];
 
   let response: string | undefined;
+  let pendingToolCall: { id: string; name: string; arguments: Record<string, unknown> } | undefined;
   let iterations = 0;
   const maxIterations = 10; // Prevent infinite loops
 
@@ -467,6 +473,28 @@ async function processChat(
     const llmResponse = await callLLM(messages, agent);
     
     if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
+      // Check if any tool call is a request_secret - these need user input
+      const secretRequest = llmResponse.toolCalls.find(tc => tc.function.name === 'request_secret');
+      
+      if (secretRequest) {
+        // Don't execute request_secret - return it to the frontend for user input
+        const args = JSON.parse(secretRequest.function.arguments);
+        pendingToolCall = {
+          id: secretRequest.id,
+          name: 'request_secret',
+          arguments: args,
+        };
+        
+        // Add the assistant message with the tool call (but not executed)
+        response = llmResponse.message || '';
+        messages.push({
+          role: 'assistant',
+          content: response,
+          tool_calls: llmResponse.toolCalls,
+        });
+        break;
+      }
+      
       // Add assistant message with tool calls
       messages.push({
         role: 'assistant',
@@ -499,7 +527,7 @@ async function processChat(
     messages.push({ role: 'assistant', content: response });
   }
 
-  return { response, history: messages };
+  return { response, history: messages, pendingToolCall };
 }
 
 /**
@@ -554,6 +582,8 @@ export async function handler(
       body: JSON.stringify({
         response: result.response,
         history: result.history,
+        // Include pending tool call if one needs user input
+        pendingToolCall: result.pendingToolCall,
       }),
     };
   } catch (error) {

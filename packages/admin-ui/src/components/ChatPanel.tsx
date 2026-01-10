@@ -60,9 +60,18 @@ export function ChatPanel() {
         const currentMessages = useAgentStore.getState().chats[activeAgent.id] || [];
         const loadingMessage = currentMessages.find((m) => m.isLoading);
         if (loadingMessage) {
+          // Check if there's a pending tool call that needs user input
+          const pendingToolCall = response.pendingToolCall;
           updateMessage(activeAgent.id, loadingMessage.id, {
             content: response.response,
             isLoading: false,
+            // Add tool call for rendering if there's a pending one
+            toolCalls: pendingToolCall ? [{
+              id: pendingToolCall.id,
+              name: pendingToolCall.name,
+              arguments: pendingToolCall.arguments,
+              status: 'pending' as const,
+            }] : undefined,
           });
         }
       } catch (error) {
@@ -112,7 +121,7 @@ export function ChatPanel() {
     async (toolCallId: string, result: unknown) => {
       if (!activeAgent) return;
 
-      // If it's a secret submission, save it
+      // If it's a secret submission, save it and continue the chat
       const secretResult = result as { secretKey?: string; value?: string };
       if (secretResult.secretKey && secretResult.value) {
         try {
@@ -133,13 +142,19 @@ export function ChatPanel() {
               break;
             }
           }
+          
+          // Send a follow-up message to let the agent know the secret was stored
+          // This continues the conversation naturally
+          const followUpContent = `I've entered my ${secretResult.secretKey.replace(/_/g, ' ')}.`;
+          await handleSendMessage(followUpContent);
+          
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to save secret';
           setError(errorMsg);
         }
       }
     },
-    [activeAgent, updateMessage, setError]
+    [activeAgent, updateMessage, setError, handleSendMessage]
   );
 
   return (
