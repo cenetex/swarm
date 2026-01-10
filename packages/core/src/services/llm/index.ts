@@ -21,6 +21,64 @@ import type {
   ToolCall,
 } from '../../types/index.js';
 
+const OPENROUTER_TIMEOUT_MS = 20_000;
+const OPENROUTER_RETRY_COUNT = 2;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+  retries: number
+): Promise<Response> {
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (attempt <= retries) {
+    try {
+      const response = await fetchWithTimeout(url, options, timeoutMs);
+      if (response.ok) {
+        return response;
+      }
+
+      const shouldRetry = response.status === 429 || response.status >= 500;
+      if (!shouldRetry) {
+        return response;
+      }
+
+      lastError = new Error(`HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+    }
+
+    attempt += 1;
+    if (attempt > retries) {
+      break;
+    }
+    await sleep(250 * attempt);
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Fetch failed');
+}
+
 /**
  * Convert a Zod schema to JSON Schema for LLM tool definitions
  */
@@ -165,16 +223,21 @@ export class OpenRouterLLMService implements LLMService {
       body.tool_choice = 'auto';
     }
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-        'HTTP-Referer': 'https://swarm.ai',
-        'X-Title': 'Swarm Agent',
+    const response = await fetchWithRetry(
+      `${this.baseUrl}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+          'HTTP-Referer': 'https://swarm.ai',
+          'X-Title': 'Swarm Agent',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+      OPENROUTER_TIMEOUT_MS,
+      OPENROUTER_RETRY_COUNT
+    );
 
     if (!response.ok) {
       const error = await response.text();
@@ -343,13 +406,6 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
     '504',
   ],
 };
-
-/**
- * Sleep for a specified duration
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 /**
  * Check if an error is retryable

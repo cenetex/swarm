@@ -29,6 +29,27 @@ const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/c
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
 
+// Timeout settings
+const LLM_TIMEOUT_MS = 60_000; // 60 seconds for LLM calls (can be slow)
+const API_TIMEOUT_MS = 10_000; // 10 seconds for other API calls
+
+/**
+ * Fetch with timeout using AbortController
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 // Cache the API key after first fetch
 let cachedApiKey: string | null = null;
@@ -808,9 +829,11 @@ async function executeTool(
 
       // List available LLM models from OpenRouter
       case 'list_available_models': {
-        const modelsResponse = await fetch('https://openrouter.ai/api/v1/models', {
-          headers: { 'Content-Type': 'application/json' },
-        });
+        const modelsResponse = await fetchWithTimeout(
+          'https://openrouter.ai/api/v1/models',
+          { headers: { 'Content-Type': 'application/json' } },
+          API_TIMEOUT_MS
+        );
 
         if (!modelsResponse.ok) {
           result = { error: 'Failed to fetch models from OpenRouter' };
@@ -901,9 +924,11 @@ async function executeTool(
       // Request model selection dropdown
       case 'request_model_selection': {
         // Fetch models for the dropdown
-        const modelsResponse = await fetch('https://openrouter.ai/api/v1/models', {
-          headers: { 'Content-Type': 'application/json' },
-        });
+        const modelsResponse = await fetchWithTimeout(
+          'https://openrouter.ai/api/v1/models',
+          { headers: { 'Content-Type': 'application/json' } },
+          API_TIMEOUT_MS
+        );
 
         let models: Array<{ id: string; name: string }> = [];
 
@@ -1387,25 +1412,29 @@ async function callLLM(
   // Sanitize messages to ensure valid format (remove orphaned tool results)
   const sanitizedMessages = sanitizeMessages(messages);
   
-  const response = await fetch(LLM_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://swarm.admin',
-      'X-Title': 'Swarm Admin',
+  const response = await fetchWithTimeout(
+    LLM_ENDPOINT,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://swarm.admin',
+        'X-Title': 'Swarm Admin',
+      },
+      body: JSON.stringify({
+        model: LLM_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...sanitizedMessages,
+        ],
+        tools: AGENT_TOOLS,
+        tool_choice: 'auto',
+        max_tokens: 2048,
+      }),
     },
-    body: JSON.stringify({
-      model: LLM_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...sanitizedMessages,
-      ],
-      tools: AGENT_TOOLS,
-      tool_choice: 'auto',
-      max_tokens: 2048,
-    }),
-  });
+    LLM_TIMEOUT_MS
+  );
 
   if (!response.ok) {
     const text = await response.text();

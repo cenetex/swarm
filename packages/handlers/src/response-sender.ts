@@ -110,7 +110,11 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       const mediaActions = response.actions.filter(
         (a: ResponseAction) => a.type === 'take_selfie' || a.type === 'generate_video'
       );
-      const hasSendMessageAction = response.actions.some(
+      const nonMediaActions = response.actions.filter(
+        (a: ResponseAction) => a.type !== 'take_selfie' && a.type !== 'generate_video'
+      );
+      const hasNonMediaActions = nonMediaActions.length > 0;
+      const hasSendMessageAction = nonMediaActions.some(
         (a: ResponseAction) => a.type === 'send_message'
       );
       let sentMessages: string[] = [];
@@ -135,16 +139,10 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
 
         logger.info('Media generation queued', { count: mediaActions.length });
 
-        sendSuccess = true;
-
         // For now, send text response without media
         // Media will be sent when generation completes via callback
-        const textActions = response.actions.filter(
-          (a: ResponseAction) => a.type !== 'take_selfie' && a.type !== 'generate_video'
-        );
-
-        if (textActions.length > 0) {
-          const textResponse = { ...response, actions: textActions };
+        if (hasNonMediaActions) {
+          const textResponse = { ...response, actions: nonMediaActions };
           const result = await outboundSender.send(textResponse);
           sentMessages = result.sentMessages;
           sendSuccess = result.success;
@@ -180,7 +178,9 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
         );
       }
 
-      const shouldMarkResponse = hasSendMessageAction ? sentMessages.length > 0 : sendSuccess;
+      const shouldMarkResponse = hasNonMediaActions
+        ? (hasSendMessageAction ? sentMessages.length > 0 : sendSuccess)
+        : false;
       if (shouldMarkResponse) {
         await stateService.markResponseSent(
           AGENT_ID,

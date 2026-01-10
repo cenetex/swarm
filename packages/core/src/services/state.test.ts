@@ -28,6 +28,64 @@ class InMemoryStateService extends DynamoDBStateService {
   setState(state: ChannelState): void {
     this.store.set(this.key(state.agentId, state.channelId), state);
   }
+
+  // Override to avoid DynamoDB UpdateCommand in tests
+  override async addMessageToChannel(
+    agentId: string,
+    channelId: string,
+    platform: Platform,
+    message: ContextMessage,
+    maxMessages: number = CHANNEL_CONFIG.MAX_BUFFER_SIZE,
+    chatType?: 'private' | 'group' | 'supergroup' | 'channel',
+    chatTitle?: string
+  ): Promise<ChannelState> {
+    const now = Date.now();
+    let state = await this.getChannelState(agentId, channelId);
+    const isDirect = Boolean(message.isMention || message.isReplyToBot);
+
+    if (!state) {
+      state = {
+        agentId,
+        channelId,
+        platform,
+        recentMessages: [],
+        lastActivityAt: now,
+        messageCount: 0,
+        state: 'IDLE',
+        stateChangedAt: now,
+        chatType,
+        chatTitle,
+      };
+    }
+
+    // Add message to buffer
+    state.recentMessages.push(message);
+    if (state.recentMessages.length > maxMessages) {
+      state.recentMessages = state.recentMessages.slice(-maxMessages);
+    }
+
+    state.lastActivityAt = now;
+    state.messageCount++;
+
+    // State machine logic
+    const previousState = state.state;
+    if (isDirect) {
+      state.state = 'ACTIVE';
+      state.directEngagementAt = now;
+    }
+
+    if (state.state !== previousState) {
+      state.stateChangedAt = now;
+    }
+
+    if (chatType) state.chatType = chatType;
+    if (chatTitle) state.chatTitle = chatTitle;
+
+    state.ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
+
+    await this.updateChannelState(state);
+    return state;
+  }
 }
 
 afterEach(() => {
