@@ -10,6 +10,7 @@ import { Construct } from 'constructs';
 import { SharedInfrastructure } from '../constructs/shared.js';
 import { AgentConstruct } from '../constructs/agent.js';
 import { AdminUi } from '../constructs/admin-ui.js';
+import { AdminApiConstruct } from '../constructs/admin-api.js';
 import type { AgentConfig } from '@swarm/core';
 
 export interface SwarmStackProps extends cdk.StackProps {
@@ -47,11 +48,27 @@ export interface SwarmStackProps extends cdk.StackProps {
    * ACM certificate ARN for Admin UI custom domain (must be in us-east-1)
    */
   adminCertificateArn?: string;
+
+  /**
+   * Cloudflare Access team domain (e.g., 'yourteam.cloudflareaccess.com')
+   */
+  cloudflareTeamDomain?: string;
+
+  /**
+   * Admin emails (comma-separated)
+   */
+  adminEmails?: string;
+
+  /**
+   * OpenRouter API key secret ARN
+   */
+  openRouterApiKeyArn?: string;
 }
 
 export class SwarmStack extends cdk.Stack {
   public readonly shared: SharedInfrastructure;
   public readonly adminUi: AdminUi;
+  public readonly adminApi?: AdminApiConstruct;
   public readonly agents: Map<string, AgentConstruct> = new Map();
 
   constructor(scope: Construct, id: string, props: SwarmStackProps) {
@@ -65,6 +82,9 @@ export class SwarmStack extends cdk.Stack {
       agentIds,
       adminDomain,
       adminCertificateArn,
+      cloudflareTeamDomain,
+      adminEmails,
+      openRouterApiKeyArn,
     } = props;
 
     // Create shared infrastructure
@@ -72,6 +92,16 @@ export class SwarmStack extends cdk.Stack {
       environment,
       enableCdn,
     });
+
+    // Create Admin API if Cloudflare Access is configured
+    if (cloudflareTeamDomain && adminEmails) {
+      this.adminApi = new AdminApiConstruct(this, 'AdminApi', {
+        cloudflareTeamDomain,
+        adminEmails,
+        openRouterApiKeyArn,
+        environment,
+      });
+    }
 
     // Create Admin UI with CloudFront
     this.adminUi = new AdminUi(this, 'AdminUi', {

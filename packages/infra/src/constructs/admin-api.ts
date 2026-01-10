@@ -88,7 +88,7 @@ export class AdminApiConstruct extends Construct {
     // Lambda function for chat handler
     this.chatHandler = new nodejs.NodejsFunction(this, 'ChatHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
-      entry: path.join(__dirname, '../../admin-api/src/handlers/chat.ts'),
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/chat.ts'),
       handler: 'handler',
       timeout: cdk.Duration.seconds(60),
       memorySize: 512,
@@ -100,6 +100,7 @@ export class AdminApiConstruct extends Construct {
         ADMIN_EMAILS: adminEmails,
         LLM_ENDPOINT: 'https://openrouter.ai/api/v1/chat/completions',
         LLM_MODEL: 'anthropic/claude-sonnet-4',
+        LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
         NODE_ENV: environment,
       },
       bundling: {

@@ -130,20 +130,28 @@ jobs:
             --query "Stacks[0].Outputs[?ExportName=='swarm-admin-ui-url-$CDK_ENV'].OutputValue" \
             --output text)
           
+          # Get Admin API endpoint if it exists
+          ADMIN_API_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
+            --query "Stacks[0].Outputs[?contains(OutputKey, 'ApiEndpoint')].OutputValue" \
+            --output text 2>/dev/null || echo "")
+          
           echo "bucket=$ADMIN_BUCKET" >> $GITHUB_OUTPUT
           echo "distribution=$ADMIN_DISTRIBUTION" >> $GITHUB_OUTPUT
           echo "url=$ADMIN_URL" >> $GITHUB_OUTPUT
+          echo "api_url=$ADMIN_API_URL" >> $GITHUB_OUTPUT
           
           echo "## Deployed Stacks ($ENV_NAME)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Stack: \`$STACK_NAME\`" >> $GITHUB_STEP_SUMMARY
           echo "Admin UI Bucket: \`$ADMIN_BUCKET\`" >> $GITHUB_STEP_SUMMARY
           echo "Admin UI URL: $ADMIN_URL" >> $GITHUB_STEP_SUMMARY
+          echo "Admin API URL: $ADMIN_API_URL" >> $GITHUB_STEP_SUMMARY
 
     outputs:
       admin-bucket: ${{ steps.stack-outputs.outputs.bucket }}
       admin-distribution: ${{ steps.stack-outputs.outputs.distribution }}
       admin-url: ${{ steps.stack-outputs.outputs.url }}
+      admin-api-url: ${{ steps.stack-outputs.outputs.api_url }}
 
   deploy-admin-ui:
     name: Deploy Admin UI
@@ -171,7 +179,7 @@ jobs:
         working-directory: packages/admin-ui
         run: pnpm build
         env:
-          VITE_API_URL: ${{ secrets.ADMIN_API_URL }}
+          VITE_API_URL: ${{ needs.deploy.outputs.admin-api-url }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
