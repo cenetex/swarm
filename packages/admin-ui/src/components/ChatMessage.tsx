@@ -1,8 +1,8 @@
 import ReactMarkdown from 'react-markdown';
-import type { Message } from '../store/chatStore';
+import type { ChatMessage as ChatMessageType } from '../types';
 
 interface ChatMessageProps {
-  message: Message;
+  message: ChatMessageType;
 }
 
 export function ChatMessage({ message }: ChatMessageProps) {

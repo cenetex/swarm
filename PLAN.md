@@ -4,7 +4,7 @@
 
 ## Implementation Status
 
-> **Last Updated:** 2025-01-10
+> **Last Updated:** 2026-01-09
 
 ### Overall Progress
 
@@ -17,11 +17,13 @@
 | Services | ✅ DONE | State, Activity, LLM (with retry), Secrets complete |
 | Handlers | ✅ DONE | All handlers implemented |
 | Infrastructure (CDK) | ✅ DONE | Full stack with shared + per-agent resources |
+| **Lambda Layer** | ✅ DONE | `@swarm/layer` - AWS SDK, OpenAI deps |
 | Agent Templates | ✅ DONE | Template config.yaml and persona.md |
 | Agent Configs | ⏳ NOT STARTED | No real agents configured yet |
 | **Admin API** | ✅ DONE | `@swarm/admin-api` - Chat handler, services, auth |
-| **Admin UI** | ✅ DONE | `@swarm/admin-ui` - React chat interface |
-| **Admin Infra** | ✅ DONE | CDK construct for admin API deployment |
+| **Admin UI** | ✅ DONE | `@swarm/admin-ui` - React chat interface with multi-agent support |
+| **Admin Infra** | ✅ DONE | CDK construct with custom domain support (admin-staging.rati.chat) |
+| **CI/CD** | ✅ DONE | GitHub Actions with layer bundling, CDK deploy, S3 sync |
 | **Secrets Management** | ✅ DONE | Write-only secrets with KMS encryption |
 | **Wallet Generation** | ✅ DONE | Solana/Ethereum key generation in Lambda |
 | Tests | ⏳ NOT STARTED | No test coverage |
@@ -38,6 +40,10 @@
 | Global API Keys | ✅ | Shared keys with per-agent override |
 | Wallet Generation | ✅ | Solana & Ethereum keypair generation |
 | Deploy Trigger | ⚠️ | Placeholder (CDK deploy integration pending) |
+| **Multi-Agent UI** | ✅ | Discord-like sidebar with agent list |
+| **Agent Avatars** | ✅ | DiceBear auto-generated avatars |
+| **Local Persistence** | ✅ | Zustand with localStorage persistence |
+| **Custom Domain** | ✅ | admin-staging.rati.chat working |
 
 ### Critical Path to MVP
 
@@ -854,6 +860,11 @@ After setup, test the flow:
 aws-swarm/
 ├── README.md                            # [ ] NOT CREATED
 │
+├── packages/layer/                      # [x] DONE - Lambda Layer Dependencies
+│   ├── package.json                     # AWS SDK, OpenAI deps
+│   └── nodejs/                          # Built by CI workflow
+│       └── node_modules/                # Installed at deploy time
+│
 ├── packages/admin-api/                  # [x] DONE - Admin API Backend
 │   ├── package.json
 │   ├── tsconfig.json
@@ -876,20 +887,29 @@ aws-swarm/
 │   ├── package.json
 │   ├── vite.config.ts
 │   ├── tailwind.config.js
+│   ├── index.html
+│   ├── dist/                            # Built output (deployed to S3)
 │   └── src/
 │       ├── main.tsx
+│       ├── index.css                    # Tailwind imports
 │       ├── App.tsx                      # Main chat interface
 │       ├── api/
 │       │   ├── index.ts
 │       │   └── chat.ts                  # API client
+│       ├── types/
+│       │   ├── index.ts
+│       │   └── agent.ts                 # Agent, ChatMessage types
 │       ├── store/
 │       │   ├── index.ts
-│       │   └── chatStore.ts             # Zustand state
+│       │   ├── chatStore.ts             # Legacy chat state
+│       │   └── agents.ts                # Multi-agent store with persistence
 │       └── components/
 │           ├── index.ts
 │           ├── Header.tsx
 │           ├── ChatInput.tsx
-│           └── ChatMessage.tsx
+│           ├── ChatMessage.tsx
+│           ├── AgentSidebar.tsx         # Discord-like agent list
+│           └── AgentConfigModal.tsx     # Agent configuration modal
 │
 ├── package.json                         # [x] DONE
 ├── pnpm-workspace.yaml                  # [x] DONE
@@ -915,7 +935,8 @@ aws-swarm/
 │           ├── index.ts                 # [x] DONE
 │           ├── shared.ts                # [x] DONE - DynamoDB, S3, CloudFront, Layer
 │           ├── agent.ts                 # [x] DONE - SQS, API Gateway, Lambdas
-│           └── admin-api.ts             # [x] DONE - Admin API, KMS, DynamoDB
+│           ├── admin-api.ts             # [x] DONE - Admin API, KMS, DynamoDB
+│           └── admin-ui.ts              # [x] DONE - S3, CloudFront, custom domain
 │
 ├── packages/core/
 │   ├── package.json                     # [x] DONE
@@ -1026,16 +1047,18 @@ aws-swarm/
 
 ### Immediate (Domain & Deployment)
 
-1. **Setup admin.rati.chat Domain**
-   - [ ] Add rati.chat domain to Cloudflare (if not already)
-   - [ ] Create Cloudflare Access application for admin.rati.chat
-   - [ ] Configure authentication methods (fingerprint/WebAuthn, Google, GitHub)
-   - [ ] Deploy admin UI to S3 + CloudFront
-   - [ ] Point admin.rati.chat to CloudFront via CNAME
+1. **Setup admin.rati.chat Domain** *(STAGING DONE)*
+   - [x] Add rati.chat domain to Cloudflare
+   - [x] Create Cloudflare Access application (cenetex.cloudflareaccess.com)
+   - [x] Configure ACM certificate (us-east-1)
+   - [x] Deploy admin UI to S3 + CloudFront (admin-staging.rati.chat)
+   - [ ] Configure Cloudflare Access policies (fingerprint/WebAuthn, Google, GitHub)
+   - [ ] Point admin.rati.chat (prod) to CloudFront via CNAME
 
-2. **Deploy Admin API**
-   - [ ] Set OpenRouter API key in Secrets Manager
-   - [ ] Deploy AdminApiConstruct via CDK
+2. **Deploy Admin API** *(STAGING DONE)*
+   - [x] Set OpenRouter API key in Secrets Manager
+   - [x] Deploy AdminApiConstruct via CDK
+   - [x] GitHub Actions workflow deploys automatically
    - [ ] Test /health endpoint
    - [ ] Test /chat endpoint with Cloudflare Access
 
