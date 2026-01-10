@@ -1,6 +1,11 @@
 /**
  * State Service - DynamoDB-based state management
  * Multi-tenant storage for channel state, user cooldowns, and agent state
+ *
+ * Supports Kyro-style channel-aware messaging:
+ * - State machine: IDLE → ACTIVE → COOLDOWN
+ * - Response triggers: direct engagement, message threshold, conversation gap
+ * - Message buffering with context preservation
  */
 import {
   DynamoDBClient,
@@ -15,11 +20,37 @@ import {
 import type {
   StateService,
   ChannelState,
+  ChannelStateMachine,
   UserCooldown,
   Platform,
   ContextMessage,
   AgentConfig,
+  ResponseDecision,
+  ResponseTrigger,
 } from '../types/index.js';
+
+// =============================================================================
+// CHANNEL STATE CONFIGURATION (Kyro-style)
+// =============================================================================
+
+export const CHANNEL_CONFIG = {
+  // Buffer settings
+  MAX_BUFFER_SIZE: 50,           // Max messages to keep in buffer
+  BUFFER_TTL_SECONDS: 3600,      // 1 hour TTL for channel state
+
+  // State machine timings
+  COOLDOWN_DURATION_MS: 10000,   // 10 seconds cooldown after response
+  ACTIVE_TIMEOUT_MS: 60000,      // 60 seconds before ACTIVE → IDLE
+
+  // Response triggers
+  DIRECT_ENGAGEMENT_DELAY_MS: 0,      // Immediate for mentions/replies
+  MESSAGE_THRESHOLD: 5,                // Respond after N messages accumulated
+  CONVERSATION_GAP_MS: 30000,          // 30 seconds of silence triggers response
+
+  // Response timing
+  MIN_RESPONSE_DELAY_MS: 500,     // Minimum delay to seem natural
+  MAX_RESPONSE_DELAY_MS: 3000,    // Maximum random delay
+};
 
 export class DynamoDBStateService implements StateService {
   private docClient: DynamoDBDocumentClient;

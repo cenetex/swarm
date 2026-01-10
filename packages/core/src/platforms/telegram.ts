@@ -13,17 +13,282 @@ import type {
   MessageContent,
   MediaAttachment,
   TelegramConfig,
+  Mention,
 } from '../types/index.js';
+
+// =============================================================================
+// SHARED TELEGRAM ENVELOPE BUILDER
+// =============================================================================
+
+/**
+ * Configuration for building a Telegram envelope
+ */
+export interface TelegramEnvelopeConfig {
+  agentId: string;
+  botUsername?: string;
+  botId?: number;
+  allowedChatTypes?: ('private' | 'group' | 'supergroup' | 'channel')[];
+}
+
+/**
+ * Build a SwarmEnvelope from a raw Telegram Update
+ *
+ * This is a shared utility function that can be used by both:
+ * - packages/handlers/src/telegram-webhook.ts (core pipeline)
+ * - packages/admin-api/src/handlers/telegram-webhook.ts (admin agent)
+ *
+ * It handles:
+ * - Extracting sender, content, mentions from the update
+ * - Detecting direct engagement (isMention, isReplyToBot)
+ * - Preserving chat type and title for channel state
+ * - Generating idempotency keys
+ */
+export function buildTelegramEnvelope(
+  update: Update,
+  config: TelegramEnvelopeConfig
+): SwarmEnvelope | null {
+  // Handle different update types
+  const message = update.message || update.edited_message || update.channel_post;
+  if (!message) {
+    return null;
+  }
+
+  // Check if chat type is allowed
+  if (config.allowedChatTypes) {
+    const chatType = message.chat.type as 'private' | 'group' | 'supergroup' | 'channel';
+    if (!config.allowedChatTypes.includes(chatType)) {
+      return null;
+    }
+  }
+
+  const sender = extractSenderInfo(message);
+  const content = extractMessageContent(message);
+  const mentions = extractMentions(message);
+
+  // Detect direct engagement
+  const text = message.text || message.caption || '';
+  const isMention = config.botUsername
+    ? new RegExp(`@${config.botUsername}\\b`, 'i').test(text)
+    : false;
+
+  const isReplyToBot = !!(
+    (config.botId && message.reply_to_message?.from?.id === config.botId) ||
+    (config.botUsername && message.reply_to_message?.from?.username?.toLowerCase() === config.botUsername.toLowerCase())
+  );
+
+  // Build the envelope
+  const envelope: SwarmEnvelope = {
+    agentId: config.agentId,
+    platform: 'telegram',
+    messageId: message.message_id.toString(),
+    conversationId: message.chat.id.toString(),
+    timestamp: message.date * 1000,
+    sender,
+    content,
+    mentions,
+    replyTo: message.reply_to_message?.message_id?.toString(),
+    raw: update,
+    metadata: {
+      receivedAt: Date.now(),
+      priority: (isMention || isReplyToBot) ? 'high' : 'normal',
+      idempotencyKey: `telegram:${config.agentId}:${message.message_id}`,
+
+      // Direct engagement detection
+      isMention,
+      isReplyToBot,
+
+      // Chat context
+      chatType: message.chat.type as 'private' | 'group' | 'supergroup' | 'channel',
+      chatTitle: 'title' in message.chat ? message.chat.title : undefined,
+
+      // Platform update ID for deduplication
+      platformUpdateId: update.update_id,
+    },
+  };
+
+  return envelope;
+}
+
+/**
+ * Extract sender information from Telegram message
+ */
+function extractSenderInfo(message: Message): SenderInfo {
+  const from = message.from;
+
+  return {
+    id: from?.id.toString() || 'unknown',
+    username: from?.username,
+    displayName: from?.first_name + (from?.last_name ? ` ${from.last_name}` : ''),
+    isBot: from?.is_bot || false,
+    platform: 'telegram',
+    platformUserId: from?.id.toString() || 'unknown',
+  };
+}
+
+/**
+ * Extract message content from Telegram message
+ */
+function extractMessageContent(message: Message): MessageContent {
+  const content: MessageContent = {};
+
+  // Text content
+  content.text = message.text || message.caption || '';
+
+  // Check for command
+  if (message.entities) {
+    const commandEntity = message.entities.find(e => e.type === 'bot_command' && e.offset === 0);
+    if (commandEntity && content.text) {
+      const fullCommand = content.text.slice(commandEntity.offset, commandEntity.offset + commandEntity.length);
+      const [command] = fullCommand.split('@'); // Remove @botname suffix
+      const args = content.text.slice(commandEntity.offset + commandEntity.length).trim().split(/\s+/).filter(Boolean);
+
+      content.command = {
+        command: command.slice(1), // Remove leading /
+        args,
+        raw: content.text,
+      };
+    }
+  }
+
+  // Media attachments
+  const mediaAttachments: MediaAttachment[] = [];
+
+  if (message.photo) {
+    // Get highest resolution photo
+    const photo = message.photo[message.photo.length - 1];
+    mediaAttachments.push({
+      type: 'photo',
+      fileId: photo.file_id,
+      size: photo.file_size,
+    });
+  }
+
+  if (message.video) {
+    mediaAttachments.push({
+      type: 'video',
+      fileId: message.video.file_id,
+      mimeType: message.video.mime_type,
+      size: message.video.file_size,
+    });
+  }
+
+  if (message.animation) {
+    mediaAttachments.push({
+      type: 'animation',
+      fileId: message.animation.file_id,
+      mimeType: message.animation.mime_type,
+      size: message.animation.file_size,
+    });
+  }
+
+  if (message.document) {
+    mediaAttachments.push({
+      type: 'document',
+      fileId: message.document.file_id,
+      mimeType: message.document.mime_type,
+      size: message.document.file_size,
+    });
+  }
+
+  if (mediaAttachments.length > 0) {
+    content.media = mediaAttachments;
+  }
+
+  // Sticker
+  if (message.sticker) {
+    content.sticker = {
+      fileId: message.sticker.file_id,
+      emoji: message.sticker.emoji,
+      setName: message.sticker.set_name,
+      isAnimated: message.sticker.is_animated || false,
+    };
+  }
+
+  return content;
+}
+
+/**
+ * Extract mentions from Telegram message
+ */
+function extractMentions(message: Message): Mention[] {
+  const mentions: Mention[] = [];
+
+  if (!message.entities || !message.text) {
+    return mentions;
+  }
+
+  for (const entity of message.entities) {
+    if (entity.type === 'mention') {
+      const username = message.text.slice(entity.offset + 1, entity.offset + entity.length);
+      mentions.push({
+        userId: username, // We don't have the user ID for @mentions
+        username,
+        offset: entity.offset,
+        length: entity.length,
+      });
+    } else if (entity.type === 'text_mention' && entity.user) {
+      mentions.push({
+        userId: entity.user.id.toString(),
+        username: entity.user.username,
+        offset: entity.offset,
+        length: entity.length,
+      });
+    }
+  }
+
+  return mentions;
+}
+
+/**
+ * Convert a SwarmEnvelope back to a BufferedMessage for channel state
+ * Useful when migrating to unified channel state
+ */
+export interface BufferedMessageCompat {
+  messageId: number;
+  userId: number;
+  userName: string;
+  username?: string;
+  text: string;
+  timestamp: number;
+  replyToMessageId?: number;
+  replyToUserId?: number;
+  isMention?: boolean;
+  isReplyToBot?: boolean;
+}
+
+export function envelopeToBufferedMessage(envelope: SwarmEnvelope): BufferedMessageCompat {
+  const raw = envelope.raw as Update;
+  const message = raw.message || raw.edited_message || raw.channel_post;
+
+  return {
+    messageId: parseInt(envelope.messageId),
+    userId: parseInt(envelope.sender.platformUserId) || 0,
+    userName: envelope.sender.displayName || envelope.sender.username || 'Unknown',
+    username: envelope.sender.username,
+    text: envelope.content.text || '',
+    timestamp: envelope.timestamp,
+    replyToMessageId: envelope.replyTo ? parseInt(envelope.replyTo) : undefined,
+    replyToUserId: message?.reply_to_message?.from?.id,
+    isMention: envelope.metadata.isMention,
+    isReplyToBot: envelope.metadata.isReplyToBot,
+  };
+}
+
+// =============================================================================
+// TELEGRAM ADAPTER CLASS
+// =============================================================================
 
 export class TelegramAdapter extends PlatformAdapter {
   readonly platform = 'telegram' as const;
   private bot: Bot | null = null;
   private config: TelegramConfig;
+  private botId?: number;
 
-  constructor(agentConfig: AgentConfig, private readonly botToken: string) {
+  constructor(agentConfig: AgentConfig, private readonly botToken: string, botId?: number) {
     super(agentConfig);
     this.config = agentConfig.platforms.telegram!;
-    
+    this.botId = botId;
+
     if (this.isConfigured()) {
       this.bot = new Bot(botToken);
     }
@@ -37,11 +302,18 @@ export class TelegramAdapter extends PlatformAdapter {
     return `Telegram @${this.config.botUsername}`;
   }
 
+  /**
+   * Set the bot ID (useful when retrieved from getMe() after construction)
+   */
+  setBotId(botId: number): void {
+    this.botId = botId;
+  }
+
   async verifyRequest(body: Buffer, headers: Record<string, string>): Promise<boolean> {
     // Grammy handles verification internally via secret_token
     // For additional security, you can verify the X-Telegram-Bot-Api-Secret-Token header
     const secretToken = headers['x-telegram-bot-api-secret-token'];
-    
+
     // If we're using a secret token, verify it matches
     // This should be set when registering the webhook
     if (secretToken) {
@@ -49,7 +321,7 @@ export class TelegramAdapter extends PlatformAdapter {
       const expectedSecret = this.generateWebhookSecret();
       return secretToken === expectedSecret;
     }
-    
+
     // Basic validation: ensure body is valid JSON
     try {
       JSON.parse(body.toString());
@@ -59,39 +331,19 @@ export class TelegramAdapter extends PlatformAdapter {
     }
   }
 
+  /**
+   * Parse platform-specific message into universal SwarmEnvelope
+   * Uses the shared buildTelegramEnvelope function
+   */
   async parseMessage(body: unknown): Promise<SwarmEnvelope | null> {
     const update = body as Update;
-    
-    // Handle different update types
-    const message = update.message || update.edited_message || update.channel_post;
-    if (!message) {
-      return null;
-    }
 
-    // Check if chat type is allowed
-    if (this.config.allowedChatTypes) {
-      if (!this.config.allowedChatTypes.includes(message.chat.type as 'private' | 'group' | 'supergroup' | 'channel')) {
-        return null;
-      }
-    }
-
-    const sender = this.extractSender(message);
-    const content = this.extractContent(message);
-    const mentions = this.extractMentions(message);
-
-    const envelope = this.createBaseEnvelope({
-      messageId: message.message_id.toString(),
-      conversationId: message.chat.id.toString(),
-      timestamp: message.date * 1000,
-      sender,
-      content,
-      raw: update,
+    return buildTelegramEnvelope(update, {
+      agentId: this.agentConfig.id,
+      botUsername: this.config.botUsername,
+      botId: this.botId,
+      allowedChatTypes: this.config.allowedChatTypes,
     });
-
-    envelope.mentions = mentions;
-    envelope.replyTo = message.reply_to_message?.message_id.toString();
-
-    return envelope;
   }
 
   async executeAction(
@@ -224,136 +476,6 @@ export class TelegramAdapter extends PlatformAdapter {
     } else {
       await this.bot.api.sendMessage(chatIdNum, text, replyParams);
     }
-  }
-
-  /**
-   * Extract sender information from Telegram message
-   */
-  private extractSender(message: Message): SenderInfo {
-    const from = message.from;
-    
-    return {
-      id: from?.id.toString() || 'unknown',
-      username: from?.username,
-      displayName: from?.first_name + (from?.last_name ? ` ${from.last_name}` : ''),
-      isBot: from?.is_bot || false,
-      platform: 'telegram',
-      platformUserId: from?.id.toString() || 'unknown',
-    };
-  }
-
-  /**
-   * Extract message content from Telegram message
-   */
-  private extractContent(message: Message): MessageContent {
-    const content: MessageContent = {};
-
-    // Text content
-    content.text = message.text || message.caption || '';
-
-    // Check for command
-    if (message.entities) {
-      const commandEntity = message.entities.find(e => e.type === 'bot_command' && e.offset === 0);
-      if (commandEntity && content.text) {
-        const fullCommand = content.text.slice(commandEntity.offset, commandEntity.offset + commandEntity.length);
-        const [command] = fullCommand.split('@'); // Remove @botname suffix
-        const args = content.text.slice(commandEntity.offset + commandEntity.length).trim().split(/\s+/).filter(Boolean);
-        
-        content.command = {
-          command: command.slice(1), // Remove leading /
-          args,
-          raw: content.text,
-        };
-      }
-    }
-
-    // Media attachments
-    const mediaAttachments: MediaAttachment[] = [];
-
-    if (message.photo) {
-      // Get highest resolution photo
-      const photo = message.photo[message.photo.length - 1];
-      mediaAttachments.push({
-        type: 'photo',
-        fileId: photo.file_id,
-        size: photo.file_size,
-      });
-    }
-
-    if (message.video) {
-      mediaAttachments.push({
-        type: 'video',
-        fileId: message.video.file_id,
-        mimeType: message.video.mime_type,
-        size: message.video.file_size,
-      });
-    }
-
-    if (message.animation) {
-      mediaAttachments.push({
-        type: 'animation',
-        fileId: message.animation.file_id,
-        mimeType: message.animation.mime_type,
-        size: message.animation.file_size,
-      });
-    }
-
-    if (message.document) {
-      mediaAttachments.push({
-        type: 'document',
-        fileId: message.document.file_id,
-        mimeType: message.document.mime_type,
-        size: message.document.file_size,
-      });
-    }
-
-    if (mediaAttachments.length > 0) {
-      content.media = mediaAttachments;
-    }
-
-    // Sticker
-    if (message.sticker) {
-      content.sticker = {
-        fileId: message.sticker.file_id,
-        emoji: message.sticker.emoji,
-        setName: message.sticker.set_name,
-        isAnimated: message.sticker.is_animated || false,
-      };
-    }
-
-    return content;
-  }
-
-  /**
-   * Extract mentions from Telegram message
-   */
-  private extractMentions(message: Message): SwarmEnvelope['mentions'] {
-    const mentions: SwarmEnvelope['mentions'] = [];
-    
-    if (!message.entities || !message.text) {
-      return mentions;
-    }
-
-    for (const entity of message.entities) {
-      if (entity.type === 'mention') {
-        const username = message.text.slice(entity.offset + 1, entity.offset + entity.length);
-        mentions.push({
-          userId: username, // We don't have the user ID for @mentions
-          username,
-          offset: entity.offset,
-          length: entity.length,
-        });
-      } else if (entity.type === 'text_mention' && entity.user) {
-        mentions.push({
-          userId: entity.user.id.toString(),
-          username: entity.user.username,
-          offset: entity.offset,
-          length: entity.length,
-        });
-      }
-    }
-
-    return mentions;
   }
 
   /**
