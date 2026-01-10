@@ -1,6 +1,11 @@
 /**
  * Message Processor Handler
  * Processes messages from SQS and generates responses
+ *
+ * Kyro-style channel-aware processing:
+ * - Buffers messages per channel
+ * - Evaluates response triggers (direct engagement, threshold, gap)
+ * - State machine: IDLE → ACTIVE → COOLDOWN
  */
 import type { SQSEvent, SQSHandler, Context } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
@@ -14,6 +19,8 @@ import {
   defaultAgentTools,
   type AgentConfig,
   type MessageQueueItem,
+  type ContextMessage,
+  type SwarmEnvelope,
 } from '@swarm/core';
 
 const sqs = new SQSClient({});
@@ -93,6 +100,25 @@ async function initialize(): Promise<void> {
   );
 }
 
+/**
+ * Convert SwarmEnvelope to ContextMessage for channel state
+ */
+function envelopeToContextMessage(envelope: SwarmEnvelope): ContextMessage {
+  return {
+    messageId: envelope.messageId,
+    sender: envelope.sender.displayName || envelope.sender.username || 'Unknown',
+    isBot: envelope.sender.isBot,
+    content: envelope.content.text || '[media]',
+    timestamp: envelope.timestamp,
+    // Extended fields for Kyro-style context
+    userId: envelope.sender.id,
+    username: envelope.sender.username,
+    isMention: envelope.metadata.isMention,
+    isReplyToBot: envelope.metadata.isReplyToBot,
+    replyToMessageId: envelope.replyTo,
+  };
+}
+
 export const handler: SQSHandler = async (event: SQSEvent, context: Context) => {
   logger.setContext({
     agentId: getAgentId(),
@@ -115,13 +141,69 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       logger.info('Processing message', {
         sender: envelope.sender.username,
         text: envelope.content.text?.slice(0, 50),
+        isMention: envelope.metadata.isMention,
+        isReplyToBot: envelope.metadata.isReplyToBot,
       });
+
+      // =========================================================
+      // KYRO-STYLE CHANNEL STATE MANAGEMENT
+      // =========================================================
+
+      // Ensure channel state exists (created if needed by addMessageToChannel)
+      await stateService.getOrCreateChannelState(
+        getAgentId(),
+        envelope.conversationId,
+        envelope.platform,
+        envelope.metadata.chatType,
+        envelope.metadata.chatTitle
+      );
+
+      // Add message to channel buffer with state machine updates
+      const updatedState = await stateService.addMessageToChannel(
+        getAgentId(),
+        envelope.conversationId,
+        envelope.platform,
+        envelopeToContextMessage(envelope)
+      );
+
+      logger.info('Channel state updated', {
+        state: updatedState.state,
+        bufferSize: updatedState.recentMessages.length,
+        chatType: updatedState.chatType,
+      });
+
+      // Evaluate if we should respond
+      const decision = stateService.evaluateResponseTrigger(updatedState);
+
+      logger.info('Response decision', {
+        shouldRespond: decision.shouldRespond,
+        trigger: decision.trigger,
+        delay: decision.delay,
+        priority: decision.priority,
+      });
+
+      if (!decision.shouldRespond) {
+        logger.info('Skipping response', { reason: decision.trigger });
+        continue; // Process next message in batch
+      }
+
+      // Apply delay if specified (makes responses feel more natural)
+      if (decision.delay > 0) {
+        await new Promise(resolve => setTimeout(resolve, decision.delay));
+      }
+
+      // Transition to ACTIVE state before generating response
+      await stateService.transitionState(getAgentId(), envelope.conversationId, 'ACTIVE');
+
+      // =========================================================
+      // GENERATE LLM RESPONSE
+      // =========================================================
 
       // Create LLM service
       const llmService = createLLMService(agentConfig.llm, secrets);
 
       // Get enabled tools from the public tool set
-      const enabledTools = publicTools.filter(t => 
+      const enabledTools = publicTools.filter(t =>
         agentConfig.tools.includes(t.name)
       );
 
@@ -150,7 +232,18 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
         MessageDeduplicationId: `resp_${envelope.messageId}_${Date.now()}`,
       }));
 
-      // Set user cooldown if configured
+      // =========================================================
+      // POST-RESPONSE STATE UPDATES
+      // =========================================================
+
+      // Mark response sent - transitions to COOLDOWN and clears buffer
+      await stateService.markResponseSent(
+        getAgentId(),
+        envelope.conversationId,
+        `resp_${envelope.messageId}_${Date.now()}`
+      );
+
+      // Set user cooldown if configured (legacy behavior)
       if (agentConfig.behavior.cooldownMinutes > 0) {
         await stateService.setUserCooldown({
           agentId: getAgentId(),
@@ -162,7 +255,7 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
 
     } catch (error) {
       logger.error('Failed to process message', error);
-      
+
       // The message will be retried or sent to DLQ based on SQS config
       throw error;
     }
