@@ -18,10 +18,34 @@ import { z } from 'zod';
 
 const sqs = new SQSClient({});
 
-// Environment variables
-const RESPONSE_QUEUE_URL = process.env.RESPONSE_QUEUE_URL!;
-const STATE_TABLE = process.env.STATE_TABLE!;
-const AGENT_ID = process.env.AGENT_ID!;
+// Environment variable validation helper
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Required environment variable ${name} is not set`);
+  }
+  return value;
+}
+
+// Environment variables - validated on first use
+let _responseQueueUrl: string | undefined;
+let _stateTable: string | undefined;
+let _agentId: string | undefined;
+
+function getResponseQueueUrl(): string {
+  if (!_responseQueueUrl) _responseQueueUrl = getRequiredEnv('getResponseQueueUrl()');
+  return _responseQueueUrl;
+}
+
+function getStateTable(): string {
+  if (!_stateTable) _stateTable = getRequiredEnv('getStateTable()');
+  return _stateTable;
+}
+
+function getAgentId(): string {
+  if (!_agentId) _agentId = getRequiredEnv('getAgentId()');
+  return _agentId;
+}
 
 // Services (lazy initialized)
 let stateService: ReturnType<typeof createStateService>;
@@ -82,13 +106,13 @@ const standardTools: ToolDefinition[] = [
 async function initialize(): Promise<void> {
   if (stateService) return;
 
-  stateService = createStateService(STATE_TABLE);
+  stateService = createStateService(getStateTable());
   secretsService = createSecretsService();
 
   // Load agent config
-  agentConfig = await stateService.getAgentConfig(AGENT_ID) || {
-    id: AGENT_ID,
-    name: process.env.AGENT_NAME || AGENT_ID,
+  agentConfig = await stateService.getAgentConfig(getAgentId()) || {
+    id: getAgentId(),
+    name: process.env.AGENT_NAME || getAgentId(),
     version: '1.0.0',
     persona: process.env.AGENT_PERSONA || 'You are a helpful AI assistant.',
     platforms: {},
@@ -115,13 +139,13 @@ async function initialize(): Promise<void> {
 
   // Load secrets
   secrets = await secretsService.getSecretJson<Record<string, string>>(
-    process.env.SECRETS_ARN || `swarm/${AGENT_ID}/secrets`
+    process.env.SECRETS_ARN || `swarm/${getAgentId()}/secrets`
   );
 }
 
 export const handler: SQSHandler = async (event: SQSEvent, context: Context) => {
   logger.setContext({
-    agentId: AGENT_ID,
+    agentId: getAgentId(),
     requestId: context.awsRequestId,
   });
 
@@ -170,7 +194,7 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
 
       // Queue response for sending
       await sqs.send(new SendMessageCommand({
-        QueueUrl: RESPONSE_QUEUE_URL,
+        QueueUrl: getResponseQueueUrl(),
         MessageBody: JSON.stringify(response),
         MessageGroupId: envelope.conversationId,
         MessageDeduplicationId: `resp_${envelope.messageId}_${Date.now()}`,
@@ -179,7 +203,7 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       // Set user cooldown if configured
       if (agentConfig.behavior.cooldownMinutes > 0) {
         await stateService.setUserCooldown({
-          agentId: AGENT_ID,
+          agentId: getAgentId(),
           platform: envelope.platform,
           userId: envelope.sender.id,
           cooldownUntil: Date.now() + (agentConfig.behavior.cooldownMinutes * 60 * 1000),

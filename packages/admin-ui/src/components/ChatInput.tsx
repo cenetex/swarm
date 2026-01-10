@@ -37,7 +37,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-3 items-end">
+    <form onSubmit={handleSubmit} className="flex gap-2 lg:gap-3 items-end">
       <div className="flex-1 relative">
         <textarea
           ref={textareaRef}
@@ -45,16 +45,16 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
-          placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+          placeholder="Type a message..."
           disabled={disabled}
           rows={1}
-          className="w-full px-4 py-3 bg-dark-800 border border-dark-600 rounded-xl text-dark-100 placeholder-dark-500 resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed max-h-36"
+          className="w-full px-3 lg:px-4 py-2.5 lg:py-3 bg-dark-800 border border-dark-600 rounded-xl text-dark-100 placeholder-dark-500 resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed max-h-36 text-sm lg:text-base"
         />
       </div>
       <button
         type="submit"
         disabled={disabled || !message.trim()}
-        className="px-6 py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-dark-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="p-2.5 lg:px-6 lg:py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-dark-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"

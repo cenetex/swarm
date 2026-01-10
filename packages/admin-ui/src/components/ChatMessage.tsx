@@ -12,9 +12,9 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   const hasPendingTools = message.toolCalls?.some(tc => tc.status === 'pending');
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3 lg:mb-4`}>
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+        className={`max-w-[90%] sm:max-w-[85%] lg:max-w-[80%] rounded-2xl px-3 lg:px-4 py-2.5 lg:py-3 ${
           isUser
             ? 'bg-primary-600 text-white rounded-br-md'
             : 'bg-dark-800 text-dark-100 rounded-bl-md'

@@ -329,14 +329,26 @@ export async function getSecretArn(
 }
 
 /**
- * Get secret value (for internal use only - e.g., agent using its own Helius key)
- * This should only be called for the agent's own secrets
+ * Get secret value - INTERNAL USE ONLY
+ *
+ * WARNING: This function breaks the "write-only" security model.
+ * Only use for legitimate internal operations like:
+ * - Agent retrieving its own Helius API key for RPC calls
+ * - Agent retrieving its own wallet private key for signing
+ *
+ * NEVER expose this through the admin API or chat tools.
+ * NEVER use to retrieve secrets for display or export.
+ *
+ * @internal
  */
-export async function getSecretValue(
+export async function _getSecretValueInternal(
   agentId: string,
   secretType: SecretType,
   name: string
 ): Promise<string | null> {
+  // Log access for audit purposes
+  console.warn(`[AUDIT] Secret value accessed: agent=${agentId}, type=${secretType}, name=${name}`);
+
   const secretArn = await getSecretArn(agentId, secretType, name);
   if (!secretArn) return null;
 
@@ -350,3 +362,8 @@ export async function getSecretValue(
     return null;
   }
 }
+
+/**
+ * @deprecated Use _getSecretValueInternal instead - renamed to make internal-only usage clear
+ */
+export const getSecretValue = _getSecretValueInternal;

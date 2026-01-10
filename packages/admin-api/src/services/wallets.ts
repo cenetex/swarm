@@ -3,8 +3,8 @@
  * Generates and securely stores crypto wallet keys
  */
 import { Keypair, Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import nacl from 'tweetnacl';
 import bs58 from 'bs58';
+// NOTE: nacl import removed - was only used by disabled Ethereum wallet generation
 import {
   DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
@@ -14,7 +14,7 @@ import {
   QueryCommand,
   GetCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { storeSecret, getSecretValue } from './secrets.js';
+import { storeSecret, _getSecretValueInternal } from './secrets.js';
 import type { WalletInfo, UserSession } from '../types.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -41,7 +41,7 @@ export interface WalletBalance {
  */
 async function getSolanaRpcUrl(agentId?: string): Promise<string> {
   if (agentId) {
-    const heliusKey = await getSecretValue(agentId, 'helius_api_key' as any, 'default');
+    const heliusKey = await _getSecretValueInternal(agentId, 'helius_api_key' as any, 'default');
     if (heliusKey) {
       return `https://mainnet.helius-rpc.com/?api-key=${heliusKey}`;
     }
@@ -114,73 +114,23 @@ export async function generateSolanaWallet(
 
 /**
  * Generate a new Ethereum wallet
- * - Generates keypair using tweetnacl (secp256k1 would be better for production)
- * - Stores private key in Secrets Manager
- * - Stores public info in DynamoDB
+ *
+ * @deprecated DISABLED - This function generates INVALID Ethereum addresses.
+ * It uses Ed25519 (tweetnacl) instead of secp256k1 which Ethereum requires.
+ * DO NOT USE until reimplemented with ethers.js or viem.
+ *
+ * @throws Error - Always throws to prevent use of invalid addresses
  */
 export async function generateEthereumWallet(
-  agentId: string,
-  name: string,
-  session: UserSession
+  _agentId: string,
+  _name: string,
+  _session: UserSession
 ): Promise<WalletInfo> {
-  // Generate random 32 bytes for private key
-  const privateKeyBytes = nacl.randomBytes(32);
-  const privateKeyHex = Buffer.from(privateKeyBytes).toString('hex');
-  
-  // For a proper Ethereum address, we'd need to:
-  // 1. Derive public key from private key using secp256k1
-  // 2. Hash the public key with Keccak-256
-  // 3. Take the last 20 bytes as the address
-  // 
-  // For this implementation, we'll use a simplified approach
-  // In production, use ethers.js or web3.js
-  const publicKeyBytes = nacl.sign.keyPair.fromSeed(privateKeyBytes).publicKey;
-  const addressBytes = publicKeyBytes.slice(-20);
-  const address = '0x' + Buffer.from(addressBytes).toString('hex');
-  
-  // Store the secret key securely
-  await storeSecret(
-    agentId,
-    'ethereum_wallet_key',
-    name,
-    privateKeyHex,
-    session,
-    `Ethereum wallet "${name}" for agent ${agentId}`
+  throw new Error(
+    'Ethereum wallet generation is disabled. ' +
+    'The current implementation generates invalid addresses. ' +
+    'Use Solana wallets instead, or wait for proper Ethereum support with ethers.js.'
   );
-  
-  // Create wallet info record
-  const walletId = `${agentId}-ethereum-${name}`;
-  const now = Date.now();
-  
-  const walletInfo: WalletInfo & { pk: string; sk: string } = {
-    pk: `AGENT#${agentId}`,
-    sk: `WALLET#ethereum#${name}`,
-    id: walletId,
-    agentId,
-    walletType: 'ethereum',
-    publicKey: Buffer.from(publicKeyBytes).toString('hex'),
-    address,
-    name,
-    createdAt: now,
-    createdBy: session.email,
-  };
-  
-  // Store wallet info in DynamoDB
-  await dynamoClient.send(new PutCommand({
-    TableName: ADMIN_TABLE,
-    Item: walletInfo,
-  }));
-  
-  return {
-    id: walletInfo.id,
-    agentId: walletInfo.agentId,
-    walletType: walletInfo.walletType,
-    publicKey: walletInfo.publicKey,
-    address: walletInfo.address,
-    name: walletInfo.name,
-    createdAt: walletInfo.createdAt,
-    createdBy: walletInfo.createdBy,
-  };
 }
 
 /**

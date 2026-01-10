@@ -84,9 +84,10 @@ function AgentListItem({ agent, isActive, onClick }: AgentListItemProps) {
 
 interface AgentSidebarProps {
   className?: string;
+  onClose?: () => void;
 }
 
-export function AgentSidebar({ className }: AgentSidebarProps) {
+export function AgentSidebar({ className, onClose }: AgentSidebarProps) {
   const { agents, activeAgentId, createAgent, setActiveAgent, isLoading, error } = useAgentStore();
 
   const handleCreateAgent = async () => {
@@ -98,36 +99,54 @@ export function AgentSidebar({ className }: AgentSidebarProps) {
     }
   };
 
+  const handleSelectAgent = (agentId: string) => {
+    setActiveAgent(agentId);
+    onClose?.();
+  };
+
   return (
-    <div className={`w-64 bg-dark-900 border-r border-dark-700 flex flex-col h-full ${className || ''}`}>
+    <div className={`w-72 lg:w-64 bg-dark-900 border-r border-dark-700 flex flex-col h-full ${className || ''}`}>
       {/* Header */}
       <div className="p-4 border-b border-dark-700">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-dark-100">Agents</h2>
-          <button
-            onClick={handleCreateAgent}
-            disabled={isLoading}
-            className={`w-8 h-8 flex items-center justify-center rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-400 hover:text-white transition-colors ${
-              isLoading ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-            title="Create new agent"
-          >
-            {isLoading ? (
-              <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="w-5 h-5"
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCreateAgent}
+              disabled={isLoading}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-400 hover:text-white transition-colors ${
+                isLoading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title="Create new agent"
+            >
+              {isLoading ? (
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="w-5 h-5"
+                >
+                  <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                </svg>
+              )}
+            </button>
+            {/* Close button - only on mobile */}
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-400 hover:text-white transition-colors lg:hidden"
               >
-                <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-              </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              </button>
             )}
-          </button>
+          </div>
         </div>
         {error && (
           <div className="mt-2 text-xs text-red-400 bg-red-900/20 rounded px-2 py-1">
@@ -163,7 +182,7 @@ export function AgentSidebar({ className }: AgentSidebarProps) {
               key={agent.id}
               agent={agent}
               isActive={agent.id === activeAgentId}
-              onClick={() => setActiveAgent(agent.id)}
+              onClick={() => handleSelectAgent(agent.id)}
             />
           ))
         )}
