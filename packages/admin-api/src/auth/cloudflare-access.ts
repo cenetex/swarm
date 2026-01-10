@@ -4,6 +4,7 @@
  */
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import type { CloudflareAccessClaims, UserSession } from '../types.js';
+import * as nodeCrypto from 'crypto';
 
 // Cloudflare Access public keys endpoint
 const CF_ACCESS_CERTS_URL = process.env.CF_ACCESS_CERTS_URL;
@@ -13,7 +14,7 @@ const CF_ACCESS_AUD = process.env.CF_ACCESS_AUD;
 // Admin emails that have full access
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').filter(Boolean);
 
-interface CloudflarePublicKey {
+interface CloudflareJWK {
   kid: string;
   kty: string;
   alg: string;
@@ -23,7 +24,7 @@ interface CloudflarePublicKey {
 }
 
 interface CloudflareKeysResponse {
-  keys: CloudflarePublicKey[];
+  keys: CloudflareJWK[];
   public_cert: { kid: string; cert: string };
   public_certs: { kid: string; cert: string }[];
 }
@@ -67,29 +68,30 @@ function decodeJwtHeader(token: string): { kid?: string; alg?: string } {
 }
 
 /**
- * Verify and decode a Cloudflare Access JWT
+ * Verify and decode a Cloudflare Access JWT using Node.js crypto
  */
 async function verifyAccessToken(token: string): Promise<CloudflareAccessClaims> {
   // Get the key ID from the token header
   const header = decodeJwtHeader(token);
   
-  // Fetch public keys
+  // Fetch public keys (JWK format)
   const keys = await getPublicKeys();
   
-  // Find the matching certificate
-  const cert = keys.public_certs.find(c => c.kid === header.kid);
-  if (!cert) {
-    throw new Error('No matching certificate found for token');
+  // Find the matching JWK key
+  const jwk = keys.keys.find(k => k.kid === header.kid);
+  if (!jwk) {
+    throw new Error('No matching key found for token');
   }
 
-  // Import the certificate for verification
-  const cryptoKey = await crypto.subtle.importKey(
-    'spki',
-    pemToArrayBuffer(cert.cert),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['verify']
-  );
+  // Create a public key from JWK using Node.js crypto
+  const publicKey = nodeCrypto.createPublicKey({
+    key: {
+      kty: jwk.kty,
+      n: jwk.n,
+      e: jwk.e,
+    },
+    format: 'jwk',
+  });
 
   // Split the token
   const [headerB64, payloadB64, signatureB64] = token.split('.');
@@ -97,15 +99,15 @@ async function verifyAccessToken(token: string): Promise<CloudflareAccessClaims>
     throw new Error('Invalid JWT format');
   }
 
-  // Verify the signature
-  const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+  // Verify the signature using Node.js crypto
+  const data = `${headerB64}.${payloadB64}`;
   const signature = Buffer.from(signatureB64, 'base64url');
 
-  const isValid = await crypto.subtle.verify(
-    'RSASSA-PKCS1-v1_5',
-    cryptoKey,
-    signature,
-    data
+  const isValid = nodeCrypto.verify(
+    'RSA-SHA256',
+    Buffer.from(data),
+    publicKey,
+    signature
   );
 
   if (!isValid) {
@@ -136,21 +138,6 @@ async function verifyAccessToken(token: string): Promise<CloudflareAccessClaims>
   }
 
   return claims;
-}
-
-/**
- * Convert PEM to ArrayBuffer
- */
-function pemToArrayBuffer(pem: string): ArrayBuffer {
-  const base64 = pem
-    .replace('-----BEGIN CERTIFICATE-----', '')
-    .replace('-----END CERTIFICATE-----', '')
-    .replace('-----BEGIN PUBLIC KEY-----', '')
-    .replace('-----END PUBLIC KEY-----', '')
-    .replace(/\s/g, '');
-
-  const binary = Buffer.from(base64, 'base64');
-  return binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength);
 }
 
 /**
