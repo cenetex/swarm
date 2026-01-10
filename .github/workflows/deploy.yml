@@ -1,6 +1,19 @@
 name: Deploy
 
 on:
+  # Auto-deploy to staging on push to main, production on version tags
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/issue-management.yml'
+
+  # Manual deployment
   workflow_dispatch:
     inputs:
       environment:
@@ -17,7 +30,7 @@ on:
         type: string
 
 concurrency:
-  group: deploy-${{ github.ref }}-${{ inputs.environment }}
+  group: deploy-${{ github.ref_name }}
   cancel-in-progress: false
 
 env:
@@ -29,7 +42,44 @@ permissions:
   contents: read
 
 jobs:
-  # Build job runs in parallel with early AWS setup
+  # Determine deployment environment based on trigger
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      is_production: ${{ steps.set-env.outputs.is_production }}
+    steps:
+      - name: Determine environment
+        id: set-env
+        run: |
+          # Default to staging
+          ENV="staging"
+          IS_PROD="false"
+
+          # Check trigger type
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual trigger - use input
+            ENV="${{ inputs.environment }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            # Version tag (v*) - deploy to production
+            ENV="production"
+            IS_PROD="true"
+            echo "🏷️ Deploying tag ${{ github.ref_name }} to production"
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            # Push to main - deploy to staging
+            ENV="staging"
+            echo "🚀 Auto-deploying main branch to staging"
+          fi
+
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "is_production=$IS_PROD" >> $GITHUB_OUTPUT
+          echo "## Deployment Info" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** $ENV" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Ref:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+
+  # Build job runs in parallel with setup
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -79,11 +129,11 @@ jobs:
           retention-days: 1
 
   deploy:
-    name: Deploy to AWS
+    name: Deploy to AWS (${{ needs.setup.outputs.environment }})
     runs-on: ubuntu-latest
-    needs: build
-    environment: ${{ inputs.environment || 'production' }}
-    
+    needs: [setup, build]
+    environment: ${{ needs.setup.outputs.environment }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -116,20 +166,22 @@ jobs:
       - name: CDK Deploy
         working-directory: packages/infra
         run: |
-          ENV_NAME="${{ inputs.environment || 'production' }}"
+          ENV_NAME="${{ needs.setup.outputs.environment }}"
           # Map GitHub environment names to CDK environment names
           if [ "$ENV_NAME" = "production" ]; then
             CDK_ENV="prod"
           else
             CDK_ENV="$ENV_NAME"
           fi
-          
+
           # Use hotswap for faster Lambda deployments in staging
           HOTSWAP_FLAG=""
           if [ "$CDK_ENV" = "staging" ]; then
             HOTSWAP_FLAG="--hotswap-fallback"
           fi
-          
+
+          echo "🚀 Deploying to $ENV_NAME (CDK env: $CDK_ENV)"
+
           # Deploy with concurrency for faster multi-stack deploys
           if [ -n "${{ inputs.stack }}" ]; then
             npx cdk deploy ${{ inputs.stack }} --require-approval never --concurrency 10 $HOTSWAP_FLAG -c environment=$CDK_ENV
@@ -141,13 +193,13 @@ jobs:
         id: stack-outputs
         working-directory: packages/infra
         run: |
-          ENV_NAME="${{ inputs.environment || 'production' }}"
+          ENV_NAME="${{ needs.setup.outputs.environment }}"
           if [ "$ENV_NAME" = "production" ]; then
             CDK_ENV="prod"
           else
             CDK_ENV="$ENV_NAME"
           fi
-          
+
           # Get Admin UI bucket and distribution from CloudFormation
           STACK_NAME="SwarmStack-$CDK_ENV"
           
@@ -187,10 +239,10 @@ jobs:
       admin-api-url: ${{ steps.stack-outputs.outputs.api_url }}
 
   deploy-admin-ui:
-    name: Deploy Admin UI
+    name: Deploy Admin UI (${{ needs.setup.outputs.environment }})
     runs-on: ubuntu-latest
-    needs: [build, deploy]
-    environment: ${{ inputs.environment || 'production' }}
+    needs: [setup, build, deploy]
+    environment: ${{ needs.setup.outputs.environment }}
     
     steps:
       - name: Checkout

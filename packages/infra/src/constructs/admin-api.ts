@@ -134,6 +134,7 @@ export class AdminApiConstruct extends Construct {
         LLM_ENDPOINT: 'https://openrouter.ai/api/v1/chat/completions',
         LLM_MODEL: 'anthropic/claude-sonnet-4',
         LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
+        API_DOMAIN: props.apiDomain || '',
         NODE_ENV: environment,
       },
       bundling: {
@@ -270,6 +271,60 @@ export class AdminApiConstruct extends Construct {
       path: '/health',
       methods: [apigateway.HttpMethod.GET],
       integration: healthIntegration,
+    });
+
+    // Shared Telegram webhook handler - handles ALL agents dynamically
+    const telegramWebhookHandler = new nodejs.NodejsFunction(this, 'TelegramWebhookHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/telegram-webhook.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        STATE_TABLE: stateTable?.tableName || '',
+        LLM_ENDPOINT: 'https://openrouter.ai/api/v1/chat/completions',
+        LLM_MODEL: 'anthropic/claude-sonnet-4',
+        LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
+        API_DOMAIN: props.apiDomain || '',
+        NODE_ENV: environment,
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+    });
+
+    // Grant permissions to telegram handler
+    this.table.grantReadData(telegramWebhookHandler);
+    if (stateTable) {
+      stateTable.grantReadData(telegramWebhookHandler);
+    }
+    llmApiKey.grantRead(telegramWebhookHandler);
+
+    // Grant read access to agent secrets
+    telegramWebhookHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['secretsmanager:GetSecretValue'],
+      resources: ['*'],
+      conditions: {
+        'StringLike': {
+          'secretsmanager:Name': 'swarm/*',
+        },
+      },
+    }));
+
+    const telegramIntegration = new integrations.HttpLambdaIntegration(
+      'TelegramWebhookIntegration',
+      telegramWebhookHandler
+    );
+
+    // Webhook route: /webhook/telegram/{agentId}
+    this.api.addRoutes({
+      path: '/webhook/telegram/{agentId}',
+      methods: [apigateway.HttpMethod.POST],
+      integration: telegramIntegration,
     });
 
     // Custom domain configuration (for Cloudflare Access proxy)

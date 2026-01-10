@@ -11,6 +11,7 @@ import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js'
 import * as agents from '../services/agents.js';
 import * as secrets from '../services/secrets.js';
 import * as wallets from '../services/wallets.js';
+import * as telegram from '../services/telegram.js';
 import type {
   AdminChatMessage,
   ToolCall,
@@ -291,17 +292,60 @@ async function executeTool(
         break;
         
       // Store a secret securely
-      case 'store_secret':
+      case 'store_secret': {
+        const secretType = args.secretType as SecretType;
+        
+        // Store the secret first
         await secrets.storeSecret(
           agentId!,
-          args.secretType as SecretType,
+          secretType,
           'default',
           args.value,
           session,
-          `${args.secretType} for agent ${agentId}`
+          `${secretType} for agent ${agentId}`
         );
-        result = { success: true, message: `${args.secretType} stored securely` };
+        
+        // Special handling for platform secrets
+        if (secretType === 'telegram_bot_token') {
+          // Validate the token
+          const validation = await telegram.validateTelegramToken(args.value);
+          if (!validation.valid) {
+            result = { 
+              success: false, 
+              message: `Token stored, but validation failed: ${validation.error}. The bot may not work.` 
+            };
+            break;
+          }
+          
+          // Enable Telegram platform on the agent
+          await agents.updateAgent(agentId!, {
+            platforms: { 
+              telegram: { 
+                enabled: true, 
+                botUsername: validation.botInfo?.username 
+              } 
+            }
+          }, session);
+          
+          // Register the webhook with Telegram
+          const webhookResult = await telegram.registerTelegramWebhook(args.value, agentId!);
+          if (!webhookResult.success) {
+            result = {
+              success: true,
+              message: `Token stored and validated (bot: @${validation.botInfo?.username}), but webhook registration failed: ${webhookResult.message}. You may need to manually configure the webhook.`
+            };
+            break;
+          }
+          
+          result = { 
+            success: true, 
+            message: `🎉 Telegram bot @${validation.botInfo?.username} is now live! Webhook registered at ${webhookResult.webhookUrl}. You can message the bot and it will respond.`
+          };
+        } else {
+          result = { success: true, message: `${secretType} stored securely` };
+        }
         break;
+      }
         
       // Update my profile
       case 'update_my_profile':
