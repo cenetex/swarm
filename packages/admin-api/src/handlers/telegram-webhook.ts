@@ -413,11 +413,10 @@ async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string
     const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
     console.log(`[Telegram] Downloaded image: ${imageBuffer.length} bytes, sending as buffer`);
 
-    // Send as multipart form data with the buffer
-    const FormData = (await import('form-data')).default;
+    // Use native FormData (Node.js 18+) with Blob
     const form = new FormData();
     form.append('chat_id', chatId.toString());
-    form.append('photo', imageBuffer, { filename: 'image.png', contentType: 'image/png' });
+    form.append('photo', new Blob([imageBuffer], { type: 'image/png' }), 'image.png');
     if (caption) {
       form.append('caption', caption.slice(0, 1024));
       form.append('parse_mode', 'Markdown');
@@ -428,13 +427,12 @@ async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string
 
     const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
       method: 'POST',
-      body: form as any,
-      headers: form.getHeaders(),
+      body: form,
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[Telegram] sendPhoto (buffer) failed: ${response.status}`, errorText);
+      console.error(`[Telegram] sendPhoto (buffer) failed: ${response.status} ${errorText}`);
     } else {
       console.log(`[Telegram] Photo sent successfully to chat ${chatId}`);
     }
