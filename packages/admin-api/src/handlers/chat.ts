@@ -136,6 +136,66 @@ const AGENT_TOOLS = [
       },
     },
   },
+  // LLM Model management
+  {
+    type: 'function',
+    function: {
+      name: 'list_available_models',
+      description: 'List available LLM models from OpenRouter that I can switch to. Returns model IDs, names, pricing, and context lengths.',
+      parameters: {
+        type: 'object',
+        properties: {
+          family: {
+            type: 'string',
+            description: 'Filter by model family (e.g., "anthropic", "openai", "google", "meta-llama"). Leave empty for all.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_my_model_config',
+      description: 'Get my current LLM model configuration (model, temperature, max tokens)',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'change_my_model',
+      description: 'Change my LLM model or settings. Use list_available_models first to see options.',
+      parameters: {
+        type: 'object',
+        properties: {
+          model: { type: 'string', description: 'Model ID from OpenRouter (e.g., "anthropic/claude-sonnet-4", "openai/gpt-4o")' },
+          temperature: { type: 'number', description: 'Temperature (0.0-2.0). Lower = more focused, higher = more creative.' },
+          maxTokens: { type: 'number', description: 'Maximum response tokens (e.g., 1024, 4096)' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'request_model_selection',
+      description: 'Show the user a dropdown to select a model. Use this when the user wants to choose interactively.',
+      parameters: {
+        type: 'object',
+        properties: {
+          family: {
+            type: 'string',
+            description: 'Pre-filter by family (e.g., "anthropic", "openai"). Leave empty to show all.',
+          },
+          currentModel: {
+            type: 'string',
+            description: 'Current model ID to show as selected',
+          },
+        },
+      },
+    },
+  },
   // Solana wallet management
   {
     type: 'function',
@@ -524,7 +584,8 @@ async function executeTool(
   const { name, arguments: argsString } = toolCall.function;
 
   try {
-    const args = JSON.parse(argsString);
+    // Handle empty or undefined arguments (common for tools with no parameters)
+    const args = argsString && argsString.trim() ? JSON.parse(argsString) : {};
     
     // Most tools require agent context
     if (!agentContext && !['request_secret'].includes(name)) {
@@ -622,7 +683,132 @@ async function executeTool(
           persona: args.persona,
         }, session);
         break;
-        
+
+      // List available LLM models from OpenRouter
+      case 'list_available_models': {
+        const modelsResponse = await fetch('https://openrouter.ai/api/v1/models', {
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (!modelsResponse.ok) {
+          result = { error: 'Failed to fetch models from OpenRouter' };
+          break;
+        }
+
+        const modelsData = await modelsResponse.json() as {
+          data: Array<{
+            id: string;
+            name: string;
+            pricing: { prompt: string; completion: string };
+            context_length: number;
+            top_provider?: { max_completion_tokens?: number };
+          }>;
+        };
+
+        let models = modelsData.data || [];
+
+        // Filter by family if specified
+        if (args.family) {
+          const family = args.family.toLowerCase();
+          models = models.filter(m => m.id.toLowerCase().startsWith(family + '/'));
+        }
+
+        // Sort by name and limit to reasonable number
+        models = models
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .slice(0, 50);
+
+        result = {
+          models: models.map(m => ({
+            id: m.id,
+            name: m.name,
+            contextLength: m.context_length,
+            maxCompletionTokens: m.top_provider?.max_completion_tokens,
+            pricing: {
+              prompt: `$${parseFloat(m.pricing.prompt) * 1000000}/M tokens`,
+              completion: `$${parseFloat(m.pricing.completion) * 1000000}/M tokens`,
+            },
+          })),
+          count: models.length,
+          tip: 'Use change_my_model with a model ID to switch, or request_model_selection to show the user a dropdown.',
+        };
+        break;
+      }
+
+      // Get my current model config
+      case 'get_my_model_config': {
+        const agent = await agents.getAgent(agentId!);
+        result = {
+          model: agent?.llmConfig?.model || 'anthropic/claude-sonnet-4',
+          temperature: agent?.llmConfig?.temperature ?? 0.8,
+          maxTokens: agent?.llmConfig?.maxTokens || 1024,
+          provider: agent?.llmConfig?.provider || 'openrouter',
+        };
+        break;
+      }
+
+      // Change my model or settings
+      case 'change_my_model': {
+        const updates: Record<string, unknown> = {};
+
+        if (args.model) updates.model = args.model;
+        if (args.temperature !== undefined) updates.temperature = args.temperature;
+        if (args.maxTokens !== undefined) updates.maxTokens = args.maxTokens;
+
+        if (Object.keys(updates).length === 0) {
+          result = { error: 'No changes specified. Provide model, temperature, or maxTokens.' };
+          break;
+        }
+
+        const agent = await agents.getAgent(agentId!);
+        const newLlmConfig = {
+          ...agent?.llmConfig,
+          ...updates,
+        };
+
+        await agents.updateAgent(agentId!, { llmConfig: newLlmConfig } as any, session);
+
+        result = {
+          success: true,
+          message: `Model configuration updated!`,
+          newConfig: newLlmConfig,
+        };
+        break;
+      }
+
+      // Request model selection dropdown
+      case 'request_model_selection': {
+        // Fetch models for the dropdown
+        const modelsResponse = await fetch('https://openrouter.ai/api/v1/models', {
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        let models: Array<{ id: string; name: string }> = [];
+
+        if (modelsResponse.ok) {
+          const modelsData = await modelsResponse.json() as {
+            data: Array<{ id: string; name: string }>;
+          };
+          models = modelsData.data || [];
+
+          // Filter by family if specified
+          if (args.family) {
+            const family = args.family.toLowerCase();
+            models = models.filter(m => m.id.toLowerCase().startsWith(family + '/'));
+          }
+
+          models = models.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 100);
+        }
+
+        result = {
+          type: 'model_selector',
+          models: models.map(m => ({ id: m.id, name: m.name })),
+          currentModel: args.currentModel || 'anthropic/claude-sonnet-4',
+          instructions: 'Please select a model from the dropdown above.',
+        };
+        break;
+      }
+
       // Create a Solana wallet
       case 'create_solana_wallet':
         result = await wallets.generateSolanaWallet(agentId!, args.name, session);
