@@ -1,28 +1,26 @@
 /**
  * Shared Telegram Webhook Handler
- * Handles webhooks for ALL agents dynamically - no per-agent CDK deployment needed
+ * Full-featured agent with conversation history and tool support
  *
- * Security features:
- * - Secret token verification (X-Telegram-Bot-Api-Secret-Token header)
- * - IP address verification (Telegram server ranges)
- * - Minimal error disclosure
- * - Sanitized logging
- *
- * Response logic:
- * - Always responds to DMs
- * - Always responds to @mentions
- * - Responds to users with active attention (from recent mentions)
- * - Small random chance to respond to other messages
+ * Features:
+ * - Conversation history per chat (stored in DynamoDB)
+ * - Tool support: image/video generation, wallet info, gallery
+ * - Attention tracking for selective responses
+ * - Media sending (photos, videos, stickers)
  */
 import type {
   APIGatewayProxyEventV2,
   APIGatewayProxyResultV2,
 } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { isValidTelegramIP } from '../services/telegram.js';
 import { timingSafeEqual } from 'crypto';
+import * as media from '../services/media.js';
+import * as gallery from '../services/gallery.js';
+import * as wallets from '../services/wallets.js';
+import * as credits from '../services/credits.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const secretsClient = new SecretsManagerClient({});
@@ -31,38 +29,27 @@ const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
-
-// Whether to enforce IP verification (disable for testing behind proxies)
 const ENFORCE_IP_CHECK = process.env.ENFORCE_TELEGRAM_IP_CHECK !== 'false';
 
-// === ATTENTION TRACKING CONFIG ===
-const ATTENTION_DURATION_SECONDS = 300; // 5 minutes
+// === CONFIG ===
+const ATTENTION_DURATION_SECONDS = 300;
 const INITIAL_ATTENTION = 1.0;
 const ATTENTION_DECAY = 0.7;
 const MIN_ATTENTION_THRESHOLD = 0.2;
-const RANDOM_REPLY_CHANCE = 0.05; // 5%
+const RANDOM_REPLY_CHANCE = 0.05;
+const MAX_HISTORY_MESSAGES = 20;
+const HISTORY_TTL_SECONDS = 3600; // 1 hour
 
+// === TYPES ===
 interface TelegramUpdate {
   update_id: number;
   message?: {
     message_id: number;
-    from?: {
-      id: number;
-      first_name: string;
-      last_name?: string;
-      username?: string;
-    };
-    chat: {
-      id: number;
-      type: 'private' | 'group' | 'supergroup' | 'channel';
-      title?: string;
-    };
+    from?: { id: number; first_name: string; last_name?: string; username?: string };
+    chat: { id: number; type: 'private' | 'group' | 'supergroup' | 'channel'; title?: string };
     date: number;
     text?: string;
-    reply_to_message?: {
-      message_id: number;
-      text?: string;
-    };
+    reply_to_message?: { message_id: number; text?: string; from?: { id: number; username?: string } };
   };
 }
 
@@ -71,42 +58,106 @@ interface AgentConfig {
   name: string;
   persona?: string;
   platforms: {
-    telegram?: {
-      enabled: boolean;
-      botUsername?: string;
-    };
+    telegram?: { enabled: boolean; botUsername?: string; botId?: number };
+    twitter?: { enabled: boolean };
   };
-  llmConfig: {
-    provider: string;
-    model: string;
-    temperature: number;
-    maxTokens: number;
-  };
-  wallets?: Array<{
-    name: string;
-    publicKey: string;
-  }>;
-  profileImage?: {
-    url: string;
-  };
+  llmConfig: { provider: string; model: string; temperature: number; maxTokens: number };
+  wallets?: Array<{ name: string; publicKey: string }>;
+  profileImage?: { url: string };
 }
 
-// Cache for secrets
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+  name?: string;
+}
+
+interface ToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+// === TOOLS FOR TELEGRAM ===
+const TELEGRAM_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'generate_image',
+      description: 'Generate an image from a text prompt. The image will be sent to the chat.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: 'Description of the image to generate' },
+        },
+        required: ['prompt'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_video',
+      description: 'Generate a short video from a text prompt. This takes time - I will send it when ready.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: 'Description of the video to generate' },
+        },
+        required: ['prompt'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_my_gallery',
+      description: 'View my generated images and videos',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['image', 'video', 'sticker'], description: 'Filter by type' },
+          limit: { type: 'number', description: 'Max items (default 5)' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_my_wallets',
+      description: 'Get my Solana wallet addresses and balances',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'send_gallery_image',
+      description: 'Send an image from my gallery to the chat',
+      parameters: {
+        type: 'object',
+        properties: {
+          imageId: { type: 'string', description: 'ID of the gallery image to send' },
+        },
+        required: ['imageId'],
+      },
+    },
+  },
+];
+
+// === CACHES ===
 const secretsCache = new Map<string, string>();
 
+// === HELPER FUNCTIONS ===
 async function getSecret(secretArn: string): Promise<string | null> {
-  if (secretsCache.has(secretArn)) {
-    return secretsCache.get(secretArn)!;
-  }
-
+  if (secretsCache.has(secretArn)) return secretsCache.get(secretArn)!;
   try {
-    const response = await secretsClient.send(new GetSecretValueCommand({
-      SecretId: secretArn,
-    }));
+    const response = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretArn }));
     const value = response.SecretString || null;
-    if (value) {
-      secretsCache.set(secretArn, value);
-    }
+    if (value) secretsCache.set(secretArn, value);
     return value;
   } catch (error) {
     console.error('Failed to get secret:', error);
@@ -117,27 +168,19 @@ async function getSecret(secretArn: string): Promise<string | null> {
 async function getAgentConfig(agentId: string): Promise<AgentConfig | null> {
   const result = await dynamoClient.send(new GetCommand({
     TableName: ADMIN_TABLE,
-    Key: {
-      pk: `AGENT#${agentId}`,
-      sk: 'CONFIG',
-    },
+    Key: { pk: `AGENT#${agentId}`, sk: 'CONFIG' },
   }));
-
   if (!result.Item) return null;
-
   const config = result.Item as AgentConfig;
 
-  // Also fetch wallets
-  const walletsResult = await dynamoClient.send(new GetCommand({
+  // Fetch wallets
+  const walletsResult = await dynamoClient.send(new QueryCommand({
     TableName: ADMIN_TABLE,
-    Key: {
-      pk: `AGENT#${agentId}`,
-      sk: 'WALLETS',
-    },
+    KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+    ExpressionAttributeValues: { ':pk': `AGENT#${agentId}`, ':sk': 'WALLET#' },
   }));
-
-  if (walletsResult.Item?.wallets) {
-    config.wallets = walletsResult.Item.wallets as AgentConfig['wallets'];
+  if (walletsResult.Items?.length) {
+    config.wallets = walletsResult.Items.map(w => ({ name: w.name, publicKey: w.publicKey }));
   }
 
   return config;
@@ -146,67 +189,91 @@ async function getAgentConfig(agentId: string): Promise<AgentConfig | null> {
 async function getTelegramToken(agentId: string): Promise<string | null> {
   const result = await dynamoClient.send(new GetCommand({
     TableName: ADMIN_TABLE,
-    Key: {
-      pk: `AGENT#${agentId}`,
-      sk: 'SECRET#telegram_bot_token#default',
-    },
+    Key: { pk: `AGENT#${agentId}`, sk: 'SECRET#telegram_bot_token#default' },
   }));
-
-  if (!result.Item?.secretArn) {
-    return null;
-  }
-
+  if (!result.Item?.secretArn) return null;
   return getSecret(result.Item.secretArn);
 }
 
 async function getWebhookSecret(agentId: string): Promise<string | null> {
   const result = await dynamoClient.send(new GetCommand({
     TableName: ADMIN_TABLE,
-    Key: {
-      pk: `AGENT#${agentId}`,
-      sk: 'SECRET#telegram_webhook_secret#default',
-    },
+    Key: { pk: `AGENT#${agentId}`, sk: 'SECRET#telegram_webhook_secret#default' },
   }));
-
-  if (!result.Item?.secretArn) {
-    return null;
-  }
-
+  if (!result.Item?.secretArn) return null;
   return getSecret(result.Item.secretArn);
 }
 
-// === ATTENTION TRACKING ===
+async function getLlmApiKey(): Promise<string> {
+  if (!LLM_API_KEY_SECRET_ARN) throw new Error('LLM_API_KEY_SECRET_ARN not configured');
+  const value = await getSecret(LLM_API_KEY_SECRET_ARN);
+  if (!value) throw new Error('Failed to get LLM API key');
+  try {
+    const parsed = JSON.parse(value);
+    return parsed.api_key || parsed.apiKey || value;
+  } catch {
+    return value;
+  }
+}
 
+// === CONVERSATION HISTORY ===
+async function getConversationHistory(agentId: string, chatId: number): Promise<ChatMessage[]> {
+  try {
+    const result = await dynamoClient.send(new GetCommand({
+      TableName: ADMIN_TABLE,
+      Key: { pk: `TELEGRAM#${agentId}#${chatId}`, sk: 'HISTORY' },
+    }));
+    if (!result.Item?.messages) return [];
+    // Check TTL
+    if (result.Item.ttl && Date.now() / 1000 > result.Item.ttl) return [];
+    return result.Item.messages as ChatMessage[];
+  } catch {
+    return [];
+  }
+}
+
+async function saveConversationHistory(
+  agentId: string,
+  chatId: number,
+  messages: ChatMessage[]
+): Promise<void> {
+  // Keep only recent messages
+  const trimmed = messages.slice(-MAX_HISTORY_MESSAGES);
+  const ttl = Math.floor(Date.now() / 1000) + HISTORY_TTL_SECONDS;
+
+  try {
+    await dynamoClient.send(new PutCommand({
+      TableName: ADMIN_TABLE,
+      Item: {
+        pk: `TELEGRAM#${agentId}#${chatId}`,
+        sk: 'HISTORY',
+        messages: trimmed,
+        ttl,
+        updatedAt: Date.now(),
+      },
+    }));
+  } catch (err) {
+    console.warn('Failed to save conversation history:', err);
+  }
+}
+
+// === ATTENTION TRACKING ===
 async function getAttention(agentId: string, chatId: number, userId: number): Promise<number> {
   try {
     const result = await dynamoClient.send(new GetCommand({
       TableName: ADMIN_TABLE,
-      Key: {
-        pk: `ATTENTION#${agentId}#${chatId}`,
-        sk: `USER#${userId}`,
-      },
+      Key: { pk: `ATTENTION#${agentId}#${chatId}`, sk: `USER#${userId}` },
     }));
-
     if (!result.Item) return 0;
-
-    // Check if expired (backup for TTL)
     if (Date.now() / 1000 > (result.Item.ttl as number)) return 0;
-
     return result.Item.attention as number;
   } catch {
     return 0;
   }
 }
 
-async function setAttention(
-  agentId: string,
-  chatId: number,
-  userId: number,
-  attention: number
-): Promise<void> {
+async function setAttention(agentId: string, chatId: number, userId: number, attention: number): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
-  const ttl = now + ATTENTION_DURATION_SECONDS;
-
   try {
     await dynamoClient.send(new PutCommand({
       TableName: ADMIN_TABLE,
@@ -215,7 +282,7 @@ async function setAttention(
         sk: `USER#${userId}`,
         attention,
         lastInteraction: now,
-        ttl,
+        ttl: now + ATTENTION_DURATION_SECONDS,
       },
     }));
   } catch (err) {
@@ -227,36 +294,31 @@ async function decayAttention(agentId: string, chatId: number, userId: number): 
   try {
     await dynamoClient.send(new UpdateCommand({
       TableName: ADMIN_TABLE,
-      Key: {
-        pk: `ATTENTION#${agentId}#${chatId}`,
-        sk: `USER#${userId}`,
-      },
+      Key: { pk: `ATTENTION#${agentId}#${chatId}`, sk: `USER#${userId}` },
       UpdateExpression: 'SET attention = attention * :decay, lastInteraction = :now',
-      ExpressionAttributeValues: {
-        ':decay': ATTENTION_DECAY,
-        ':now': Math.floor(Date.now() / 1000),
-      },
+      ExpressionAttributeValues: { ':decay': ATTENTION_DECAY, ':now': Math.floor(Date.now() / 1000) },
       ConditionExpression: 'attribute_exists(pk)',
     }));
   } catch {
-    // Ignore - record may not exist
+    // Ignore
   }
 }
 
 function isBotMentioned(text: string, botUsername?: string): boolean {
   if (!botUsername) return false;
-  const mentionPattern = new RegExp(`@${botUsername}\\b`, 'i');
-  return mentionPattern.test(text);
+  return new RegExp(`@${botUsername}\\b`, 'i').test(text);
 }
 
 async function shouldRespond(
   agentId: string,
   message: NonNullable<TelegramUpdate['message']>,
-  botUsername?: string
+  agent: AgentConfig
 ): Promise<{ respond: boolean; reason: string; setAttention?: boolean }> {
   const chatType = message.chat.type;
   const userId = message.from?.id;
   const text = message.text || '';
+  const botUsername = agent.platforms.telegram?.botUsername;
+  const botId = agent.platforms.telegram?.botId;
 
   // Always respond to DMs
   if (chatType === 'private') {
@@ -268,15 +330,23 @@ async function shouldRespond(
     return { respond: true, reason: 'mentioned', setAttention: true };
   }
 
-  // Check if replying and has attention
-  if (message.reply_to_message && userId) {
-    const attention = await getAttention(agentId, message.chat.id, userId);
-    if (attention > MIN_ATTENTION_THRESHOLD) {
-      return { respond: true, reason: 'reply_with_attention' };
+  // Check if replying to bot's message
+  if (message.reply_to_message) {
+    const replyToId = message.reply_to_message.from?.id;
+    const replyToUsername = message.reply_to_message.from?.username;
+    if ((botId && replyToId === botId) || (botUsername && replyToUsername === botUsername)) {
+      return { respond: true, reason: 'reply_to_bot', setAttention: true };
+    }
+    // Has attention and replying
+    if (userId) {
+      const attention = await getAttention(agentId, message.chat.id, userId);
+      if (attention > MIN_ATTENTION_THRESHOLD) {
+        return { respond: true, reason: 'reply_with_attention' };
+      }
     }
   }
 
-  // Check attention level for ongoing conversations
+  // Check attention level
   if (userId) {
     const attention = await getAttention(agentId, message.chat.id, userId);
     if (attention >= MIN_ATTENTION_THRESHOLD) {
@@ -284,7 +354,7 @@ async function shouldRespond(
     }
   }
 
-  // Random chance to reply (for engagement)
+  // Random chance
   if (Math.random() < RANDOM_REPLY_CHANCE) {
     return { respond: true, reason: 'random' };
   }
@@ -292,107 +362,178 @@ async function shouldRespond(
   return { respond: false, reason: 'no_trigger' };
 }
 
-function verifySecretToken(provided: string | undefined, expected: string): boolean {
-  if (!provided) return false;
-
-  const providedBuf = Buffer.from(provided);
-  const expectedBuf = Buffer.from(expected);
-
-  if (providedBuf.length !== expectedBuf.length) return false;
-
-  return timingSafeEqual(providedBuf, expectedBuf);
-}
-
-function getClientIP(event: APIGatewayProxyEventV2): string | null {
-  const cfConnectingIP = event.headers['cf-connecting-ip'];
-  if (cfConnectingIP) return cfConnectingIP;
-
-  const forwardedFor = event.headers['x-forwarded-for'];
-  if (forwardedFor) {
-    return forwardedFor.split(',')[0].trim();
-  }
-
-  return event.requestContext.http.sourceIp || null;
-}
-
-async function getLlmApiKey(): Promise<string> {
-  if (!LLM_API_KEY_SECRET_ARN) {
-    throw new Error('LLM_API_KEY_SECRET_ARN not configured');
-  }
-
-  const value = await getSecret(LLM_API_KEY_SECRET_ARN);
-  if (!value) {
-    throw new Error('Failed to get LLM API key');
-  }
-
-  try {
-    const parsed = JSON.parse(value);
-    return parsed.api_key || parsed.apiKey || value;
-  } catch {
-    return value;
-  }
-}
-
-async function sendTelegramMessage(
-  token: string,
-  chatId: number,
-  text: string,
-  replyToMessageId?: number
-): Promise<void> {
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
-
-  const body: Record<string, unknown> = {
-    chat_id: chatId,
-    text,
-    parse_mode: 'Markdown',
-  };
-
-  if (replyToMessageId) {
-    body.reply_to_message_id = replyToMessageId;
-  }
-
-  const response = await fetch(url, {
+// === TELEGRAM API ===
+async function sendTelegramMessage(token: string, chatId: number, text: string, replyTo?: number): Promise<number | null> {
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: 'Markdown',
+      reply_to_message_id: replyTo,
+    }),
   });
-
   if (!response.ok) {
-    const error = await response.text();
-    console.error('Telegram API error:', error);
+    console.error('Telegram sendMessage error:', await response.text());
+    return null;
+  }
+  const data = await response.json() as { result?: { message_id: number } };
+  return data.result?.message_id || null;
+}
+
+async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string, caption?: string, replyTo?: number): Promise<void> {
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      photo: photoUrl,
+      caption,
+      parse_mode: 'Markdown',
+      reply_to_message_id: replyTo,
+    }),
+  });
+  if (!response.ok) {
+    console.error('Telegram sendPhoto error:', await response.text());
   }
 }
 
-async function generateResponse(
-  agent: AgentConfig,
-  message: string,
-  chatContext?: string
-): Promise<string> {
-  const apiKey = await getLlmApiKey();
+async function sendTelegramVideo(token: string, chatId: number, videoUrl: string, caption?: string, replyTo?: number): Promise<void> {
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      video: videoUrl,
+      caption,
+      parse_mode: 'Markdown',
+      reply_to_message_id: replyTo,
+    }),
+  });
+  if (!response.ok) {
+    console.error('Telegram sendVideo error:', await response.text());
+  }
+}
 
-  let systemPrompt = agent.persona || `You are ${agent.name}, a helpful AI assistant.`;
+async function sendChatAction(token: string, chatId: number, action: string): Promise<void> {
+  await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, action }),
+  });
+}
 
-  if (agent.wallets && agent.wallets.length > 0) {
-    systemPrompt += `\n\n## Your Solana Wallets\n`;
-    for (const wallet of agent.wallets) {
-      systemPrompt += `- ${wallet.name}: ${wallet.publicKey}\n`;
+// === TOOL EXECUTION ===
+interface ToolResult {
+  success: boolean;
+  result?: unknown;
+  error?: string;
+  media?: { type: 'image' | 'video'; url: string; caption?: string };
+}
+
+async function executeTool(
+  agentId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  token: string,
+  chatId: number
+): Promise<ToolResult> {
+  try {
+    switch (toolName) {
+      case 'generate_image': {
+        const prompt = args.prompt as string;
+        const canUse = await credits.canUseTool(agentId, 'generate_image');
+        if (!canUse.allowed) {
+          return { success: false, error: `Rate limited: ${canUse.reason}` };
+        }
+
+        await sendChatAction(token, chatId, 'upload_photo');
+        const result = await media.generateImage({ prompt, agentId, platform: 'telegram' });
+        return {
+          success: true,
+          result: { id: result.id, url: result.url },
+          media: { type: 'image', url: result.url, caption: prompt },
+        };
+      }
+
+      case 'generate_video': {
+        const prompt = args.prompt as string;
+        const canUse = await credits.canUseTool(agentId, 'generate_video');
+        if (!canUse.allowed) {
+          return { success: false, error: `Rate limited: ${canUse.reason}` };
+        }
+
+        // Video generation is async - just start it
+        await sendChatAction(token, chatId, 'upload_video');
+        const job = await media.generateVideo({
+          prompt,
+          agentId,
+          platform: 'telegram',
+          conversationId: `telegram-${chatId}`,
+        });
+        return {
+          success: true,
+          result: { jobId: job.jobId, status: 'started', message: 'Video generation started. I will send it when ready!' },
+        };
+      }
+
+      case 'get_my_gallery': {
+        const type = args.type as 'image' | 'video' | 'sticker' | undefined;
+        const limit = (args.limit as number) || 5;
+        const items = await gallery.getGallery(agentId, { type, limit });
+        return {
+          success: true,
+          result: items.map(i => ({ id: i.id, type: i.type, url: i.url, prompt: i.prompt })),
+        };
+      }
+
+      case 'get_my_wallets': {
+        const walletList = await wallets.listWallets(agentId);
+        const enriched = await Promise.all(
+          walletList
+            .filter(w => w.walletType === 'solana')
+            .map(async (w) => {
+              try {
+                const balance = await wallets.getSolanaBalance(w.publicKey, agentId);
+                return { ...w, solBalance: balance.solBalance };
+              } catch {
+                return { ...w, solBalance: null };
+              }
+            })
+        );
+        return { success: true, result: enriched };
+      }
+
+      case 'send_gallery_image': {
+        const imageId = args.imageId as string;
+        const item = await gallery.getGalleryItem(agentId, imageId);
+        if (!item) {
+          return { success: false, error: 'Image not found in gallery' };
+        }
+        return {
+          success: true,
+          result: { id: item.id, url: item.url },
+          media: { type: 'image', url: item.url, caption: item.prompt },
+        };
+      }
+
+      default:
+        return { success: false, error: `Unknown tool: ${toolName}` };
     }
-    systemPrompt += `\nYou can share your wallet address when users ask about tipping, donations, or your wallet.`;
+  } catch (error) {
+    console.error(`Tool ${toolName} error:`, error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
+}
 
-  if (agent.profileImage?.url) {
-    systemPrompt += `\n\n## Your Profile\n- Profile image: ${agent.profileImage.url}`;
-  }
-
-  const messages = [
-    { role: 'system', content: systemPrompt },
-  ];
-
-  if (chatContext) {
-    messages.push({ role: 'assistant', content: `Previous context: ${chatContext}` });
-  }
-
-  messages.push({ role: 'user', content: message });
+// === LLM CALL WITH TOOLS ===
+async function callLLM(
+  messages: ChatMessage[],
+  agent: AgentConfig,
+  tools?: typeof TELEGRAM_TOOLS
+): Promise<{ content?: string; toolCalls?: ToolCall[] }> {
+  const apiKey = await getLlmApiKey();
 
   const response = await fetch(LLM_ENDPOINT, {
     method: 'POST',
@@ -405,141 +546,217 @@ async function generateResponse(
     body: JSON.stringify({
       model: agent.llmConfig.model || LLM_MODEL,
       messages,
+      tools: tools?.length ? tools : undefined,
       max_tokens: agent.llmConfig.maxTokens || 1024,
       temperature: agent.llmConfig.temperature || 0.8,
     }),
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`LLM API error: ${error}`);
+    throw new Error(`LLM API error: ${await response.text()}`);
   }
 
   const data = await response.json() as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ message?: { content?: string; tool_calls?: ToolCall[] } }>;
   };
 
-  return data.choices?.[0]?.message?.content || 'I apologize, but I couldn\'t generate a response.';
+  const choice = data.choices?.[0]?.message;
+  return { content: choice?.content || undefined, toolCalls: choice?.tool_calls };
 }
 
-export async function handler(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+// === MAIN PROCESSING ===
+async function processMessage(
+  agentId: string,
+  agent: AgentConfig,
+  message: NonNullable<TelegramUpdate['message']>,
+  token: string
+): Promise<void> {
+  const chatId = message.chat.id;
+  const text = message.text || '';
+  const messageId = message.message_id;
+  const userName = message.from?.first_name || 'User';
+
+  // Get conversation history
+  const history = await getConversationHistory(agentId, chatId);
+
+  // Build system prompt
+  let systemPrompt = agent.persona || `You are ${agent.name}, a helpful AI assistant on Telegram.`;
+  systemPrompt += `\n\nYou are chatting on Telegram. Keep responses concise and conversational.`;
+  systemPrompt += `\nYou can generate images and videos when asked. Just use the tools available to you.`;
+
+  if (agent.wallets?.length) {
+    systemPrompt += `\n\n## Your Solana Wallets\n`;
+    agent.wallets.forEach(w => { systemPrompt += `- ${w.name}: ${w.publicKey}\n`; });
+  }
+
+  if (agent.profileImage?.url) {
+    systemPrompt += `\n\n## Your Profile Image\n${agent.profileImage.url}`;
+  }
+
+  // Build messages
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    ...history,
+    { role: 'user', content: `${userName}: ${text}` },
+  ];
+
+  // Tool loop
+  let iterations = 0;
+  const maxIterations = 5;
+  const mediasToSend: Array<{ type: 'image' | 'video'; url: string; caption?: string }> = [];
+
+  while (iterations++ < maxIterations) {
+    await sendChatAction(token, chatId, 'typing');
+
+    const llmResponse = await callLLM(messages, agent, TELEGRAM_TOOLS);
+
+    if (llmResponse.toolCalls?.length) {
+      // Add assistant message with tool calls
+      messages.push({ role: 'assistant', content: '', tool_calls: llmResponse.toolCalls });
+
+      // Execute tools
+      for (const tc of llmResponse.toolCalls) {
+        const args = JSON.parse(tc.function.arguments || '{}');
+        const result = await executeTool(agentId, tc.function.name, args, token, chatId);
+
+        // Add tool result
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          name: tc.function.name,
+          content: JSON.stringify(result.success ? result.result : { error: result.error }),
+        });
+
+        // Collect media to send
+        if (result.media) {
+          mediasToSend.push(result.media);
+        }
+      }
+
+      // Continue loop to get final response
+      continue;
+    }
+
+    // No tool calls - we have final response
+    if (llmResponse.content) {
+      messages.push({ role: 'assistant', content: llmResponse.content });
+
+      // Send text response
+      await sendTelegramMessage(token, chatId, llmResponse.content, messageId);
+
+      // Send any collected media
+      for (const m of mediasToSend) {
+        if (m.type === 'image') {
+          await sendTelegramPhoto(token, chatId, m.url, m.caption);
+        } else if (m.type === 'video') {
+          await sendTelegramVideo(token, chatId, m.url, m.caption);
+        }
+      }
+    }
+
+    break;
+  }
+
+  // Save updated history (excluding system prompt)
+  await saveConversationHistory(agentId, chatId, messages.slice(1));
+}
+
+// === SECURITY ===
+function verifySecretToken(provided: string | undefined, expected: string): boolean {
+  if (!provided) return false;
+  const providedBuf = Buffer.from(provided);
+  const expectedBuf = Buffer.from(expected);
+  if (providedBuf.length !== expectedBuf.length) return false;
+  return timingSafeEqual(providedBuf, expectedBuf);
+}
+
+function getClientIP(event: APIGatewayProxyEventV2): string | null {
+  return event.headers['cf-connecting-ip'] ||
+    event.headers['x-forwarded-for']?.split(',')[0].trim() ||
+    event.requestContext.http.sourceIp || null;
+}
+
+// === HANDLER ===
+export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
   const agentId = event.pathParameters?.agentId;
   const clientIP = getClientIP(event);
-  console.log('Telegram webhook:', {
-    agentId,
-    clientIP,
-    hasSecretHeader: !!event.headers['x-telegram-bot-api-secret-token'],
-    method: event.requestContext.http.method,
-  });
+
+  console.log('Telegram webhook:', { agentId, clientIP, method: event.requestContext.http.method });
 
   const ok = () => ({ statusCode: 200, body: 'OK' });
 
   try {
     if (!agentId || !/^[a-zA-Z0-9_-]+$/.test(agentId)) {
-      console.warn('Invalid agent ID format');
+      console.warn('Invalid agent ID');
       return ok();
     }
 
-    if (ENFORCE_IP_CHECK && clientIP) {
-      if (!isValidTelegramIP(clientIP)) {
-        console.warn(`Request from non-Telegram IP: ${clientIP}`);
-      }
+    if (ENFORCE_IP_CHECK && clientIP && !isValidTelegramIP(clientIP)) {
+      console.warn(`Non-Telegram IP: ${clientIP}`);
     }
 
+    // Verify webhook secret
     const webhookSecret = await getWebhookSecret(agentId);
     const providedSecret = event.headers['x-telegram-bot-api-secret-token'];
-
-    if (webhookSecret) {
-      if (!verifySecretToken(providedSecret, webhookSecret)) {
-        console.warn(`Invalid secret token for agent: ${agentId}`);
-        return ok();
-      }
-    } else {
-      console.warn(`No webhook secret configured for agent: ${agentId}`);
+    if (webhookSecret && !verifySecretToken(providedSecret, webhookSecret)) {
+      console.warn(`Invalid secret for: ${agentId}`);
+      return ok();
     }
 
+    // Load agent
     const agent = await getAgentConfig(agentId);
-    if (!agent) {
-      console.warn(`Agent not found: ${agentId}`);
+    if (!agent || !agent.platforms.telegram?.enabled) {
+      console.warn(`Agent not found or Telegram disabled: ${agentId}`);
       return ok();
     }
 
-    if (!agent.platforms.telegram?.enabled) {
-      console.warn(`Telegram not enabled for agent: ${agentId}`);
-      return ok();
-    }
-
+    // Get token
     const token = await getTelegramToken(agentId);
     if (!token) {
-      console.error(`Telegram token not configured for agent: ${agentId}`);
+      console.error(`No Telegram token for: ${agentId}`);
       return ok();
     }
 
-    const body = event.body ? JSON.parse(event.body) : null;
-    if (!body) {
-      return ok();
-    }
-
-    const update: TelegramUpdate = body;
-
-    if (!update.message?.text) {
-      return ok();
-    }
+    // Parse update
+    const update: TelegramUpdate = event.body ? JSON.parse(event.body) : {};
+    if (!update.message?.text) return ok();
 
     const message = update.message;
-    const chatId = message.chat.id;
-    const text = message.text!;
-    const messageId = message.message_id;
-
-    if (message.from?.username?.endsWith('bot')) {
-      return ok();
-    }
-
-    const botUsername = agent.platforms.telegram?.botUsername;
     const userId = message.from?.id;
 
-    // Check if we should respond
-    const decision = await shouldRespond(agentId, message, botUsername);
+    // Skip bot messages
+    if (message.from?.username?.endsWith('bot')) return ok();
 
-    console.log('Processing message:', {
+    // Check if should respond
+    const decision = await shouldRespond(agentId, message, agent);
+
+    console.log('Message decision:', {
       agentId,
-      chatId,
-      messageId,
+      chatId: message.chat.id,
       fromUser: userId,
-      textLength: text.length,
       chatType: message.chat.type,
       decision: decision.reason,
       willRespond: decision.respond,
     });
 
-    if (!decision.respond) {
-      return ok();
-    }
+    if (!decision.respond) return ok();
 
-    // Set attention if mentioned
+    // Set attention if triggered by mention/reply
     if (decision.setAttention && userId) {
-      await setAttention(agentId, chatId, userId, INITIAL_ATTENTION);
+      await setAttention(agentId, message.chat.id, userId, INITIAL_ATTENTION);
     }
 
-    // Generate and send response
-    const response = await generateResponse(
-      agent,
-      text,
-      message.reply_to_message?.text
-    );
+    // Process message with tools
+    await processMessage(agentId, agent, message, token);
 
-    await sendTelegramMessage(token, chatId, response, messageId);
-
-    // Decay attention after responding (not in DMs)
+    // Decay attention
     if (userId && decision.reason !== 'private_chat') {
-      await decayAttention(agentId, chatId, userId);
+      await decayAttention(agentId, message.chat.id, userId);
     }
 
     return ok();
   } catch (error) {
-    console.error('Webhook handler error:', error instanceof Error ? error.message : 'Unknown');
+    console.error('Webhook error:', error instanceof Error ? error.message : 'Unknown');
     return ok();
   }
 }
