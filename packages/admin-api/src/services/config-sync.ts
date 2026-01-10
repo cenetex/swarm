@@ -75,7 +75,9 @@ interface AgentConfig {
   secrets: string[];
 }
 
-const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: { removeUndefinedValues: true },
+});
 const STATE_TABLE = process.env.STATE_TABLE;
 
 /**

@@ -16,7 +16,9 @@ import type { MediaJob, GalleryItem } from '../types.js';
 
 const s3Client = new S3Client({});
 const sqsClient = new SQSClient({});
-const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: { removeUndefinedValues: true },
+});
 
 const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
 const MEDIA_QUEUE_URL = process.env.MEDIA_QUEUE_URL;

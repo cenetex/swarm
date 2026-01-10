@@ -17,7 +17,9 @@ import {
 import { storeSecret, _getSecretValueInternal } from './secrets.js';
 import type { WalletInfo, UserSession } from '../types.js';
 
-const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: { removeUndefinedValues: true },
+});
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 // Default Solana RPC - agent can configure their own Helius key

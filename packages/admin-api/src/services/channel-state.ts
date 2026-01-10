@@ -22,7 +22,9 @@ import type {
   ResponseDecision,
 } from '../types.js';
 
-const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: { removeUndefinedValues: true },
+});
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 // === CONFIGURATION ===

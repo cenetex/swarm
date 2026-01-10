@@ -13,7 +13,9 @@ import {
 import type { AgentRecord, UserSession } from '../types.js';
 import { syncAgentConfig } from './config-sync.js';
 
-const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: { removeUndefinedValues: true },
+});
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 /**

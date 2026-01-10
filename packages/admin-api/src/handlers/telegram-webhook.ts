@@ -31,7 +31,9 @@ import * as credits from '../services/credits.js';
 import * as channelState from '../services/channel-state.js';
 import type { BufferedMessage, ChannelStateRecord } from '../types.js';
 
-const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: { removeUndefinedValues: true },
+});
 const secretsClient = new SecretsManagerClient({});
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;

@@ -23,7 +23,9 @@ import {
 import type { SecretMetadata, SecretType, UserSession } from '../types.js';
 
 const secretsClient = new SecretsManagerClient({});
-const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: { removeUndefinedValues: true },
+});
 
 const SECRETS_TABLE = process.env.ADMIN_TABLE!;
 const KMS_KEY_ID = process.env.KMS_KEY_ID!;

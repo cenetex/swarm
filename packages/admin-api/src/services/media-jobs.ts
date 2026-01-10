@@ -10,10 +10,19 @@ import {
   UpdateCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { v4 as uuid } from 'uuid';
 import type { MediaJob } from '../types.js';
+import * as gallery from './gallery.js';
 
-const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: { removeUndefinedValues: true },
+});
+const s3Client = new S3Client({});
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
+const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
+const CDN_URL = process.env.CDN_URL;
+const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
 
 // TTL: 24 hours for job records
 const JOB_TTL_SECONDS = 24 * 60 * 60;

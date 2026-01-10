@@ -1,16 +1,19 @@
 # OpenRouter SDK + Zod Schema Refactor Plan
 
+Last updated: 2026-01-10 (audit against current `packages/admin-api/src/handlers/chat.ts`)
+
 ## Overview
 
 Refactor `packages/admin-api/src/handlers/chat.ts` to use the OpenRouter SDK's `tool()` helper with Zod schemas for type-safe tool definitions and automatic execution.
 
 ## Current State
 
-- **28 tools** defined in `AGENT_TOOLS` array using OpenAI's raw JSON schema format
+- **26 tools** defined in `AGENT_TOOLS` array using OpenAI's raw JSON schema format
 - Manual `fetch()` call to OpenRouter API in `callLLM()`
 - Manual tool execution loop in `processChat()` with ~10 max iterations
-- Special handling for "pause-for-input" tools: `request_secret`, `set_profile_image(upload)`, upload URL tools
-- Giant `switch` statement in `executeTool()` with 28 cases
+- Special handling for "pause-for-input" tools: `request_secret`, `request_model_selection`, `get_profile_upload_url`, `get_reference_image_upload_url`, `set_profile_image` with `source="upload"`
+- `processChat()` uses `pendingToolCall` to return upload URLs and wait for user input
+- Giant `switch` statement in `executeTool()` with 26 cases
 
 ## Why Refactor?
 
@@ -68,7 +71,6 @@ These can use `execute: async (params) => { ... }`:
 - `get_job_status`
 - `set_profile_image` (for generate/url/gallery sources)
 - `save_uploaded_profile_image`
-- `get_reference_image_upload_url`
 - `save_reference_image`
 - `list_reference_images`
 - `delete_reference_image`
@@ -84,6 +86,7 @@ These need user interaction and should NOT auto-execute:
 - `request_secret` → Shows secure input in UI
 - `request_model_selection` → Shows dropdown in UI
 - `get_profile_upload_url` → Returns upload widget
+- `get_reference_image_upload_url` → Returns upload widget
 - `set_profile_image` (source='upload') → Returns upload widget
 
 ## File Structure After Refactor
@@ -339,6 +342,8 @@ for (const call of manualCalls) {
 }
 ```
 
+Keep the existing `pendingToolCall` behavior for upload URLs and `set_profile_image` with `source="upload"` so the UI can render the file picker before continuing.
+
 ### 3. Message History Format
 SDK uses `fromChatMessages()` / `toChatMessage()` for format conversion:
 - Input: OpenAI-style messages → SDK internal format
@@ -359,7 +364,7 @@ If issues arise:
 
 ## Success Criteria
 
-- [ ] All 28 tools converted to Zod schemas
+- [ ] All 26 tools converted to Zod schemas
 - [ ] SDK handles tool execution loop
 - [ ] Manual tools pause correctly for user input
 - [ ] Type inference works in executors

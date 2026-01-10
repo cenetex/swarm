@@ -26,7 +26,9 @@ export class ActivityService {
 
   constructor(tableName: string, region: string = 'us-east-1') {
     const client = new DynamoDBClient({ region });
-    this.docClient = DynamoDBDocumentClient.from(client);
+    this.docClient = DynamoDBDocumentClient.from(client, {
+      marshallOptions: { removeUndefinedValues: true },
+    });
     this.tableName = tableName;
   }
 
