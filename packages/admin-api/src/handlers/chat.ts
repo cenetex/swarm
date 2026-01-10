@@ -490,15 +490,15 @@ async function executeTool(
           
           // Enable Telegram platform on the agent
           await agents.updateAgent(agentId!, {
-            platforms: { 
-              telegram: { 
-                enabled: true, 
-                botUsername: validation.botInfo?.username 
-              } 
+            platforms: {
+              telegram: {
+                enabled: true,
+                botUsername: validation.botInfo?.username
+              }
             }
           }, session);
-          
-          // Register the webhook with Telegram
+
+          // Generate and register the webhook with a secret token for security
           const webhookResult = await telegram.registerTelegramWebhook(args.value, agentId!);
           if (!webhookResult.success) {
             result = {
@@ -507,10 +507,22 @@ async function executeTool(
             };
             break;
           }
-          
-          result = { 
-            success: true, 
-            message: `🎉 Telegram bot @${validation.botInfo?.username} is now live! Webhook registered at ${webhookResult.webhookUrl}. You can message the bot and it will respond.`
+
+          // Store the webhook secret for request verification
+          if (webhookResult.secretToken && agentId) {
+            await secrets.storeSecret(
+              agentId,
+              'telegram_webhook_secret',
+              'default',
+              webhookResult.secretToken,
+              session,
+              `Telegram webhook secret for ${agentId}`
+            );
+          }
+
+          result = {
+            success: true,
+            message: `Telegram bot @${validation.botInfo?.username} is now live! Webhook registered at ${webhookResult.webhookUrl} with secure token verification. You can message the bot and it will respond.`
           };
         } else {
           result = { success: true, message: `${secretType} stored securely` };

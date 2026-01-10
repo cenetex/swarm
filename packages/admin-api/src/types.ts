@@ -28,6 +28,7 @@ export interface UserSession {
 // Secret types that can be managed
 export const SecretType = z.enum([
   'telegram_bot_token',
+  'telegram_webhook_secret',  // Secret token for webhook verification
   'twitter_api_key',
   'twitter_api_secret',
   'twitter_access_token',

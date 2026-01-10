@@ -1,29 +1,23 @@
 name: Deploy
 
 on:
-  # Auto-deploy to staging on push to main, production on version tags
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
     paths-ignore:
       - '*.md'
       - 'docs/**'
       - '.github/workflows/ci.yml'
       - '.github/workflows/issue-management.yml'
 
-  # Manual deployment
   workflow_dispatch:
     inputs:
       environment:
         description: 'Environment to deploy to'
         required: true
-        default: 'production'
+        default: 'staging'
         type: choice
-        options:
-          - staging
-          - production
+        options: [staging, production]
       stack:
         description: 'Stack to deploy (leave empty for all)'
         required: false
@@ -42,267 +36,103 @@ permissions:
   contents: read
 
 jobs:
-  # Determine deployment environment based on trigger
-  setup:
-    name: Setup
+  deploy:
+    name: Build & Deploy
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_type == 'tag' && 'production' || 'staging') }}
+    
     outputs:
-      environment: ${{ steps.set-env.outputs.environment }}
-      is_production: ${{ steps.set-env.outputs.is_production }}
-    steps:
-      - name: Determine environment
-        id: set-env
-        run: |
-          # Default to staging
-          ENV="staging"
-          IS_PROD="false"
+      environment: ${{ steps.env.outputs.environment }}
+      admin-url: ${{ steps.outputs.outputs.url }}
+      api-url: ${{ steps.outputs.outputs.api_url }}
 
-          # Check trigger type
+    steps:
+      - name: Set environment
+        id: env
+        run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Manual trigger - use input
             ENV="${{ inputs.environment }}"
           elif [ "${{ github.ref_type }}" = "tag" ]; then
-            # Version tag (v*) - deploy to production
             ENV="production"
-            IS_PROD="true"
-            echo "🏷️ Deploying tag ${{ github.ref_name }} to production"
-          elif [ "${{ github.ref_name }}" = "main" ]; then
-            # Push to main - deploy to staging
+          else
             ENV="staging"
-            echo "🚀 Auto-deploying main branch to staging"
           fi
-
+          CDK_ENV="${ENV/production/prod}"
           echo "environment=$ENV" >> $GITHUB_OUTPUT
-          echo "is_production=$IS_PROD" >> $GITHUB_OUTPUT
-          echo "## Deployment Info" >> $GITHUB_STEP_SUMMARY
-          echo "- **Environment:** $ENV" >> $GITHUB_STEP_SUMMARY
-          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Ref:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "cdk_env=$CDK_ENV" >> $GITHUB_OUTPUT
+          echo "🚀 Deploying to **$ENV**" >> $GITHUB_STEP_SUMMARY
 
-  # Build job runs in parallel with setup
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build all packages
-        run: pnpm -r build
-
       - name: Cache Lambda Layer
-        id: cache-layer
+        id: layer-cache
         uses: actions/cache@v4
         with:
           path: packages/layer/nodejs
-          key: lambda-layer-${{ hashFiles('packages/layer/package.json') }}
+          key: layer-${{ hashFiles('packages/layer/package.json') }}
 
-      - name: Build Lambda Layer
-        if: steps.cache-layer.outputs.cache-hit != 'true'
-        run: |
-          cd packages/layer
-          mkdir -p nodejs
-          cp package.json nodejs/
-          cd nodejs
-          npm install --omit=dev --legacy-peer-deps
-          cd ..
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+      - name: Cache CDK output
+        uses: actions/cache@v4
         with:
-          name: build-${{ github.sha }}
-          path: |
-            packages/*/dist
-            packages/layer/nodejs
-          retention-days: 1
-
-  deploy:
-    name: Deploy to AWS (${{ needs.setup.outputs.environment }})
-    runs-on: ubuntu-latest
-    needs: [setup, build]
-    environment: ${{ needs.setup.outputs.environment }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-${{ github.sha }}
-          path: packages
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          path: packages/infra/cdk.out
+          key: cdk-${{ steps.env.outputs.cdk_env }}-${{ hashFiles('packages/infra/**/*.ts', 'packages/*/src/**/*.ts') }}
+          restore-keys: cdk-${{ steps.env.outputs.cdk_env }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Build packages
+        run: |
+          # Build layer if not cached
+          if [ "${{ steps.layer-cache.outputs.cache-hit }}" != "true" ]; then
+            cd packages/layer && mkdir -p nodejs && cp package.json nodejs/ && cd nodejs && npm i --omit=dev --legacy-peer-deps && cd ../..
+          fi
+          # Build all except admin-ui (needs API URL)
+          pnpm -r --filter '!admin-ui' build
+
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-deploy
+          role-session-name: deploy-${{ steps.env.outputs.environment }}
 
       - name: CDK Deploy
         working-directory: packages/infra
         run: |
-          ENV_NAME="${{ needs.setup.outputs.environment }}"
-          # Map GitHub environment names to CDK environment names
-          if [ "$ENV_NAME" = "production" ]; then
-            CDK_ENV="prod"
-          else
-            CDK_ENV="$ENV_NAME"
-          fi
+          HOTSWAP=${{ steps.env.outputs.cdk_env == 'staging' && '--hotswap-fallback' || '' }}
+          STACK="${{ inputs.stack }}"
+          npx cdk deploy ${STACK:-'--all'} --require-approval never --concurrency 10 $HOTSWAP -c environment=${{ steps.env.outputs.cdk_env }}
 
-          # Use hotswap for faster Lambda deployments in staging
-          HOTSWAP_FLAG=""
-          if [ "$CDK_ENV" = "staging" ]; then
-            HOTSWAP_FLAG="--hotswap-fallback"
-          fi
-
-          echo "🚀 Deploying to $ENV_NAME (CDK env: $CDK_ENV)"
-
-          # Deploy with concurrency for faster multi-stack deploys
-          if [ -n "${{ inputs.stack }}" ]; then
-            npx cdk deploy ${{ inputs.stack }} --require-approval never --concurrency 10 $HOTSWAP_FLAG -c environment=$CDK_ENV
-          else
-            npx cdk deploy --all --require-approval never --concurrency 10 $HOTSWAP_FLAG -c environment=$CDK_ENV
-          fi
-
-      - name: Get Stack Outputs
-        id: stack-outputs
-        working-directory: packages/infra
+      - name: Get outputs
+        id: outputs
         run: |
-          ENV_NAME="${{ needs.setup.outputs.environment }}"
-          if [ "$ENV_NAME" = "production" ]; then
-            CDK_ENV="prod"
-          else
-            CDK_ENV="$ENV_NAME"
-          fi
+          STACK="SwarmStack-${{ steps.env.outputs.cdk_env }}"
+          echo "bucket=$(aws cloudformation describe-stacks --stack-name $STACK --query "Stacks[0].Outputs[?ExportName=='swarm-admin-ui-bucket-${{ steps.env.outputs.cdk_env }}'].OutputValue" --output text)" >> $GITHUB_OUTPUT
+          echo "distribution=$(aws cloudformation describe-stacks --stack-name $STACK --query "Stacks[0].Outputs[?ExportName=='swarm-admin-ui-distribution-${{ steps.env.outputs.cdk_env }}'].OutputValue" --output text)" >> $GITHUB_OUTPUT
+          echo "url=$(aws cloudformation describe-stacks --stack-name $STACK --query "Stacks[0].Outputs[?ExportName=='swarm-admin-ui-url-${{ steps.env.outputs.cdk_env }}'].OutputValue" --output text)" >> $GITHUB_OUTPUT
+          echo "api_url=$(aws cloudformation describe-stacks --stack-name $STACK --query "Stacks[0].Outputs[?contains(OutputKey, 'ApiEndpoint')].OutputValue" --output text 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
-          # Get Admin UI bucket and distribution from CloudFormation
-          STACK_NAME="SwarmStack-$CDK_ENV"
-          
-          ADMIN_BUCKET=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
-            --query "Stacks[0].Outputs[?ExportName=='swarm-admin-ui-bucket-$CDK_ENV'].OutputValue" \
-            --output text)
-          
-          ADMIN_DISTRIBUTION=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
-            --query "Stacks[0].Outputs[?ExportName=='swarm-admin-ui-distribution-$CDK_ENV'].OutputValue" \
-            --output text)
-          
-          ADMIN_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
-            --query "Stacks[0].Outputs[?ExportName=='swarm-admin-ui-url-$CDK_ENV'].OutputValue" \
-            --output text)
-          
-          # Get Admin API endpoint if it exists
-          ADMIN_API_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
-            --query "Stacks[0].Outputs[?contains(OutputKey, 'ApiEndpoint')].OutputValue" \
-            --output text 2>/dev/null || echo "")
-          
-          echo "bucket=$ADMIN_BUCKET" >> $GITHUB_OUTPUT
-          echo "distribution=$ADMIN_DISTRIBUTION" >> $GITHUB_OUTPUT
-          echo "url=$ADMIN_URL" >> $GITHUB_OUTPUT
-          echo "api_url=$ADMIN_API_URL" >> $GITHUB_OUTPUT
-          
-          echo "## Deployed Stacks ($ENV_NAME)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Stack: \`$STACK_NAME\`" >> $GITHUB_STEP_SUMMARY
-          echo "Admin UI Bucket: \`$ADMIN_BUCKET\`" >> $GITHUB_STEP_SUMMARY
-          echo "Admin UI URL: $ADMIN_URL" >> $GITHUB_STEP_SUMMARY
-          echo "Admin API URL: $ADMIN_API_URL" >> $GITHUB_STEP_SUMMARY
-
-    outputs:
-      admin-bucket: ${{ steps.stack-outputs.outputs.bucket }}
-      admin-distribution: ${{ steps.stack-outputs.outputs.distribution }}
-      admin-url: ${{ steps.stack-outputs.outputs.url }}
-      admin-api-url: ${{ steps.stack-outputs.outputs.api_url }}
-
-  deploy-admin-ui:
-    name: Deploy Admin UI (${{ needs.setup.outputs.environment }})
-    runs-on: ubuntu-latest
-    needs: [setup, build, deploy]
-    environment: ${{ needs.setup.outputs.environment }}
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-${{ github.sha }}
-          path: packages
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Rebuild Admin UI with API URL
-        working-directory: packages/admin-ui
-        run: pnpm build
-        env:
-          # Use the direct API Gateway URL (custom domain requires ACM cert setup)
-          VITE_API_URL: ${{ needs.deploy.outputs.admin-api-url }}
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-deploy-ui
-
-      - name: Deploy to S3
+      - name: Build & Deploy Admin UI
         run: |
-          aws s3 sync packages/admin-ui/dist s3://${{ needs.deploy.outputs.admin-bucket }} \
-            --delete \
-            --cache-control "max-age=31536000,immutable" \
-            --exclude "index.html" \
-            --exclude "*.json"
-          
-          aws s3 cp packages/admin-ui/dist/index.html s3://${{ needs.deploy.outputs.admin-bucket }}/index.html \
-            --cache-control "no-cache,no-store,must-revalidate"
+          cd packages/admin-ui
+          VITE_API_URL=${{ steps.outputs.outputs.api_url }} pnpm build
+          aws s3 sync dist s3://${{ steps.outputs.outputs.bucket }} --delete --cache-control "max-age=31536000,immutable" --exclude "index.html" --exclude "*.json"
+          aws s3 cp dist/index.html s3://${{ steps.outputs.outputs.bucket }}/index.html --cache-control "no-cache"
 
-      - name: Invalidate CloudFront
+      - name: Invalidate CDN
         run: |
-          DISTRIBUTION_ID="${{ needs.deploy.outputs.admin-distribution }}"
-          if [ -n "$DISTRIBUTION_ID" ]; then
-            aws cloudfront create-invalidation \
-              --distribution-id $DISTRIBUTION_ID \
-              --paths "/*"
-            echo "CloudFront cache invalidated for distribution: $DISTRIBUTION_ID"
-          fi
+          DIST="${{ steps.outputs.outputs.distribution }}"
+          [ -n "$DIST" ] && [ "$DIST" != "None" ] && aws cloudfront create-invalidation --distribution-id $DIST --paths "/*" --no-cli-pager || true
 
       - name: Summary
         run: |
-          echo "## Admin UI Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**URL:** ${{ needs.deploy.outputs.admin-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Deployed to ${{ steps.env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **UI:** ${{ steps.outputs.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **API:** ${{ steps.outputs.outputs.api_url }}" >> $GITHUB_STEP_SUMMARY

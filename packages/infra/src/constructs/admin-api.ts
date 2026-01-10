@@ -163,7 +163,7 @@ export class AdminApiConstruct extends Construct {
       environment: {
         ADMIN_TABLE: this.table.tableName,
         STATE_TABLE: stateTable?.tableName || '',
-        SECRETS_PREFIX: 'swarm/',
+        SECRET_PREFIX: 'swarm',
         KMS_KEY_ID: this.encryptionKey.keyId,
         CF_ACCESS_TEAM_DOMAIN: cloudflareTeamDomain,
         ADMIN_EMAILS: adminEmails,
@@ -206,24 +206,40 @@ export class AdminApiConstruct extends Construct {
       responseQueue.grantSendMessages(this.chatHandler);
     }
 
-    // Grant secrets manager permissions
+    // Grant secrets manager permissions for swarm secrets
+    // CreateSecret needs wildcard since the secret doesn't exist yet
     this.chatHandler.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
-      actions: [
-        'secretsmanager:CreateSecret',
-        'secretsmanager:UpdateSecret',
-        'secretsmanager:DeleteSecret',
-        'secretsmanager:PutSecretValue',
-        'secretsmanager:DescribeSecret',
-        'secretsmanager:ListSecrets',
-        'secretsmanager:TagResource',
-      ],
+      actions: ['secretsmanager:CreateSecret'],
       resources: ['*'],
       conditions: {
         'StringLike': {
           'secretsmanager:Name': 'swarm/*',
         },
       },
+    }));
+
+    // Other operations can use ARN pattern
+    this.chatHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'secretsmanager:UpdateSecret',
+        'secretsmanager:DeleteSecret',
+        'secretsmanager:PutSecretValue',
+        'secretsmanager:DescribeSecret',
+        'secretsmanager:GetSecretValue',
+        'secretsmanager:TagResource',
+      ],
+      resources: [
+        `arn:aws:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:swarm/*`,
+      ],
+    }));
+
+    // ListSecrets needs wildcard resource (API limitation)
+    this.chatHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['secretsmanager:ListSecrets'],
+      resources: ['*'],
     }));
 
     // HTTP API Gateway
@@ -272,7 +288,7 @@ export class AdminApiConstruct extends Construct {
         NODE_ENV: environment,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         KMS_KEY_ID: this.encryptionKey.keyId,
-        SECRETS_PREFIX: 'swarm/',
+        SECRET_PREFIX: 'swarm',
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],
@@ -289,20 +305,30 @@ export class AdminApiConstruct extends Construct {
     }
 
     // Grant secrets manager permissions to agents handler
+    // CreateSecret needs wildcard since the secret doesn't exist yet
+    agentsHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['secretsmanager:CreateSecret'],
+      resources: ['*'],
+      conditions: {
+        'StringLike': {
+          'secretsmanager:Name': 'swarm/*',
+        },
+      },
+    }));
+
     agentsHandler.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [
-        'secretsmanager:CreateSecret',
         'secretsmanager:UpdateSecret',
         'secretsmanager:PutSecretValue',
         'secretsmanager:DeleteSecret',
         'secretsmanager:DescribeSecret',
         'secretsmanager:GetSecretValue',
-        'secretsmanager:ListSecrets',
         'secretsmanager:TagResource',
       ],
       resources: [
-        `arn:aws:secretsmanager:*:${cdk.Stack.of(this).account}:secret:swarm/*`,
+        `arn:aws:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:swarm/*`,
       ],
     }));
 
@@ -390,16 +416,13 @@ export class AdminApiConstruct extends Construct {
     }
     llmApiKey.grantRead(telegramWebhookHandler);
 
-    // Grant read access to agent secrets
+    // Grant read access to agent secrets (bot tokens and webhook secrets)
     telegramWebhookHandler.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: ['secretsmanager:GetSecretValue'],
-      resources: ['*'],
-      conditions: {
-        'StringLike': {
-          'secretsmanager:Name': 'swarm/*',
-        },
-      },
+      resources: [
+        `arn:aws:secretsmanager:*:${cdk.Stack.of(this).account}:secret:swarm/*`,
+      ],
     }));
 
     const telegramIntegration = new integrations.HttpLambdaIntegration(

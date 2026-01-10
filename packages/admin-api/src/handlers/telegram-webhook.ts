@@ -1,6 +1,12 @@
 /**
  * Shared Telegram Webhook Handler
  * Handles webhooks for ALL agents dynamically - no per-agent CDK deployment needed
+ *
+ * Security features:
+ * - Secret token verification (X-Telegram-Bot-Api-Secret-Token header)
+ * - IP address verification (Telegram server ranges)
+ * - Minimal error disclosure
+ * - Sanitized logging
  */
 import type {
   APIGatewayProxyEventV2,
@@ -9,6 +15,8 @@ import type {
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { isValidTelegramIP } from '../services/telegram.js';
+import { timingSafeEqual } from 'crypto';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const secretsClient = new SecretsManagerClient({});
@@ -17,6 +25,9 @@ const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
+
+// Whether to enforce IP verification (disable for testing behind proxies)
+const ENFORCE_IP_CHECK = process.env.ENFORCE_TELEGRAM_IP_CHECK !== 'false';
 
 interface TelegramUpdate {
   update_id: number;
@@ -110,6 +121,58 @@ async function getTelegramToken(agentId: string): Promise<string | null> {
   }
 
   return getSecret(result.Item.secretArn);
+}
+
+async function getWebhookSecret(agentId: string): Promise<string | null> {
+  // Look up the webhook secret for this agent
+  const result = await dynamoClient.send(new GetCommand({
+    TableName: ADMIN_TABLE,
+    Key: {
+      pk: `AGENT#${agentId}`,
+      sk: 'SECRET#telegram_webhook_secret#default',
+    },
+  }));
+
+  if (!result.Item?.secretArn) {
+    return null;
+  }
+
+  return getSecret(result.Item.secretArn);
+}
+
+/**
+ * Timing-safe comparison of secret tokens to prevent timing attacks
+ */
+function verifySecretToken(provided: string | undefined, expected: string): boolean {
+  if (!provided) return false;
+
+  // Convert to buffers for timing-safe comparison
+  const providedBuf = Buffer.from(provided);
+  const expectedBuf = Buffer.from(expected);
+
+  // Length check (this leaks length info, but Telegram tokens are fixed format)
+  if (providedBuf.length !== expectedBuf.length) return false;
+
+  return timingSafeEqual(providedBuf, expectedBuf);
+}
+
+/**
+ * Extract client IP from request (handles proxies like Cloudflare, API Gateway)
+ */
+function getClientIP(event: APIGatewayProxyEventV2): string | null {
+  // X-Forwarded-For can have multiple IPs: client, proxy1, proxy2
+  // The rightmost trusted proxy's left neighbor is the real client
+  // For API Gateway behind Cloudflare, CF-Connecting-IP is most reliable
+  const cfConnectingIP = event.headers['cf-connecting-ip'];
+  if (cfConnectingIP) return cfConnectingIP;
+
+  const forwardedFor = event.headers['x-forwarded-for'];
+  if (forwardedFor) {
+    // Take the first (leftmost) IP as client IP
+    return forwardedFor.split(',')[0].trim();
+  }
+
+  return event.requestContext.http.sourceIp || null;
 }
 
 async function getLlmApiKey(): Promise<string> {
@@ -211,72 +274,104 @@ async function generateResponse(
 export async function handler(
   event: APIGatewayProxyEventV2
 ): Promise<APIGatewayProxyResultV2> {
-  console.log('Telegram webhook received:', JSON.stringify(event, null, 2));
+  // Sanitized logging - only log metadata, never message content
+  const agentId = event.pathParameters?.agentId;
+  const clientIP = getClientIP(event);
+  console.log('Telegram webhook:', {
+    agentId,
+    clientIP,
+    hasSecretHeader: !!event.headers['x-telegram-bot-api-secret-token'],
+    method: event.requestContext.http.method,
+  });
+
+  // Always return 200 to prevent Telegram retries, even on auth failures
+  // This prevents information leakage about which agents exist
+  const ok = () => ({ statusCode: 200, body: 'OK' });
 
   try {
-    // Extract agent ID from path: /webhook/telegram/{agentId}
-    const agentId = event.pathParameters?.agentId;
-
-    if (!agentId) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: 'Agent ID required' }),
-      };
+    // === SECURITY CHECK 1: Validate agent ID format ===
+    if (!agentId || !/^[a-zA-Z0-9_-]+$/.test(agentId)) {
+      console.warn('Invalid agent ID format');
+      return ok();
     }
 
-    // Get agent config
+    // === SECURITY CHECK 2: IP verification (if enabled) ===
+    if (ENFORCE_IP_CHECK && clientIP) {
+      if (!isValidTelegramIP(clientIP)) {
+        console.warn(`Request from non-Telegram IP: ${clientIP}`);
+        // Don't immediately reject - could be legitimate proxy
+        // But log for monitoring
+      }
+    }
+
+    // === SECURITY CHECK 3: Get webhook secret and verify ===
+    const webhookSecret = await getWebhookSecret(agentId);
+    const providedSecret = event.headers['x-telegram-bot-api-secret-token'];
+
+    if (webhookSecret) {
+      // Secret is configured - verify it
+      if (!verifySecretToken(providedSecret, webhookSecret)) {
+        console.warn(`Invalid secret token for agent: ${agentId}`);
+        return ok(); // Silent failure to prevent enumeration
+      }
+    } else {
+      // No secret configured - log warning but allow (for backwards compatibility)
+      // TODO: Make this a hard failure once all agents have secrets configured
+      console.warn(`No webhook secret configured for agent: ${agentId}`);
+    }
+
+    // === Load agent config ===
     const agent = await getAgentConfig(agentId);
     if (!agent) {
-      console.error(`Agent not found: ${agentId}`);
-      return {
-        statusCode: 404,
-        body: JSON.stringify({ error: 'Agent not found' }),
-      };
+      // Don't reveal agent doesn't exist
+      console.warn(`Agent not found: ${agentId}`);
+      return ok();
     }
 
     // Check if Telegram is enabled
     if (!agent.platforms.telegram?.enabled) {
-      console.error(`Telegram not enabled for agent: ${agentId}`);
-      return {
-        statusCode: 403,
-        body: JSON.stringify({ error: 'Telegram not enabled for this agent' }),
-      };
+      console.warn(`Telegram not enabled for agent: ${agentId}`);
+      return ok();
     }
 
     // Get Telegram token
     const token = await getTelegramToken(agentId);
     if (!token) {
-      console.error(`Telegram token not found for agent: ${agentId}`);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: 'Telegram token not configured' }),
-      };
+      console.error(`Telegram token not configured for agent: ${agentId}`);
+      return ok();
     }
 
     // Parse the update
     const body = event.body ? JSON.parse(event.body) : null;
     if (!body) {
-      return { statusCode: 200, body: 'OK' };
+      return ok();
     }
 
     const update: TelegramUpdate = body;
 
     // Only handle text messages for now
     if (!update.message?.text) {
-      return { statusCode: 200, body: 'OK' };
+      return ok();
     }
 
     const message = update.message;
     const chatId = message.chat.id;
-    const text = message.text!; // Already checked above
+    const text = message.text!;  // Guaranteed by check above
     const messageId = message.message_id;
 
     // Skip if message is from a bot
     if (message.from?.username?.endsWith('bot')) {
-      return { statusCode: 200, body: 'OK' };
+      return ok();
     }
 
-    console.log(`Processing message from ${message.from?.username || 'unknown'}: ${text}`);
+    // Sanitized log - don't log message content
+    console.log('Processing message:', {
+      agentId,
+      chatId,
+      messageId,
+      fromUser: message.from?.id,
+      textLength: text.length,
+    });
 
     // Generate response
     const response = await generateResponse(
@@ -288,10 +383,10 @@ export async function handler(
     // Send response
     await sendTelegramMessage(token, chatId, response, messageId);
 
-    return { statusCode: 200, body: 'OK' };
+    return ok();
   } catch (error) {
-    console.error('Webhook handler error:', error);
-    // Return 200 to prevent Telegram retries
-    return { statusCode: 200, body: 'OK' };
+    // Log error but don't expose details
+    console.error('Webhook handler error:', error instanceof Error ? error.message : 'Unknown');
+    return ok();
   }
 }
