@@ -1,14 +1,9 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
-    paths-ignore:
-      - '*.md'
-      - 'docs/**'
-      - '.github/workflows/ci.yml'
-      - '.github/workflows/issue-management.yml'
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
   workflow_dispatch:
     inputs:
@@ -24,7 +19,7 @@ on:
         type: string
 
 concurrency:
-  group: deploy-${{ github.ref_name }}
+  group: deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 env:
@@ -39,7 +34,15 @@ jobs:
   deploy:
     name: Build & Deploy
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref_type == 'tag' && 'production' || 'staging') }}
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       (
+         github.event.workflow_run.head_branch == 'main' ||
+         startsWith(github.event.workflow_run.head_branch, 'v')
+       ))
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (startsWith(github.event.workflow_run.head_branch, 'v') && 'production' || 'staging') }}
     
     outputs:
       environment: ${{ steps.env.outputs.environment }}
@@ -52,10 +55,16 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             ENV="${{ inputs.environment }}"
-          elif [ "${{ github.ref_type }}" = "tag" ]; then
-            ENV="production"
           else
-            ENV="staging"
+            REF="${{ github.event.workflow_run.head_branch }}"
+            if [ "$REF" = "main" ]; then
+              ENV="staging"
+            elif [[ "$REF" == v* ]]; then
+              ENV="production"
+            else
+              echo "::error::Unsupported ref '$REF' for deployment"
+              exit 1
+            fi
           fi
           CDK_ENV="${ENV/production/prod}"
           echo "environment=$ENV" >> $GITHUB_OUTPUT
@@ -63,6 +72,15 @@ jobs:
           echo "🚀 Deploying to **$ENV**" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/checkout@v4
+
+      - name: Download CI build artifacts
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: .
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: pnpm/action-setup@v4
 
@@ -94,8 +112,12 @@ jobs:
           if [ "${{ steps.layer-cache.outputs.cache-hit }}" != "true" ]; then
             cd packages/layer && mkdir -p nodejs && cp package.json nodejs/ && cd nodejs && npm i --omit=dev --legacy-peer-deps && cd ../..
           fi
-          # Build all except admin-ui (needs API URL)
-          pnpm -r --filter '!admin-ui' build
+          # If CI artifacts were downloaded, reuse them; otherwise build
+          if [ -d packages/core/dist ]; then
+            echo "Using CI build artifacts"
+          else
+            pnpm -r --filter '!admin-ui' build
+          fi
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -122,7 +144,12 @@ jobs:
       - name: Build & Deploy Admin UI
         run: |
           cd packages/admin-ui
-          VITE_API_URL=${{ steps.outputs.outputs.api_url }} pnpm build
+          API_URL="${{ steps.outputs.outputs.api_url }}"
+          if [ -z "$API_URL" ] || [ "$API_URL" = "None" ]; then
+            echo "::error::API URL output missing"
+            exit 1
+          fi
+          VITE_API_URL=$API_URL pnpm build
           aws s3 sync dist s3://${{ steps.outputs.outputs.bucket }} --delete --cache-control "max-age=31536000,immutable" --exclude "index.html" --exclude "*.json"
           aws s3 cp dist/index.html s3://${{ steps.outputs.outputs.bucket }}/index.html --cache-control "no-cache"
 

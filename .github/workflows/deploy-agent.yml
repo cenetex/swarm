@@ -58,7 +58,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build all packages
-        run: pnpm -r build
+        run: pnpm -r --filter '!admin-ui' build
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

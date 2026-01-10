@@ -1075,12 +1075,14 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
 
 3. **Admin feature gaps**
    - [ ] Add audit logging service to DynamoDB
-   - [ ] Add wallet balance tool (Solana)
+   - [x] Add wallet balance tool (Solana)
    - [ ] Re-enable Ethereum wallet generation with ethers/viem
    - [ ] OpenRouter SDK + Zod tool refactor (`ZOD_REFACTOR.md`)
+   - [ ] Preserve manual tool pause flows (`request_secret`, `request_model_selection`, upload URLs)
    - [ ] Add agent config import/export (DB-backed templates; no repo files)
    - [ ] Define agent template schema + versioning for DB storage
    - [ ] Add validation/migration for template import payloads
+   - [ ] Ensure import/export excludes secrets (config/persona only)
    - [ ] Hook `request_model_selection` to a UI dropdown pause-flow
    - [ ] Build logs UI view for `GET /agents/{id}/logs`
    - [ ] Optional: deploy trigger integration (CodePipeline/Actions)
@@ -1107,7 +1109,9 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
 
 7. **Media generation in runtime pipeline**
    - [ ] Adopt SQS-first pipeline for media jobs (enqueue from response-sender)
+   - [ ] Choose queue type (standard vs FIFO) and define ordering guarantees
    - [ ] Add media-processor Lambda to consume `MEDIA_QUEUE_URL` and fan-in callbacks
+   - [ ] Add media-results SQS queue (or reuse response queue) for completed media callbacks
    - [ ] Define callback contract (prefer SQS response queue; avoid Lambda-name stub)
    - [ ] Add idempotency keys + dedupe to prevent double-sends on retries
    - [ ] Configure DLQ, visibility timeouts, and retry policies for media jobs
@@ -1121,22 +1125,28 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
    - [ ] Integration test for SQS media pipeline (queue → media-processor → callback)
    - [ ] UI flow tests for manual tools (request_secret, request_model_selection, upload URLs)
 
+9. **Operational readiness**
+   - [ ] Enable DynamoDB PITR + backup strategy for agent configs/state
+   - [ ] Define secrets rotation policy + admin audit trail requirements
+   - [ ] Add model allowlist/budget caps to control OpenRouter spend
+   - [ ] Document DLQ redrive/runbook for media/message queues
+
 ### Long-term (Additional Platforms)
 
-9. **Discord adapter**
+10. **Discord adapter**
    - [ ] Create DiscordAdapter class
    - [ ] Decide: Interaction webhooks vs Gateway (ECS Fargate)
    - [ ] Implement slash commands
 
-10. **Observability**
+11. **Observability**
     - [x] Consolidated logs API endpoint: `GET /agents/{agent_id}/logs`
     - [ ] Logs UI route: `rati.chat/agents/<agent_id>/logs`
     - [ ] Standardize structured logging fields (`agentId`, `level`, `component`) for reliable filters
     - [ ] CloudWatch dashboards
     - [ ] X-Ray tracing
-    - [ ] CloudWatch alarms
+    - [ ] CloudWatch alarms (Lambda errors, SQS queue depth, DLQ age)
 
-11. **CLI Tool**
+12. **CLI Tool**
     - [ ] `swarm agent create <name>`
     - [ ] `swarm agent deploy <name>`
     - [ ] `swarm secrets set <agent> <key> <value>`
