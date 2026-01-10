@@ -53,6 +53,15 @@ jobs:
       - name: Build all packages
         run: pnpm -r build
 
+      - name: Build Lambda Layer
+        run: |
+          cd packages/layer
+          mkdir -p nodejs
+          cp package.json nodejs/
+          cd nodejs
+          npm install --omit=dev --legacy-peer-deps
+          cd ..
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

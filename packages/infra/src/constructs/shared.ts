@@ -123,7 +123,7 @@ export class SharedInfrastructure extends Construct {
     }
 
     // Lambda layer with shared dependencies
-    // Use local bundling to avoid Docker issues with pnpm workspaces
+    // The layer is pre-built in CI workflow before CDK deploy
     const layerPath = path.resolve(__dirname, '../../../layer');
     this.dependencyLayer = new lambda.LayerVersion(this, 'DependencyLayer', {
       layerVersionName: `swarm-deps-${environment}`,
@@ -131,37 +131,7 @@ export class SharedInfrastructure extends Construct {
       compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
       code: layerCodePath 
         ? lambda.Code.fromAsset(layerCodePath)
-        : lambda.Code.fromAsset(layerPath, {
-            bundling: {
-              image: lambda.Runtime.NODEJS_20_X.bundlingImage,
-              local: {
-                tryBundle(outputDir: string): boolean {
-                  // Use local bundling with npm (not pnpm) for layer
-                  const { execSync } = require('child_process');
-                  const fs = require('fs');
-                  const pathMod = require('path');
-                  
-                  const nodejsDir = pathMod.join(outputDir, 'nodejs');
-                  fs.mkdirSync(nodejsDir, { recursive: true });
-                  
-                  // Copy layer package.json
-                  fs.copyFileSync(
-                    pathMod.join(layerPath, 'package.json'),
-                    pathMod.join(nodejsDir, 'package.json')
-                  );
-                  
-                  // Install with npm (not pnpm) to avoid workspace protocol issues
-                  execSync('npm install --omit=dev --legacy-peer-deps', {
-                    cwd: nodejsDir,
-                    stdio: 'inherit',
-                  });
-                  
-                  return true;
-                },
-              },
-              command: ['echo', 'Docker bundling not used'],
-            },
-          }),
+        : lambda.Code.fromAsset(layerPath),
     });
 
     // Outputs
