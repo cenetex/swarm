@@ -1077,8 +1077,12 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
 - [ ] Add audit logging service to DynamoDB
 - [x] Add wallet balance tool (Solana)
 - [ ] Re-enable Ethereum wallet generation with ethers/viem
-- [ ] OpenRouter SDK + Zod tool refactor (`ZOD_REFACTOR.md`) - Zod groundwork exists (admin-api types + Telegram webhook), admin chat tools still JSON
-- [ ] Preserve manual tool pause flows (`request_secret`, `request_model_selection`, upload URLs)
+- [ ] OpenRouter SDK + Zod tool refactor (`ZOD_REFACTOR.md`) - admin chat tools still JSON; no tools module detected
+   - [ ] Feature flag for legacy tool loop fallback
+   - [ ] Preserve manual tool pause flows (`request_secret`, `request_model_selection`, upload URLs)
+   - [ ] Add schema validation error logging + sanitize error responses
+   - [ ] Add manual-tool contract tests (secret, model selector, upload URL)
+   - [ ] Normalize `pendingToolCall` payloads for admin UI compatibility
    - [ ] Add agent config import/export (DB-backed templates; no repo files)
    - [ ] Define agent template schema + versioning for DB storage
    - [ ] Add validation/migration for template import payloads

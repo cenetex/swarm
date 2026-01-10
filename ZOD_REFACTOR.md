@@ -21,6 +21,7 @@ Refactor `packages/admin-api/src/handlers/chat.ts` to use the OpenRouter SDK's `
 - No `packages/admin-api/src/tools/` directory yet
 - No `@openrouter/sdk` tool usage found in `packages/admin-api/src/handlers/chat.ts`
 - `AGENT_TOOLS` + `executeTool()` remain the primary definitions/execution path
+- Zod usage elsewhere exists (core tool definitions + zod-to-json conversion, handlers/web-chat/media-processor validation), but no admin chat tool schema migration detected
 
 ## Why Refactor?
 
@@ -243,6 +244,12 @@ export const generateImage = (agentId: string) => tool({
 
 ## Implementation Steps
 
+### Phase 0: Stability Scaffolding (1-2 hours)
+1. [ ] Add a feature flag to switch between legacy tool loop and SDK flow
+2. [ ] Create a compatibility adapter that preserves `pendingToolCall` payloads
+3. [ ] Add structured error capture for schema validation failures (surface in logs)
+4. [ ] Add smoke tests for manual tools (request_secret, model selector, upload URL)
+
 ### Phase 1: Setup & Schemas (1-2 hours)
 1. [x] Install dependencies: `@openrouter/sdk`, `zod` (already installed)
 2. [ ] Create `packages/admin-api/src/tools/` directory
@@ -362,6 +369,15 @@ Keep existing `AdminChatMessage` type for storage, convert on-the-fly.
 SDK handles tool execution errors gracefully - sends error back to model.
 Add Zod validation errors to output for better debugging.
 
+## Stability Improvements (Recommended)
+
+- **Feature flag**: keep legacy tool execution available for fast rollback
+- **Schema error reporting**: capture `safeParse` errors and send a sanitized message to the model + logs
+- **Manual tool contract tests**: verify payloads for `request_secret`, `request_model_selection`, upload URLs
+- **Pending tool call normalization**: ensure `pendingToolCall` keeps `id/name/arguments` shape for admin UI
+- **Tool result normalization**: always return JSON content with `success`/`error` fields to avoid UI parsing drift
+- **Tool execution timeout**: cap tool execution time so the LLM loop cannot hang on slow dependencies
+
 ## Rollback Plan
 
 If issues arise:
@@ -378,6 +394,7 @@ If issues arise:
 - [ ] All existing tests pass
 - [ ] Can switch models via OpenRouter without issues
 - [ ] Bundle size increase < 100KB (Zod + SDK)
+- [ ] `pendingToolCall` payloads remain backward-compatible with admin UI
 
 ## Estimated Timeline
 
