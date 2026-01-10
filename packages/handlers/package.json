@@ -1,0 +1,21 @@
+{
+  "name": "@swarm/handlers",
+  "version": "1.0.0",
+  "description": "Lambda handlers for the swarm framework",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@swarm/core": "workspace:*",
+    "@aws-sdk/client-sqs": "^3.700.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

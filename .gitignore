@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+*.js
+*.d.ts
+*.js.map
+!jest.config.js
+!vitest.config.js
+
+# CDK
+cdk.out/
+.cdk.staging/
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.local.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test
+coverage/
+.nyc_output/
+
+# Secrets (never commit)
+secrets.json
+*.pem
+*.key
