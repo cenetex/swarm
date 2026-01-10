@@ -3,7 +3,7 @@ import { useAgentStore } from './store';
 import { AgentSidebar, ChatPanel } from './components';
 
 function App() {
-  const { agents, fetchAgents } = useAgentStore();
+  const { fetchAgents } = useAgentStore();
   const [initialized, setInitialized] = useState(false);
 
   // Fetch agents from backend on mount
