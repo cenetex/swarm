@@ -24,12 +24,17 @@ const CDN_URL = process.env.CDN_URL;
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 // Provider configuration
-const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/images/generations';
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
 
-// Default models
+// Default models (Replicate model identifiers)
 const DEFAULT_IMAGE_MODEL = 'black-forest-labs/flux-schnell';
 const DEFAULT_VIDEO_MODEL = 'minimax/video-01';
+
+// Replicate model versions (required for predictions API)
+const REPLICATE_MODEL_VERSIONS: Record<string, string> = {
+  'black-forest-labs/flux-schnell': 'f2ab8a5bfe79f02f0789a146cf5e73d2a4ff2684a98c2b303d1e1ff3814271db',
+  'black-forest-labs/flux-dev': 'a8a9b47a5f6c7f2e06b5d4f0e6a5d4f0e6a5d4f0e6a5d4f0e6a5d4f0e6a5d4f0', // placeholder
+};
 
 interface GenerateImageOptions {
   prompt: string;
@@ -146,7 +151,7 @@ async function getProviderApiKey(
 }
 
 /**
- * Generate an image synchronously
+ * Generate an image synchronously using Replicate
  * Returns immediately with the generated image URL
  */
 export async function generateImage(options: GenerateImageOptions): Promise<GalleryItem> {
@@ -158,10 +163,10 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     throw new Error(`Rate limited: ${canUse.reason}`);
   }
 
-  // Get API key (OpenRouter for images by default)
-  const apiKey = await getProviderApiKey(agentId, 'openrouter');
+  // Get Replicate API key
+  const apiKey = await getProviderApiKey(agentId, 'replicate');
   if (!apiKey) {
-    throw new Error('No OpenRouter API key configured. Please set up an API key first.');
+    throw new Error('No Replicate API key configured. Please set up an API key first.');
   }
 
   // Build the prompt with reference if available
@@ -170,43 +175,84 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     finalPrompt = `${prompt}. Maintain visual consistency with the reference character.`;
   }
 
-  // Call OpenRouter image generation
-  const response = await fetch(OPENROUTER_ENDPOINT, {
+  // Get model version for Replicate
+  const modelId = model || DEFAULT_IMAGE_MODEL;
+  const version = REPLICATE_MODEL_VERSIONS[modelId];
+
+  if (!version) {
+    throw new Error(`Unknown model: ${modelId}. Supported models: ${Object.keys(REPLICATE_MODEL_VERSIONS).join(', ')}`);
+  }
+
+  // Start Replicate prediction
+  const response = await fetch(REPLICATE_ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://swarm.agent',
-      'X-Title': 'Swarm Agent',
     },
     body: JSON.stringify({
-      model: model || DEFAULT_IMAGE_MODEL,
-      prompt: finalPrompt,
-      n: 1,
-      size: `${width}x${height}`,
+      version,
+      input: {
+        prompt: finalPrompt,
+        width,
+        height,
+        num_outputs: 1,
+        output_format: 'png',
+        ...(referenceImageUrl && { image: referenceImageUrl }),
+      },
     }),
   });
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Image generation failed: ${error}`);
+    throw new Error(`Image generation failed to start: ${error}`);
   }
 
-  const data = await response.json() as { data?: Array<{ url?: string; b64_json?: string }> };
-  const imageData = data.data?.[0];
+  // Poll for completion (Flux is usually fast - 5-15 seconds)
+  let prediction = await response.json() as {
+    id: string;
+    status: string;
+    output?: string | string[];
+    error?: string;
+  };
 
-  if (!imageData?.url && !imageData?.b64_json) {
-    throw new Error('No image returned from provider');
+  const maxAttempts = 60; // 60 seconds max
+  let attempts = 0;
+
+  while (prediction.status === 'starting' || prediction.status === 'processing') {
+    if (attempts++ >= maxAttempts) {
+      throw new Error('Image generation timed out');
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const pollResponse = await fetch(`${REPLICATE_ENDPOINT}/${prediction.id}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    });
+    prediction = await pollResponse.json() as typeof prediction;
+  }
+
+  if (prediction.status === 'failed') {
+    throw new Error(`Image generation failed: ${prediction.error || 'Unknown error'}`);
+  }
+
+  if (prediction.status !== 'succeeded') {
+    throw new Error(`Unexpected prediction status: ${prediction.status}`);
+  }
+
+  // Get output URL (can be string or array)
+  const outputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+
+  if (!outputUrl) {
+    throw new Error('No image returned from Replicate');
   }
 
   // Download and store in S3
-  let imageBuffer: Buffer;
-  if (imageData.url) {
-    const imageResponse = await fetch(imageData.url);
-    imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-  } else {
-    imageBuffer = Buffer.from(imageData.b64_json!, 'base64');
+  const imageResponse = await fetch(outputUrl);
+  if (!imageResponse.ok) {
+    throw new Error(`Failed to download generated image: ${imageResponse.status}`);
   }
+  const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
 
   const imageId = uuid();
   const s3Key = `agents/${agentId}/images/${imageId}.png`;
@@ -230,7 +276,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     url: publicUrl,
     s3Key,
     prompt,
-    model: model || DEFAULT_IMAGE_MODEL,
+    model: modelId,
     platform,
   });
 

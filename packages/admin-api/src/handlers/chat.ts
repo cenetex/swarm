@@ -76,16 +76,16 @@ const AGENT_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          secretType: { 
-            type: 'string', 
+          secretType: {
+            type: 'string',
             enum: [
               'telegram_bot_token',
               'discord_bot_token',
-              'twitter_api_key', 'twitter_api_secret', 'twitter_access_token', 
+              'twitter_api_key', 'twitter_api_secret', 'twitter_access_token',
               'twitter_access_secret', 'twitter_bearer_token',
-              'helius_api_key', 'openrouter_api_key', 'anthropic_api_key', 'openai_api_key',
+              'helius_api_key', 'replicate_api_key', 'openrouter_api_key', 'anthropic_api_key', 'openai_api_key',
             ],
-            description: 'Type of secret being requested' 
+            description: 'Type of secret being requested'
           },
           label: { type: 'string', description: 'Human-readable label for the input field' },
           instructions: { type: 'string', description: 'Brief instructions on how to get this secret' },
@@ -103,16 +103,16 @@ const AGENT_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          secretType: { 
-            type: 'string', 
+          secretType: {
+            type: 'string',
             enum: [
               'telegram_bot_token',
               'discord_bot_token',
-              'twitter_api_key', 'twitter_api_secret', 'twitter_access_token', 
+              'twitter_api_key', 'twitter_api_secret', 'twitter_access_token',
               'twitter_access_secret', 'twitter_bearer_token',
-              'helius_api_key', 'openrouter_api_key', 'anthropic_api_key', 'openai_api_key',
+              'helius_api_key', 'replicate_api_key', 'openrouter_api_key', 'anthropic_api_key', 'openai_api_key',
             ],
-            description: 'Type of secret' 
+            description: 'Type of secret'
           },
           value: { type: 'string', description: 'The secret value to store' },
         },
@@ -516,6 +516,7 @@ You can request and store secrets for various integrations:
 - **Discord**: Request bot token from Discord Developer Portal
 - **Twitter/X**: Request API credentials
 - **Helius**: Request API key for Solana RPC (for wallet balance lookups)
+- **Replicate**: API key for image/video generation (REQUIRED for media features)
 - **AI Providers**: OpenRouter, Anthropic, OpenAI API keys
 
 You can manage your Solana wallets:
@@ -1235,6 +1236,34 @@ async function processChat(
           content: response,
           tool_calls: llmResponse.toolCalls,
         });
+        break;
+      }
+
+      // Check for upload URL tools - these need user interaction to upload
+      const uploadUrlTool = llmResponse.toolCalls.find(tc => 
+        tc.function.name === 'get_profile_upload_url' || 
+        tc.function.name === 'get_reference_image_upload_url'
+      );
+
+      if (uploadUrlTool) {
+        // Execute the tool to get the upload URL
+        const uploadResult = await executeTool(uploadUrlTool, session, agent);
+        const uploadArgs = JSON.parse(uploadResult.content);
+
+        // Add assistant message with tool calls
+        messages.push({
+          role: 'assistant',
+          content: llmResponse.message || '',
+          tool_calls: llmResponse.toolCalls,
+        });
+
+        // Return the upload URL result as a pending tool call for the UI
+        pendingToolCall = {
+          id: uploadUrlTool.id,
+          name: uploadUrlTool.function.name,
+          arguments: uploadArgs,
+        };
+        response = llmResponse.message || 'Please upload your image:';
         break;
       }
       
