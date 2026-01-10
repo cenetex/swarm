@@ -29,6 +29,12 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
   const [level, setLevel] = useState('');
   const [subsystem, setSubsystem] = useState('');
   const [query, setQuery] = useState('');
+  const [appliedFilters, setAppliedFilters] = useState({
+    since: DEFAULT_SINCE,
+    level: '',
+    subsystem: '',
+    query: '',
+  });
   const [logs, setLogs] = useState<AgentLogEvent[]>([]);
   const [logGroups, setLogGroups] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -41,11 +47,11 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
   }, [agentId, setActiveAgent]);
 
   const filters = useMemo(() => ({
-    since,
-    level: level || undefined,
-    subsystem: subsystem || undefined,
-    query: query || undefined,
-  }), [since, level, subsystem, query]);
+    since: appliedFilters.since,
+    level: appliedFilters.level || undefined,
+    subsystem: appliedFilters.subsystem || undefined,
+    query: appliedFilters.query || undefined,
+  }), [appliedFilters]);
 
   const loadLogs = useCallback(async () => {
     if (!agentId) return;
@@ -66,6 +72,15 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
   useEffect(() => {
     loadLogs();
   }, [loadLogs]);
+
+  const applyFilters = useCallback(() => {
+    setAppliedFilters({
+      since,
+      level,
+      subsystem,
+      query,
+    });
+  }, [level, query, since, subsystem]);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-dark-950">
@@ -153,7 +168,7 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
             />
           </label>
           <button
-            onClick={loadLogs}
+            onClick={applyFilters}
             className="px-3 py-1.5 rounded-md bg-dark-700 hover:bg-dark-600 text-dark-100 transition-colors"
           >
             Apply
