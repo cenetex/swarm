@@ -23,6 +23,13 @@ const MEDIA_QUEUE_URL = process.env.MEDIA_QUEUE_URL;
 const CDN_URL = process.env.CDN_URL;
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
+// Log CDN configuration on cold start
+if (!CDN_URL) {
+  console.warn('[Media] WARNING: CDN_URL is not set! S3 bucket is private, images will not be accessible via direct S3 URLs.');
+} else {
+  console.log(`[Media] CDN configured: ${CDN_URL}`);
+}
+
 // Provider configuration
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
 

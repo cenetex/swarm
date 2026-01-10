@@ -1051,6 +1051,16 @@ async function executeTool(
           const agent = await agents.getAgent(agentId!);
           if (agent?.profileImage?.url) {
             referenceImageUrls.push(agent.profileImage.url);
+          } else {
+            // Fallback: check for reference images with 'profile' or 'character' category
+            const refImages = await media.listReferenceImages(agentId!);
+            const profileRef = refImages.find(img => img.category === 'profile');
+            const characterRef = refImages.find(img => img.category === 'character');
+            if (profileRef?.url) {
+              referenceImageUrls.push(profileRef.url);
+            } else if (characterRef?.url) {
+              referenceImageUrls.push(characterRef.url);
+            }
           }
         }
 

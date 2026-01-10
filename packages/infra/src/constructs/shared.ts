@@ -110,7 +110,8 @@ export class SharedInfrastructure extends Construct {
       ],
     });
 
-    // CloudFront CDN
+    // CloudFront CDN - REQUIRED for media to be accessible
+    // S3 bucket is private, only CloudFront can access it via OAI
     if (enableCdn) {
       this.distribution = new cloudfront.Distribution(this, 'MediaCdn', {
         defaultBehavior: {
@@ -120,6 +121,15 @@ export class SharedInfrastructure extends Construct {
         },
         comment: `Swarm media CDN (${environment})`,
       });
+
+      // Output the CDN URL for debugging
+      new cdk.CfnOutput(this, 'MediaCdnUrl', {
+        value: `https://${this.distribution.distributionDomainName}`,
+        description: 'CloudFront CDN URL for media files',
+        exportName: `swarm-cdn-url-${environment}`,
+      });
+    } else {
+      console.warn('WARNING: enableCdn is false! Media files will NOT be accessible.');
     }
 
     // Lambda layer with shared dependencies

@@ -108,37 +108,6 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
     [activeAgent, messages, addMessage, updateMessage, removeMessage, setLoading, setError]
   );
 
-  if (!activeAgent) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-dark-950 p-4">
-        <div className="text-center">
-          {/* Mobile menu button */}
-          <button
-            onClick={onMenuClick}
-            className="mb-6 w-12 h-12 mx-auto flex items-center justify-center rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-400 hover:text-white transition-colors lg:hidden"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
-              <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
-            </svg>
-          </button>
-          <div className="w-20 h-20 lg:w-24 lg:h-24 mx-auto mb-4 lg:mb-6 rounded-full bg-dark-800 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-10 h-10 lg:w-12 lg:h-12 text-dark-600">
-              <path fillRule="evenodd" d="M4.848 2.771A49.144 49.144 0 0112 2.25c2.43 0 4.817.178 7.152.52 1.978.292 3.348 2.024 3.348 3.97v6.02c0 1.946-1.37 3.678-3.348 3.97a48.901 48.901 0 01-3.476.383.39.39 0 00-.297.17l-2.755 4.133a.75.75 0 01-1.248 0l-2.755-4.133a.39.39 0 00-.297-.17 48.9 48.9 0 01-3.476-.384c-1.978-.29-3.348-2.024-3.348-3.97V6.741c0-1.946 1.37-3.68 3.348-3.97z" clipRule="evenodd" />
-            </svg>
-          </div>
-          <h3 className="text-lg lg:text-xl font-semibold text-dark-300 mb-2">No Agent Selected</h3>
-          <p className="text-sm lg:text-base text-dark-500 mb-4">Create or select an agent to start chatting</p>
-          <button
-            onClick={() => useAgentStore.getState().createAgent()}
-            className="px-4 lg:px-6 py-2.5 lg:py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl font-medium transition-colors text-sm lg:text-base"
-          >
-            Create Your First Agent
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   // Handle tool submissions (secrets, confirmations, uploads, etc.)
   const handleToolSubmit = useCallback(
     async (toolCallId: string, result: unknown) => {
@@ -237,6 +206,37 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
     },
     [activeAgent, updateMessage, setError, handleSendMessage]
   );
+
+  if (!activeAgent) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-dark-950 p-4">
+        <div className="text-center">
+          {/* Mobile menu button */}
+          <button
+            onClick={onMenuClick}
+            className="mb-6 w-12 h-12 mx-auto flex items-center justify-center rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-400 hover:text-white transition-colors lg:hidden"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
+              <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+            </svg>
+          </button>
+          <div className="w-20 h-20 lg:w-24 lg:h-24 mx-auto mb-4 lg:mb-6 rounded-full bg-dark-800 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-10 h-10 lg:w-12 lg:h-12 text-dark-600">
+              <path fillRule="evenodd" d="M4.848 2.771A49.144 49.144 0 0112 2.25c2.43 0 4.817.178 7.152.52 1.978.292 3.348 2.024 3.348 3.97v6.02c0 1.946-1.37 3.678-3.348 3.97a48.901 48.901 0 01-3.476.383.39.39 0 00-.297.17l-2.755 4.133a.75.75 0 01-1.248 0l-2.755-4.133a.39.39 0 00-.297-.17 48.9 48.9 0 01-3.476-.384c-1.978-.29-3.348-2.024-3.348-3.97V6.741c0-1.946 1.37-3.68 3.348-3.97z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <h3 className="text-lg lg:text-xl font-semibold text-dark-300 mb-2">No Agent Selected</h3>
+          <p className="text-sm lg:text-base text-dark-500 mb-4">Create or select an agent to start chatting</p>
+          <button
+            onClick={() => useAgentStore.getState().createAgent()}
+            className="px-4 lg:px-6 py-2.5 lg:py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl font-medium transition-colors text-sm lg:text-base"
+          >
+            Create Your First Agent
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col h-full bg-dark-950">
