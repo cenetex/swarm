@@ -255,7 +255,22 @@ async function generateResponse(
 ): Promise<string> {
   const apiKey = await getLlmApiKey();
 
-  const systemPrompt = agent.persona || `You are ${agent.name}, a helpful AI assistant.`;
+  // Build system prompt with persona and capabilities
+  let systemPrompt = agent.persona || `You are ${agent.name}, a helpful AI assistant.`;
+
+  // Add agent's wallet info if available
+  if (agent.wallets && agent.wallets.length > 0) {
+    systemPrompt += `\n\n## Your Solana Wallets\n`;
+    for (const wallet of agent.wallets) {
+      systemPrompt += `- ${wallet.name}: ${wallet.publicKey}\n`;
+    }
+    systemPrompt += `\nYou can share your wallet address when users ask about tipping, donations, or your wallet.`;
+  }
+
+  // Add profile image info
+  if (agent.profileImage?.url) {
+    systemPrompt += `\n\n## Your Profile\n- Profile image: ${agent.profileImage.url}`;
+  }
 
   const messages = [
     { role: 'system', content: systemPrompt },
