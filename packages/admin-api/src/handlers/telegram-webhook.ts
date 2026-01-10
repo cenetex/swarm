@@ -30,6 +30,14 @@ import * as gallery from '../services/gallery.js';
 import * as wallets from '../services/wallets.js';
 import * as credits from '../services/credits.js';
 import * as channelState from '../services/channel-state.js';
+import {
+  buildGalleryContext,
+  buildWalletContext,
+  injectContext,
+  type ContextLevel,
+  type GalleryContextItem,
+  type WalletContextItem,
+} from '../tools/context-builder.js';
 import type { BufferedMessage, ChannelStateRecord } from '../types.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -123,73 +131,108 @@ const _ChatMessageSchema = z.object({
 type ChatMessage = z.infer<typeof _ChatMessageSchema>;
 type ToolCall = z.infer<typeof ToolCallSchema>;
 
-// === TOOLS FOR TELEGRAM ===
-const TELEGRAM_TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'generate_image',
-      description: 'Generate an image from a text prompt. The image will be sent to the chat.',
-      parameters: {
-        type: 'object',
-        properties: {
-          prompt: { type: 'string', description: 'Description of the image to generate' },
-        },
-        required: ['prompt'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'generate_video',
-      description: 'Generate a short video from a text prompt. This takes time - I will send it when ready.',
-      parameters: {
-        type: 'object',
-        properties: {
-          prompt: { type: 'string', description: 'Description of the video to generate' },
-        },
-        required: ['prompt'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_my_gallery',
-      description: 'View my generated images and videos',
-      parameters: {
-        type: 'object',
-        properties: {
-          type: { type: 'string', enum: ['image', 'video', 'sticker'], description: 'Filter by type' },
-          limit: { type: 'number', description: 'Max items (default 5)' },
+// === CONTEXTUAL TOOL DEFINITIONS ===
+
+/**
+ * Agent context for building dynamic tools
+ */
+interface ToolContext {
+  galleryItems: GalleryContextItem[];
+  wallets: WalletContextItem[];
+  contextLevel: ContextLevel;
+}
+
+/**
+ * Build tools with dynamic context injected into descriptions
+ * This gives the LLM situational awareness without extra tool calls
+ */
+function buildContextualTools(context?: ToolContext) {
+  const level = context?.contextLevel || 'summary';
+  
+  // Build context summaries
+  const galleryContext = context?.galleryItems 
+    ? buildGalleryContext(context.galleryItems, level)
+    : undefined;
+  const walletContext = context?.wallets
+    ? buildWalletContext(context.wallets, level)
+    : undefined;
+
+  return [
+    {
+      type: 'function',
+      function: {
+        name: 'generate_image',
+        description: 'Generate an image from a text prompt. The image will be sent to the chat.',
+        parameters: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Description of the image to generate' },
+          },
+          required: ['prompt'],
         },
       },
     },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_my_wallets',
-      description: 'Get my Solana wallet addresses and balances',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'send_gallery_image',
-      description: 'Send an image from my gallery to the chat',
-      parameters: {
-        type: 'object',
-        properties: {
-          imageId: { type: 'string', description: 'ID of the gallery image to send' },
+    {
+      type: 'function',
+      function: {
+        name: 'generate_video',
+        description: 'Generate a short video from a text prompt. This takes time - I will send it when ready.',
+        parameters: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string', description: 'Description of the video to generate' },
+          },
+          required: ['prompt'],
         },
-        required: ['imageId'],
       },
     },
-  },
-];
+    {
+      type: 'function',
+      function: {
+        name: 'get_my_gallery',
+        description: injectContext(
+          'View my generated images and videos',
+          galleryContext
+        ),
+        parameters: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: ['image', 'video', 'sticker'], description: 'Filter by type' },
+            limit: { type: 'number', description: 'Max items (default 5)' },
+          },
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'get_my_wallets',
+        description: injectContext(
+          'Get my Solana wallet addresses and balances',
+          walletContext
+        ),
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'send_gallery_image',
+        description: injectContext(
+          'Send an image from my gallery to the chat. Use an ID from my gallery.',
+          galleryContext
+        ),
+        parameters: {
+          type: 'object',
+          properties: {
+            imageId: { type: 'string', description: 'ID of the gallery image to send' },
+          },
+          required: ['imageId'],
+        },
+      },
+    },
+  ];
+}
 
 // === CACHES ===
 const secretsCache = new Map<string, string>();
@@ -746,11 +789,14 @@ async function executeTool(
   }
 }
 
+// Tool type for LLM calls
+type TelegramTool = ReturnType<typeof buildContextualTools>[number];
+
 // === LLM CALL WITH TOOLS ===
 async function callLLM(
   messages: ChatMessage[],
   agent: AgentConfig,
-  tools?: typeof TELEGRAM_TOOLS
+  tools?: TelegramTool[]
 ): Promise<{ content?: string; toolCalls?: ToolCall[] }> {
   const apiKey = await getLlmApiKey();
 
@@ -912,6 +958,23 @@ async function processChannelResponse(
 ): Promise<number | null> {
   const chatId = state.chatId;
 
+  // === FETCH DYNAMIC CONTEXT FOR TOOLS ===
+  // This gives the LLM situational awareness without extra tool calls
+  const [galleryItems, walletList] = await Promise.all([
+    gallery.getGallery(agentId, { limit: 5, type: 'image' }).catch(() => []),
+    wallets.listWallets(agentId).catch(() => []),
+  ]);
+
+  const toolContext: ToolContext = {
+    galleryItems: galleryItems.map(g => ({ id: g.id, type: g.type, prompt: g.prompt })),
+    wallets: walletList
+      .filter(w => w.walletType === 'solana')
+      .map(w => ({ publicKey: w.publicKey, label: w.name })),
+    contextLevel: 'summary', // Use summary for token efficiency
+  };
+
+  const contextualTools = buildContextualTools(toolContext);
+
   // Build conversation context from buffered messages
   const conversationContext = channelState.buildConversationContext(state);
   const participants = channelState.getActiveParticipants(state);
@@ -979,7 +1042,7 @@ async function processChannelResponse(
   while (iterations++ < maxIterations) {
     await sendChatAction(token, chatId, 'typing');
 
-    const llmResponse = await callLLM(messages, agent, TELEGRAM_TOOLS);
+    const llmResponse = await callLLM(messages, agent, contextualTools);
 
     if (llmResponse.toolCalls?.length) {
       messages.push({ role: 'assistant', content: '', tool_calls: llmResponse.toolCalls });
