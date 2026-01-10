@@ -26,6 +26,8 @@ const adminCertificateArn = app.node.tryGetContext('adminCertificateArn') || env
 const cloudflareTeamDomain = app.node.tryGetContext('cloudflareTeamDomain') || envConfig.cloudflareTeamDomain;
 const adminEmails = app.node.tryGetContext('adminEmails') || envConfig.adminEmails;
 const openRouterApiKeyArn = app.node.tryGetContext('openRouterApiKeyArn') || envConfig.openRouterApiKeyArn;
+const galleryDomain = app.node.tryGetContext('galleryDomain') || envConfig.galleryDomain;
+const galleryCertificateArn = app.node.tryGetContext('galleryCertificateArn') || envConfig.galleryCertificateArn;
 
 // Resolve paths relative to monorepo root
 const monorepoRoot = path.resolve(__dirname, '../../../..');
@@ -43,6 +45,8 @@ new SwarmStack(app, `SwarmStack-${environment}`, {
   cloudflareTeamDomain,
   adminEmails,
   openRouterApiKeyArn,
+  galleryDomain,
+  galleryCertificateArn,
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION || 'us-east-1',

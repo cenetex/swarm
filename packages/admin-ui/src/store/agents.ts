@@ -307,9 +307,11 @@ export const useAgentStore = create<AgentState>()(
     }),
     {
       name: 'swarm-agents',
+      // Only persist agent metadata and active selection
+      // Chat history is synced from backend (source of truth for cross-device)
       partialize: (state) => ({
         agents: state.agents,
-        chats: state.chats,
+        // Don't persist chats - always sync from backend
         activeAgentId: state.activeAgentId,
       }),
     }
