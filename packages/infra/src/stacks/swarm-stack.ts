@@ -100,6 +100,7 @@ export class SwarmStack extends cdk.Stack {
         adminEmails,
         openRouterApiKeyArn,
         environment,
+        adminDomain,
       });
     }
 

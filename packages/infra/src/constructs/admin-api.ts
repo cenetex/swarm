@@ -38,6 +38,11 @@ export interface AdminApiConstructProps {
    * Environment (development/production)
    */
   environment?: string;
+
+  /**
+   * Admin UI domain for CORS (e.g., 'admin.example.com')
+   */
+  adminDomain?: string;
 }
 
 export class AdminApiConstruct extends Construct {
@@ -49,7 +54,12 @@ export class AdminApiConstruct extends Construct {
   constructor(scope: Construct, id: string, props: AdminApiConstructProps) {
     super(scope, id);
 
-    const { cloudflareTeamDomain, adminEmails, environment = 'development' } = props;
+    const { cloudflareTeamDomain, adminEmails, environment = 'development', adminDomain } = props;
+
+    // Build CORS allowed origins
+    const allowedOrigins = adminDomain 
+      ? [`https://${adminDomain}`]
+      : ['http://localhost:5173', 'http://localhost:3000'];
 
     // KMS key for encrypting secrets
     this.encryptionKey = new kms.Key(this, 'AdminEncryptionKey', {
@@ -145,13 +155,14 @@ export class AdminApiConstruct extends Construct {
       apiName: `SwarmAdminApi-${environment}`,
       description: `API for Swarm admin interface (${environment})`,
       corsPreflight: {
-        allowOrigins: ['*'],
+        allowOrigins: allowedOrigins,
         allowMethods: [
           apigateway.CorsHttpMethod.GET,
           apigateway.CorsHttpMethod.POST,
           apigateway.CorsHttpMethod.OPTIONS,
         ],
         allowHeaders: ['Content-Type', 'Authorization', 'CF-Access-JWT-Assertion'],
+        allowCredentials: true,
         maxAge: cdk.Duration.hours(24),
       },
     });
