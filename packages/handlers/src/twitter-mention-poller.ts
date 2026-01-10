@@ -42,7 +42,7 @@ async function initialize(): Promise<void> {
     version: '1.0.0',
     persona: '',
     platforms: {
-      twitter: { enabled: true, username: '', features: ['mentions'] },
+      twitter: { enabled: true, username: '', features: ['mention_replies'] },
     },
     llm: { provider: 'openrouter', model: 'anthropic/claude-sonnet-4', temperature: 0.8, maxTokens: 1024 },
     media: { image: { provider: 'openrouter', model: 'openai/dall-e-3' } },
@@ -88,7 +88,7 @@ export const handler: ScheduledHandler = async (_event, context: Context) => {
     logger.info('Fetching mentions', { sinceId });
 
     // Get new mentions
-    const mentions = await twitterAdapter.getMentions(sinceId);
+    const mentions = await twitterAdapter.getMentions(sinceId ?? undefined);
 
     if (mentions.length === 0) {
       logger.info('No new mentions found');
