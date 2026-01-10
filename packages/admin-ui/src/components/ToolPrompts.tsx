@@ -2,7 +2,7 @@
  * Tool Prompt Components - Interactive UI for agent tools
  * These render inline with chat messages when the agent needs user input
  */
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { ToolCall } from '../types';
 
 interface ToolPromptProps {
@@ -363,16 +363,169 @@ export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
 }
 
 /**
+ * Model Selector Prompt - Dropdown for selecting LLM models
+ */
+export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const args = toolCall.arguments as {
+    models: Array<{ id: string; name: string }>;
+    currentModel?: string;
+    instructions?: string;
+  };
+
+  const models = args.models || [];
+  const currentModel = args.currentModel || '';
+
+  // Initialize with current model
+  useEffect(() => {
+    if (currentModel && !selectedModel) {
+      setSelectedModel(currentModel);
+    }
+  }, [currentModel]);
+
+  // Filter models by search query
+  const filteredModels = models.filter(m =>
+    m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    m.id.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Group models by provider
+  const groupedModels = filteredModels.reduce((acc, model) => {
+    const provider = model.id.split('/')[0] || 'other';
+    if (!acc[provider]) acc[provider] = [];
+    acc[provider].push(model);
+    return acc;
+  }, {} as Record<string, typeof models>);
+
+  const handleSubmit = async () => {
+    if (!selectedModel || isSubmitting) return;
+
+    setIsSubmitting(true);
+    try {
+      await onSubmit(toolCall.id, { selectedModel });
+      setSubmitted(true);
+    } catch {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    const modelName = models.find(m => m.id === selectedModel)?.name || selectedModel;
+    return (
+      <div className="flex items-center gap-2 px-4 py-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+        <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+        <span className="text-green-300">
+          Model changed to: <span className="font-medium">{modelName}</span>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-dark-800 border border-dark-600 rounded-lg p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <div className="p-2 bg-purple-500/20 rounded-lg">
+          <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <h4 className="font-medium text-white">Select LLM Model</h4>
+          {args.instructions && (
+            <p className="text-sm text-dark-300 mt-1">{args.instructions}</p>
+          )}
+          {currentModel && (
+            <p className="text-xs text-dark-400 mt-1">
+              Current: <span className="text-primary-400">{currentModel}</span>
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Search input */}
+      <div className="relative">
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search models..."
+          className="w-full pl-10 pr-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-white placeholder-dark-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+          disabled={disabled || isSubmitting}
+        />
+      </div>
+
+      {/* Model list */}
+      <div className="max-h-64 overflow-y-auto space-y-2 scrollbar-thin scrollbar-thumb-dark-600 scrollbar-track-dark-800">
+        {Object.entries(groupedModels).map(([provider, providerModels]) => (
+          <div key={provider}>
+            <div className="text-xs text-dark-400 uppercase tracking-wider px-2 py-1 sticky top-0 bg-dark-800">
+              {provider}
+            </div>
+            <div className="space-y-1">
+              {providerModels.map((model) => (
+                <button
+                  key={model.id}
+                  onClick={() => setSelectedModel(model.id)}
+                  disabled={disabled || isSubmitting}
+                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors text-sm ${
+                    selectedModel === model.id
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-dark-700 text-dark-200 hover:bg-dark-600'
+                  } ${disabled || isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <div className="font-medium truncate">{model.name}</div>
+                  <div className="text-xs opacity-70 truncate">{model.id}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        {filteredModels.length === 0 && (
+          <div className="text-center text-dark-400 py-4">
+            No models found matching "{searchQuery}"
+          </div>
+        )}
+      </div>
+
+      {/* Submit button */}
+      <div className="flex justify-end gap-2 pt-2 border-t border-dark-700">
+        <button
+          onClick={handleSubmit}
+          disabled={!selectedModel || selectedModel === currentModel || disabled || isSubmitting}
+          className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-dark-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
+        >
+          {isSubmitting ? 'Changing...' : 'Change Model'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Route tool calls to the appropriate prompt component
  */
 export function ToolPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
   // Check if this is an upload URL response (from get_profile_upload_url or get_reference_image_upload_url)
   const args = toolCall.arguments as Record<string, unknown>;
-  const isUploadUrl = args?.type === 'upload_url' || 
+  const isUploadUrl = args?.type === 'upload_url' ||
     (args?.uploadUrl && args?.s3Key && args?.publicUrl);
 
   if (isUploadUrl) {
     return <UploadPrompt toolCall={toolCall} onSubmit={onSubmit} disabled={disabled} />;
+  }
+
+  // Check if this is a model selector response
+  if (args?.type === 'model_selector') {
+    return <ModelSelectorPrompt toolCall={toolCall} onSubmit={onSubmit} disabled={disabled} />;
   }
 
   switch (toolCall.name) {
