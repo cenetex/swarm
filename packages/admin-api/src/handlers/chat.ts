@@ -993,7 +993,22 @@ async function executeTool(
         
       // Check pending media jobs
       case 'get_pending_jobs': {
-        const pendingJobs = await mediaJobs.getPendingJobs(agentId!);
+        let pendingJobs = await mediaJobs.getPendingJobs(agentId!);
+
+        // Poll Replicate for any processing jobs (fallback if webhooks aren't working)
+        if (pendingJobs.length > 0) {
+          const replicateKey = await media.getProviderApiKey(agentId!, 'replicate');
+          if (replicateKey) {
+            for (const job of pendingJobs) {
+              if ((job.status === 'processing' || job.status === 'pending') && job.externalId) {
+                await mediaJobs.pollAndCompleteJob(job.jobId, replicateKey);
+              }
+            }
+            // Refresh the list after polling
+            pendingJobs = await mediaJobs.getPendingJobs(agentId!);
+          }
+        }
+
         result = {
           count: pendingJobs.length,
           jobs: pendingJobs.map(job => ({
@@ -1008,13 +1023,23 @@ async function executeTool(
         break;
       }
 
-      // Get specific job status
+      // Get specific job status (polls Replicate if still processing)
       case 'get_job_status': {
-        const job = await mediaJobs.getJob(args.jobId);
+        let job = await mediaJobs.getJob(args.jobId);
         if (!job) {
           result = { error: true, message: 'Job not found' };
           break;
         }
+
+        // Poll Replicate if job is still processing (fallback if webhooks aren't working)
+        if ((job.status === 'processing' || job.status === 'pending') && job.externalId) {
+          const replicateKey = await media.getProviderApiKey(job.agentId, 'replicate');
+          if (replicateKey) {
+            const polledJob = await mediaJobs.pollAndCompleteJob(job.jobId, replicateKey);
+            if (polledJob) job = polledJob;
+          }
+        }
+
         result = {
           jobId: job.jobId,
           type: job.type,

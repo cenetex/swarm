@@ -18,7 +18,7 @@
 | Handlers | ✅ DONE | Telegram webhook, message-processor, response-sender, web-chat, tweet-poster, mention poller |
 | Infrastructure (CDK) | ✅ DONE | Shared/per-agent stacks plus admin API/UI constructs |
 | **Lambda Layer** | ✅ DONE | `@swarm/layer` - AWS SDK, OpenAI deps |
-| Agent Templates | ✅ DONE | Template config.yaml and persona.md |
+| Agent Templates | 🟡 PARTIAL | Templates live in DB; no repo templates. Import/export component is pending. |
 | Agent Configs | ⏳ NOT STARTED | No real agents configured yet |
 | **Admin API** | ✅ DONE | `@swarm/admin-api` - Chat handler, services, auth |
 | **Admin UI** | ✅ DONE | `@swarm/admin-ui` - React chat interface with multi-agent support |
@@ -26,6 +26,7 @@
 | **CI/CD** | ✅ DONE | GitHub Actions with layer bundling, CDK deploy, S3 sync |
 | **Secrets Management** | ✅ DONE | Write-only secrets with KMS encryption |
 | **Wallet Generation** | 🟡 PARTIAL | Solana implemented; Ethereum disabled pending ethers/viem |
+| **Logs API** | 🟡 PARTIAL | `GET /agents/{id}/logs` exists; UI + standardized log schema pending. |
 | Tests | 🟡 PARTIAL | Vitest coverage in admin-api/core; no end-to-end tests |
 
 ### Admin Interface Features
@@ -40,6 +41,8 @@
 | Global API Keys | ✅ | Shared keys with per-agent override |
 | Wallet Generation | 🟡 | Solana only; Ethereum disabled |
 | Deploy Trigger | ❌ | Not implemented (no deploy hook yet) |
+| Logs UI | 🟡 | API exists; UI route not built yet |
+| Import/Export Config | 🟡 | Templates stored in DB; add admin import/export workflow |
 | **Multi-Agent UI** | ✅ | Discord-like sidebar with agent list |
 | **Agent Avatars** | ✅ | DiceBear auto-generated avatars |
 | **Local Persistence** | ✅ | Zustand with localStorage persistence |
@@ -59,7 +62,7 @@
 [x] Response Sender Handler
 [x] CDK Infrastructure (SharedInfrastructure + AgentConstruct)
 [x] Tool Definitions (send_message, react, ignore, wait, take_selfie)
-[x] Agent Template
+[ ] Agent template workflow (DB-backed; import/export optional)
 [ ] First real agent config (firehorse, kyro, etc.)
 [ ] End-to-end Telegram test
 [ ] Deploy to AWS
@@ -98,6 +101,9 @@
 
 8. **Discord adapter missing**
     - Requires implementation and gateway vs interaction decision.
+
+9. **Media pipeline callback contract is incomplete**
+    - Response-sender queues media jobs but callback routing is stubbed; define SQS response queue + idempotency.
 
 ---
 
@@ -1071,6 +1077,12 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
    - [ ] Add audit logging service to DynamoDB
    - [ ] Add wallet balance tool (Solana)
    - [ ] Re-enable Ethereum wallet generation with ethers/viem
+   - [ ] OpenRouter SDK + Zod tool refactor (`ZOD_REFACTOR.md`)
+   - [ ] Add agent config import/export (DB-backed templates; no repo files)
+   - [ ] Define agent template schema + versioning for DB storage
+   - [ ] Add validation/migration for template import payloads
+   - [ ] Hook `request_model_selection` to a UI dropdown pause-flow
+   - [ ] Build logs UI view for `GET /agents/{id}/logs`
    - [ ] Optional: deploy trigger integration (CodePipeline/Actions)
 
 ### Short-term (First Agent)
@@ -1094,14 +1106,20 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
    - [ ] End-to-end testing
 
 7. **Media generation in runtime pipeline**
-   - [ ] Wire handler tool execution to media service
-   - [ ] Add media-processor Lambda for queued jobs (if using `MEDIA_QUEUE_URL`)
+   - [ ] Adopt SQS-first pipeline for media jobs (enqueue from response-sender)
+   - [ ] Add media-processor Lambda to consume `MEDIA_QUEUE_URL` and fan-in callbacks
+   - [ ] Define callback contract (prefer SQS response queue; avoid Lambda-name stub)
+   - [ ] Add idempotency keys + dedupe to prevent double-sends on retries
+   - [ ] Configure DLQ, visibility timeouts, and retry policies for media jobs
+   - [ ] Handle payload size limits (SQS 256KB) via S3 pointers for large prompts/metadata
    - [ ] Add async video callback handling for runtime pipeline
 
 8. **Testing**
    - [ ] Expand unit tests for MessageEvaluator/ResponseGenerator
    - [ ] Add integration tests with local DynamoDB
    - [ ] End-to-end test scripts for Telegram/Twitter/Web
+   - [ ] Integration test for SQS media pipeline (queue → media-processor → callback)
+   - [ ] UI flow tests for manual tools (request_secret, request_model_selection, upload URLs)
 
 ### Long-term (Additional Platforms)
 
@@ -1111,8 +1129,9 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
    - [ ] Implement slash commands
 
 10. **Observability**
-    - [ ] Consolidated logs endpoint: `rati.chat/agents/<agent_id>/logs`
-    - [ ] Log filtering by `level` and `subsystem`
+    - [x] Consolidated logs API endpoint: `GET /agents/{agent_id}/logs`
+    - [ ] Logs UI route: `rati.chat/agents/<agent_id>/logs`
+    - [ ] Standardize structured logging fields (`agentId`, `level`, `component`) for reliable filters
     - [ ] CloudWatch dashboards
     - [ ] X-Ray tracing
     - [ ] CloudWatch alarms
@@ -1128,7 +1147,7 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
 
 **Goal:** Provide a single, authenticated endpoint at `rati.chat/agents/<agent_id>/logs`
 that returns everything for that agent (human UI + AI agents can `curl` one URL).
-Support optional filters for `level` and `subsystem`.
+API endpoint exists; UI and log schema standardization remain.
 
 ### Data Sources
 - **CloudWatch Logs** for all Lambdas (admin API, handlers, media/replicate webhooks).
@@ -1147,11 +1166,11 @@ Include these fields in every log event:
 - **Long-term:** Export to **S3** on a schedule for compliance and replay.
 
 ### UI + API
-- Add an **Admin API endpoint** (e.g., `GET /agents/{agentId}/logs`) that:
-  - Proxies CloudWatch Logs Insights results (or OpenSearch results).
+- **Admin API endpoint exists**: `GET /agents/{agentId}/logs` (CloudWatch Logs Insights).
   - Enforces Cloudflare Access auth + admin role.
   - Supports filters: time range, `level`, `subsystem/component`, free-text search.
   - Accepts query params like `?level=error&subsystem=telegram-webhook&since=1h`.
+  - Requires consistent structured log fields for reliable filters.
 - Admin UI route: `rati.chat/agents/<agent_id>/logs` with:
   - Live tail mode (polling) and history query mode.
   - Filters and quick presets (errors only, last 15m, by subsystem).
@@ -1159,7 +1178,7 @@ Include these fields in every log event:
 ### Implementation Steps
 1. Standardize JSON logging in all Lambdas (shared logger helper).
 2. Add agentId-aware log fields to handlers and admin API.
-3. Create admin-api log query handler + UI view.
+3. Build admin UI view for logs (API already exists).
 4. Optionally enable tracing (`traceId`) and OpenSearch indexing.
 
 ---

@@ -185,7 +185,7 @@ export async function getReferenceImageUploadUrl(
 /**
  * Get API key for a provider
  */
-async function getProviderApiKey(
+export async function getProviderApiKey(
   agentId: string,
   provider: 'openrouter' | 'replicate' | 'openai'
 ): Promise<string | null> {
