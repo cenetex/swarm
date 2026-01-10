@@ -1,5 +1,5 @@
 {
-  "app": "npx ts-node --esm bin/swarm.ts",
+  "app": "npx tsx bin/swarm.ts",
   "watch": {
     "include": ["**"],
     "exclude": [
