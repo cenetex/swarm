@@ -158,8 +158,8 @@ export class AdminApiConstruct extends Construct {
       runtime: lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../../admin-api/src/handlers/chat.ts'),
       handler: 'handler',
-      timeout: cdk.Duration.seconds(60),
-      memorySize: 512,
+      timeout: cdk.Duration.seconds(180), // Increased for image generation with Nano Banana Pro
+      memorySize: 1024, // Increased for image processing
       environment: {
         ADMIN_TABLE: this.table.tableName,
         STATE_TABLE: stateTable?.tableName || '',

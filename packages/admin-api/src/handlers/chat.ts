@@ -266,14 +266,14 @@ const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'set_profile_image',
-      description: 'Set my profile image. Can generate a new one, use a URL, or select from my gallery.',
+      description: 'Set my profile image. Can generate a new one, use a URL, select from gallery, or request the user to upload a file. For user uploads, use source="upload" which will show a file picker in the UI.',
       parameters: {
         type: 'object',
         properties: {
           source: {
             type: 'string',
-            enum: ['generate', 'url', 'gallery'],
-            description: 'How to set the profile image',
+            enum: ['generate', 'url', 'gallery', 'upload'],
+            description: 'How to set the profile image: generate (AI creates one), url (from a web URL), gallery (from existing images), upload (user selects a file from their device)',
           },
           prompt: {
             type: 'string',
@@ -296,7 +296,7 @@ const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'get_profile_upload_url',
-      description: 'Get a signed URL for the user to upload a profile image directly',
+      description: 'Get a signed URL for the user to upload a profile image directly. Prefer using set_profile_image with source="upload" instead.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -553,7 +553,11 @@ You can update your profile:
 - Change your name, description, and persona
 
 You have media generation capabilities:
-- Set your profile image (generate, upload, or select from gallery)
+- Set your profile image using set_profile_image with these sources:
+  - source="generate" - AI generates a profile image from a text prompt
+  - source="upload" - Shows file picker for user to upload from their device (USE THIS when user wants to upload their own image!)
+  - source="url" - Uses an image from a web URL
+  - source="gallery" - Selects from existing gallery images
 - Generate images with AI (saved to your gallery)
 - Generate videos (async - check status with get_pending_jobs, saved to gallery when complete)
 - Generate stickers (with transparent backgrounds)
@@ -888,6 +892,19 @@ async function executeTool(
 
       // Profile image management
       case 'set_profile_image': {
+        // Handle 'upload' source - return upload URL for user to select a file
+        if (args.source === 'upload') {
+          const uploadInfo = await media.getProfileImageUploadUrl(agentId!);
+          result = {
+            type: 'upload_url',
+            uploadUrl: uploadInfo.uploadUrl,
+            s3Key: uploadInfo.s3Key,
+            publicUrl: uploadInfo.publicUrl,
+            instructions: 'Please select a profile image from your device. After upload, it will be set as your profile picture.',
+          };
+          break;
+        }
+
         let source: { type: 'url'; url: string } | { type: 'generate'; prompt: string } | { type: 'gallery'; imageId: string };
 
         if (args.source === 'generate') {
@@ -1347,10 +1364,22 @@ async function processChat(
       }
 
       // Check for upload URL tools - these need user interaction to upload
-      const uploadUrlTool = llmResponse.toolCalls.find(tc => 
-        tc.function.name === 'get_profile_upload_url' || 
-        tc.function.name === 'get_reference_image_upload_url'
-      );
+      const uploadUrlTool = llmResponse.toolCalls.find(tc => {
+        if (tc.function.name === 'get_profile_upload_url' || 
+            tc.function.name === 'get_reference_image_upload_url') {
+          return true;
+        }
+        // Also check for set_profile_image with source='upload'
+        if (tc.function.name === 'set_profile_image') {
+          try {
+            const toolArgs = JSON.parse(tc.function.arguments || '{}');
+            return toolArgs.source === 'upload';
+          } catch {
+            return false;
+          }
+        }
+        return false;
+      });
 
       if (uploadUrlTool) {
         // Execute the tool to get the upload URL
@@ -1392,7 +1421,13 @@ async function processChat(
       );
 
       // Extract any media from the tool results
+      // Log tool results for debugging
+      for (const result of toolResults) {
+        console.log(`[Chat] Tool result: ${result.tool_call_id}`, result.content?.slice(0, 200));
+      }
+
       const mediaFromResults = extractMediaFromToolResults(toolResults);
+      console.log(`[Chat] Extracted ${mediaFromResults.length} media items from tool results`);
       allMedia.push(...mediaFromResults);
 
       // Add tool results
@@ -1415,6 +1450,7 @@ async function processChat(
     messages.push({ role: 'assistant', content: response });
   }
 
+  console.log(`[Chat] Final response with ${allMedia.length} media items`);
   return { response, history: messages, media: allMedia.length > 0 ? allMedia : undefined, pendingToolCall };
 }
 
