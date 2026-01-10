@@ -167,6 +167,11 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
         continue;
       }
 
+      if (!mediaAction) {
+        logger.warn('No media action generated', { jobId: item.jobId });
+        continue;
+      }
+
       const mediaResponse: SwarmResponse = {
         ...item.response,
         actions: [mediaAction],

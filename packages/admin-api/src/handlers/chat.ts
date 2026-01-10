@@ -1568,6 +1568,7 @@ async function processChat(
   response: string; 
   history: AdminChatMessage[];
   media?: MediaItem[];
+  pendingJobs?: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string }>;
   pendingToolCall?: {
     id: string;
     name: string;
@@ -1582,6 +1583,7 @@ async function processChat(
   let response: string | undefined;
   let pendingToolCall: { id: string; name: string; arguments: Record<string, unknown> } | undefined;
   const allMedia: MediaItem[] = [];
+  const pendingJobs: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string }> = [];
   let iterations = 0;
   const maxIterations = 10; // Prevent infinite loops
 
@@ -1682,6 +1684,20 @@ async function processChat(
       // Log tool results for debugging
       for (const result of toolResults) {
         console.log(`[Chat] Tool result: ${result.tool_call_id}`, result.content?.slice(0, 200));
+        
+        // Extract pending job IDs from generate_image/generate_video results
+        try {
+          const parsed = JSON.parse(result.content);
+          if (parsed.jobId && parsed.status && (parsed.status === 'pending' || parsed.status === 'processing')) {
+            pendingJobs.push({
+              jobId: parsed.jobId,
+              type: parsed.type || 'image',
+              prompt: parsed.prompt,
+            });
+          }
+        } catch {
+          // Not JSON, skip
+        }
       }
 
       const mediaFromResults = extractMediaFromToolResults(toolResults);
@@ -1708,8 +1724,14 @@ async function processChat(
     messages.push({ role: 'assistant', content: response });
   }
 
-  console.log(`[Chat] Final response with ${allMedia.length} media items`);
-  return { response, history: messages, media: allMedia.length > 0 ? allMedia : undefined, pendingToolCall };
+  console.log(`[Chat] Final response with ${allMedia.length} media items, ${pendingJobs.length} pending jobs`);
+  return { 
+    response, 
+    history: messages, 
+    media: allMedia.length > 0 ? allMedia : undefined, 
+    pendingJobs: pendingJobs.length > 0 ? pendingJobs : undefined,
+    pendingToolCall,
+  };
 }
 
 /**

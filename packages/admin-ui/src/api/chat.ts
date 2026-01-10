@@ -13,6 +13,12 @@ interface MediaItem {
   id?: string;
 }
 
+interface PendingJob {
+  jobId: string;
+  type: 'image' | 'video' | 'sticker';
+  prompt?: string;
+}
+
 interface ChatResponse {
   response: string;
   history: Array<{
@@ -21,6 +27,7 @@ interface ChatResponse {
     tool_calls?: unknown[];
   }>;
   media?: MediaItem[];
+  pendingJobs?: PendingJob[];
   pendingToolCall?: PendingToolCall;
   error?: string;
 }
@@ -192,6 +199,7 @@ export interface JobStatus {
   updatedAt: number;
   completedAt?: number;
   resultUrl?: string;
+  url?: string; // Alias for resultUrl for compatibility
   error?: string;
 }
 

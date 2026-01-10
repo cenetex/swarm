@@ -92,12 +92,19 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
             }] : mediaToolCalls.length > 0 ? mediaToolCalls : undefined,
           });
 
-          // Check if the response contains a job ID that needs polling
-          // Job IDs are returned when generate_image or generate_video is called
+          // Check for pending jobs from the response (explicit pendingJobs array)
+          const pendingJobsList = response.pendingJobs || [];
+          
+          // Also try to extract job IDs from the response text as fallback
           const responseText = response.response;
           const jobIdMatch = responseText.match(/jobId[:\s]+["']?([a-f0-9-]{36})["']?/i);
-          if (jobIdMatch) {
-            const jobId = jobIdMatch[1];
+          if (jobIdMatch && !pendingJobsList.find(j => j.jobId === jobIdMatch[1])) {
+            pendingJobsList.push({ jobId: jobIdMatch[1], type: 'image' });
+          }
+          
+          // Start polling for all pending jobs
+          for (const pendingJob of pendingJobsList) {
+            const jobId = pendingJob.jobId;
             if (!activePollers.has(jobId)) {
               activePollers.add(jobId);
               const messageId = loadingMessage.id;
@@ -107,7 +114,8 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
               pollJobCompletion(jobId, {
                 intervalMs: 3000,
                 onProgress: (status: JobStatus) => {
-                  if (status.status === 'completed' && status.resultUrl) {
+                  const mediaUrl = status.resultUrl || status.url;
+                  if (status.status === 'completed' && mediaUrl) {
                     // Update the message with the completed image
                     const currentMsgs = useAgentStore.getState().chats[agentIdForPolling] || [];
                     const msg = currentMsgs.find(m => m.id === messageId);
@@ -122,7 +130,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
                             arguments: { prompt: status.prompt },
                             status: 'completed' as const,
                             result: {
-                              url: status.resultUrl,
+                              url: mediaUrl,
                               prompt: status.prompt,
                               jobId: status.jobId,
                             },

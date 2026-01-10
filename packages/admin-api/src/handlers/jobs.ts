@@ -71,6 +71,8 @@ export async function handler(
           updatedAt: job.updatedAt,
           completedAt: job.completedAt,
           resultUrl: job.resultUrl,
+          // Add 'url' alias for frontend compatibility
+          url: job.resultUrl,
           error: job.error,
         }),
       };
@@ -102,6 +104,8 @@ export async function handler(
           createdAt: job.createdAt,
           updatedAt: job.updatedAt,
           resultUrl: job.resultUrl,
+          // Add 'url' alias for frontend compatibility
+          url: job.resultUrl,
         })),
       }),
     };
