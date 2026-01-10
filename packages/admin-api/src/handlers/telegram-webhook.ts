@@ -30,6 +30,7 @@ import * as gallery from '../services/gallery.js';
 import * as wallets from '../services/wallets.js';
 import * as credits from '../services/credits.js';
 import * as channelState from '../services/channel-state.js';
+import * as agents from '../services/agents.js';
 import {
   buildGalleryContext,
   buildWalletContext,
@@ -228,6 +229,34 @@ function buildContextualTools(context?: ToolContext) {
             imageId: { type: 'string', description: 'ID of the gallery image to send' },
           },
           required: ['imageId'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'list_available_models',
+        description: 'List available AI models I can use. Returns model IDs and context lengths.',
+        parameters: {
+          type: 'object',
+          properties: {
+            family: { type: 'string', description: 'Filter by model family (e.g., "claude", "gpt", "gemini")' },
+          },
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'change_my_model',
+        description: 'Change which AI model I use. Model ID must be from list_available_models.',
+        parameters: {
+          type: 'object',
+          properties: {
+            model: { type: 'string', description: 'The model ID to use (e.g., "anthropic/claude-sonnet-4")' },
+            temperature: { type: 'number', description: 'Creativity level 0.0-2.0 (default 0.8)' },
+          },
+          required: ['model'],
         },
       },
     },
@@ -830,6 +859,82 @@ async function executeTool(
           result: { id: item.id, url: item.url },
           media: { type: 'image', url: item.url, caption: item.prompt },
         };
+      }
+
+      case 'list_available_models': {
+        const family = args.family as string | undefined;
+        try {
+          const response = await fetchWithTimeout(
+            'https://openrouter.ai/api/v1/models',
+            { headers: { 'Content-Type': 'application/json' } },
+            10_000
+          );
+          
+          if (!response.ok) {
+            return { success: false, error: 'Failed to fetch models' };
+          }
+          
+          const data = await response.json() as {
+            data: Array<{
+              id: string;
+              name: string;
+              context_length: number;
+            }>;
+          };
+          
+          let models = data.data || [];
+          
+          if (family) {
+            const f = family.toLowerCase();
+            models = models.filter(m => m.id.toLowerCase().includes(f));
+          }
+          
+          // Return top models sorted by name
+          const topModels = models
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .slice(0, 20)
+            .map(m => ({ id: m.id, name: m.name, contextLength: m.context_length }));
+          
+          return { success: true, result: topModels };
+        } catch (e) {
+          return { success: false, error: `Failed to fetch models: ${e}` };
+        }
+      }
+
+      case 'change_my_model': {
+        const model = args.model as string;
+        const temperature = args.temperature as number | undefined;
+        
+        try {
+          const agent = await agents.getAgent(agentId);
+          if (!agent) {
+            return { success: false, error: 'Agent not found' };
+          }
+          
+          const newLlmConfig = {
+            ...agent.llmConfig,
+            model,
+            ...(temperature !== undefined ? { temperature } : {}),
+          };
+          
+          // Use the agents service to update
+          await agents.updateAgent(agentId, { llmConfig: newLlmConfig }, { 
+            email: 'telegram-user@telegram.bot', 
+            userId: 'telegram-' + agentId,
+            isAdmin: false,
+            accessToken: '',
+          });
+          
+          return { 
+            success: true, 
+            result: { 
+              message: `Model changed to ${model}`,
+              newConfig: newLlmConfig,
+            },
+          };
+        } catch (e) {
+          return { success: false, error: `Failed to change model: ${e}` };
+        }
       }
 
       default:
