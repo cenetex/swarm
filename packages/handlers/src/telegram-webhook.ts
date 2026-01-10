@@ -59,7 +59,7 @@ async function initialize(): Promise<void> {
       maxTokens: 1024,
     },
     media: {
-      image: { provider: 'openrouter', model: 'openai/dall-e-3' },
+      image: { provider: 'replicate', model: 'f2ab8a5bfe79f02f0789a146cf5e73d2a4ff2684a98c2b303d1e1ff3814271db' }, // flux-schnell
     },
     scheduling: {},
     behavior: {

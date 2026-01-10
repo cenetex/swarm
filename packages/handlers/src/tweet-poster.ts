@@ -46,7 +46,7 @@ async function initialize(): Promise<void> {
       twitter: { enabled: true, username: '', features: ['scheduled_tweets'] },
     },
     llm: { provider: 'openrouter', model: 'anthropic/claude-sonnet-4', temperature: 0.9, maxTokens: 280 },
-    media: { image: { provider: 'openrouter', model: 'openai/dall-e-3' } },
+    media: { image: { provider: 'replicate', model: 'f2ab8a5bfe79f02f0789a146cf5e73d2a4ff2684a98c2b303d1e1ff3814271db' } }, // flux-schnell
     scheduling: {},
     behavior: { responseDelayMs: [0, 0], typingIndicator: false, ignoreBots: true, cooldownMinutes: 0, maxContextMessages: 0 },
     tools: [],

@@ -113,9 +113,10 @@ export class SwarmMediaService implements MediaService {
    * Generate image using Replicate
    */
   private async generateImageReplicate(prompt: string, model: string): Promise<GeneratedMedia> {
-    const apiKey = this.secrets['REPLICATE_API_TOKEN'];
+    // Check for various key names
+    const apiKey = this.secrets['REPLICATE_API_TOKEN'] || this.secrets['REPLICATE_API_KEY'] || this.secrets['replicate_api_key'];
     if (!apiKey) {
-      throw new Error('REPLICATE_API_TOKEN not found');
+      throw new Error('REPLICATE_API_TOKEN or REPLICATE_API_KEY not found in secrets');
     }
 
     // Start prediction
@@ -123,41 +124,49 @@ export class SwarmMediaService implements MediaService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Token ${apiKey}`,
+        'Authorization': `Bearer ${apiKey}`,
+        'Prefer': 'wait',
       },
       body: JSON.stringify({
         version: model,
-        input: { prompt },
+        input: { 
+          prompt,
+          num_outputs: 1,
+          output_format: 'png',
+        },
       }),
     });
 
     if (!createResponse.ok) {
-      throw new Error(`Replicate prediction failed: ${createResponse.status}`);
+      const errorText = await createResponse.text();
+      throw new Error(`Replicate prediction failed: ${createResponse.status} - ${errorText}`);
     }
 
     const prediction = await createResponse.json() as {
       id: string;
       status: string;
-      output?: string[];
+      output?: string | string[];
+      error?: string;
     };
 
-    // Poll for completion
+    // Poll for completion if not using Prefer: wait or if still processing
     let result = prediction;
     while (result.status !== 'succeeded' && result.status !== 'failed') {
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${result.id}`, {
-        headers: { 'Authorization': `Token ${apiKey}` },
+        headers: { 'Authorization': `Bearer ${apiKey}` },
       });
       
       result = await pollResponse.json() as typeof prediction;
     }
 
     if (result.status === 'failed') {
-      throw new Error('Replicate prediction failed');
+      throw new Error(`Replicate prediction failed: ${result.error || 'Unknown error'}`);
     }
 
-    const imageUrl = result.output?.[0];
+    // Handle output as string or array
+    const imageUrl = Array.isArray(result.output) ? result.output[0] : result.output;
     if (!imageUrl) {
       throw new Error('No output from Replicate');
     }
