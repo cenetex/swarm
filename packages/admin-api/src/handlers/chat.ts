@@ -6,6 +6,7 @@ import type {
   APIGatewayProxyEventV2,
   APIGatewayProxyResultV2,
 } from 'aws-lambda';
+import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js';
 import * as agents from '../services/agents.js';
 import * as secrets from '../services/secrets.js';
@@ -20,8 +21,39 @@ import type {
 } from '../types.js';
 
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
-const LLM_API_KEY = process.env.LLM_API_KEY!;
+const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
+
+// Cache the API key after first fetch
+let cachedApiKey: string | null = null;
+
+async function getLlmApiKey(): Promise<string> {
+  if (cachedApiKey) return cachedApiKey;
+  
+  if (!LLM_API_KEY_SECRET_ARN) {
+    throw new Error('LLM_API_KEY_SECRET_ARN not configured');
+  }
+
+  const client = new SecretsManagerClient({});
+  const response = await client.send(new GetSecretValueCommand({
+    SecretId: LLM_API_KEY_SECRET_ARN,
+  }));
+
+  if (!response.SecretString) {
+    throw new Error('Secret value is empty');
+  }
+
+  // Parse JSON secret (handles {"api_key": "..."} format)
+  try {
+    const parsed = JSON.parse(response.SecretString);
+    cachedApiKey = parsed.api_key || parsed.apiKey || parsed.API_KEY || response.SecretString;
+  } catch {
+    // Plain string secret
+    cachedApiKey = response.SecretString;
+  }
+
+  return cachedApiKey!;
+}
 
 /**
  * Define available tools for the admin chatbot
@@ -507,11 +539,13 @@ async function callLLM(
   message?: string; 
   toolCalls?: ToolCall[]; 
 }> {
+  const apiKey = await getLlmApiKey();
+  
   const response = await fetch(LLM_ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${LLM_API_KEY}`,
+      'Authorization': `Bearer ${apiKey}`,
       'HTTP-Referer': 'https://swarm.admin',
       'X-Title': 'Swarm Admin',
     },
