@@ -24,8 +24,19 @@ export interface AgentConfig {
   // Avatar/profile image for Discord webhooks
   profileImage?: {
     url: string;
+    s3Key?: string;
+    updatedAt?: number;
   };
-  
+
+  // Character reference for full-body consistency in image/video generation
+  characterReference?: {
+    url: string;
+    s3Key?: string;
+    description?: string;
+    generatedPrompt?: string;
+    updatedAt?: number;
+  };
+
   platforms: PlatformConfigs;
   llm: LLMConfig;
   media: MediaConfig;

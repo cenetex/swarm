@@ -59,6 +59,11 @@ export const TOOL_CREDITS: Record<string, {
     maxCredits: 3,
     dailyLimit: 10,
   },
+  set_character_reference: {
+    creditsPerHour: 1,
+    maxCredits: 3,
+    dailyLimit: 10,
+  },
 };
 
 export const ENERGY_DAILY_LIMIT = 1000;

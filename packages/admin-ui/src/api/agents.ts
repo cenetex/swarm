@@ -22,6 +22,7 @@ export interface AgentResponse {
     url: string;
     s3Key?: string;
     description?: string;
+    generatedPrompt?: string;
     updatedAt?: number;
   };
   telegram?: {
