@@ -20,6 +20,17 @@ import * as mediaJobs from '../services/media-jobs.js';
 const API_TIMEOUT_MS = 10_000;
 
 /**
+ * Get bot token from secrets for a given agent
+ */
+async function getBotToken(agentId: string): Promise<string> {
+  const botToken = await secrets._getSecretValueInternal(agentId, 'telegram_bot_token', 'default');
+  if (!botToken) {
+    throw new Error('No Telegram bot token configured');
+  }
+  return botToken;
+}
+
+/**
  * Fetch with timeout using AbortController
  */
 async function fetchWithTimeout(
@@ -559,11 +570,7 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
     // =========================================================================
     telegram: {
       getUserProfilePhotos: async (agentId, userId, options) => {
-        const agent = await agents.getAgent(agentId);
-        const botToken = agent?.telegramConfig?.botToken;
-        if (!botToken) {
-          throw new Error('No Telegram bot token configured');
-        }
+        const botToken = await getBotToken(agentId);
         
         const result = await telegram.getUserProfilePhotos(botToken, userId, options);
         
@@ -598,65 +605,37 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
       },
 
       getBotName: async (agentId) => {
-        const agent = await agents.getAgent(agentId);
-        const botToken = agent?.telegramConfig?.botToken;
-        if (!botToken) {
-          throw new Error('No Telegram bot token configured');
-        }
+        const botToken = await getBotToken(agentId);
         return telegram.getBotName(botToken);
       },
 
       setBotName: async (agentId, name, languageCode) => {
-        const agent = await agents.getAgent(agentId);
-        const botToken = agent?.telegramConfig?.botToken;
-        if (!botToken) {
-          throw new Error('No Telegram bot token configured');
-        }
+        const botToken = await getBotToken(agentId);
         await telegram.setBotName(botToken, name, languageCode);
       },
 
       getBotDescription: async (agentId) => {
-        const agent = await agents.getAgent(agentId);
-        const botToken = agent?.telegramConfig?.botToken;
-        if (!botToken) {
-          throw new Error('No Telegram bot token configured');
-        }
+        const botToken = await getBotToken(agentId);
         return telegram.getBotDescription(botToken);
       },
 
       setBotDescription: async (agentId, description, languageCode) => {
-        const agent = await agents.getAgent(agentId);
-        const botToken = agent?.telegramConfig?.botToken;
-        if (!botToken) {
-          throw new Error('No Telegram bot token configured');
-        }
+        const botToken = await getBotToken(agentId);
         await telegram.setBotDescription(botToken, description, languageCode);
       },
 
       getBotShortDescription: async (agentId) => {
-        const agent = await agents.getAgent(agentId);
-        const botToken = agent?.telegramConfig?.botToken;
-        if (!botToken) {
-          throw new Error('No Telegram bot token configured');
-        }
+        const botToken = await getBotToken(agentId);
         return telegram.getBotShortDescription(botToken);
       },
 
       setBotShortDescription: async (agentId, shortDescription, languageCode) => {
-        const agent = await agents.getAgent(agentId);
-        const botToken = agent?.telegramConfig?.botToken;
-        if (!botToken) {
-          throw new Error('No Telegram bot token configured');
-        }
+        const botToken = await getBotToken(agentId);
         await telegram.setBotShortDescription(botToken, shortDescription, languageCode);
       },
 
       sendChatAction: async (agentId, chatId, action) => {
-        const agent = await agents.getAgent(agentId);
-        const botToken = agent?.telegramConfig?.botToken;
-        if (!botToken) {
-          throw new Error('No Telegram bot token configured');
-        }
+        const botToken = await getBotToken(agentId);
         await telegram.sendChatAction(botToken, chatId, action);
       },
 
@@ -692,11 +671,7 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
       },
 
       executeModification: async (agentId, proposalId) => {
-        const agent = await agents.getAgent(agentId);
-        const botToken = agent?.telegramConfig?.botToken;
-        if (!botToken) {
-          throw new Error('No Telegram bot token configured');
-        }
+        const botToken = await getBotToken(agentId);
         return chatVoting.executeModification(agentId, proposalId, botToken);
       },
     },

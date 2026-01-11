@@ -95,6 +95,10 @@ export class SwarmMediaService implements MediaService {
 
     // Download and upload to S3 for persistence
     const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      const errorText = await imageResponse.text();
+      throw new Error(`Failed to download generated image: ${imageResponse.status} - ${errorText}`);
+    }
     const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
     
     const s3Key = `generated/${Date.now()}_${Math.random().toString(36).slice(2)}.png`;
@@ -187,6 +191,10 @@ export class SwarmMediaService implements MediaService {
 
     // Upload to S3
     const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      const errorText = await imageResponse.text();
+      throw new Error(`Failed to download generated image: ${imageResponse.status} - ${errorText}`);
+    }
     const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
     
     const s3Key = `generated/${Date.now()}_${Math.random().toString(36).slice(2)}.png`;
@@ -237,6 +245,10 @@ export class SwarmMediaService implements MediaService {
 
     // Upload to S3
     const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      const errorText = await imageResponse.text();
+      throw new Error(`Failed to download generated image: ${imageResponse.status} - ${errorText}`);
+    }
     const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
     
     const s3Key = `generated/${Date.now()}_${Math.random().toString(36).slice(2)}.png`;
@@ -255,9 +267,9 @@ export class SwarmMediaService implements MediaService {
    * Generate video using Replicate (async with webhook callback)
    */
   private async generateVideoReplicate(prompt: string, model: string): Promise<GeneratedMedia> {
-    const apiKey = this.secrets['REPLICATE_API_TOKEN'];
+    const apiKey = this.secrets['REPLICATE_API_TOKEN'] || this.secrets['REPLICATE_API_KEY'] || this.secrets['replicate_api_key'];
     if (!apiKey) {
-      throw new Error('REPLICATE_API_TOKEN not found');
+      throw new Error('REPLICATE_API_TOKEN or REPLICATE_API_KEY not found in secrets');
     }
 
     // Start prediction
@@ -311,6 +323,10 @@ export class SwarmMediaService implements MediaService {
 
     // Upload to S3
     const videoResponse = await fetch(videoUrl);
+    if (!videoResponse.ok) {
+      const errorText = await videoResponse.text();
+      throw new Error(`Failed to download generated video: ${videoResponse.status} - ${errorText}`);
+    }
     const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
     
     const s3Key = `generated/${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`;

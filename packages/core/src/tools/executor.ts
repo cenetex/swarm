@@ -79,17 +79,15 @@ export async function executeToolCall(
         return await executeCheckBalance(deps);
 
       case 'remember':
-        // TODO: Implement memory storage
         return {
-          success: true,
-          data: { remembered: args.fact, about: args.about },
+          success: false,
+          error: 'Memory tools are disabled until durable storage is enabled.',
         };
 
       case 'recall':
-        // TODO: Implement memory retrieval
         return {
-          success: true,
-          data: { memories: [] },
+          success: false,
+          error: 'Memory tools are disabled until durable storage is enabled.',
         };
 
       case 'send_sticker':

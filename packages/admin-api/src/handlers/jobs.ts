@@ -17,13 +17,27 @@ import * as mediaJobs from '../services/media-jobs.js';
 export async function handler(
   event: APIGatewayProxyEventV2
 ): Promise<APIGatewayProxyResultV2> {
+  const resolveCorsOrigin = (): string => {
+    const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+      .split(',')
+      .map(origin => origin.trim())
+      .filter(Boolean);
+    const fallbackOrigin = allowedOrigins[0] || 'http://localhost:5173';
+    const requestOrigin = event.headers['origin'] || event.headers['Origin'];
+    if (!requestOrigin) return fallbackOrigin;
+    const normalizedRequest = requestOrigin.replace(/\/$/, '');
+    const match = allowedOrigins.find(allowed => normalizedRequest === allowed.replace(/\/$/, ''));
+    return match || fallbackOrigin;
+  };
+
   // CORS headers
-  const allowedOrigin = process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173';
+  const allowedOrigin = resolveCorsOrigin();
   const corsHeaders = {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, CF-Access-JWT-Assertion',
     'Access-Control-Allow-Credentials': 'true',
+    'Vary': 'Origin',
   };
 
   // Handle preflight

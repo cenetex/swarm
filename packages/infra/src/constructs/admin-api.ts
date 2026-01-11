@@ -148,6 +148,22 @@ export class AdminApiConstruct extends Construct {
       sortKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
     });
 
+    // GSI for media jobs by agent/status
+    this.table.addGlobalSecondaryIndex({
+      indexName: 'GSI2',
+      partitionKey: { name: 'gsi2pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi2sk', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // GSI for media jobs by external provider ID
+    this.table.addGlobalSecondaryIndex({
+      indexName: 'GSI3',
+      partitionKey: { name: 'gsi3pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi3sk', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
     // Secret for OpenRouter API key
     const llmApiKey = props.openRouterApiKeyArn 
       ? secretsmanager.Secret.fromSecretCompleteArn(this, 'LLMApiKey', props.openRouterApiKeyArn)

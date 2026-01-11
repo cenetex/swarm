@@ -307,6 +307,7 @@ export const useAgentStore = create<AgentState>()(
     }),
     {
       name: 'swarm-agents',
+      version: 2,
       // Only persist agent metadata and active selection
       // Chat history is synced from backend (source of truth for cross-device)
       partialize: (state) => ({
@@ -314,6 +315,13 @@ export const useAgentStore = create<AgentState>()(
         // Don't persist chats - always sync from backend
         activeAgentId: state.activeAgentId,
       }),
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<AgentState>;
+        return {
+          agents: state.agents || [],
+          activeAgentId: state.activeAgentId || null,
+        };
+      },
     }
   )
 );

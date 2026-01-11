@@ -26,6 +26,7 @@ const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
 
 // TTL: 24 hours for job records
 const JOB_TTL_SECONDS = 24 * 60 * 60;
+const buildAgentStatusKey = (status: MediaJob['status'], timestamp: number) => `${status}#${timestamp}`;
 
 /**
  * Create a new media job
@@ -34,7 +35,10 @@ export async function createJob(
   job: Omit<MediaJob, 'pk' | 'sk' | 'status' | 'createdAt' | 'updatedAt' | 'ttl'>
 ): Promise<MediaJob> {
   const now = Date.now();
-  const mediaJob: MediaJob = {
+  const mediaJob: MediaJob & {
+    gsi2pk: string;
+    gsi2sk: string;
+  } = {
     pk: `MEDIAJOB#${job.jobId}`,
     sk: 'STATUS',
     ...job,
@@ -42,6 +46,8 @@ export async function createJob(
     createdAt: now,
     updatedAt: now,
     ttl: Math.floor(now / 1000) + JOB_TTL_SECONDS,
+    gsi2pk: `AGENT#${job.agentId}`,
+    gsi2sk: buildAgentStatusKey('pending', now),
   };
 
   await dynamoClient.send(new PutCommand({
@@ -77,10 +83,11 @@ export async function updateJobStatus(
 ): Promise<MediaJob | null> {
   const now = Date.now();
 
-  const updateExpressions = ['#status = :status', 'updatedAt = :now'];
+  const updateExpressions = ['#status = :status', 'updatedAt = :now', 'gsi2sk = :gsi2sk'];
   const expressionValues: Record<string, unknown> = {
     ':status': status,
     ':now': now,
+    ':gsi2sk': buildAgentStatusKey(status, now),
   };
   const expressionNames: Record<string, string> = {
     '#status': 'status',
@@ -110,6 +117,9 @@ export async function updateJobStatus(
   if (updates?.externalId) {
     updateExpressions.push('externalId = :externalId');
     expressionValues[':externalId'] = updates.externalId;
+    updateExpressions.push('gsi3pk = :gsi3pk', 'gsi3sk = :gsi3sk');
+    expressionValues[':gsi3pk'] = `EXTERNAL#${updates.externalId}`;
+    expressionValues[':gsi3sk'] = `JOB#${jobId}`;
   }
 
   const result = await dynamoClient.send(new UpdateCommand({
@@ -131,40 +141,42 @@ export async function updateJobStatus(
  * Get pending jobs for an agent (for status checking)
  */
 export async function getPendingJobs(agentId: string): Promise<MediaJob[]> {
-  // Use GSI to query by agentId and status
-  // For now, scan with filter (not ideal for scale, but works for MVP)
-  const result = await dynamoClient.send(new QueryCommand({
+  const pendingResult = await dynamoClient.send(new QueryCommand({
     TableName: ADMIN_TABLE,
-    IndexName: 'GSI1',
-    KeyConditionExpression: 'sk = :sk',
-    FilterExpression: 'agentId = :agentId AND (#status = :pending OR #status = :processing)',
+    IndexName: 'GSI2',
+    KeyConditionExpression: 'gsi2pk = :agentPk AND begins_with(gsi2sk, :pendingPrefix)',
     ExpressionAttributeValues: {
-      ':sk': 'STATUS',
-      ':agentId': agentId,
-      ':pending': 'pending',
-      ':processing': 'processing',
-    },
-    ExpressionAttributeNames: {
-      '#status': 'status',
+      ':agentPk': `AGENT#${agentId}`,
+      ':pendingPrefix': 'pending#',
     },
   }));
 
-  return (result.Items || []) as MediaJob[];
+  const processingResult = await dynamoClient.send(new QueryCommand({
+    TableName: ADMIN_TABLE,
+    IndexName: 'GSI2',
+    KeyConditionExpression: 'gsi2pk = :agentPk AND begins_with(gsi2sk, :processingPrefix)',
+    ExpressionAttributeValues: {
+      ':agentPk': `AGENT#${agentId}`,
+      ':processingPrefix': 'processing#',
+    },
+  }));
+
+  return [
+    ...((pendingResult.Items || []) as MediaJob[]),
+    ...((processingResult.Items || []) as MediaJob[]),
+  ];
 }
 
 /**
  * Find job by external ID (e.g., Replicate prediction ID)
  */
 export async function findByExternalId(externalId: string): Promise<MediaJob | null> {
-  // This requires a scan - in production, add a GSI on externalId
   const result = await dynamoClient.send(new QueryCommand({
     TableName: ADMIN_TABLE,
-    IndexName: 'GSI1',
-    KeyConditionExpression: 'sk = :sk',
-    FilterExpression: 'externalId = :externalId',
+    IndexName: 'GSI3',
+    KeyConditionExpression: 'gsi3pk = :externalPk',
     ExpressionAttributeValues: {
-      ':sk': 'STATUS',
-      ':externalId': externalId,
+      ':externalPk': `EXTERNAL#${externalId}`,
     },
     Limit: 1,
   }));

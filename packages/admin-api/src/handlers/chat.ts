@@ -389,7 +389,7 @@ async function callLLM(
     subsystem: 'chat',
     event: 'llm_response',
     hasContent: !!choice.message?.content,
-    contentPreview: choice.message?.content?.slice(0, 100),
+    contentLength: choice.message?.content?.length || 0,
     toolCallCount: choice.message?.tool_calls?.length || 0,
     toolNames: choice.message?.tool_calls?.map(tc => tc.function?.name) || [],
   }));
@@ -672,9 +672,8 @@ async function processChat(
       );
 
       // Extract any media from the tool results
-      // Log tool results for debugging
       for (const result of toolResults) {
-        console.log(`[Chat] Tool result: ${result.tool_call_id}`, result.content?.slice(0, 200));
+        console.log(`[Chat] Tool result: ${result.tool_call_id} (${result.content?.length || 0} chars)`);
         
         // Extract pending jobs from _pendingJob metadata (hidden from LLM)
         try {
@@ -751,13 +750,27 @@ async function processChat(
 export async function handler(
   event: APIGatewayProxyEventV2
 ): Promise<APIGatewayProxyResultV2> {
-  // CORS headers - restricted to configured admin domain
-  const allowedOrigin = process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173';
+  const resolveCorsOrigin = (): string => {
+    const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+      .split(',')
+      .map(origin => origin.trim())
+      .filter(Boolean);
+    const fallbackOrigin = allowedOrigins[0] || 'http://localhost:5173';
+    const requestOrigin = event.headers['origin'] || event.headers['Origin'];
+    if (!requestOrigin) return fallbackOrigin;
+    const normalizedRequest = requestOrigin.replace(/\/$/, '');
+    const match = allowedOrigins.find(allowed => normalizedRequest === allowed.replace(/\/$/, ''));
+    return match || fallbackOrigin;
+  };
+
+  // CORS headers - restricted to configured admin domains
+  const allowedOrigin = resolveCorsOrigin();
   const corsHeaders = {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, CF-Access-JWT-Assertion',
     'Access-Control-Allow-Credentials': 'true',
+    'Vary': 'Origin',
   };
 
   // Handle preflight

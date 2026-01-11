@@ -164,28 +164,33 @@ export async function sendTelegramReaction(
  * Handle reaction flow for an agent who lost initiative.
  * Decides whether to react and sends the reaction after a delay.
  *
+ * Note: This uses fire-and-forget pattern to avoid blocking the Lambda response.
+ * The reaction is attempted but not guaranteed (Lambda may freeze after response).
+ * For guaranteed delivery, consider using SQS with DelaySeconds.
+ *
  * @param token - Bot token
  * @param chatId - Chat ID
  * @param messageId - Message ID to react to
  * @param messageText - Original message text
  * @param winnerResponse - Winner's response (if available)
  */
-export async function handleReaction(
+export function handleReaction(
   token: string,
   chatId: number,
   messageId: number,
   messageText: string,
   winnerResponse?: string
-): Promise<void> {
+): void {
   const decision = decideReaction(messageText, winnerResponse);
 
   if (!decision.shouldReact || !decision.emoji) {
     return;
   }
 
-  // Wait for the delay
-  await new Promise((resolve) => setTimeout(resolve, decision.delay));
-
-  // Send the reaction
-  await sendTelegramReaction(token, chatId, messageId, decision.emoji);
+  // Fire-and-forget: spawn delayed reaction without blocking
+  // Lambda may freeze after response, so this is best-effort
+  setTimeout(() => {
+    sendTelegramReaction(token, chatId, messageId, decision.emoji!)
+      .catch((err) => console.warn('[reactions] Fire-and-forget reaction failed:', err));
+  }, decision.delay);
 }

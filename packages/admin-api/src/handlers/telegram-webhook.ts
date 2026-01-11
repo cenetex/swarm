@@ -390,6 +390,11 @@ async function clearMessageProcessing(agentId: string, updateId: number): Promis
 }
 
 // === TELEGRAM API ===
+function escapeTelegramMarkdownV2(text: string): string {
+  // eslint-disable-next-line no-useless-escape
+  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+}
+
 async function sendTelegramMessage(token: string, agentId: string, chatId: number, text: string, replyTo?: number): Promise<number | null> {
   const canUse = await credits.canUseTool(agentId, 'send_message');
   if (!canUse.allowed) {
@@ -404,6 +409,7 @@ async function sendTelegramMessage(token: string, agentId: string, chatId: numbe
   }
 
   try {
+    const safeText = escapeTelegramMarkdownV2(text);
     const response = await fetchWithRetry(
       `https://api.telegram.org/bot${token}/sendMessage`,
       {
@@ -411,8 +417,8 @@ async function sendTelegramMessage(token: string, agentId: string, chatId: numbe
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
-          text,
-          parse_mode: 'Markdown',
+          text: safeText,
+          parse_mode: 'MarkdownV2',
           reply_to_message_id: replyTo,
         }),
       },
@@ -461,8 +467,8 @@ async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string
             body: JSON.stringify({
               chat_id: chatId,
               photo: photoUrl,
-              caption: caption?.slice(0, 1024),
-              parse_mode: 'Markdown',
+              caption: caption ? escapeTelegramMarkdownV2(caption.slice(0, 1024)) : undefined,
+              parse_mode: 'MarkdownV2',
               reply_to_message_id: replyTo,
             }),
           },
@@ -486,8 +492,8 @@ async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string
     form.append('chat_id', chatId.toString());
     form.append('photo', new Blob([imageBuffer], { type: 'image/png' }), 'image.png');
     if (caption) {
-      form.append('caption', caption.slice(0, 1024));
-      form.append('parse_mode', 'Markdown');
+      form.append('caption', escapeTelegramMarkdownV2(caption.slice(0, 1024)));
+      form.append('parse_mode', 'MarkdownV2');
     }
     if (replyTo) {
       form.append('reply_to_message_id', replyTo.toString());
@@ -539,8 +545,8 @@ async function sendTelegramVideo(token: string, chatId: number, videoUrl: string
             body: JSON.stringify({
               chat_id: chatId,
               video: videoUrl,
-              caption: caption?.slice(0, 1024),
-              parse_mode: 'Markdown',
+              caption: caption ? escapeTelegramMarkdownV2(caption.slice(0, 1024)) : undefined,
+              parse_mode: 'MarkdownV2',
               reply_to_message_id: replyTo,
             }),
           },
@@ -564,8 +570,8 @@ async function sendTelegramVideo(token: string, chatId: number, videoUrl: string
     form.append('chat_id', chatId.toString());
     form.append('video', new Blob([videoBuffer], { type: 'video/mp4' }), 'video.mp4');
     if (caption) {
-      form.append('caption', caption.slice(0, 1024));
-      form.append('parse_mode', 'Markdown');
+      form.append('caption', escapeTelegramMarkdownV2(caption.slice(0, 1024)));
+      form.append('parse_mode', 'MarkdownV2');
     }
     if (replyTo) {
       form.append('reply_to_message_id', replyTo.toString());
@@ -1162,10 +1168,11 @@ async function processChannelResponse(
  * Handle message in a multi-agent channel using D&D-style initiative.
  *
  * Flow:
- * 1. Register agent in shared channel (if not already)
- * 2. Check interest (CHA/WIS roll)
- * 3. Roll initiative (1d20 + DEX)
- * 4. Winner responds, others can react
+ * 1. Check interest (CHA/WIS roll)
+ * 2. Roll initiative (1d20 + DEX)
+ * 3. Winner responds, others can react
+ *
+ * Note: Agent is already registered in shared channel by caller.
  */
 async function handleMultiAgentMessage(
   agentId: string,
@@ -1179,15 +1186,6 @@ async function handleMultiAgentMessage(
   const chatType = message.chat.type;
   const messageId = message.message_id;
   const text = message.text || message.caption || '';
-  const botUsername = agent.platforms.telegram?.botUsername || '';
-
-  // Ensure this agent is registered in the shared channel
-  await sharedChannel.ensureAgentInChannel(
-    chatId,
-    agentId,
-    botUsername,
-    agentRecord.createdAt
-  );
 
   // Get or generate agent stats
   const stats = generateAgentStats(agentRecord.createdAt, agentId);

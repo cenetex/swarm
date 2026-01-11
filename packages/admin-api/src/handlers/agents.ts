@@ -11,6 +11,7 @@ import * as agentService from '../services/agents.js';
 import * as secretsService from '../services/secrets.js';
 import * as logsService from '../services/logs.js';
 import * as telegramService from '../services/telegram.js';
+import { SecretType } from '../types.js';
 
 // CORS headers - restricted to configured admin domain
 const allowedOrigin = process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173';
@@ -132,7 +133,7 @@ export async function handler(
       const body = JSON.parse(event.body || '{}');
       const { key, value } = body;
 
-      if (!key || !value) {
+      if (typeof key !== 'string' || typeof value !== 'string' || !key || !value) {
         return {
           statusCode: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -140,9 +141,21 @@ export async function handler(
         };
       }
 
+      const secretType = SecretType.safeParse(key);
+      if (!secretType.success) {
+        return {
+          statusCode: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            error: `Unsupported secret key: ${key}`,
+            allowed: SecretType.options,
+          }),
+        };
+      }
+
       await secretsService.storeSecret(
         agentId,
-        key,
+        secretType.data,
         'default',
         value,
         session,
