@@ -148,21 +148,27 @@ export class AdminApiConstruct extends Construct {
       sortKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
     });
 
+    // NOTE: GSI2 and GSI3 must be added in separate deployments due to DynamoDB limitation
+    // (only one GSI can be added/removed per update)
+    // Deploy sequence: 1) GSI1, 2) GSI2, 3) GSI3
+
     // GSI for media jobs by agent/status
-    this.table.addGlobalSecondaryIndex({
-      indexName: 'GSI2',
-      partitionKey: { name: 'gsi2pk', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'gsi2sk', type: dynamodb.AttributeType.STRING },
-      projectionType: dynamodb.ProjectionType.ALL,
-    });
+    // TODO: Uncomment after GSI1 is deployed
+    // this.table.addGlobalSecondaryIndex({
+    //   indexName: 'GSI2',
+    //   partitionKey: { name: 'gsi2pk', type: dynamodb.AttributeType.STRING },
+    //   sortKey: { name: 'gsi2sk', type: dynamodb.AttributeType.STRING },
+    //   projectionType: dynamodb.ProjectionType.ALL,
+    // });
 
     // GSI for media jobs by external provider ID
-    this.table.addGlobalSecondaryIndex({
-      indexName: 'GSI3',
-      partitionKey: { name: 'gsi3pk', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'gsi3sk', type: dynamodb.AttributeType.STRING },
-      projectionType: dynamodb.ProjectionType.ALL,
-    });
+    // TODO: Uncomment after GSI2 is deployed
+    // this.table.addGlobalSecondaryIndex({
+    //   indexName: 'GSI3',
+    //   partitionKey: { name: 'gsi3pk', type: dynamodb.AttributeType.STRING },
+    //   sortKey: { name: 'gsi3sk', type: dynamodb.AttributeType.STRING },
+    //   projectionType: dynamodb.ProjectionType.ALL,
+    // });
 
     // Secret for OpenRouter API key
     const llmApiKey = props.openRouterApiKeyArn 
