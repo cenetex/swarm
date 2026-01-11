@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { isValidTelegramIP } from '../services/telegram.js';
 import { timingSafeEqual } from 'crypto';
 import * as channelState from '../services/channel-state.js';
+import * as credits from '../services/credits.js';
 import {
   ToolRegistry,
   createToolClient,
@@ -372,7 +373,19 @@ async function clearMessageProcessing(agentId: string, updateId: number): Promis
 }
 
 // === TELEGRAM API ===
-async function sendTelegramMessage(token: string, chatId: number, text: string, replyTo?: number): Promise<number | null> {
+async function sendTelegramMessage(token: string, agentId: string, chatId: number, text: string, replyTo?: number): Promise<number | null> {
+  const canUse = await credits.canUseTool(agentId, 'send_message');
+  if (!canUse.allowed) {
+    console.warn(`[Credits] send_message rate limit hit for agent=${agentId}: ${canUse.reason}`);
+    return null;
+  }
+
+  const energyCheck = await credits.canUseEnergy(agentId, credits.ENERGY_COSTS.text);
+  if (!energyCheck.allowed) {
+    console.warn(`[Credits] Energy limit hit for send_message (agent=${agentId}): ${energyCheck.reason}`);
+    return null;
+  }
+
   try {
     const response = await fetchWithRetry(
       `https://api.telegram.org/bot${token}/sendMessage`,
@@ -392,6 +405,11 @@ async function sendTelegramMessage(token: string, chatId: number, text: string, 
     if (!response.ok) {
       console.error('Telegram sendMessage error:', await response.text());
       return null;
+    }
+    await credits.consumeCredit(agentId, 'send_message');
+    const energyConsumed = await credits.consumeEnergy(agentId, credits.ENERGY_COSTS.text);
+    if (!energyConsumed) {
+      console.warn(`[Credits] Failed to consume energy for send_message: agent=${agentId}`);
     }
     const data = await response.json() as { result?: { message_id: number } };
     return data.result?.message_id || null;
@@ -645,6 +663,7 @@ async function sendTelegramSticker(token: string, chatId: number, stickerUrl: st
  */
 async function sendTelegramStickerOrPhoto(
   token: string,
+  agentId: string,
   chatId: number,
   mediaUrl: string,
   caption?: string,
@@ -656,7 +675,7 @@ async function sendTelegramStickerOrPhoto(
     await sendTelegramSticker(token, chatId, mediaUrl, replyTo);
     // Telegram stickers don't support captions, send as separate message
     if (caption) {
-      await sendTelegramMessage(token, chatId, caption);
+      await sendTelegramMessage(token, agentId, chatId, caption);
     }
     return;
   }
@@ -1077,7 +1096,7 @@ async function processChannelResponse(
     // Final response
     if (llmResponse.content) {
       messages.push({ role: 'assistant', content: llmResponse.content });
-      responseMessageId = await sendTelegramMessage(token, chatId, llmResponse.content, replyToMessageId);
+      responseMessageId = await sendTelegramMessage(token, agentId, chatId, llmResponse.content, replyToMessageId);
     }
 
     // Send media
@@ -1088,7 +1107,7 @@ async function processChannelResponse(
         await sendTelegramVideo(token, chatId, m.url, m.caption);
       } else if (m.type === 'sticker') {
         // Route by format: .webp/.tgs/.webm → sendSticker, else → sendPhoto
-        await sendTelegramStickerOrPhoto(token, chatId, m.url, m.caption);
+        await sendTelegramStickerOrPhoto(token, agentId, chatId, m.url, m.caption);
       }
     }
     mediasToSend.length = 0;
@@ -1100,6 +1119,7 @@ async function processChannelResponse(
     console.warn(`[Telegram] Max iterations reached for chat ${chatId}`);
     responseMessageId = await sendTelegramMessage(
       token,
+      agentId,
       chatId,
       "Sorry, I ran into some issues processing your request. Please try again!",
       replyToMessageId
@@ -1110,7 +1130,7 @@ async function processChannelResponse(
       } else if (m.type === 'video') {
         await sendTelegramVideo(token, chatId, m.url, m.caption);
       } else if (m.type === 'sticker') {
-        await sendTelegramStickerOrPhoto(token, chatId, m.url, m.caption);
+        await sendTelegramStickerOrPhoto(token, agentId, chatId, m.url, m.caption);
       }
     }
   }

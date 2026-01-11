@@ -855,6 +855,8 @@ export async function handler(
         pendingJobs: result.pendingJobs,
         // Include pending tool call if one needs user input
         pendingToolCall: result.pendingToolCall,
+        // Include agent updates (e.g., profile image changes)
+        agentUpdates: result.agentUpdates,
       }),
     };
   } catch (error) {

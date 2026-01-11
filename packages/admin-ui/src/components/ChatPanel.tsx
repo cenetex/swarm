@@ -46,15 +46,15 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
       setError(null);
 
       try {
-        // Build history for API
+        // Build history for API - existing messages only, the server will add the new user message
+        // Note: messages is from the closure before we called addMessage, 
+        // so it doesn't include the user message we just added
         const history = messages
           .filter((m) => m.id !== 'welcome' && !m.isLoading)
           .map((m) => ({
             role: m.role,
             content: m.content,
           }));
-
-        history.push({ role: 'user', content });
 
         // Send to API with agent context
         const response = await sendChatMessage(content, history, {

@@ -97,6 +97,7 @@ interface GenerateImageOptions {
   referenceImageUrls?: string[]; // Array of reference images (profile, gallery, etc.)
   resolution?: '1K' | '2K' | '4K';
   aspectRatio?: 'match_input_image' | '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9';
+  chargeEnergy?: boolean;
 }
 
 interface GenerateVideoOptions {
@@ -217,12 +218,20 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     referenceImageUrls = [],
     resolution = '2K',
     aspectRatio = '1:1',
+    chargeEnergy = true,
   } = options;
 
   // Check credits
   const canUse = await credits.canUseTool(agentId, 'generate_image');
   if (!canUse.allowed) {
     throw new Error(`Rate limited: ${canUse.reason}`);
+  }
+
+  if (chargeEnergy) {
+    const energyCheck = await credits.canUseEnergy(agentId, credits.ENERGY_COSTS.image);
+    if (!energyCheck.allowed) {
+      throw new Error(`Energy limit reached: ${energyCheck.reason}`);
+    }
   }
 
   // Get Replicate API key
@@ -396,6 +405,12 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
 
   // Consume credit
   await credits.consumeCredit(agentId, 'generate_image');
+  if (chargeEnergy) {
+    const energyConsumed = await credits.consumeEnergy(agentId, credits.ENERGY_COSTS.image);
+    if (!energyConsumed) {
+      console.warn(`[Credits] Failed to consume energy for generate_image: agent=${agentId}`);
+    }
+  }
 
   // Construct public URL
   // IMPORTANT: CDN_URL should be set to your CloudFront distribution URL
@@ -441,12 +456,20 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     aspectRatio = '1:1',
     conversationId,
     replyToMessageId,
+    chargeEnergy = true,
   } = options;
 
   // Check credits
   const canUse = await credits.canUseTool(agentId, 'generate_image');
   if (!canUse.allowed) {
     throw new Error(`Rate limited: ${canUse.reason}`);
+  }
+
+  if (chargeEnergy) {
+    const energyCheck = await credits.canUseEnergy(agentId, credits.ENERGY_COSTS.image);
+    if (!energyCheck.allowed) {
+      throw new Error(`Energy limit reached: ${energyCheck.reason}`);
+    }
   }
 
   // Get Replicate API key
@@ -555,6 +578,12 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
 
   // Consume credit
   await credits.consumeCredit(agentId, 'generate_image');
+  if (chargeEnergy) {
+    const energyConsumed = await credits.consumeEnergy(agentId, credits.ENERGY_COSTS.image);
+    if (!energyConsumed) {
+      console.warn(`[Credits] Failed to consume energy for generate_image: agent=${agentId}`);
+    }
+  }
 
   console.log(`[Media] Async image job started: job=${jobId}, prediction=${prediction.id}`);
 
@@ -575,6 +604,11 @@ export async function generateVideo(options: GenerateVideoOptions): Promise<Medi
   const canUse = await credits.canUseTool(agentId, 'generate_video');
   if (!canUse.allowed) {
     throw new Error(`Rate limited: ${canUse.reason}`);
+  }
+
+  const energyCheck = await credits.canUseEnergy(agentId, credits.ENERGY_COSTS.video);
+  if (!energyCheck.allowed) {
+    throw new Error(`Energy limit reached: ${energyCheck.reason}`);
   }
 
   // Get Replicate API key
@@ -643,6 +677,10 @@ export async function generateVideo(options: GenerateVideoOptions): Promise<Medi
 
   // Consume credit
   await credits.consumeCredit(agentId, 'generate_video');
+  const energyConsumed = await credits.consumeEnergy(agentId, credits.ENERGY_COSTS.video);
+  if (!energyConsumed) {
+    console.warn(`[Credits] Failed to consume energy for generate_video: agent=${agentId}`);
+  }
 
   return job;
 }
@@ -657,6 +695,11 @@ export async function generateSticker(options: GenerateStickerOptions): Promise<
   const canUse = await credits.canUseTool(agentId, 'generate_sticker');
   if (!canUse.allowed) {
     throw new Error(`Rate limited: ${canUse.reason}`);
+  }
+
+  const energyCheck = await credits.canUseEnergy(agentId, credits.ENERGY_COSTS.image);
+  if (!energyCheck.allowed) {
+    throw new Error(`Energy limit reached: ${energyCheck.reason}`);
   }
 
   let imageUrl: string;
@@ -678,6 +721,7 @@ export async function generateSticker(options: GenerateStickerOptions): Promise<
       platform,
       resolution: '1K',
       aspectRatio: '1:1',
+      chargeEnergy: false,
     });
     imageUrl = image.url;
     originalS3Key = image.s3Key;
@@ -743,6 +787,10 @@ export async function generateSticker(options: GenerateStickerOptions): Promise<
 
   // Consume credit
   await credits.consumeCredit(agentId, 'generate_sticker');
+  const energyConsumed = await credits.consumeEnergy(agentId, credits.ENERGY_COSTS.image);
+  if (!energyConsumed) {
+    console.warn(`[Credits] Failed to consume energy for generate_sticker: agent=${agentId}`);
+  }
 
   // Mark original as converted if it was from gallery
   if (sourceImageId && originalS3Key) {
