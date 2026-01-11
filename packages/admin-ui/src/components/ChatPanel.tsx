@@ -70,15 +70,6 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
         if (loadingMessage) {
           // Check if there's a pending tool call that needs user input
           const pendingToolCall = response.pendingToolCall;
-          
-          // Convert media to tool calls for display
-          const mediaToolCalls = response.media?.map((m, idx) => ({
-            id: `media-${Date.now()}-${idx}`,
-            name: m.type === 'image' ? 'generate_image' : m.type === 'video' ? 'generate_video' : 'get_my_gallery',
-            arguments: { prompt: m.prompt },
-            status: 'completed' as const,
-            result: { url: m.url, id: m.id, prompt: m.prompt },
-          })) || [];
 
           // Check for pending jobs from the response (explicit pendingJobs array)
           const pendingJobsList = response.pendingJobs || [];
@@ -101,13 +92,14 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
           updateMessage(activeAgent.id, loadingMessage.id, {
             content: response.response,
             isLoading: false,
-            // Add tool calls for rendering - pending ones or completed media
+            // Only add tool calls that need user input (pendingToolCall)
+            // Media is displayed via message.media, not as tool calls
             toolCalls: pendingToolCall ? [{
               id: pendingToolCall.id,
               name: pendingToolCall.name,
               arguments: pendingToolCall.arguments,
               status: 'pending' as const,
-            }] : mediaToolCalls.length > 0 ? mediaToolCalls : undefined,
+            }] : undefined,
             // Track pending jobs for status display
             pendingJobs: pendingJobsForState.length > 0 ? pendingJobsForState : undefined,
           });

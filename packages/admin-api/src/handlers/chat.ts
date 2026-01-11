@@ -270,6 +270,22 @@ async function executeTool(
     // Execute via MCP ToolClient
     const mcpResult = await toolClient.execute(name, args, { agentId: agentId || '' });
 
+    // Handle pending async jobs specially - don't expose jobId to LLM
+    // The jobId is hidden in metadata for the UI to extract
+    if (mcpResult.pendingJob) {
+      const friendlyType = mcpResult.pendingJob.type === 'video' ? 'video' : 'image';
+      return {
+        tool_call_id: toolCall.id,
+        role: 'tool',
+        content: JSON.stringify({
+          success: true,
+          message: `${friendlyType.charAt(0).toUpperCase() + friendlyType.slice(1)} generation started! I'll send it when it's ready.`,
+          // Hidden metadata for UI extraction (prefixed with _ to indicate internal)
+          _pendingJob: mcpResult.pendingJob,
+        }, null, 2),
+      };
+    }
+
     return {
       tool_call_id: toolCall.id,
       role: 'tool',
@@ -656,14 +672,14 @@ async function processChat(
       for (const result of toolResults) {
         console.log(`[Chat] Tool result: ${result.tool_call_id}`, result.content?.slice(0, 200));
         
-        // Extract pending job IDs from generate_image/generate_video results
+        // Extract pending jobs from _pendingJob metadata (hidden from LLM)
         try {
           const parsed = JSON.parse(result.content);
-          if (parsed.jobId && parsed.status && (parsed.status === 'pending' || parsed.status === 'processing')) {
+          if (parsed._pendingJob) {
             pendingJobs.push({
-              jobId: parsed.jobId,
-              type: parsed.type || 'image',
-              prompt: parsed.prompt,
+              jobId: parsed._pendingJob.jobId,
+              type: parsed._pendingJob.type || 'image',
+              prompt: parsed._pendingJob.prompt,
             });
           }
         } catch {
