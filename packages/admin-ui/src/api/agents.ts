@@ -17,6 +17,13 @@ export interface AgentResponse {
     s3Key?: string;
     updatedAt?: number;
   };
+  // Character reference for full-body consistency in image/video generation
+  characterReference?: {
+    url: string;
+    s3Key?: string;
+    description?: string;
+    updatedAt?: number;
+  };
   telegram?: {
     botUsername: string;
     enabled: boolean;
