@@ -11,6 +11,7 @@ export { createProfileTools, type ProfileServices } from './profile.js';
 export { createSecretTools, type SecretServices, type SecretType, type SecretInfo } from './secrets.js';
 export { createJobTools, type JobServices, type JobInfo, type CreditServices as JobCreditServices, type CreditStatus } from './jobs.js';
 export { createReferenceImageTools, type ReferenceImageServices, type ReferenceImage, type ReferenceImageCategory } from './reference.js';
+export { createDiagnosticsTools, type IssueSeverity, type IssueCategory } from './diagnostics.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';
 import { createGalleryTools } from './gallery.js';
@@ -20,6 +21,7 @@ import { createProfileTools } from './profile.js';
 import { createSecretTools } from './secrets.js';
 import { createJobTools, type CreditServices as JobCreditServices } from './jobs.js';
 import { createReferenceImageTools } from './reference.js';
+import { createDiagnosticsTools } from './diagnostics.js';
 import type { ToolRegistry } from '../registry.js';
 
 /**
@@ -53,4 +55,5 @@ export function registerAllTools(
   registry.registerAll(createSecretTools(services.secrets));
   registry.registerAll(createJobTools(services.jobs, services.jobCredits));
   registry.registerAll(createReferenceImageTools(services.reference));
+  registry.registerAll(createDiagnosticsTools());
 }
