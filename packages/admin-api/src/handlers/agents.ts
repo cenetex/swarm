@@ -209,6 +209,49 @@ export async function handler(
         }
       }
 
+      // Special handling for Replicate API key - validate it
+      if (key === 'replicate_api_key') {
+        console.log(JSON.stringify({
+          level: 'INFO',
+          subsystem: 'media',
+          event: 'replicate_key_stored_via_api',
+          agentId,
+        }));
+
+        try {
+          const response = await fetch('https://api.replicate.com/v1/account', {
+            headers: { 'Authorization': `Bearer ${value}` },
+          });
+          
+          if (response.ok) {
+            const account = await response.json() as { username?: string };
+            console.log(JSON.stringify({
+              level: 'INFO',
+              subsystem: 'media',
+              event: 'replicate_key_valid',
+              agentId,
+              username: account.username,
+            }));
+          } else {
+            console.log(JSON.stringify({
+              level: 'WARN',
+              subsystem: 'media',
+              event: 'replicate_key_invalid',
+              agentId,
+              status: response.status,
+            }));
+          }
+        } catch (err) {
+          console.log(JSON.stringify({
+            level: 'WARN',
+            subsystem: 'media',
+            event: 'replicate_key_validation_error',
+            agentId,
+            error: err instanceof Error ? err.message : 'Unknown error',
+          }));
+        }
+      }
+
       return {
         statusCode: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

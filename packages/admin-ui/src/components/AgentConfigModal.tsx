@@ -14,11 +14,12 @@ interface AgentConfigModalProps {
 
 // Predefined secret templates
 const SECRET_TEMPLATES: { key: string; name: string; description: string }[] = [
+  { key: 'REPLICATE_API_KEY', name: 'Replicate API Key', description: 'For image/video generation via Replicate' },
+  { key: 'TELEGRAM_BOT_TOKEN', name: 'Telegram Bot Token', description: 'For Telegram bot' },
   { key: 'OPENROUTER_API_KEY', name: 'OpenRouter API Key', description: 'For LLM access via OpenRouter' },
   { key: 'OPENAI_API_KEY', name: 'OpenAI API Key', description: 'For OpenAI models' },
   { key: 'ANTHROPIC_API_KEY', name: 'Anthropic API Key', description: 'For Claude models' },
   { key: 'TWITTER_API_KEY', name: 'Twitter API Key', description: 'For Twitter/X integration' },
-  { key: 'TELEGRAM_BOT_TOKEN', name: 'Telegram Bot Token', description: 'For Telegram bot' },
   { key: 'DISCORD_BOT_TOKEN', name: 'Discord Bot Token', description: 'For Discord bot' },
   { key: 'SOLANA_PRIVATE_KEY', name: 'Solana Private Key', description: 'For Solana wallet' },
 ];
