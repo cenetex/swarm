@@ -322,6 +322,10 @@ The Telegram webhook handler implements multiple security layers:
 
 4. **Sanitized Logging** - Message content is never logged; only metadata (chat ID, message ID, text length) is recorded.
 
+### Structured Logging
+
+Handlers emit structured JSON logs with fields like `level`, `subsystem`, `event`, `agentId`, and `requestId`. Avoid logging raw message content or secrets; log counts, lengths, and IDs instead.
+
 ## Resources
 
 - [PLAN.md](./PLAN.md) - Detailed architecture and implementation plan

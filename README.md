@@ -57,4 +57,4 @@ pnpm cdk deploy   # Deploy stacks (see infra package scripts)
 
 ## License
 
-MIT
+Code is MIT licensed (see `LICENSE`). Documentation, schemas, and reference data are dedicated to the public domain under CC0 1.0 (see `LICENSE-CC0-1.0`).

@@ -303,6 +303,10 @@ Secrets are write-only. Tools are rate-limited. Spend has hard caps. Agents cann
 
 ### Privacy & Data Retention
 We default to not storing user data. The free tier is stateless beyond what is required to deliver a response, and durable memory is only available for paying customers who explicitly opt in. Memory, logs, and media have explicit retention policies, deletion workflows, and export tooling, with short defaults and minimal collection. Archives are encrypted with revocable keys, and redactions propagate to indexes, caches, and retrieval layers so "forget" takes effect in practice.
+Defaults in the control plane:
+- Admin chat history is retained for 24 hours by default (configurable) and can be deleted on demand.
+- Admin UI does not persist chat transcripts in local storage; only agent metadata and the active selection are cached.
+- Free tier memory is request-scoped; durable memory requires explicit paid opt-in.
 
 ### Human-in-the-Loop for High-Risk Actions
 Transactions, spend, and irreversible actions require explicit approval paths. Policies define who can approve, when, and under what limits, and every decision is auditable.
