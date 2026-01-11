@@ -269,6 +269,39 @@ async function executeTool(
       };
     }
 
+    if (name === 'request_model_selection') {
+      if (!toolClient || !agentId) {
+        throw new Error('Tool client not initialized');
+      }
+
+      const family = typeof args.family === 'string'
+        ? args.family
+        : typeof args.preferredFamily === 'string'
+          ? args.preferredFamily
+          : undefined;
+
+      const listResult = await toolClient.execute('list_available_models', family ? { family } : {}, { agentId });
+      const configResult = await toolClient.execute('get_my_model_config', {}, { agentId });
+
+      const models = listResult.success && Array.isArray(listResult.data)
+        ? listResult.data
+        : [];
+      const currentModel = configResult.success && typeof (configResult.data as { model?: string } | undefined)?.model === 'string'
+        ? (configResult.data as { model?: string }).model
+        : undefined;
+
+      return {
+        tool_call_id: toolCall.id,
+        role: 'tool',
+        content: JSON.stringify({
+          type: 'model_selector',
+          models,
+          currentModel,
+          ...(family ? { instructions: `Showing models filtered by "${family}".` } : {}),
+        }, null, 2),
+      };
+    }
+
     // Execute via MCP ToolClient
     const mcpResult = await toolClient.execute(name, args, { agentId: agentId || '' });
 

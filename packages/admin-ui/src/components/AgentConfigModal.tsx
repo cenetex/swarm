@@ -97,25 +97,25 @@ export function AgentConfigModal({ agent, isOpen, onClose }: AgentConfigModalPro
       />
 
       {/* Modal */}
-      <div className="relative bg-dark-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-dark-700">
+      <div className="relative bg-[var(--color-bg-secondary)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-[var(--color-border)]">
         {/* Header */}
-        <div className="flex items-center gap-4 p-6 border-b border-dark-700">
+        <div className="flex items-center gap-4 p-6 border-b border-[var(--color-border)]">
           <AgentAvatar agent={{ ...agent, name }} size="lg" showStatus={false} />
           <div className="flex-1">
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="text-xl font-semibold bg-transparent border-none outline-none text-white w-full"
+              className="text-xl font-semibold bg-transparent border-none outline-none text-[var(--color-text)] w-full"
               placeholder="Agent Name"
             />
-            <p className="text-sm text-dark-400">
+            <p className="text-sm text-[var(--color-text-tertiary)]">
               {agent.status === 'shell' ? 'Unconfigured agent shell' : 'Configured agent'}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-dark-800 text-dark-400 hover:text-white transition-colors"
+            className="p-2 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
               <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -124,20 +124,20 @@ export function AgentConfigModal({ agent, isOpen, onClose }: AgentConfigModalPro
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-dark-700">
+        <div className="flex border-b border-[var(--color-border)]">
           {(['general', 'persona', 'secrets'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                 activeTab === tab
-                  ? 'text-primary-400 border-b-2 border-primary-400'
-                  : 'text-dark-400 hover:text-dark-200'
+                  ? 'text-brand-400 border-b-2 border-brand-400'
+                  : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
               }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               {tab === 'secrets' && secrets.length > 0 && (
-                <span className="ml-2 px-1.5 py-0.5 text-xs bg-dark-700 rounded-full">
+                <span className="ml-2 px-1.5 py-0.5 text-xs bg-[var(--color-bg-tertiary)] rounded-full">
                   {secrets.length}
                 </span>
               )}
@@ -150,7 +150,7 @@ export function AgentConfigModal({ agent, isOpen, onClose }: AgentConfigModalPro
           {activeTab === 'general' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-2">
                   Description
                 </label>
                 <textarea
@@ -158,7 +158,7 @@ export function AgentConfigModal({ agent, isOpen, onClose }: AgentConfigModalPro
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="What does this agent do?"
                   rows={3}
-                  className="w-full px-4 py-3 bg-dark-800 border border-dark-600 rounded-xl text-dark-100 placeholder-dark-500 resize-none focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-4 py-3 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
             </div>
@@ -167,10 +167,10 @@ export function AgentConfigModal({ agent, isOpen, onClose }: AgentConfigModalPro
           {activeTab === 'persona' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-2">
                   System Persona
                 </label>
-                <p className="text-xs text-dark-500 mb-2">
+                <p className="text-xs text-[var(--color-text-muted)] mb-2">
                   Define the agent's personality, expertise, and behavior
                 </p>
                 <textarea
@@ -178,7 +178,7 @@ export function AgentConfigModal({ agent, isOpen, onClose }: AgentConfigModalPro
                   onChange={(e) => setPersona(e.target.value)}
                   placeholder={`You are a helpful AI assistant that specializes in...\n\nYou have expertise in:\n- Topic 1\n- Topic 2\n\nYour communication style is...`}
                   rows={12}
-                  className="w-full px-4 py-3 bg-dark-800 border border-dark-600 rounded-xl text-dark-100 placeholder-dark-500 resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono text-sm"
+                  className="w-full px-4 py-3 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono text-sm"
                 />
               </div>
             </div>
@@ -189,26 +189,26 @@ export function AgentConfigModal({ agent, isOpen, onClose }: AgentConfigModalPro
               {/* Current Secrets */}
               {secrets.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-dark-300 mb-3">
+                  <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-3">
                     Configured Secrets
                   </label>
                   <div className="space-y-2">
                     {secrets.map((secret) => (
                       <div
                         key={secret.key}
-                        className="flex items-center gap-3 p-3 bg-dark-800 rounded-lg"
+                        className="flex items-center gap-3 p-3 bg-[var(--color-bg-tertiary)] rounded-lg"
                       >
-                        <div className={`w-2 h-2 rounded-full ${secret.isSet ? 'bg-green-500' : 'bg-dark-500'}`} />
+                        <div className={`w-2 h-2 rounded-full ${secret.isSet ? 'bg-green-500' : 'bg-[var(--color-text-muted)]'}`} />
                         <div className="flex-1">
-                          <div className="font-medium text-dark-200">{secret.name}</div>
-                          <div className="text-xs text-dark-500 font-mono">{secret.key}</div>
+                          <div className="font-medium text-[var(--color-text-secondary)]">{secret.name}</div>
+                          <div className="text-xs text-[var(--color-text-muted)] font-mono">{secret.key}</div>
                         </div>
-                        <span className={`text-xs px-2 py-1 rounded ${secret.isSet ? 'bg-green-900/50 text-green-400' : 'bg-dark-700 text-dark-400'}`}>
+                        <span className={`text-xs px-2 py-1 rounded ${secret.isSet ? 'bg-green-900/50 text-green-400' : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)]'}`}>
                           {secret.isSet ? 'Set' : 'Not set'}
                         </span>
                         <button
                           onClick={() => handleRemoveSecret(secret.key)}
-                          className="p-1 text-dark-500 hover:text-red-400 transition-colors"
+                          className="p-1 text-[var(--color-text-muted)] hover:text-red-400 transition-colors"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                             <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
@@ -222,20 +222,20 @@ export function AgentConfigModal({ agent, isOpen, onClose }: AgentConfigModalPro
 
               {/* Add Secret */}
               <div>
-                <label className="block text-sm font-medium text-dark-300 mb-3">
+                <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-3">
                   Add Secret
                 </label>
                 
                 {/* Quick Add Templates */}
                 {availableTemplates.length > 0 && (
                   <div className="mb-4">
-                    <p className="text-xs text-dark-500 mb-2">Quick add:</p>
+                    <p className="text-xs text-[var(--color-text-muted)] mb-2">Quick add:</p>
                     <div className="flex flex-wrap gap-2">
                       {availableTemplates.slice(0, 4).map((template) => (
                         <button
                           key={template.key}
                           onClick={() => handleAddSecret(template)}
-                          className="px-3 py-1.5 text-xs bg-dark-800 hover:bg-dark-700 text-dark-300 hover:text-white rounded-lg transition-colors"
+                          className="px-3 py-1.5 text-xs bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] rounded-lg transition-colors"
                         >
                           + {template.name}
                         </button>
@@ -251,20 +251,20 @@ export function AgentConfigModal({ agent, isOpen, onClose }: AgentConfigModalPro
                     value={newSecretKey}
                     onChange={(e) => setNewSecretKey(e.target.value)}
                     placeholder="CUSTOM_SECRET_KEY"
-                    className="flex-1 px-4 py-2 bg-dark-800 border border-dark-600 rounded-lg text-dark-100 placeholder-dark-500 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="flex-1 px-4 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                     onKeyDown={(e) => e.key === 'Enter' && handleAddSecret()}
                   />
                   <button
                     onClick={() => handleAddSecret()}
                     disabled={!newSecretKey}
-                    className="px-4 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
                   >
                     Add
                   </button>
                 </div>
               </div>
 
-              <p className="text-xs text-dark-500">
+              <p className="text-xs text-[var(--color-text-muted)]">
                 Secrets are stored encrypted in AWS Secrets Manager. The values will be set when you deploy the agent.
               </p>
             </div>
@@ -272,7 +272,7 @@ export function AgentConfigModal({ agent, isOpen, onClose }: AgentConfigModalPro
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-6 border-t border-dark-700">
+        <div className="flex items-center justify-between p-6 border-t border-[var(--color-border)]">
           <button
             onClick={handleDelete}
             className={`px-4 py-2 rounded-lg transition-colors ${
@@ -286,13 +286,13 @@ export function AgentConfigModal({ agent, isOpen, onClose }: AgentConfigModalPro
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-dark-400 hover:text-dark-200 transition-colors"
+              className="px-4 py-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
-              className="px-6 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg font-medium transition-colors"
+              className="px-6 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors"
             >
               Save Changes
             </button>
