@@ -60,15 +60,18 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
     // =========================================================================
     media: {
       generateImage: async (params) => {
-        const result = await media.generateImage({
+        // Use async generation to avoid API Gateway timeout (29s limit)
+        // The image will be delivered via job polling
+        const job = await media.generateImageAsync({
           prompt: params.prompt,
           agentId: params.agentId,
           platform: params.platform,
           referenceImageUrls: params.referenceImageUrls,
           resolution: params.resolution as '1K' | '2K' | '4K' | undefined,
           aspectRatio: params.aspectRatio as '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9' | undefined,
+          conversationId: `admin-ui-${Date.now()}`,
         });
-        return { id: result.id, url: result.url };
+        return { jobId: job.jobId, status: job.status };
       },
 
       generateVideo: async (params) => {

@@ -350,7 +350,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
             // Add a simple confirmation message
             addMessage(activeAgent.id, {
               role: 'assistant',
-              content: `Character reference updated${filename}! This will be used for consistent image and video generation.`,
+              content: '✅ Character reference updated. This will be used for consistent image and video generation.',
             });
           } else if (isProfileUpload) {
             // For profile images, save directly via API - don't rely on LLM
@@ -369,7 +369,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
             // Add a simple confirmation message instead of asking LLM
             addMessage(activeAgent.id, {
               role: 'assistant',
-              content: `Profile image updated${filename}!`,
+              content: '✅ Profile image updated.',
             });
           } else {
             // For reference images, ask LLM to save to reference images

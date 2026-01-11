@@ -1,60 +1,15 @@
 /**
  * Media Service Tests
+ *
+ * Tests for URL conversion logic and image generation options.
+ * These are pure function tests that don't require mocking.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-// Mock AWS SDK clients
-vi.mock('@aws-sdk/client-s3', () => ({
-  S3Client: vi.fn().mockImplementation(() => ({
-    send: vi.fn(),
-  })),
-  PutObjectCommand: vi.fn(),
-  DeleteObjectCommand: vi.fn(),
-  GetObjectCommand: vi.fn(),
-}));
-
-vi.mock('@aws-sdk/s3-request-presigner', () => ({
-  getSignedUrl: vi.fn().mockResolvedValue('https://signed-url.example.com/image.png'),
-}));
-
-vi.mock('@aws-sdk/client-sqs', () => ({
-  SQSClient: vi.fn().mockImplementation(() => ({
-    send: vi.fn(),
-  })),
-  SendMessageCommand: vi.fn(),
-}));
-
-vi.mock('@aws-sdk/client-dynamodb', () => ({
-  DynamoDBClient: vi.fn().mockImplementation(() => ({})),
-}));
-
-vi.mock('@aws-sdk/lib-dynamodb', () => ({
-  DynamoDBDocumentClient: {
-    from: vi.fn().mockReturnValue({
-      send: vi.fn(),
-    }),
-  },
-  PutCommand: vi.fn(),
-  QueryCommand: vi.fn(),
-  DeleteCommand: vi.fn(),
-}));
+import { describe, it, expect } from 'vitest';
 
 describe('Media URL Generation', () => {
-  beforeEach(() => {
-    vi.resetModules();
-  });
-
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
   describe('URL accessibility conversion', () => {
-    it('should return CDN URL when CDN_URL is configured', async () => {
-      // Set environment variables before importing module
-      process.env.CDN_URL = 'https://media.example.com';
-      process.env.MEDIA_BUCKET = 'test-bucket';
-      process.env.ADMIN_TABLE = 'test-table';
-
+    it('should return CDN URL when CDN_URL is configured', () => {
+      const CDN_URL = 'https://media.example.com';
       const s3Url = 'https://test-bucket.s3.amazonaws.com/agents/agent-1/images/test.png';
       const expectedCdnUrl = 'https://media.example.com/agents/agent-1/images/test.png';
 
@@ -62,8 +17,8 @@ describe('Media URL Generation', () => {
       const s3UrlPattern = /https:\/\/[^/]+\.s3[^/]*\.amazonaws\.com\/(.+)/;
       const match = s3Url.match(s3UrlPattern);
       expect(match).toBeTruthy();
-      
-      const cdnUrl = `${process.env.CDN_URL}/${match![1]}`;
+
+      const cdnUrl = `${CDN_URL}/${match![1]}`;
       expect(cdnUrl).toBe(expectedCdnUrl);
     });
 
@@ -115,7 +70,7 @@ describe('Media URL Generation', () => {
       const s3Key = 'agents/agent-1/images/test-uuid.png';
 
       const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
-      
+
       expect(publicUrl).toBe('https://media-staging.rati.chat/agents/agent-1/images/test-uuid.png');
     });
 
@@ -125,7 +80,7 @@ describe('Media URL Generation', () => {
       const s3Key = 'agents/agent-1/images/test-uuid.png';
 
       const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
-      
+
       expect(publicUrl).toBe('https://swarm-media-staging-022118847419.s3.amazonaws.com/agents/agent-1/images/test-uuid.png');
     });
   });

@@ -89,7 +89,10 @@ class InMemoryStateService extends DynamoDBStateService {
 }
 
 afterEach(() => {
-  vi.useRealTimers();
+  // Reset timers if they were mocked (safe for both vitest and bun)
+  if (typeof vi !== 'undefined' && typeof vi.useRealTimers === 'function') {
+    vi.useRealTimers();
+  }
 });
 
 // Mock the state service's pure functions for testing
@@ -482,9 +485,7 @@ describe('Channel State Machine Logic', () => {
   describe('State service method behavior', () => {
     it('updates stateChangedAt when transitioning to ACTIVE via addMessageToChannel', async () => {
       const svc = new InMemoryStateService();
-      const now = new Date('2024-01-01T00:00:00Z');
-      vi.useFakeTimers();
-      vi.setSystemTime(now);
+      const beforeTime = Date.now();
 
       const result = await svc.addMessageToChannel(
         'agent',
@@ -493,9 +494,14 @@ describe('Channel State Machine Logic', () => {
         createMessage({ isMention: true })
       );
 
+      const afterTime = Date.now();
+
       expect(result.state).toBe('ACTIVE');
-      expect(result.stateChangedAt).toBe(now.getTime());
-      expect(result.directEngagementAt).toBe(now.getTime());
+      // Verify timestamps are set and within a reasonable range
+      expect(result.stateChangedAt).toBeGreaterThanOrEqual(beforeTime);
+      expect(result.stateChangedAt).toBeLessThanOrEqual(afterTime);
+      expect(result.directEngagementAt).toBeGreaterThanOrEqual(beforeTime);
+      expect(result.directEngagementAt).toBeLessThanOrEqual(afterTime);
     });
 
     it('markResponseSent clears buffer and enters COOLDOWN', async () => {
