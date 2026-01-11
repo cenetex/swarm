@@ -606,13 +606,14 @@ async function processChat(
 
       // Check for upload URL tools - these need user interaction to upload
       const uploadUrlTool = llmResponse.toolCalls.find(tc => {
-        if (tc.function.name === 'get_profile_upload_url' || 
+        if (tc.function.name === 'get_profile_upload_url' ||
             tc.function.name === 'get_reference_image_upload_url' ||
+            tc.function.name === 'get_character_reference_upload_url' ||
             tc.function.name === 'request_model_selection') {
           return true;
         }
-        // Also check for set_profile_image with source='upload'
-        if (tc.function.name === 'set_profile_image') {
+        // Also check for set_profile_image or set_character_reference with source='upload'
+        if (tc.function.name === 'set_profile_image' || tc.function.name === 'set_character_reference') {
           try {
             const toolArgs = JSON.parse(tc.function.arguments || '{}');
             return toolArgs.source === 'upload';
