@@ -1,0 +1,491 @@
+{
+  "downloadedAt": "2026-01-11T07:22:08Z",
+  "originalTimestamp": "2026-01-10 23:11:30",
+  "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011",
+  "issue": {
+    "level": "INFO",
+    "subsystem": "diagnostics",
+    "event": "agent_reported_issue",
+    "agentId": "agent-3-qkwg",
+    "platform": "admin-ui",
+    "issue": {
+      "category": "missing_data",
+      "severity": "medium",
+      "title": "Missing model selection tool functionality",
+      "description": "When user requested to change AI model, I attempted to use request_model_selection tool but it appears to be missing or non-functional. The user specifically asked to \"change your ai model\" and I offered to open model selection interface, but the tool is not available in my current function set. This prevents users from easily switching between different AI models (Claude, GPT, Gemini, etc.) through the UI.",
+      "userMessage": "lets change your ai model",
+      "context": {
+        "toolName": "request_model_selection",
+        "expectedBehavior": "Should be able to open model selection UI when user wants to change AI models",
+        "actualBehavior": "Tool appears to be missing from available function set",
+        "reproSteps": [
+          "User asks to change AI model",
+          "Bot attempts to open model selection",
+          "Tool is not available"
+        ]
+      }
+    },
+    "timestamp": "2026-01-11T07:11:30.540Z"
+  },
+  "contextLogs": [
+    {
+      "timestamp": 1768115396664,
+      "message": "START RequestId: 58763f79-3377-48ca-9e36-8f0a5c311f6e Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115396683,
+      "message": "2026-01-11T07:09:56.683Z\t58763f79-3377-48ca-9e36-8f0a5c311f6e\tINFO\tAuth debug: {\n  origin: 'https://admin-staging.rati.chat',\n  referer: 'https://admin-staging.rati.chat/',\n  allowedOrigins: [ 'https://admin-staging.rati.chat' ],\n  hasToken: false,\n  headers: [\n    'accept',           'accept-encoding',\n    'accept-language',  'cdn-loop',\n    'cf-connecting-ip', 'cf-ipcountry',\n    'cf-ray',           'cf-visitor',\n    'content-length',   'content-type',\n    'host',             'origin',\n    'priority',         'referer',\n    'sec-fetch-dest',   'sec-fetch-mode',\n    'sec-fetch-site',   'user-agent',\n    'x-amzn-trace-id',  'x-forwarded-for',\n    'x-forwarded-port', 'x-forwarded-proto'\n  ]\n}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115396745,
+      "message": "END RequestId: 58763f79-3377-48ca-9e36-8f0a5c311f6e\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115396745,
+      "message": "REPORT RequestId: 58763f79-3377-48ca-9e36-8f0a5c311f6e\tDuration: 79.83 ms\tBilled Duration: 80 ms\tMemory Size: 1024 MB\tMax Memory Used: 123 MB\t\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115402560,
+      "message": "START RequestId: bdcf1884-23b0-4d97-a9ae-ddb9ee169497 Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115402584,
+      "message": "2026-01-11T07:10:02.584Z\tbdcf1884-23b0-4d97-a9ae-ddb9ee169497\tINFO\tAuth debug: {\n  origin: 'https://admin-staging.rati.chat',\n  referer: 'https://admin-staging.rati.chat/',\n  allowedOrigins: [ 'https://admin-staging.rati.chat' ],\n  hasToken: false,\n  headers: [\n    'accept',           'accept-encoding',\n    'accept-language',  'cdn-loop',\n    'cf-connecting-ip', 'cf-ipcountry',\n    'cf-ray',           'cf-visitor',\n    'content-length',   'content-type',\n    'host',             'origin',\n    'priority',         'referer',\n    'sec-fetch-dest',   'sec-fetch-mode',\n    'sec-fetch-site',   'user-agent',\n    'x-amzn-trace-id',  'x-forwarded-for',\n    'x-forwarded-port', 'x-forwarded-proto'\n  ]\n}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115402625,
+      "message": "END RequestId: bdcf1884-23b0-4d97-a9ae-ddb9ee169497\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115402626,
+      "message": "REPORT RequestId: bdcf1884-23b0-4d97-a9ae-ddb9ee169497\tDuration: 64.49 ms\tBilled Duration: 65 ms\tMemory Size: 1024 MB\tMax Memory Used: 123 MB\t\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115420843,
+      "message": "START RequestId: 9f605106-6b56-4246-ad79-a0f0aff031ba Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115420844,
+      "message": "2026-01-11T07:10:20.844Z\t9f605106-6b56-4246-ad79-a0f0aff031ba\tINFO\tAuth debug: {\n  origin: 'https://admin-staging.rati.chat',\n  referer: 'https://admin-staging.rati.chat/',\n  allowedOrigins: [ 'https://admin-staging.rati.chat' ],\n  hasToken: false,\n  headers: [\n    'accept',           'accept-encoding',\n    'accept-language',  'cdn-loop',\n    'cf-connecting-ip', 'cf-ipcountry',\n    'cf-ray',           'cf-visitor',\n    'content-length',   'content-type',\n    'host',             'origin',\n    'priority',         'referer',\n    'sec-fetch-dest',   'sec-fetch-mode',\n    'sec-fetch-site',   'user-agent',\n    'x-amzn-trace-id',  'x-forwarded-for',\n    'x-forwarded-port', 'x-forwarded-proto'\n  ]\n}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115420854,
+      "message": "END RequestId: 9f605106-6b56-4246-ad79-a0f0aff031ba\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115420854,
+      "message": "REPORT RequestId: 9f605106-6b56-4246-ad79-a0f0aff031ba\tDuration: 11.06 ms\tBilled Duration: 12 ms\tMemory Size: 1024 MB\tMax Memory Used: 123 MB\t\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115425746,
+      "message": "2026-01-11T07:10:25.746Z\tcf5c7b56-47ef-44c9-ba76-9f1942187759\tINFO\tAuth debug: {\n  origin: 'https://admin-staging.rati.chat',\n  referer: 'https://admin-staging.rati.chat/',\n  allowedOrigins: [ 'https://admin-staging.rati.chat' ],\n  hasToken: false,\n  headers: [\n    'accept',           'accept-encoding',\n    'accept-language',  'cdn-loop',\n    'cf-connecting-ip', 'cf-ipcountry',\n    'cf-ray',           'cf-visitor',\n    'content-length',   'content-type',\n    'host',             'origin',\n    'priority',         'referer',\n    'sec-fetch-dest',   'sec-fetch-mode',\n    'sec-fetch-site',   'user-agent',\n    'x-amzn-trace-id',  'x-forwarded-for',\n    'x-forwarded-port', 'x-forwarded-proto'\n  ]\n}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115425746,
+      "message": "START RequestId: cf5c7b56-47ef-44c9-ba76-9f1942187759 Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115425750,
+      "message": "2026-01-11T07:10:25.750Z\tcf5c7b56-47ef-44c9-ba76-9f1942187759\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"chat\",\"event\":\"request_received\",\"agentId\":\"agent-3-qkwg\",\"requestId\":\"XAjzVjoBIAMEYLA=\",\"messageLength\":25,\"historyLength\":22}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115425856,
+      "message": "2026-01-11T07:10:25.856Z\tcf5c7b56-47ef-44c9-ba76-9f1942187759\tINFO\t{\"level\":\"DEBUG\",\"subsystem\":\"chat\",\"event\":\"tools_created\",\"agentId\":\"agent-3-qkwg\",\"toolCount\":32,\"toolNames\":[\"generate_image\",\"generate_video\",\"generate_sticker\",\"get_my_gallery\",\"search_gallery\",\"send_gallery_image\",\"get_my_wallets\",\"create_solana_wallet\",\"get_wallet_balance\",\"list_available_models\",\"get_my_model_config\",\"change_my_model\",\"request_model_selection\",\"update_my_profile\",\"set_profile_image\",\"get_profile_upload_url\",\"save_uploaded_profile_image\",\"get_my_secrets\",\"store_secret\",\"request_secret\",\"get_pending_jobs\",\"get_job_status\",\"get_tool_credits\",\"get_reference_image_upload_url\",\"save_reference_image\",\"list_reference_images\",\"delete_reference_image\",\"report_issue\",\"report_user_feedback\",\"set_bot_name\",\"set_bot_description\",\"set_bot_short_description\"]}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115425928,
+      "message": "2026-01-11T07:10:25.928Z\tcf5c7b56-47ef-44c9-ba76-9f1942187759\tINFO\tLLM API key loaded, starts with: sk-or-v1-8\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115425929,
+      "message": "2026-01-11T07:10:25.929Z\tcf5c7b56-47ef-44c9-ba76-9f1942187759\tWARN\t[PlatformPrompts] Error loading prompt for admin-ui: TypeError [ERR_INVALID_ARG_TYPE]: The \"path\" argument must be of type string or an instance of URL. Received undefined\n    at fileURLToPath (node:internal/url:1487:11)\n    at wY (/var/task/index.js:63:62473)\n    at SY (/var/task/index.js:63:62677)\n    at Pk (/var/task/index.js:63:63080)\n    at IY (/var/task/index.js:149:3)\n    at xY (/var/task/index.js:149:1204)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async CY (/var/task/index.js:149:3243)\n    at async Runtime.PY [as handler] (/var/task/index.js:149:8146) {\n  code: 'ERR_INVALID_ARG_TYPE'\n}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115425932,
+      "message": "2026-01-11T07:10:25.932Z\tcf5c7b56-47ef-44c9-ba76-9f1942187759\tINFO\t[Chat] Skipping orphaned tool result: undefined\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115425932,
+      "message": "2026-01-11T07:10:25.932Z\tcf5c7b56-47ef-44c9-ba76-9f1942187759\tINFO\t[Chat] Skipping orphaned tool result: undefined\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115425932,
+      "message": "2026-01-11T07:10:25.932Z\tcf5c7b56-47ef-44c9-ba76-9f1942187759\tINFO\t{\"level\":\"DEBUG\",\"subsystem\":\"chat\",\"event\":\"llm_request\",\"model\":\"anthropic/claude-sonnet-4\",\"messageCount\":21,\"toolsIncluded\":true,\"toolChoice\":\"auto\"}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115430790,
+      "message": "2026-01-11T07:10:30.790Z\tcf5c7b56-47ef-44c9-ba76-9f1942187759\tINFO\t{\"level\":\"DEBUG\",\"subsystem\":\"chat\",\"event\":\"llm_response\",\"hasContent\":true,\"contentLength\":616,\"toolCallCount\":1,\"toolNames\":[\"request_model_selection\"]}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115430790,
+      "message": "2026-01-11T07:10:30.790Z\tcf5c7b56-47ef-44c9-ba76-9f1942187759\tINFO\t[Chat] Final response with 0 media items, 0 pending jobs\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115430819,
+      "message": "END RequestId: cf5c7b56-47ef-44c9-ba76-9f1942187759\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115430819,
+      "message": "REPORT RequestId: cf5c7b56-47ef-44c9-ba76-9f1942187759\tDuration: 5073.13 ms\tBilled Duration: 5074 ms\tMemory Size: 1024 MB\tMax Memory Used: 141 MB\t\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115482901,
+      "message": "START RequestId: af36e325-33bb-4170-a785-c14cbe37e55c Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115482902,
+      "message": "2026-01-11T07:11:22.902Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\tAuth debug: {\n  origin: 'https://admin-staging.rati.chat',\n  referer: 'https://admin-staging.rati.chat/',\n  allowedOrigins: [ 'https://admin-staging.rati.chat' ],\n  hasToken: false,\n  headers: [\n    'accept',           'accept-encoding',\n    'accept-language',  'cdn-loop',\n    'cf-connecting-ip', 'cf-ipcountry',\n    'cf-ray',           'cf-visitor',\n    'content-length',   'content-type',\n    'host',             'origin',\n    'priority',         'referer',\n    'sec-fetch-dest',   'sec-fetch-mode',\n    'sec-fetch-site',   'user-agent',\n    'x-amzn-trace-id',  'x-forwarded-for',\n    'x-forwarded-port', 'x-forwarded-proto'\n  ]\n}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115482902,
+      "message": "2026-01-11T07:11:22.902Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"chat\",\"event\":\"request_received\",\"agentId\":\"agent-3-qkwg\",\"requestId\":\"XAj8QiShIAMEM9A=\",\"messageLength\":45,\"historyLength\":24}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115482930,
+      "message": "2026-01-11T07:11:22.930Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t{\"level\":\"DEBUG\",\"subsystem\":\"chat\",\"event\":\"tools_created\",\"agentId\":\"agent-3-qkwg\",\"toolCount\":32,\"toolNames\":[\"generate_image\",\"generate_video\",\"generate_sticker\",\"get_my_gallery\",\"search_gallery\",\"send_gallery_image\",\"get_my_wallets\",\"create_solana_wallet\",\"get_wallet_balance\",\"list_available_models\",\"get_my_model_config\",\"change_my_model\",\"request_model_selection\",\"update_my_profile\",\"set_profile_image\",\"get_profile_upload_url\",\"save_uploaded_profile_image\",\"get_my_secrets\",\"store_secret\",\"request_secret\",\"get_pending_jobs\",\"get_job_status\",\"get_tool_credits\",\"get_reference_image_upload_url\",\"save_reference_image\",\"list_reference_images\",\"delete_reference_image\",\"report_issue\",\"report_user_feedback\",\"set_bot_name\",\"set_bot_description\",\"set_bot_short_description\"]}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115482930,
+      "message": "2026-01-11T07:11:22.930Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t[Chat] Skipping orphaned tool result: undefined\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115482930,
+      "message": "2026-01-11T07:11:22.930Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t[Chat] Skipping orphaned tool result: undefined\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115482930,
+      "message": "2026-01-11T07:11:22.930Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t{\"level\":\"DEBUG\",\"subsystem\":\"chat\",\"event\":\"llm_request\",\"model\":\"anthropic/claude-sonnet-4\",\"messageCount\":23,\"toolsIncluded\":true,\"toolChoice\":\"auto\"}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115490539,
+      "message": "2026-01-11T07:11:30.539Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t{\"level\":\"DEBUG\",\"subsystem\":\"chat\",\"event\":\"llm_response\",\"hasContent\":true,\"contentLength\":205,\"toolCallCount\":1,\"toolNames\":[\"report_issue\"]}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115490540,
+      "message": "2026-01-11T07:11:30.540Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"diagnostics\",\"event\":\"agent_reported_issue\",\"agentId\":\"agent-3-qkwg\",\"platform\":\"admin-ui\",\"issue\":{\"category\":\"missing_data\",\"severity\":\"medium\",\"title\":\"Missing model selection tool functionality\",\"description\":\"When user requested to change AI model, I attempted to use request_model_selection tool but it appears to be missing or non-functional. The user specifically asked to \\\"change your ai model\\\" and I offered to open model selection interface, but the tool is not available in my current function set. This prevents users from easily switching between different AI models (Claude, GPT, Gemini, etc.) through the UI.\",\"userMessage\":\"lets change your ai model\",\"context\":{\"toolName\":\"request_model_selection\",\"expectedBehavior\":\"Should be able to open model selection UI when user wants to change AI models\",\"actualBehavior\":\"Tool appears to be missing from available function set\",\"reproSteps\":[\"User asks to change AI model\",\"Bot attempts to open model selection\",\"Tool is not available\"]}},\"timestamp\":\"2026-01-11T07:11:30.540Z\"}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115490540,
+      "message": "2026-01-11T07:11:30.540Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t[Chat] Tool result: toolu_vrtx_01S5P3tVaa3QrKR2q1EpgNY1 (176 chars)\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115490540,
+      "message": "2026-01-11T07:11:30.540Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t[Chat] Extracted 0 media items from tool results\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115490540,
+      "message": "2026-01-11T07:11:30.540Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t[Chat] Skipping orphaned tool result: undefined\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115490540,
+      "message": "2026-01-11T07:11:30.540Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t[Chat] Skipping orphaned tool result: undefined\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115490540,
+      "message": "2026-01-11T07:11:30.540Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t{\"level\":\"DEBUG\",\"subsystem\":\"chat\",\"event\":\"llm_request\",\"model\":\"anthropic/claude-sonnet-4\",\"messageCount\":25,\"toolsIncluded\":true,\"toolChoice\":\"auto\"}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115494309,
+      "message": "2026-01-11T07:11:34.309Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t{\"level\":\"DEBUG\",\"subsystem\":\"chat\",\"event\":\"llm_response\",\"hasContent\":true,\"contentLength\":639,\"toolCallCount\":0,\"toolNames\":[]}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115494309,
+      "message": "2026-01-11T07:11:34.309Z\taf36e325-33bb-4170-a785-c14cbe37e55c\tINFO\t[Chat] Final response with 0 media items, 0 pending jobs\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115494322,
+      "message": "END RequestId: af36e325-33bb-4170-a785-c14cbe37e55c\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115494322,
+      "message": "REPORT RequestId: af36e325-33bb-4170-a785-c14cbe37e55c\tDuration: 11420.74 ms\tBilled Duration: 11421 ms\tMemory Size: 1024 MB\tMax Memory Used: 141 MB\t\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115522746,
+      "message": "INIT_START Runtime Version: nodejs:20.v93\tRuntime Version ARN: arn:aws:lambda:us-east-1::runtime:a245a9f616c3bd5592157d3573155529391e9c7136cc9650a239d736763a026c\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115523572,
+      "message": "2026-01-11T07:12:03.572Z\tundefined\tINFO\t[Media] CDN configured: https://media-staging.rati.chat\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115523585,
+      "message": "START RequestId: 37d7ab60-524b-4d2d-98cc-3846118d44bb Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115523588,
+      "message": "2026-01-11T07:12:03.588Z\t37d7ab60-524b-4d2d-98cc-3846118d44bb\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"telegram\",\"event\":\"request_received\",\"agentId\":\"agent-1-55e3\",\"clientIP\":\"91.108.5.41\",\"method\":\"POST\",\"requestId\":\"XAkCdh60IAMEJuw=\"}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115524105,
+      "message": "2026-01-11T07:12:04.105Z\t37d7ab60-524b-4d2d-98cc-3846118d44bb\tINFO\t[Telegram] Channel state: {\n  agentId: 'agent-1-55e3',\n  chatId: -1003401362204,\n  chatType: 'supergroup',\n  state: 'COOLDOWN',\n  bufferSize: 1,\n  isMention: false,\n  isReplyToBot: false\n}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115524108,
+      "message": "2026-01-11T07:12:04.108Z\t37d7ab60-524b-4d2d-98cc-3846118d44bb\tINFO\t[Telegram] Response decision: {\n  chatId: -1003401362204,\n  shouldRespond: false,\n  trigger: 'none',\n  delay: 0,\n  priority: 'low'\n}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115524123,
+      "message": "2026-01-11T07:12:04.123Z\t37d7ab60-524b-4d2d-98cc-3846118d44bb\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"telegram\",\"event\":\"channel_processed\",\"agentId\":\"agent-1-55e3\",\"chatId\":-1003401362204,\"fromUser\":6739088094,\"chatType\":\"supergroup\",\"updateId\":273974402,\"responded\":false,\"reason\":\"no_trigger:COOLDOWN\",\"multiAgent\":false,\"agentCount\":1,\"requestId\":\"XAkCdh60IAMEJuw=\"}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115524126,
+      "message": "END RequestId: 37d7ab60-524b-4d2d-98cc-3846118d44bb\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115524126,
+      "message": "REPORT RequestId: 37d7ab60-524b-4d2d-98cc-3846118d44bb\tDuration: 540.23 ms\tBilled Duration: 1377 ms\tMemory Size: 512 MB\tMax Memory Used: 122 MB\tInit Duration: 835.85 ms\t\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115524259,
+      "message": "START RequestId: 07994c2c-dd82-4b93-b217-11ef7d8a3004 Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115524260,
+      "message": "2026-01-11T07:12:04.260Z\t07994c2c-dd82-4b93-b217-11ef7d8a3004\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"telegram\",\"event\":\"request_received\",\"agentId\":\"agent-1-55e3\",\"clientIP\":\"91.108.5.41\",\"method\":\"POST\",\"requestId\":\"XAkCugVyIAMEJ6A=\"}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115524367,
+      "message": "2026-01-11T07:12:04.367Z\t07994c2c-dd82-4b93-b217-11ef7d8a3004\tINFO\t[Telegram] Channel state: {\n  agentId: 'agent-1-55e3',\n  chatId: -1003401362204,\n  chatType: 'supergroup',\n  state: 'ACTIVE',\n  bufferSize: 2,\n  isMention: false,\n  isReplyToBot: true\n}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115524368,
+      "message": "2026-01-11T07:12:04.368Z\t07994c2c-dd82-4b93-b217-11ef7d8a3004\tINFO\t[Telegram] Response decision: {\n  chatId: -1003401362204,\n  shouldRespond: true,\n  trigger: 'direct_engagement',\n  delay: 500,\n  priority: 'high'\n}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115525023,
+      "message": "2026-01-11T07:12:05.023Z\t07994c2c-dd82-4b93-b217-11ef7d8a3004\tWARN\t[AUDIT] Secret value accessed: agent=agent-1-55e3, type=helius_api_key, name=default\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115525722,
+      "message": "2026-01-11T07:12:05.722Z\t07994c2c-dd82-4b93-b217-11ef7d8a3004\tWARN\t[PlatformPrompts] Error loading prompt for telegram: TypeError [ERR_INVALID_ARG_TYPE]: The \"path\" argument must be of type string or an instance of URL. Received undefined\n    at fileURLToPath (node:internal/url:1487:11)\n    at BP (/var/task/index.js:28:4393)\n    at zP (/var/task/index.js:28:4597)\n    at w9 (/var/task/index.js:28:5000)\n    at vC (/var/task/index.js:68:67152)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async hC (/var/task/index.js:68:66828)\n    at async Runtime.KX [as handler] (/var/task/index.js:89:5627) {\n  code: 'ERR_INVALID_ARG_TYPE'\n}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115529439,
+      "message": "2026-01-11T07:12:09.439Z\t07994c2c-dd82-4b93-b217-11ef7d8a3004\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"telegram\",\"event\":\"channel_processed\",\"agentId\":\"agent-1-55e3\",\"chatId\":-1003401362204,\"fromUser\":6739088094,\"chatType\":\"supergroup\",\"updateId\":273974403,\"responded\":true,\"reason\":\"direct_engagement\",\"multiAgent\":false,\"agentCount\":1,\"requestId\":\"XAkCugVyIAMEJ6A=\"}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115529441,
+      "message": "END RequestId: 07994c2c-dd82-4b93-b217-11ef7d8a3004\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115529441,
+      "message": "REPORT RequestId: 07994c2c-dd82-4b93-b217-11ef7d8a3004\tDuration: 5181.21 ms\tBilled Duration: 5182 ms\tMemory Size: 512 MB\tMax Memory Used: 170 MB\t\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115530518,
+      "message": "START RequestId: e052d61e-6507-4672-ab6c-e10c00f3a8bf Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115530520,
+      "message": "2026-01-11T07:12:10.520Z\te052d61e-6507-4672-ab6c-e10c00f3a8bf\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"telegram\",\"event\":\"request_received\",\"agentId\":\"agent-1-55e3\",\"clientIP\":\"91.108.5.41\",\"method\":\"POST\",\"requestId\":\"XAkDsgRAIAMEc1Q=\"}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115530819,
+      "message": "2026-01-11T07:12:10.819Z\te052d61e-6507-4672-ab6c-e10c00f3a8bf\tINFO\t[Telegram] Channel state: {\n  agentId: 'agent-1-55e3',\n  chatId: -1003401362204,\n  chatType: 'supergroup',\n  state: 'COOLDOWN',\n  bufferSize: 1,\n  isMention: false,\n  isReplyToBot: false\n}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115530838,
+      "message": "2026-01-11T07:12:10.838Z\te052d61e-6507-4672-ab6c-e10c00f3a8bf\tINFO\t[Telegram] Response decision: {\n  chatId: -1003401362204,\n  shouldRespond: false,\n  trigger: 'none',\n  delay: 0,\n  priority: 'low'\n}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115530859,
+      "message": "2026-01-11T07:12:10.859Z\te052d61e-6507-4672-ab6c-e10c00f3a8bf\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"telegram\",\"event\":\"channel_processed\",\"agentId\":\"agent-1-55e3\",\"chatId\":-1003401362204,\"fromUser\":6739088094,\"chatType\":\"supergroup\",\"updateId\":273974404,\"responded\":false,\"reason\":\"no_trigger:COOLDOWN\",\"multiAgent\":false,\"agentCount\":1,\"requestId\":\"XAkDsgRAIAMEc1Q=\"}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115530861,
+      "message": "END RequestId: e052d61e-6507-4672-ab6c-e10c00f3a8bf\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115530861,
+      "message": "REPORT RequestId: e052d61e-6507-4672-ab6c-e10c00f3a8bf\tDuration: 343.12 ms\tBilled Duration: 344 ms\tMemory Size: 512 MB\tMax Memory Used: 170 MB\t\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115539800,
+      "message": "START RequestId: b3fe5e40-58ef-4b6a-9ec6-093b3288b1e6 Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115539802,
+      "message": "2026-01-11T07:12:19.802Z\tb3fe5e40-58ef-4b6a-9ec6-093b3288b1e6\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"telegram\",\"event\":\"request_received\",\"agentId\":\"agent-1-55e3\",\"clientIP\":\"91.108.5.41\",\"method\":\"POST\",\"requestId\":\"XAkFJjIrIAMEJUQ=\"}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115539886,
+      "message": "2026-01-11T07:12:19.886Z\tb3fe5e40-58ef-4b6a-9ec6-093b3288b1e6\tINFO\t[Telegram] Channel state: {\n  agentId: 'agent-1-55e3',\n  chatId: -1003401362204,\n  chatType: 'supergroup',\n  state: 'ACTIVE',\n  bufferSize: 2,\n  isMention: false,\n  isReplyToBot: true\n}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115539886,
+      "message": "2026-01-11T07:12:19.886Z\tb3fe5e40-58ef-4b6a-9ec6-093b3288b1e6\tINFO\t[Telegram] Response decision: {\n  chatId: -1003401362204,\n  shouldRespond: true,\n  trigger: 'direct_engagement',\n  delay: 500,\n  priority: 'high'\n}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115540422,
+      "message": "2026-01-11T07:12:20.422Z\tb3fe5e40-58ef-4b6a-9ec6-093b3288b1e6\tWARN\t[AUDIT] Secret value accessed: agent=agent-1-55e3, type=helius_api_key, name=default\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115545225,
+      "message": "2026-01-11T07:12:25.225Z\tb3fe5e40-58ef-4b6a-9ec6-093b3288b1e6\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"telegram\",\"event\":\"channel_processed\",\"agentId\":\"agent-1-55e3\",\"chatId\":-1003401362204,\"fromUser\":28074506,\"chatType\":\"supergroup\",\"updateId\":273974405,\"responded\":true,\"reason\":\"direct_engagement\",\"multiAgent\":false,\"agentCount\":1,\"requestId\":\"XAkFJjIrIAMEJUQ=\"}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115545227,
+      "message": "END RequestId: b3fe5e40-58ef-4b6a-9ec6-093b3288b1e6\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115545227,
+      "message": "REPORT RequestId: b3fe5e40-58ef-4b6a-9ec6-093b3288b1e6\tDuration: 5425.54 ms\tBilled Duration: 5426 ms\tMemory Size: 512 MB\tMax Memory Used: 170 MB\t\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115552962,
+      "message": "START RequestId: a287e0df-e986-44e7-add4-f520727e60fd Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115552964,
+      "message": "2026-01-11T07:12:32.964Z\ta287e0df-e986-44e7-add4-f520727e60fd\tINFO\tAuth debug: {\n  origin: 'https://admin-staging.rati.chat',\n  referer: 'https://admin-staging.rati.chat/',\n  allowedOrigins: [ 'https://admin-staging.rati.chat' ],\n  hasToken: false,\n  headers: [\n    'accept',           'accept-encoding',\n    'accept-language',  'cdn-loop',\n    'cf-connecting-ip', 'cf-ipcountry',\n    'cf-ray',           'cf-visitor',\n    'content-length',   'content-type',\n    'host',             'origin',\n    'priority',         'referer',\n    'sec-fetch-dest',   'sec-fetch-mode',\n    'sec-fetch-site',   'user-agent',\n    'x-amzn-trace-id',  'x-forwarded-for',\n    'x-forwarded-port', 'x-forwarded-proto'\n  ]\n}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115552985,
+      "message": "END RequestId: a287e0df-e986-44e7-add4-f520727e60fd\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115552985,
+      "message": "REPORT RequestId: a287e0df-e986-44e7-add4-f520727e60fd\tDuration: 23.36 ms\tBilled Duration: 24 ms\tMemory Size: 1024 MB\tMax Memory Used: 141 MB\t\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115556366,
+      "message": "START RequestId: 5f783844-b1cb-40b2-bea8-348b0296fb34 Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115556367,
+      "message": "2026-01-11T07:12:36.367Z\t5f783844-b1cb-40b2-bea8-348b0296fb34\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"telegram\",\"event\":\"request_received\",\"agentId\":\"agent-1-55e3\",\"clientIP\":\"91.108.5.41\",\"method\":\"POST\",\"requestId\":\"XAkHvh7NIAMEc9w=\"}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115556706,
+      "message": "2026-01-11T07:12:36.706Z\t5f783844-b1cb-40b2-bea8-348b0296fb34\tINFO\t[Telegram] Channel state: {\n  agentId: 'agent-1-55e3',\n  chatId: -1003401362204,\n  chatType: 'supergroup',\n  state: 'COOLDOWN',\n  bufferSize: 1,\n  isMention: false,\n  isReplyToBot: false\n}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115556707,
+      "message": "2026-01-11T07:12:36.707Z\t5f783844-b1cb-40b2-bea8-348b0296fb34\tINFO\t[Telegram] Response decision: {\n  chatId: -1003401362204,\n  shouldRespond: false,\n  trigger: 'none',\n  delay: 0,\n  priority: 'low'\n}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115556719,
+      "message": "2026-01-11T07:12:36.719Z\t5f783844-b1cb-40b2-bea8-348b0296fb34\tINFO\t{\"level\":\"INFO\",\"subsystem\":\"telegram\",\"event\":\"channel_processed\",\"agentId\":\"agent-1-55e3\",\"chatId\":-1003401362204,\"fromUser\":6739088094,\"chatType\":\"supergroup\",\"updateId\":273974406,\"responded\":false,\"reason\":\"no_trigger:COOLDOWN\",\"multiAgent\":false,\"agentCount\":1,\"requestId\":\"XAkHvh7NIAMEc9w=\"}\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115556721,
+      "message": "END RequestId: 5f783844-b1cb-40b2-bea8-348b0296fb34\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115556721,
+      "message": "REPORT RequestId: 5f783844-b1cb-40b2-bea8-348b0296fb34\tDuration: 354.79 ms\tBilled Duration: 355 ms\tMemory Size: 512 MB\tMax Memory Used: 170 MB\t\n",
+      "logStream": "2026/01/11/[$LATEST]10384b460d324ae99dec88d6f21857fe"
+    },
+    {
+      "timestamp": 1768115610342,
+      "message": "START RequestId: 7681ea95-2785-4e54-be3a-f0409f3ac022 Version: $LATEST\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115610364,
+      "message": "2026-01-11T07:13:30.364Z\t7681ea95-2785-4e54-be3a-f0409f3ac022\tINFO\tAuth debug: {\n  origin: 'https://admin-staging.rati.chat',\n  referer: 'https://admin-staging.rati.chat/',\n  allowedOrigins: [ 'https://admin-staging.rati.chat' ],\n  hasToken: false,\n  headers: [\n    'accept',           'accept-encoding',\n    'accept-language',  'cdn-loop',\n    'cf-connecting-ip', 'cf-ipcountry',\n    'cf-ray',           'cf-visitor',\n    'content-length',   'content-type',\n    'host',             'origin',\n    'priority',         'referer',\n    'sec-fetch-dest',   'sec-fetch-mode',\n    'sec-fetch-site',   'user-agent',\n    'x-amzn-trace-id',  'x-forwarded-for',\n    'x-forwarded-port', 'x-forwarded-proto'\n  ]\n}\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115610425,
+      "message": "END RequestId: 7681ea95-2785-4e54-be3a-f0409f3ac022\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    },
+    {
+      "timestamp": 1768115610425,
+      "message": "REPORT RequestId: 7681ea95-2785-4e54-be3a-f0409f3ac022\tDuration: 82.38 ms\tBilled Duration: 83 ms\tMemory Size: 1024 MB\tMax Memory Used: 141 MB\t\n",
+      "logStream": "2026/01/11/[$LATEST]0c1c45dca98841ba8686a560655d4011"
+    }
+  ],
+  "contextWindow": {
+    "before": "2 minutes",
+    "after": "2 minutes"
+  }
+}
