@@ -56,27 +56,34 @@ fi
 # Current timestamp
 NOW=$(($(date +%s) * 1000))
 
-# Temporary file for collecting issues
-ISSUES_FILE=$(mktemp)
-trap "rm -f ${ISSUES_FILE}" EXIT
+# Temporary directory for collecting issues
+ISSUES_DIR=$(mktemp -d)
+trap "rm -rf ${ISSUES_DIR}" EXIT
 
 echo -e "${YELLOW}Searching for issues...${NC}"
 
 # Search each log group for issues
+GROUP_INDEX=0
 for LOG_GROUP in "${LOG_GROUPS[@]}"; do
   echo "  Checking ${LOG_GROUP}..."
   
+  # Use a simpler text-based filter pattern that works with CloudWatch Logs
+  # The JSON filter pattern syntax can be finicky
   aws logs filter-log-events \
     --log-group-name "${LOG_GROUP}" \
     --start-time "${LAST_DOWNLOAD}" \
-    --filter-pattern '{ $.event = "agent_reported_issue" }' \
+    --filter-pattern '"agent_reported_issue"' \
     --region "${REGION}" \
     --query 'events[*]' \
-    --output json 2>/dev/null >> "${ISSUES_FILE}" || true
+    --output json 2>/dev/null > "${ISSUES_DIR}/group_${GROUP_INDEX}.json" || echo "[]" > "${ISSUES_DIR}/group_${GROUP_INDEX}.json"
+  GROUP_INDEX=$((GROUP_INDEX + 1))
 done
 
-# Parse and deduplicate issues
-ISSUE_COUNT=$(jq -s 'add | length // 0' "${ISSUES_FILE}" 2>/dev/null || echo "0")
+# Merge all JSON files into one array
+MERGED_ISSUES=$(jq -s 'add // []' "${ISSUES_DIR}"/*.json 2>/dev/null || echo "[]")
+
+# Parse and deduplicate issues - filter to only actual issue events
+ISSUE_COUNT=$(echo "${MERGED_ISSUES}" | jq 'map(select(.message | contains("agent_reported_issue"))) | length // 0' 2>/dev/null || echo "0")
 
 if [[ "${ISSUE_COUNT}" -eq 0 ]]; then
   echo -e "${GREEN}No new issues found.${NC}"
@@ -87,9 +94,9 @@ fi
 
 echo -e "${YELLOW}Found ${ISSUE_COUNT} issue(s). Downloading with context...${NC}"
 
-# Process each issue
+# Process each issue - filter to only actual issue events
 DOWNLOADED=0
-jq -s 'add | .[]' "${ISSUES_FILE}" 2>/dev/null | while read -r EVENT; do
+echo "${MERGED_ISSUES}" | jq -c 'map(select(.message | contains("agent_reported_issue"))) | .[]' 2>/dev/null | while read -r EVENT; do
   # Parse issue details
   TIMESTAMP=$(echo "${EVENT}" | jq -r '.timestamp')
   MESSAGE=$(echo "${EVENT}" | jq -r '.message')
@@ -109,7 +116,9 @@ jq -s 'add | .[]' "${ISSUES_FILE}" 2>/dev/null | while read -r EVENT; do
   # Create issue filename
   ISSUE_FILE="${OUTPUT_DIR}/issue-${TIMESTAMP}-${AGENT_ID}-${SEVERITY}.json"
   
-  echo -e "  ${BLUE}[${SEVERITY^^}]${NC} ${TITLE} (${AGENT_ID})"
+  # Display with uppercase severity
+  SEVERITY_UPPER=$(echo "${SEVERITY}" | tr '[:lower:]' '[:upper:]')
+  echo -e "  ${BLUE}[${SEVERITY_UPPER}]${NC} ${TITLE} (${AGENT_ID})"
   
   # Calculate time window for context logs
   CONTEXT_MS=$((CONTEXT_MINUTES * 60 * 1000))

@@ -283,11 +283,19 @@ async function executeTool(
       const listResult = await toolClient.execute('list_available_models', family ? { family } : {}, { agentId });
       const configResult = await toolClient.execute('get_my_model_config', {}, { agentId });
 
-      const models = listResult.success && Array.isArray(listResult.data)
-        ? listResult.data
+      const models = listResult.success
+        ? Array.isArray(listResult.data)
+          ? listResult.data
+          : Array.isArray((listResult.data as { models?: unknown })?.models)
+            ? (listResult.data as { models: Array<{ id: string; name: string }> }).models
+            : []
         : [];
-      const currentModel = configResult.success && typeof (configResult.data as { model?: string } | undefined)?.model === 'string'
-        ? (configResult.data as { model?: string }).model
+      const currentModel = configResult.success
+        ? typeof (configResult.data as { model?: string } | undefined)?.model === 'string'
+          ? (configResult.data as { model?: string }).model
+          : typeof (configResult.data as { config?: { model?: string } } | undefined)?.config?.model === 'string'
+            ? (configResult.data as { config: { model?: string } }).config.model
+            : undefined
         : undefined;
 
       return {
