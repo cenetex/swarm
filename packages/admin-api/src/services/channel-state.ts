@@ -34,17 +34,20 @@ export const CHANNEL_CONFIG = {
   BUFFER_TTL_SECONDS: 3600,      // 1 hour TTL for channel state
 
   // State machine timings
-  COOLDOWN_DURATION_MS: 10000,   // 10 seconds cooldown after response
+  COOLDOWN_DURATION_MS: 30000,   // 30 seconds cooldown after response (prevents spam)
   ACTIVE_TIMEOUT_MS: 60000,      // 60 seconds before ACTIVE → IDLE
 
   // Response triggers
-  DIRECT_ENGAGEMENT_DELAY_MS: 0,      // Immediate for mentions/replies
+  DIRECT_ENGAGEMENT_DELAY_MS: 500,    // Small delay even for mentions (more natural)
   MESSAGE_THRESHOLD: 5,                // Respond after N messages accumulated
   CONVERSATION_GAP_MS: 30000,          // 30 seconds of silence triggers response
 
   // Response timing
   MIN_RESPONSE_DELAY_MS: 500,     // Minimum delay to seem natural
   MAX_RESPONSE_DELAY_MS: 3000,    // Maximum random delay
+  
+  // Private chat rate limiting
+  PRIVATE_COOLDOWN_MS: 5000,      // 5 second minimum between responses in private chats
 };
 
 // === CHANNEL STATE MANAGEMENT ===
@@ -342,12 +345,25 @@ export function evaluateResponseTrigger(
   void _botId;
   const now = Date.now();
 
-  // Private chats always get immediate response
+  // Check if we're in cooldown (applies to all chat types)
+  const timeSinceLastResponse = state.lastResponseAt ? now - state.lastResponseAt : Infinity;
+  
+  // Private chats get quick responses but still have rate limiting
   if (state.chatType === 'private') {
+    // Respect minimum cooldown even in private chats
+    if (timeSinceLastResponse < CHANNEL_CONFIG.PRIVATE_COOLDOWN_MS) {
+      return {
+        shouldRespond: false,
+        trigger: 'none',
+        delay: 0,
+        priority: 'low',
+      };
+    }
+    
     return {
       shouldRespond: true,
       trigger: 'private_chat',
-      delay: 0,
+      delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
       priority: 'high',
     };
   }
