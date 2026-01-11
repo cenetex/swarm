@@ -43,7 +43,7 @@ export interface WalletBalance {
  */
 async function getSolanaRpcUrl(agentId?: string): Promise<string> {
   if (agentId) {
-    const heliusKey = await _getSecretValueInternal(agentId, 'helius_api_key' as any, 'default');
+    const heliusKey = await _getSecretValueInternal(agentId, 'helius_api_key', 'default');
     if (heliusKey) {
       return `https://mainnet.helius-rpc.com/?api-key=${heliusKey}`;
     }

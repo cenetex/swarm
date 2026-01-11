@@ -66,11 +66,14 @@ describe('buildTelegramEnvelope', () => {
 
     it('should handle missing optional sender fields', () => {
       const update = createTelegramUpdate();
-      (update.message!.from as any) = {
-        id: 789,
-        is_bot: false,
-        first_name: 'Alice',
-        // No last_name, no username
+      update.message = {
+        ...update.message!,
+        from: {
+          id: 789,
+          is_bot: false,
+          first_name: 'Alice',
+          // No last_name, no username
+        },
       };
 
       const envelope = buildTelegramEnvelope(update, defaultConfig);
@@ -114,10 +117,13 @@ describe('buildTelegramEnvelope', () => {
 
     it('should handle private chats', () => {
       const update = createTelegramUpdate();
-      (update.message!.chat as any) = {
-        id: 456,
-        type: 'private',
-        first_name: 'John',
+      update.message = {
+        ...update.message!,
+        chat: {
+          id: 456,
+          type: 'private',
+          first_name: 'John',
+        } as Message['chat'],
       };
 
       const envelope = buildTelegramEnvelope(update, defaultConfig);
@@ -150,7 +156,7 @@ describe('buildTelegramEnvelope', () => {
         reply_to_message: {
           message_id: 100,
           date: Math.floor(Date.now() / 1000) - 60,
-          chat: { id: -100123456789, type: 'supergroup' } as any,
+          chat: { id: -100123456789, type: 'supergroup' } as Message['chat'],
           from: { id: 12345, is_bot: true, first_name: 'TestBot' },
         } as Message,
       });
@@ -166,7 +172,7 @@ describe('buildTelegramEnvelope', () => {
         reply_to_message: {
           message_id: 100,
           date: Math.floor(Date.now() / 1000) - 60,
-          chat: { id: -100123456789, type: 'supergroup' } as any,
+          chat: { id: -100123456789, type: 'supergroup' } as Message['chat'],
           from: { id: 99999, is_bot: true, first_name: 'TestBot', username: 'TestBot' },
         } as Message,
       });
@@ -181,7 +187,7 @@ describe('buildTelegramEnvelope', () => {
         reply_to_message: {
           message_id: 100,
           date: Math.floor(Date.now() / 1000) - 60,
-          chat: { id: -100123456789, type: 'supergroup' } as any,
+          chat: { id: -100123456789, type: 'supergroup' } as Message['chat'],
           from: { id: 999, is_bot: false, first_name: 'OtherUser' },
         } as Message,
       });
@@ -212,7 +218,7 @@ describe('buildTelegramEnvelope', () => {
         ],
         caption: 'Check out this photo!',
       });
-      delete (update.message as any).text;
+      delete update.message!.text;
 
       const envelope = buildTelegramEnvelope(update, defaultConfig);
 
@@ -236,7 +242,7 @@ describe('buildTelegramEnvelope', () => {
           set_name: 'TestPack',
         },
       });
-      delete (update.message as any).text;
+      delete update.message!.text;
 
       const envelope = buildTelegramEnvelope(update, defaultConfig);
 

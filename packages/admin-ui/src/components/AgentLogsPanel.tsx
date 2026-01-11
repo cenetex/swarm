@@ -83,8 +83,8 @@ function getLevelColor(level?: string): string {
     case 'ERROR': return 'text-red-400 bg-red-500/10';
     case 'WARN': return 'text-yellow-400 bg-yellow-500/10';
     case 'INFO': return 'text-blue-400 bg-blue-500/10';
-    case 'DEBUG': return 'text-dark-400 bg-dark-700';
-    default: return 'text-dark-300 bg-dark-800';
+    case 'DEBUG': return 'text-[var(--color-text-tertiary)] bg-[var(--color-bg-tertiary)]';
+    default: return 'text-[var(--color-text-secondary)] bg-[var(--color-bg-elevated)]';
   }
 }
 
@@ -96,16 +96,16 @@ function CompactJsonView({ json }: { json: Record<string, unknown> }) {
   const event = typeof json.event === 'string' ? json.event : null;
   
   if (!subsystem && !event) {
-    return <span className="text-dark-400 text-xs">—</span>;
+    return <span className="text-[var(--color-text-tertiary)] text-xs">—</span>;
   }
   
   return (
     <div className="flex flex-wrap gap-1.5 text-xs">
       {subsystem && (
-        <span className="px-1.5 py-0.5 rounded bg-dark-700 text-dark-200">{subsystem}</span>
+        <span className="px-1.5 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]">{subsystem}</span>
       )}
       {event && (
-        <span className="px-1.5 py-0.5 rounded bg-primary-900/50 text-primary-300">{event}</span>
+        <span className="px-1.5 py-0.5 rounded bg-brand-900/50 text-brand-300">{event}</span>
       )}
     </div>
   );
@@ -119,15 +119,15 @@ function LogEntry({ event }: { event: AgentLogEvent }) {
   const parsed = useMemo(() => parseLogMessage(event.message || ''), [event.message]);
   
   return (
-    <div className="border border-dark-800 rounded-lg bg-dark-900/70 overflow-hidden">
+    <div className="border border-[var(--color-border)] rounded-lg bg-[var(--color-bg-secondary)]/70 overflow-hidden">
       {/* Header row - always visible */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-2 py-1.5 flex items-center gap-2 text-left hover:bg-dark-800/50 transition-colors"
+        className="w-full px-2 py-1.5 flex items-center gap-2 text-left hover:bg-[var(--color-bg-tertiary)]/50 transition-colors"
       >
         {/* Expand indicator */}
         <svg 
-          className={`w-3 h-3 text-dark-500 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+          className={`w-3 h-3 text-[var(--color-text-muted)] flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
           fill="none" 
           viewBox="0 0 24 24" 
           stroke="currentColor"
@@ -145,37 +145,37 @@ function LogEntry({ event }: { event: AgentLogEvent }) {
           {parsed.json ? (
             <CompactJsonView json={parsed.json} />
           ) : (
-            <span className="text-xs text-dark-400 truncate block">
+            <span className="text-xs text-[var(--color-text-tertiary)] truncate block">
               {parsed.text.slice(0, 60)}{parsed.text.length > 60 ? '...' : ''}
             </span>
           )}
         </div>
         
         {/* Timestamp - hidden on very small screens */}
-        <span className="text-[10px] text-dark-500 flex-shrink-0 hidden sm:block">
+        <span className="text-[10px] text-[var(--color-text-muted)] flex-shrink-0 hidden sm:block">
           {formatTimestamp(event.timestamp)}
         </span>
       </button>
       
       {/* Expanded details */}
       {isExpanded && (
-        <div className="border-t border-dark-800 px-3 py-2 space-y-2">
+        <div className="border-t border-[var(--color-border)] px-3 py-2 space-y-2">
           {/* Log group/stream info */}
-          <div className="text-xs text-dark-500 flex flex-wrap gap-3">
+          <div className="text-xs text-[var(--color-text-muted)] flex flex-wrap gap-3">
             {event.logGroup && (
               <span className="truncate max-w-full" title={event.logGroup}>
-                <span className="text-dark-600">Group:</span> {event.logGroup.split('/').pop()}
+                <span className="text-[var(--color-text-quaternary)]">Group:</span> {event.logGroup.split('/').pop()}
               </span>
             )}
             {event.logStream && (
               <span className="truncate max-w-[200px]" title={event.logStream}>
-                <span className="text-dark-600">Stream:</span> {event.logStream.slice(0, 20)}...
+                <span className="text-[var(--color-text-quaternary)]">Stream:</span> {event.logStream.slice(0, 20)}...
               </span>
             )}
           </div>
           
           {/* Full message */}
-          <pre className="text-xs text-dark-100 whitespace-pre-wrap break-all overflow-x-auto max-h-[400px] overflow-y-auto bg-dark-950 rounded p-2">
+          <pre className="text-xs text-[var(--color-text)] whitespace-pre-wrap break-all overflow-x-auto max-h-[400px] overflow-y-auto bg-[var(--color-bg)] rounded p-2">
             {parsed.json ? JSON.stringify(parsed.json, null, 2) : parsed.text}
           </pre>
         </div>
@@ -246,13 +246,13 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
   }, [level, query, since, subsystem]);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-dark-950">
-      <header className="bg-dark-900/80 backdrop-blur-sm border-b border-dark-700 px-4 lg:px-6 py-3 lg:py-4">
+    <div className="flex-1 flex flex-col h-full bg-[var(--color-bg)]">
+      <header className="bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm border-b border-[var(--color-border)] px-4 lg:px-6 py-3 lg:py-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 lg:gap-4 min-w-0">
             <button
               onClick={onMenuClick}
-              className="w-10 h-10 flex items-center justify-center rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-400 hover:text-white transition-colors lg:hidden"
+              className="w-10 h-10 flex items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors lg:hidden"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                 <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
@@ -260,10 +260,10 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
             </button>
             {activeAgent && <AgentAvatar agent={activeAgent} size="md" />}
             <div className="min-w-0">
-              <h1 className="text-base lg:text-lg font-semibold text-dark-100 truncate">
+              <h1 className="text-base lg:text-lg font-semibold text-[var(--color-text)] truncate">
                 {activeAgent?.name || agentId} logs
               </h1>
-              <p className="text-xs text-dark-400 truncate">
+              <p className="text-xs text-[var(--color-text-tertiary)] truncate">
                 {logGroups.length} log group{logGroups.length === 1 ? '' : 's'} queried
               </p>
             </div>
@@ -272,7 +272,7 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
             {onBack && (
               <button
                 onClick={onBack}
-                className="px-3 py-2 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-200 text-xs font-medium transition-colors"
+                className="px-3 py-2 rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] text-xs font-medium transition-colors"
               >
                 Back to chat
               </button>

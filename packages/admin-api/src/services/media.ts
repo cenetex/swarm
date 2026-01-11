@@ -12,7 +12,7 @@ import * as mediaJobs from './media-jobs.js';
 import * as gallery from './gallery.js';
 import * as credits from './credits.js';
 import { _getSecretValueInternal } from './secrets.js';
-import type { MediaJob, GalleryItem } from '../types.js';
+import type { MediaJob, GalleryItem, SecretType } from '../types.js';
 
 const s3Client = new S3Client({});
 const sqsClient = new SQSClient({});
@@ -240,16 +240,16 @@ export async function getProviderApiKey(
   agentId: string,
   provider: 'openrouter' | 'replicate' | 'openai'
 ): Promise<string | null> {
-  const secretTypes: Record<string, string> = {
+  const secretTypes: Record<'openrouter' | 'replicate' | 'openai', SecretType> = {
     openrouter: 'openrouter_api_key',
     replicate: 'replicate_api_key',
     openai: 'openai_api_key',
   };
 
   // Try agent-specific key first, then global
-  let key = await _getSecretValueInternal(agentId, secretTypes[provider] as any, 'default');
+  let key = await _getSecretValueInternal(agentId, secretTypes[provider], 'default');
   if (!key) {
-    key = await _getSecretValueInternal('GLOBAL', secretTypes[provider] as any, 'default');
+    key = await _getSecretValueInternal('GLOBAL', secretTypes[provider], 'default');
   }
   return key;
 }

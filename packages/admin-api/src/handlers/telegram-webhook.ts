@@ -1226,16 +1226,23 @@ async function handleMultiAgentMessage(
     bufferedMessage
   );
 
-  // Coordinate initiative
-  const initiativeResult = await initiative.coordinateInitiative(
-    chatId,
-    messageId,
-    agentId,
-    stats,
-    bufferedMessage,
-    recentResponseAge,
-    state.bufferSize
-  );
+  // Coordinate initiative with error handling
+  let initiativeResult: initiative.InitiativeResult;
+  try {
+    initiativeResult = await initiative.coordinateInitiative(
+      chatId,
+      messageId,
+      agentId,
+      stats,
+      bufferedMessage,
+      recentResponseAge,
+      state.bufferSize
+    );
+  } catch (err) {
+    // On initiative coordination failure, skip to avoid blocking the webhook
+    console.error('[Telegram] Initiative coordination failed, skipping:', err);
+    return { responded: false, reason: 'initiative_error' };
+  }
 
   console.log('[Telegram] Multi-agent initiative result:', {
     agentId,
