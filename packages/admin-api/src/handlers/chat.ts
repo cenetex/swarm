@@ -830,6 +830,8 @@ export async function handler(
         history: result.history,
         // Include media generated during this response
         media: result.media,
+        // Include pending jobs for async generation (image/video)
+        pendingJobs: result.pendingJobs,
         // Include pending tool call if one needs user input
         pendingToolCall: result.pendingToolCall,
       }),

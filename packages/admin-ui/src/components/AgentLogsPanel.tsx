@@ -21,6 +21,167 @@ function formatTimestamp(value?: string): string {
   return date.toLocaleString();
 }
 
+/**
+ * Parse and extract useful info from a log message
+ */
+function parseLogMessage(message: string): {
+  level?: string;
+  subsystem?: string;
+  event?: string;
+  json?: Record<string, unknown>;
+  text: string;
+} {
+  // Try to parse as JSON
+  try {
+    const parsed = JSON.parse(message);
+    if (typeof parsed === 'object' && parsed !== null) {
+      return {
+        level: parsed.level,
+        subsystem: parsed.subsystem,
+        event: parsed.event,
+        json: parsed,
+        text: message,
+      };
+    }
+  } catch {
+    // Not JSON
+  }
+  
+  // Try to extract level from text like "INFO", "ERROR", etc.
+  const levelMatch = message.match(/\b(ERROR|WARN|INFO|DEBUG)\b/i);
+  return {
+    level: levelMatch?.[1]?.toUpperCase(),
+    text: message,
+  };
+}
+
+/**
+ * Get color classes for log level
+ */
+function getLevelColor(level?: string): string {
+  switch (level?.toUpperCase()) {
+    case 'ERROR': return 'text-red-400 bg-red-500/10';
+    case 'WARN': return 'text-yellow-400 bg-yellow-500/10';
+    case 'INFO': return 'text-blue-400 bg-blue-500/10';
+    case 'DEBUG': return 'text-dark-400 bg-dark-700';
+    default: return 'text-dark-300 bg-dark-800';
+  }
+}
+
+/**
+ * Compact JSON display - shows key info inline
+ */
+function CompactJsonView({ json }: { json: Record<string, unknown> }) {
+  // Extract the most useful fields for compact view (cast to string if present)
+  const subsystem = typeof json.subsystem === 'string' ? json.subsystem : null;
+  const event = typeof json.event === 'string' ? json.event : null;
+  const agentId = typeof json.agentId === 'string' ? json.agentId : null;
+  const error = json.error != null ? String(json.error) : null;
+  const message = json.message != null ? String(json.message) : null;
+  
+  // Count remaining fields
+  const keyFields = ['level', 'subsystem', 'event', 'agentId', 'error', 'message'];
+  const remainingCount = Object.keys(json).filter(k => !keyFields.includes(k)).length;
+  
+  return (
+    <div className="flex flex-wrap gap-2 text-xs">
+      {subsystem && (
+        <span className="px-2 py-0.5 rounded bg-dark-700 text-dark-200">{subsystem}</span>
+      )}
+      {event && (
+        <span className="px-2 py-0.5 rounded bg-primary-900/50 text-primary-300">{event}</span>
+      )}
+      {agentId && (
+        <span className="px-2 py-0.5 rounded bg-dark-700 text-dark-300">agent: {agentId}</span>
+      )}
+      {error && (
+        <span className="text-red-400">{error}</span>
+      )}
+      {message && !error && (
+        <span className="text-dark-200">{message}</span>
+      )}
+      {remainingCount > 0 && (
+        <span className="text-dark-500">+{remainingCount} fields</span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Single log entry component with expand/collapse
+ */
+function LogEntry({ event }: { event: AgentLogEvent }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const parsed = useMemo(() => parseLogMessage(event.message || ''), [event.message]);
+  
+  return (
+    <div className="border border-dark-800 rounded-lg bg-dark-900/70 overflow-hidden">
+      {/* Header row - always visible */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-3 py-2 flex items-start gap-3 text-left hover:bg-dark-800/50 transition-colors"
+      >
+        {/* Expand indicator */}
+        <svg 
+          className={`w-4 h-4 text-dark-500 flex-shrink-0 mt-0.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+          fill="none" 
+          viewBox="0 0 24 24" 
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+        
+        {/* Timestamp */}
+        <span className="text-xs text-dark-500 flex-shrink-0 w-[140px]">
+          {formatTimestamp(event.timestamp)}
+        </span>
+        
+        {/* Level badge */}
+        {parsed.level && (
+          <span className={`text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${getLevelColor(parsed.level)}`}>
+            {parsed.level}
+          </span>
+        )}
+        
+        {/* Content preview */}
+        <div className="flex-1 min-w-0">
+          {parsed.json ? (
+            <CompactJsonView json={parsed.json} />
+          ) : (
+            <span className="text-xs text-dark-200 truncate block">
+              {parsed.text.slice(0, 200)}{parsed.text.length > 200 ? '...' : ''}
+            </span>
+          )}
+        </div>
+      </button>
+      
+      {/* Expanded details */}
+      {isExpanded && (
+        <div className="border-t border-dark-800 px-3 py-2 space-y-2">
+          {/* Log group/stream info */}
+          <div className="text-xs text-dark-500 flex flex-wrap gap-3">
+            {event.logGroup && (
+              <span className="truncate max-w-full" title={event.logGroup}>
+                <span className="text-dark-600">Group:</span> {event.logGroup.split('/').pop()}
+              </span>
+            )}
+            {event.logStream && (
+              <span className="truncate max-w-[200px]" title={event.logStream}>
+                <span className="text-dark-600">Stream:</span> {event.logStream.slice(0, 20)}...
+              </span>
+            )}
+          </div>
+          
+          {/* Full message */}
+          <pre className="text-xs text-dark-100 whitespace-pre-wrap break-all overflow-x-auto max-h-[400px] overflow-y-auto bg-dark-950 rounded p-2">
+            {parsed.json ? JSON.stringify(parsed.json, null, 2) : parsed.text}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelProps) {
   const activeAgent = useActiveAgent();
   const { setActiveAgent } = useAgentStore();
@@ -176,7 +337,7 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-4 space-y-2">
         {isLoading && (
           <div className="text-dark-400 text-sm">Loading logs…</div>
         )}
@@ -189,16 +350,7 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
           <div className="text-dark-400 text-sm">No log events found.</div>
         )}
         {logs.map((event, index) => (
-          <div key={`${event.logStream || 'stream'}-${index}`} className="border border-dark-800 rounded-lg bg-dark-900/70">
-            <div className="px-3 py-2 border-b border-dark-800 text-xs text-dark-400 flex flex-wrap gap-3">
-              <span>{formatTimestamp(event.timestamp)}</span>
-              {event.logGroup && <span className="text-dark-500">{event.logGroup}</span>}
-              {event.logStream && <span className="text-dark-600">{event.logStream}</span>}
-            </div>
-            <pre className="text-xs text-dark-100 whitespace-pre-wrap px-3 py-2">
-              {event.message || ''}
-            </pre>
-          </div>
+          <LogEntry key={`${event.logStream || 'stream'}-${index}`} event={event} />
         ))}
       </div>
     </div>

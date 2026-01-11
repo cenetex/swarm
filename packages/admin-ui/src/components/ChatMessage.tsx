@@ -1,10 +1,84 @@
 import ReactMarkdown from 'react-markdown';
+import { useMemo } from 'react';
 import type { ChatMessage as ChatMessageType } from '../types';
 import { ToolPrompt } from './ToolPrompts';
 
 interface ChatMessageProps {
   message: ChatMessageType;
   onToolSubmit?: (toolCallId: string, result: unknown) => void;
+}
+
+/**
+ * Clean message content by removing raw JSON and extracting embedded images
+ * LLMs sometimes include tool results as raw JSON in their responses
+ */
+function processMessageContent(content: string): { 
+  cleanedContent: string; 
+  embeddedImages: string[];
+  embeddedData: Array<{ type: 'gallery' | 'jobs' | 'unknown'; items: unknown[] }>;
+} {
+  const embeddedImages: string[] = [];
+  const embeddedData: Array<{ type: 'gallery' | 'jobs' | 'unknown'; items: unknown[] }> = [];
+  
+  // Match JSON arrays or objects in the content
+  // This regex finds standalone JSON that looks like tool output
+  let cleanedContent = content;
+  
+  // Pattern 1: JSON arrays (like gallery results or job lists)
+  const jsonArrayPattern = /\n?\s*\[\s*\{[\s\S]*?\}\s*\]\s*\n?/g;
+  const arrayMatches = content.match(jsonArrayPattern) || [];
+  
+  for (const match of arrayMatches) {
+    try {
+      const parsed = JSON.parse(match.trim());
+      if (Array.isArray(parsed)) {
+        // Check if it's a gallery (has url field)
+        const hasUrls = parsed.some(item => item && typeof item === 'object' && 'url' in item);
+        if (hasUrls) {
+          embeddedData.push({ type: 'gallery', items: parsed });
+          for (const item of parsed) {
+            if (item?.url && typeof item.url === 'string') {
+              embeddedImages.push(item.url);
+            }
+          }
+        } else if (parsed.length === 0) {
+          // Empty array, likely "no pending jobs" - just remove it
+          embeddedData.push({ type: 'jobs', items: [] });
+        } else {
+          embeddedData.push({ type: 'unknown', items: parsed });
+        }
+        cleanedContent = cleanedContent.replace(match, '');
+      }
+    } catch {
+      // Not valid JSON, leave it
+    }
+  }
+  
+  // Pattern 2: Single JSON objects (like image generation results)
+  const jsonObjectPattern = /\n?\s*\{\s*"[^"]+"\s*:[\s\S]*?\}\s*\n?/g;
+  const objectMatches = cleanedContent.match(jsonObjectPattern) || [];
+  
+  for (const match of objectMatches) {
+    try {
+      const parsed = JSON.parse(match.trim());
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        // Check if it has an image URL
+        if (parsed.url && typeof parsed.url === 'string' && 
+            (parsed.url.includes('.png') || parsed.url.includes('.jpg') || 
+             parsed.url.includes('rati.chat') || parsed.url.includes('/images/'))) {
+          embeddedImages.push(parsed.url);
+          cleanedContent = cleanedContent.replace(match, '');
+        }
+      }
+    } catch {
+      // Not valid JSON, leave it
+    }
+  }
+  
+  // Clean up multiple newlines left after removal
+  cleanedContent = cleanedContent.replace(/\n{3,}/g, '\n\n').trim();
+  
+  return { cleanedContent, embeddedImages, embeddedData };
 }
 
 /**
@@ -77,9 +151,19 @@ function getFailedJobs(pendingJobs?: ChatMessageType['pendingJobs']) {
 export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const hasPendingTools = message.toolCalls?.some(tc => tc.status === 'pending');
+  
+  // Process message content to extract embedded JSON and images
+  const { cleanedContent, embeddedImages } = useMemo(
+    () => message.content ? processMessageContent(message.content) : { cleanedContent: '', embeddedImages: [], embeddedData: [] },
+    [message.content]
+  );
+  
   const imagesFromTools = extractImagesFromToolCalls(message.toolCalls);
   const imagesFromJobs = extractImagesFromPendingJobs(message.pendingJobs);
-  const images = [...imagesFromTools, ...imagesFromJobs];
+  // Combine all image sources, deduplicate
+  const allImages = [...imagesFromTools, ...imagesFromJobs, ...embeddedImages];
+  const images = [...new Set(allImages)];
+  
   const activeJobs = getActiveJobs(message.pendingJobs);
   const failedJobs = getFailedJobs(message.pendingJobs);
 
@@ -100,15 +184,15 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
           </div>
         ) : (
           <>
-            {message.content && (
+            {cleanedContent && (
               <div className="prose prose-invert prose-sm max-w-none">
-                <ReactMarkdown>{message.content}</ReactMarkdown>
+                <ReactMarkdown>{cleanedContent}</ReactMarkdown>
               </div>
             )}
             
             {/* Render generated images inline */}
             {images.length > 0 && (
-              <div className={`grid gap-2 ${message.content ? 'mt-3' : ''} ${
+              <div className={`grid gap-2 ${cleanedContent ? 'mt-3' : ''} ${
                 images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
               }`}>
                 {images.slice(0, 4).map((url, idx) => (
