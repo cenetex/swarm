@@ -10,6 +10,7 @@ import * as agents from '../services/agents.js';
 import * as secrets from '../services/secrets.js';
 import * as wallets from '../services/wallets.js';
 import * as telegram from '../services/telegram.js';
+import * as chatVoting from '../services/chat-voting.js';
 import * as media from '../services/media.js';
 import * as gallery from '../services/gallery.js';
 import * as credits from '../services/credits.js';
@@ -550,6 +551,153 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
 
       deleteReferenceImage: async (agentId, imageId) => {
         await media.deleteReferenceImage(agentId, imageId);
+      },
+    },
+
+    // =========================================================================
+    // Telegram Services
+    // =========================================================================
+    telegram: {
+      getUserProfilePhotos: async (agentId, userId, options) => {
+        const agent = await agents.getAgent(agentId);
+        const botToken = agent?.telegramConfig?.botToken;
+        if (!botToken) {
+          throw new Error('No Telegram bot token configured');
+        }
+        
+        const result = await telegram.getUserProfilePhotos(botToken, userId, options);
+        
+        // Get file URLs for photos
+        const photos = [];
+        for (const photoSizes of result.photos) {
+          // Get the largest size
+          const largest = photoSizes.reduce((a, b) => 
+            (a.width * a.height > b.width * b.height) ? a : b
+          );
+          
+          let fileUrl: string | undefined;
+          try {
+            fileUrl = await telegram.getFileUrl(botToken, largest.file_id);
+          } catch {
+            // File URL fetch failed, skip
+          }
+          
+          photos.push({
+            fileId: largest.file_id,
+            width: largest.width,
+            height: largest.height,
+            fileUrl,
+          });
+        }
+        
+        return {
+          userId,
+          totalPhotos: result.totalCount,
+          photos,
+        };
+      },
+
+      getBotName: async (agentId) => {
+        const agent = await agents.getAgent(agentId);
+        const botToken = agent?.telegramConfig?.botToken;
+        if (!botToken) {
+          throw new Error('No Telegram bot token configured');
+        }
+        return telegram.getBotName(botToken);
+      },
+
+      setBotName: async (agentId, name, languageCode) => {
+        const agent = await agents.getAgent(agentId);
+        const botToken = agent?.telegramConfig?.botToken;
+        if (!botToken) {
+          throw new Error('No Telegram bot token configured');
+        }
+        await telegram.setBotName(botToken, name, languageCode);
+      },
+
+      getBotDescription: async (agentId) => {
+        const agent = await agents.getAgent(agentId);
+        const botToken = agent?.telegramConfig?.botToken;
+        if (!botToken) {
+          throw new Error('No Telegram bot token configured');
+        }
+        return telegram.getBotDescription(botToken);
+      },
+
+      setBotDescription: async (agentId, description, languageCode) => {
+        const agent = await agents.getAgent(agentId);
+        const botToken = agent?.telegramConfig?.botToken;
+        if (!botToken) {
+          throw new Error('No Telegram bot token configured');
+        }
+        await telegram.setBotDescription(botToken, description, languageCode);
+      },
+
+      getBotShortDescription: async (agentId) => {
+        const agent = await agents.getAgent(agentId);
+        const botToken = agent?.telegramConfig?.botToken;
+        if (!botToken) {
+          throw new Error('No Telegram bot token configured');
+        }
+        return telegram.getBotShortDescription(botToken);
+      },
+
+      setBotShortDescription: async (agentId, shortDescription, languageCode) => {
+        const agent = await agents.getAgent(agentId);
+        const botToken = agent?.telegramConfig?.botToken;
+        if (!botToken) {
+          throw new Error('No Telegram bot token configured');
+        }
+        await telegram.setBotShortDescription(botToken, shortDescription, languageCode);
+      },
+
+      sendChatAction: async (agentId, chatId, action) => {
+        const agent = await agents.getAgent(agentId);
+        const botToken = agent?.telegramConfig?.botToken;
+        if (!botToken) {
+          throw new Error('No Telegram bot token configured');
+        }
+        await telegram.sendChatAction(botToken, chatId, action);
+      },
+
+      // Chat Modification Voting System
+      getChatBots: async (chatId) => {
+        return chatVoting.getChatBots(chatId);
+      },
+
+      proposeModification: async (agentId, chatId, type, newValue, reason) => {
+        const proposal = await chatVoting.createProposal(agentId, chatId, type, newValue, reason);
+        const withCounts = chatVoting.computeProposalCounts(proposal);
+        return withCounts;
+      },
+
+      voteOnProposal: async (agentId, proposalId, vote, comment) => {
+        const proposal = await chatVoting.voteOnProposal(agentId, proposalId, vote, comment);
+        return chatVoting.computeProposalCounts(proposal);
+      },
+
+      getActiveProposals: async (chatId) => {
+        const proposals = await chatVoting.getActiveProposals(chatId);
+        return proposals.map(p => chatVoting.computeProposalCounts(p));
+      },
+
+      getProposal: async (proposalId) => {
+        const proposal = await chatVoting.getProposal(proposalId);
+        if (!proposal) return null;
+        return chatVoting.computeProposalCounts(proposal);
+      },
+
+      canModifyChat: async (chatId, type) => {
+        return chatVoting.canModifyChat(chatId, type);
+      },
+
+      executeModification: async (agentId, proposalId) => {
+        const agent = await agents.getAgent(agentId);
+        const botToken = agent?.telegramConfig?.botToken;
+        if (!botToken) {
+          throw new Error('No Telegram bot token configured');
+        }
+        return chatVoting.executeModification(agentId, proposalId, botToken);
       },
     },
   };

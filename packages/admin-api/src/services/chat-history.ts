@@ -18,12 +18,16 @@ const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 // Max messages to store per chat (older messages will be trimmed)
 const MAX_MESSAGES = 100;
+const CHAT_HISTORY_TTL_HOURS_RAW = Number(process.env.CHAT_HISTORY_TTL_HOURS || '24');
+const CHAT_HISTORY_TTL_HOURS = Number.isFinite(CHAT_HISTORY_TTL_HOURS_RAW) ? CHAT_HISTORY_TTL_HOURS_RAW : 24;
+const CHAT_HISTORY_TTL_SECONDS = Math.max(0, CHAT_HISTORY_TTL_HOURS) * 60 * 60;
 
 export interface ChatHistoryRecord {
   pk: string; // CHAT#<userEmail>
   sk: string; // AGENT#<agentId> or GLOBAL
   messages: AdminChatMessage[];
   updatedAt: number;
+  ttl?: number;
 }
 
 /**
@@ -62,6 +66,9 @@ export async function getChatHistory(
   }
 
   const record = result.Item as ChatHistoryRecord;
+  if (record.ttl && record.ttl <= Math.floor(Date.now() / 1000)) {
+    return [];
+  }
   return record.messages || [];
 }
 
@@ -81,6 +88,9 @@ export async function saveChatHistory(
     sk: buildAgentKey(agentId),
     messages: trimmedMessages,
     updatedAt: Date.now(),
+    ...(CHAT_HISTORY_TTL_SECONDS > 0
+      ? { ttl: Math.floor(Date.now() / 1000) + CHAT_HISTORY_TTL_SECONDS }
+      : {}),
   };
 
   await dynamoClient.send(

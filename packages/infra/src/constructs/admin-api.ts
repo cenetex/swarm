@@ -138,6 +138,7 @@ export class AdminApiConstruct extends Construct {
       pointInTimeRecoverySpecification: {
         pointInTimeRecoveryEnabled: environment === 'production',
       },
+      timeToLiveAttribute: 'ttl',
     });
 
     // GSI for listing by type

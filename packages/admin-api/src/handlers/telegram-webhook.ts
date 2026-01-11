@@ -1457,10 +1457,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       // Check if this is a multi-agent channel (for group chats only)
       const isGroupChat = message.chat.type === 'group' || message.chat.type === 'supergroup';
       let channelAgents: SharedChannelRecord[] = [];
+      let agentRecord: AgentRecord | null = null;
 
       if (isGroupChat) {
-        // Get agent record for createdAt timestamp
-        const agentRecord = await getAgentRecord(agentId);
+        // Get agent record for createdAt timestamp (fetched once, reused below)
+        agentRecord = await getAgentRecord(agentId);
         if (agentRecord) {
           // Register this agent in the shared channel (updates presence)
           await sharedChannel.ensureAgentInChannel(
@@ -1481,7 +1482,6 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         // MULTI-AGENT MODE: Use D&D-style initiative
         console.log(`[Telegram] Multi-agent channel detected (${channelAgents.length} agents), using initiative system`);
 
-        const agentRecord = await getAgentRecord(agentId);
         if (!agentRecord) {
           console.warn(`[Telegram] Agent record not found: ${agentId}`);
           return ok();
