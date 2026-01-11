@@ -279,7 +279,7 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
             )}
             <button
               onClick={loadLogs}
-              className="px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-500 text-white text-xs font-medium transition-colors"
+              className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-medium transition-colors"
             >
               Refresh
             </button>
@@ -287,14 +287,14 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
         </div>
       </header>
 
-      <div className="border-b border-dark-800 px-4 lg:px-6 py-3 bg-dark-900">
-        <div className="flex flex-wrap items-center gap-3 text-xs text-dark-300">
+      <div className="border-b border-[var(--color-border)] px-4 lg:px-6 py-3 bg-[var(--color-bg-secondary)]">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--color-text-secondary)]">
           <label className="flex items-center gap-2">
-            <span className="text-dark-400">Since</span>
+            <span className="text-[var(--color-text-tertiary)]">Since</span>
             <select
               value={since}
               onChange={(event) => setSince(event.target.value)}
-              className="bg-dark-800 border border-dark-700 rounded-md px-2 py-1 text-dark-100"
+              className="bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-md px-2 py-1 text-[var(--color-text)]"
             >
               <option value="15m">15m</option>
               <option value="30m">30m</option>
@@ -304,35 +304,35 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
             </select>
           </label>
           <label className="flex items-center gap-2">
-            <span className="text-dark-400">Level</span>
+            <span className="text-[var(--color-text-tertiary)]">Level</span>
             <input
               value={level}
               onChange={(event) => setLevel(event.target.value)}
               placeholder="error, warn"
-              className="bg-dark-800 border border-dark-700 rounded-md px-2 py-1 text-dark-100 placeholder:text-dark-500"
+              className="bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-md px-2 py-1 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
             />
           </label>
           <label className="flex items-center gap-2">
-            <span className="text-dark-400">Subsystem</span>
+            <span className="text-[var(--color-text-tertiary)]">Subsystem</span>
             <input
               value={subsystem}
               onChange={(event) => setSubsystem(event.target.value)}
               placeholder="telegram-webhook"
-              className="bg-dark-800 border border-dark-700 rounded-md px-2 py-1 text-dark-100 placeholder:text-dark-500"
+              className="bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-md px-2 py-1 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
             />
           </label>
           <label className="flex items-center gap-2 flex-1 min-w-[200px]">
-            <span className="text-dark-400">Query</span>
+            <span className="text-[var(--color-text-tertiary)]">Query</span>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="text search"
-              className="w-full bg-dark-800 border border-dark-700 rounded-md px-2 py-1 text-dark-100 placeholder:text-dark-500"
+              className="w-full bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-md px-2 py-1 text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
             />
           </label>
           <button
             onClick={applyFilters}
-            className="px-3 py-1.5 rounded-md bg-dark-700 hover:bg-dark-600 text-dark-100 transition-colors"
+            className="px-3 py-1.5 rounded-md bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text)] transition-colors"
           >
             Apply
           </button>
@@ -341,7 +341,7 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
 
       <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-4 space-y-2">
         {isLoading && (
-          <div className="text-dark-400 text-sm">Loading logs…</div>
+          <div className="text-[var(--color-text-tertiary)] text-sm">Loading logs…</div>
         )}
         {error && (
           <div className="text-sm text-red-400 bg-red-900/20 border border-red-900/40 rounded-lg px-3 py-2">
@@ -349,7 +349,7 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
           </div>
         )}
         {!isLoading && !error && logs.length === 0 && (
-          <div className="text-dark-400 text-sm">No log events found.</div>
+          <div className="text-[var(--color-text-tertiary)] text-sm">No log events found.</div>
         )}
         {logs.map((event, index) => (
           <LogEntry key={`${event.logStream || 'stream'}-${index}`} event={event} />
