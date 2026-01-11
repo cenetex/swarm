@@ -6,7 +6,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, QueryCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, QueryCommand, DeleteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { v4 as uuid } from 'uuid';
 import * as mediaJobs from './media-jobs.js';
 import * as gallery from './gallery.js';
@@ -77,6 +77,56 @@ async function makeUrlsAccessible(urls: string[]): Promise<string[]> {
 
 // Provider configuration
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
+const IMAGE_TRIAL_LIMIT = 3;
+
+async function consumeImageGenerationTrial(agentId: string): Promise<{ allowed: boolean; remaining: number }> {
+  const now = Date.now();
+  try {
+    const result = await dynamoClient.send(new UpdateCommand({
+      TableName: ADMIN_TABLE,
+      Key: { pk: `AGENT#${agentId}`, sk: 'IMAGE_TRIAL' },
+      UpdateExpression: 'SET used = if_not_exists(used, :zero) + :one, updatedAt = :now',
+      ConditionExpression: 'attribute_not_exists(used) OR used < :limit',
+      ExpressionAttributeValues: {
+        ':zero': 0,
+        ':one': 1,
+        ':limit': IMAGE_TRIAL_LIMIT,
+        ':now': now,
+      },
+      ReturnValues: 'ALL_NEW',
+    }));
+    const used = Number((result.Attributes as { used?: number })?.used ?? 0);
+    return {
+      allowed: true,
+      remaining: Math.max(0, IMAGE_TRIAL_LIMIT - used),
+    };
+  } catch (err: unknown) {
+    if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
+      return { allowed: false, remaining: 0 };
+    }
+    throw err;
+  }
+}
+
+async function getImageGenerationApiKey(agentId: string): Promise<string> {
+  const agentKey = await _getSecretValueInternal(agentId, 'replicate_api_key', 'default');
+  if (agentKey) {
+    return agentKey;
+  }
+
+  const systemKey = await _getSecretValueInternal('GLOBAL', 'replicate_api_key', 'default');
+  if (!systemKey) {
+    throw new Error('No Replicate API key configured. Please set up an API key first.');
+  }
+
+  const trial = await consumeImageGenerationTrial(agentId);
+  if (!trial.allowed) {
+    throw new Error('Free image generation trial exhausted. Please set a Replicate API key to continue.');
+  }
+
+  console.log(`[Media] Using system Replicate key for image generation: agent=${agentId}, remaining=${trial.remaining}`);
+  return systemKey;
+}
 
 // Default models (Replicate model identifiers)
 const DEFAULT_IMAGE_MODEL = 'google/nano-banana-pro';
@@ -234,11 +284,8 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     }
   }
 
-  // Get Replicate API key
-  const apiKey = await getProviderApiKey(agentId, 'replicate');
-  if (!apiKey) {
-    throw new Error('No Replicate API key configured. Please set up an API key first.');
-  }
+  // Get Replicate API key (agent key or system trial)
+  const apiKey = await getImageGenerationApiKey(agentId);
 
   // Build the prompt with reference context if images provided
   let finalPrompt = prompt;
@@ -438,6 +485,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
 interface GenerateImageAsyncOptions extends GenerateImageOptions {
   conversationId: string;
   replyToMessageId?: string;
+  apiKey?: string;
 }
 
 /**
@@ -457,6 +505,7 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     conversationId,
     replyToMessageId,
     chargeEnergy = true,
+    apiKey: apiKeyOverride,
   } = options;
 
   // Check credits
@@ -473,10 +522,7 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
   }
 
   // Get Replicate API key
-  const apiKey = await getProviderApiKey(agentId, 'replicate');
-  if (!apiKey) {
-    throw new Error('No Replicate API key configured. Please set up an API key first.');
-  }
+  const apiKey = apiKeyOverride || await getImageGenerationApiKey(agentId);
 
   // Build the prompt with reference context if images provided
   let finalPrompt = prompt;

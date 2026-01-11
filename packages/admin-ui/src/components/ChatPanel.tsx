@@ -378,27 +378,27 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
 
   if (!activeAgent) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-dark-950 p-4">
+      <div className="flex-1 flex items-center justify-center bg-[var(--color-bg)] p-4">
         <div className="text-center">
           {/* Mobile menu button */}
           <button
             onClick={onMenuClick}
-            className="mb-6 w-12 h-12 mx-auto flex items-center justify-center rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-400 hover:text-white transition-colors lg:hidden"
+            className="mb-6 w-12 h-12 mx-auto flex items-center justify-center rounded-lg bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors lg:hidden"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
               <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
             </svg>
           </button>
-          <div className="w-20 h-20 lg:w-24 lg:h-24 mx-auto mb-4 lg:mb-6 rounded-full bg-dark-800 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-10 h-10 lg:w-12 lg:h-12 text-dark-600">
+          <div className="w-20 h-20 lg:w-24 lg:h-24 mx-auto mb-4 lg:mb-6 rounded-full bg-[var(--color-bg-secondary)] ring-4 ring-brand-600 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-10 h-10 lg:w-12 lg:h-12 text-[var(--color-text-muted)]">
               <path fillRule="evenodd" d="M4.848 2.771A49.144 49.144 0 0112 2.25c2.43 0 4.817.178 7.152.52 1.978.292 3.348 2.024 3.348 3.97v6.02c0 1.946-1.37 3.678-3.348 3.97a48.901 48.901 0 01-3.476.383.39.39 0 00-.297.17l-2.755 4.133a.75.75 0 01-1.248 0l-2.755-4.133a.39.39 0 00-.297-.17 48.9 48.9 0 01-3.476-.384c-1.978-.29-3.348-2.024-3.348-3.97V6.741c0-1.946 1.37-3.68 3.348-3.97z" clipRule="evenodd" />
             </svg>
           </div>
-          <h3 className="text-lg lg:text-xl font-semibold text-dark-300 mb-2">No Agent Selected</h3>
-          <p className="text-sm lg:text-base text-dark-500 mb-4">Create or select an agent to start chatting</p>
+          <h3 className="text-lg lg:text-xl font-semibold text-[var(--color-text-secondary)] mb-2">No Agent Selected</h3>
+          <p className="text-sm lg:text-base text-[var(--color-text-muted)] mb-4">Create or select an agent to start chatting</p>
           <button
             onClick={() => useAgentStore.getState().createAgent()}
-            className="px-4 lg:px-6 py-2.5 lg:py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl font-medium transition-colors text-sm lg:text-base"
+            className="px-4 lg:px-6 py-2.5 lg:py-3 bg-brand-600 hover:bg-brand-500 text-white rounded-xl font-medium transition-colors text-sm lg:text-base"
           >
             Create Your First Agent
           </button>
@@ -408,15 +408,15 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-dark-950">
+    <div className="flex-1 flex flex-col h-full bg-[var(--color-bg)]">
       {/* Agent Header */}
-      <header className="bg-dark-900/80 backdrop-blur-sm border-b border-dark-700 px-4 lg:px-6 py-3 lg:py-4">
+      <header className="bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm border-b border-[var(--color-border)] px-4 lg:px-6 py-3 lg:py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 lg:gap-4">
             {/* Hamburger menu - mobile only */}
             <button
               onClick={onMenuClick}
-              className="w-10 h-10 flex items-center justify-center rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-400 hover:text-white transition-colors lg:hidden"
+              className="w-10 h-10 flex items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors lg:hidden"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                 <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
@@ -424,8 +424,8 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
             </button>
             <AgentAvatar agent={activeAgent} size="md" />
             <div className="min-w-0">
-              <h1 className="text-base lg:text-lg font-semibold text-dark-100 truncate">{activeAgent.name}</h1>
-              <p className="text-xs text-dark-400 truncate hidden sm:block">
+              <h1 className="text-base lg:text-lg font-semibold text-[var(--color-text)] truncate">{activeAgent.name}</h1>
+              <p className="text-xs text-[var(--color-text-tertiary)] truncate hidden sm:block">
                 {activeAgent.status === 'shell' && 'Shell agent - configure to unlock full capabilities'}
                 {activeAgent.status === 'configured' && `${activeAgent.secrets.filter(s => s.isSet).length} secrets configured`}
                 {activeAgent.status === 'active' && 'Active and ready'}
@@ -435,7 +435,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
           <div className="flex items-center gap-2">
             <button
               onClick={() => clearChat(activeAgent.id)}
-              className="px-2 lg:px-3 py-1.5 text-xs lg:text-sm text-dark-400 hover:text-dark-200 hover:bg-dark-800 rounded-lg transition-colors"
+              className="px-2 lg:px-3 py-1.5 text-xs lg:text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
             >
               <span className="hidden sm:inline">Clear Chat</span>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
@@ -446,7 +446,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
           {onOpenLogs && (
             <button
               onClick={() => onOpenLogs(activeAgent.id)}
-              className="px-3 py-2 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-200 text-xs font-medium transition-colors"
+              className="px-3 py-2 rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] text-xs font-medium transition-colors"
             >
               View logs
             </button>
@@ -469,7 +469,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
       </div>
 
       {/* Input */}
-      <div className="chat-input-container border-t border-dark-700 bg-dark-900/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
+      <div className="chat-input-container border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
         <div className="max-w-3xl mx-auto">
           <ChatInput onSend={handleSendMessage} disabled={isLoading} />
         </div>

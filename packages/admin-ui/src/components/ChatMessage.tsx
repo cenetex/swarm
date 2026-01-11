@@ -231,22 +231,22 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
       <div
         className={`max-w-[90%] sm:max-w-[85%] lg:max-w-[80%] rounded-2xl px-3 lg:px-4 py-2.5 lg:py-3 ${
           isUser
-            ? 'bg-primary-600 text-white rounded-br-md'
-            : 'bg-dark-800 text-dark-100 rounded-bl-md'
+            ? 'bg-brand-600 text-white rounded-br-md'
+            : 'bg-[var(--color-bg-secondary)] text-[var(--color-text)] rounded-bl-md border border-[var(--color-border)]'
         }`}
       >
         {message.isLoading ? (
           <div className="typing-indicator flex gap-1 py-2">
-            <span className="w-2 h-2 bg-dark-400 rounded-full"></span>
-            <span className="w-2 h-2 bg-dark-400 rounded-full"></span>
-            <span className="w-2 h-2 bg-dark-400 rounded-full"></span>
+            <span className="w-2 h-2 bg-[var(--color-text-muted)] rounded-full"></span>
+            <span className="w-2 h-2 bg-[var(--color-text-muted)] rounded-full"></span>
+            <span className="w-2 h-2 bg-[var(--color-text-muted)] rounded-full"></span>
           </div>
         ) : (
           <>
             {activeJobs.length > 0 && (
-              <div className="mb-2 rounded-lg border border-primary-500/20 bg-primary-500/10 px-3 py-2 text-sm text-primary-100">
+              <div className="mb-2 rounded-lg border border-brand-500/20 bg-brand-500/10 px-3 py-2 text-sm text-brand-100">
                 <div className="flex items-center gap-2">
-                  <div className="animate-spin w-4 h-4 border-2 border-primary-300 border-t-transparent rounded-full" />
+                  <div className="animate-spin w-4 h-4 border-2 border-brand-300 border-t-transparent rounded-full" />
                   <span>
                     Generating {activeJobs.length} {activeJobs.length === 1 ? activeJobs[0].type : 'items'}...
                   </span>
@@ -255,7 +255,7 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
             )}
 
             {cleanedContent && (
-              <div className="prose prose-invert prose-sm max-w-none">
+              <div className={`prose prose-sm max-w-none ${isUser ? 'prose-invert' : 'dark:prose-invert'}`}>
                 <ReactMarkdown>{cleanedContent}</ReactMarkdown>
               </div>
             )}
@@ -267,9 +267,9 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
                   <div 
                     key={idx}
                     className={`text-xs px-2 py-1 rounded inline-flex items-center gap-1.5 mr-2 ${
-                      result.type === 'success' ? 'bg-green-500/20 text-green-300' :
-                      result.type === 'error' ? 'bg-red-500/20 text-red-300' :
-                      'bg-dark-700 text-dark-300'
+                      result.type === 'success' ? 'bg-green-500/20 text-green-600 dark:text-green-300' :
+                      result.type === 'error' ? 'bg-red-500/20 text-red-600 dark:text-red-300' :
+                      'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]'
                     }`}
                   >
                     {result.type === 'success' && (
@@ -338,11 +338,11 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
             {activeJobs.length > 0 && (
               <div className={`${message.content || images.length > 0 ? 'mt-3' : ''}`}>
                 {activeJobs.map((job) => (
-                  <div key={job.jobId} className="flex items-center gap-2 text-sm text-dark-300 bg-dark-900 rounded-lg px-3 py-2">
-                    <div className="animate-spin w-4 h-4 border-2 border-primary-400 border-t-transparent rounded-full" />
+                  <div key={job.jobId} className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-tertiary)] rounded-lg px-3 py-2">
+                    <div className="animate-spin w-4 h-4 border-2 border-brand-400 border-t-transparent rounded-full" />
                     <span>
                       {job.status === 'processing' ? 'Generating' : 'Starting'} {job.type}...
-                      {job.prompt && <span className="text-dark-500 ml-1">"{job.prompt.slice(0, 50)}{job.prompt.length > 50 ? '...' : ''}"</span>}
+                      {job.prompt && <span className="text-[var(--color-text-muted)] ml-1">"{job.prompt.slice(0, 50)}{job.prompt.length > 50 ? '...' : ''}"</span>}
                     </span>
                   </div>
                 ))}
@@ -370,7 +370,7 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
         {!message.isLoading && (
           <div
             className={`text-xs mt-2 ${
-              isUser ? 'text-primary-200' : 'text-dark-500'
+              isUser ? 'text-brand-200' : 'text-[var(--color-text-muted)]'
             }`}
           >
             {new Date(message.timestamp).toLocaleTimeString([], {
@@ -378,10 +378,10 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
               minute: '2-digit',
             })}
             {hasPendingTools && (
-              <span className="ml-2 text-yellow-400">• Waiting for input</span>
+              <span className="ml-2 text-yellow-500 dark:text-yellow-400">• Waiting for input</span>
             )}
             {activeJobs.length > 0 && (
-              <span className="ml-2 text-primary-400">• Generating {activeJobs.length} {activeJobs.length === 1 ? 'image' : 'images'}</span>
+              <span className="ml-2 text-brand-500">• Generating {activeJobs.length} {activeJobs.length === 1 ? 'image' : 'images'}</span>
             )}
           </div>
         )}

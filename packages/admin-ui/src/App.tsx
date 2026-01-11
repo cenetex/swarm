@@ -63,7 +63,7 @@ function App() {
   }, []);
 
   return (
-    <div className="h-screen flex bg-dark-950 relative">
+    <div className="h-screen flex bg-[var(--color-bg)] relative">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div 

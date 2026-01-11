@@ -1274,8 +1274,8 @@ async function handleMultiAgentMessage(
     }
 
     case 'react': {
-      // This agent lost initiative - maybe send a reaction
-      await reactions.handleReaction(
+      // This agent lost initiative - maybe send a reaction (fire-and-forget)
+      reactions.handleReaction(
         token,
         chatId,
         messageId,

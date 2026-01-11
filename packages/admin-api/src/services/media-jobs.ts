@@ -9,6 +9,7 @@ import {
   GetCommand,
   UpdateCommand,
   QueryCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuid } from 'uuid';
@@ -117,9 +118,38 @@ export async function updateJobStatus(
   if (updates?.externalId) {
     updateExpressions.push('externalId = :externalId');
     expressionValues[':externalId'] = updates.externalId;
-    updateExpressions.push('gsi3pk = :gsi3pk', 'gsi3sk = :gsi3sk');
-    expressionValues[':gsi3pk'] = `EXTERNAL#${updates.externalId}`;
-    expressionValues[':gsi3sk'] = `JOB#${jobId}`;
+  }
+
+  if (updates?.externalId) {
+    const ttl = Math.floor(now / 1000) + JOB_TTL_SECONDS;
+    await dynamoClient.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Update: {
+            TableName: ADMIN_TABLE,
+            Key: {
+              pk: `MEDIAJOB#${jobId}`,
+              sk: 'STATUS',
+            },
+            UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+            ExpressionAttributeValues: expressionValues,
+            ExpressionAttributeNames: expressionNames,
+          },
+        },
+        {
+          Put: {
+            TableName: ADMIN_TABLE,
+            Item: {
+              pk: `MEDIAJOB_EXTERNAL#${updates.externalId}`,
+              sk: 'JOB',
+              jobId,
+              ttl,
+            },
+          },
+        },
+      ],
+    }));
+    return await getJob(jobId);
   }
 
   const result = await dynamoClient.send(new UpdateCommand({
@@ -171,17 +201,20 @@ export async function getPendingJobs(agentId: string): Promise<MediaJob[]> {
  * Find job by external ID (e.g., Replicate prediction ID)
  */
 export async function findByExternalId(externalId: string): Promise<MediaJob | null> {
-  const result = await dynamoClient.send(new QueryCommand({
+  const mapping = await dynamoClient.send(new GetCommand({
     TableName: ADMIN_TABLE,
-    IndexName: 'GSI3',
-    KeyConditionExpression: 'gsi3pk = :externalPk',
-    ExpressionAttributeValues: {
-      ':externalPk': `EXTERNAL#${externalId}`,
+    Key: {
+      pk: `MEDIAJOB_EXTERNAL#${externalId}`,
+      sk: 'JOB',
     },
-    Limit: 1,
   }));
 
-  return (result.Items?.[0] as MediaJob) || null;
+  const jobId = (mapping.Item as { jobId?: string })?.jobId;
+  if (!jobId) {
+    return null;
+  }
+
+  return getJob(jobId);
 }
 
 // === REPLICATE POLLING FALLBACK ===

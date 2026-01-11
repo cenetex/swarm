@@ -4,33 +4,66 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          200: '#bae6fd',
-          300: '#7dd3fc',
-          400: '#38bdf8',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-          800: '#075985',
-          900: '#0c4a6e',
+        // Brand purple from logo
+        brand: {
+          50: '#f5f3f7',
+          100: '#ebe7ef',
+          200: '#d4cce0',
+          300: '#b8a9c9',
+          400: '#9680ad',
+          500: '#7a6395',
+          600: '#5d4e7a', // Primary brand color from logo
+          700: '#4d4066',
+          800: '#423855',
+          900: '#3a3249',
+          950: '#241e2e',
         },
-        dark: {
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
-          950: '#020617',
+        // Semantic colors that change with theme
+        surface: {
+          // Light mode surfaces
+          light: {
+            DEFAULT: '#ffffff',
+            secondary: '#f8f7fa',
+            tertiary: '#f0eef4',
+            elevated: '#ffffff',
+          },
+          // Dark mode surfaces
+          dark: {
+            DEFAULT: '#1a1625',
+            secondary: '#241e2e',
+            tertiary: '#2d2640',
+            elevated: '#322a45',
+          },
+        },
+        // Text colors
+        content: {
+          light: {
+            DEFAULT: '#1a1625',
+            secondary: '#5d4e7a',
+            tertiary: '#9680ad',
+            muted: '#b8a9c9',
+          },
+          dark: {
+            DEFAULT: '#f5f3f7',
+            secondary: '#d4cce0',
+            tertiary: '#9680ad',
+            muted: '#7a6395',
+          },
+        },
+        // Border colors
+        border: {
+          light: {
+            DEFAULT: '#ebe7ef',
+            secondary: '#d4cce0',
+          },
+          dark: {
+            DEFAULT: '#3a3249',
+            secondary: '#4d4066',
+          },
         },
       },
       animation: {

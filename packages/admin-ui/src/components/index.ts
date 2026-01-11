@@ -6,3 +6,4 @@ export { AgentConfigModal } from './AgentConfigModal';
 export { ChatPanel } from './ChatPanel';
 export { ToolPrompt, SecretPrompt, ConfirmPrompt } from './ToolPrompts';
 export { AgentLogsPanel } from './AgentLogsPanel';
+export { ThemeToggle } from './ThemeToggle';
