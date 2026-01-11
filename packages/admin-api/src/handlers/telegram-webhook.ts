@@ -969,7 +969,8 @@ async function processChannelMessage(
     agent,
     updatedState,
     token,
-    decision.trigger
+    decision.trigger,
+    botUsername
   );
 
   if (responseMessageId) {
@@ -984,23 +985,33 @@ async function processChannelMessage(
 /**
  * Generate and send response to the channel
  * Uses full channel context (all buffered messages)
+ * For multi-agent channels, includes shared history so bots can see each other's messages
  */
 async function processChannelResponse(
   agentId: string,
   agent: AgentConfig,
   state: ChannelStateRecord,
   token: string,
-  trigger: string
+  trigger: string,
+  botUsername?: string
 ): Promise<number | null> {
   const chatId = state.chatId;
+  const isMultiAgent = state.chatType !== 'private';
 
   // === CREATE MCP TOOL CLIENT ===
   // Tools get context injected into descriptions automatically
   const toolClient = await createTelegramToolClient(agentId);
   const contextualTools = await toolClient.getOpenAIToolsWithContext(agentId);
 
-  // Build conversation context from buffered messages
-  const conversationContext = channelState.buildConversationContext(state);
+  // Build conversation context
+  // For multi-agent channels, fetch shared history so we can see other bots' messages
+  let conversationContext: string;
+  if (isMultiAgent) {
+    const sharedHistory = await channelState.getSharedHistory(chatId);
+    conversationContext = channelState.buildCombinedConversationContext(state, sharedHistory, agentId);
+  } else {
+    conversationContext = channelState.buildConversationContext(state);
+  }
   const participants = channelState.getActiveParticipants(state);
   const responseTarget = channelState.getResponseTarget(state);
 
@@ -1063,6 +1074,7 @@ async function processChannelResponse(
   const mediasToSend: Array<{ type: 'image' | 'video' | 'sticker'; url: string; caption?: string }> = [];
   const failedTools = new Set<string>();
   let responseMessageId: number | null = null;
+  let finalResponseContent: string | null = null; // Track for shared history
 
   while (iterations++ < maxIterations) {
     await sendChatAction(token, chatId, 'typing');
@@ -1134,6 +1146,7 @@ async function processChannelResponse(
     if (llmResponse.content) {
       messages.push({ role: 'assistant', content: llmResponse.content });
       responseMessageId = await sendTelegramMessage(token, agentId, chatId, llmResponse.content, replyToMessageId);
+      finalResponseContent = llmResponse.content; // Capture for shared history
     }
 
     // Send media
@@ -1154,13 +1167,15 @@ async function processChannelResponse(
   // Fallback if max iterations reached
   if (!responseMessageId && iterations >= maxIterations) {
     console.warn(`[Telegram] Max iterations reached for chat ${chatId}`);
+    const fallbackMessage = "Sorry, I ran into some issues processing your request. Please try again!";
     responseMessageId = await sendTelegramMessage(
       token,
       agentId,
       chatId,
-      "Sorry, I ran into some issues processing your request. Please try again!",
+      fallbackMessage,
       replyToMessageId
     );
+    finalResponseContent = fallbackMessage;
     for (const m of mediasToSend) {
       if (m.type === 'image') {
         await sendTelegramPhoto(token, chatId, m.url, m.caption);
@@ -1170,6 +1185,18 @@ async function processChannelResponse(
         await sendTelegramStickerOrPhoto(token, agentId, chatId, m.url, m.caption);
       }
     }
+  }
+
+  // Record bot's message to shared history for multi-agent visibility
+  if (responseMessageId && finalResponseContent && isMultiAgent && botUsername) {
+    await channelState.recordBotMessage(chatId, {
+      messageId: responseMessageId,
+      agentId,
+      botUsername,
+      text: finalResponseContent,
+      timestamp: Date.now(),
+      replyToMessageId,
+    });
   }
 
   return responseMessageId;
@@ -1199,6 +1226,7 @@ async function handleMultiAgentMessage(
   const chatType = message.chat.type;
   const messageId = message.message_id;
   const text = message.text || message.caption || '';
+  const botUsername = agent.platforms.telegram?.botUsername;
 
   // Get or generate agent stats
   const stats = generateAgentStats(agentRecord.createdAt, agentId);
@@ -1281,7 +1309,8 @@ async function handleMultiAgentMessage(
         agent,
         updatedState,
         token,
-        'initiative_winner'
+        'initiative_winner',
+        botUsername
       );
 
       if (responseMessageId) {

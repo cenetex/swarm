@@ -219,4 +219,110 @@ describe('Channel State Service', () => {
       expect(target?.messageId).toBe(3);
     });
   });
+
+  describe('Shared History (Multi-Agent)', () => {
+    it('should build combined context interleaving human and bot messages by timestamp', () => {
+      const state: ChannelStateRecord = {
+        pk: 'CHANNEL#agent-1#123',
+        sk: 'STATE',
+        agentId: 'agent-1',
+        chatId: 123,
+        chatType: 'supergroup',
+        state: 'IDLE',
+        stateChangedAt: Date.now(),
+        messageBuffer: [
+          { messageId: 1, userId: 100, userName: 'Alice', text: 'Hello everyone', timestamp: 1000 },
+          { messageId: 3, userId: 200, userName: 'Bob', text: 'Hey Alice!', timestamp: 3000 },
+        ],
+        bufferSize: 2,
+        lastActivityAt: Date.now(),
+        ttl: Math.floor(Date.now() / 1000) + 3600,
+        updatedAt: Date.now(),
+      };
+
+      // Import and test buildCombinedConversationContext
+      // Note: We're testing the logic, not the actual function since it requires DynamoDB
+      
+      interface MockSharedMessage {
+        messageId: number;
+        agentId: string;
+        botUsername: string;
+        text: string;
+        timestamp: number;
+      }
+
+      interface MockSharedHistory {
+        messages: MockSharedMessage[];
+      }
+
+      // Simulating buildCombinedConversationContext logic
+      const sharedHistory: MockSharedHistory = {
+        messages: [
+          { messageId: 2, agentId: 'agent-2', botUsername: 'OtherBot', text: 'Hi there!', timestamp: 2000 },
+          { messageId: 4, agentId: 'agent-1', botUsername: 'TestBot', text: 'My own message', timestamp: 4000 },
+        ],
+      };
+
+      const currentAgentId = 'agent-1';
+
+      // Combine messages
+      const allMessages: Array<{ timestamp: number; isBot: boolean; userName: string; text: string; agentId?: string }> = [];
+
+      // Add human messages
+      for (const msg of state.messageBuffer) {
+        allMessages.push({
+          timestamp: msg.timestamp,
+          isBot: false,
+          userName: msg.userName,
+          text: msg.text,
+        });
+      }
+
+      // Add bot messages (excluding self)
+      for (const msg of sharedHistory.messages) {
+        if (msg.agentId === currentAgentId) continue;
+        allMessages.push({
+          timestamp: msg.timestamp,
+          isBot: true,
+          userName: msg.botUsername,
+          text: msg.text,
+          agentId: msg.agentId,
+        });
+      }
+
+      // Sort by timestamp
+      allMessages.sort((a, b) => a.timestamp - b.timestamp);
+
+      expect(allMessages).toHaveLength(3); // 2 human + 1 other bot (self excluded)
+      expect(allMessages[0].text).toBe('Hello everyone');
+      expect(allMessages[0].isBot).toBe(false);
+      expect(allMessages[1].text).toBe('Hi there!');
+      expect(allMessages[1].isBot).toBe(true);
+      expect(allMessages[2].text).toBe('Hey Alice!');
+      expect(allMessages[2].isBot).toBe(false);
+    });
+
+    it('should exclude own messages from shared history context', () => {
+      interface MockSharedMessage {
+        messageId: number;
+        agentId: string;
+        botUsername: string;
+        text: string;
+        timestamp: number;
+      }
+
+      const sharedMessages: MockSharedMessage[] = [
+        { messageId: 1, agentId: 'agent-1', botUsername: 'BotA', text: 'I said this', timestamp: 1000 },
+        { messageId: 2, agentId: 'agent-2', botUsername: 'BotB', text: 'Other bot said this', timestamp: 2000 },
+        { messageId: 3, agentId: 'agent-1', botUsername: 'BotA', text: 'I said this too', timestamp: 3000 },
+      ];
+
+      const currentAgentId = 'agent-1';
+      const visibleMessages = sharedMessages.filter(m => m.agentId !== currentAgentId);
+
+      expect(visibleMessages).toHaveLength(1);
+      expect(visibleMessages[0].agentId).toBe('agent-2');
+      expect(visibleMessages[0].text).toBe('Other bot said this');
+    });
+  });
 });

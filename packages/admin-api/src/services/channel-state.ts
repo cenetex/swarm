@@ -20,6 +20,8 @@ import type {
   ChannelStateRecord,
   BufferedMessage,
   ResponseDecision,
+  SharedChannelMessage,
+  SharedChannelHistoryRecord,
 } from '../types.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -72,6 +74,12 @@ export const MULTI_AGENT_CONFIG = {
   ACTIVITY_WINDOW_MS: 300000,            // 5 minute window for activity measurement
   MESSAGES_FOR_SHORT_COOLDOWN: 20,       // Messages in window for minimum cooldown
   QUIET_THRESHOLD_MS: 60000,             // 60 seconds of silence = "quiet"
+};
+
+// === SHARED HISTORY CONFIGURATION ===
+export const SHARED_HISTORY_CONFIG = {
+  MAX_MESSAGES: 30,                      // Max bot messages to keep in shared history
+  TTL_SECONDS: 3600,                     // 1 hour TTL for shared history
 };
 
 /**
@@ -626,4 +634,164 @@ export function getActiveParticipants(
   return Array.from(participants.entries())
     .map(([userId, data]) => ({ userId, ...data }))
     .sort((a, b) => b.messageCount - a.messageCount);
+}
+
+// ========================================
+// SHARED CHANNEL HISTORY (Multi-Agent)
+// ========================================
+
+/**
+ * Get shared channel history - contains bot messages visible to all bots
+ */
+export async function getSharedHistory(
+  chatId: number
+): Promise<SharedChannelHistoryRecord | null> {
+  try {
+    const result = await dynamoClient.send(new GetCommand({
+      TableName: ADMIN_TABLE,
+      Key: {
+        pk: `SHARED_HISTORY#${chatId}`,
+        sk: 'HISTORY',
+      },
+    }));
+
+    if (!result.Item) return null;
+
+    const record = result.Item as SharedChannelHistoryRecord;
+    if (record.ttl && Date.now() / 1000 > record.ttl) {
+      return null;
+    }
+
+    return record;
+  } catch (err) {
+    console.warn('[SharedHistory] Failed to get shared history:', err);
+    return null;
+  }
+}
+
+/**
+ * Record a bot's message in shared history so other bots can see it
+ */
+export async function recordBotMessage(
+  chatId: number,
+  message: SharedChannelMessage
+): Promise<void> {
+  const now = Date.now();
+  const ttl = Math.floor(now / 1000) + SHARED_HISTORY_CONFIG.TTL_SECONDS;
+
+  try {
+    // Get existing history
+    const existing = await getSharedHistory(chatId);
+    
+    let messages: SharedChannelMessage[];
+    if (existing) {
+      // Add new message and trim to max size
+      messages = [...existing.messages, message];
+      if (messages.length > SHARED_HISTORY_CONFIG.MAX_MESSAGES) {
+        messages = messages.slice(-SHARED_HISTORY_CONFIG.MAX_MESSAGES);
+      }
+    } else {
+      messages = [message];
+    }
+
+    // Write back
+    const record: SharedChannelHistoryRecord = {
+      pk: `SHARED_HISTORY#${chatId}`,
+      sk: 'HISTORY',
+      chatId,
+      messages,
+      ttl,
+      updatedAt: now,
+    };
+
+    await dynamoClient.send(new PutCommand({
+      TableName: ADMIN_TABLE,
+      Item: record,
+    }));
+
+    console.log('[SharedHistory] Recorded bot message:', {
+      chatId,
+      agentId: message.agentId,
+      messageId: message.messageId,
+      totalMessages: messages.length,
+    });
+  } catch (err) {
+    console.error('[SharedHistory] Failed to record bot message:', err);
+    // Don't throw - this is best-effort
+  }
+}
+
+/**
+ * Build combined conversation context from human messages + shared bot history
+ * Interleaves messages by timestamp for natural conversation flow
+ */
+export function buildCombinedConversationContext(
+  state: ChannelStateRecord,
+  sharedHistory: SharedChannelHistoryRecord | null,
+  currentAgentId: string,
+  maxTokens: number = 4000
+): string {
+  // Combine human messages and bot messages
+  const allMessages: Array<{
+    timestamp: number;
+    isBot: boolean;
+    userName: string;
+    username?: string;
+    text: string;
+    agentId?: string;
+  }> = [];
+
+  // Add human messages from buffer
+  for (const msg of state.messageBuffer) {
+    allMessages.push({
+      timestamp: msg.timestamp,
+      isBot: false,
+      userName: msg.userName,
+      username: msg.username,
+      text: msg.text,
+    });
+  }
+
+  // Add bot messages from shared history (excluding self)
+  if (sharedHistory) {
+    for (const msg of sharedHistory.messages) {
+      // Skip messages from self - agent already knows what it said
+      if (msg.agentId === currentAgentId) continue;
+      
+      allMessages.push({
+        timestamp: msg.timestamp,
+        isBot: true,
+        userName: msg.botUsername,
+        username: msg.botUsername,
+        text: msg.text,
+        agentId: msg.agentId,
+      });
+    }
+  }
+
+  // Sort by timestamp
+  allMessages.sort((a, b) => a.timestamp - b.timestamp);
+
+  // Build context string
+  const lines: string[] = [];
+  let approxTokens = 0;
+
+  for (const msg of allMessages) {
+    const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+    const userLabel = msg.username ? `@${msg.username}` : msg.userName;
+    const botIndicator = msg.isBot ? ' [bot]' : '';
+    const line = `[${timestamp}] ${userLabel}${botIndicator}: ${msg.text}`;
+
+    // Rough token estimate (4 chars = 1 token)
+    const lineTokens = Math.ceil(line.length / 4);
+
+    if (approxTokens + lineTokens > maxTokens) {
+      break;
+    }
+
+    lines.push(line);
+    approxTokens += lineTokens;
+  }
+
+  return lines.join('\n');
 }

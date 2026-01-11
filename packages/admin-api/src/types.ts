@@ -488,6 +488,33 @@ export interface SharedChannelRecord {
 }
 
 /**
+ * Shared channel message - a message in the shared history visible to all bots
+ * This allows bots to see each other's responses in multi-agent channels
+ */
+export interface SharedChannelMessage {
+  messageId: number;       // Telegram message ID
+  agentId: string;         // Which bot sent this
+  botUsername: string;     // Bot's @username for display
+  text: string;            // Message content
+  timestamp: number;       // When it was sent
+  replyToMessageId?: number; // What message this replies to
+}
+
+/**
+ * Shared channel history record
+ * Stores recent bot messages visible to all bots in the channel
+ * Key: pk=SHARED_HISTORY#{chatId}, sk=HISTORY
+ */
+export interface SharedChannelHistoryRecord {
+  pk: string;              // SHARED_HISTORY#{chatId}
+  sk: string;              // HISTORY
+  chatId: number;
+  messages: SharedChannelMessage[];
+  ttl: number;             // Auto-cleanup
+  updatedAt: number;
+}
+
+/**
  * Initiative round phases
  */
 export type InitiativePhase = 'interest' | 'rolling' | 'responding' | 'reacting' | 'complete';
