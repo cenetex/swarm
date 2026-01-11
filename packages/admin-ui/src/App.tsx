@@ -63,37 +63,54 @@ function App() {
   }, []);
 
   return (
-    <div className="h-screen flex bg-[var(--color-bg)] relative">
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+    <div className="h-[100dvh] flex flex-col bg-[var(--color-bg)] relative">
+      {/* Safe area spacer for iOS status bar */}
+      <div 
+        className="flex-shrink-0 bg-[var(--color-bg-secondary)]" 
+        style={{ height: 'env(safe-area-inset-top, 0px)' }} 
+      />
+      
+      {/* Main content area */}
+      <div className="flex-1 flex min-h-0 relative">
+        {/* Mobile overlay */}
+        {sidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
 
-      {/* Sidebar - hidden on mobile unless toggled */}
-      <div className={`
-        fixed lg:relative inset-y-0 left-0 z-30 
-        transform transition-transform duration-200 ease-in-out
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
-        <AgentSidebar onClose={() => setSidebarOpen(false)} />
+        {/* Sidebar - hidden on mobile unless toggled */}
+        <div className={`
+          fixed lg:relative inset-y-0 left-0 z-30 
+          transform transition-transform duration-200 ease-in-out
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+          style={{ top: 'env(safe-area-inset-top, 0px)' }}
+        >
+          <AgentSidebar onClose={() => setSidebarOpen(false)} />
+        </div>
+
+        {/* Main Chat Area */}
+        {isLogsRoute && logsAgentId ? (
+          <AgentLogsPanel
+            agentId={logsAgentId}
+            onMenuClick={() => setSidebarOpen(true)}
+            onBack={openChat}
+          />
+        ) : (
+          <ChatPanel
+            onMenuClick={() => setSidebarOpen(true)}
+            onOpenLogs={openLogs}
+          />
+        )}
       </div>
-
-      {/* Main Chat Area */}
-      {isLogsRoute && logsAgentId ? (
-        <AgentLogsPanel
-          agentId={logsAgentId}
-          onMenuClick={() => setSidebarOpen(true)}
-          onBack={openChat}
-        />
-      ) : (
-        <ChatPanel
-          onMenuClick={() => setSidebarOpen(true)}
-          onOpenLogs={openLogs}
-        />
-      )}
+      
+      {/* Safe area spacer for iOS home indicator */}
+      <div 
+        className="flex-shrink-0 bg-[var(--color-bg)]" 
+        style={{ height: 'env(safe-area-inset-bottom, 0px)' }} 
+      />
     </div>
   );
 }
