@@ -227,3 +227,186 @@ describe('Attention System', () => {
     expect(shouldRespond).toBe(false);
   });
 });
+
+describe('Channel Post Parsing', () => {
+  // Simulate extractMessage logic from the webhook handler
+  const extractMessage = (update: {
+    message?: object;
+    edited_message?: object;
+    channel_post?: object;
+    edited_channel_post?: object;
+  }): object | undefined => {
+    return update.channel_post || update.edited_channel_post || update.message || update.edited_message;
+  };
+
+  it('should extract message from channel_post', () => {
+    const update = {
+      update_id: 12345,
+      channel_post: {
+        message_id: 1,
+        chat: { id: -1001234567890, type: 'channel', title: 'Test Channel' },
+        date: 1704067200,
+        text: 'Hello from channel',
+      },
+    };
+
+    const message = extractMessage(update);
+    expect(message).toBeDefined();
+    expect(message).toEqual(update.channel_post);
+  });
+
+  it('should extract message from edited_channel_post', () => {
+    const update = {
+      update_id: 12346,
+      edited_channel_post: {
+        message_id: 1,
+        chat: { id: -1001234567890, type: 'channel', title: 'Test Channel' },
+        date: 1704067200,
+        edit_date: 1704067300,
+        text: 'Edited message',
+      },
+    };
+
+    const message = extractMessage(update);
+    expect(message).toBeDefined();
+    expect(message).toEqual(update.edited_channel_post);
+  });
+
+  it('should prioritize channel_post over regular message', () => {
+    const update = {
+      update_id: 12347,
+      message: {
+        message_id: 2,
+        chat: { id: 123, type: 'private' },
+        text: 'Private message',
+      },
+      channel_post: {
+        message_id: 1,
+        chat: { id: -1001234567890, type: 'channel' },
+        text: 'Channel post',
+      },
+    };
+
+    const message = extractMessage(update);
+    expect(message).toEqual(update.channel_post);
+  });
+
+  it('should fall back to regular message when no channel_post', () => {
+    const update = {
+      update_id: 12348,
+      message: {
+        message_id: 2,
+        chat: { id: 123, type: 'private' },
+        text: 'Private message',
+      },
+    };
+
+    const message = extractMessage(update);
+    expect(message).toEqual(update.message);
+  });
+
+  it('should return undefined when no message types present', () => {
+    const update: {
+      update_id?: number;
+      message?: object;
+      edited_message?: object;
+      channel_post?: object;
+      edited_channel_post?: object;
+    } = {
+      update_id: 12349,
+    };
+
+    const message = extractMessage(update);
+    expect(message).toBeUndefined();
+  });
+});
+
+describe('Multi-Agent Channel Eligibility', () => {
+  // Simulate the isMultiAgentEligible logic
+  const isMultiAgentEligible = (chatType: string): boolean => {
+    return chatType === 'group' || chatType === 'supergroup' || chatType === 'channel';
+  };
+
+  it('should enable multi-agent for group chats', () => {
+    expect(isMultiAgentEligible('group')).toBe(true);
+  });
+
+  it('should enable multi-agent for supergroup chats', () => {
+    expect(isMultiAgentEligible('supergroup')).toBe(true);
+  });
+
+  it('should enable multi-agent for channel chats', () => {
+    expect(isMultiAgentEligible('channel')).toBe(true);
+  });
+
+  it('should not enable multi-agent for private chats', () => {
+    expect(isMultiAgentEligible('private')).toBe(false);
+  });
+});
+
+describe('Reply-to-Bot Targeting', () => {
+  // Simulate reply-to-bot detection
+  const isReplyToBot = (
+    message: {
+      reply_to_message?: { from?: { id: number; username?: string } };
+    },
+    botId?: number,
+    botUsername?: string
+  ): boolean => {
+    if (!message.reply_to_message?.from) return false;
+    
+    if (botId && message.reply_to_message.from.id === botId) {
+      return true;
+    }
+    
+    if (botUsername && message.reply_to_message.from.username === botUsername) {
+      return true;
+    }
+    
+    return false;
+  };
+
+  it('should detect reply to bot by ID', () => {
+    const message = {
+      text: 'Yes, I agree',
+      reply_to_message: {
+        from: { id: 123456789 },
+      },
+    };
+
+    expect(isReplyToBot(message, 123456789)).toBe(true);
+  });
+
+  it('should detect reply to bot by username', () => {
+    const message = {
+      text: 'Yes, I agree',
+      reply_to_message: {
+        from: { id: 987654321, username: 'TestBot' },
+      },
+    };
+
+    expect(isReplyToBot(message, undefined, 'TestBot')).toBe(true);
+  });
+
+  it('should not detect reply to different user', () => {
+    const message = {
+      text: 'Yes, I agree',
+      reply_to_message: {
+        from: { id: 111111111, username: 'SomeUser' },
+      },
+    };
+
+    expect(isReplyToBot(message, 123456789, 'TestBot')).toBe(false);
+  });
+
+  it('should handle missing reply_to_message', () => {
+    const message: {
+      text: string;
+      reply_to_message?: { from?: { id: number; username?: string } };
+    } = {
+      text: 'Hello',
+    };
+
+    expect(isReplyToBot(message, 123456789)).toBe(false);
+  });
+});
