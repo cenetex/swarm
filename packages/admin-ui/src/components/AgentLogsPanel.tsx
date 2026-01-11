@@ -31,12 +31,32 @@ function parseLogMessage(message: string): {
   json?: Record<string, unknown>;
   text: string;
 } {
-  // Try to parse as JSON
+  // Lambda logs often have format: "2026-01-11T00:41:56.500Z requestId INFO {...}"
+  // Try to find and extract JSON from the message
+  const jsonMatch = message.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (typeof parsed === 'object' && parsed !== null) {
+        return {
+          level: typeof parsed.level === 'string' ? parsed.level.toUpperCase() : undefined,
+          subsystem: parsed.subsystem,
+          event: parsed.event,
+          json: parsed,
+          text: message,
+        };
+      }
+    } catch {
+      // Not valid JSON
+    }
+  }
+  
+  // Try to parse whole message as JSON
   try {
     const parsed = JSON.parse(message);
     if (typeof parsed === 'object' && parsed !== null) {
       return {
-        level: parsed.level,
+        level: typeof parsed.level === 'string' ? parsed.level.toUpperCase() : undefined,
         subsystem: parsed.subsystem,
         event: parsed.event,
         json: parsed,
@@ -69,39 +89,23 @@ function getLevelColor(level?: string): string {
 }
 
 /**
- * Compact JSON display - shows key info inline
+ * Compact JSON display - shows only subsystem and event for collapsed view
  */
 function CompactJsonView({ json }: { json: Record<string, unknown> }) {
-  // Extract the most useful fields for compact view (cast to string if present)
   const subsystem = typeof json.subsystem === 'string' ? json.subsystem : null;
   const event = typeof json.event === 'string' ? json.event : null;
-  const agentId = typeof json.agentId === 'string' ? json.agentId : null;
-  const error = json.error != null ? String(json.error) : null;
-  const message = json.message != null ? String(json.message) : null;
   
-  // Count remaining fields
-  const keyFields = ['level', 'subsystem', 'event', 'agentId', 'error', 'message'];
-  const remainingCount = Object.keys(json).filter(k => !keyFields.includes(k)).length;
+  if (!subsystem && !event) {
+    return <span className="text-dark-400 text-xs">—</span>;
+  }
   
   return (
-    <div className="flex flex-wrap gap-2 text-xs">
+    <div className="flex flex-wrap gap-1.5 text-xs">
       {subsystem && (
-        <span className="px-2 py-0.5 rounded bg-dark-700 text-dark-200">{subsystem}</span>
+        <span className="px-1.5 py-0.5 rounded bg-dark-700 text-dark-200">{subsystem}</span>
       )}
       {event && (
-        <span className="px-2 py-0.5 rounded bg-primary-900/50 text-primary-300">{event}</span>
-      )}
-      {agentId && (
-        <span className="px-2 py-0.5 rounded bg-dark-700 text-dark-300">agent: {agentId}</span>
-      )}
-      {error && (
-        <span className="text-red-400">{error}</span>
-      )}
-      {message && !error && (
-        <span className="text-dark-200">{message}</span>
-      )}
-      {remainingCount > 0 && (
-        <span className="text-dark-500">+{remainingCount} fields</span>
+        <span className="px-1.5 py-0.5 rounded bg-primary-900/50 text-primary-300">{event}</span>
       )}
     </div>
   );
@@ -119,11 +123,11 @@ function LogEntry({ event }: { event: AgentLogEvent }) {
       {/* Header row - always visible */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-3 py-2 flex items-start gap-3 text-left hover:bg-dark-800/50 transition-colors"
+        className="w-full px-2 py-1.5 flex items-center gap-2 text-left hover:bg-dark-800/50 transition-colors"
       >
         {/* Expand indicator */}
         <svg 
-          className={`w-4 h-4 text-dark-500 flex-shrink-0 mt-0.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+          className={`w-3 h-3 text-dark-500 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
           fill="none" 
           viewBox="0 0 24 24" 
           stroke="currentColor"
@@ -131,28 +135,26 @@ function LogEntry({ event }: { event: AgentLogEvent }) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
         
-        {/* Timestamp */}
-        <span className="text-xs text-dark-500 flex-shrink-0 w-[140px]">
-          {formatTimestamp(event.timestamp)}
+        {/* Level badge */}
+        <span className={`text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 min-w-[45px] text-center ${getLevelColor(parsed.level)}`}>
+          {parsed.level || '?'}
         </span>
         
-        {/* Level badge */}
-        {parsed.level && (
-          <span className={`text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${getLevelColor(parsed.level)}`}>
-            {parsed.level}
-          </span>
-        )}
-        
-        {/* Content preview */}
+        {/* Subsystem + Event */}
         <div className="flex-1 min-w-0">
           {parsed.json ? (
             <CompactJsonView json={parsed.json} />
           ) : (
-            <span className="text-xs text-dark-200 truncate block">
-              {parsed.text.slice(0, 200)}{parsed.text.length > 200 ? '...' : ''}
+            <span className="text-xs text-dark-400 truncate block">
+              {parsed.text.slice(0, 60)}{parsed.text.length > 60 ? '...' : ''}
             </span>
           )}
         </div>
+        
+        {/* Timestamp - hidden on very small screens */}
+        <span className="text-[10px] text-dark-500 flex-shrink-0 hidden sm:block">
+          {formatTimestamp(event.timestamp)}
+        </span>
       </button>
       
       {/* Expanded details */}
