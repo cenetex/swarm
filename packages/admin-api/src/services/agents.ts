@@ -95,7 +95,7 @@ export async function getAgent(agentId: string): Promise<AgentRecord | null> {
  */
 export async function updateAgent(
   agentId: string,
-  updates: Partial<Pick<AgentRecord, 'name' | 'description' | 'persona' | 'platforms' | 'llmConfig' | 'status' | 'profileImage' | 'mediaConfig' | 'stickerPack'>>,
+  updates: Partial<Pick<AgentRecord, 'name' | 'description' | 'persona' | 'platforms' | 'llmConfig' | 'status' | 'profileImage' | 'characterReference' | 'mediaConfig' | 'stickerPack'>>,
   session: UserSession
 ): Promise<AgentRecord> {
   const existing = await getAgent(agentId);
