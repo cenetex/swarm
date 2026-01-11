@@ -536,3 +536,84 @@ export interface InitiativeResult {
   winnerRoll?: number;
   myRoll?: number;
 }
+
+// ============================================================================
+// Chat Modification Voting System
+// ============================================================================
+
+/**
+ * Types of chat modifications that require voting
+ */
+export type ChatModificationType = 'photo' | 'description' | 'title';
+
+/**
+ * Status of a chat modification proposal
+ */
+export type ChatModificationStatus = 'pending' | 'approved' | 'rejected' | 'executed' | 'expired';
+
+/**
+ * Chat modification proposal record
+ * Tracks proposals for changing chat photo, description, or title
+ * Key: pk=CHAT_VOTE#{chatId}, sk=PROPOSAL#{proposalId}
+ */
+export interface ChatModificationProposal {
+  pk: string;              // CHAT_VOTE#{chatId}
+  sk: string;              // PROPOSAL#{proposalId}
+  proposalId: string;      // UUID
+  chatId: number;
+  type: ChatModificationType;
+  
+  // Proposal details
+  proposedBy: string;      // Agent ID who proposed
+  proposedAt: number;      // Timestamp
+  
+  // What to change
+  newValue: string;        // URL for photo, text for description/title
+  currentValue?: string;   // Current value for reference
+  reason?: string;         // Why the change is proposed
+  
+  // Voting
+  status: ChatModificationStatus;
+  votes: Record<string, {
+    agentId: string;
+    vote: 'approve' | 'reject';
+    votedAt: number;
+    comment?: string;
+  }>;
+  requiredVotes: number;   // Number of agents that need to approve
+  
+  // Execution
+  executedAt?: number;
+  executedBy?: string;
+  
+  ttl: number;             // Auto-cleanup after 7 days
+}
+
+/**
+ * Chat modification rate limit record
+ * Tracks when modifications were last made to enforce weekly limit
+ * Key: pk=CHAT_MOD_LIMIT#{chatId}, sk=TYPE#{type}
+ */
+export interface ChatModificationLimit {
+  pk: string;              // CHAT_MOD_LIMIT#{chatId}
+  sk: string;              // TYPE#{type}
+  chatId: number;
+  type: ChatModificationType;
+  lastModifiedAt: number;  // Timestamp of last successful modification
+  lastModifiedBy: string;  // Agent ID
+  proposalId: string;      // Reference to the approved proposal
+  ttl: number;             // Auto-cleanup after 30 days
+}
+
+/**
+ * User profile photo info (from Telegram API)
+ */
+export interface TelegramUserProfilePhotos {
+  totalCount: number;
+  photos: Array<{
+    fileId: string;
+    width: number;
+    height: number;
+    fileSize?: number;
+  }>;
+}

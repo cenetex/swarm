@@ -76,7 +76,7 @@ export interface ToolDefinition<TInput = any, TOutput = unknown> {
   /** Human-readable description for LLM */
   description: string;
   /** Optional category for organization */
-  category?: 'media' | 'wallet' | 'profile' | 'config' | 'gallery' | 'secrets' | 'readonly' | 'diagnostics';
+  category?: 'media' | 'wallet' | 'profile' | 'config' | 'gallery' | 'secrets' | 'readonly' | 'diagnostics' | 'telegram';
   /** Zod schema for input validation */
   inputSchema: ZodType<TInput>;
   /** Zod schema for output validation (optional) */

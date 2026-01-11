@@ -151,18 +151,32 @@ export class SwarmMediaService implements MediaService {
 
     // Poll for completion if not using Prefer: wait or if still processing
     let result = prediction;
-    while (result.status !== 'succeeded' && result.status !== 'failed') {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+    let attempts = 0;
+    const pollIntervalMs = 1000;
+    const maxAttempts = 120; // 2 minutes max
+
+    while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+      attempts++;
+
       const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${result.id}`, {
         headers: { 'Authorization': `Bearer ${apiKey}` },
       });
-      
+
+      if (!pollResponse.ok) {
+        const errorText = await pollResponse.text();
+        throw new Error(`Replicate poll failed: ${pollResponse.status} - ${errorText}`);
+      }
+
       result = await pollResponse.json() as typeof prediction;
     }
 
-    if (result.status === 'failed') {
-      throw new Error(`Replicate prediction failed: ${result.error || 'Unknown error'}`);
+    if (result.status !== 'succeeded') {
+      const timeoutSeconds = Math.round((maxAttempts * pollIntervalMs) / 1000);
+      const reason = result.status === 'failed'
+        ? result.error || 'Unknown error'
+        : `timed out after ${timeoutSeconds}s`;
+      throw new Error(`Replicate prediction ${result.status === 'failed' ? 'failed' : 'timed out'}: ${reason}`);
     }
 
     // Handle output as string or array
