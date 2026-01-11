@@ -28,6 +28,9 @@ interface ChatResponse {
   }>;
   media?: MediaItem[];
   pendingJobs?: PendingJob[];
+  agentUpdates?: {
+    profileImageUrl?: string;
+  };
   pendingToolCall?: PendingToolCall;
   error?: string;
 }

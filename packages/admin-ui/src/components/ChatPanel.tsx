@@ -19,7 +19,7 @@ interface ChatPanelProps {
 export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
   const activeAgent = useActiveAgent();
   const messages = useActiveChat();
-  const { addMessage, updateMessage, removeMessage, clearChat, isLoading, setLoading, setError } = useAgentStore();
+  const { addMessage, updateMessage, removeMessage, clearChat, updateAgent, isLoading, setLoading, setError } = useAgentStore();
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -63,6 +63,11 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
           description: activeAgent.description,
           persona: activeAgent.persona,
         });
+
+        // Update agent avatar if profile image was changed
+        if (response.agentUpdates?.profileImageUrl) {
+          updateAgent(activeAgent.id, { avatar: response.agentUpdates.profileImageUrl });
+        }
 
         // Update the loading message with the response
         const currentMessages = useAgentStore.getState().chats[activeAgent.id] || [];

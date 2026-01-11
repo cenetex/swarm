@@ -473,6 +473,7 @@ async function processChat(
   history: AdminChatMessage[];
   media?: MediaItem[];
   pendingJobs?: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string }>;
+  agentUpdates?: { profileImageUrl?: string };
   pendingToolCall?: {
     id: string;
     name: string;
@@ -520,6 +521,7 @@ async function processChat(
   let pendingToolCall: { id: string; name: string; arguments: Record<string, unknown> } | undefined;
   const allMedia: MediaItem[] = [];
   const pendingJobs: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string }> = [];
+  const agentUpdates: { profileImageUrl?: string } = {};
   const failedTools = new Set<string>(); // Track failed tools to prevent infinite retry loops
   let iterations = 0;
   const maxIterations = 10; // Prevent infinite loops
@@ -691,6 +693,24 @@ async function processChat(
       console.log(`[Chat] Extracted ${mediaFromResults.length} media items from tool results`);
       allMedia.push(...mediaFromResults);
 
+      // Check for profile image updates from tool results
+      for (const tc of llmResponse.toolCalls) {
+        if (tc.function.name === 'set_profile_image' || tc.function.name === 'save_uploaded_profile_image') {
+          const matchingResult = toolResults.find(r => r.tool_call_id === tc.id);
+          if (matchingResult) {
+            try {
+              const parsed = JSON.parse(matchingResult.content);
+              if (parsed.success && (parsed.data?.url || parsed.url)) {
+                agentUpdates.profileImageUrl = parsed.data?.url || parsed.url;
+                console.log(`[Chat] Profile image updated: ${agentUpdates.profileImageUrl}`);
+              }
+            } catch {
+              // Not JSON, skip
+            }
+          }
+        }
+      }
+
       // Add tool results
       for (const result of toolResults) {
         messages.push(result as AdminChatMessage);
@@ -717,6 +737,7 @@ async function processChat(
     history: messages, 
     media: allMedia.length > 0 ? allMedia : undefined, 
     pendingJobs: pendingJobs.length > 0 ? pendingJobs : undefined,
+    agentUpdates: agentUpdates.profileImageUrl ? agentUpdates : undefined,
     pendingToolCall,
   };
 }

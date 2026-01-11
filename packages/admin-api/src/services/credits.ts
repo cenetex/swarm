@@ -24,15 +24,20 @@ export const TOOL_CREDITS: Record<string, {
   maxCredits: number;
   dailyLimit: number;
 }> = {
+  send_message: {
+    creditsPerHour: 3600,
+    maxCredits: 1,
+    dailyLimit: 86400,
+  },
   generate_image: {
-    creditsPerHour: 10,
-    maxCredits: 20,
-    dailyLimit: 100,
+    creditsPerHour: 60,
+    maxCredits: 1,
+    dailyLimit: 1440,
   },
   generate_video: {
     creditsPerHour: 1,
-    maxCredits: 3,
-    dailyLimit: 10,
+    maxCredits: 1,
+    dailyLimit: 24,
   },
   generate_sticker: {
     creditsPerHour: 2,
@@ -55,6 +60,13 @@ export const TOOL_CREDITS: Record<string, {
     dailyLimit: 10,
   },
 };
+
+export const ENERGY_DAILY_LIMIT = 1000;
+export const ENERGY_COSTS = {
+  text: 1,
+  image: 10,
+  video: 100,
+} as const;
 
 /**
  * Get or create a credit bucket for an agent/tool
@@ -92,6 +104,41 @@ async function getOrCreateBucket(
     lastRefillAt: now,
     dailyUsed: 0,
     dailyLimit: config.dailyLimit,
+    dailyResetAt: getNextMidnightUTC(),
+  };
+
+  await dynamoClient.send(new PutCommand({
+    TableName: ADMIN_TABLE,
+    Item: bucket,
+  }));
+
+  return bucket;
+}
+
+async function getOrCreateEnergyBucket(agentId: string): Promise<CreditBucket> {
+  const pk = `AGENT#${agentId}`;
+  const sk = 'CREDIT#energy';
+
+  const result = await dynamoClient.send(new GetCommand({
+    TableName: ADMIN_TABLE,
+    Key: { pk, sk },
+  }));
+
+  if (result.Item) {
+    return result.Item as CreditBucket;
+  }
+
+  const now = Date.now();
+  const bucket: CreditBucket = {
+    pk,
+    sk,
+    agentId,
+    toolName: 'energy',
+    credits: ENERGY_DAILY_LIMIT,
+    maxCredits: ENERGY_DAILY_LIMIT,
+    lastRefillAt: now,
+    dailyUsed: 0,
+    dailyLimit: ENERGY_DAILY_LIMIT,
     dailyResetAt: getNextMidnightUTC(),
   };
 
@@ -213,6 +260,77 @@ export async function consumeCredit(
       ':credits': currentCredits - 1,
       ':now': now,
       ':dailyUsed': dailyUsed + 1,
+      ':dailyResetAt': dailyResetAt,
+    },
+  }));
+
+  return true;
+}
+
+export async function canUseEnergy(
+  agentId: string,
+  cost: number
+): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
+  if (cost <= 0) {
+    return { allowed: true, remaining: ENERGY_DAILY_LIMIT };
+  }
+
+  const bucket = await getOrCreateEnergyBucket(agentId);
+  const now = Date.now();
+
+  // Reset daily if needed
+  let credits = bucket.credits;
+  let dailyUsed = bucket.dailyUsed;
+  let dailyResetAt = bucket.dailyResetAt;
+  if (now >= dailyResetAt) {
+    credits = ENERGY_DAILY_LIMIT;
+    dailyUsed = 0;
+    dailyResetAt = getNextMidnightUTC();
+  }
+
+  if (credits < cost || dailyUsed + cost > ENERGY_DAILY_LIMIT) {
+    return {
+      allowed: false,
+      reason: `Energy limit reached (${ENERGY_DAILY_LIMIT} per day). Resets at midnight UTC.`,
+      remaining: credits,
+    };
+  }
+
+  return { allowed: true, remaining: credits };
+}
+
+export async function consumeEnergy(
+  agentId: string,
+  cost: number
+): Promise<boolean> {
+  if (cost <= 0) {
+    return true;
+  }
+
+  const bucket = await getOrCreateEnergyBucket(agentId);
+  const now = Date.now();
+
+  let credits = bucket.credits;
+  let dailyUsed = bucket.dailyUsed;
+  let dailyResetAt = bucket.dailyResetAt;
+  if (now >= dailyResetAt) {
+    credits = ENERGY_DAILY_LIMIT;
+    dailyUsed = 0;
+    dailyResetAt = getNextMidnightUTC();
+  }
+
+  if (credits < cost || dailyUsed + cost > ENERGY_DAILY_LIMIT) {
+    return false;
+  }
+
+  await dynamoClient.send(new UpdateCommand({
+    TableName: ADMIN_TABLE,
+    Key: { pk: bucket.pk, sk: bucket.sk },
+    UpdateExpression: 'SET credits = :credits, lastRefillAt = :now, dailyUsed = :dailyUsed, dailyResetAt = :dailyResetAt',
+    ExpressionAttributeValues: {
+      ':credits': credits - cost,
+      ':now': now,
+      ':dailyUsed': dailyUsed + cost,
       ':dailyResetAt': dailyResetAt,
     },
   }));
