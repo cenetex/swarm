@@ -21,6 +21,9 @@ import type {
   InterestCheckResult,
   InitiativeResult,
 } from '../types.js';
+
+// Re-export types for consumers using namespace import
+export type { InitiativeResult, InterestCheckResult } from '../types.js';
 import { rollD20 } from './agent-stats.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {

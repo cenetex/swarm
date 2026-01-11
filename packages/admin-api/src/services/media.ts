@@ -78,6 +78,7 @@ async function makeUrlsAccessible(urls: string[]): Promise<string[]> {
 // Provider configuration
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
 const IMAGE_TRIAL_LIMIT = 3;
+const SYSTEM_REPLICATE_API_KEY = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_API_KEY;
 
 async function consumeImageGenerationTrial(agentId: string): Promise<{ allowed: boolean; remaining: number }> {
   const now = Date.now();
@@ -114,9 +115,9 @@ async function getImageGenerationApiKey(agentId: string): Promise<string> {
     return agentKey;
   }
 
-  const systemKey = await _getSecretValueInternal('GLOBAL', 'replicate_api_key', 'default');
+  const systemKey = SYSTEM_REPLICATE_API_KEY || await _getSecretValueInternal('GLOBAL', 'replicate_api_key', 'default');
   if (!systemKey) {
-    throw new Error('No Replicate API key configured. Please set up an API key first.');
+    throw new Error('No system Replicate API key configured. Please set up a global or agent Replicate API key.');
   }
 
   const trial = await consumeImageGenerationTrial(agentId);
