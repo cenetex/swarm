@@ -28,17 +28,45 @@ const TelegramConfigFileSchema = z.object({
 
 const DiscordConfigFileSchema = z.object({
   enabled: z.boolean().default(true),
+  mode: z.enum(['webhook', 'bot', 'hybrid']).default('webhook'),
+  // Webhook mode
+  webhook_url: z.string().optional(),
+  webhookUrl: z.string().optional(),
+  webhook_id: z.string().optional(),
+  webhookId: z.string().optional(),
+  webhook_token: z.string().optional(),
+  webhookToken: z.string().optional(),
+  // Bot mode
   application_id: z.string().optional(),
   applicationId: z.string().optional(),
   public_key: z.string().optional(),
   publicKey: z.string().optional(),
   use_gateway: z.boolean().optional(),
   useGateway: z.boolean().optional(),
+  intents: z.number().optional(),
+  // Behavior
+  respond_to_mentions: z.boolean().optional(),
+  respondToMentions: z.boolean().optional(),
+  respond_in_dms: z.boolean().optional(),
+  respondInDMs: z.boolean().optional(),
+  allowed_channels: z.array(z.string()).optional(),
+  allowedChannels: z.array(z.string()).optional(),
+  allowed_guilds: z.array(z.string()).optional(),
+  allowedGuilds: z.array(z.string()).optional(),
 }).transform((val) => ({
   enabled: val.enabled,
-  applicationId: val.applicationId || val.application_id || '',
-  publicKey: val.publicKey || val.public_key || '',
-  useGateway: val.useGateway ?? val.use_gateway ?? false,
+  mode: val.mode,
+  webhookUrl: val.webhookUrl || val.webhook_url,
+  webhookId: val.webhookId || val.webhook_id,
+  webhookToken: val.webhookToken || val.webhook_token,
+  applicationId: val.applicationId || val.application_id,
+  publicKey: val.publicKey || val.public_key,
+  useGateway: val.useGateway ?? val.use_gateway,
+  intents: val.intents,
+  respondToMentions: val.respondToMentions ?? val.respond_to_mentions,
+  respondInDMs: val.respondInDMs ?? val.respond_in_dms,
+  allowedChannels: val.allowedChannels || val.allowed_channels,
+  allowedGuilds: val.allowedGuilds || val.allowed_guilds,
 }));
 
 const TwitterConfigFileSchema = z.object({

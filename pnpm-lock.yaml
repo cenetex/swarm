@@ -92,6 +92,9 @@ importers:
       tweetnacl:
         specifier: ^1.0.3
         version: 1.0.3
+      twitter-api-v2:
+        specifier: ^1.18.0
+        version: 1.28.0
       uuid:
         specifier: ^13.0.0
         version: 13.0.0

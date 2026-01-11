@@ -617,6 +617,106 @@ export class AdminApiConstruct extends Construct {
       integration: replicateIntegration,
     });
 
+    // Twitter OAuth handler - for connecting X/Twitter accounts via OAuth 1.0a
+    const twitterAppCredentialsSecret = secretsmanager.Secret.fromSecretNameV2(
+      this, 'TwitterAppCredentials', 'swarm/global/twitter-app-credentials'
+    );
+
+    const twitterOAuthHandler = new nodejs.NodejsFunction(this, 'TwitterOAuthHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/twitter-oauth.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        CF_ACCESS_TEAM_DOMAIN: cloudflareTeamDomain,
+        ADMIN_EMAILS: adminEmails,
+        NODE_ENV: environment,
+        ALLOWED_ORIGINS: allowedOrigins.join(','),
+        ADMIN_UI_URL: allowedOrigins[0] || 'http://localhost:5173',
+        KMS_KEY_ID: this.encryptionKey.keyId,
+        SECRET_PREFIX: 'swarm',
+        // Twitter App credentials from Secrets Manager
+        TWITTER_APP_CREDENTIALS_ARN: twitterAppCredentialsSecret.secretArn,
+        TWITTER_OAUTH_CALLBACK_URL: props.apiDomain 
+          ? `https://${props.apiDomain}/oauth/twitter/callback`
+          : '',
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+    });
+
+    // Grant read access to Twitter app credentials
+    twitterAppCredentialsSecret.grantRead(twitterOAuthHandler);
+
+    // Grant permissions to Twitter OAuth handler
+    this.table.grantReadWriteData(twitterOAuthHandler);
+    this.encryptionKey.grantEncryptDecrypt(twitterOAuthHandler);
+    if (stateTable) {
+      stateTable.grantReadWriteData(twitterOAuthHandler);
+    }
+
+    // Grant Secrets Manager permissions for storing Twitter tokens
+    twitterOAuthHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['secretsmanager:CreateSecret'],
+      resources: ['*'],
+      conditions: {
+        'StringLike': {
+          'secretsmanager:Name': 'swarm/*',
+        },
+      },
+    }));
+
+    twitterOAuthHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'secretsmanager:UpdateSecret',
+        'secretsmanager:PutSecretValue',
+        'secretsmanager:DeleteSecret',
+        'secretsmanager:DescribeSecret',
+        'secretsmanager:GetSecretValue',
+        'secretsmanager:TagResource',
+      ],
+      resources: [
+        `arn:aws:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:swarm/*`,
+      ],
+    }));
+
+    const twitterOAuthIntegration = new integrations.HttpLambdaIntegration(
+      'TwitterOAuthIntegration',
+      twitterOAuthHandler
+    );
+
+    // Twitter OAuth routes
+    this.api.addRoutes({
+      path: '/oauth/twitter/start',
+      methods: [apigateway.HttpMethod.GET],
+      integration: twitterOAuthIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/oauth/twitter/callback',
+      methods: [apigateway.HttpMethod.GET],
+      integration: twitterOAuthIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/oauth/twitter/status/{agentId}',
+      methods: [apigateway.HttpMethod.GET],
+      integration: twitterOAuthIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/oauth/twitter/{agentId}',
+      methods: [apigateway.HttpMethod.DELETE],
+      integration: twitterOAuthIntegration,
+    });
+
     // Configure log group prefixes for the consolidated logs endpoint
     // This allows querying logs across all admin API handlers for a given agent
     const stackPrefix = cdk.Stack.of(this).stackName;

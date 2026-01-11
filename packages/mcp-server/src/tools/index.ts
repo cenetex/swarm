@@ -13,6 +13,15 @@ export { createJobTools, type JobServices, type JobInfo, type CreditServices as 
 export { createReferenceImageTools, type ReferenceImageServices, type ReferenceImage, type ReferenceImageCategory } from './reference.js';
 export { createDiagnosticsTools, type IssueSeverity, type IssueCategory } from './diagnostics.js';
 export { createTelegramTools, type TelegramServices, type TelegramUserProfile, type TelegramPhoto, type ChatModificationProposal } from './telegram.js';
+export { createTwitterTools, type TwitterServices, type TwitterConnectionStatus, type Tweet } from './twitter.js';
+export {
+  createDiscordTools,
+  type DiscordServices,
+  type DiscordConnectionStatus,
+  type DiscordChannel,
+  type DiscordGuild,
+  type DiscordMessageInfo,
+} from './discord.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';
 import { createGalleryTools } from './gallery.js';
@@ -24,6 +33,8 @@ import { createJobTools, type CreditServices as JobCreditServices } from './jobs
 import { createReferenceImageTools } from './reference.js';
 import { createDiagnosticsTools } from './diagnostics.js';
 import { createTelegramTools } from './telegram.js';
+import { createTwitterTools } from './twitter.js';
+import { createDiscordTools } from './discord.js';
 import type { ToolRegistry } from '../registry.js';
 
 /**
@@ -41,6 +52,8 @@ export interface AllServices {
   jobs: import('./jobs.js').JobServices;
   reference: import('./reference.js').ReferenceImageServices;
   telegram?: import('./telegram.js').TelegramServices;
+  twitter?: import('./twitter.js').TwitterServices;
+  discord?: import('./discord.js').DiscordServices;
 }
 
 /**
@@ -61,5 +74,11 @@ export function registerAllTools(
   registry.registerAll(createDiagnosticsTools());
   if (services.telegram) {
     registry.registerAll(createTelegramTools(services.telegram));
+  }
+  if (services.twitter) {
+    registry.registerAll(createTwitterTools(services.twitter));
+  }
+  if (services.discord) {
+    registry.registerAll(createDiscordTools(services.discord));
   }
 }

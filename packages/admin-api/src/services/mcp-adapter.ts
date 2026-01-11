@@ -10,7 +10,9 @@ import * as agents from '../services/agents.js';
 import * as secrets from '../services/secrets.js';
 import * as wallets from '../services/wallets.js';
 import * as telegram from '../services/telegram.js';
+import * as twitterOAuth from '../services/twitter-oauth.js';
 import * as chatVoting from '../services/chat-voting.js';
+import * as discord from '../services/discord.js';
 import * as media from '../services/media.js';
 import * as gallery from '../services/gallery.js';
 import * as credits from '../services/credits.js';
@@ -723,6 +725,441 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
       executeModification: async (agentId, proposalId) => {
         const botToken = await getBotToken(agentId);
         return chatVoting.executeModification(agentId, proposalId, botToken);
+      },
+    },
+
+    // =========================================================================
+    // Twitter Services
+    // =========================================================================
+    twitter: {
+      getConnectionStatus: async () => {
+        return twitterOAuth.getConnectionStatus(_agentId);
+      },
+
+      startOAuthFlow: async () => {
+        try {
+          const result = await twitterOAuth.startOAuthFlow(_agentId);
+          return { authorizationUrl: result.authorizationUrl };
+        } catch (error) {
+          console.error('Failed to start Twitter OAuth flow:', error);
+          return null;
+        }
+      },
+
+      postTweet: async (text: string, mediaUrls?: string[]) => {
+        // Get credentials
+        const creds = await twitterOAuth.getAgentTwitterCredentials(_agentId);
+        if (!creds.configured) {
+          return null;
+        }
+
+        // Import twitter-api-v2 dynamically to avoid loading it when not needed
+        const { TwitterApi } = await import('twitter-api-v2');
+        
+        const client = new TwitterApi({
+          appKey: creds.appKey!,
+          appSecret: creds.appSecret!,
+          accessToken: creds.accessToken!,
+          accessSecret: creds.accessSecret!,
+        });
+
+        try {
+          // Handle media uploads if provided
+          let mediaIds: string[] | undefined;
+          if (mediaUrls && mediaUrls.length > 0) {
+            mediaIds = [];
+            for (const url of mediaUrls.slice(0, 4)) {
+              try {
+                const response = await fetch(url);
+                const buffer = Buffer.from(await response.arrayBuffer());
+                const mediaId = await client.v1.uploadMedia(buffer, {
+                  mimeType: 'image/png',
+                });
+                mediaIds.push(mediaId);
+              } catch (err) {
+                console.error('Failed to upload media to Twitter:', err);
+              }
+            }
+          }
+
+          // Post the tweet
+          const tweetParams: Parameters<typeof client.v2.tweet>[0] = { text };
+          if (mediaIds && mediaIds.length > 0) {
+            tweetParams.media = { media_ids: mediaIds as [string] };
+          }
+
+          const result = await client.v2.tweet(tweetParams);
+          const tweetId = result.data.id;
+
+          // Get connection status for username
+          const status = await twitterOAuth.getConnectionStatus(_agentId);
+          const username = status.username || 'unknown';
+
+          return {
+            tweetId,
+            url: `https://x.com/${username}/status/${tweetId}`,
+          };
+        } catch (error) {
+          console.error('Failed to post tweet:', error);
+          return null;
+        }
+      },
+
+      // Extended Twitter methods
+      getTimeline: async (count = 20) => {
+        const creds = await twitterOAuth.getAgentTwitterCredentials(_agentId);
+        if (!creds.configured) return [];
+
+        const { TwitterApi } = await import('twitter-api-v2');
+        const client = new TwitterApi({
+          appKey: creds.appKey!,
+          appSecret: creds.appSecret!,
+          accessToken: creds.accessToken!,
+          accessSecret: creds.accessSecret!,
+        });
+
+        try {
+          const me = await client.v2.me();
+          const timeline = await client.v2.userTimeline(me.data.id, {
+            max_results: Math.min(count, 100),
+            expansions: ['author_id'],
+            'tweet.fields': ['created_at', 'public_metrics', 'conversation_id'],
+            'user.fields': ['username', 'name'],
+          });
+
+          return (timeline.data.data || []).map(t => {
+            const author = timeline.includes?.users?.find(u => u.id === t.author_id);
+            return {
+              id: t.id,
+              text: t.text,
+              authorId: t.author_id || '',
+              authorUsername: author?.username,
+              authorName: author?.name,
+              createdAt: t.created_at || new Date().toISOString(),
+              conversationId: t.conversation_id,
+              metrics: t.public_metrics ? {
+                replyCount: t.public_metrics.reply_count,
+                retweetCount: t.public_metrics.retweet_count,
+                likeCount: t.public_metrics.like_count,
+                quoteCount: t.public_metrics.quote_count,
+              } : undefined,
+            };
+          });
+        } catch (error) {
+          console.error('Failed to get Twitter timeline:', error);
+          return [];
+        }
+      },
+
+      getMentions: async (sinceId?: string, count = 20) => {
+        const creds = await twitterOAuth.getAgentTwitterCredentials(_agentId);
+        if (!creds.configured) return [];
+
+        const { TwitterApi } = await import('twitter-api-v2');
+        const client = new TwitterApi({
+          appKey: creds.appKey!,
+          appSecret: creds.appSecret!,
+          accessToken: creds.accessToken!,
+          accessSecret: creds.accessSecret!,
+        });
+
+        try {
+          const me = await client.v2.me();
+          const mentions = await client.v2.userMentionTimeline(me.data.id, {
+            since_id: sinceId,
+            max_results: Math.min(count, 100),
+            expansions: ['author_id'],
+            'tweet.fields': ['created_at', 'conversation_id', 'in_reply_to_user_id'],
+            'user.fields': ['username', 'name'],
+          });
+
+          return (mentions.data.data || []).map(t => {
+            const author = mentions.includes?.users?.find(u => u.id === t.author_id);
+            return {
+              id: t.id,
+              text: t.text,
+              authorId: t.author_id || '',
+              authorUsername: author?.username,
+              authorName: author?.name,
+              createdAt: t.created_at || new Date().toISOString(),
+              conversationId: t.conversation_id,
+              inReplyToUserId: t.in_reply_to_user_id,
+            };
+          });
+        } catch (error) {
+          console.error('Failed to get Twitter mentions:', error);
+          return [];
+        }
+      },
+
+      getTweet: async (tweetId: string) => {
+        const creds = await twitterOAuth.getAgentTwitterCredentials(_agentId);
+        if (!creds.configured) return null;
+
+        const { TwitterApi } = await import('twitter-api-v2');
+        const client = new TwitterApi({
+          appKey: creds.appKey!,
+          appSecret: creds.appSecret!,
+          accessToken: creds.accessToken!,
+          accessSecret: creds.accessSecret!,
+        });
+
+        try {
+          const tweet = await client.v2.singleTweet(tweetId, {
+            expansions: ['author_id', 'referenced_tweets.id'],
+            'tweet.fields': ['created_at', 'public_metrics', 'conversation_id'],
+            'user.fields': ['username', 'name'],
+          });
+
+          const author = tweet.includes?.users?.find(u => u.id === tweet.data.author_id);
+          return {
+            id: tweet.data.id,
+            text: tweet.data.text,
+            authorId: tweet.data.author_id || '',
+            authorUsername: author?.username,
+            authorName: author?.name,
+            createdAt: tweet.data.created_at || new Date().toISOString(),
+            conversationId: tweet.data.conversation_id,
+            metrics: tweet.data.public_metrics ? {
+              replyCount: tweet.data.public_metrics.reply_count,
+              retweetCount: tweet.data.public_metrics.retweet_count,
+              likeCount: tweet.data.public_metrics.like_count,
+              quoteCount: tweet.data.public_metrics.quote_count,
+            } : undefined,
+            referencedTweets: tweet.data.referenced_tweets?.map(r => ({
+              type: r.type as 'replied_to' | 'quoted' | 'retweeted',
+              id: r.id,
+            })),
+          };
+        } catch (error) {
+          console.error('Failed to get tweet:', error);
+          return null;
+        }
+      },
+
+      reply: async (tweetId: string, text: string, mediaUrls?: string[]) => {
+        const creds = await twitterOAuth.getAgentTwitterCredentials(_agentId);
+        if (!creds.configured) return null;
+
+        const { TwitterApi } = await import('twitter-api-v2');
+        const client = new TwitterApi({
+          appKey: creds.appKey!,
+          appSecret: creds.appSecret!,
+          accessToken: creds.accessToken!,
+          accessSecret: creds.accessSecret!,
+        });
+
+        try {
+          let mediaIds: string[] | undefined;
+          if (mediaUrls && mediaUrls.length > 0) {
+            mediaIds = [];
+            for (const url of mediaUrls.slice(0, 4)) {
+              try {
+                const response = await fetch(url);
+                const buffer = Buffer.from(await response.arrayBuffer());
+                const mediaId = await client.v1.uploadMedia(buffer, { mimeType: 'image/png' });
+                mediaIds.push(mediaId);
+              } catch (err) {
+                console.error('Failed to upload media:', err);
+              }
+            }
+          }
+
+          const tweetParams: Parameters<typeof client.v2.tweet>[0] = {
+            text,
+            reply: { in_reply_to_tweet_id: tweetId },
+          };
+          if (mediaIds && mediaIds.length > 0) {
+            tweetParams.media = { media_ids: mediaIds as [string] };
+          }
+
+          const result = await client.v2.tweet(tweetParams);
+          const status = await twitterOAuth.getConnectionStatus(_agentId);
+          return {
+            tweetId: result.data.id,
+            url: `https://x.com/${status.username || 'unknown'}/status/${result.data.id}`,
+          };
+        } catch (error) {
+          console.error('Failed to reply to tweet:', error);
+          return null;
+        }
+      },
+
+      like: async (tweetId: string) => {
+        const creds = await twitterOAuth.getAgentTwitterCredentials(_agentId);
+        if (!creds.configured) return false;
+
+        const { TwitterApi } = await import('twitter-api-v2');
+        const client = new TwitterApi({
+          appKey: creds.appKey!,
+          appSecret: creds.appSecret!,
+          accessToken: creds.accessToken!,
+          accessSecret: creds.accessSecret!,
+        });
+
+        try {
+          const me = await client.v2.me();
+          await client.v2.like(me.data.id, tweetId);
+          return true;
+        } catch (error) {
+          console.error('Failed to like tweet:', error);
+          return false;
+        }
+      },
+
+      unlike: async (tweetId: string) => {
+        const creds = await twitterOAuth.getAgentTwitterCredentials(_agentId);
+        if (!creds.configured) return false;
+
+        const { TwitterApi } = await import('twitter-api-v2');
+        const client = new TwitterApi({
+          appKey: creds.appKey!,
+          appSecret: creds.appSecret!,
+          accessToken: creds.accessToken!,
+          accessSecret: creds.accessSecret!,
+        });
+
+        try {
+          const me = await client.v2.me();
+          await client.v2.unlike(me.data.id, tweetId);
+          return true;
+        } catch (error) {
+          console.error('Failed to unlike tweet:', error);
+          return false;
+        }
+      },
+
+      retweet: async (tweetId: string) => {
+        const creds = await twitterOAuth.getAgentTwitterCredentials(_agentId);
+        if (!creds.configured) return false;
+
+        const { TwitterApi } = await import('twitter-api-v2');
+        const client = new TwitterApi({
+          appKey: creds.appKey!,
+          appSecret: creds.appSecret!,
+          accessToken: creds.accessToken!,
+          accessSecret: creds.accessSecret!,
+        });
+
+        try {
+          const me = await client.v2.me();
+          await client.v2.retweet(me.data.id, tweetId);
+          return true;
+        } catch (error) {
+          console.error('Failed to retweet:', error);
+          return false;
+        }
+      },
+
+      unretweet: async (tweetId: string) => {
+        const creds = await twitterOAuth.getAgentTwitterCredentials(_agentId);
+        if (!creds.configured) return false;
+
+        const { TwitterApi } = await import('twitter-api-v2');
+        const client = new TwitterApi({
+          appKey: creds.appKey!,
+          appSecret: creds.appSecret!,
+          accessToken: creds.accessToken!,
+          accessSecret: creds.accessSecret!,
+        });
+
+        try {
+          const me = await client.v2.me();
+          await client.v2.unretweet(me.data.id, tweetId);
+          return true;
+        } catch (error) {
+          console.error('Failed to unretweet:', error);
+          return false;
+        }
+      },
+
+      quoteTweet: async (tweetId: string, text: string, mediaUrls?: string[]) => {
+        const creds = await twitterOAuth.getAgentTwitterCredentials(_agentId);
+        if (!creds.configured) return null;
+
+        const { TwitterApi } = await import('twitter-api-v2');
+        const client = new TwitterApi({
+          appKey: creds.appKey!,
+          appSecret: creds.appSecret!,
+          accessToken: creds.accessToken!,
+          accessSecret: creds.accessSecret!,
+        });
+
+        try {
+          let mediaIds: string[] | undefined;
+          if (mediaUrls && mediaUrls.length > 0) {
+            mediaIds = [];
+            for (const url of mediaUrls.slice(0, 4)) {
+              try {
+                const response = await fetch(url);
+                const buffer = Buffer.from(await response.arrayBuffer());
+                const mediaId = await client.v1.uploadMedia(buffer, { mimeType: 'image/png' });
+                mediaIds.push(mediaId);
+              } catch (err) {
+                console.error('Failed to upload media:', err);
+              }
+            }
+          }
+
+          const tweetParams: Parameters<typeof client.v2.tweet>[0] = {
+            text,
+            quote_tweet_id: tweetId,
+          };
+          if (mediaIds && mediaIds.length > 0) {
+            tweetParams.media = { media_ids: mediaIds as [string] };
+          }
+
+          const result = await client.v2.tweet(tweetParams);
+          const status = await twitterOAuth.getConnectionStatus(_agentId);
+          return {
+            tweetId: result.data.id,
+            url: `https://x.com/${status.username || 'unknown'}/status/${result.data.id}`,
+          };
+        } catch (error) {
+          console.error('Failed to quote tweet:', error);
+          return null;
+        }
+      },
+    },
+
+    // =========================================================================
+    // Discord Services
+    // =========================================================================
+    discord: {
+      getConnectionStatus: async () => {
+        return discord.getConnectionStatus(_agentId);
+      },
+
+      sendMessage: async (channelId, content, options) => {
+        return discord.sendMessage(_agentId, channelId, content, options);
+      },
+
+      sendWebhookMessage: async (content, options) => {
+        return discord.sendWebhookMessage(_agentId, content, options);
+      },
+
+      getChannel: async (channelId) => {
+        return discord.getChannel(_agentId, channelId);
+      },
+
+      listChannels: async (guildId) => {
+        return discord.listChannels(_agentId, guildId);
+      },
+
+      listGuilds: async () => {
+        return discord.listGuilds(_agentId);
+      },
+
+      getMessages: async (channelId, limit) => {
+        return discord.getMessages(_agentId, channelId, limit);
+      },
+
+      addReaction: async (channelId, messageId, emoji) => {
+        return discord.addReaction(_agentId, channelId, messageId, emoji);
+      },
+
+      removeReaction: async (channelId, messageId, emoji) => {
+        return discord.removeReaction(_agentId, channelId, messageId, emoji);
       },
     },
   };

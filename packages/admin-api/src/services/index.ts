@@ -9,3 +9,5 @@ export * from './media.js';
 export * from './telegram-stickers.js';
 export * from './telegram.js';
 export * from './chat-voting.js';
+export * as twitterOAuth from './twitter-oauth.js';
+export * as discord from './discord.js';

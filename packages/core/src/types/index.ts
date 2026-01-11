@@ -21,6 +21,11 @@ export interface AgentConfig {
   version: string;
   persona: string; // Path or content of persona markdown
   
+  // Avatar/profile image for Discord webhooks
+  profileImage?: {
+    url: string;
+  };
+  
   platforms: PlatformConfigs;
   llm: LLMConfig;
   media: MediaConfig;
@@ -47,9 +52,33 @@ export interface TelegramConfig {
 
 export interface DiscordConfig {
   enabled: boolean;
-  applicationId: string;
-  publicKey: string;
-  useGateway: boolean; // ECS Fargate for persistent connection
+
+  /**
+   * Operating mode:
+   * - 'webhook': Outbound only via Discord webhook (for avatar appearance)
+   * - 'bot': Full bot functionality with gateway connection
+   * - 'hybrid': Webhook for posting + bot for reading/responding
+   */
+  mode: 'webhook' | 'bot' | 'hybrid';
+
+  // For webhook mode (outbound posting with custom avatar)
+  webhookUrl?: string;
+  webhookId?: string;
+  webhookToken?: string;
+
+  // For bot mode (full functionality)
+  applicationId?: string;
+  publicKey?: string;
+
+  // Gateway options
+  useGateway?: boolean; // ECS Fargate for persistent connection
+  intents?: number; // Discord gateway intents bitmask
+
+  // Behavior configuration
+  respondToMentions?: boolean;
+  respondInDMs?: boolean;
+  allowedChannels?: string[]; // Channel IDs to operate in (empty = all)
+  allowedGuilds?: string[]; // Guild IDs to operate in (empty = all)
 }
 
 export interface TwitterConfig {
@@ -238,6 +267,9 @@ export interface EnvelopeMetadata {
   // Telegram-specific context (preserved for channel state)
   chatType?: 'private' | 'group' | 'supergroup' | 'channel';
   chatTitle?: string;
+
+  // Discord-specific context
+  guildId?: string;
 
   // Platform-specific raw update ID (for deduplication)
   platformUpdateId?: string | number;
@@ -564,9 +596,26 @@ export const TelegramConfigSchema = z.object({
 
 export const DiscordConfigSchema = z.object({
   enabled: z.boolean(),
-  applicationId: z.string(),
-  publicKey: z.string(),
-  useGateway: z.boolean(),
+  mode: z.enum(['webhook', 'bot', 'hybrid']),
+
+  // Webhook mode
+  webhookUrl: z.string().optional(),
+  webhookId: z.string().optional(),
+  webhookToken: z.string().optional(),
+
+  // Bot mode
+  applicationId: z.string().optional(),
+  publicKey: z.string().optional(),
+
+  // Gateway options
+  useGateway: z.boolean().optional(),
+  intents: z.number().optional(),
+
+  // Behavior
+  respondToMentions: z.boolean().optional(),
+  respondInDMs: z.boolean().optional(),
+  allowedChannels: z.array(z.string()).optional(),
+  allowedGuilds: z.array(z.string()).optional(),
 });
 
 export const TwitterConfigSchema = z.object({
@@ -727,6 +776,7 @@ export const EnvelopeMetadataSchema = z.object({
   isReplyToBot: z.boolean().optional(),
   chatType: z.enum(['private', 'group', 'supergroup', 'channel']).optional(),
   chatTitle: z.string().optional(),
+  guildId: z.string().optional(),
   platformUpdateId: z.union([z.string(), z.number()]).optional(),
 });
 

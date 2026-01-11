@@ -1047,6 +1047,9 @@ async function processChannelResponse(
     systemPrompt += `\n\n## Your Profile Image\n${agent.profileImage.url}`;
   }
 
+  // Final reminder about brevity
+  systemPrompt += `\n\n---\n**REMEMBER: Keep responses to 1-2 sentences MAX. This is Telegram, not an essay.**`;
+
   // Build messages array with conversation context
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -1056,7 +1059,7 @@ async function processChannelResponse(
   if (conversationContext) {
     messages.push({
       role: 'user',
-      content: `Here's the recent conversation:\n\n${conversationContext}\n\nRespond to the conversation naturally. If someone asked you a question or mentioned you, address them directly.`,
+      content: `Here's the recent conversation:\n\n${conversationContext}\n\nRespond naturally in 1-2 sentences. Be brief!`,
     });
   } else {
     messages.push({

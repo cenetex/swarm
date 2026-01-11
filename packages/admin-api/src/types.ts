@@ -37,6 +37,7 @@ export const SecretType = z.enum([
   'discord_bot_token',
   'discord_client_id',
   'discord_client_secret',
+  'discord_webhook_url',
   'openrouter_api_key',
   'anthropic_api_key',
   'replicate_api_key',
