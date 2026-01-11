@@ -232,28 +232,42 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
             name: string;
             context_length: number;
             pricing?: { prompt: string; completion: string };
+            architecture?: { modality?: string };
           }>;
         };
 
         let models = data.data || [];
 
+        // Filter to text-capable models (exclude image-only models)
+        models = models.filter(m => {
+          const modality = m.architecture?.modality || '';
+          return modality.includes('text');
+        });
+
         if (family) {
           const f = family.toLowerCase();
-          models = models.filter(m => m.id.toLowerCase().includes(f));
+          models = models.filter(m => m.id.toLowerCase().startsWith(f + '/') || m.id.toLowerCase().includes('/' + f));
         }
 
-        return models
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .slice(0, 50)
-          .map(m => ({
-            id: m.id,
-            name: m.name,
-            contextLength: m.context_length,
-            pricing: m.pricing ? {
-              prompt: parseFloat(m.pricing.prompt),
-              completion: parseFloat(m.pricing.completion),
-            } : undefined,
-          }));
+        // Sort by provider, then by name
+        models.sort((a, b) => {
+          const providerA = a.id.split('/')[0] || '';
+          const providerB = b.id.split('/')[0] || '';
+          if (providerA !== providerB) return providerA.localeCompare(providerB);
+          return a.name.localeCompare(b.name);
+        });
+
+        // Return all models (UI will handle display)
+        return models.map(m => ({
+          id: m.id,
+          name: m.name,
+          provider: m.id.split('/')[0] || 'other',
+          contextLength: m.context_length,
+          pricing: m.pricing ? {
+            prompt: parseFloat(m.pricing.prompt),
+            completion: parseFloat(m.pricing.completion),
+          } : undefined,
+        }));
       },
 
       getConfig: async (agentId) => {

@@ -370,9 +370,10 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
 
   const args = toolCall.arguments as {
-    models: Array<{ id: string; name: string }>;
+    models: Array<{ id: string; name: string; provider?: string; contextLength?: number; pricing?: { prompt: number; completion: number } }>;
     currentModel?: string;
     instructions?: string;
   };
@@ -380,10 +381,14 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
   const models = args.models || [];
   const currentModel = args.currentModel || '';
 
-  // Initialize with current model
+  // Initialize with current model and expand its provider
   useEffect(() => {
     if (currentModel && !selectedModel) {
       setSelectedModel(currentModel);
+      const provider = currentModel.split('/')[0];
+      if (provider) {
+        setExpandedProviders(new Set([provider]));
+      }
     }
   }, [currentModel]);
 
@@ -393,13 +398,43 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
     m.id.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Group models by provider
+  // Group models by provider with counts
   const groupedModels = filteredModels.reduce((acc, model) => {
-    const provider = model.id.split('/')[0] || 'other';
+    const provider = model.provider || model.id.split('/')[0] || 'other';
     if (!acc[provider]) acc[provider] = [];
     acc[provider].push(model);
     return acc;
   }, {} as Record<string, typeof models>);
+
+  // Sort providers: prioritize popular ones, then alphabetically
+  const priorityProviders = ['anthropic', 'openai', 'google', 'meta-llama', 'mistralai', 'cohere', 'deepseek'];
+  const sortedProviders = Object.keys(groupedModels).sort((a, b) => {
+    const aIdx = priorityProviders.indexOf(a);
+    const bIdx = priorityProviders.indexOf(b);
+    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+    if (aIdx !== -1) return -1;
+    if (bIdx !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  const toggleProvider = (provider: string) => {
+    setExpandedProviders(prev => {
+      const next = new Set(prev);
+      if (next.has(provider)) {
+        next.delete(provider);
+      } else {
+        next.add(provider);
+      }
+      return next;
+    });
+  };
+
+  // Expand all when searching
+  useEffect(() => {
+    if (searchQuery) {
+      setExpandedProviders(new Set(Object.keys(groupedModels)));
+    }
+  }, [searchQuery, Object.keys(groupedModels).join(',')]);
 
   const handleSubmit = async () => {
     if (!selectedModel || isSubmitting) return;
@@ -457,38 +492,75 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search models..."
+          placeholder="Search models (e.g., claude, gpt-4, llama)..."
           className="w-full pl-10 pr-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
           disabled={disabled || isSubmitting}
         />
       </div>
 
-      {/* Model list */}
-      <div className="max-h-64 overflow-y-auto space-y-2">
-        {Object.entries(groupedModels).map(([provider, providerModels]) => (
-          <div key={provider}>
-            <div className="text-xs text-[var(--color-text-tertiary)] uppercase tracking-wider px-2 py-1 sticky top-0 bg-[var(--color-bg-secondary)]">
-              {provider}
+      {/* Provider count summary */}
+      <div className="text-xs text-[var(--color-text-muted)]">
+        {filteredModels.length} models from {sortedProviders.length} providers
+      </div>
+
+      {/* Model list with collapsible providers */}
+      <div className="max-h-72 overflow-y-auto space-y-1">
+        {sortedProviders.map((provider) => {
+          const providerModels = groupedModels[provider];
+          const isExpanded = expandedProviders.has(provider);
+          const hasSelectedModel = providerModels.some(m => m.id === selectedModel);
+          
+          return (
+            <div key={provider} className="border border-[var(--color-border)] rounded-lg overflow-hidden">
+              {/* Provider header - clickable to expand/collapse */}
+              <button
+                onClick={() => toggleProvider(provider)}
+                className={`w-full flex items-center justify-between px-3 py-2 text-left transition-colors ${
+                  hasSelectedModel 
+                    ? 'bg-brand-600/20 text-brand-400' 
+                    : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)]'
+                }`}
+              >
+                <span className="font-medium text-sm capitalize">{provider.replace(/-/g, ' ')}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs opacity-70">{providerModels.length} models</span>
+                  <svg 
+                    className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </button>
+              
+              {/* Models list - shown when expanded */}
+              {isExpanded && (
+                <div className="border-t border-[var(--color-border)] bg-[var(--color-bg)] p-1 space-y-1">
+                  {providerModels.map((model) => (
+                    <button
+                      key={model.id}
+                      onClick={() => setSelectedModel(model.id)}
+                      disabled={disabled || isSubmitting}
+                      className={`w-full text-left px-3 py-2 rounded transition-colors text-sm ${
+                        selectedModel === model.id
+                          ? 'bg-brand-600 text-white'
+                          : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                      } ${disabled || isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium truncate">{model.name}</span>
+                        {model.contextLength && (
+                          <span className="text-xs opacity-60 flex-shrink-0">{Math.round(model.contextLength / 1000)}k ctx</span>
+                        )}
+                      </div>
+                      <div className="text-xs opacity-60 truncate">{model.id}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="space-y-1">
-              {providerModels.map((model) => (
-                <button
-                  key={model.id}
-                  onClick={() => setSelectedModel(model.id)}
-                  disabled={disabled || isSubmitting}
-                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors text-sm ${
-                    selectedModel === model.id
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)]'
-                  } ${disabled || isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <div className="font-medium truncate">{model.name}</div>
-                  <div className="text-xs opacity-70 truncate">{model.id}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {filteredModels.length === 0 && (
           <div className="text-center text-[var(--color-text-tertiary)] py-4">
             No models found matching "{searchQuery}"
