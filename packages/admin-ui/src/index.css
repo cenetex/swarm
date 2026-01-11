@@ -8,6 +8,8 @@ html, body {
   overflow: hidden;
   overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
+  /* Prevent zoom on iOS */
+  touch-action: manipulation;
 }
 
 html {
@@ -25,13 +27,22 @@ body {
   /* Prevent text selection and callouts on mobile */
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  /* Safe area insets for notched devices */
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* Remove body padding - apply safe areas to specific elements instead */
 }
 
 #root {
   height: 100%;
   overflow: hidden;
+  /* Apply safe area to root container */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Prevent iOS double-tap zoom */
+* {
+  touch-action: manipulation;
 }
 
 /* Allow text selection in chat messages */
@@ -96,4 +107,30 @@ body {
 .prose pre code {
   background-color: transparent;
   padding: 0;
+}
+
+/* ============================================
+   Mobile-specific fixes for iOS
+   ============================================ */
+
+/* Prevent pinch-to-zoom on iOS */
+@supports (-webkit-touch-callout: none) {
+  body {
+    /* iOS-specific: prevent gesture-based zoom */
+    -webkit-text-size-adjust: 100%;
+  }
+}
+
+/* Ensure inputs don't trigger zoom (iOS zooms on inputs < 16px) */
+input, textarea, select {
+  font-size: 16px !important;
+}
+
+/* Fix for iOS keyboard pushing content */
+@supports (-webkit-touch-callout: none) {
+  .chat-input-container {
+    /* Ensure input stays at bottom when keyboard opens */
+    position: sticky;
+    bottom: 0;
+  }
 }

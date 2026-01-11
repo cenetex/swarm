@@ -111,7 +111,9 @@ export class AgentConstruct extends Construct {
     });
 
     this.mediaQueue = new sqs.Queue(this, 'MediaQueue', {
-      queueName: `${config.id}-media`,
+      queueName: `${config.id}-media.fifo`,
+      fifo: true,
+      contentBasedDeduplication: true,
       visibilityTimeout: cdk.Duration.minutes(5),
       deadLetterQueue: {
         queue: dlq,

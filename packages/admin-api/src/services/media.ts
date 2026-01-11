@@ -934,12 +934,15 @@ export async function queueMediaJob(job: {
 
   const jobId = uuid();
 
+  const messageGroupId = job.conversationId || job.agentId;
   await sqsClient.send(new SendMessageCommand({
     QueueUrl: MEDIA_QUEUE_URL,
     MessageBody: JSON.stringify({
       jobId,
       ...job,
     }),
+    MessageGroupId: messageGroupId,
+    MessageDeduplicationId: `media_${jobId}`,
   }));
 
   return jobId;

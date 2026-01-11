@@ -134,6 +134,8 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
               action,
               response,
             }),
+            MessageGroupId: response.conversationId,
+            MessageDeduplicationId: `media_${jobId}`,
           }));
         }
 

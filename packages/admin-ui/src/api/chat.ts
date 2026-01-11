@@ -210,13 +210,14 @@ export interface JobStatus {
 /**
  * Get the status of a specific job
  */
-export async function getJobStatus(jobId: string): Promise<JobStatus> {
+export async function getJobStatus(jobId: string, signal?: AbortSignal): Promise<JobStatus> {
   const response = await fetch(`${API_BASE}/jobs/${encodeURIComponent(jobId)}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
     },
     credentials: 'include',
+    signal,
   });
 
   if (!response.ok) {
@@ -256,13 +257,34 @@ export async function pollJobCompletion(
   options: {
     maxAttempts?: number;
     intervalMs?: number;
+    maxIntervalMs?: number;
+    backoffFactor?: number;
     onProgress?: (status: JobStatus) => void;
+    signal?: AbortSignal;
   } = {}
 ): Promise<JobStatus> {
-  const { maxAttempts = 120, intervalMs = 2000, onProgress } = options;
+  const {
+    maxAttempts = 120,
+    intervalMs = 2000,
+    maxIntervalMs = 12000,
+    backoffFactor = 1.5,
+    onProgress,
+    signal,
+  } = options;
+  let currentInterval = intervalMs;
+
+  const createAbortError = () => {
+    const err = new Error('Polling cancelled');
+    (err as Error & { name: string }).name = 'AbortError';
+    return err;
+  };
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const status = await getJobStatus(jobId);
+    if (signal?.aborted) {
+      throw createAbortError();
+    }
+
+    const status = await getJobStatus(jobId, signal);
 
     if (onProgress) {
       onProgress(status);
@@ -277,7 +299,16 @@ export async function pollJobCompletion(
     }
 
     // Wait before next poll
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
+    await new Promise<void>((resolve, reject) => {
+      const timeoutId = setTimeout(resolve, currentInterval);
+      if (!signal) return;
+      const onAbort = () => {
+        clearTimeout(timeoutId);
+        reject(createAbortError());
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    currentInterval = Math.min(Math.floor(currentInterval * backoffFactor), maxIntervalMs);
   }
 
   throw new Error('Job timed out');

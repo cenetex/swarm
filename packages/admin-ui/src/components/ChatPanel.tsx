@@ -9,7 +9,7 @@ import { ChatInput } from './ChatInput';
 import { AgentAvatar } from './AgentSidebar';
 
 // Track active polling jobs to avoid duplicate polling
-const activePollers = new Set<string>();
+const activePollers = new Map<string, { controller: AbortController; agentId: string }>();
 
 interface ChatPanelProps {
   onMenuClick?: () => void;
@@ -27,6 +27,20 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Cancel pollers when switching agents or unmounting
+  useEffect(() => {
+    const currentAgentId = activeAgent?.id;
+    return () => {
+      if (!currentAgentId) return;
+      for (const [jobId, poller] of activePollers) {
+        if (poller.agentId === currentAgentId) {
+          poller.controller.abort();
+          activePollers.delete(jobId);
+        }
+      }
+    };
+  }, [activeAgent?.id]);
 
   const handleSendMessage = useCallback(
     async (content: string) => {
@@ -114,17 +128,25 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
           for (const pendingJob of pendingJobsList) {
             const jobId = pendingJob.jobId;
             if (!activePollers.has(jobId)) {
-              activePollers.add(jobId);
               const messageId = loadingMessage.id;
               const agentIdForPolling = activeAgent.id;
+              const controller = new AbortController();
+              activePollers.set(jobId, { controller, agentId: agentIdForPolling });
 
               // Poll in background - don't await
               pollJobCompletion(jobId, {
-                intervalMs: 3000,
+                intervalMs: 2000,
+                maxIntervalMs: 12000,
+                signal: controller.signal,
                 onProgress: (status: JobStatus) => {
                   const currentMsgs = useAgentStore.getState().chats[agentIdForPolling] || [];
                   const msg = currentMsgs.find(m => m.id === messageId);
-                  if (!msg) return;
+                  if (!msg) {
+                    const poller = activePollers.get(jobId);
+                    poller?.controller.abort();
+                    activePollers.delete(jobId);
+                    return;
+                  }
 
                   const mediaUrl = status.resultUrl || status.url;
                   const jobPurpose = msg.pendingJobs?.find(j => j.jobId === jobId)?.purpose;
@@ -199,6 +221,10 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
                   }
                 },
               }).catch((err) => {
+                if (err instanceof Error && err.name === 'AbortError') {
+                  activePollers.delete(jobId);
+                  return;
+                }
                 console.error('Job polling failed:', err);
                 // Update job to failed state on error
                 const currentMsgs = useAgentStore.getState().chats[agentIdForPolling] || [];
@@ -443,7 +469,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
       </div>
 
       {/* Input */}
-      <div className="border-t border-dark-700 bg-dark-900/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
+      <div className="chat-input-container border-t border-dark-700 bg-dark-900/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
         <div className="max-w-3xl mx-auto">
           <ChatInput onSend={handleSendMessage} disabled={isLoading} />
         </div>
