@@ -202,6 +202,8 @@ export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
     s3Key: string;
     publicUrl: string;
     category?: string;
+    purpose?: string;
+    description?: string;
     instructions?: string;
   };
 
@@ -239,6 +241,8 @@ export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
         s3Key: args.s3Key,
         publicUrl: args.publicUrl,
         category: args.category,
+        purpose: args.purpose,
+        description: args.description,
         filename: file.name,
       });
 
@@ -298,7 +302,7 @@ export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
         </div>
         <div className="flex-1">
           <h4 className="font-medium text-[var(--color-text)]">
-            Upload {args.category ? `${args.category} ` : ''}Image
+            Upload {args.purpose === 'character_reference' ? 'Character Reference' : args.category ? `${args.category} ` : ''}Image
           </h4>
           {args.instructions && (
             <p className="text-sm text-[var(--color-text-secondary)] mt-1">{args.instructions}</p>
