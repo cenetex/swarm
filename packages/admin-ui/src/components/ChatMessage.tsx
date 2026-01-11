@@ -225,6 +225,24 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   
   // Filter tool results that should be shown (not images - those are rendered separately)
   const visibleToolResults = toolResults.filter(r => r.type !== 'image' && r.type !== 'gallery');
+  
+  // Filter out media generation tools for interactive display
+  const mediaToolNames = ['generate_image', 'generate_video', 'generate_sticker', 'get_my_gallery'];
+  const interactiveToolCalls = message.toolCalls?.filter(tc => !mediaToolNames.includes(tc.name)) ?? [];
+  
+  // Don't render empty bubbles - check if there's any visible content
+  const hasVisibleContent = 
+    message.isLoading ||
+    cleanedContent ||
+    visibleToolResults.length > 0 ||
+    images.length > 0 ||
+    interactiveToolCalls.length > 0 ||
+    activeJobs.length > 0 ||
+    failedJobs.length > 0;
+  
+  if (!hasVisibleContent) {
+    return null;
+  }
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3 lg:mb-4`}>
@@ -313,26 +331,18 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
             )}
             
             {/* Render tool prompts inline - only for tools that need user input */}
-            {message.toolCalls && message.toolCalls.length > 0 && (() => {
-              // Filter out media generation tools - those are displayed as images, not prompts
-              const mediaToolNames = ['generate_image', 'generate_video', 'generate_sticker', 'get_my_gallery'];
-              const interactiveToolCalls = message.toolCalls.filter(tc => !mediaToolNames.includes(tc.name));
-              
-              if (interactiveToolCalls.length === 0) return null;
-              
-              return (
-                <div className={`space-y-3 ${message.content || images.length > 0 ? 'mt-3' : ''}`}>
-                  {interactiveToolCalls.map((toolCall) => (
-                    <ToolPrompt
-                      key={toolCall.id}
-                      toolCall={toolCall}
-                      onSubmit={onToolSubmit || (() => {})}
-                      disabled={!onToolSubmit || toolCall.status !== 'pending'}
-                    />
-                  ))}
-                </div>
-              );
-            })()}
+            {interactiveToolCalls.length > 0 && (
+              <div className={`space-y-3 ${message.content || images.length > 0 ? 'mt-3' : ''}`}>
+                {interactiveToolCalls.map((toolCall) => (
+                  <ToolPrompt
+                    key={toolCall.id}
+                    toolCall={toolCall}
+                    onSubmit={onToolSubmit || (() => {})}
+                    disabled={!onToolSubmit || toolCall.status !== 'pending'}
+                  />
+                ))}
+              </div>
+            )}
 
             {/* Render pending job indicators */}
             {activeJobs.length > 0 && (
