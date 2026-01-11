@@ -86,7 +86,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
             jobId: j.jobId,
             type: (j.type || 'image') as 'image' | 'video' | 'sticker',
             status: 'pending' as const,
-            prompt: undefined,
+            prompt: j.prompt,
           }));
 
           updateMessage(activeAgent.id, loadingMessage.id, {

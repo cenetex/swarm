@@ -79,9 +79,13 @@ function processMessageContent(content: string): {
   // Match arrays that contain objects
   const jsonArrayPattern = /\n?\s*\[\s*(?:\{[\s\S]*?\}\s*,?\s*)+\]\s*\n?/g;
   const emptyArrayPattern = /\n?\s*\[\s*\]\s*\n?/g;
+  const emptyArrayLinePattern = /^\s*[^:\n]{1,60}:\s*\[\s*\]\s*$/gm;
+  const emptyArrayFencePattern = /```(?:json)?\s*\[\s*\]\s*```/g;
   
   // Remove empty arrays (e.g., "no pending jobs")
   cleanedContent = cleanedContent.replace(emptyArrayPattern, '');
+  cleanedContent = cleanedContent.replace(emptyArrayLinePattern, '');
+  cleanedContent = cleanedContent.replace(emptyArrayFencePattern, '');
   
   // Process non-empty arrays
   const arrayMatches = cleanedContent.match(jsonArrayPattern) || [];
@@ -239,6 +243,17 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
           </div>
         ) : (
           <>
+            {activeJobs.length > 0 && (
+              <div className="mb-2 rounded-lg border border-primary-500/20 bg-primary-500/10 px-3 py-2 text-sm text-primary-100">
+                <div className="flex items-center gap-2">
+                  <div className="animate-spin w-4 h-4 border-2 border-primary-300 border-t-transparent rounded-full" />
+                  <span>
+                    Generating {activeJobs.length} {activeJobs.length === 1 ? activeJobs[0].type : 'items'}...
+                  </span>
+                </div>
+              </div>
+            )}
+
             {cleanedContent && (
               <div className="prose prose-invert prose-sm max-w-none">
                 <ReactMarkdown>{cleanedContent}</ReactMarkdown>
