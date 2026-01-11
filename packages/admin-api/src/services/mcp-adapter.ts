@@ -330,30 +330,70 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
       storeSecret: async (agentId, secretType, name, value, description) => {
         await secrets.storeSecret(agentId, secretType as SecretType, name, value, session, description);
 
-        // Special handling for Telegram bot tokens
+        // Special handling for Telegram bot tokens - register webhook automatically
         if (secretType === 'telegram_bot_token') {
-          const validation = await telegram.validateTelegramToken(value);
-          if (validation.valid) {
-            await agents.updateAgent(agentId, {
-              platforms: {
-                telegram: {
-                  enabled: true,
-                  botUsername: validation.botInfo?.username
-                }
-              }
-            }, session);
+          console.log(JSON.stringify({
+            level: 'INFO',
+            subsystem: 'telegram',
+            event: 'telegram_token_stored',
+            agentId,
+            message: 'Telegram bot token stored, validating and registering webhook...',
+          }));
 
-            const webhookResult = await telegram.registerTelegramWebhook(value, agentId);
-            if (webhookResult.success && webhookResult.secretToken) {
-              await secrets.storeSecret(
-                agentId,
-                'telegram_webhook_secret',
-                'default',
-                webhookResult.secretToken,
-                session,
-                `Telegram webhook secret for ${agentId}`
-              );
+          const validation = await telegram.validateTelegramToken(value);
+          if (!validation.valid) {
+            console.log(JSON.stringify({
+              level: 'WARN',
+              subsystem: 'telegram',
+              event: 'telegram_token_invalid',
+              agentId,
+              error: validation.error,
+            }));
+            return;
+          }
+
+          console.log(JSON.stringify({
+            level: 'INFO',
+            subsystem: 'telegram',
+            event: 'telegram_token_valid',
+            agentId,
+            botUsername: validation.botInfo?.username,
+          }));
+
+          await agents.updateAgent(agentId, {
+            platforms: {
+              telegram: {
+                enabled: true,
+                botUsername: validation.botInfo?.username
+              }
             }
+          }, session);
+
+          const webhookResult = await telegram.registerTelegramWebhook(value, agentId);
+          if (webhookResult.success && webhookResult.secretToken) {
+            await secrets.storeSecret(
+              agentId,
+              'telegram_webhook_secret',
+              'default',
+              webhookResult.secretToken,
+              session,
+              `Telegram webhook secret for ${agentId}`
+            );
+            console.log(JSON.stringify({
+              level: 'INFO',
+              subsystem: 'telegram',
+              event: 'telegram_webhook_registered',
+              agentId,
+              webhookUrl: webhookResult.webhookUrl,
+            }));
+          } else {
+            console.log(JSON.stringify({
+              level: 'ERROR',
+              subsystem: 'telegram',
+              event: 'telegram_webhook_failed',
+              agentId,
+              error: webhookResult.message,
+            }));
           }
         }
       },
