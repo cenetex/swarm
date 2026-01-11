@@ -46,6 +46,7 @@ export interface PendingJob {
   type: 'image' | 'video' | 'sticker';
   status: 'pending' | 'processing' | 'completed' | 'failed';
   prompt?: string;
+  purpose?: string;
   error?: string;
   resultUrl?: string;
 }

@@ -237,7 +237,7 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
         QueueUrl: getResponseQueueUrl(),
         MessageBody: JSON.stringify(response),
         MessageGroupId: envelope.conversationId,
-        MessageDeduplicationId: `resp_${envelope.messageId}_${Date.now()}`,
+        MessageDeduplicationId: `resp_${envelope.conversationId}_${envelope.messageId}`,
       }));
 
       // =========================================================

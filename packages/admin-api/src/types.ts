@@ -433,3 +433,106 @@ export interface ResponseDecision {
   delay: number;           // Delay in ms before responding (0 = immediate)
   priority: 'high' | 'normal' | 'low';
 }
+
+// ========================================
+// Multi-Agent D&D Coordination Types
+// ========================================
+
+/**
+ * D&D ability scores with computed modifiers
+ * Generated deterministically from agent createdAt timestamp
+ */
+export interface AgentStats {
+  STR: number; // Strength - reserved for future use
+  DEX: number; // Dexterity - Initiative modifier
+  CON: number; // Constitution - reserved for future use
+  INT: number; // Intelligence - reserved for future use
+  WIS: number; // Wisdom - Interest check (reflective contexts)
+  CHA: number; // Charisma - Interest check (social contexts)
+  modifiers: {
+    STR: number;
+    DEX: number;
+    CON: number;
+    INT: number;
+    WIS: number;
+    CHA: number;
+  };
+}
+
+/**
+ * Shared channel registry record
+ * Tracks all agents present in a Telegram channel/group
+ * Key: pk=SHARED_CHANNEL#{chatId}, sk=AGENT#{agentId}
+ */
+export interface SharedChannelRecord {
+  pk: string;              // SHARED_CHANNEL#{chatId}
+  sk: string;              // AGENT#{agentId}
+  chatId: number;
+  agentId: string;
+  botUsername: string;     // For mention detection
+  joinedAt: number;        // First seen in channel
+  lastSeenAt: number;      // Last activity
+  stats: AgentStats;       // D&D ability scores
+  ttl: number;             // Auto-cleanup after inactivity
+}
+
+/**
+ * Initiative round phases
+ */
+export type InitiativePhase = 'interest' | 'rolling' | 'responding' | 'reacting' | 'complete';
+
+/**
+ * Initiative round coordination record
+ * Coordinates which agent responds to a message in multi-agent channels
+ * Key: pk=INITIATIVE#{chatId}#{messageId}, sk=META or ROLL#{agentId}
+ */
+export interface InitiativeRoundRecord {
+  pk: string;              // INITIATIVE#{chatId}#{messageId}
+  sk: string;              // META or ROLL#{agentId}
+  chatId: number;
+  messageId: number;       // Triggering message ID
+
+  // For META record (sk: META)
+  phase?: InitiativePhase;
+  startedAt?: number;
+  expiresAt?: number;      // Round times out after this
+  winnerId?: string;       // Agent who won initiative
+  winnerRoll?: number;     // Winning roll total
+  winnerRespondedAt?: number;
+
+  // For ROLL records (sk: ROLL#{agentId})
+  agentId?: string;
+  interested?: boolean;    // Interest check result
+  interestRoll?: number;   // CHA/WIS check roll
+  initiativeRoll?: number; // d20 roll
+  initiativeModifier?: number; // DEX modifier
+  totalInitiative?: number; // roll + modifier
+  rolledAt?: number;
+
+  ttl: number;             // Auto-cleanup (5 min)
+}
+
+/**
+ * Interest check result
+ */
+export interface InterestCheckResult {
+  interested: boolean;
+  roll: number;
+  modifier: number;
+  dc: number;
+  reason: 'direct_engagement' | 'context_interest' | 'not_interested';
+}
+
+/**
+ * Initiative coordination result
+ */
+export type InitiativeAction = 'respond' | 'react' | 'skip';
+
+export interface InitiativeResult {
+  action: InitiativeAction;
+  reason: string;
+  priority?: 'primary' | 'secondary';
+  winnerId?: string;
+  winnerRoll?: number;
+  myRoll?: number;
+}

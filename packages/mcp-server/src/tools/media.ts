@@ -103,11 +103,6 @@ export const createMediaTools = (
         aspectRatio: input.aspectRatio,
       });
 
-      const consumed = await credits.consumeCredit(context.agentId, 'generate_image');
-      if (!consumed) {
-        console.warn(`Failed to consume credit for generate_image, agentId: ${context.agentId}`);
-      }
-
       // If synchronous result with URL
       if ('url' in result && result.url) {
         return {
@@ -169,11 +164,6 @@ export const createMediaTools = (
         replyToMessageId: context.replyToMessageId,
       });
 
-      const consumed = await credits.consumeCredit(context.agentId, 'generate_video');
-      if (!consumed) {
-        console.warn(`Failed to consume credit for generate_video, agentId: ${context.agentId}`);
-      }
-
       return {
         success: true,
         data: { jobId: result.jobId, status: 'started', message: 'Video generation started. I will send it when ready!' },
@@ -210,11 +200,6 @@ export const createMediaTools = (
         sourceImageId: input.sourceImageId,
         agentId: context.agentId,
       });
-
-      const consumed = await credits.consumeCredit(context.agentId, 'generate_sticker');
-      if (!consumed) {
-        console.warn(`Failed to consume credit for generate_sticker, agentId: ${context.agentId}`);
-      }
 
       return {
         success: true,

@@ -28,6 +28,11 @@ import { timingSafeEqual } from 'crypto';
 import * as channelState from '../services/channel-state.js';
 import * as credits from '../services/credits.js';
 import { getPlatformPromptSection } from '../services/platform-prompts.js';
+import * as sharedChannel from '../services/shared-channel.js';
+import * as initiative from '../services/initiative.js';
+import * as reactions from '../services/reactions.js';
+import { generateAgentStats } from '../services/agent-stats.js';
+import type { AgentRecord, SharedChannelRecord } from '../types.js';
 import {
   ToolRegistry,
   createToolClient,
@@ -231,6 +236,17 @@ async function getAgentConfig(agentId: string): Promise<AgentConfig | null> {
   }
 
   return config;
+}
+
+/**
+ * Get full agent record including createdAt (for D&D stats generation)
+ */
+async function getAgentRecord(agentId: string): Promise<AgentRecord | null> {
+  const result = await dynamoClient.send(new GetCommand({
+    TableName: ADMIN_TABLE,
+    Key: { pk: `AGENT#${agentId}`, sk: 'CONFIG' },
+  }));
+  return result.Item as AgentRecord | null;
 }
 
 async function getTelegramToken(agentId: string): Promise<string | null> {
@@ -1140,6 +1156,150 @@ async function processChannelResponse(
   return responseMessageId;
 }
 
+// === MULTI-AGENT COORDINATION ===
+
+/**
+ * Handle message in a multi-agent channel using D&D-style initiative.
+ *
+ * Flow:
+ * 1. Register agent in shared channel (if not already)
+ * 2. Check interest (CHA/WIS roll)
+ * 3. Roll initiative (1d20 + DEX)
+ * 4. Winner responds, others can react
+ */
+async function handleMultiAgentMessage(
+  agentId: string,
+  agent: AgentConfig,
+  agentRecord: AgentRecord,
+  message: NonNullable<TelegramUpdate['message']>,
+  token: string,
+  _channelAgents: SharedChannelRecord[]
+): Promise<{ responded: boolean; reason: string }> {
+  const chatId = message.chat.id;
+  const chatType = message.chat.type;
+  const messageId = message.message_id;
+  const text = message.text || message.caption || '';
+  const botUsername = agent.platforms.telegram?.botUsername || '';
+
+  // Ensure this agent is registered in the shared channel
+  await sharedChannel.ensureAgentInChannel(
+    chatId,
+    agentId,
+    botUsername,
+    agentRecord.createdAt
+  );
+
+  // Get or generate agent stats
+  const stats = generateAgentStats(agentRecord.createdAt, agentId);
+
+  // Get channel state for activity metrics
+  const state = await channelState.getOrCreateChannelState(
+    agentId,
+    chatId,
+    chatType,
+    message.chat.title
+  );
+
+  // Calculate recent response age
+  const recentResponseAge = state.lastResponseAt
+    ? Date.now() - state.lastResponseAt
+    : null;
+
+  // Create buffered message for interest check
+  const bufferedMessage = {
+    messageId,
+    userId: message.from?.id || 0,
+    userName: message.from?.first_name || 'User',
+    username: message.from?.username,
+    text,
+    timestamp: Date.now(),
+    replyToMessageId: message.reply_to_message?.message_id,
+    replyToUserId: message.reply_to_message?.from?.id,
+    isMention: false, // Already handled direct mentions before this
+    isReplyToBot: false,
+  };
+
+  // Add message to buffer (needed for context)
+  await channelState.addMessageToBuffer(
+    agentId,
+    chatId,
+    chatType,
+    message.chat.title,
+    bufferedMessage
+  );
+
+  // Coordinate initiative
+  const initiativeResult = await initiative.coordinateInitiative(
+    chatId,
+    messageId,
+    agentId,
+    stats,
+    bufferedMessage,
+    recentResponseAge,
+    state.bufferSize
+  );
+
+  console.log('[Telegram] Multi-agent initiative result:', {
+    agentId,
+    chatId,
+    messageId,
+    action: initiativeResult.action,
+    reason: initiativeResult.reason,
+    myRoll: initiativeResult.myRoll,
+    winnerId: initiativeResult.winnerId,
+    winnerRoll: initiativeResult.winnerRoll,
+  });
+
+  switch (initiativeResult.action) {
+    case 'respond': {
+      // This agent won initiative - send full response
+      const updatedState = await channelState.getChannelState(agentId, chatId);
+      if (!updatedState) {
+        return { responded: false, reason: 'state_not_found' };
+      }
+
+      const responseMessageId = await processChannelResponse(
+        agentId,
+        agent,
+        updatedState,
+        token,
+        'initiative_winner'
+      );
+
+      if (responseMessageId) {
+        await channelState.markResponseSent(agentId, chatId, responseMessageId);
+        // Mark that winner responded (for reaction coordination)
+        await initiative.markWinnerResponded(chatId, messageId);
+        return { responded: true, reason: 'initiative_winner' };
+      }
+      return { responded: false, reason: 'response_failed' };
+    }
+
+    case 'react': {
+      // This agent lost initiative - maybe send a reaction
+      await reactions.handleReaction(
+        token,
+        chatId,
+        messageId,
+        text
+      );
+      return { responded: false, reason: 'reacted' };
+    }
+
+    case 'skip':
+    default:
+      return { responded: false, reason: initiativeResult.reason };
+  }
+}
+
+/**
+ * Check if a specific bot is mentioned in the message text.
+ */
+function isBotMentioned(text: string, botUsername: string | undefined): boolean {
+  if (!botUsername) return false;
+  return new RegExp(`@${botUsername}\\b`, 'i').test(text);
+}
+
 // === SECURITY ===
 function verifySecretToken(provided: string | undefined, expected: string): boolean {
   if (!provided) return false;
@@ -1244,9 +1404,101 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     try {
-      // Use channel-aware processing (Kyro-style architecture)
-      // This buffers messages and responds to the channel, not individual messages
-      const result = await processChannelMessage(agentId, agent, message, token);
+      const chatId = message.chat.id;
+      const text = message.text || message.caption || '';
+      const botUsername = agent.platforms.telegram?.botUsername;
+
+      // === MULTI-AGENT ROUTING ===
+      // 1. If this bot is @mentioned directly -> respond immediately (bypass initiative)
+      // 2. If channel has multiple agents -> use initiative system
+      // 3. Otherwise -> use existing single-agent behavior
+
+      // Check if THIS bot is mentioned directly
+      const isDirectMention = isBotMentioned(text, botUsername);
+
+      if (isDirectMention) {
+        // DIRECT MENTION: This bot responds, but still respect cooldown
+        // Check if we're in cooldown to prevent spam
+        const existingState = await channelState.getChannelState(agentId, chatId);
+
+        if (existingState?.state === 'COOLDOWN') {
+          const cooldownRemaining = channelState.CHANNEL_CONFIG.COOLDOWN_DURATION_MS -
+            (Date.now() - existingState.stateChangedAt);
+
+          if (cooldownRemaining > 0) {
+            console.log(`[Telegram] Direct mention for @${botUsername} ignored - in cooldown (${Math.round(cooldownRemaining / 1000)}s remaining)`);
+            await markMessageProcessed(agentId, update.update_id);
+            return ok();
+          }
+        }
+
+        console.log(`[Telegram] Direct mention detected for @${botUsername}, responding`);
+        const result = await processChannelMessage(agentId, agent, message, token);
+
+        await markMessageProcessed(agentId, update.update_id);
+
+        console.log(JSON.stringify({
+          level: 'INFO',
+          subsystem: 'telegram',
+          event: 'direct_mention_processed',
+          agentId,
+          chatId,
+          fromUser: userId,
+          chatType: message.chat.type,
+          updateId: update.update_id,
+          responded: result.responded,
+          reason: result.reason,
+          requestId,
+        }));
+
+        return ok();
+      }
+
+      // Check if this is a multi-agent channel (for group chats only)
+      const isGroupChat = message.chat.type === 'group' || message.chat.type === 'supergroup';
+      let channelAgents: SharedChannelRecord[] = [];
+
+      if (isGroupChat) {
+        // Get agent record for createdAt timestamp
+        const agentRecord = await getAgentRecord(agentId);
+        if (agentRecord) {
+          // Register this agent in the shared channel (updates presence)
+          await sharedChannel.ensureAgentInChannel(
+            chatId,
+            agentId,
+            botUsername || '',
+            agentRecord.createdAt
+          );
+
+          // Get all agents in this channel
+          channelAgents = await sharedChannel.getChannelAgents(chatId);
+        }
+      }
+
+      let result: { responded: boolean; reason: string };
+
+      if (isGroupChat && channelAgents.length > 1) {
+        // MULTI-AGENT MODE: Use D&D-style initiative
+        console.log(`[Telegram] Multi-agent channel detected (${channelAgents.length} agents), using initiative system`);
+
+        const agentRecord = await getAgentRecord(agentId);
+        if (!agentRecord) {
+          console.warn(`[Telegram] Agent record not found: ${agentId}`);
+          return ok();
+        }
+
+        result = await handleMultiAgentMessage(
+          agentId,
+          agent,
+          agentRecord,
+          message,
+          token,
+          channelAgents
+        );
+      } else {
+        // SINGLE-AGENT MODE: Use existing Kyro-style channel processing
+        result = await processChannelMessage(agentId, agent, message, token);
+      }
 
       await markMessageProcessed(agentId, update.update_id);
 
@@ -1255,12 +1507,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         subsystem: 'telegram',
         event: 'channel_processed',
         agentId,
-        chatId: message.chat.id,
+        chatId,
         fromUser: userId,
         chatType: message.chat.type,
         updateId: update.update_id,
         responded: result.responded,
         reason: result.reason,
+        multiAgent: channelAgents.length > 1,
+        agentCount: channelAgents.length,
         requestId,
       }));
 

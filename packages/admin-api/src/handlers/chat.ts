@@ -474,7 +474,7 @@ async function processChat(
   response: string;
   history: AdminChatMessage[];
   media?: MediaItem[];
-  pendingJobs?: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string }>;
+  pendingJobs?: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string; purpose?: string }>;
   agentUpdates?: { profileImageUrl?: string };
   pendingToolCall?: {
     id: string;
@@ -522,7 +522,7 @@ async function processChat(
   let response: string | undefined;
   let pendingToolCall: { id: string; name: string; arguments: Record<string, unknown> } | undefined;
   const allMedia: MediaItem[] = [];
-  const pendingJobs: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string }> = [];
+  const pendingJobs: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string; purpose?: string }> = [];
   const agentUpdates: { profileImageUrl?: string } = {};
   const failedTools = new Set<string>(); // Track failed tools to prevent infinite retry loops
   let iterations = 0;
@@ -684,6 +684,7 @@ async function processChat(
               jobId: parsed._pendingJob.jobId,
               type: parsed._pendingJob.type || 'image',
               prompt: parsed._pendingJob.prompt,
+              purpose: parsed._pendingJob.purpose,
             });
           }
         } catch {

@@ -295,6 +295,14 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
       },
 
       setProfileImage: async (agentId, source) => {
+        if (source.type === 'generate') {
+          if (!source.prompt) {
+            throw new Error('Prompt is required to generate a profile image.');
+          }
+          const job = await media.generateProfileImageAsync(agentId, source.prompt);
+          return { jobId: job.jobId, status: job.status };
+        }
+
         const result = await media.setProfileImage(agentId, source);
         await agents.updateAgent(agentId, {
           profileImage: { url: result.url, s3Key: result.s3Key, updatedAt: Date.now() }

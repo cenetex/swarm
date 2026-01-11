@@ -17,6 +17,7 @@ interface PendingJob {
   jobId: string;
   type: 'image' | 'video' | 'sticker';
   prompt?: string;
+  purpose?: string;
 }
 
 interface ChatResponse {

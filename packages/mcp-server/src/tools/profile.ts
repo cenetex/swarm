@@ -28,7 +28,7 @@ export interface ProfileServices {
     | { type: 'url'; url: string }
     | { type: 'gallery'; imageId: string }
     | { type: 'generate'; prompt: string }
-  ) => Promise<{ url: string }>;
+  ) => Promise<{ url: string } | { jobId: string; status: string }>;
   
   getProfileUploadUrl: (agentId: string) => Promise<{
     uploadUrl: string;
@@ -120,6 +120,23 @@ export const createProfileTools = (services: ProfileServices) => [
       }
 
       const result = await services.setProfileImage(context.agentId, sourceArg);
+
+      if ('jobId' in result) {
+        return {
+          success: true,
+          data: {
+            jobId: result.jobId,
+            status: result.status,
+            message: 'Profile image generation started!',
+          },
+          pendingJob: {
+            jobId: result.jobId,
+            type: 'image',
+            prompt: input.prompt || 'profile image',
+            purpose: 'profile_image',
+          },
+        };
+      }
 
       return {
         success: true,

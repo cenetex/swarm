@@ -45,10 +45,92 @@ export const CHANNEL_CONFIG = {
   // Response timing
   MIN_RESPONSE_DELAY_MS: 500,     // Minimum delay to seem natural
   MAX_RESPONSE_DELAY_MS: 3000,    // Maximum random delay
-  
+
   // Private chat rate limiting
   PRIVATE_COOLDOWN_MS: 5000,      // 5 second minimum between responses in private chats
 };
+
+// === MULTI-AGENT DYNAMIC COOLDOWN CONFIGURATION ===
+export const MULTI_AGENT_CONFIG = {
+  // Initiative system
+  INITIATIVE_ROUND_TIMEOUT_MS: 5000,    // Max time for all agents to roll
+  REACTION_WINDOW_MS: 10000,             // Time window for reactions after winner responds
+
+  // Interest check
+  BASE_INTEREST_DC: 10,                  // Default difficulty class
+  MENTION_INTEREST_BONUS: 5,             // DC reduction for topic mentions
+  RECENT_RESPONSE_PENALTY: 5,            // DC increase if agent responded recently
+
+  // Reaction limits
+  MAX_REACTIONS_PER_MESSAGE: 3,          // Max emoji reactions per agent per message
+  REACTION_COOLDOWN_MS: 5000,            // Min time between reactions
+
+  // Dynamic cooldown settings
+  BASE_COOLDOWN_MS: 30000,               // Base cooldown (30 seconds)
+  MIN_COOLDOWN_MS: 10000,                // Minimum cooldown during high activity (10 seconds)
+  MAX_COOLDOWN_MS: 120000,               // Maximum cooldown during quiet periods (2 minutes)
+  ACTIVITY_WINDOW_MS: 300000,            // 5 minute window for activity measurement
+  MESSAGES_FOR_SHORT_COOLDOWN: 20,       // Messages in window for minimum cooldown
+  QUIET_THRESHOLD_MS: 60000,             // 60 seconds of silence = "quiet"
+};
+
+/**
+ * Calculate dynamic cooldown based on channel activity.
+ *
+ * - High activity (20+ msgs in 5 min): 10s cooldown
+ * - Normal activity: 30s base cooldown
+ * - Quiet (60s+ silence): up to 120s cooldown
+ *
+ * @param state - Current channel state
+ * @returns Cooldown duration in milliseconds
+ */
+export function calculateDynamicCooldown(state: ChannelStateRecord): number {
+  const now = Date.now();
+  const windowStart = now - MULTI_AGENT_CONFIG.ACTIVITY_WINDOW_MS;
+
+  // Count human messages in activity window
+  const recentHumanMessages = state.messageBuffer.filter(
+    m => m.timestamp > windowStart
+  ).length;
+
+  // Time since last activity
+  const timeSinceLastActivity = now - state.lastActivityAt;
+
+  // High activity: shorter cooldown
+  if (recentHumanMessages >= MULTI_AGENT_CONFIG.MESSAGES_FOR_SHORT_COOLDOWN) {
+    return MULTI_AGENT_CONFIG.MIN_COOLDOWN_MS;
+  }
+
+  // Quiet channel: longer cooldown
+  if (timeSinceLastActivity > MULTI_AGENT_CONFIG.QUIET_THRESHOLD_MS) {
+    const quietMultiplier = Math.min(
+      4,
+      1 + (timeSinceLastActivity / MULTI_AGENT_CONFIG.QUIET_THRESHOLD_MS)
+    );
+    return Math.min(
+      MULTI_AGENT_CONFIG.MAX_COOLDOWN_MS,
+      Math.floor(MULTI_AGENT_CONFIG.BASE_COOLDOWN_MS * quietMultiplier)
+    );
+  }
+
+  // Normal activity: scale cooldown inversely with message count
+  const activityRatio = recentHumanMessages / MULTI_AGENT_CONFIG.MESSAGES_FOR_SHORT_COOLDOWN;
+  const cooldown = MULTI_AGENT_CONFIG.BASE_COOLDOWN_MS * (1 - activityRatio * 0.5);
+
+  return Math.max(MULTI_AGENT_CONFIG.MIN_COOLDOWN_MS, Math.floor(cooldown));
+}
+
+/**
+ * Check if dynamic cooldown has expired (for multi-agent channels)
+ */
+export function isDynamicCooldownExpired(state: ChannelStateRecord): boolean {
+  if (state.state !== 'COOLDOWN') return true;
+
+  const dynamicCooldown = calculateDynamicCooldown(state);
+  const elapsed = Date.now() - state.stateChangedAt;
+
+  return elapsed > dynamicCooldown;
+}
 
 // === CHANNEL STATE MANAGEMENT ===
 

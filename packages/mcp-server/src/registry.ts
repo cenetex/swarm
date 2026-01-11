@@ -57,6 +57,7 @@ export interface ToolResult<T = unknown> {
     jobId: string;
     type: 'image' | 'video' | 'sticker';
     prompt?: string;
+    purpose?: string;
   };
   /** UI action (for admin-ui) */
   uiAction?: {

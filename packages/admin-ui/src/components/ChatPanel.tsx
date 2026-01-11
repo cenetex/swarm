@@ -3,7 +3,7 @@
  */
 import { useEffect, useRef, useCallback } from 'react';
 import { useAgentStore, useActiveAgent, useActiveChat } from '../store/agents';
-import { sendChatMessage, saveAgentSecret, pollJobCompletion, type JobStatus } from '../api';
+import { sendChatMessage, saveAgentSecret, pollJobCompletion, updateAgent as updateAgentApi, type JobStatus } from '../api';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { AgentAvatar } from './AgentSidebar';
@@ -92,6 +92,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
             type: (j.type || 'image') as 'image' | 'video' | 'sticker',
             status: 'pending' as const,
             prompt: j.prompt,
+            purpose: j.purpose,
           }));
 
           updateMessage(activeAgent.id, loadingMessage.id, {
@@ -126,6 +127,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
                   if (!msg) return;
 
                   const mediaUrl = status.resultUrl || status.url;
+                  const jobPurpose = msg.pendingJobs?.find(j => j.jobId === jobId)?.purpose;
                   
                   // Update pendingJobs status for this job
                   const updatedPendingJobs = (msg.pendingJobs || []).map(j => 
@@ -161,6 +163,28 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
                       ],
                     });
                     activePollers.delete(jobId);
+
+                    if (jobPurpose === 'profile_image') {
+                      void (async () => {
+                        try {
+                          const updated = await updateAgentApi(agentIdForPolling, {
+                            profileImage: {
+                              url: mediaUrl,
+                              updatedAt: Date.now(),
+                            },
+                          });
+                          updateAgent(agentIdForPolling, {
+                            avatar: updated.profileImage?.url || mediaUrl,
+                          });
+                          addMessage(agentIdForPolling, {
+                            role: 'assistant',
+                            content: '✅ Profile image updated.',
+                          });
+                        } catch (err) {
+                          console.error('Failed to save profile image:', err);
+                        }
+                      })();
+                    }
                   } else if (status.status === 'failed') {
                     // Job failed - update status
                     updateMessage(agentIdForPolling, messageId, {

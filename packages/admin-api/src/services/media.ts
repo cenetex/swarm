@@ -817,6 +817,33 @@ export async function generateSticker(options: GenerateStickerOptions): Promise<
   return galleryItem;
 }
 
+export async function generateProfileImageAsync(
+  agentId: string,
+  prompt: string
+): Promise<MediaJob> {
+  const canUse = await credits.canUseTool(agentId, 'set_profile_image');
+  if (!canUse.allowed) {
+    throw new Error(`Rate limited: ${canUse.reason}`);
+  }
+
+  const profilePrompt = `${prompt}, professional profile picture, centered subject, clean background`;
+  const job = await generateImageAsync({
+    prompt: profilePrompt,
+    agentId,
+    platform: 'profile',
+    resolution: '1K',
+    aspectRatio: '1:1',
+    conversationId: '',
+  });
+
+  const consumed = await credits.consumeCredit(agentId, 'set_profile_image');
+  if (!consumed) {
+    console.warn(`[Credits] Failed to consume credit for set_profile_image: agent=${agentId}`);
+  }
+
+  return job;
+}
+
 /**
  * Set agent profile image from URL or generated image
  */
