@@ -10,6 +10,7 @@ import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js'
 import * as agentService from '../services/agents.js';
 import * as secretsService from '../services/secrets.js';
 import * as logsService from '../services/logs.js';
+import * as telegramService from '../services/telegram.js';
 
 // CORS headers - restricted to configured admin domain
 const allowedOrigin = process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:5173';
@@ -147,6 +148,66 @@ export async function handler(
         session,
         `${key} for agent ${agentId}`
       );
+
+      // Special handling for Telegram bot tokens - register webhook automatically
+      if (key === 'telegram_bot_token') {
+        console.log(JSON.stringify({
+          level: 'INFO',
+          subsystem: 'telegram',
+          event: 'telegram_token_stored_via_api',
+          agentId,
+        }));
+
+        const validation = await telegramService.validateTelegramToken(value);
+        if (validation.valid) {
+          // Update agent config to enable Telegram
+          await agentService.updateAgent(agentId, {
+            platforms: {
+              telegram: {
+                enabled: true,
+                botUsername: validation.botInfo?.username
+              }
+            }
+          }, session);
+
+          // Register webhook with Telegram
+          const webhookResult = await telegramService.registerTelegramWebhook(value, agentId);
+          if (webhookResult.success && webhookResult.secretToken) {
+            await secretsService.storeSecret(
+              agentId,
+              'telegram_webhook_secret',
+              'default',
+              webhookResult.secretToken,
+              session,
+              `Telegram webhook secret for ${agentId}`
+            );
+            console.log(JSON.stringify({
+              level: 'INFO',
+              subsystem: 'telegram',
+              event: 'telegram_webhook_registered',
+              agentId,
+              webhookUrl: webhookResult.webhookUrl,
+              botUsername: validation.botInfo?.username,
+            }));
+          } else {
+            console.log(JSON.stringify({
+              level: 'ERROR',
+              subsystem: 'telegram',
+              event: 'telegram_webhook_failed',
+              agentId,
+              error: webhookResult.message,
+            }));
+          }
+        } else {
+          console.log(JSON.stringify({
+            level: 'WARN',
+            subsystem: 'telegram',
+            event: 'telegram_token_invalid',
+            agentId,
+            error: validation.error,
+          }));
+        }
+      }
 
       return {
         statusCode: 200,
