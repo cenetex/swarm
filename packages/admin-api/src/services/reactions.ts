@@ -3,7 +3,13 @@
  *
  * Handles emoji reactions for agents who lose initiative.
  * Uses Telegram's setMessageReaction API.
+ * 
+ * Uses SQS with DelaySeconds for reliable reaction delivery after Lambda completes.
  */
+import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+
+const sqsClient = new SQSClient({});
+const REACTION_QUEUE_URL = process.env.RESPONSE_QUEUE_URL; // Reuse response queue
 
 // Common reaction emojis that work with Telegram
 const REACTION_EMOJIS = [
@@ -162,33 +168,62 @@ export async function sendTelegramReaction(
 
 /**
  * Handle reaction flow for an agent who lost initiative.
- * Decides whether to react and sends the reaction after a delay.
+ * Decides whether to react and queues the reaction via SQS with delay.
  *
- * Note: This uses fire-and-forget pattern to avoid blocking the Lambda response.
- * The reaction is attempted but not guaranteed (Lambda may freeze after response).
- * For guaranteed delivery, consider using SQS with DelaySeconds.
+ * Uses SQS DelaySeconds for reliable delivery after Lambda response.
+ * Falls back to fire-and-forget if SQS queue is not configured.
  *
  * @param token - Bot token
  * @param chatId - Chat ID
  * @param messageId - Message ID to react to
  * @param messageText - Original message text
+ * @param agentId - Agent ID (for queue message)
  * @param winnerResponse - Winner's response (if available)
  */
-export function handleReaction(
+export async function handleReaction(
   token: string,
   chatId: number,
   messageId: number,
   messageText: string,
+  agentId?: string,
   winnerResponse?: string
-): void {
+): Promise<void> {
   const decision = decideReaction(messageText, winnerResponse);
 
   if (!decision.shouldReact || !decision.emoji) {
     return;
   }
 
-  // Fire-and-forget: spawn delayed reaction without blocking
-  // Lambda may freeze after response, so this is best-effort
+  // Calculate delay in seconds for SQS (max 900 seconds = 15 minutes)
+  const delaySeconds = Math.min(Math.ceil(decision.delay / 1000), 900);
+
+  // Try SQS-based delivery for reliability
+  if (REACTION_QUEUE_URL && agentId) {
+    try {
+      const reactionMessage = {
+        type: 'telegram_reaction',
+        agentId,
+        chatId,
+        messageId,
+        emoji: decision.emoji,
+        // Include token in message for processing (encrypted in transit via SQS)
+        token,
+      };
+
+      await sqsClient.send(new SendMessageCommand({
+        QueueUrl: REACTION_QUEUE_URL,
+        MessageBody: JSON.stringify(reactionMessage),
+        DelaySeconds: delaySeconds,
+      }));
+
+      console.log(`[reactions] Queued reaction ${decision.emoji} for message ${messageId} with ${delaySeconds}s delay`);
+      return;
+    } catch (err) {
+      console.warn('[reactions] SQS queue failed, falling back to fire-and-forget:', err);
+    }
+  }
+
+  // Fallback: Fire-and-forget (best-effort, may not complete if Lambda freezes)
   setTimeout(() => {
     sendTelegramReaction(token, chatId, messageId, decision.emoji!)
       .catch((err) => console.warn('[reactions] Fire-and-forget reaction failed:', err));

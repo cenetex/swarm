@@ -392,6 +392,11 @@ export async function getRoundRolls(
 /**
  * Full initiative coordination flow for an agent.
  * Returns what action the agent should take.
+ * 
+ * Includes structured logging for observability (P2):
+ * - Round ID for correlation
+ * - Interest check results
+ * - Initiative rolls and outcomes
  *
  * @param chatId - Telegram chat ID
  * @param messageId - Triggering message ID
@@ -410,8 +415,24 @@ export async function coordinateInitiative(
   recentResponseAge: number | null,
   channelActivity: number
 ): Promise<InitiativeResult> {
+  // Round ID for correlation in logs
+  const roundId = `${chatId}#${messageId}`;
+  
   // Step 1: Get or create the initiative round
-  await getOrCreateInitiativeRound(chatId, messageId);
+  const round = await getOrCreateInitiativeRound(chatId, messageId);
+  
+  // Log round creation/join
+  console.log(JSON.stringify({
+    level: 'INFO',
+    subsystem: 'initiative',
+    event: 'round_joined',
+    roundId,
+    agentId,
+    chatId,
+    messageId,
+    roundPhase: round.phase,
+    roundStartedAt: round.startedAt,
+  }));
 
   // Step 2: Interest check
   const interest = checkInterest(
@@ -420,6 +441,22 @@ export async function coordinateInitiative(
     recentResponseAge,
     channelActivity
   );
+  
+  // Log interest check result
+  console.log(JSON.stringify({
+    level: 'INFO',
+    subsystem: 'initiative',
+    event: 'interest_check',
+    roundId,
+    agentId,
+    interested: interest.interested,
+    roll: interest.roll,
+    dc: interest.dc,
+    modifier: interest.modifier,
+    reason: interest.reason,
+    channelActivity,
+    recentResponseAge,
+  }));
 
   // Step 3: Record our roll
   const rollResult = await recordAgentRoll(
@@ -431,11 +468,35 @@ export async function coordinateInitiative(
   );
 
   if (!interest.interested || !rollResult) {
+    // Log skip decision
+    console.log(JSON.stringify({
+      level: 'INFO',
+      subsystem: 'initiative',
+      event: 'agent_skipped',
+      roundId,
+      agentId,
+      reason: 'not_interested',
+      interestRoll: interest.roll,
+      interestDC: interest.dc,
+    }));
+    
     return {
       action: 'skip',
       reason: 'not_interested',
     };
   }
+  
+  // Log initiative roll
+  console.log(JSON.stringify({
+    level: 'INFO',
+    subsystem: 'initiative',
+    event: 'initiative_rolled',
+    roundId,
+    agentId,
+    roll: rollResult.roll,
+    total: rollResult.total,
+    dexModifier: stats.modifiers.DEX,
+  }));
 
   // Step 4: Attempt to claim winner
   const claimResult = await attemptWinnerClaim(
@@ -446,6 +507,17 @@ export async function coordinateInitiative(
   );
 
   if (claimResult.isWinner) {
+    // Log winner
+    console.log(JSON.stringify({
+      level: 'INFO',
+      subsystem: 'initiative',
+      event: 'initiative_won',
+      roundId,
+      agentId,
+      myRoll: rollResult.total,
+      action: 'respond',
+    }));
+    
     return {
       action: 'respond',
       reason: 'won_initiative',
@@ -453,6 +525,19 @@ export async function coordinateInitiative(
       myRoll: rollResult.total,
     };
   }
+
+  // Log loss
+  console.log(JSON.stringify({
+    level: 'INFO',
+    subsystem: 'initiative',
+    event: 'initiative_lost',
+    roundId,
+    agentId,
+    myRoll: rollResult.total,
+    winnerId: claimResult.winnerId,
+    winnerRoll: claimResult.winnerRoll,
+    action: 'react',
+  }));
 
   // Not the winner - can react
   return {

@@ -97,9 +97,22 @@ const TelegramMessageSchema = z.object({
 const TelegramUpdateSchema = z.object({
   update_id: z.number(),
   message: TelegramMessageSchema.optional(),
+  edited_message: TelegramMessageSchema.optional(),
+  channel_post: TelegramMessageSchema.optional(),
+  edited_channel_post: TelegramMessageSchema.optional(),
 });
 
 type TelegramUpdate = z.infer<typeof TelegramUpdateSchema>;
+
+/**
+ * Extract the message from a Telegram update.
+ * Handles regular messages, edited messages, channel posts, and edited channel posts.
+ * Priority: channel_post > edited_channel_post > message > edited_message
+ */
+function extractMessage(update: TelegramUpdate): TelegramUpdate['message'] | undefined {
+  // Channel posts have priority over regular messages
+  return update.channel_post || update.edited_channel_post || update.message || update.edited_message;
+}
 
 // Agent config (internal use)
 interface AgentConfig {
@@ -1281,12 +1294,14 @@ async function handleMultiAgentMessage(
     }
 
     case 'react': {
-      // This agent lost initiative - maybe send a reaction (fire-and-forget)
-      reactions.handleReaction(
+      // This agent lost initiative - maybe send a reaction via SQS
+      // Using await since handleReaction now uses SQS for reliable delivery
+      await reactions.handleReaction(
         token,
         chatId,
         messageId,
-        text
+        text,
+        agentId
       );
       return { responded: false, reason: 'reacted' };
     }
@@ -1383,8 +1398,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return ok();
     }
     const update = parseResult.data;
-    const message = update.message;
+    const message = extractMessage(update);
     if (!message) return ok();
+
+    // Check if this is a channel post (for logging)
+    const isChannelPost = Boolean(update.channel_post || update.edited_channel_post);
 
     const hasContent = Boolean(
       message.text ||
@@ -1414,15 +1432,25 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       const botUsername = agent.platforms.telegram?.botUsername;
 
       // === MULTI-AGENT ROUTING ===
-      // 1. If this bot is @mentioned directly -> respond immediately (bypass initiative)
+      // 1. If this bot is @mentioned directly OR replied to -> respond immediately (bypass initiative)
       // 2. If channel has multiple agents -> use initiative system
       // 3. Otherwise -> use existing single-agent behavior
 
       // Check if THIS bot is mentioned directly
       const isDirectMention = isBotMentioned(text, botUsername);
 
-      if (isDirectMention) {
-        // DIRECT MENTION: This bot responds, but still respect cooldown
+      // Check if THIS bot is being replied to (P1 - treat reply-to-bot as direct targeting)
+      const botId = agent.platforms.telegram?.botId;
+      const isReplyToThisBot = !!(
+        (botId && message.reply_to_message?.from?.id === botId) ||
+        (botUsername && message.reply_to_message?.from?.username === botUsername)
+      );
+
+      // Direct engagement: either mention or reply-to-bot (both bypass initiative)
+      const isDirectEngagement = isDirectMention || isReplyToThisBot;
+
+      if (isDirectEngagement) {
+        // DIRECT ENGAGEMENT: This bot responds, but still respect cooldown
         // Check if we're in cooldown to prevent spam
         const existingState = await channelState.getChannelState(agentId, chatId);
 
@@ -1431,13 +1459,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
             (Date.now() - existingState.stateChangedAt);
 
           if (cooldownRemaining > 0) {
-            console.log(`[Telegram] Direct mention for @${botUsername} ignored - in cooldown (${Math.round(cooldownRemaining / 1000)}s remaining)`);
+            const engagementType = isDirectMention ? 'mention' : 'reply';
+            console.log(`[Telegram] Direct ${engagementType} for @${botUsername} ignored - in cooldown (${Math.round(cooldownRemaining / 1000)}s remaining)`);
             await markMessageProcessed(agentId, update.update_id);
             return ok();
           }
         }
 
-        console.log(`[Telegram] Direct mention detected for @${botUsername}, responding`);
+        const engagementType = isDirectMention ? 'mention' : 'reply-to-bot';
+        console.log(`[Telegram] Direct ${engagementType} detected for @${botUsername}, responding (bypassing initiative)`);
         const result = await processChannelMessage(agentId, agent, message, token);
 
         await markMessageProcessed(agentId, update.update_id);
@@ -1445,7 +1475,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         console.log(JSON.stringify({
           level: 'INFO',
           subsystem: 'telegram',
-          event: 'direct_mention_processed',
+          event: 'direct_engagement_processed',
           agentId,
           chatId,
           fromUser: userId,
@@ -1453,18 +1483,23 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           updateId: update.update_id,
           responded: result.responded,
           reason: result.reason,
+          engagementType,
+          isReplyToBot: isReplyToThisBot,
           requestId,
         }));
 
         return ok();
       }
 
-      // Check if this is a multi-agent channel (for group chats only)
-      const isGroupChat = message.chat.type === 'group' || message.chat.type === 'supergroup';
+      // Check if this is a multi-agent chat (for group and channel chats)
+      // Channels now support multi-agent coordination just like groups
+      const isMultiAgentEligible = message.chat.type === 'group' || 
+                                   message.chat.type === 'supergroup' || 
+                                   message.chat.type === 'channel';
       let channelAgents: SharedChannelRecord[] = [];
       let agentRecord: AgentRecord | null = null;
 
-      if (isGroupChat) {
+      if (isMultiAgentEligible) {
         // Get agent record for createdAt timestamp (fetched once, reused below)
         agentRecord = await getAgentRecord(agentId);
         if (agentRecord) {
@@ -1483,9 +1518,9 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
       let result: { responded: boolean; reason: string };
 
-      if (isGroupChat && channelAgents.length > 1) {
+      if (isMultiAgentEligible && channelAgents.length > 1) {
         // MULTI-AGENT MODE: Use D&D-style initiative
-        console.log(`[Telegram] Multi-agent channel detected (${channelAgents.length} agents), using initiative system`);
+        console.log(`[Telegram] Multi-agent ${message.chat.type} detected (${channelAgents.length} agents), using initiative system`);
 
         if (!agentRecord) {
           console.warn(`[Telegram] Agent record not found: ${agentId}`);
@@ -1520,6 +1555,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         reason: result.reason,
         multiAgent: channelAgents.length > 1,
         agentCount: channelAgents.length,
+        isChannelPost,
         requestId,
       }));
 
