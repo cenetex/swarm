@@ -88,11 +88,22 @@ export interface AgentRecord {
   description?: string;
   persona?: string;
 
-  // Profile image for character consistency
+  // Profile image for character consistency (avatar/headshot)
   profileImage?: {
     url: string;           // S3/CDN URL
     s3Key: string;         // S3 key for reference
     generatedPrompt?: string; // If AI-generated, the prompt used
+    updatedAt: number;
+  };
+
+  // Character reference for full-body consistency
+  // Used as default reference for image/video generation when available
+  // Falls back to profileImage if not set
+  characterReference?: {
+    url: string;           // S3/CDN URL
+    s3Key: string;         // S3 key for reference
+    generatedPrompt?: string; // If AI-generated, the prompt used
+    description?: string;  // Description of the character sheet (e.g., "turnaround, blue furry creature")
     updatedAt: number;
   };
 

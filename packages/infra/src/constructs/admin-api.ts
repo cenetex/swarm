@@ -40,6 +40,12 @@ export interface AdminApiConstructProps {
   openRouterApiKeyArn?: string;
 
   /**
+   * Global Replicate API key (stored in Secrets Manager)
+   * Used for image/video generation with a trial limit per agent
+   */
+  replicateApiKeyArn?: string;
+
+  /**
    * Environment (development/production)
    */
   environment?: string;
@@ -163,12 +169,17 @@ export class AdminApiConstruct extends Construct {
     // External provider ID lookups use a mapping item (no extra GSI).
 
     // Secret for OpenRouter API key
-    const llmApiKey = props.openRouterApiKeyArn 
+    const llmApiKey = props.openRouterApiKeyArn
       ? secretsmanager.Secret.fromSecretCompleteArn(this, 'LLMApiKey', props.openRouterApiKeyArn)
       : new secretsmanager.Secret(this, 'LLMApiKey', {
           secretName: 'swarm/admin/llm-api-key',
           description: 'API key for the admin chatbot LLM',
         });
+
+    // Secret for Replicate API key (optional - enables free trial image generation)
+    const replicateApiKey = props.replicateApiKeyArn
+      ? secretsmanager.Secret.fromSecretCompleteArn(this, 'ReplicateApiKey', props.replicateApiKeyArn)
+      : undefined;
 
     // Build webhook URL for Replicate callbacks
     const replicateWebhookUrl = props.apiDomain
@@ -204,6 +215,7 @@ export class AdminApiConstruct extends Construct {
         MEDIA_BUCKET: mediaBucket?.bucketName || '',
         CDN_URL: cdnUrl || '',
         REPLICATE_WEBHOOK_URL: replicateWebhookUrl,
+        REPLICATE_API_KEY_SECRET_ARN: replicateApiKey?.secretArn || '',
         RESPONSE_QUEUE_URL: responseQueue?.queueUrl || '',
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         // Internal testing (non-production only)
@@ -229,6 +241,9 @@ export class AdminApiConstruct extends Construct {
     this.table.grantReadWriteData(this.chatHandler);
     this.encryptionKey.grantEncryptDecrypt(this.chatHandler);
     llmApiKey.grantRead(this.chatHandler);
+    if (replicateApiKey) {
+      replicateApiKey.grantRead(this.chatHandler);
+    }
 
     // Grant permissions to state table for agent config sync
     if (stateTable) {
@@ -503,6 +518,7 @@ export class AdminApiConstruct extends Construct {
         // Media generation config - REQUIRED for image/video generation
         MEDIA_BUCKET: mediaBucket?.bucketName || '',
         CDN_URL: cdnUrl || '',
+        REPLICATE_API_KEY_SECRET_ARN: replicateApiKey?.secretArn || '',
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],
@@ -526,6 +542,9 @@ export class AdminApiConstruct extends Construct {
       stateTable.grantReadData(telegramWebhookHandler);
     }
     llmApiKey.grantRead(telegramWebhookHandler);
+    if (replicateApiKey) {
+      replicateApiKey.grantRead(telegramWebhookHandler);
+    }
 
     // Grant KMS decrypt for agent secrets
     this.encryptionKey.grantDecrypt(telegramWebhookHandler);

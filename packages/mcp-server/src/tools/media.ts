@@ -40,6 +40,8 @@ export interface MediaServices {
 
   getProfileImageUrl: (agentId: string) => Promise<string | undefined>;
   getReferenceImageUrl: (agentId: string, category: 'profile' | 'character') => Promise<string | undefined>;
+  getCharacterReferenceUrl?: (agentId: string) => Promise<string | undefined>;
+  getBestReferenceImageUrl?: (agentId: string) => Promise<string | undefined>;
 }
 
 export interface CreditServices {
@@ -72,7 +74,7 @@ export const createMediaTools = (
       useProfileAsReference: z.boolean()
         .optional()
         .default(true)
-        .describe('Use profile image as reference for consistency'),
+        .describe('Use character reference (or profile image) for consistency'),
     }),
     execute: async (input, context): Promise<ToolResult> => {
       // Check credits
@@ -81,16 +83,24 @@ export const createMediaTools = (
         return { success: false, error: `Rate limited: ${canUse.reason}` };
       }
 
-      // Get reference images
+      // Get reference images - prefer character reference for full-body consistency
       const referenceImageUrls: string[] = [];
       if (input.useProfileAsReference) {
-        const profileUrl = await media.getProfileImageUrl(context.agentId);
-        if (profileUrl) {
-          referenceImageUrls.push(profileUrl);
+        // Use getBestReferenceImageUrl if available (prefers character reference over profile)
+        if (media.getBestReferenceImageUrl) {
+          const bestRef = await media.getBestReferenceImageUrl(context.agentId);
+          if (bestRef) referenceImageUrls.push(bestRef);
         } else {
-          // Try character reference
-          const charUrl = await media.getReferenceImageUrl(context.agentId, 'character');
-          if (charUrl) referenceImageUrls.push(charUrl);
+          // Fallback: try character reference first, then profile image
+          const charRef = media.getCharacterReferenceUrl 
+            ? await media.getCharacterReferenceUrl(context.agentId)
+            : await media.getReferenceImageUrl(context.agentId, 'character');
+          if (charRef) {
+            referenceImageUrls.push(charRef);
+          } else {
+            const profileUrl = await media.getProfileImageUrl(context.agentId);
+            if (profileUrl) referenceImageUrls.push(profileUrl);
+          }
         }
       }
 
@@ -139,7 +149,7 @@ export const createMediaTools = (
       useProfileAsReference: z.boolean()
         .optional()
         .default(true)
-        .describe('Use profile image as starting frame reference'),
+        .describe('Use character reference (or profile image) as starting frame'),
     }),
     execute: async (input, context): Promise<ToolResult> => {
       const canUse = await credits.canUseTool(context.agentId, 'generate_video');
@@ -147,11 +157,22 @@ export const createMediaTools = (
         return { success: false, error: `Rate limited: ${canUse.reason}` };
       }
 
+      // Get best reference image - prefer character reference for full-body consistency
       let referenceImageUrl: string | undefined;
       if (input.useProfileAsReference) {
-        referenceImageUrl = await media.getProfileImageUrl(context.agentId);
-        if (!referenceImageUrl) {
-          referenceImageUrl = await media.getReferenceImageUrl(context.agentId, 'character');
+        if (media.getBestReferenceImageUrl) {
+          referenceImageUrl = await media.getBestReferenceImageUrl(context.agentId);
+        } else {
+          // Fallback: try character reference first, then profile image
+          if (media.getCharacterReferenceUrl) {
+            referenceImageUrl = await media.getCharacterReferenceUrl(context.agentId);
+          }
+          if (!referenceImageUrl) {
+            referenceImageUrl = await media.getReferenceImageUrl(context.agentId, 'character');
+          }
+          if (!referenceImageUrl) {
+            referenceImageUrl = await media.getProfileImageUrl(context.agentId);
+          }
         }
       }
 

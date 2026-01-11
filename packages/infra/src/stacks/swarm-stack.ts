@@ -65,6 +65,11 @@ export interface SwarmStackProps extends cdk.StackProps {
   openRouterApiKeyArn?: string;
 
   /**
+   * Replicate API key secret ARN (for image/video generation trial)
+   */
+  replicateApiKeyArn?: string;
+
+  /**
    * Custom domain for gallery CDN (e.g., 'gallery.rati.chat' or 'gallery-staging.rati.chat')
    * Images will be served from https://{galleryDomain}/agents/{agentId}/images/{imageId}.png
    */
@@ -85,17 +90,18 @@ export class SwarmStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: SwarmStackProps) {
     super(scope, id, props);
 
-    const { 
-      environment, 
-      agentsPath, 
-      handlersPath, 
-      enableCdn = true, 
+    const {
+      environment,
+      agentsPath,
+      handlersPath,
+      enableCdn = true,
       agentIds,
       adminDomain,
       adminCertificateArn,
       cloudflareTeamDomain,
       adminEmails,
       openRouterApiKeyArn,
+      replicateApiKeyArn,
       galleryDomain,
       galleryCertificateArn,
     } = props;
@@ -117,6 +123,7 @@ export class SwarmStack extends cdk.Stack {
         cloudflareTeamDomain,
         adminEmails,
         openRouterApiKeyArn,
+        replicateApiKeyArn,
         environment,
         adminDomain,
         apiDomain,

@@ -16,6 +16,7 @@ export interface ProfileServices {
     description?: string;
     persona?: string;
     profileImage?: { url: string };
+    characterReference?: { url: string; description?: string };
   }>;
   
   updateProfile: (agentId: string, updates: {
@@ -37,6 +38,22 @@ export interface ProfileServices {
   }>;
   
   saveProfileImage: (agentId: string, s3Key: string, publicUrl: string) => Promise<void>;
+
+  // Character reference (full-body) for image/video generation
+  setCharacterReference?: (agentId: string, source: 
+    | { type: 'url'; url: string }
+    | { type: 'gallery'; imageId: string }
+    | { type: 'generate'; prompt: string },
+    description?: string
+  ) => Promise<{ url: string } | { jobId: string; status: string }>;
+
+  getCharacterReferenceUploadUrl?: (agentId: string) => Promise<{
+    uploadUrl: string;
+    s3Key: string;
+    publicUrl: string;
+  }>;
+
+  saveCharacterReference?: (agentId: string, s3Key: string, publicUrl: string, description?: string) => Promise<void>;
 }
 
 // ============================================================================
@@ -185,6 +202,144 @@ export const createProfileTools = (services: ProfileServices) => [
         data: {
           message: 'Profile image saved!',
           url: input.publicUrl,
+        },
+      };
+    },
+  }),
+
+  // Character Reference Tools - for full-body consistency in image/video generation
+  defineTool({
+    name: 'set_character_reference',
+    description: 'Set my character reference image (full-body turnaround/model sheet) for consistent image and video generation. This is used instead of my profile image when generating full-body images.',
+    category: 'profile',
+    inputSchema: z.object({
+      source: z.enum(['url', 'gallery', 'generate', 'upload'])
+        .describe('Where to get the character reference from'),
+      url: z.string().optional().describe('URL of the image (when source=url)'),
+      imageId: z.string().optional().describe('Gallery image ID (when source=gallery)'),
+      prompt: z.string().optional().describe('Description for generating a character sheet (when source=generate)'),
+      description: z.string().optional().describe('Description of the character reference (e.g., "blue furry creature, front/side/back view")'),
+    }),
+    execute: async (input, context): Promise<ToolResult> => {
+      if (!services.setCharacterReference) {
+        return { success: false, error: 'Character reference not supported in this environment' };
+      }
+
+      // Upload source returns a widget for the UI
+      if (input.source === 'upload') {
+        if (!services.getCharacterReferenceUploadUrl) {
+          return { success: false, error: 'Character reference upload not supported' };
+        }
+        const uploadInfo = await services.getCharacterReferenceUploadUrl(context.agentId);
+        return {
+          success: true,
+          data: { ...uploadInfo, description: input.description },
+          uiAction: {
+            type: 'upload_widget',
+            payload: { ...uploadInfo, purpose: 'character_reference' },
+          },
+        };
+      }
+
+      // Validate source-specific params
+      if (input.source === 'url' && !input.url) {
+        return { success: false, error: 'URL required when source=url' };
+      }
+      if (input.source === 'gallery' && !input.imageId) {
+        return { success: false, error: 'imageId required when source=gallery' };
+      }
+      if (input.source === 'generate' && !input.prompt) {
+        return { success: false, error: 'prompt required when source=generate' };
+      }
+
+      let sourceArg: Parameters<NonNullable<typeof services.setCharacterReference>>[1];
+      if (input.source === 'url') {
+        sourceArg = { type: 'url', url: input.url! };
+      } else if (input.source === 'gallery') {
+        sourceArg = { type: 'gallery', imageId: input.imageId! };
+      } else {
+        sourceArg = { type: 'generate', prompt: input.prompt! };
+      }
+
+      const result = await services.setCharacterReference(context.agentId, sourceArg, input.description);
+
+      if ('jobId' in result) {
+        return {
+          success: true,
+          data: {
+            jobId: result.jobId,
+            status: result.status,
+            message: 'Character reference generation started! This will create a character sheet for consistent image generation.',
+          },
+          pendingJob: {
+            jobId: result.jobId,
+            type: 'image',
+            prompt: input.prompt || 'character reference',
+            purpose: 'character_reference',
+          },
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          message: 'Character reference set! This will be used for full-body image and video generation.',
+          url: result.url,
+          description: input.description,
+        },
+      };
+    },
+  }),
+
+  defineTool({
+    name: 'get_character_reference_upload_url',
+    description: 'Get a URL to upload a character reference image (turnaround/model sheet).',
+    category: 'profile',
+    platforms: ['admin-ui'],
+    inputSchema: z.object({
+      description: z.string().optional().describe('Description of the character reference'),
+    }),
+    execute: async (input, context): Promise<ToolResult> => {
+      if (!services.getCharacterReferenceUploadUrl) {
+        return { success: false, error: 'Character reference upload not supported' };
+      }
+
+      const uploadInfo = await services.getCharacterReferenceUploadUrl(context.agentId);
+
+      return {
+        success: true,
+        data: { ...uploadInfo, description: input.description },
+        uiAction: {
+          type: 'upload_widget',
+          payload: { ...uploadInfo, purpose: 'character_reference', description: input.description },
+        },
+      };
+    },
+  }),
+
+  defineTool({
+    name: 'save_uploaded_character_reference',
+    description: 'Save an already-uploaded image as my character reference.',
+    category: 'profile',
+    platforms: ['admin-ui'],
+    inputSchema: z.object({
+      s3Key: z.string().describe('The S3 key of the uploaded image'),
+      publicUrl: z.string().describe('The public URL of the uploaded image'),
+      description: z.string().optional().describe('Description of the character reference'),
+    }),
+    execute: async (input, context): Promise<ToolResult> => {
+      if (!services.saveCharacterReference) {
+        return { success: false, error: 'Character reference not supported' };
+      }
+
+      await services.saveCharacterReference(context.agentId, input.s3Key, input.publicUrl, input.description);
+
+      return {
+        success: true,
+        data: {
+          message: 'Character reference saved! This will be used for full-body image and video generation.',
+          url: input.publicUrl,
+          description: input.description,
         },
       };
     },

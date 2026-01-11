@@ -100,6 +100,15 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
         const found = images.find(img => img.category === category);
         return found?.url;
       },
+
+      getCharacterReferenceUrl: async (agentId) => {
+        const agent = await agents.getAgent(agentId);
+        return agent?.characterReference?.url;
+      },
+
+      getBestReferenceImageUrl: async (agentId) => {
+        return media.getBestReferenceImageUrl(agentId);
+      },
     },
 
     // =========================================================================
@@ -313,6 +322,10 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
           description: agent.description,
           persona: agent.persona,
           profileImage: agent.profileImage ? { url: agent.profileImage.url } : undefined,
+          characterReference: agent.characterReference ? { 
+            url: agent.characterReference.url, 
+            description: agent.characterReference.description 
+          } : undefined,
         };
       },
 
@@ -343,6 +356,29 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
       saveProfileImage: async (agentId, s3Key, publicUrl) => {
         await agents.updateAgent(agentId, {
           profileImage: { url: publicUrl, s3Key, updatedAt: Date.now() }
+        }, session);
+      },
+
+      // Character reference (full-body) for image/video generation
+      setCharacterReference: async (agentId, source, description) => {
+        // For now, we handle url and gallery directly; generate would need async job
+        if (source.type === 'generate') {
+          // Character sheet generation - uses wider aspect ratio
+          const result = await media.setCharacterReference(agentId, source, description);
+          return { url: result.url };
+        }
+
+        const result = await media.setCharacterReference(agentId, source, description);
+        return { url: result.url };
+      },
+
+      getCharacterReferenceUploadUrl: async (agentId) => {
+        return media.getCharacterReferenceUploadUrl(agentId);
+      },
+
+      saveCharacterReference: async (agentId, s3Key, publicUrl, description) => {
+        await agents.updateAgent(agentId, {
+          characterReference: { url: publicUrl, s3Key, description, updatedAt: Date.now() }
         }, session);
       },
     },

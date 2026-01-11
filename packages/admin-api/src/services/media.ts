@@ -5,8 +5,9 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, QueryCommand, DeleteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, QueryCommand, DeleteCommand, UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { v4 as uuid } from 'uuid';
 import * as mediaJobs from './media-jobs.js';
 import * as gallery from './gallery.js';
@@ -78,7 +79,60 @@ async function makeUrlsAccessible(urls: string[]): Promise<string[]> {
 // Provider configuration
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
 const IMAGE_TRIAL_LIMIT = 3;
-const SYSTEM_REPLICATE_API_KEY = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_API_KEY;
+const REPLICATE_API_KEY_SECRET_ARN = process.env.REPLICATE_API_KEY_SECRET_ARN;
+
+// Cached system Replicate API key (fetched from Secrets Manager on first use)
+let cachedSystemReplicateKey: string | null = null;
+
+/**
+ * Get the system Replicate API key.
+ * Checks in order: env var, Secrets Manager ARN, GLOBAL secret.
+ */
+async function getSystemReplicateKey(): Promise<string | null> {
+  // Check env var first (fastest)
+  const envKey = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_API_KEY;
+  if (envKey) {
+    return envKey;
+  }
+
+  // Check cached key from Secrets Manager
+  if (cachedSystemReplicateKey) {
+    return cachedSystemReplicateKey;
+  }
+
+  // Try to fetch from Secrets Manager ARN
+  if (REPLICATE_API_KEY_SECRET_ARN) {
+    try {
+      const secretsClient = new SecretsManagerClient({});
+      const response = await secretsClient.send(new GetSecretValueCommand({
+        SecretId: REPLICATE_API_KEY_SECRET_ARN,
+      }));
+      if (response.SecretString) {
+        // Try to parse as JSON (may be { api_key: '...' })
+        try {
+          const parsed = JSON.parse(response.SecretString);
+          cachedSystemReplicateKey = parsed.api_key || parsed.apiKey || response.SecretString;
+        } catch {
+          cachedSystemReplicateKey = response.SecretString;
+        }
+        console.log('[Media] Loaded system Replicate API key from Secrets Manager');
+        return cachedSystemReplicateKey;
+      }
+    } catch (err) {
+      console.warn('[Media] Failed to get Replicate key from Secrets Manager:', err);
+    }
+  }
+
+  // Fall back to GLOBAL secret in DynamoDB
+  const globalKey = await _getSecretValueInternal('GLOBAL', 'replicate_api_key', 'default');
+  if (globalKey) {
+    cachedSystemReplicateKey = globalKey;
+    console.log('[Media] Loaded system Replicate API key from GLOBAL secret');
+    return cachedSystemReplicateKey;
+  }
+
+  return null;
+}
 
 async function consumeImageGenerationTrial(agentId: string): Promise<{ allowed: boolean; remaining: number }> {
   const now = Date.now();
@@ -110,16 +164,19 @@ async function consumeImageGenerationTrial(agentId: string): Promise<{ allowed: 
 }
 
 async function getImageGenerationApiKey(agentId: string): Promise<string> {
+  // Check for agent-specific key first
   const agentKey = await _getSecretValueInternal(agentId, 'replicate_api_key', 'default');
   if (agentKey) {
     return agentKey;
   }
 
-  const systemKey = SYSTEM_REPLICATE_API_KEY || await _getSecretValueInternal('GLOBAL', 'replicate_api_key', 'default');
+  // Check for system key (env var, Secrets Manager, or GLOBAL secret)
+  const systemKey = await getSystemReplicateKey();
   if (!systemKey) {
     throw new Error('No system Replicate API key configured. Please set up a global or agent Replicate API key.');
   }
 
+  // System key exists - check trial limit
   const trial = await consumeImageGenerationTrial(agentId);
   if (!trial.allowed) {
     throw new Error('Free image generation trial exhausted. Please set a Replicate API key to continue.');
@@ -955,6 +1012,150 @@ export async function setProfileImage(
   const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
 
   return { url: publicUrl, s3Key };
+}
+
+/**
+ * Generate a signed URL for uploading a character reference image
+ */
+export async function getCharacterReferenceUploadUrl(agentId: string): Promise<{
+  uploadUrl: string;
+  s3Key: string;
+  publicUrl: string;
+}> {
+  const s3Key = `agents/${agentId}/character-reference/${uuid()}.png`;
+
+  const command = new PutObjectCommand({
+    Bucket: MEDIA_BUCKET,
+    Key: s3Key,
+    ContentType: 'image/png',
+  });
+
+  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+
+  return { uploadUrl, s3Key, publicUrl };
+}
+
+/**
+ * Set agent character reference from URL, upload, or gallery
+ * Character reference is used for full-body consistency in image/video generation
+ */
+export async function setCharacterReference(
+  agentId: string,
+  source: { type: 'url'; url: string } | { type: 'generate'; prompt: string } | { type: 'gallery'; imageId: string },
+  description?: string
+): Promise<{ url: string; s3Key: string }> {
+  // Check credits 
+  const canUse = await credits.canUseTool(agentId, 'set_profile_image');
+  if (!canUse.allowed) {
+    throw new Error(`Rate limited: ${canUse.reason}`);
+  }
+
+  let imageBuffer: Buffer;
+  let generatedPrompt: string | undefined;
+
+  if (source.type === 'url') {
+    // Download from URL
+    const response = await fetch(source.url);
+    if (!response.ok) {
+      throw new Error(`Failed to download image: ${response.statusText}`);
+    }
+    imageBuffer = Buffer.from(await response.arrayBuffer());
+  } else if (source.type === 'generate') {
+    generatedPrompt = source.prompt;
+    // Generate a character sheet image
+    const image = await generateImage({
+      prompt: `${source.prompt}, character reference sheet, turnaround view, full body, multiple angles, white background, concept art`,
+      agentId,
+      platform: 'character-reference',
+      resolution: '2K',
+      aspectRatio: '16:9', // Wide for turnaround
+    });
+
+    // Download from our storage
+    const response = await fetch(image.url);
+    imageBuffer = Buffer.from(await response.arrayBuffer());
+  } else if (source.type === 'gallery') {
+    // Use existing gallery image
+    const item = await gallery.getGalleryItem(agentId, source.imageId);
+    if (!item) {
+      throw new Error(`Image not found in gallery: ${source.imageId}`);
+    }
+
+    const response = await fetch(item.url);
+    imageBuffer = Buffer.from(await response.arrayBuffer());
+  } else {
+    throw new Error('Invalid source type');
+  }
+
+  // Store as character reference
+  const s3Key = `agents/${agentId}/character-reference/${uuid()}.png`;
+
+  await s3Client.send(new PutObjectCommand({
+    Bucket: MEDIA_BUCKET,
+    Key: s3Key,
+    Body: imageBuffer,
+    ContentType: 'image/png',
+  }));
+
+  // Consume credit
+  await credits.consumeCredit(agentId, 'set_profile_image');
+
+  const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+
+  // Update agent record with character reference
+  await dynamoClient.send(new UpdateCommand({
+    TableName: ADMIN_TABLE,
+    Key: {
+      pk: `AGENT#${agentId}`,
+      sk: 'CONFIG',
+    },
+    UpdateExpression: 'SET characterReference = :ref',
+    ExpressionAttributeValues: {
+      ':ref': {
+        url: publicUrl,
+        s3Key,
+        generatedPrompt,
+        description,
+        updatedAt: Date.now(),
+      },
+    },
+  }));
+
+  return { url: publicUrl, s3Key };
+}
+
+/**
+ * Get the best reference image for generation
+ * Prefers character reference (full body) over profile image (headshot)
+ */
+export async function getBestReferenceImageUrl(agentId: string): Promise<string | undefined> {
+  // First check for character reference in agent config
+  const agentResult = await dynamoClient.send(new GetCommand({
+    TableName: ADMIN_TABLE,
+    Key: { pk: `AGENT#${agentId}`, sk: 'CONFIG' },
+  }));
+
+  const agent = agentResult.Item;
+  if (!agent) return undefined;
+
+  // Prefer character reference for full-body consistency
+  if (agent.characterReference?.url) {
+    return agent.characterReference.url;
+  }
+
+  // Fall back to profile image
+  if (agent.profileImage?.url) {
+    return agent.profileImage.url;
+  }
+
+  // Fall back to any 'character' category reference image
+  const characterRefs = await listReferenceImages(agentId, 'character');
+  if (characterRefs.length > 0) {
+    return characterRefs[0].url;
+  }
+
+  return undefined;
 }
 
 /**
