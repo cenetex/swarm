@@ -163,3 +163,415 @@ export async function validateTelegramToken(
     return { valid: false, error: String(err) };
   }
 }
+
+// ============================================================================
+// User Profile Photos
+// ============================================================================
+
+export interface TelegramPhotoSize {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
+/**
+ * Get a user's profile photos
+ */
+export async function getUserProfilePhotos(
+  botToken: string,
+  userId: number,
+  options?: { offset?: number; limit?: number }
+): Promise<{
+  ok: boolean;
+  totalCount: number;
+  photos: TelegramPhotoSize[][];
+}> {
+  const url = `https://api.telegram.org/bot${botToken}/getUserProfilePhotos`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      offset: options?.offset || 0,
+      limit: Math.min(options?.limit || 10, 100),
+    }),
+  });
+  
+  const result = await response.json() as {
+    ok: boolean;
+    result?: {
+      total_count: number;
+      photos: TelegramPhotoSize[][];
+    };
+    description?: string;
+  };
+  
+  if (!result.ok || !result.result) {
+    throw new Error(result.description || 'Failed to get profile photos');
+  }
+  
+  return {
+    ok: true,
+    totalCount: result.result.total_count,
+    photos: result.result.photos,
+  };
+}
+
+/**
+ * Get a file download URL from Telegram
+ */
+export async function getFileUrl(
+  botToken: string,
+  fileId: string
+): Promise<string> {
+  const url = `https://api.telegram.org/bot${botToken}/getFile`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_id: fileId }),
+  });
+  
+  const result = await response.json() as {
+    ok: boolean;
+    result?: { file_path: string };
+    description?: string;
+  };
+  
+  if (!result.ok || !result.result?.file_path) {
+    throw new Error(result.description || 'Failed to get file');
+  }
+  
+  return `https://api.telegram.org/file/bot${botToken}/${result.result.file_path}`;
+}
+
+// ============================================================================
+// Bot Profile Management
+// ============================================================================
+
+/**
+ * Get the bot's current name
+ */
+export async function getBotName(
+  botToken: string,
+  languageCode?: string
+): Promise<{ name: string }> {
+  const url = `https://api.telegram.org/bot${botToken}/getMyName`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language_code: languageCode }),
+  });
+  
+  const result = await response.json() as {
+    ok: boolean;
+    result?: { name: string };
+    description?: string;
+  };
+  
+  if (!result.ok || !result.result) {
+    throw new Error(result.description || 'Failed to get bot name');
+  }
+  
+  return { name: result.result.name };
+}
+
+/**
+ * Set the bot's name
+ */
+export async function setBotName(
+  botToken: string,
+  name: string,
+  languageCode?: string
+): Promise<void> {
+  const url = `https://api.telegram.org/bot${botToken}/setMyName`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: name || '',
+      language_code: languageCode,
+    }),
+  });
+  
+  const result = await response.json() as { ok: boolean; description?: string };
+  
+  if (!result.ok) {
+    throw new Error(result.description || 'Failed to set bot name');
+  }
+}
+
+/**
+ * Get the bot's description
+ */
+export async function getBotDescription(
+  botToken: string,
+  languageCode?: string
+): Promise<{ description: string }> {
+  const url = `https://api.telegram.org/bot${botToken}/getMyDescription`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language_code: languageCode }),
+  });
+  
+  const result = await response.json() as {
+    ok: boolean;
+    result?: { description: string };
+    description?: string;
+  };
+  
+  if (!result.ok || !result.result) {
+    throw new Error(result.description || 'Failed to get bot description');
+  }
+  
+  return { description: result.result.description };
+}
+
+/**
+ * Set the bot's description
+ */
+export async function setBotDescription(
+  botToken: string,
+  description: string,
+  languageCode?: string
+): Promise<void> {
+  const url = `https://api.telegram.org/bot${botToken}/setMyDescription`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      description: description || '',
+      language_code: languageCode,
+    }),
+  });
+  
+  const result = await response.json() as { ok: boolean; description?: string };
+  
+  if (!result.ok) {
+    throw new Error(result.description || 'Failed to set bot description');
+  }
+}
+
+/**
+ * Get the bot's short description
+ */
+export async function getBotShortDescription(
+  botToken: string,
+  languageCode?: string
+): Promise<{ shortDescription: string }> {
+  const url = `https://api.telegram.org/bot${botToken}/getMyShortDescription`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language_code: languageCode }),
+  });
+  
+  const result = await response.json() as {
+    ok: boolean;
+    result?: { short_description: string };
+    description?: string;
+  };
+  
+  if (!result.ok || !result.result) {
+    throw new Error(result.description || 'Failed to get bot short description');
+  }
+  
+  return { shortDescription: result.result.short_description };
+}
+
+/**
+ * Set the bot's short description
+ */
+export async function setBotShortDescription(
+  botToken: string,
+  shortDescription: string,
+  languageCode?: string
+): Promise<void> {
+  const url = `https://api.telegram.org/bot${botToken}/setMyShortDescription`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      short_description: shortDescription || '',
+      language_code: languageCode,
+    }),
+  });
+  
+  const result = await response.json() as { ok: boolean; description?: string };
+  
+  if (!result.ok) {
+    throw new Error(result.description || 'Failed to set bot short description');
+  }
+}
+
+// ============================================================================
+// Chat Actions
+// ============================================================================
+
+export type ChatAction = 
+  | 'typing' | 'upload_photo' | 'record_video' | 'upload_video'
+  | 'record_voice' | 'upload_voice' | 'upload_document' | 'choose_sticker'
+  | 'find_location' | 'record_video_note' | 'upload_video_note';
+
+/**
+ * Send a chat action (typing indicator, etc.)
+ */
+export async function sendChatAction(
+  botToken: string,
+  chatId: number,
+  action: ChatAction
+): Promise<void> {
+  const url = `https://api.telegram.org/bot${botToken}/sendChatAction`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      action,
+    }),
+  });
+  
+  const result = await response.json() as { ok: boolean; description?: string };
+  
+  if (!result.ok) {
+    throw new Error(result.description || 'Failed to send chat action');
+  }
+}
+
+// ============================================================================
+// Chat Modification (for voting system)
+// ============================================================================
+
+/**
+ * Set chat photo (requires bot to be admin with can_change_info)
+ */
+export async function setChatPhoto(
+  botToken: string,
+  chatId: number,
+  photoUrl: string
+): Promise<void> {
+  // First, we need to download the photo and upload it
+  // Telegram requires multipart/form-data for photo uploads
+  const photoResponse = await fetch(photoUrl);
+  const photoBlob = await photoResponse.blob();
+  
+  const formData = new FormData();
+  formData.append('chat_id', chatId.toString());
+  formData.append('photo', photoBlob, 'photo.jpg');
+  
+  const url = `https://api.telegram.org/bot${botToken}/setChatPhoto`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    body: formData,
+  });
+  
+  const result = await response.json() as { ok: boolean; description?: string };
+  
+  if (!result.ok) {
+    throw new Error(result.description || 'Failed to set chat photo');
+  }
+}
+
+/**
+ * Set chat description (requires bot to be admin with can_change_info)
+ */
+export async function setChatDescription(
+  botToken: string,
+  chatId: number,
+  description: string
+): Promise<void> {
+  const url = `https://api.telegram.org/bot${botToken}/setChatDescription`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      description: description || '',
+    }),
+  });
+  
+  const result = await response.json() as { ok: boolean; description?: string };
+  
+  if (!result.ok) {
+    throw new Error(result.description || 'Failed to set chat description');
+  }
+}
+
+/**
+ * Set chat title (requires bot to be admin with can_change_info)
+ */
+export async function setChatTitle(
+  botToken: string,
+  chatId: number,
+  title: string
+): Promise<void> {
+  const url = `https://api.telegram.org/bot${botToken}/setChatTitle`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      title,
+    }),
+  });
+  
+  const result = await response.json() as { ok: boolean; description?: string };
+  
+  if (!result.ok) {
+    throw new Error(result.description || 'Failed to set chat title');
+  }
+}
+
+/**
+ * Get chat info
+ */
+export async function getChat(
+  botToken: string,
+  chatId: number
+): Promise<{
+  id: number;
+  type: string;
+  title?: string;
+  description?: string;
+  photo?: { small_file_id: string; big_file_id: string };
+}> {
+  const url = `https://api.telegram.org/bot${botToken}/getChat`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId }),
+  });
+  
+  const result = await response.json() as {
+    ok: boolean;
+    result?: {
+      id: number;
+      type: string;
+      title?: string;
+      description?: string;
+      photo?: { small_file_id: string; big_file_id: string };
+    };
+    description?: string;
+  };
+  
+  if (!result.ok || !result.result) {
+    throw new Error(result.description || 'Failed to get chat');
+  }
+  
+  return result.result;
+}
