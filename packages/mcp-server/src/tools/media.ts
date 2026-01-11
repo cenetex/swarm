@@ -29,6 +29,7 @@ export interface MediaServices {
     platform: string;
     referenceImageUrl?: string;
     conversationId?: string;
+    replyToMessageId?: string;
   }) => Promise<{ jobId: string; status: string }>;
 
   generateSticker: (params: {
@@ -165,6 +166,7 @@ export const createMediaTools = (
         platform: context.platform,
         referenceImageUrl,
         conversationId: context.conversationId,
+        replyToMessageId: context.replyToMessageId,
       });
 
       const consumed = await credits.consumeCredit(context.agentId, 'generate_video');

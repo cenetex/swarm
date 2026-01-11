@@ -149,7 +149,8 @@ export async function handler(
       });
 
       // Send callback message to response queue if configured
-      if (RESPONSE_QUEUE_URL && job.replyToMessageId) {
+      // Allow sending when we have conversationId (will post to chat) or replyToMessageId (will reply to specific message)
+      if (RESPONSE_QUEUE_URL && (job.conversationId || job.replyToMessageId)) {
         await sqsClient.send(new SendMessageCommand({
           QueueUrl: RESPONSE_QUEUE_URL,
           MessageBody: JSON.stringify({

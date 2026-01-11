@@ -64,6 +64,7 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
           platform: params.platform,
           referenceImageUrl: params.referenceImageUrl,
           conversationId: params.conversationId || `mcp-${Date.now()}`,
+          replyToMessageId: params.replyToMessageId,
         });
         return { jobId: result.jobId, status: result.status };
       },

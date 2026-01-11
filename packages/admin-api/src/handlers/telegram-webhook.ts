@@ -557,6 +557,115 @@ async function sendTelegramVideo(token: string, chatId: number, videoUrl: string
   }
 }
 
+/**
+ * Send a sticker to Telegram chat
+ * Telegram supports .webp (static), .tgs (animated), .webm (video sticker) formats
+ * Note: sendSticker does NOT support captions
+ */
+async function sendTelegramSticker(token: string, chatId: number, stickerUrl: string, replyTo?: number): Promise<void> {
+  console.log(`[Telegram] Sending sticker to chat ${chatId}: ${stickerUrl.slice(0, 80)}...`);
+
+  try {
+    // Download the sticker first, then send as buffer
+    const stickerResponse = await fetchWithRetry(
+      stickerUrl,
+      { method: 'GET' },
+      TELEGRAM_TIMEOUT_MS,
+      TELEGRAM_RETRY_COUNT
+    );
+    if (!stickerResponse.ok) {
+      console.error(`[Telegram] Failed to download sticker: ${stickerResponse.status}`);
+      // Fall back to URL-based send
+      try {
+        const response = await fetchWithRetry(
+          `https://api.telegram.org/bot${token}/sendSticker`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              sticker: stickerUrl,
+              reply_to_message_id: replyTo,
+            }),
+          },
+          TELEGRAM_TIMEOUT_MS,
+          TELEGRAM_RETRY_COUNT
+        );
+        if (!response.ok) {
+          console.error(`[Telegram] sendSticker (URL fallback) failed: ${response.status}`, await response.text());
+        }
+      } catch (error) {
+        console.error('[Telegram] sendSticker (URL fallback) failed:', error);
+      }
+      return;
+    }
+
+    const stickerBuffer = Buffer.from(await stickerResponse.arrayBuffer());
+    console.log(`[Telegram] Downloaded sticker: ${stickerBuffer.length} bytes, sending as buffer`);
+
+    // Determine content type from URL extension
+    const isWebm = /\.webm(\?.*)?$/i.test(stickerUrl);
+    const isTgs = /\.tgs(\?.*)?$/i.test(stickerUrl);
+    const contentType = isWebm ? 'video/webm' : isTgs ? 'application/gzip' : 'image/webp';
+    const filename = isWebm ? 'sticker.webm' : isTgs ? 'sticker.tgs' : 'sticker.webp';
+
+    // Use native FormData (Node.js 18+) with Blob
+    const form = new FormData();
+    form.append('chat_id', chatId.toString());
+    form.append('sticker', new Blob([stickerBuffer], { type: contentType }), filename);
+    if (replyTo) {
+      form.append('reply_to_message_id', replyTo.toString());
+    }
+
+    const response = await fetchWithRetry(
+      `https://api.telegram.org/bot${token}/sendSticker`,
+      {
+        method: 'POST',
+        body: form,
+      },
+      TELEGRAM_TIMEOUT_MS,
+      TELEGRAM_RETRY_COUNT
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Telegram] sendSticker (buffer) failed: ${response.status} ${errorText}`);
+    } else {
+      console.log(`[Telegram] Sticker sent successfully to chat ${chatId}`);
+    }
+  } catch (err) {
+    console.error(`[Telegram] Error sending sticker:`, err);
+  }
+}
+
+/**
+ * Send sticker or photo based on file format
+ * Uses sendSticker for .webp/.tgs/.webm formats, falls back to sendPhoto for others (e.g., PNG)
+ * Since Telegram stickers don't support captions, sends caption as separate message if needed
+ */
+async function sendTelegramStickerOrPhoto(
+  token: string,
+  chatId: number,
+  mediaUrl: string,
+  caption?: string,
+  replyTo?: number
+): Promise<void> {
+  const isStickerFormat = /\.(webp|tgs|webm)(\?.*)?$/i.test(mediaUrl);
+
+  if (isStickerFormat) {
+    await sendTelegramSticker(token, chatId, mediaUrl, replyTo);
+    // Telegram stickers don't support captions, send as separate message
+    if (caption) {
+      await sendTelegramMessage(token, chatId, caption);
+    }
+    return;
+  }
+
+  // Non-sticker format (e.g., PNG) - send as photo
+  console.log(`[Telegram] Sticker URL is not a sticker format, sending as photo: ${mediaUrl.slice(0, 60)}...`);
+  await sendTelegramPhoto(token, chatId, mediaUrl, caption, replyTo);
+}
+
 async function sendChatAction(token: string, chatId: number, action: string): Promise<void> {
   try {
     await fetchWithRetry(
@@ -620,9 +729,11 @@ async function executeTool(
     }
 
     // Execute via MCP ToolClient with conversationId for async callbacks
+    // Note: conversationId is raw chatId (not prefixed) for compatibility with Telegram API
     const mcpResult = await toolClient.execute(toolName, args, { 
       agentId,
-      conversationId: `telegram:${chatId}`,
+      conversationId: String(chatId),
+      replyToMessageId: undefined, // Will be set by response queue handler
     });
 
     // Convert MCP result to Telegram handler format
@@ -976,8 +1087,8 @@ async function processChannelResponse(
       } else if (m.type === 'video') {
         await sendTelegramVideo(token, chatId, m.url, m.caption);
       } else if (m.type === 'sticker') {
-        // Stickers sent as photos for now (Telegram requires sticker format conversion)
-        await sendTelegramPhoto(token, chatId, m.url, m.caption);
+        // Route by format: .webp/.tgs/.webm → sendSticker, else → sendPhoto
+        await sendTelegramStickerOrPhoto(token, chatId, m.url, m.caption);
       }
     }
     mediasToSend.length = 0;
@@ -999,7 +1110,7 @@ async function processChannelResponse(
       } else if (m.type === 'video') {
         await sendTelegramVideo(token, chatId, m.url, m.caption);
       } else if (m.type === 'sticker') {
-        await sendTelegramPhoto(token, chatId, m.url, m.caption);
+        await sendTelegramStickerOrPhoto(token, chatId, m.url, m.caption);
       }
     }
   }
