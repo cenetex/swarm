@@ -33,6 +33,34 @@ if (!CDN_URL) {
   console.log(`[Media] CDN configured: ${CDN_URL}`);
 }
 
+// Timeout for external fetch operations (10 seconds)
+const FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Fetch with timeout using AbortController
+ * Prevents hanging on slow/unresponsive external URLs
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs}ms: ${url.slice(0, 100)}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /**
  * Convert an S3 URL to a publicly accessible URL.
  * If CDN is configured, returns CDN URL.
@@ -1045,8 +1073,8 @@ export async function setCharacterReference(
   source: { type: 'url'; url: string } | { type: 'generate'; prompt: string } | { type: 'gallery'; imageId: string },
   description?: string
 ): Promise<{ url: string; s3Key: string }> {
-  // Check credits 
-  const canUse = await credits.canUseTool(agentId, 'set_profile_image');
+  // Check credits - use dedicated character reference bucket
+  const canUse = await credits.canUseTool(agentId, 'set_character_reference');
   if (!canUse.allowed) {
     throw new Error(`Rate limited: ${canUse.reason}`);
   }
@@ -1055,8 +1083,8 @@ export async function setCharacterReference(
   let generatedPrompt: string | undefined;
 
   if (source.type === 'url') {
-    // Download from URL
-    const response = await fetch(source.url);
+    // Download from URL with timeout protection
+    const response = await fetchWithTimeout(source.url);
     if (!response.ok) {
       throw new Error(`Failed to download image: ${response.statusText}`);
     }
@@ -1072,8 +1100,8 @@ export async function setCharacterReference(
       aspectRatio: '16:9', // Wide for turnaround
     });
 
-    // Download from our storage
-    const response = await fetch(image.url);
+    // Download from our storage with timeout protection
+    const response = await fetchWithTimeout(image.url);
     imageBuffer = Buffer.from(await response.arrayBuffer());
   } else if (source.type === 'gallery') {
     // Use existing gallery image
@@ -1082,7 +1110,8 @@ export async function setCharacterReference(
       throw new Error(`Image not found in gallery: ${source.imageId}`);
     }
 
-    const response = await fetch(item.url);
+    // Download with timeout protection
+    const response = await fetchWithTimeout(item.url);
     imageBuffer = Buffer.from(await response.arrayBuffer());
   } else {
     throw new Error('Invalid source type');
@@ -1091,6 +1120,7 @@ export async function setCharacterReference(
   // Store as character reference
   const s3Key = `agents/${agentId}/character-reference/${uuid()}.png`;
 
+  // Upload to S3
   await s3Client.send(new PutObjectCommand({
     Bucket: MEDIA_BUCKET,
     Key: s3Key,
@@ -1098,29 +1128,46 @@ export async function setCharacterReference(
     ContentType: 'image/png',
   }));
 
-  // Consume credit
-  await credits.consumeCredit(agentId, 'set_profile_image');
-
   const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
 
   // Update agent record with character reference
-  await dynamoClient.send(new UpdateCommand({
-    TableName: ADMIN_TABLE,
-    Key: {
-      pk: `AGENT#${agentId}`,
-      sk: 'CONFIG',
-    },
-    UpdateExpression: 'SET characterReference = :ref',
-    ExpressionAttributeValues: {
-      ':ref': {
-        url: publicUrl,
-        s3Key,
-        generatedPrompt,
-        description,
-        updatedAt: Date.now(),
+  // If this fails, rollback by deleting the S3 file to prevent orphaned files
+  try {
+    await dynamoClient.send(new UpdateCommand({
+      TableName: ADMIN_TABLE,
+      Key: {
+        pk: `AGENT#${agentId}`,
+        sk: 'CONFIG',
       },
-    },
-  }));
+      UpdateExpression: 'SET characterReference = :ref, updatedAt = :now',
+      ExpressionAttributeValues: {
+        ':ref': {
+          url: publicUrl,
+          s3Key,
+          generatedPrompt,
+          description,
+          updatedAt: Date.now(),
+        },
+        ':now': Date.now(),
+      },
+    }));
+  } catch (dbError) {
+    // Rollback: delete the orphaned S3 file
+    console.error(`[Media] DynamoDB update failed for character reference, rolling back S3 upload: ${s3Key}`, dbError);
+    try {
+      await s3Client.send(new DeleteObjectCommand({
+        Bucket: MEDIA_BUCKET,
+        Key: s3Key,
+      }));
+      console.log(`[Media] Rollback successful: deleted ${s3Key}`);
+    } catch (rollbackError) {
+      console.error(`[Media] Rollback failed: could not delete ${s3Key}`, rollbackError);
+    }
+    throw new Error('Failed to save character reference. Please try again.');
+  }
+
+  // Consume credit only after successful save
+  await credits.consumeCredit(agentId, 'set_character_reference');
 
   return { url: publicUrl, s3Key };
 }
