@@ -47,7 +47,7 @@ async function telegramApi<T>(
 ): Promise<TelegramResponse<T>> {
   const url = `${TELEGRAM_API}${botToken}/${method}`;
 
-  let body: BodyInit;
+  let body: string | FormData;
   const headers: Record<string, string> = {};
 
   if (file) {

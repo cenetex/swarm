@@ -164,15 +164,14 @@ export class BedrockLLMService implements LLMService {
 
   private convertToolDefinition(tool: ToolDefinition): Tool {
     const jsonSchema = convertZodToJsonSchema(tool.parameters);
-    type ToolSpec = NonNullable<Tool['toolSpec']>;
 
     return {
       toolSpec: {
         name: tool.name,
         description: tool.description,
         inputSchema: {
-          json: jsonSchema as ToolSpec['inputSchema']['json'],
-        },
+          json: jsonSchema,
+        } as Tool['toolSpec'] extends { inputSchema?: infer T } ? T : never,
       },
     };
   }
