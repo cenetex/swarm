@@ -87,7 +87,7 @@ export async function getAgent(agentId: string): Promise<AgentResponse> {
  */
 export async function updateAgent(
   agentId: string,
-  updates: Partial<Pick<AgentResponse, 'name' | 'description' | 'persona'>>
+  updates: Partial<Pick<AgentResponse, 'name' | 'description' | 'persona' | 'profileImage'>>
 ): Promise<AgentResponse> {
   const response = await fetch(`${API_BASE}/agents/${agentId}`, {
     method: 'PUT',

@@ -272,8 +272,6 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
         try {
           updateToolCallStatus();
           
-          // Build follow-up message based on the tool type
-          let followUpContent: string;
           const filename = resultObj.filename ? ` (${resultObj.filename})` : '';
           
           // Check if this was a profile image upload (from set_profile_image or get_profile_upload_url)
@@ -282,15 +280,30 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
                                    !resultObj.category;
           
           if (isProfileUpload) {
-            // For profile images, ask the LLM to update the agent's profile
-            followUpContent = `I've uploaded my new profile image${filename}. The URL is "${resultObj.publicUrl}" and s3Key is "${resultObj.s3Key}". Please update my profile image with this.`;
+            // For profile images, save directly via API - don't rely on LLM
+            const { updateAgent: updateAgentApi } = await import('../api/agents');
+            await updateAgentApi(activeAgent.id, {
+              profileImage: {
+                url: resultObj.publicUrl as string,
+                s3Key: resultObj.s3Key as string,
+                updatedAt: Date.now(),
+              },
+            });
+            
+            // Update local state immediately
+            updateAgent(activeAgent.id, { avatar: resultObj.publicUrl as string });
+            
+            // Add a simple confirmation message instead of asking LLM
+            addMessage(activeAgent.id, {
+              role: 'assistant',
+              content: `✅ Profile image updated${filename}!`,
+            });
           } else {
-            // For reference images, ask to save to reference images
+            // For reference images, ask LLM to save to reference images
             const category = resultObj.category ? ` ${resultObj.category}` : '';
-            followUpContent = `I've uploaded the${category} image${filename}. The s3Key is "${resultObj.s3Key}" and publicUrl is "${resultObj.publicUrl}". Please save it to my reference images.`;
+            const followUpContent = `I've uploaded the${category} image${filename}. The s3Key is "${resultObj.s3Key}" and publicUrl is "${resultObj.publicUrl}". Please save it to my reference images.`;
+            await handleSendMessage(followUpContent);
           }
-          
-          await handleSendMessage(followUpContent);
           
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to process upload';
@@ -310,7 +323,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
       // Generic tool result - just update status
       updateToolCallStatus();
     },
-    [activeAgent, updateMessage, setError, handleSendMessage]
+    [activeAgent, updateMessage, setError, handleSendMessage, addMessage, updateAgent]
   );
 
   if (!activeAgent) {
