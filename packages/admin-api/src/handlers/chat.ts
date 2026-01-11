@@ -22,6 +22,7 @@ import {
   registerAllTools,
 } from '@swarm/mcp-server';
 import { createMCPServices } from '../services/mcp-adapter.js';
+import { getPlatformPromptSection } from '../services/platform-prompts.js';
 
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
@@ -214,7 +215,8 @@ Example flow:
 - Wallet private keys are generated securely and stored encrypted
 - You can only see public keys and balances
 
-Be friendly, helpful, and guide your owner through setup step by step.`;
+Be friendly, helpful, and guide your owner through setup step by step.
+${getPlatformPromptSection('admin-ui')}`;
   }
 
   // Fallback for no agent context

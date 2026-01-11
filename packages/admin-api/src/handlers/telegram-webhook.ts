@@ -27,6 +27,7 @@ import { isValidTelegramIP } from '../services/telegram.js';
 import { timingSafeEqual } from 'crypto';
 import * as channelState from '../services/channel-state.js';
 import * as credits from '../services/credits.js';
+import { getPlatformPromptSection } from '../services/platform-prompts.js';
 import {
   ToolRegistry,
   createToolClient,
@@ -970,8 +971,9 @@ async function processChannelResponse(
 
   // Build system prompt
   let systemPrompt = agent.persona || `You are ${agent.name}, a helpful AI assistant on Telegram.`;
-  systemPrompt += `\n\nYou are chatting on Telegram. Keep responses concise and conversational.`;
-  systemPrompt += `\nYou can generate images and videos when asked. Just use the tools available to you.`;
+  
+  // Add platform-specific prompt from markdown file
+  systemPrompt += getPlatformPromptSection('telegram');
 
   // Add channel context
   systemPrompt += `\n\n## Current Conversation`;

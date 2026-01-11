@@ -198,6 +198,15 @@ export class AdminApiConstruct extends Construct {
         externalModules: ['@aws-sdk/*'],
         minify: true,
         sourceMap: true,
+        commandHooks: {
+          beforeBundling: () => [],
+          beforeInstall: () => [],
+          afterBundling: (inputDir: string, outputDir: string) => [
+            // Copy platform prompts to Lambda bundle
+            `mkdir -p ${outputDir}/prompts/platforms`,
+            `cp -r ${inputDir}/../../../../prompts/platforms/* ${outputDir}/prompts/platforms/ 2>/dev/null || true`,
+          ],
+        },
       },
     });
 
@@ -484,6 +493,15 @@ export class AdminApiConstruct extends Construct {
         externalModules: ['@aws-sdk/*'],
         minify: true,
         sourceMap: true,
+        commandHooks: {
+          beforeBundling: () => [],
+          beforeInstall: () => [],
+          afterBundling: (inputDir: string, outputDir: string) => [
+            // Copy platform prompts to Lambda bundle
+            `mkdir -p ${outputDir}/prompts/platforms`,
+            `cp -r ${inputDir}/../../../../prompts/platforms/* ${outputDir}/prompts/platforms/ 2>/dev/null || true`,
+          ],
+        },
       },
     });
 
