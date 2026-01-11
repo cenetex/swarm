@@ -230,6 +230,9 @@ importers:
       '@swarm/core':
         specifier: workspace:*
         version: link:../core
+      '@swarm/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
       zod:
         specifier: ^3.24.0
         version: 3.25.76

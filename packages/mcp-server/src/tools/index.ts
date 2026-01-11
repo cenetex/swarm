@@ -22,6 +22,7 @@ export {
   type DiscordGuild,
   type DiscordMessageInfo,
 } from './discord.js';
+export { createMemoryTools, type MemoryServices, type MemoryFact } from './memory.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';
 import { createGalleryTools } from './gallery.js';
@@ -35,6 +36,7 @@ import { createDiagnosticsTools } from './diagnostics.js';
 import { createTelegramTools } from './telegram.js';
 import { createTwitterTools } from './twitter.js';
 import { createDiscordTools } from './discord.js';
+import { createMemoryTools } from './memory.js';
 import type { ToolRegistry } from '../registry.js';
 
 /**
@@ -51,6 +53,7 @@ export interface AllServices {
   secrets: import('./secrets.js').SecretServices;
   jobs: import('./jobs.js').JobServices;
   reference: import('./reference.js').ReferenceImageServices;
+  memory?: import('./memory.js').MemoryServices;
   telegram?: import('./telegram.js').TelegramServices;
   twitter?: import('./twitter.js').TwitterServices;
   discord?: import('./discord.js').DiscordServices;
@@ -72,6 +75,9 @@ export function registerAllTools(
   registry.registerAll(createJobTools(services.jobs, services.jobCredits));
   registry.registerAll(createReferenceImageTools(services.reference));
   registry.registerAll(createDiagnosticsTools());
+  if (services.memory) {
+    registry.registerAll(createMemoryTools(services.memory));
+  }
   if (services.telegram) {
     registry.registerAll(createTelegramTools(services.telegram));
   }

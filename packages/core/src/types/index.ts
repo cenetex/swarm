@@ -523,6 +523,20 @@ export interface StateService {
   updateChannelState(state: ChannelState): Promise<void>;
   getUserCooldown(agentId: string, platform: Platform, userId: string): Promise<UserCooldown | null>;
   setUserCooldown(cooldown: UserCooldown): Promise<void>;
+  
+  // Memory/facts storage
+  saveFact(agentId: string, fact: MemoryFact): Promise<void>;
+  getFacts(agentId: string, query: string, userId?: string): Promise<MemoryFact[]>;
+}
+
+/**
+ * A fact stored in agent memory
+ */
+export interface MemoryFact {
+  fact: string;
+  about?: string;
+  userId?: string;
+  timestamp: number;
 }
 
 export interface LLMService {

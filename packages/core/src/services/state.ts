@@ -727,6 +727,63 @@ export class DynamoDBStateService implements StateService {
       },
     }));
   }
+
+  // =====================================================================
+  // MEMORY / FACTS STORAGE
+  // =====================================================================
+
+  async saveFact(agentId: string, fact: { fact: string; about?: string; userId?: string; timestamp: number }): Promise<void> {
+    // Create a deterministic ID from the fact content for deduplication
+    const factId = Buffer.from(fact.fact.slice(0, 100)).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 20);
+    const sortKey = `FACT#${fact.about || 'general'}#${factId}`;
+
+    await this.docClient.send(new PutCommand({
+      TableName: this.tableName,
+      Item: {
+        pk: `AGENT#${agentId}`,
+        sk: sortKey,
+        fact: fact.fact,
+        about: fact.about,
+        userId: fact.userId,
+        timestamp: fact.timestamp,
+        // TTL: keep facts for 90 days
+        ttl: Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60),
+      },
+    }));
+  }
+
+  async getFacts(agentId: string, query: string, userId?: string): Promise<Array<{ fact: string; about?: string; userId?: string; timestamp: number }>> {
+    // Query facts by prefix (about field)
+    // For more sophisticated search, would need GSI or OpenSearch
+    const result = await this.docClient.send(new ScanCommand({
+      TableName: this.tableName,
+      FilterExpression: 'pk = :pk AND begins_with(sk, :prefix) AND (contains(fact, :query) OR contains(about, :query))',
+      ExpressionAttributeValues: {
+        ':pk': `AGENT#${agentId}`,
+        ':prefix': 'FACT#',
+        ':query': query.toLowerCase(),
+      },
+      Limit: 20,
+    }));
+
+    const facts = (result.Items || [])
+      .filter(item => {
+        // If userId filter provided, only return facts from that user or general facts
+        if (userId && item.userId && item.userId !== userId) {
+          return false;
+        }
+        return true;
+      })
+      .map(item => ({
+        fact: item.fact,
+        about: item.about,
+        userId: item.userId,
+        timestamp: item.timestamp,
+      }))
+      .sort((a, b) => b.timestamp - a.timestamp);
+
+    return facts;
+  }
 }
 
 /**

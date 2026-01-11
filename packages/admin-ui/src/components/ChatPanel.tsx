@@ -321,15 +321,38 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
       if (resultObj.success && resultObj.s3Key && resultObj.publicUrl) {
         try {
           updateToolCallStatus();
-          
+
           const filename = resultObj.filename ? ` (${resultObj.filename})` : '';
-          
+
+          // Check if this is a character reference upload
+          const isCharacterReferenceUpload = toolName === 'set_character_reference' ||
+                                              toolName === 'get_character_reference_upload_url' ||
+                                              resultObj.purpose === 'character_reference';
+
           // Check if this was a profile image upload (from set_profile_image or get_profile_upload_url)
-          const isProfileUpload = toolName === 'set_profile_image' || 
+          const isProfileUpload = !isCharacterReferenceUpload && (
+                                   toolName === 'set_profile_image' ||
                                    toolName === 'get_profile_upload_url' ||
-                                   !resultObj.category;
-          
-          if (isProfileUpload) {
+                                   !resultObj.category);
+
+          if (isCharacterReferenceUpload) {
+            // For character reference, save directly via API
+            const { updateAgent: updateAgentApi } = await import('../api/agents');
+            await updateAgentApi(activeAgent.id, {
+              characterReference: {
+                url: resultObj.publicUrl as string,
+                s3Key: resultObj.s3Key as string,
+                description: resultObj.description as string | undefined,
+                updatedAt: Date.now(),
+              },
+            });
+
+            // Add a simple confirmation message
+            addMessage(activeAgent.id, {
+              role: 'assistant',
+              content: `Character reference updated${filename}! This will be used for consistent image and video generation.`,
+            });
+          } else if (isProfileUpload) {
             // For profile images, save directly via API - don't rely on LLM
             const { updateAgent: updateAgentApi } = await import('../api/agents');
             await updateAgentApi(activeAgent.id, {
@@ -339,14 +362,14 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
                 updatedAt: Date.now(),
               },
             });
-            
+
             // Update local state immediately
             updateAgent(activeAgent.id, { avatar: resultObj.publicUrl as string });
-            
+
             // Add a simple confirmation message instead of asking LLM
             addMessage(activeAgent.id, {
               role: 'assistant',
-              content: `✅ Profile image updated${filename}!`,
+              content: `Profile image updated${filename}!`,
             });
           } else {
             // For reference images, ask LLM to save to reference images

@@ -1,29 +1,46 @@
 /**
  * Message Processor Handler
- * Processes messages from SQS and generates responses
+ * Processes messages from SQS and generates responses using MCP tools
  *
  * Kyro-style channel-aware processing:
  * - Buffers messages per channel
  * - Evaluates response triggers (direct engagement, threshold, gap)
  * - State machine: IDLE → ACTIVE → COOLDOWN
+ * 
+ * MCP Tool Integration:
+ * - Uses unified tool registry from @swarm/mcp-server
+ * - Supports iterative tool execution (multi-step reasoning)
+ * - Memory tools wired to state service
  */
 import type { SQSEvent, SQSHandler, Context } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import {
   createStateService,
   createSecretsService,
-  createLLMService,
-  createResponseGenerator,
+  createMediaService,
   logger,
-  publicTools,
-  defaultAgentTools,
   MessageQueueItemSchema,
   type AgentConfig,
   type ContextMessage,
   type SwarmEnvelope,
+  type SwarmResponse,
+  type ResponseAction,
+  type LLMConfig,
 } from '@swarm/core';
+import {
+  ToolRegistry,
+  createToolClient,
+  registerAllTools,
+  type ToolContext,
+} from '@swarm/mcp-server';
+import { createPlatformMCPServices } from './services/platform-mcp-adapter.js';
 
 const sqs = new SQSClient({});
+
+// LLM Configuration
+const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
+const LLM_TIMEOUT_MS = 60_000;
+const MAX_TOOL_ITERATIONS = 5;
 
 // Environment variable validation helper
 function getRequiredEnv(name: string): string {
@@ -38,6 +55,8 @@ function getRequiredEnv(name: string): string {
 let _responseQueueUrl: string | undefined;
 let _stateTable: string | undefined;
 let _agentId: string | undefined;
+let _mediaBucket: string | undefined;
+let _cdnUrl: string | undefined;
 
 function getResponseQueueUrl(): string {
   if (!_responseQueueUrl) _responseQueueUrl = getRequiredEnv('RESPONSE_QUEUE_URL');
@@ -52,6 +71,16 @@ function getStateTable(): string {
 function getAgentId(): string {
   if (!_agentId) _agentId = getRequiredEnv('AGENT_ID');
   return _agentId;
+}
+
+function getMediaBucket(): string | undefined {
+  if (_mediaBucket === undefined) _mediaBucket = process.env.MEDIA_BUCKET || '';
+  return _mediaBucket || undefined;
+}
+
+function getCdnUrl(): string | undefined {
+  if (_cdnUrl === undefined) _cdnUrl = process.env.CDN_URL || '';
+  return _cdnUrl || undefined;
 }
 
 // Services (lazy initialized)
@@ -80,7 +109,7 @@ async function initialize(): Promise<void> {
       maxTokens: 1024,
     },
     media: {
-      image: { provider: 'replicate', model: 'f2ab8a5bfe79f02f0789a146cf5e73d2a4ff2684a98c2b303d1e1ff3814271db' }, // flux-schnell
+      image: { provider: 'replicate', model: 'black-forest-labs/flux-schnell' },
     },
     scheduling: {},
     behavior: {
@@ -90,7 +119,10 @@ async function initialize(): Promise<void> {
       cooldownMinutes: 5,
       maxContextMessages: 20,
     },
-    tools: defaultAgentTools,
+    tools: [
+      'send_message', 'react', 'wait', 'ignore',
+      'generate_image', 'remember', 'recall',
+    ],
     secrets: ['OPENROUTER_API_KEY', 'REPLICATE_API_KEY'],
   };
 
@@ -110,12 +142,290 @@ function envelopeToContextMessage(envelope: SwarmEnvelope): ContextMessage {
     isBot: envelope.sender.isBot,
     content: envelope.content.text || '[media]',
     timestamp: envelope.timestamp,
-    // Extended fields for Kyro-style context
     userId: envelope.sender.id,
     username: envelope.sender.username,
     isMention: envelope.metadata.isMention,
     isReplyToBot: envelope.metadata.isReplyToBot,
     replyToMessageId: envelope.replyTo,
+  };
+}
+
+/**
+ * LLM Message format
+ */
+interface LLMMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
+}
+
+/**
+ * Call the LLM API with tools
+ */
+async function callLLM(
+  messages: LLMMessage[],
+  tools: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }>,
+  config: LLMConfig
+): Promise<{
+  content?: string;
+  toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+}> {
+  const apiKey = secrets['OPENROUTER_API_KEY'] || secrets['openrouter_api_key'];
+  if (!apiKey) {
+    throw new Error('OPENROUTER_API_KEY not found in secrets');
+  }
+
+  const requestBody: Record<string, unknown> = {
+    model: config.model,
+    messages,
+    temperature: config.temperature,
+    max_tokens: config.maxTokens,
+  };
+
+  if (tools.length > 0) {
+    requestBody.tools = tools;
+    requestBody.tool_choice = 'auto';
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(LLM_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://swarm.platform',
+        'X-Title': 'Swarm Platform',
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`LLM API error: ${response.status} ${text.slice(0, 200)}`);
+    }
+
+    const data = await response.json() as {
+      choices?: Array<{
+        message?: {
+          content?: string;
+          tool_calls?: Array<{
+            id: string;
+            type: 'function';
+            function: { name: string; arguments: string };
+          }>;
+        };
+      }>;
+    };
+
+    const choice = data.choices?.[0]?.message;
+    if (!choice) {
+      throw new Error('No response from LLM');
+    }
+
+    return {
+      content: choice.content || undefined,
+      toolCalls: choice.tool_calls?.map(tc => ({
+        id: tc.id,
+        name: tc.function.name,
+        arguments: JSON.parse(tc.function.arguments || '{}'),
+      })),
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Build system prompt from agent persona and context
+ */
+function buildSystemPrompt(envelope: SwarmEnvelope): string {
+  let prompt = agentConfig.persona;
+
+  prompt += `\n\n## Current Context
+- Platform: ${envelope.platform}
+- Channel: ${envelope.conversationId}
+- Time: ${new Date().toISOString()}
+`;
+
+  prompt += `\n## User
+- Username: ${envelope.sender.username || 'unknown'}
+- Display Name: ${envelope.sender.displayName || 'unknown'}
+`;
+
+  // Add tool usage guidance
+  prompt += `\n## Response Guidelines
+- Use send_message to respond with text
+- Use generate_image to create images when asked
+- Use remember to save important facts about users
+- Use recall to remember things about users before responding
+- Use ignore if the message doesn't warrant a response
+- Keep responses concise and natural
+`;
+
+  return prompt;
+}
+
+/**
+ * Convert tool results to response actions
+ */
+function toolResultsToActions(
+  toolResults: Array<{ name: string; result: { success: boolean; data?: unknown; media?: { type: string; url: string } } }>
+): ResponseAction[] {
+  const actions: ResponseAction[] = [];
+
+  for (const { name, result } of toolResults) {
+    if (!result.success) continue;
+
+    switch (name) {
+      case 'send_message': {
+        const data = result.data as { text?: string } | undefined;
+        if (data?.text) {
+          actions.push({ type: 'send_message', text: data.text });
+        }
+        break;
+      }
+
+      case 'generate_image': {
+        if (result.media) {
+          actions.push({
+            type: 'send_media',
+            mediaType: 'image',
+            url: result.media.url,
+          });
+        }
+        break;
+      }
+
+      case 'react': {
+        const data = result.data as { emoji?: string; messageId?: string } | undefined;
+        if (data?.emoji) {
+          actions.push({ type: 'react', emoji: data.emoji, messageId: data.messageId || '' });
+        }
+        break;
+      }
+
+      case 'wait': {
+        const data = result.data as { durationMs?: number } | undefined;
+        if (data?.durationMs) {
+          actions.push({ type: 'wait', durationMs: data.durationMs });
+        }
+        break;
+      }
+
+      case 'ignore': {
+        const data = result.data as { reason?: string } | undefined;
+        actions.push({ type: 'ignore', reason: data?.reason || 'No response needed' });
+        break;
+      }
+    }
+  }
+
+  return actions;
+}
+
+/**
+ * Generate response with iterative tool execution
+ */
+async function generateResponse(
+  envelope: SwarmEnvelope,
+  toolClient: ReturnType<typeof createToolClient>,
+  toolContext: ToolContext
+): Promise<SwarmResponse> {
+  const systemPrompt = buildSystemPrompt(envelope);
+  const openAITools = toolClient.getOpenAITools();
+
+  // Filter tools based on agent config
+  const enabledTools = openAITools.filter(t => 
+    agentConfig.tools.includes(t.function.name)
+  );
+
+  // Build initial messages
+  const messages: LLMMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: envelope.content.text || '[media received]' },
+  ];
+
+  const allToolResults: Array<{ name: string; result: { success: boolean; data?: unknown; media?: { type: string; url: string } } }> = [];
+  let finalContent: string | undefined;
+  let iterations = 0;
+  let totalTokens = 0;
+
+  while (iterations < MAX_TOOL_ITERATIONS) {
+    iterations++;
+
+    const llmResponse = await callLLM(messages, enabledTools, agentConfig.llm);
+    totalTokens += 100; // Approximate, would need actual count from API
+
+    if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
+      // No tool calls, we have a final response
+      finalContent = llmResponse.content;
+      break;
+    }
+
+    // Add assistant message with tool calls
+    messages.push({
+      role: 'assistant',
+      content: llmResponse.content || '',
+      tool_calls: llmResponse.toolCalls.map(tc => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: {
+          name: tc.name,
+          arguments: JSON.stringify(tc.arguments),
+        },
+      })),
+    });
+
+    // Execute tool calls
+    for (const toolCall of llmResponse.toolCalls) {
+      logger.info('Executing tool', { tool: toolCall.name, args: toolCall.arguments });
+
+      const result = await toolClient.execute(toolCall.name, toolCall.arguments, toolContext);
+
+      allToolResults.push({ name: toolCall.name, result });
+
+      // Add tool result message
+      messages.push({
+        role: 'tool',
+        tool_call_id: toolCall.id,
+        content: JSON.stringify(result.success ? result.data : { error: result.error }),
+      });
+
+      logger.info('Tool result', { tool: toolCall.name, success: result.success });
+    }
+  }
+
+  // Build response actions
+  let actions: ResponseAction[] = toolResultsToActions(allToolResults);
+
+  // If we got final content but no send_message action, add it
+  if (finalContent && !actions.some(a => a.type === 'send_message')) {
+    actions.push({ type: 'send_message', text: finalContent, replyToMessageId: envelope.messageId });
+  }
+
+  // If no actions at all, add the content as a message
+  if (actions.length === 0 && finalContent) {
+    actions = [{ type: 'send_message', text: finalContent, replyToMessageId: envelope.messageId }];
+  }
+
+  return {
+    agentId: envelope.agentId,
+    platform: envelope.platform,
+    conversationId: envelope.conversationId,
+    replyToMessageId: envelope.messageId,
+    actions,
+    generatedAt: Date.now(),
+    llmModel: agentConfig.llm.model,
+    tokensUsed: totalTokens,
   };
 }
 
@@ -127,12 +437,29 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
 
   await initialize();
 
+  // Create MCP services and tool client
+  const mediaBucket = getMediaBucket();
+  const mediaService = mediaBucket 
+    ? createMediaService(secrets, mediaBucket, getCdnUrl())
+    : undefined;
+
+  const mcpServices = createPlatformMCPServices({
+    agentId: getAgentId(),
+    agentConfig,
+    stateService,
+    mediaService,
+    secrets,
+  });
+
+  const registry = new ToolRegistry();
+  registerAllTools(registry, mcpServices);
+
   for (const record of event.Records) {
     try {
       const parseResult = MessageQueueItemSchema.safeParse(JSON.parse(record.body));
       if (!parseResult.success) {
         logger.error('Invalid message queue item', { error: parseResult.error.message });
-        continue; // Skip invalid messages
+        continue;
       }
       const item = parseResult.data;
       const envelope = item.envelope as SwarmEnvelope;
@@ -154,7 +481,6 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       // KYRO-STYLE CHANNEL STATE MANAGEMENT
       // =========================================================
 
-      // Ensure channel state exists (created if needed by addMessageToChannel)
       await stateService.getOrCreateChannelState(
         getAgentId(),
         envelope.conversationId,
@@ -163,7 +489,6 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
         envelope.metadata.chatTitle
       );
 
-      // Add message to channel buffer with state machine updates
       const updatedState = await stateService.addMessageToChannel(
         getAgentId(),
         envelope.conversationId,
@@ -180,7 +505,6 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
         chatType: updatedState.chatType,
       });
 
-      // Evaluate if we should respond
       const decision = stateService.evaluateResponseTrigger(updatedState);
 
       logger.info('Response decision', {
@@ -192,40 +516,30 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
 
       if (!decision.shouldRespond) {
         logger.info('Skipping response', { reason: decision.trigger });
-        continue; // Process next message in batch
+        continue;
       }
 
-      // Apply delay if specified (makes responses feel more natural)
       if (decision.delay > 0) {
         await new Promise(resolve => setTimeout(resolve, decision.delay));
       }
 
-      // Transition to ACTIVE state before generating response
       await stateService.transitionState(getAgentId(), envelope.conversationId, 'ACTIVE');
 
       // =========================================================
-      // GENERATE LLM RESPONSE
+      // GENERATE RESPONSE WITH MCP TOOLS
       // =========================================================
 
-      // Create LLM service
-      const llmService = createLLMService(agentConfig.llm, secrets);
+      const toolClient = createToolClient(registry, envelope.platform as 'telegram' | 'discord' | 'twitter' | 'admin-ui' | 'api');
+      
+      const toolContext: ToolContext = {
+        agentId: getAgentId(),
+        platform: envelope.platform as 'telegram' | 'discord' | 'twitter' | 'admin-ui' | 'api',
+        userId: envelope.sender.id,
+        conversationId: envelope.conversationId,
+        replyToMessageId: envelope.messageId,
+      };
 
-      // Get enabled tools from the public tool set
-      const enabledTools = publicTools.filter(t =>
-        agentConfig.tools.includes(t.name)
-      );
-
-      // Create response generator
-      const generator = createResponseGenerator(
-        agentConfig,
-        llmService,
-        stateService,
-        enabledTools,
-        agentConfig.persona
-      );
-
-      // Generate response
-      const response = await generator.generate(envelope);
+      const response = await generateResponse(envelope, toolClient, toolContext);
 
       logger.info('Response generated', {
         actions: response.actions.length,
@@ -244,7 +558,6 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       // POST-RESPONSE STATE UPDATES
       // =========================================================
 
-      // Set user cooldown if configured (legacy behavior)
       if (agentConfig.behavior.cooldownMinutes > 0) {
         await stateService.setUserCooldown({
           agentId: getAgentId(),
@@ -256,8 +569,6 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
 
     } catch (error) {
       logger.error('Failed to process message', error);
-
-      // The message will be retried or sent to DLQ based on SQS config
       throw error;
     }
   }
