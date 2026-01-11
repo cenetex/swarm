@@ -9,43 +9,95 @@ interface ChatMessageProps {
 }
 
 /**
- * Clean message content by removing raw JSON and extracting embedded images
- * LLMs sometimes include tool results as raw JSON in their responses
+ * Parsed tool result from message content
+ */
+interface ParsedToolResult {
+  type: 'image' | 'gallery' | 'success' | 'error' | 'info' | 'unknown';
+  data: Record<string, unknown>;
+  imageUrl?: string;
+  message?: string;
+}
+
+/**
+ * Clean message content by removing raw JSON tool results
+ * Returns cleaned content plus any extracted data for rich rendering
  */
 function processMessageContent(content: string): { 
   cleanedContent: string; 
   embeddedImages: string[];
-  embeddedData: Array<{ type: 'gallery' | 'jobs' | 'unknown'; items: unknown[] }>;
+  toolResults: ParsedToolResult[];
 } {
   const embeddedImages: string[] = [];
-  const embeddedData: Array<{ type: 'gallery' | 'jobs' | 'unknown'; items: unknown[] }> = [];
-  
-  // Match JSON arrays or objects in the content
-  // This regex finds standalone JSON that looks like tool output
+  const toolResults: ParsedToolResult[] = [];
   let cleanedContent = content;
   
-  // Pattern 1: JSON arrays (like gallery results or job lists)
-  const jsonArrayPattern = /\n?\s*\[\s*\{[\s\S]*?\}\s*\]\s*\n?/g;
-  const arrayMatches = content.match(jsonArrayPattern) || [];
+  // Helper to categorize a parsed JSON object
+  const categorizeResult = (parsed: Record<string, unknown>): ParsedToolResult => {
+    // Image generation result
+    if (parsed.url && typeof parsed.url === 'string') {
+      const url = parsed.url;
+      const isImage = url.includes('.png') || url.includes('.jpg') || 
+                      url.includes('.webp') || url.includes('rati.chat') || 
+                      url.includes('/images/');
+      if (isImage) {
+        embeddedImages.push(url);
+        return { type: 'image', data: parsed, imageUrl: url };
+      }
+    }
+    
+    // Success message (profile update, wallet created, etc)
+    if (parsed.message && typeof parsed.message === 'string') {
+      if (parsed.error === true) {
+        return { type: 'error', data: parsed, message: parsed.message };
+      }
+      return { type: 'success', data: parsed, message: parsed.message };
+    }
+    
+    // Success boolean
+    if (parsed.success === true) {
+      const msg = typeof parsed.result === 'string' ? parsed.result : 
+                  typeof parsed.data === 'string' ? parsed.data : 'Done!';
+      return { type: 'success', data: parsed, message: msg };
+    }
+    
+    // Error result
+    if (parsed.error === true || parsed.success === false) {
+      const msg = typeof parsed.message === 'string' ? parsed.message :
+                  typeof parsed.error === 'string' ? parsed.error : 'An error occurred';
+      return { type: 'error', data: parsed, message: msg };
+    }
+    
+    // Job status or other info
+    if (parsed.status || parsed.jobId) {
+      return { type: 'info', data: parsed };
+    }
+    
+    return { type: 'unknown', data: parsed };
+  };
   
+  // Pattern 1: JSON arrays (gallery, job lists, etc)
+  // Match arrays that contain objects
+  const jsonArrayPattern = /\n?\s*\[\s*(?:\{[\s\S]*?\}\s*,?\s*)+\]\s*\n?/g;
+  const emptyArrayPattern = /\n?\s*\[\s*\]\s*\n?/g;
+  
+  // Remove empty arrays (e.g., "no pending jobs")
+  cleanedContent = cleanedContent.replace(emptyArrayPattern, '');
+  
+  // Process non-empty arrays
+  const arrayMatches = cleanedContent.match(jsonArrayPattern) || [];
   for (const match of arrayMatches) {
     try {
       const parsed = JSON.parse(match.trim());
       if (Array.isArray(parsed)) {
-        // Check if it's a gallery (has url field)
-        const hasUrls = parsed.some(item => item && typeof item === 'object' && 'url' in item);
+        // Check if it's a gallery (items have url field)
+        const hasUrls = parsed.some(item => item?.url);
         if (hasUrls) {
-          embeddedData.push({ type: 'gallery', items: parsed });
           for (const item of parsed) {
             if (item?.url && typeof item.url === 'string') {
               embeddedImages.push(item.url);
             }
           }
-        } else if (parsed.length === 0) {
-          // Empty array, likely "no pending jobs" - just remove it
-          embeddedData.push({ type: 'jobs', items: [] });
-        } else {
-          embeddedData.push({ type: 'unknown', items: parsed });
+          toolResults.push({ type: 'gallery', data: { items: parsed } });
         }
         cleanedContent = cleanedContent.replace(match, '');
       }
@@ -54,31 +106,31 @@ function processMessageContent(content: string): {
     }
   }
   
-  // Pattern 2: Single JSON objects (like image generation results)
-  const jsonObjectPattern = /\n?\s*\{\s*"[^"]+"\s*:[\s\S]*?\}\s*\n?/g;
-  const objectMatches = cleanedContent.match(jsonObjectPattern) || [];
+  // Pattern 2: Single JSON objects
+  // More aggressive pattern to catch tool results
+  const jsonObjectPattern = /\n?\s*\{\s*"[\w]+"\s*:\s*(?:"[^"]*"|true|false|null|\d+|\{[^}]*\}|\[[^\]]*\])\s*(?:,\s*"[\w]+"\s*:\s*(?:"[^"]*"|true|false|null|\d+|\{[^}]*\}|\[[^\]]*\])\s*)*\}\s*\n?/g;
   
+  const objectMatches = cleanedContent.match(jsonObjectPattern) || [];
   for (const match of objectMatches) {
     try {
       const parsed = JSON.parse(match.trim());
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        // Check if it has an image URL
-        if (parsed.url && typeof parsed.url === 'string' && 
-            (parsed.url.includes('.png') || parsed.url.includes('.jpg') || 
-             parsed.url.includes('rati.chat') || parsed.url.includes('/images/'))) {
-          embeddedImages.push(parsed.url);
-          cleanedContent = cleanedContent.replace(match, '');
-        }
+        const result = categorizeResult(parsed);
+        toolResults.push(result);
+        cleanedContent = cleanedContent.replace(match, '');
       }
     } catch {
       // Not valid JSON, leave it
     }
   }
   
-  // Clean up multiple newlines left after removal
-  cleanedContent = cleanedContent.replace(/\n{3,}/g, '\n\n').trim();
+  // Clean up artifacts
+  cleanedContent = cleanedContent
+    .replace(/\n{3,}/g, '\n\n')  // Multiple newlines
+    .replace(/^\s*\n/, '')       // Leading newline
+    .trim();
   
-  return { cleanedContent, embeddedImages, embeddedData };
+  return { cleanedContent, embeddedImages, toolResults };
 }
 
 /**
@@ -153,8 +205,8 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   const hasPendingTools = message.toolCalls?.some(tc => tc.status === 'pending');
   
   // Process message content to extract embedded JSON and images
-  const { cleanedContent, embeddedImages } = useMemo(
-    () => message.content ? processMessageContent(message.content) : { cleanedContent: '', embeddedImages: [], embeddedData: [] },
+  const { cleanedContent, embeddedImages, toolResults } = useMemo(
+    () => message.content ? processMessageContent(message.content) : { cleanedContent: '', embeddedImages: [], toolResults: [] },
     [message.content]
   );
   
@@ -166,6 +218,9 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   
   const activeJobs = getActiveJobs(message.pendingJobs);
   const failedJobs = getFailedJobs(message.pendingJobs);
+  
+  // Filter tool results that should be shown (not images - those are rendered separately)
+  const visibleToolResults = toolResults.filter(r => r.type !== 'image' && r.type !== 'gallery');
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3 lg:mb-4`}>
@@ -190,9 +245,37 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
               </div>
             )}
             
+            {/* Render tool result badges (success/error messages) */}
+            {visibleToolResults.length > 0 && (
+              <div className={`space-y-1 ${cleanedContent ? 'mt-2' : ''}`}>
+                {visibleToolResults.map((result, idx) => (
+                  <div 
+                    key={idx}
+                    className={`text-xs px-2 py-1 rounded inline-flex items-center gap-1.5 mr-2 ${
+                      result.type === 'success' ? 'bg-green-500/20 text-green-300' :
+                      result.type === 'error' ? 'bg-red-500/20 text-red-300' :
+                      'bg-dark-700 text-dark-300'
+                    }`}
+                  >
+                    {result.type === 'success' && (
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                    {result.type === 'error' && (
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    )}
+                    {result.message || (result.type === 'success' ? 'Done!' : 'Completed')}
+                  </div>
+                ))}
+              </div>
+            )}
+            
             {/* Render generated images inline */}
             {images.length > 0 && (
-              <div className={`grid gap-2 ${cleanedContent ? 'mt-3' : ''} ${
+              <div className={`grid gap-2 ${cleanedContent || visibleToolResults.length > 0 ? 'mt-3' : ''} ${
                 images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
               }`}>
                 {images.slice(0, 4).map((url, idx) => (
