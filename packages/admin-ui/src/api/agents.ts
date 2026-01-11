@@ -12,6 +12,11 @@ export interface AgentResponse {
   createdAt: number;
   updatedAt: number;
   createdBy: string;
+  profileImage?: {
+    url: string;
+    s3Key?: string;
+    updatedAt?: number;
+  };
   telegram?: {
     botUsername: string;
     enabled: boolean;
