@@ -7,3 +7,5 @@ export * from './media-jobs.js';
 export * from './credits.js';
 export * from './media.js';
 export * from './telegram-stickers.js';
+export * from './telegram.js';
+export * from './chat-voting.js';
