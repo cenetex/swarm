@@ -491,6 +491,59 @@ export class AdminApiConstruct extends Construct {
       integration: jobsIntegration,
     });
 
+    // Wallet authentication handler - for Solana wallet sign-in
+    const walletAuthHandler = new nodejs.NodejsFunction(this, 'WalletAuthHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/wallet-auth.ts'),
+      handler: 'handleWalletAuth',
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 256,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        NODE_ENV: environment,
+        ALLOWED_ORIGINS: allowedOrigins.join(','),
+        AUTH_DOMAIN: adminDomain || 'admin.rati.chat',
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+    });
+
+    // Grant permissions to wallet auth handler
+    this.table.grantReadWriteData(walletAuthHandler);
+
+    const walletAuthIntegration = new integrations.HttpLambdaIntegration(
+      'WalletAuthIntegration',
+      walletAuthHandler
+    );
+
+    // Wallet auth routes - no Cloudflare Access required
+    this.api.addRoutes({
+      path: '/auth/challenge',
+      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      integration: walletAuthIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/auth/verify',
+      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      integration: walletAuthIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/auth/me',
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.OPTIONS],
+      integration: walletAuthIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/auth/logout',
+      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      integration: walletAuthIntegration,
+    });
+
     // Shared Telegram webhook handler - handles ALL agents dynamically
     const telegramWebhookHandler = new nodejs.NodejsFunction(this, 'TelegramWebhookHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,

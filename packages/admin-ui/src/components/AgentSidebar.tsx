@@ -3,6 +3,7 @@
  */
 import { useAgentStore } from '../store/agents';
 import { ThemeToggle } from './ThemeToggle';
+import { WalletLogin } from './WalletLogin';
 import type { Agent } from '../types';
 
 interface AgentAvatarProps {
@@ -191,6 +192,11 @@ export function AgentSidebar({ className, onClose }: AgentSidebarProps) {
             />
           ))
         )}
+      </div>
+
+      {/* Wallet Login Footer */}
+      <div className="p-3 border-t border-[var(--color-border)]">
+        <WalletLogin />
       </div>
     </div>
   );
