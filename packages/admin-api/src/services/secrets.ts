@@ -330,6 +330,27 @@ export async function getSecretArn(
   return (result.Item as SecretMetadata)?.secretArn || null;
 }
 
+async function getLatestSecretArnForType(
+  agentId: string,
+  secretType: SecretType
+): Promise<string | null> {
+  const pk = agentId ? `AGENT#${agentId}` : 'GLOBAL';
+  const result = await dynamoClient.send(new QueryCommand({
+    TableName: SECRETS_TABLE,
+    KeyConditionExpression: 'pk = :pk AND begins_with(sk, :skPrefix)',
+    ExpressionAttributeValues: {
+      ':pk': pk,
+      ':skPrefix': `SECRET#${secretType}#`,
+    },
+  }));
+
+  const items = (result.Items || []) as SecretMetadata[];
+  if (items.length === 0) return null;
+
+  items.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  return items[0]?.secretArn || null;
+}
+
 /**
  * Get secret value - INTERNAL USE ONLY
  *
@@ -351,7 +372,10 @@ export async function _getSecretValueInternal(
   // Log access for audit purposes
   console.warn(`[AUDIT] Secret value accessed: agent=${agentId}, type=${secretType}, name=${name}`);
 
-  const secretArn = await getSecretArn(agentId, secretType, name);
+  let secretArn = await getSecretArn(agentId, secretType, name);
+  if (!secretArn && name === 'default') {
+    secretArn = await getLatestSecretArnForType(agentId, secretType);
+  }
   if (!secretArn) return null;
 
   try {
