@@ -70,6 +70,11 @@ export interface SwarmStackProps extends cdk.StackProps {
   replicateApiKeyArn?: string;
 
   /**
+   * Helius API key secret ARN (for Solana RPC + burn verification)
+   */
+  heliusApiKeyArn?: string;
+
+  /**
    * Custom domain for gallery CDN (e.g., 'gallery.rati.chat' or 'gallery-staging.rati.chat')
    * Images will be served from https://{galleryDomain}/agents/{agentId}/images/{imageId}.png
    */
@@ -102,6 +107,7 @@ export class SwarmStack extends cdk.Stack {
       adminEmails,
       openRouterApiKeyArn,
       replicateApiKeyArn,
+      heliusApiKeyArn,
       galleryDomain,
       galleryCertificateArn,
     } = props;
@@ -124,6 +130,7 @@ export class SwarmStack extends cdk.Stack {
         adminEmails,
         openRouterApiKeyArn,
         replicateApiKeyArn,
+        heliusApiKeyArn,
         environment,
         adminDomain,
         apiDomain,

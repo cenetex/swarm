@@ -306,6 +306,7 @@ export async function verifyGateBurn(
     ]);
 
     const heliusMints = extractHeliusMintCandidates(heliusParsedTx);
+    const candidateMints = Array.from(new Set([...burnedMints, ...heliusMints]));
     const burnDetected = burnedMints.length > 0 || isBurnTransaction(heliusParsedTx, tx.meta?.logMessages);
 
     if (!burnDetected) {
@@ -315,10 +316,13 @@ export async function verifyGateBurn(
     const heliusCollection = extractHeliusCollection(heliusParsedTx);
     if (heliusCollection === GATE_COLLECTION) {
       console.log(`[LineageNFT] Verified Gate burn (collection match) for ${walletAddress.slice(0, 8)}...`);
-      return { verified: true, signature };
+      return {
+        verified: true,
+        signature,
+        burnedMint: candidateMints.length === 1 ? candidateMints[0] : undefined,
+      };
     }
 
-    const candidateMints = Array.from(new Set([...burnedMints, ...heliusMints]));
     if (candidateMints.length === 0) {
       return { verified: false, error: 'Unable to identify burned NFT mint' };
     }

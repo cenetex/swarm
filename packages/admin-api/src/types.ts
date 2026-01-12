@@ -196,6 +196,8 @@ export interface AgentRecord {
   // Lineage tracking for NFT minting on abandonment
   nftCollectionMint?: string;     // Metaplex Core collection for this agent's lineage
   currentEra?: number;            // Increments on each abandonment (defaults to 0)
+  lastBurnTx?: string;
+  lastBurnMint?: string;
 
   status: 'draft' | 'active' | 'paused' | 'deleted';
   createdAt: number;

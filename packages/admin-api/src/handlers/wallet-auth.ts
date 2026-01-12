@@ -641,6 +641,7 @@ export async function handleAbandonAgent(
       agentName: result.agentName,
       era: result.era,
       lineageNftMint: result.lineageNftMint,
+      burnedMint: result.burnedMint,
       lineageMetadata: lineageMint.metadata,
       gateStatus: result.gateStatus,
     }, cors);

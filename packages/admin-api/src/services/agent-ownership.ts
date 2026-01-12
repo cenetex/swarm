@@ -49,6 +49,7 @@ export interface AbandonResult {
   agentName?: string;
   era?: number;
   lineageNftMint?: string;
+  burnedMint?: string;
   gateStatus?: GateStatus;
 }
 
@@ -300,10 +301,16 @@ export async function abandonAgent(
     };
   }
 
+  const burnedMint = burnVerification.burnedMint;
   const now = Date.now();
   const newEra = (agent.currentEra || 0) + 1;
 
   try {
+    const updateExpression = `
+      SET currentEra = :era, updatedAt = :now, lastBurnTx = :burnTx${burnedMint ? ', lastBurnMint = :burnMint' : ''}
+      REMOVE inhabitantWallet, inhabitedAt
+    `;
+
     // Atomic transaction: update agent AND delete mapping
     await ddb.send(
       new TransactWriteCommand({
@@ -316,16 +323,14 @@ export async function abandonAgent(
                 pk: `AGENT#${agent.agentId}`,
                 sk: 'CONFIG',
               },
-              UpdateExpression: `
-                SET currentEra = :era, updatedAt = :now, lastBurnTx = :burnTx
-                REMOVE inhabitantWallet, inhabitedAt
-              `,
+              UpdateExpression: updateExpression,
               // Ensure we're still the inhabitant
               ConditionExpression: 'inhabitantWallet = :wallet',
               ExpressionAttributeValues: {
                 ':era': newEra,
                 ':now': now,
                 ':burnTx': burnTxSignature,
+                ...(burnedMint ? { ':burnMint': burnedMint } : {}),
                 ':wallet': walletAddress,
               },
             },
@@ -357,6 +362,7 @@ export async function abandonAgent(
       agentName: agent.name,
       era: newEra,
       lineageNftMint: agent.nftCollectionMint,
+      burnedMint,
       gateStatus,
     };
   } catch (err: unknown) {

@@ -27,6 +27,7 @@ const cloudflareTeamDomain = app.node.tryGetContext('cloudflareTeamDomain') || e
 const adminEmails = app.node.tryGetContext('adminEmails') || envConfig.adminEmails;
 const openRouterApiKeyArn = app.node.tryGetContext('openRouterApiKeyArn') || envConfig.openRouterApiKeyArn;
 const replicateApiKeyArn = app.node.tryGetContext('replicateApiKeyArn') || envConfig.replicateApiKeyArn;
+const heliusApiKeyArn = app.node.tryGetContext('heliusApiKeyArn') || envConfig.heliusApiKeyArn;
 const galleryDomain = app.node.tryGetContext('galleryDomain') || envConfig.galleryDomain;
 const galleryCertificateArn = app.node.tryGetContext('galleryCertificateArn') || envConfig.galleryCertificateArn;
 
@@ -47,6 +48,7 @@ new SwarmStack(app, `SwarmStack-${environment}`, {
   adminEmails,
   openRouterApiKeyArn,
   replicateApiKeyArn,
+  heliusApiKeyArn,
   galleryDomain,
   galleryCertificateArn,
   env: {

@@ -67,6 +67,7 @@ export interface AbandonResult {
   agentName?: string;
   era?: number;
   lineageNftMint?: string;
+  burnedMint?: string;
   gateStatus?: GateStatus;
 }
 

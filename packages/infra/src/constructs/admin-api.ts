@@ -52,6 +52,11 @@ export interface AdminApiConstructProps {
   heliusApiKey?: string;
 
   /**
+   * Helius API key secret ARN (preferred over inline value)
+   */
+  heliusApiKeyArn?: string;
+
+  /**
    * Environment (development/production)
    */
   environment?: string;
@@ -179,6 +184,11 @@ export class AdminApiConstruct extends Construct {
     // Secret for Replicate API key (optional - enables free trial image generation)
     const replicateApiKey = props.replicateApiKeyArn
       ? secretsmanager.Secret.fromSecretCompleteArn(this, 'ReplicateApiKey', props.replicateApiKeyArn)
+      : undefined;
+
+    // Secret for Helius API key (optional, preferred over inline value)
+    const heliusApiKeySecret = props.heliusApiKeyArn
+      ? secretsmanager.Secret.fromSecretCompleteArn(this, 'HeliusApiKey', props.heliusApiKeyArn)
       : undefined;
 
     // Build webhook URL for Replicate callbacks
@@ -513,7 +523,7 @@ export class AdminApiConstruct extends Construct {
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         AUTH_DOMAIN: adminDomain || 'admin.rati.chat',
         // Helius for NFT gating
-        HELIUS_API_KEY: props.heliusApiKey || '',
+        HELIUS_API_KEY: heliusApiKeySecret?.secretValue.toString() || props.heliusApiKey || '',
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],
