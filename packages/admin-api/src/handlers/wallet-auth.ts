@@ -11,8 +11,6 @@ import {
   deleteSession,
 } from '../services/wallet-auth.js';
 import {
-  claimAgent,
-  releaseAgent,
   inhabitAgent,
   abandonAgent,
   canAbandon,
@@ -344,109 +342,8 @@ export async function handleLogout(
   }
 }
 
-/**
- * POST /auth/claim
- * Claim ownership of an agent (inhabit avatar)
- */
-export async function handleClaimAgent(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
-  const cors = corsHeaders(event);
-
-  if (event.requestContext.http.method === 'OPTIONS') {
-    return { statusCode: 204, headers: cors };
-  }
-
-  try {
-    // Require authentication
-    const sessionToken = getSessionFromCookie(event);
-    if (!sessionToken) {
-      return jsonResponse(401, { error: 'Authentication required' }, cors);
-    }
-
-    const session = await getSessionWithUser(sessionToken);
-    if (!session) {
-      return jsonResponse(401, { error: 'Session expired' }, {
-        ...cors,
-        'Set-Cookie': clearSessionCookie(),
-      });
-    }
-
-    // Parse request
-    const body = JSON.parse(event.body || '{}');
-    const agentId = body.agentId;
-
-    if (!agentId || typeof agentId !== 'string') {
-      return jsonResponse(400, { error: 'agentId is required' }, cors);
-    }
-
-    // Claim the agent
-    const result = await claimAgent(session.user.walletAddress, agentId);
-
-    if (!result.success) {
-      return jsonResponse(400, { error: result.error }, cors);
-    }
-
-    return jsonResponse(200, {
-      success: true,
-      agentId: result.agentId,
-      agentName: result.agentName,
-      avatarUrl: result.avatarUrl,
-    }, cors);
-  } catch (error) {
-    console.error('[WalletAuth] Claim error:', error);
-    return jsonResponse(500, { error: 'Internal server error' }, cors);
-  }
-}
-
-/**
- * POST /auth/release
- * Release ownership of current agent
- */
-export async function handleReleaseAgent(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
-  const cors = corsHeaders(event);
-
-  if (event.requestContext.http.method === 'OPTIONS') {
-    return { statusCode: 204, headers: cors };
-  }
-
-  try {
-    // Require authentication
-    const sessionToken = getSessionFromCookie(event);
-    if (!sessionToken) {
-      return jsonResponse(401, { error: 'Authentication required' }, cors);
-    }
-
-    const session = await getSessionWithUser(sessionToken);
-    if (!session) {
-      return jsonResponse(401, { error: 'Session expired' }, {
-        ...cors,
-        'Set-Cookie': clearSessionCookie(),
-      });
-    }
-
-    // Release the agent
-    const result = await releaseAgent(session.user.walletAddress);
-
-    if (!result.success) {
-      return jsonResponse(400, { error: result.error }, cors);
-    }
-
-    return jsonResponse(200, {
-      success: true,
-      releasedAgentId: result.agentId,
-      releasedAgentName: result.agentName,
-    }, cors);
-  } catch (error) {
-    console.error('[WalletAuth] Release error:', error);
-    return jsonResponse(500, { error: 'Internal server error' }, cors);
-  }
-}
-
 // ============================================================================
-// NEW INHABITATION ENDPOINTS
+// INHABITATION ENDPOINTS
 // ============================================================================
 
 /**
@@ -772,15 +669,7 @@ export async function handleWalletAuth(
     return handleLogout(event);
   }
 
-  if (path === '/auth/claim' && method === 'POST') {
-    return handleClaimAgent(event);
-  }
-
-  if (path === '/auth/release' && method === 'POST') {
-    return handleReleaseAgent(event);
-  }
-
-  // New inhabitation endpoints
+  // Inhabitation endpoints
   if (path === '/auth/unclaimed-agents' && method === 'GET') {
     return handleUnclaimedAgents(event);
   }

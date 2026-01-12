@@ -50,6 +50,11 @@ export async function createAgent(
     name,
     description,
     platforms: {},
+    voiceConfig: {
+      enabled: true,
+      ttsProvider: 'voice-clone',
+      format: 'ogg',
+    },
     llmConfig: {
       provider: 'openrouter',
       model: 'anthropic/claude-sonnet-4',
@@ -117,6 +122,11 @@ export async function createAgentWithWallet(
     name,
     description,
     platforms: {},
+    voiceConfig: {
+      enabled: true,
+      ttsProvider: 'voice-clone',
+      format: 'ogg',
+    },
     llmConfig: {
       provider: 'openrouter',
       model: 'anthropic/claude-sonnet-4',
@@ -177,11 +187,12 @@ export async function createAgentWithWallet(
 
 /**
  * List unclaimed agents (no inhabitant)
+ * Only checks inhabitantWallet - ownerWallet is a legacy field
  */
 export async function listUnclaimedAgents(): Promise<AgentRecord[]> {
   const result = await dynamoClient.send(new ScanCommand({
     TableName: ADMIN_TABLE,
-    FilterExpression: 'sk = :sk AND #status <> :deleted AND attribute_not_exists(inhabitantWallet) AND attribute_not_exists(ownerWallet)',
+    FilterExpression: 'sk = :sk AND #status <> :deleted AND attribute_not_exists(inhabitantWallet)',
     ExpressionAttributeNames: {
       '#status': 'status',
     },

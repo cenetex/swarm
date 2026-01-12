@@ -195,7 +195,7 @@ export interface AgentRecord {
 
   // Lineage tracking for NFT minting on abandonment
   nftCollectionMint?: string;     // Metaplex Core collection for this agent's lineage
-  currentEra: number;             // Increments on each abandonment (starts at 0)
+  currentEra?: number;            // Increments on each abandonment (defaults to 0)
 
   status: 'draft' | 'active' | 'paused' | 'deleted';
   createdAt: number;
@@ -453,6 +453,13 @@ export type AdminToolName = keyof typeof AdminTools;
 // Channel state machine states
 export type ChannelState = 'IDLE' | 'ACTIVE' | 'COOLDOWN';
 
+// Media attachment in a buffered message
+export interface BufferedMedia {
+  type: 'photo' | 'video' | 'animation' | 'document' | 'sticker';
+  fileId: string;
+  mimeType?: string;
+}
+
 // Buffered message in a channel
 export interface BufferedMessage {
   messageId: number;
@@ -465,6 +472,7 @@ export interface BufferedMessage {
   replyToUserId?: number;
   isMention?: boolean;
   isReplyToBot?: boolean;
+  media?: BufferedMedia[];
 }
 
 // Channel state record stored in DynamoDB

@@ -93,6 +93,12 @@ const STATE_TABLE = process.env.STATE_TABLE;
  * Convert AdminAPI AgentRecord to Core AgentConfig format
  */
 function convertToAgentConfig(record: AgentRecord): AgentConfig {
+  const defaultVoiceConfig = record.voiceConfig ?? {
+    enabled: true,
+    ttsProvider: 'voice-clone' as const,
+    format: 'ogg' as const,
+  };
+
   const config: AgentConfig = {
     id: record.agentId,
     name: record.name,
@@ -119,18 +125,18 @@ function convertToAgentConfig(record: AgentRecord): AgentConfig {
       cooldownMinutes: 1,
       maxContextMessages: 20,
     },
-    voice: record.voiceConfig ? {
-      enabled: record.voiceConfig.enabled,
-      defaultVoiceId: record.voiceConfig.defaultVoiceId,
-      ttsProvider: record.voiceConfig.ttsProvider,
-      speed: record.voiceConfig.speed,
-      pitch: record.voiceConfig.pitch,
-      format: record.voiceConfig.format,
-      referenceUrl: record.voiceConfig.referenceUrl,
-    } : undefined,
+    voice: {
+      enabled: defaultVoiceConfig.enabled,
+      defaultVoiceId: defaultVoiceConfig.defaultVoiceId,
+      ttsProvider: defaultVoiceConfig.ttsProvider,
+      speed: defaultVoiceConfig.speed,
+      pitch: defaultVoiceConfig.pitch,
+      format: defaultVoiceConfig.format,
+      referenceUrl: defaultVoiceConfig.referenceUrl,
+    },
     tools: (() => {
       const tools = ['send_message', 'react', 'ignore', 'wait'];
-      if (record.voiceConfig?.enabled) {
+      if (defaultVoiceConfig.enabled) {
         tools.push('generate_voice_message', 'transcribe_audio');
       }
       return tools;

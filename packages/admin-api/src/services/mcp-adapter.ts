@@ -1330,6 +1330,32 @@ function createNFTServices(): NFTServices {
     generateLineageMetadata: (metadata) => {
       return lineageNft.generateLineageMetadataJson(metadata);
     },
+
+    // Agent self-awareness (what agents can actually use)
+    getAgentInhabitationStatus: async (agentId: string) => {
+      const agent = await agents.getAgent(agentId);
+      if (!agent) {
+        return {
+          isInhabited: false,
+          currentEra: 0,
+          totalEras: 0,
+        };
+      }
+
+      return {
+        isInhabited: !!agent.inhabitantWallet,
+        inhabitantWallet: agent.inhabitantWallet,
+        inhabitedAt: agent.inhabitedAt,
+        currentEra: agent.currentEra || 0,
+        totalEras: agent.currentEra || 0, // Era increments on each abandon
+      };
+    },
+
+    getInhabitationUrl: (agentId: string) => {
+      // URL to the inhabitation page for this agent
+      const baseUrl = process.env.ADMIN_UI_URL || 'https://admin.rati.chat';
+      return `${baseUrl}/inhabit/${agentId}`;
+    },
   };
 }
 

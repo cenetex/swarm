@@ -36,6 +36,7 @@ export {
   type LineageMetadata,
   type MintPreparation,
   type LineageCollection,
+  type AgentInhabitationStatus,
 } from './nft.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';

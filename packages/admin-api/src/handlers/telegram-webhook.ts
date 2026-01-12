@@ -23,7 +23,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { z } from 'zod';
-import { isValidTelegramIP } from '../services/telegram.js';
+import { isValidTelegramIP, getFileUrl as getTelegramFileUrl } from '../services/telegram.js';
 import { timingSafeEqual } from 'crypto';
 import * as channelState from '../services/channel-state.js';
 import * as credits from '../services/credits.js';
@@ -39,7 +39,7 @@ import {
   registerAllTools,
 } from '@swarm/mcp-server';
 import { createTelegramMCPServices } from '../services/mcp-adapter.js';
-import type { BufferedMessage, ChannelStateRecord } from '../types.js';
+import type { BufferedMessage, BufferedMedia, ChannelStateRecord } from '../types.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
@@ -128,22 +128,29 @@ interface AgentConfig {
   profileImage?: { url: string };
 }
 
-const ToolCallSchema = z.object({
+const _ToolCallSchema = z.object({
   id: z.string(),
   type: z.literal('function'),
   function: z.object({ name: z.string(), arguments: z.string() }),
 });
 
-const _ChatMessageSchema = z.object({
-  role: z.enum(['system', 'user', 'assistant', 'tool']),
-  content: z.string(),
-  tool_calls: z.array(ToolCallSchema).optional(),
-  tool_call_id: z.string().optional(),
-  name: z.string().optional(),
-});
+// Multimodal content part (for vision)
+type ContentPart = 
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } };
 
-type ChatMessage = z.infer<typeof _ChatMessageSchema>;
-type ToolCall = z.infer<typeof ToolCallSchema>;
+// ChatMessage content can be string OR array of content parts (for vision)
+type MessageContent = string | ContentPart[];
+
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: MessageContent;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+  name?: string;
+}
+
+type ToolCall = z.infer<typeof _ToolCallSchema>;
 
 // === MCP TOOL CLIENT SETUP ===
 
@@ -828,6 +835,68 @@ type OpenAITool = {
   };
 };
 
+/**
+ * Fetch image URLs from buffered messages that have photos
+ * Returns a map of messageId -> imageUrl for recent messages with photos
+ */
+async function fetchImageUrlsFromBuffer(
+  token: string,
+  messages: BufferedMessage[],
+  maxImages: number = 3
+): Promise<Map<number, string>> {
+  const imageUrls = new Map<number, string>();
+  
+  // Get recent messages with photos (most recent first)
+  const messagesWithPhotos = [...messages]
+    .reverse()
+    .filter(m => m.media?.some(media => media.type === 'photo'))
+    .slice(0, maxImages);
+  
+  // Fetch URLs in parallel
+  await Promise.all(
+    messagesWithPhotos.map(async (msg) => {
+      const photo = msg.media?.find(m => m.type === 'photo');
+      if (!photo) return;
+      
+      try {
+        const url = await getTelegramFileUrl(token, photo.fileId);
+        if (url) {
+          imageUrls.set(msg.messageId, url);
+        }
+      } catch (error) {
+        console.warn(`[Telegram] Failed to get file URL for message ${msg.messageId}:`, error);
+      }
+    })
+  );
+  
+  return imageUrls;
+}
+
+/**
+ * Build multimodal message content with images
+ */
+function buildMultimodalContent(
+  textContent: string,
+  imageUrls: string[]
+): MessageContent {
+  if (imageUrls.length === 0) {
+    return textContent;
+  }
+  
+  const parts: ContentPart[] = [
+    { type: 'text', text: textContent }
+  ];
+  
+  for (const url of imageUrls) {
+    parts.push({
+      type: 'image_url',
+      image_url: { url, detail: 'auto' }
+    });
+  }
+  
+  return parts;
+}
+
 // === LLM CALL WITH TOOLS ===
 async function callLLM(
   messages: ChatMessage[],
@@ -902,6 +971,33 @@ async function processChannelMessage(
   const botUsername = agent.platforms.telegram?.botUsername;
   const botId = agent.platforms.telegram?.botId;
 
+  // Extract media attachments
+  const media: BufferedMedia[] = [];
+  if (message.photo) {
+    // Telegram sends multiple sizes, pick the largest
+    const photos = message.photo as Array<{ file_id: string; file_unique_id: string; width: number; height: number }>;
+    const largest = photos.reduce((max, p) => (p.width * p.height > max.width * max.height ? p : max), photos[0]);
+    if (largest) {
+      media.push({ type: 'photo', fileId: largest.file_id });
+    }
+  }
+  if (message.video) {
+    const video = message.video as { file_id: string; mime_type?: string };
+    media.push({ type: 'video', fileId: video.file_id, mimeType: video.mime_type });
+  }
+  if (message.animation) {
+    const animation = message.animation as { file_id: string; mime_type?: string };
+    media.push({ type: 'animation', fileId: animation.file_id, mimeType: animation.mime_type });
+  }
+  if (message.document) {
+    const doc = message.document as { file_id: string; mime_type?: string };
+    media.push({ type: 'document', fileId: doc.file_id, mimeType: doc.mime_type });
+  }
+  if (message.sticker) {
+    const sticker = message.sticker as { file_id: string; emoji?: string };
+    media.push({ type: 'sticker', fileId: sticker.file_id });
+  }
+
   // Check if this is a mention or reply to bot
   const isMention = botUsername ? new RegExp(`@${botUsername}\\b`, 'i').test(text) : false;
   const isReplyToBot = !!(message.reply_to_message?.from?.id === botId ||
@@ -919,6 +1015,7 @@ async function processChannelMessage(
     replyToUserId: message.reply_to_message?.from?.id,
     isMention,
     isReplyToBot,
+    media: media.length > 0 ? media : undefined,
   };
 
   // Add message to buffer and get updated state
@@ -1050,16 +1147,29 @@ async function processChannelResponse(
   // Final reminder about brevity
   systemPrompt += `\n\n---\n**REMEMBER: Keep responses to 1-2 sentences MAX. This is Telegram, not an essay.**`;
 
+  // Fetch image URLs from recent messages (for vision)
+  const imageUrlMap = await fetchImageUrlsFromBuffer(token, state.messageBuffer, 3);
+  const recentImageUrls = Array.from(imageUrlMap.values());
+  
+  if (recentImageUrls.length > 0) {
+    console.log(`[Telegram] Including ${recentImageUrls.length} images in LLM context`);
+    systemPrompt += `\n\nNote: The user has shared ${recentImageUrls.length} image(s) in this conversation. You can see them attached to the message below.`;
+  }
+
   // Build messages array with conversation context
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
   ];
 
-  // Add conversation history as a single user message with context
-  if (conversationContext) {
+  // Add conversation history with images (multimodal content)
+  if (conversationContext || recentImageUrls.length > 0) {
+    const textContent = conversationContext 
+      ? `Here's the recent conversation:\n\n${conversationContext}\n\nRespond naturally in 1-2 sentences. Be brief!`
+      : 'Start a conversation!';
+    
     messages.push({
       role: 'user',
-      content: `Here's the recent conversation:\n\n${conversationContext}\n\nRespond naturally in 1-2 sentences. Be brief!`,
+      content: buildMultimodalContent(textContent, recentImageUrls),
     });
   } else {
     messages.push({
@@ -1231,6 +1341,32 @@ async function handleMultiAgentMessage(
   const text = message.text || message.caption || '';
   const botUsername = agent.platforms.telegram?.botUsername;
 
+  // Extract media attachments (same as processChannelMessage)
+  const msgMedia: BufferedMedia[] = [];
+  if (message.photo) {
+    const photos = message.photo as Array<{ file_id: string; file_unique_id: string; width: number; height: number }>;
+    const largest = photos.reduce((max, p) => (p.width * p.height > max.width * max.height ? p : max), photos[0]);
+    if (largest) {
+      msgMedia.push({ type: 'photo', fileId: largest.file_id });
+    }
+  }
+  if (message.video) {
+    const video = message.video as { file_id: string; mime_type?: string };
+    msgMedia.push({ type: 'video', fileId: video.file_id, mimeType: video.mime_type });
+  }
+  if (message.animation) {
+    const animation = message.animation as { file_id: string; mime_type?: string };
+    msgMedia.push({ type: 'animation', fileId: animation.file_id, mimeType: animation.mime_type });
+  }
+  if (message.document) {
+    const doc = message.document as { file_id: string; mime_type?: string };
+    msgMedia.push({ type: 'document', fileId: doc.file_id, mimeType: doc.mime_type });
+  }
+  if (message.sticker) {
+    const sticker = message.sticker as { file_id: string; emoji?: string };
+    msgMedia.push({ type: 'sticker', fileId: sticker.file_id });
+  }
+
   // Get or generate agent stats
   const stats = generateAgentStats(agentRecord.createdAt, agentId);
 
@@ -1248,7 +1384,7 @@ async function handleMultiAgentMessage(
     : null;
 
   // Create buffered message for interest check
-  const bufferedMessage = {
+  const bufferedMessage: BufferedMessage = {
     messageId,
     userId: message.from?.id || 0,
     userName: message.from?.first_name || 'User',
@@ -1259,6 +1395,7 @@ async function handleMultiAgentMessage(
     replyToUserId: message.reply_to_message?.from?.id,
     isMention: false, // Already handled direct mentions before this
     isReplyToBot: false,
+    media: msgMedia.length > 0 ? msgMedia : undefined,
   };
 
   // Add message to buffer (needed for context)

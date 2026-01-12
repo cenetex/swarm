@@ -575,7 +575,24 @@ export function buildConversationContext(
   for (const msg of state.messageBuffer) {
     const timestamp = new Date(msg.timestamp).toLocaleTimeString();
     const userLabel = msg.username ? `@${msg.username}` : msg.userName;
-    const line = `[${timestamp}] ${userLabel}: ${msg.text}`;
+    
+    // Build message content with media indicators
+    let content = msg.text;
+    if (msg.media && msg.media.length > 0) {
+      const mediaLabels = msg.media.map(m => {
+        switch (m.type) {
+          case 'photo': return '📷 [photo]';
+          case 'video': return '🎥 [video]';
+          case 'animation': return '🎬 [GIF]';
+          case 'sticker': return '🎭 [sticker]';
+          case 'document': return '📎 [file]';
+          default: return '[media]';
+        }
+      });
+      content = content ? `${content} ${mediaLabels.join(' ')}` : mediaLabels.join(' ');
+    }
+    
+    const line = `[${timestamp}] ${userLabel}: ${content}`;
 
     // Rough token estimate (4 chars = 1 token)
     const lineTokens = Math.ceil(line.length / 4);
