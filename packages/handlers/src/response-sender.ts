@@ -2,7 +2,7 @@
  * Response Sender Handler
  * Sends generated responses to platforms
  */
-import type { SQSEvent, SQSHandler, Context } from 'aws-lambda';
+import type { SQSEvent, Context, SQSBatchResponse, Handler } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { randomUUID } from 'crypto';
 import {
@@ -86,17 +86,31 @@ async function initialize(): Promise<void> {
   outboundSender = createOutboundSender(platformRegistry, activityService);
 }
 
-export const handler: SQSHandler = async (event: SQSEvent, context: Context) => {
+export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
+  event: SQSEvent,
+  context: Context
+) => {
   logger.setContext({
     agentId: AGENT_ID,
     requestId: context.awsRequestId,
   });
 
   await initialize();
+  const batchItemFailures: SQSBatchResponse['batchItemFailures'] = [];
 
   for (const record of event.Records) {
     try {
-      const response: SwarmResponse = JSON.parse(record.body);
+      let response: SwarmResponse;
+      try {
+        response = JSON.parse(record.body);
+      } catch (parseError) {
+        logger.error('Failed to parse message body as JSON', parseError, {
+          messageId: record.messageId,
+          bodyPreview: record.body?.slice(0, 100),
+        });
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+        continue;
+      }
 
       logger.setContext({
         platform: response.platform,
@@ -114,88 +128,123 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       const nonMediaActions = response.actions.filter(
         (a: ResponseAction) => a.type !== 'take_selfie' && a.type !== 'generate_video'
       );
-      const hasNonMediaActions = nonMediaActions.length > 0;
-      const hasSendMessageAction = nonMediaActions.some(
-        (a: ResponseAction) => a.type === 'send_message'
-      );
+      let actionsToSend: ResponseAction[] | null = null;
+      let queuedMedia = false;
       let sentMessages: string[] = [];
       let sendSuccess = false;
 
-      if (mediaActions.length > 0 && MEDIA_QUEUE_URL) {
-        // Queue media generation and wait
-        for (const action of mediaActions) {
-          const jobId = randomUUID();
-          await sqs.send(new SendMessageCommand({
-            QueueUrl: MEDIA_QUEUE_URL,
-            MessageBody: JSON.stringify({
-              jobId,
-              agentId: AGENT_ID,
-              conversationId: response.conversationId,
-              action,
-              response,
-            }),
-            MessageGroupId: response.conversationId,
-            MessageDeduplicationId: `media_${jobId}`,
-          }));
-        }
-
-        logger.info('Media generation queued', { count: mediaActions.length });
-
-        // For now, send text response without media
-        // Media will be sent when generation completes via callback
-        if (hasNonMediaActions) {
-          const textResponse = { ...response, actions: nonMediaActions };
-          const result = await outboundSender.send(textResponse);
-          sentMessages = result.sentMessages;
-          sendSuccess = result.success;
-          
-          if (result.errors.length > 0) {
-            logger.warn('Some actions failed', { errors: result.errors });
+      if (mediaActions.length > 0) {
+        if (MEDIA_QUEUE_URL) {
+          // Queue media generation and wait
+          for (const action of mediaActions) {
+            const jobId = randomUUID();
+            await sqs.send(new SendMessageCommand({
+              QueueUrl: MEDIA_QUEUE_URL,
+              MessageBody: JSON.stringify({
+                jobId,
+                agentId: AGENT_ID,
+                conversationId: response.conversationId,
+                action,
+                response,
+              }),
+              MessageGroupId: response.conversationId,
+              MessageDeduplicationId: `media_${jobId}`,
+            }));
           }
+
+          logger.info('Media generation queued', { count: mediaActions.length });
+          queuedMedia = true;
+
+          // For now, send text response without media
+          // Media will be sent when generation completes via callback
+          if (nonMediaActions.length > 0) {
+            actionsToSend = nonMediaActions;
+          }
+        } else {
+          logger.error('MEDIA_QUEUE_URL is not configured; skipping media generation');
+          actionsToSend = nonMediaActions.length > 0
+            ? nonMediaActions
+            : [{
+                type: 'send_message',
+                text: 'Media generation is unavailable right now.',
+              }];
         }
       } else {
         // No media actions, send directly
-        const result = await outboundSender.send(response);
+        actionsToSend = response.actions;
+      }
+
+      if (actionsToSend && actionsToSend.length > 0) {
+        const result = await outboundSender.send({ ...response, actions: actionsToSend });
         sentMessages = result.sentMessages;
         sendSuccess = result.success;
 
         if (result.errors.length > 0) {
           logger.warn('Some actions failed', { errors: result.errors });
         }
+      } else {
+        sendSuccess = queuedMedia;
       }
 
       // Update channel state with bot's response
       for (const text of sentMessages) {
-        await stateService.addMessageToChannel(
-          AGENT_ID,
-          response.conversationId,
-          response.platform,
-          {
-            messageId: `bot_${Date.now()}`,
-            sender: agentConfig.name,
-            isBot: true,
-            content: text,
-            timestamp: Date.now(),
-          }
-        );
+        try {
+          await stateService.addMessageToChannel(
+            AGENT_ID,
+            response.conversationId,
+            response.platform,
+            {
+              messageId: `bot_${randomUUID()}`,
+              sender: agentConfig.name,
+              isBot: true,
+              content: text,
+              timestamp: Date.now(),
+            }
+          );
+        } catch (error) {
+          logger.warn('Failed to update channel state for sent message', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
 
-      const shouldMarkResponse = hasNonMediaActions
+      const hasActionsToSend = Boolean(actionsToSend && actionsToSend.length > 0);
+      const hasSendMessageAction = actionsToSend?.some(
+        (a: ResponseAction) => a.type === 'send_message'
+      ) ?? false;
+      const shouldMarkResponse = hasActionsToSend
         ? (hasSendMessageAction ? sentMessages.length > 0 : sendSuccess)
         : false;
       if (shouldMarkResponse) {
-        await stateService.markResponseSent(
-          AGENT_ID,
-          response.conversationId,
-          `resp_${response.replyToMessageId || Date.now()}_${Date.now()}`
-        );
+        try {
+          await stateService.markResponseSent(
+            AGENT_ID,
+            response.conversationId,
+            `resp_${response.replyToMessageId || Date.now()}_${Date.now()}`
+          );
+        } catch (error) {
+          logger.warn('Failed to mark response sent', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      if (actionsToSend && actionsToSend.length > 0 && !sendSuccess) {
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+        logger.error('Response actions failed to send', {
+          messageId: record.messageId,
+          platform: response.platform,
+        });
+        continue;
       }
 
       logger.info('Response sent successfully');
 
     } catch (error) {
       logger.error('Failed to send response', error);
-      throw error;
+      batchItemFailures.push({ itemIdentifier: record.messageId });
     }
   }
+
+  return { batchItemFailures };
 };

@@ -4,7 +4,7 @@
  * 
  * Triggered by SQS messages from the Replicate webhook handler
  */
-import type { SQSEvent, SQSHandler, Context } from 'aws-lambda';
+import type { SQSEvent, Context, SQSBatchResponse, Handler } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import {
@@ -344,6 +344,11 @@ async function processMessage(message: ResponseMessage): Promise<void> {
     return;
   }
 
+  if (!conversationId) {
+    logger.error('Missing conversationId for response sender', { agentId, platform });
+    return;
+  }
+
   // Get bot token
   const token = await getTelegramToken(agentId);
   if (!token) {
@@ -352,8 +357,12 @@ async function processMessage(message: ResponseMessage): Promise<void> {
   }
 
   // Parse chat ID from conversationId (format: "telegram:{chatId}")
-  const chatId = conversationId.replace('telegram:', '');
-  const replyTo = replyToMessageId ? parseInt(replyToMessageId, 10) : undefined;
+  const chatId = conversationId.startsWith('telegram:')
+    ? conversationId.replace('telegram:', '')
+    : conversationId;
+  const replyTo = replyToMessageId && Number.isFinite(Number(replyToMessageId))
+    ? Number(replyToMessageId)
+    : undefined;
 
   if (message.type.includes('failed') || !result.success) {
     // Send error message
@@ -388,28 +397,37 @@ async function processMessage(message: ResponseMessage): Promise<void> {
 /**
  * Lambda handler for SQS-triggered response sending
  */
-export const handler: SQSHandler = async (event: SQSEvent, context: Context) => {
+export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
+  event: SQSEvent,
+  context: Context
+) => {
   logger.setContext({
     subsystem: 'response-sender',
     requestId: context.awsRequestId,
   });
 
   logger.info('Response sender triggered', { recordCount: event.Records.length });
-
-  const errors: Error[] = [];
+  const batchItemFailures: SQSBatchResponse['batchItemFailures'] = [];
 
   for (const record of event.Records) {
     try {
-      const message: ResponseMessage = JSON.parse(record.body);
+      let message: ResponseMessage;
+      try {
+        message = JSON.parse(record.body);
+      } catch (parseError) {
+        logger.error('Failed to parse message body as JSON', parseError, {
+          messageId: record.messageId,
+          bodyPreview: record.body?.slice(0, 100),
+        });
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+        continue;
+      }
       await processMessage(message);
     } catch (error) {
       logger.error('Failed to process message', error, { messageId: record.messageId });
-      errors.push(error as Error);
+      batchItemFailures.push({ itemIdentifier: record.messageId });
     }
   }
 
-  // If any messages failed, throw to trigger DLQ
-  if (errors.length > 0) {
-    throw new Error(`Failed to process ${errors.length} of ${event.Records.length} messages`);
-  }
+  return { batchItemFailures };
 };

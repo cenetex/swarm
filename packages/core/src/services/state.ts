@@ -254,7 +254,30 @@ export class DynamoDBStateService implements StateService {
       ReturnValues: 'ALL_NEW',
     }));
 
-    let updated = response.Attributes as ChannelState & { updatedAt?: number };
+    // Validate the response has expected shape
+    if (!response.Attributes) {
+      console.error('[State] DynamoDB UpdateCommand returned no Attributes');
+      throw new Error('DynamoDB UpdateCommand returned no Attributes');
+    }
+
+    let updated: ChannelState & { updatedAt?: number } = {
+      agentId: response.Attributes.agentId ?? agentId,
+      channelId: response.Attributes.channelId ?? channelId,
+      platform: response.Attributes.platform ?? platform,
+      recentMessages: response.Attributes.recentMessages ?? [],
+      lastActivityAt: response.Attributes.lastActivityAt ?? now,
+      messageCount: response.Attributes.messageCount ?? 0,
+      state: response.Attributes.state ?? 'IDLE',
+      stateChangedAt: response.Attributes.stateChangedAt,
+      chatType: response.Attributes.chatType,
+      chatTitle: response.Attributes.chatTitle,
+      lastResponseAt: response.Attributes.lastResponseAt,
+      lastResponseMessageId: response.Attributes.lastResponseMessageId,
+      pendingResponseAt: response.Attributes.pendingResponseAt,
+      directEngagementAt: response.Attributes.directEngagementAt,
+      ttl: response.Attributes.ttl,
+      updatedAt: response.Attributes.updatedAt,
+    };
 
     if ((updated.recentMessages?.length || 0) > maxMessages) {
       const trimmedMessages = updated.recentMessages.slice(-maxMessages);
@@ -288,7 +311,11 @@ export class DynamoDBStateService implements StateService {
           ttl,
         };
       } catch (err: unknown) {
-        if ((err as { name?: string }).name !== 'ConditionalCheckFailedException') {
+        if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
+          // Race condition - another request modified the state. This is expected in concurrent environments.
+          // The returned state may have more messages than maxMessages until next update.
+          console.info('[State] Concurrent update detected during message trim, skipping trim operation');
+        } else {
           console.warn('[State] Failed to trim channel messages:', err);
         }
       }

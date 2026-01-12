@@ -2,7 +2,7 @@
  * Media Processor Handler
  * Consumes media jobs from SQS and enqueues send_media actions back to response queue.
  */
-import type { SQSEvent, SQSHandler, Context } from 'aws-lambda';
+import type { SQSEvent, Context } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -152,7 +152,7 @@ function buildImagePrompt(action: { prompt: string; style?: string }, agent: Age
   return prompt;
 }
 
-export const handler: SQSHandler = async (event: SQSEvent, context: Context) => {
+export const handler = async (event: SQSEvent, context: Context): Promise<{ batchItemFailures: { itemIdentifier: string }[] } | void> => {
   logger.setContext({
     agentId: getAgentId(),
     requestId: context.awsRequestId,
@@ -160,10 +160,30 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
 
   await initialize();
 
+  const batchItemFailures: { itemIdentifier: string }[] = [];
+
   for (const record of event.Records) {
-    const parseResult = MediaQueueItemSchema.safeParse(JSON.parse(record.body));
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(record.body);
+    } catch (parseError) {
+      logger.error('Failed to parse message body as JSON', {
+        messageId: record.messageId,
+        error: parseError instanceof Error ? parseError.message : String(parseError),
+        bodyPreview: record.body?.slice(0, 100)
+      });
+      batchItemFailures.push({ itemIdentifier: record.messageId });
+      continue;
+    }
+
+    const parseResult = MediaQueueItemSchema.safeParse(parsedBody);
     if (!parseResult.success) {
-      logger.error('Invalid media queue item', { error: parseResult.error.message });
+      logger.error('Invalid media queue item schema', {
+        messageId: record.messageId,
+        error: parseResult.error.message
+      });
+      // Schema validation failures are permanent - don't retry (send to DLQ)
+      batchItemFailures.push({ itemIdentifier: record.messageId });
       continue;
     }
     const item = parseResult.data;
@@ -242,8 +262,18 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
 
       logger.info('Media job completed', { jobId: item.jobId, type: item.action.type });
     } catch (error) {
-      logger.error('Media job failed', error);
-      throw error;
+      logger.error('Media job failed', error, { jobId: item.jobId, messageId: record.messageId });
+      // Add to batch failures for partial batch failure handling
+      batchItemFailures.push({ itemIdentifier: record.messageId });
     }
+  }
+
+  // Return partial batch failure response for SQS
+  if (batchItemFailures.length > 0) {
+    logger.warn('Partial batch failure', {
+      failedCount: batchItemFailures.length,
+      totalCount: event.Records.length
+    });
+    return { batchItemFailures };
   }
 };

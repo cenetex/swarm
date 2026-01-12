@@ -99,9 +99,24 @@ async function makeUrlAccessible(url: string): Promise<string> {
 
 /**
  * Make multiple URLs accessible for external services like Replicate
+ * Uses Promise.allSettled to handle partial failures gracefully
  */
 async function makeUrlsAccessible(urls: string[]): Promise<string[]> {
-  return Promise.all(urls.map(url => makeUrlAccessible(url)));
+  const results = await Promise.allSettled(urls.map(url => makeUrlAccessible(url)));
+  const successfulUrls: string[] = [];
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === 'fulfilled') {
+      successfulUrls.push(result.value);
+    } else {
+      console.warn(`[Media] Failed to make URL accessible: ${urls[i]?.slice(0, 50)}...`, result.reason);
+      // Include the original URL as fallback
+      successfulUrls.push(urls[i]);
+    }
+  }
+
+  return successfulUrls;
 }
 
 // Provider configuration

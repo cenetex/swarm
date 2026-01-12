@@ -726,20 +726,22 @@ async function processChat(
       // Extract any media from the tool results
       for (const result of toolResults) {
         logger.info('Tool result', { toolCallId: result.tool_call_id, contentLength: result.content?.length || 0 });
-        
+
         // Extract pending jobs from _pendingJob metadata (hidden from LLM)
-        try {
-          const parsed = JSON.parse(result.content);
-          if (parsed._pendingJob) {
-            pendingJobs.push({
-              jobId: parsed._pendingJob.jobId,
-              type: parsed._pendingJob.type || 'image',
-              prompt: parsed._pendingJob.prompt,
-              purpose: parsed._pendingJob.purpose,
-            });
+        if (result.content && typeof result.content === 'string') {
+          try {
+            const parsed = JSON.parse(result.content);
+            if (parsed._pendingJob) {
+              pendingJobs.push({
+                jobId: parsed._pendingJob.jobId,
+                type: parsed._pendingJob.type || 'image',
+                prompt: parsed._pendingJob.prompt,
+                purpose: parsed._pendingJob.purpose,
+              });
+            }
+          } catch {
+            // Not JSON, skip
           }
-        } catch {
-          // Not JSON, skip
         }
       }
 
@@ -751,7 +753,7 @@ async function processChat(
       for (const tc of llmResponse.toolCalls) {
         if (tc.function.name === 'set_profile_image' || tc.function.name === 'save_uploaded_profile_image') {
           const matchingResult = toolResults.find(r => r.tool_call_id === tc.id);
-          if (matchingResult) {
+          if (matchingResult?.content && typeof matchingResult.content === 'string') {
             try {
               const parsed = JSON.parse(matchingResult.content);
               if (parsed.success && (parsed.data?.url || parsed.url)) {

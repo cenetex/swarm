@@ -55,7 +55,18 @@ export function buildTelegramEnvelope(
 
   // Check if chat type is allowed
   if (config.allowedChatTypes) {
-    const chatType = message.chat.type as 'private' | 'group' | 'supergroup' | 'channel';
+    const validChatTypes = ['private', 'group', 'supergroup', 'channel'] as const;
+    const rawChatType = message.chat.type;
+
+    // Validate that chat type is one we recognize
+    if (!validChatTypes.includes(rawChatType as typeof validChatTypes[number])) {
+      console.warn(`[Telegram] Unknown chat type: ${rawChatType}, treating as group`);
+    }
+
+    const chatType = validChatTypes.includes(rawChatType as typeof validChatTypes[number])
+      ? (rawChatType as 'private' | 'group' | 'supergroup' | 'channel')
+      : 'group'; // Default to group for unknown types
+
     if (!config.allowedChatTypes.includes(chatType)) {
       return null;
     }

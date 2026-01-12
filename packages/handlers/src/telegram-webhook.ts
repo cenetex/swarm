@@ -110,7 +110,13 @@ export async function handler(
     }
 
     // Parse the message
-    const update = JSON.parse(body.toString());
+    let update;
+    try {
+      update = JSON.parse(body.toString());
+    } catch (parseError) {
+      logger.error('Failed to parse Telegram update as JSON', parseError);
+      return { statusCode: 400, body: 'Invalid JSON' };
+    }
     const envelope = await telegramAdapter.parseMessage(update);
 
     if (!envelope) {

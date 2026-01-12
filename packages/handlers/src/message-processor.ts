@@ -12,7 +12,7 @@
  * - Supports iterative tool execution (multi-step reasoning)
  * - Memory tools wired to state service
  */
-import type { SQSEvent, SQSHandler, Context } from 'aws-lambda';
+import type { SQSEvent, Context } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import {
   createStateService,
@@ -234,11 +234,22 @@ async function callLLM(
 
     return {
       content: choice.content || undefined,
-      toolCalls: choice.tool_calls?.map(tc => ({
-        id: tc.id,
-        name: tc.function.name,
-        arguments: JSON.parse(tc.function.arguments || '{}'),
-      })),
+      toolCalls: choice.tool_calls?.map(tc => {
+        let parsedArgs: Record<string, unknown> = {};
+        try {
+          parsedArgs = JSON.parse(tc.function.arguments || '{}');
+        } catch {
+          logger.warn('Failed to parse tool call arguments', {
+            toolName: tc.function.name,
+            arguments: tc.function.arguments?.slice(0, 100),
+          });
+        }
+        return {
+          id: tc.id,
+          name: tc.function.name,
+          arguments: parsedArgs,
+        };
+      }),
     };
   } finally {
     clearTimeout(timeoutId);
@@ -509,13 +520,15 @@ async function generateResponse(
   };
 }
 
-export const handler: SQSHandler = async (event: SQSEvent, context: Context) => {
+export const handler = async (event: SQSEvent, context: Context): Promise<{ batchItemFailures: { itemIdentifier: string }[] }> => {
   logger.setContext({
     agentId: getAgentId(),
     requestId: context.awsRequestId,
   });
 
   await initialize();
+
+  const batchItemFailures: { itemIdentifier: string }[] = [];
 
   // Create MCP services and tool client
   const mediaBucket = getMediaBucket();
@@ -538,9 +551,28 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
 
   for (const record of event.Records) {
     try {
-      const parseResult = MessageQueueItemSchema.safeParse(JSON.parse(record.body));
+      let parsedBody: unknown;
+      try {
+        parsedBody = JSON.parse(record.body);
+      } catch (parseError) {
+        logger.error('Failed to parse message body as JSON', {
+          messageId: record.messageId,
+          error: parseError instanceof Error ? parseError.message : String(parseError),
+          bodyPreview: record.body?.slice(0, 100),
+        });
+        // Poison pill - send to DLQ by reporting as failure
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+        continue;
+      }
+
+      const parseResult = MessageQueueItemSchema.safeParse(parsedBody);
       if (!parseResult.success) {
-        logger.error('Invalid message queue item', { error: parseResult.error.message });
+        logger.error('Invalid message queue item schema', {
+          messageId: record.messageId,
+          error: parseResult.error.message,
+        });
+        // Schema validation failures are permanent - send to DLQ
+        batchItemFailures.push({ itemIdentifier: record.messageId });
         continue;
       }
       const item = parseResult.data;
@@ -650,8 +682,18 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
       }
 
     } catch (error) {
-      logger.error('Failed to process message', error);
-      throw error;
+      logger.error('Failed to process message', error, { messageId: record.messageId });
+      batchItemFailures.push({ itemIdentifier: record.messageId });
     }
   }
+
+  // Return partial batch failure response for SQS
+  if (batchItemFailures.length > 0) {
+    logger.warn('Partial batch failure', {
+      failedCount: batchItemFailures.length,
+      totalCount: event.Records.length,
+    });
+  }
+
+  return { batchItemFailures };
 };
