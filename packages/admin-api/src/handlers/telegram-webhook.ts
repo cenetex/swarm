@@ -171,7 +171,10 @@ async function saveThinkingToMemory(
 
   for (const thinking of thinkingBlocks) {
     // Create a deterministic ID from the thinking content for deduplication
-    const factId = Buffer.from(thinking.slice(0, 100))
+    // Use TextEncoder to properly handle Unicode (including emojis)
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(thinking.slice(0, 100));
+    const factId = Buffer.from(bytes)
       .toString('base64')
       .replace(/[^a-zA-Z0-9]/g, '')
       .slice(0, 20);

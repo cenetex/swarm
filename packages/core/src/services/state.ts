@@ -734,7 +734,10 @@ export class DynamoDBStateService implements StateService {
 
   async saveFact(agentId: string, fact: { fact: string; about?: string; userId?: string; timestamp: number }): Promise<void> {
     // Create a deterministic ID from the fact content for deduplication
-    const factId = Buffer.from(fact.fact.slice(0, 100)).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 20);
+    // Use TextEncoder to properly handle Unicode (including emojis)
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(fact.fact.slice(0, 100));
+    const factId = Buffer.from(bytes).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 20);
     const sortKey = `FACT#${fact.about || 'general'}#${factId}`;
 
     await this.docClient.send(new PutCommand({
