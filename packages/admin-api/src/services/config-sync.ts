@@ -71,6 +71,14 @@ interface AgentConfig {
     cooldownMinutes: number;
     maxContextMessages: number;
   };
+  voice?: {
+    enabled: boolean;
+    defaultVoiceId?: string;
+    ttsProvider?: 'voice-clone';
+    speed?: number;
+    pitch?: number;
+    format?: 'ogg' | 'mp3' | 'wav';
+  };
   tools: string[];
   secrets: string[];
 }
@@ -110,6 +118,14 @@ function convertToAgentConfig(record: AgentRecord): AgentConfig {
       cooldownMinutes: 1,
       maxContextMessages: 20,
     },
+    voice: record.voiceConfig ? {
+      enabled: record.voiceConfig.enabled,
+      defaultVoiceId: record.voiceConfig.defaultVoiceId,
+      ttsProvider: record.voiceConfig.ttsProvider,
+      speed: record.voiceConfig.speed,
+      pitch: record.voiceConfig.pitch,
+      format: record.voiceConfig.format,
+    } : undefined,
     tools: ['send_message', 'react', 'ignore', 'wait'],
     secrets: [],
   };
