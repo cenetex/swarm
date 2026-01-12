@@ -348,6 +348,42 @@ export class AdminApiConstruct extends Construct {
       integration: chatIntegration,
     });
 
+    // Transcribe handler - for audio transcription
+    const transcribeHandler = new nodejs.NodejsFunction(this, 'TranscribeHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/transcribe.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        CF_ACCESS_TEAM_DOMAIN: cloudflareTeamDomain,
+        ADMIN_EMAILS: adminEmails,
+        NODE_ENV: environment,
+        ALLOWED_ORIGINS: allowedOrigins.join(','),
+        LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
+        INTERNAL_TEST_KEY: internalTestKey,
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+    });
+
+    // Grant permissions to transcribe handler
+    llmApiKey.grantRead(transcribeHandler);
+
+    const transcribeIntegration = new integrations.HttpLambdaIntegration(
+      'TranscribeIntegration',
+      transcribeHandler
+    );
+
+    this.api.addRoutes({
+      path: '/transcribe',
+      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      integration: transcribeIntegration,
+    });
+
     // Agents handler - for CRUD operations on agents
     const agentsHandler = new nodejs.NodejsFunction(this, 'AgentsHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,

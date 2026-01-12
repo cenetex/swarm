@@ -52,9 +52,10 @@ function SenderAvatar({ sender }: { sender?: MessageSender }) {
  * Parsed tool result from message content
  */
 interface ParsedToolResult {
-  type: 'image' | 'gallery' | 'success' | 'error' | 'info' | 'inhabit' | 'unknown';
+  type: 'image' | 'gallery' | 'audio' | 'success' | 'error' | 'info' | 'inhabit' | 'unknown';
   data: Record<string, unknown>;
   imageUrl?: string;
+  audioUrl?: string;
   message?: string;
   action?: string;
   agentId?: string;
@@ -69,11 +70,21 @@ interface ParsedToolResult {
 function processMessageContent(content: string): { 
   cleanedContent: string; 
   embeddedImages: string[];
+  embeddedAudios: string[];
   toolResults: ParsedToolResult[];
 } {
   const embeddedImages: string[] = [];
+  const embeddedAudios: string[] = [];
   const toolResults: ParsedToolResult[] = [];
   let cleanedContent = content;
+  
+  // Helper to detect if URL is an audio file
+  const isAudioUrl = (url: string) => {
+    const lowerUrl = url.toLowerCase();
+    return lowerUrl.includes('.ogg') || lowerUrl.includes('.mp3') || 
+           lowerUrl.includes('.wav') || lowerUrl.includes('.opus') ||
+           lowerUrl.includes('/audio/') || lowerUrl.includes('/voice/');
+  };
   
   // Helper to categorize a parsed JSON object
   const categorizeResult = (parsed: Record<string, unknown>): ParsedToolResult => {
@@ -89,9 +100,15 @@ function processMessageContent(content: string): {
       };
     }
 
-    // Image generation result
+    // Check for audio URL
     if (parsed.url && typeof parsed.url === 'string') {
       const url = parsed.url;
+      if (isAudioUrl(url)) {
+        embeddedAudios.push(url);
+        return { type: 'audio', data: parsed, audioUrl: url };
+      }
+      
+      // Image generation result
       const isImage = url.includes('.png') || url.includes('.jpg') || 
                       url.includes('.webp') || url.includes('rati.chat') || 
                       url.includes('/images/');
@@ -190,7 +207,34 @@ function processMessageContent(content: string): {
     .replace(/^\s*\n/, '')       // Leading newline
     .trim();
   
-  return { cleanedContent, embeddedImages, toolResults };
+  return { cleanedContent, embeddedImages, embeddedAudios, toolResults };
+}
+
+/**
+ * Extract audio URLs from tool call results
+ */
+function extractAudiosFromToolCalls(toolCalls?: ChatMessageType['toolCalls']): string[] {
+  if (!toolCalls) return [];
+
+  const audios: string[] = [];
+  const isAudioUrl = (url: string) => {
+    const lowerUrl = url.toLowerCase();
+    return lowerUrl.includes('.ogg') || lowerUrl.includes('.mp3') || 
+           lowerUrl.includes('.wav') || lowerUrl.includes('.opus') ||
+           lowerUrl.includes('/audio/') || lowerUrl.includes('/voice/');
+  };
+
+  for (const tc of toolCalls) {
+    if (tc.result && typeof tc.result === 'object') {
+      const result = tc.result as Record<string, unknown>;
+      const url = (result.url || result.resultUrl) as string | undefined;
+      if (url && typeof url === 'string' && isAudioUrl(url)) {
+        audios.push(url);
+      }
+    }
+  }
+
+  return audios;
 }
 
 /**
@@ -270,29 +314,35 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
     error?: string;
   }>>({});
   
-  // Process message content to extract embedded JSON and images
-  const { cleanedContent, embeddedImages, toolResults } = useMemo(
-    () => message.content ? processMessageContent(message.content) : { cleanedContent: '', embeddedImages: [], toolResults: [] },
+  // Process message content to extract embedded JSON, images, and audio
+  const { cleanedContent, embeddedImages, embeddedAudios, toolResults } = useMemo(
+    () => message.content ? processMessageContent(message.content) : { cleanedContent: '', embeddedImages: [], embeddedAudios: [], toolResults: [] },
     [message.content]
   );
   
   const imagesFromTools = extractImagesFromToolCalls(message.toolCalls);
   const imagesFromJobs = extractImagesFromPendingJobs(message.pendingJobs);
+  const audiosFromTools = extractAudiosFromToolCalls(message.toolCalls);
+  
   // Combine all image sources, deduplicate
   const allImages = [...imagesFromTools, ...imagesFromJobs, ...embeddedImages];
   const images = [...new Set(allImages)];
+  
+  // Combine all audio sources, deduplicate
+  const allAudios = [...audiosFromTools, ...embeddedAudios];
+  const audios = [...new Set(allAudios)];
   
   const activeJobs = getActiveJobs(message.pendingJobs);
   const failedJobs = getFailedJobs(message.pendingJobs);
   
   const actionResults = toolResults.filter(r => r.type === 'inhabit');
-  // Filter tool results that should be shown (not images - those are rendered separately)
+  // Filter tool results that should be shown (not images/audio - those are rendered separately)
   const visibleToolResults = toolResults.filter(
-    r => r.type !== 'image' && r.type !== 'gallery' && r.type !== 'inhabit'
+    r => r.type !== 'image' && r.type !== 'gallery' && r.type !== 'audio' && r.type !== 'inhabit'
   );
   
   // Filter out media generation tools for interactive display
-  const mediaToolNames = ['generate_image', 'generate_video', 'generate_sticker', 'get_my_gallery'];
+  const mediaToolNames = ['generate_image', 'generate_video', 'generate_sticker', 'get_my_gallery', 'generate_voice_message'];
   const interactiveToolCalls = message.toolCalls?.filter(tc => !mediaToolNames.includes(tc.name)) ?? [];
   
   // Don't render empty bubbles - check if there's any visible content
@@ -302,6 +352,7 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
     actionResults.length > 0 ||
     visibleToolResults.length > 0 ||
     images.length > 0 ||
+    audios.length > 0 ||
     interactiveToolCalls.length > 0 ||
     activeJobs.length > 0 ||
     failedJobs.length > 0;
@@ -472,6 +523,37 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
                       loading="lazy"
                     />
                   </button>
+                ))}
+              </div>
+            )}
+
+            {/* Render voice/audio messages */}
+            {audios.length > 0 && (
+              <div className={`space-y-2 ${cleanedContent || visibleToolResults.length > 0 || images.length > 0 ? 'mt-3' : ''}`}>
+                {audios.map((url, idx) => (
+                  <div 
+                    key={idx}
+                    className="flex items-center gap-3 bg-[var(--color-bg-tertiary)] rounded-xl px-3 py-2"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-brand-500/20 flex items-center justify-center flex-shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-brand-500">
+                        <path d="M13.5 4.06c0-1.336-1.616-2.005-2.56-1.06l-4.5 4.5H4.508c-1.141 0-2.318.664-2.66 1.905A9.76 9.76 0 001.5 12c0 .898.121 1.768.35 2.595.341 1.24 1.518 1.905 2.659 1.905h1.93l4.5 4.5c.945.945 2.561.276 2.561-1.06V4.06zM18.584 5.106a.75.75 0 011.06 0c3.808 3.807 3.808 9.98 0 13.788a.75.75 0 01-1.06-1.06 8.25 8.25 0 000-11.668.75.75 0 010-1.06z" />
+                        <path d="M15.932 7.757a.75.75 0 011.061 0 6 6 0 010 8.486.75.75 0 01-1.06-1.061 4.5 4.5 0 000-6.364.75.75 0 010-1.06z" />
+                      </svg>
+                    </div>
+                    <audio 
+                      controls 
+                      preload="metadata"
+                      className="flex-1 h-10"
+                      style={{ 
+                        filter: 'invert(1) hue-rotate(180deg)',
+                        opacity: 0.9
+                      }}
+                    >
+                      <source src={url} type={url.includes('.mp3') ? 'audio/mpeg' : url.includes('.wav') ? 'audio/wav' : 'audio/ogg'} />
+                      Your browser does not support audio playback.
+                    </audio>
+                  </div>
                 ))}
               </div>
             )}

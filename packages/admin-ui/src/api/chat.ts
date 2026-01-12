@@ -328,3 +328,31 @@ export async function pollJobCompletion(
 
   throw new Error('Job timed out');
 }
+
+/**
+ * Transcribe audio using the backend API
+ * Uploads audio blob and returns transcribed text
+ */
+export async function transcribeAudio(
+  audioBlob: Blob,
+  agentId?: string
+): Promise<{ text: string; language?: string }> {
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'recording.webm');
+  if (agentId) {
+    formData.append('agentId', agentId);
+  }
+
+  const response = await fetch(`${API_BASE}/transcribe`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Transcription failed' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}

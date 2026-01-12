@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAgentStore, useActiveAgent, useActiveChat, useWalletAuth } from '../store';
-import { sendChatMessage, saveAgentSecret, pollJobCompletion, updateAgent as updateAgentApi, type JobStatus } from '../api';
+import { sendChatMessage, saveAgentSecret, pollJobCompletion, updateAgent as updateAgentApi, transcribeAudio, type JobStatus } from '../api';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { AgentAvatar } from './AgentSidebar';
@@ -306,6 +306,29 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
     [activeAgent, messages, addMessage, updateMessage, removeMessage, setLoading, setError]
   );
 
+  // Handle audio message - transcribe and send as text
+  const handleSendAudio = useCallback(
+    async (audioBlob: Blob) => {
+      if (!activeAgent) return;
+      if (accessMode === 'browse') return;
+
+      setLoading(true);
+      try {
+        // Transcribe the audio
+        const result = await transcribeAudio(audioBlob, activeAgent.id);
+        if (result.text) {
+          // Send the transcribed text as a regular message
+          handleSendMessage(`🎤 ${result.text}`);
+        }
+      } catch (error) {
+        console.error('Failed to transcribe audio:', error);
+        setError(error instanceof Error ? error.message : 'Failed to transcribe audio');
+        setLoading(false);
+      }
+    },
+    [activeAgent, accessMode, handleSendMessage, setLoading, setError]
+  );
+
   // Handle tool submissions (secrets, confirmations, uploads, etc.)
   const handleToolSubmit = useCallback(
     async (toolCallId: string, result: unknown) => {
@@ -585,7 +608,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
       ) : accessMode === 'limited' ? (
         <div className="chat-input-container border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
           <div className="max-w-3xl mx-auto space-y-2">
-            <ChatInput onSend={handleSendMessage} disabled={isLoading} />
+            <ChatInput onSend={handleSendMessage} onSendAudio={handleSendAudio} disabled={isLoading} />
             <div className="flex items-center justify-center gap-2 text-xs text-amber-400">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -597,7 +620,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
       ) : (
         <div className="chat-input-container border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
           <div className="max-w-3xl mx-auto">
-            <ChatInput onSend={handleSendMessage} disabled={isLoading} />
+            <ChatInput onSend={handleSendMessage} onSendAudio={handleSendAudio} disabled={isLoading} />
           </div>
         </div>
       )}
