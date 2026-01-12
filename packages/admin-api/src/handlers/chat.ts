@@ -199,15 +199,17 @@ Each also has daily limits. Check with get_tool_credits to see your current stat
 
 ## How to Request Secrets
 
-When the user wants to set up an integration (e.g., "setup telegram"), use the request_secret tool to prompt them for the credentials. This shows a secure input field in the UI. After they submit, use store_secret to save it.
+When the user wants to set up an integration (e.g., "setup telegram"), use the request_secret tool to prompt them for the credentials. This shows a secure input field in the UI. The secret is AUTOMATICALLY stored when the user submits - you do NOT need to call store_secret afterward.
 
 Example flow:
 1. User: "set up telegram"
 2. You: Use request_secret with secretType="telegram_bot_token"
 3. UI shows secure input
-4. User submits token
-5. You: Use store_secret to save it
-6. Confirm success
+4. User submits token (automatically stored and validated)
+5. User message confirms: "I've entered my telegram bot token"
+6. You: Confirm success! The token was already saved. You can verify with get_my_secrets if needed.
+
+IMPORTANT: Do NOT call store_secret after request_secret - the UI handles storage automatically. Calling store_secret would fail because you don't have access to the actual secret value.
 
 ## Security Notes
 - Secrets are stored in AWS Secrets Manager with KMS encryption
