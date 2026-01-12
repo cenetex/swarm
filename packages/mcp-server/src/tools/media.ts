@@ -21,6 +21,8 @@ export interface MediaServices {
     referenceImageUrls?: string[];
     resolution?: '1K' | '2K' | '4K';
     aspectRatio?: string;
+    conversationId?: string;
+    replyToMessageId?: string;
   }) => Promise<{ url: string; id: string } | { jobId: string; status: string; url?: string; id?: string }>;
 
   generateVideo: (params: {
@@ -111,6 +113,8 @@ export const createMediaTools = (
         referenceImageUrls,
         resolution: input.resolution,
         aspectRatio: input.aspectRatio,
+        conversationId: context.conversationId,
+        replyToMessageId: context.replyToMessageId,
       });
 
       // If synchronous result with URL

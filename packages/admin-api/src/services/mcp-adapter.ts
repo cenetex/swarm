@@ -136,7 +136,7 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
     media: {
       generateImage: async (params) => {
         // Use async generation to avoid API Gateway timeout (29s limit)
-        // The image will be delivered via job polling
+        // The image will be delivered via webhook callback
         const job = await media.generateImageAsync({
           prompt: params.prompt,
           agentId: params.agentId,
@@ -144,7 +144,8 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
           referenceImageUrls: params.referenceImageUrls,
           resolution: params.resolution as '1K' | '2K' | '4K' | undefined,
           aspectRatio: params.aspectRatio as '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9' | undefined,
-          conversationId: `admin-ui-${Date.now()}`,
+          conversationId: params.conversationId || `admin-ui-${Date.now()}`,
+          replyToMessageId: params.replyToMessageId,
         });
         return { jobId: job.jobId, status: job.status };
       },
