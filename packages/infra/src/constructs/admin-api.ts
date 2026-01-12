@@ -22,6 +22,7 @@ const __dirname = path.dirname(__filename);
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 
 export interface AdminApiConstructProps {
   /**
@@ -97,10 +98,6 @@ export interface AdminApiConstructProps {
    */
   cdnUrl?: string;
 
-  /**
-   * Response queue for async callbacks
-   */
-  responseQueue?: sqs.IQueue;
 }
 
 export class AdminApiConstruct extends Construct {
@@ -122,7 +119,6 @@ export class AdminApiConstruct extends Construct {
       mediaBucket,
       mediaCdn,
       cdnUrl: propsCdnUrl,
-      responseQueue,
     } = props;
 
     // Use provided CDN URL or fall back to distribution domain
@@ -172,6 +168,23 @@ export class AdminApiConstruct extends Construct {
     // Jobs have TTL so the scan is bounded by recent jobs only
 
     // External provider ID lookups use a mapping item (no extra GSI).
+
+    // Response queue for async media generation callbacks
+    // When Replicate finishes generating an image/video, it calls our webhook
+    // which puts a message in this queue. The response sender Lambda then
+    // delivers the media to Telegram.
+    const responseQueue = new sqs.Queue(this, 'ResponseQueue', {
+      queueName: `swarm-response-queue-${environment}`,
+      visibilityTimeout: cdk.Duration.seconds(120), // Match Lambda timeout
+      retentionPeriod: cdk.Duration.days(1),
+      deadLetterQueue: {
+        queue: new sqs.Queue(this, 'ResponseDLQ', {
+          queueName: `swarm-response-dlq-${environment}`,
+          retentionPeriod: cdk.Duration.days(14),
+        }),
+        maxReceiveCount: 3,
+      },
+    });
 
     // Secret for OpenRouter API key
     const llmApiKey = props.openRouterApiKeyArn
@@ -226,7 +239,7 @@ export class AdminApiConstruct extends Construct {
         CDN_URL: cdnUrl || '',
         REPLICATE_WEBHOOK_URL: replicateWebhookUrl,
         REPLICATE_API_KEY_SECRET_ARN: replicateApiKey?.secretArn || '',
-        RESPONSE_QUEUE_URL: responseQueue?.queueUrl || '',
+        RESPONSE_QUEUE_URL: responseQueue.queueUrl,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         // Internal testing (non-production only)
         INTERNAL_TEST_KEY: internalTestKey,
@@ -266,9 +279,7 @@ export class AdminApiConstruct extends Construct {
     }
 
     // Grant SQS permissions for async callbacks
-    if (responseQueue) {
-      responseQueue.grantSendMessages(this.chatHandler);
-    }
+    responseQueue.grantSendMessages(this.chatHandler);
 
     // Grant secrets manager permissions for swarm secrets
     // CreateSecret needs wildcard since the secret doesn't exist yet
@@ -652,7 +663,7 @@ export class AdminApiConstruct extends Construct {
         ADMIN_TABLE: this.table.tableName,
         MEDIA_BUCKET: mediaBucket?.bucketName || '',
         CDN_URL: cdnUrl || '',
-        RESPONSE_QUEUE_URL: responseQueue?.queueUrl || '',
+        RESPONSE_QUEUE_URL: responseQueue.queueUrl,
         NODE_ENV: environment,
       },
       bundling: {
@@ -667,9 +678,7 @@ export class AdminApiConstruct extends Construct {
     if (mediaBucket) {
       mediaBucket.grantReadWrite(replicateWebhookHandler);
     }
-    if (responseQueue) {
-      responseQueue.grantSendMessages(replicateWebhookHandler);
-    }
+    responseQueue.grantSendMessages(replicateWebhookHandler);
 
     const replicateIntegration = new integrations.HttpLambdaIntegration(
       'ReplicateWebhookIntegration',
@@ -682,6 +691,44 @@ export class AdminApiConstruct extends Construct {
       methods: [apigateway.HttpMethod.POST],
       integration: replicateIntegration,
     });
+
+    // Response Sender Lambda - delivers generated media to platforms
+    // Triggered by SQS messages from the Replicate webhook handler
+    const responseSenderHandler = new nodejs.NodejsFunction(this, 'ResponseSenderHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/response-sender.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 256,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        NODE_ENV: environment,
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+    });
+
+    // Grant permissions to response sender
+    this.table.grantReadData(responseSenderHandler);
+    this.encryptionKey.grantDecrypt(responseSenderHandler);
+
+    // Grant secrets manager access (for bot tokens)
+    responseSenderHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['secretsmanager:GetSecretValue'],
+      resources: [
+        `arn:aws:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:swarm/*`,
+      ],
+    }));
+
+    // Add SQS trigger
+    responseSenderHandler.addEventSource(new lambdaEventSources.SqsEventSource(responseQueue, {
+      batchSize: 5,
+      maxBatchingWindow: cdk.Duration.seconds(5),
+    }));
 
     // Twitter OAuth handler - for connecting X/Twitter accounts via OAuth 1.0a
     const twitterAppCredentialsSecret = secretsmanager.Secret.fromSecretNameV2(
