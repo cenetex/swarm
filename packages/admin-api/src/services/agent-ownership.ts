@@ -17,14 +17,13 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
-  UpdateCommand,
   GetCommand,
-  DeleteCommand,
   QueryCommand,
-  PutCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { AgentRecord } from '../types.js';
 import { getGateStatus, type GateStatus } from './nft-gate.js';
+import { verifyGateBurn } from './lineage-nft.js';
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 const GSI1_NAME = 'GSI1';
@@ -105,6 +104,10 @@ export async function getInhabitedAgent(
 /**
  * Inhabit an unclaimed agent (FREE - no NFT required)
  *
+ * Uses TransactWriteItems for atomic update of both:
+ * 1. Agent CONFIG record (set inhabitantWallet)
+ * 2. Inhabitant mapping record (for GSI1 lookup)
+ *
  * @param walletAddress - The wallet inhabiting the agent
  * @param agentId - The agent to inhabit
  * @returns Result with success/error and agent info
@@ -148,40 +151,48 @@ export async function inhabitAgent(
   const now = Date.now();
 
   try {
-    // Update agent with inhabitant - condition: still no inhabitant
+    // Atomic transaction: update agent AND create mapping in one operation
     await ddb.send(
-      new UpdateCommand({
-        TableName: TABLE_NAME,
-        Key: {
-          pk: `AGENT#${agentId}`,
-          sk: 'CONFIG',
-        },
-        UpdateExpression:
-          'SET inhabitantWallet = :wallet, inhabitedAt = :now, updatedAt = :now',
-        ConditionExpression: 'attribute_not_exists(inhabitantWallet)',
-        ExpressionAttributeValues: {
-          ':wallet': walletAddress,
-          ':now': now,
-        },
-      })
-    );
-
-    // Create inhabitant mapping record (for GSI1 lookup)
-    await ddb.send(
-      new PutCommand({
-        TableName: TABLE_NAME,
-        Item: {
-          pk: `AGENT#${agentId}`,
-          sk: `INHABITANT#${walletAddress}`,
-          agentId,
-          walletAddress,
-          inhabitedAt: now,
-        },
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            // Update agent with inhabitant - condition: still no inhabitant
+            Update: {
+              TableName: TABLE_NAME,
+              Key: {
+                pk: `AGENT#${agentId}`,
+                sk: 'CONFIG',
+              },
+              UpdateExpression:
+                'SET inhabitantWallet = :wallet, inhabitedAt = :now, updatedAt = :now',
+              ConditionExpression: 'attribute_not_exists(inhabitantWallet)',
+              ExpressionAttributeValues: {
+                ':wallet': walletAddress,
+                ':now': now,
+              },
+            },
+          },
+          {
+            // Create inhabitant mapping record (for GSI1 lookup)
+            Put: {
+              TableName: TABLE_NAME,
+              Item: {
+                pk: `AGENT#${agentId}`,
+                sk: `INHABITANT#${walletAddress}`,
+                agentId,
+                walletAddress,
+                inhabitedAt: now,
+              },
+              // Prevent duplicate mappings
+              ConditionExpression: 'attribute_not_exists(pk)',
+            },
+          },
+        ],
       })
     );
 
     console.log(
-      `[Inhabit] Wallet ${walletAddress.slice(0, 8)}... inhabited agent ${agentId}`
+      `[Inhabit] Wallet ${walletAddress.slice(0, 8)}... inhabited agent ${agentId} (atomic)`
     );
 
     return {
@@ -192,6 +203,16 @@ export async function inhabitAgent(
       era: (agent.currentEra || 0) + 1, // They will be this era when they abandon
     };
   } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'TransactionCanceledException') {
+      // Check which condition failed
+      const message = err.message || '';
+      if (message.includes('ConditionalCheckFailed')) {
+        return {
+          success: false,
+          error: `${agent.name} was just inhabited by another wallet`,
+        };
+      }
+    }
     if (err instanceof Error && err.name === 'ConditionalCheckFailedException') {
       return {
         success: false,
@@ -225,20 +246,136 @@ export async function canAbandon(walletAddress: string): Promise<{
  * Abandon an inhabited agent (REQUIRES burning a Gate NFT)
  *
  * This function:
- * 1. Verifies the wallet holds a Gate NFT
+ * 1. Verifies the burn transaction on-chain (REQUIRED)
  * 2. Increments the agent's era
- * 3. Clears the inhabitant
- * 4. Returns info needed to mint the lineage NFT and burn the Gate NFT
+ * 3. Clears the inhabitant atomically
+ * 4. Returns info needed to mint the lineage NFT
  *
- * Note: The actual NFT burn and lineage mint happen client-side after this call
+ * Flow:
+ * 1. Client burns Gate NFT → gets transaction signature
+ * 2. Client calls this endpoint with signature
+ * 3. Backend verifies burn on-chain
+ * 4. Backend releases agent
  *
  * @param walletAddress - The wallet abandoning the agent
- * @param burnTxSignature - Optional: The signature of the Gate NFT burn transaction
+ * @param burnTxSignature - REQUIRED: The signature of the Gate NFT burn transaction
  * @returns Result with agent info for lineage minting
  */
 export async function abandonAgent(
   walletAddress: string,
-  burnTxSignature?: string
+  burnTxSignature: string
+): Promise<AbandonResult> {
+  // Burn verification is REQUIRED
+  if (!burnTxSignature) {
+    return {
+      success: false,
+      error: 'Burn transaction signature is required. You must burn a Gate NFT to abandon.',
+    };
+  }
+
+  // Get the inhabited agent first (before verification, for better UX)
+  const agent = await getInhabitedAgent(walletAddress);
+
+  if (!agent) {
+    return {
+      success: false,
+      error: 'You do not currently inhabit any agent',
+    };
+  }
+
+  // Verify this wallet is the inhabitant
+  if (agent.inhabitantWallet !== walletAddress) {
+    return {
+      success: false,
+      error: 'You do not inhabit this agent',
+    };
+  }
+
+  // Verify the burn transaction on-chain
+  const burnVerification = await verifyGateBurn(walletAddress, burnTxSignature);
+  if (!burnVerification.verified) {
+    return {
+      success: false,
+      error: `Burn verification failed: ${burnVerification.error || 'Invalid transaction'}`,
+    };
+  }
+
+  const now = Date.now();
+  const newEra = (agent.currentEra || 0) + 1;
+
+  try {
+    // Atomic transaction: update agent AND delete mapping
+    await ddb.send(
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            // Update agent: increment era, clear inhabitant
+            Update: {
+              TableName: TABLE_NAME,
+              Key: {
+                pk: `AGENT#${agent.agentId}`,
+                sk: 'CONFIG',
+              },
+              UpdateExpression: `
+                SET currentEra = :era, updatedAt = :now, lastBurnTx = :burnTx
+                REMOVE inhabitantWallet, inhabitedAt
+              `,
+              // Ensure we're still the inhabitant
+              ConditionExpression: 'inhabitantWallet = :wallet',
+              ExpressionAttributeValues: {
+                ':era': newEra,
+                ':now': now,
+                ':burnTx': burnTxSignature,
+                ':wallet': walletAddress,
+              },
+            },
+          },
+          {
+            // Delete inhabitant mapping record
+            Delete: {
+              TableName: TABLE_NAME,
+              Key: {
+                pk: `AGENT#${agent.agentId}`,
+                sk: `INHABITANT#${walletAddress}`,
+              },
+            },
+          },
+        ],
+      })
+    );
+
+    console.log(
+      `[Abandon] Wallet ${walletAddress.slice(0, 8)}... abandoned agent ${agent.agentId} (era ${newEra}, burn tx: ${burnTxSignature.slice(0, 16)}...)`
+    );
+
+    // Get updated gate status
+    const gateStatus = await getGateStatus(walletAddress);
+
+    return {
+      success: true,
+      agentId: agent.agentId,
+      agentName: agent.name,
+      era: newEra,
+      lineageNftMint: agent.nftCollectionMint,
+      gateStatus,
+    };
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'TransactionCanceledException') {
+      return {
+        success: false,
+        error: 'Agent state changed during abandon. Please try again.',
+      };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Abandon without burn verification (LEGACY - for migration only)
+ * @deprecated Use abandonAgent with burnTxSignature instead
+ */
+export async function abandonAgentLegacy(
+  walletAddress: string
 ): Promise<AbandonResult> {
   // Get current gate status
   const gateStatus = await getGateStatus(walletAddress);
@@ -246,12 +383,11 @@ export async function abandonAgent(
   if (!gateStatus.canAbandon) {
     return {
       success: false,
-      error: 'You must hold at least 1 Gate NFT to abandon an agent. Purchase one to leave.',
+      error: 'You must hold at least 1 Gate NFT to abandon an agent.',
       gateStatus,
     };
   }
 
-  // Get the inhabited agent
   const agent = await getInhabitedAgent(walletAddress);
 
   if (!agent) {
@@ -262,7 +398,6 @@ export async function abandonAgent(
     };
   }
 
-  // Verify this wallet is the inhabitant
   if (agent.inhabitantWallet !== walletAddress) {
     return {
       success: false,
@@ -274,38 +409,41 @@ export async function abandonAgent(
   const now = Date.now();
   const newEra = (agent.currentEra || 0) + 1;
 
-  // Update agent: increment era, clear inhabitant
   await ddb.send(
-    new UpdateCommand({
-      TableName: TABLE_NAME,
-      Key: {
-        pk: `AGENT#${agent.agentId}`,
-        sk: 'CONFIG',
-      },
-      UpdateExpression: `
-        SET currentEra = :era, updatedAt = :now
-        REMOVE inhabitantWallet, inhabitedAt
-      `,
-      ExpressionAttributeValues: {
-        ':era': newEra,
-        ':now': now,
-      },
-    })
-  );
-
-  // Delete inhabitant mapping record
-  await ddb.send(
-    new DeleteCommand({
-      TableName: TABLE_NAME,
-      Key: {
-        pk: `AGENT#${agent.agentId}`,
-        sk: `INHABITANT#${walletAddress}`,
-      },
+    new TransactWriteCommand({
+      TransactItems: [
+        {
+          Update: {
+            TableName: TABLE_NAME,
+            Key: {
+              pk: `AGENT#${agent.agentId}`,
+              sk: 'CONFIG',
+            },
+            UpdateExpression: `
+              SET currentEra = :era, updatedAt = :now
+              REMOVE inhabitantWallet, inhabitedAt
+            `,
+            ExpressionAttributeValues: {
+              ':era': newEra,
+              ':now': now,
+            },
+          },
+        },
+        {
+          Delete: {
+            TableName: TABLE_NAME,
+            Key: {
+              pk: `AGENT#${agent.agentId}`,
+              sk: `INHABITANT#${walletAddress}`,
+            },
+          },
+        },
+      ],
     })
   );
 
   console.log(
-    `[Abandon] Wallet ${walletAddress.slice(0, 8)}... abandoned agent ${agent.agentId} (era ${newEra})${burnTxSignature ? `, burn tx: ${burnTxSignature}` : ''}`
+    `[Abandon] LEGACY: Wallet ${walletAddress.slice(0, 8)}... abandoned agent ${agent.agentId} (era ${newEra})`
   );
 
   return {
@@ -353,6 +491,181 @@ export async function getInhabitationInfo(walletAddress: string): Promise<{
 }
 
 // =============================================================================
+// RECONCILIATION - Fix orphaned mappings
+// =============================================================================
+
+export interface ReconciliationResult {
+  orphanedMappings: number;
+  orphanedAgents: number;
+  fixed: number;
+  errors: string[];
+}
+
+/**
+ * Find and fix orphaned inhabitant mappings
+ *
+ * Orphaned states can occur if:
+ * 1. Mapping exists but agent.inhabitantWallet is null (mapping orphan)
+ * 2. Agent.inhabitantWallet is set but no mapping exists (agent orphan)
+ *
+ * This function scans for both cases and reconciles them.
+ */
+export async function reconcileInhabitantMappings(
+  dryRun: boolean = true
+): Promise<ReconciliationResult> {
+  const result: ReconciliationResult = {
+    orphanedMappings: 0,
+    orphanedAgents: 0,
+    fixed: 0,
+    errors: [],
+  };
+
+  console.log(`[Reconcile] Starting reconciliation (dryRun=${dryRun})`);
+
+  try {
+    // Scan for all INHABITANT# mappings
+    const { ScanCommand } = await import('@aws-sdk/lib-dynamodb');
+
+    const mappingScan = await ddb.send(
+      new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: 'begins_with(sk, :prefix)',
+        ExpressionAttributeValues: {
+          ':prefix': 'INHABITANT#',
+        },
+      })
+    );
+
+    const mappings = mappingScan.Items || [];
+    console.log(`[Reconcile] Found ${mappings.length} inhabitant mappings`);
+
+    for (const mapping of mappings) {
+      const agentId = mapping.agentId as string;
+      const walletAddress = mapping.walletAddress as string;
+
+      // Get the agent record
+      const agentResult = await ddb.send(
+        new GetCommand({
+          TableName: TABLE_NAME,
+          Key: {
+            pk: `AGENT#${agentId}`,
+            sk: 'CONFIG',
+          },
+        })
+      );
+
+      const agent = agentResult.Item as AgentRecord | undefined;
+
+      if (!agent) {
+        // Agent doesn't exist - delete orphaned mapping
+        result.orphanedMappings++;
+        result.errors.push(`Mapping for non-existent agent: ${agentId}`);
+
+        if (!dryRun) {
+          const { DeleteCommand } = await import('@aws-sdk/lib-dynamodb');
+          await ddb.send(
+            new DeleteCommand({
+              TableName: TABLE_NAME,
+              Key: {
+                pk: `AGENT#${agentId}`,
+                sk: `INHABITANT#${walletAddress}`,
+              },
+            })
+          );
+          result.fixed++;
+          console.log(`[Reconcile] Deleted orphaned mapping for agent ${agentId}`);
+        }
+      } else if (agent.inhabitantWallet !== walletAddress) {
+        // Agent has different or no inhabitant - delete stale mapping
+        result.orphanedMappings++;
+        result.errors.push(
+          `Stale mapping: agent ${agentId} has inhabitant ${agent.inhabitantWallet || 'none'}, but mapping points to ${walletAddress}`
+        );
+
+        if (!dryRun) {
+          const { DeleteCommand } = await import('@aws-sdk/lib-dynamodb');
+          await ddb.send(
+            new DeleteCommand({
+              TableName: TABLE_NAME,
+              Key: {
+                pk: `AGENT#${agentId}`,
+                sk: `INHABITANT#${walletAddress}`,
+              },
+            })
+          );
+          result.fixed++;
+          console.log(`[Reconcile] Deleted stale mapping for agent ${agentId}`);
+        }
+      }
+    }
+
+    // Also scan for agents with inhabitantWallet but no mapping
+    const agentScan = await ddb.send(
+      new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: 'sk = :config AND attribute_exists(inhabitantWallet)',
+        ExpressionAttributeValues: {
+          ':config': 'CONFIG',
+        },
+      })
+    );
+
+    const agents = agentScan.Items || [];
+    console.log(`[Reconcile] Found ${agents.length} agents with inhabitantWallet`);
+
+    for (const agent of agents) {
+      const agentId = agent.agentId as string;
+      const walletAddress = agent.inhabitantWallet as string;
+
+      // Check if mapping exists
+      const mappingResult = await ddb.send(
+        new GetCommand({
+          TableName: TABLE_NAME,
+          Key: {
+            pk: `AGENT#${agentId}`,
+            sk: `INHABITANT#${walletAddress}`,
+          },
+        })
+      );
+
+      if (!mappingResult.Item) {
+        // No mapping exists - create it
+        result.orphanedAgents++;
+        result.errors.push(`Agent ${agentId} has inhabitant ${walletAddress} but no mapping`);
+
+        if (!dryRun) {
+          const { PutCommand } = await import('@aws-sdk/lib-dynamodb');
+          await ddb.send(
+            new PutCommand({
+              TableName: TABLE_NAME,
+              Item: {
+                pk: `AGENT#${agentId}`,
+                sk: `INHABITANT#${walletAddress}`,
+                agentId,
+                walletAddress,
+                inhabitedAt: agent.inhabitedAt || Date.now(),
+                reconciledAt: Date.now(),
+              },
+            })
+          );
+          result.fixed++;
+          console.log(`[Reconcile] Created missing mapping for agent ${agentId}`);
+        }
+      }
+    }
+
+    console.log(
+      `[Reconcile] Complete: ${result.orphanedMappings} orphaned mappings, ${result.orphanedAgents} orphaned agents, ${result.fixed} fixed`
+    );
+  } catch (err) {
+    console.error('[Reconcile] Error:', err);
+    result.errors.push(`Scan error: ${err instanceof Error ? err.message : 'Unknown'}`);
+  }
+
+  return result;
+}
+
+// =============================================================================
 // LEGACY API - Deprecated aliases for backwards compatibility
 // =============================================================================
 
@@ -367,12 +680,13 @@ export const getOwnedAgent = getInhabitedAgent;
 export const claimAgent = inhabitAgent;
 
 /**
- * @deprecated Use abandonAgent instead
+ * @deprecated Use abandonAgent with burnTxSignature instead
  */
 export async function releaseAgent(
   walletAddress: string
 ): Promise<OwnershipResult> {
-  const result = await abandonAgent(walletAddress);
+  // Use legacy abandon which doesn't require burn verification
+  const result = await abandonAgentLegacy(walletAddress);
   return {
     success: result.success,
     error: result.error,

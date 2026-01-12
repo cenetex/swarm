@@ -1,7 +1,12 @@
 /**
  * Chat Panel - Main chat area for active agent
+ * 
+ * Access modes:
+ * - Admin mode: Full access to chat with tools (inhabited agent or created by user)
+ * - Chat mode: Simple chat without admin tools (other agents)
+ * - Browse mode: Read-only profile view (no wallet connected)
  */
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAgentStore, useActiveAgent, useActiveChat, useWalletAuth } from '../store';
 import { sendChatMessage, saveAgentSecret, pollJobCompletion, updateAgent as updateAgentApi, type JobStatus } from '../api';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
@@ -23,6 +28,22 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
   const { user: walletUser, isAuthenticated: isWalletAuthenticated } = useWalletAuth();
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Determine access mode for this agent
+  const accessMode = useMemo(() => {
+    if (!isWalletAuthenticated || !walletUser) {
+      return 'browse'; // Not authenticated - read-only
+    }
+    
+    const isInhabited = walletUser.inhabitedAgentId === activeAgent?.id;
+    const isCreator = activeAgent?.creatorWallet === walletUser.walletAddress;
+    
+    if (isInhabited || isCreator) {
+      return 'admin'; // Full admin access
+    }
+    
+    return 'chat'; // Can chat but no admin tools
+  }, [isWalletAuthenticated, walletUser, activeAgent]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -46,6 +67,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
   const handleSendMessage = useCallback(
     async (content: string) => {
       if (!activeAgent) return;
+      if (accessMode === 'browse') return; // Can't send in browse mode
 
       // Build sender context from wallet auth
       const sender = isWalletAuthenticated && walletUser ? {
@@ -487,24 +509,32 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
             <div className="min-w-0">
               <h1 className="text-base lg:text-lg font-semibold text-[var(--color-text)] truncate">{activeAgent.name}</h1>
               <p className="text-xs text-[var(--color-text-tertiary)] truncate hidden sm:block">
-                {activeAgent.status === 'shell' && 'Shell agent - configure to unlock full capabilities'}
-                {activeAgent.status === 'configured' && `${activeAgent.secrets.filter(s => s.isSet).length} secrets configured`}
-                {activeAgent.status === 'active' && 'Active and ready'}
+                {accessMode === 'admin' && (
+                  <span className="text-brand-400">Admin access</span>
+                )}
+                {accessMode === 'chat' && (
+                  <span>Chat mode</span>
+                )}
+                {accessMode === 'browse' && (
+                  <span>Browse mode - connect wallet to chat</span>
+                )}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => clearChat(activeAgent.id)}
-              className="px-2 lg:px-3 py-1.5 text-xs lg:text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
-            >
-              <span className="hidden sm:inline">Clear Chat</span>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
-                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-              </svg>
-            </button>
+            {accessMode === 'admin' && (
+              <button
+                onClick={() => clearChat(activeAgent.id)}
+                className="px-2 lg:px-3 py-1.5 text-xs lg:text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
+              >
+                <span className="hidden sm:inline">Clear Chat</span>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
+                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
           </div>
-          {onOpenLogs && (
+          {onOpenLogs && accessMode === 'admin' && (
             <button
               onClick={() => onOpenLogs(activeAgent.id)}
               className="px-3 py-2 rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] text-xs font-medium transition-colors"
@@ -529,12 +559,22 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
         </div>
       </div>
 
-      {/* Input */}
-      <div className="chat-input-container border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
-        <div className="max-w-3xl mx-auto">
-          <ChatInput onSend={handleSendMessage} disabled={isLoading} />
+      {/* Input - hidden in browse mode */}
+      {accessMode !== 'browse' ? (
+        <div className="chat-input-container border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
+          <div className="max-w-3xl mx-auto">
+            <ChatInput onSend={handleSendMessage} disabled={isLoading} />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-4">
+          <div className="max-w-3xl mx-auto text-center">
+            <p className="text-sm text-[var(--color-text-muted)]">
+              Connect your wallet to chat with this agent
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -305,6 +305,17 @@ function toolResultsToActions(
         break;
       }
 
+      case 'generate_voice_message': {
+        const data = result.data as { url?: string } | undefined;
+        if (data?.url) {
+          actions.push({
+            type: 'send_voice',
+            url: data.url,
+          });
+        }
+        break;
+      }
+
       case 'react': {
         const data = result.data as { emoji?: string; messageId?: string } | undefined;
         if (data?.emoji) {
@@ -351,7 +362,12 @@ async function generateResponse(
   // Build initial messages
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: envelope.content.text || '[media received]' },
+    { role: 'user', content: (() => {
+      if (envelope.content.text) return envelope.content.text;
+      const mediaTypes = envelope.content.media?.map(m => m.type) || [];
+      if (mediaTypes.includes('audio')) return '[voice message received]';
+      return '[media received]';
+    })() },
   ];
 
   const allToolResults: Array<{ name: string; result: { success: boolean; data?: unknown; media?: { type: string; url: string } } }> = [];

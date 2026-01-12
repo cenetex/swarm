@@ -108,6 +108,10 @@ export class WebAdapter extends PlatformAdapter {
         console.log(`Web response for ${conversationId}:`, action.text);
         return true;
 
+      case 'send_voice':
+        console.log(`Web voice response for ${conversationId}:`, action.url);
+        return true;
+
       case 'wait':
         await new Promise(resolve => setTimeout(resolve, action.durationMs));
         return true;

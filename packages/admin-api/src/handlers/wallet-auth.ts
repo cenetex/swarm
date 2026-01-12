@@ -20,7 +20,7 @@ import {
 } from '../services/agent-ownership.js';
 import { getGateStatus } from '../services/nft-gate.js';
 import { listUnclaimedAgents } from '../services/agents.js';
-import { prepareLineageMint, verifyGateBurn } from '../services/lineage-nft.js';
+import { prepareLineageMint } from '../services/lineage-nft.js';
 
 // ============================================================================
 // Request Schemas
@@ -245,7 +245,7 @@ export async function handleVerify(
 
 /**
  * GET /auth/me
- * Get current authenticated user
+ * Get current authenticated user with gate status
  */
 export async function handleMe(
   event: APIGatewayProxyEventV2
@@ -273,6 +273,10 @@ export async function handleMe(
       });
     }
 
+    // Get gate status for the wallet
+    const { getGateStatus } = await import('../services/nft-gate.js');
+    const gateStatus = await getGateStatus(session.user.walletAddress);
+
     return jsonResponse(200, {
       authenticated: true,
       user: {
@@ -282,6 +286,13 @@ export async function handleMe(
         inhabitedAgentId: session.user.inhabitedAgentId,
         createdAt: session.user.createdAt,
         sessionCount: session.user.sessionCount,
+      },
+      gateStatus: {
+        nftsHeld: gateStatus.nftsHeld,
+        agentsCreated: gateStatus.agentsCreated,
+        availableSlots: gateStatus.availableSlots,
+        canCreate: gateStatus.canCreate,
+        canAbandon: gateStatus.canAbandon,
       },
     }, cors);
   } catch (error) {
@@ -638,7 +649,14 @@ export async function handleCanAbandon(
  * Abandon the currently inhabited agent (REQUIRES Gate NFT burn)
  *
  * Request body:
- * - burnTxSignature: Optional signature of the Gate NFT burn transaction
+ * - burnTxSignature: REQUIRED - The signature of the Gate NFT burn transaction
+ *
+ * Flow:
+ * 1. Client burns Gate NFT using wallet
+ * 2. Client sends burn transaction signature to this endpoint
+ * 3. Backend verifies burn on-chain
+ * 4. Backend releases the agent and increments era
+ * 5. Client can then mint lineage NFT with returned metadata
  *
  * Returns info needed for lineage NFT minting
  */
@@ -669,21 +687,14 @@ export async function handleAbandonAgent(
     const body = JSON.parse(event.body || '{}');
     const burnTxSignature = body.burnTxSignature;
 
-    // Optionally verify the burn transaction
-    if (burnTxSignature) {
-      const burnVerification = await verifyGateBurn(
-        session.user.walletAddress,
-        burnTxSignature
-      );
-      if (!burnVerification.verified) {
-        return jsonResponse(400, {
-          error: 'Burn transaction verification failed',
-          details: burnVerification.error,
-        }, cors);
-      }
+    // Burn signature is REQUIRED
+    if (!burnTxSignature || typeof burnTxSignature !== 'string') {
+      return jsonResponse(400, {
+        error: 'burnTxSignature is required. You must burn a Gate NFT first.',
+      }, cors);
     }
 
-    // Abandon the agent
+    // Abandon the agent (includes burn verification)
     const result = await abandonAgent(
       session.user.walletAddress,
       burnTxSignature

@@ -109,6 +109,12 @@ export class TwitterAdapter extends PlatformAdapter {
           await this.postTweet(action.text, action.media, replyToMessageId);
           break;
 
+        case 'send_voice': {
+          const text = action.caption ? `${action.caption} ${action.url}` : action.url;
+          await this.postTweet(text, undefined, replyToMessageId);
+          break;
+        }
+
         case 'react':
           // Twitter "reaction" is a like
           await this.client.v2.like(await this.getBotUserId(), action.messageId);

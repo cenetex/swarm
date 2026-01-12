@@ -390,6 +390,12 @@ export class DiscordAdapter extends PlatformAdapter {
           await this.sendMedia(conversationId, action.mediaType, action.url, action.caption);
           break;
 
+        case 'send_voice': {
+          const message = action.caption ? `${action.caption}\n${action.url}` : action.url;
+          await this.sendMessage(conversationId, message);
+          break;
+        }
+
         case 'react':
           await this.addReaction(conversationId, action.messageId, action.emoji);
           break;

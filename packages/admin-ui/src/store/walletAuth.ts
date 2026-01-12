@@ -28,6 +28,14 @@ export interface NFTGateInfo {
   }>;
 }
 
+export interface GateStatus {
+  nftsHeld: number;
+  agentsCreated: number;
+  availableSlots: number;
+  canCreate: boolean;
+  canAbandon: boolean;
+}
+
 interface WalletAuthState {
   // Auth state
   isAuthenticated: boolean;
@@ -38,6 +46,7 @@ interface WalletAuthState {
   // NFT gating state
   nftGateError: boolean;
   nftGateInfo: NFTGateInfo | null;
+  gateStatus: GateStatus | null;
 
   // Actions
   checkAuth: () => Promise<void>;
@@ -59,6 +68,7 @@ export const useWalletAuth = create<WalletAuthState>()(
       error: null,
       nftGateError: false,
       nftGateInfo: null,
+      gateStatus: null,
 
       /**
        * Check if user is already authenticated (from cookie)
@@ -80,12 +90,14 @@ export const useWalletAuth = create<WalletAuthState>()(
             set({
               isAuthenticated: true,
               user: data.user,
+              gateStatus: data.gateStatus || null,
               isLoading: false,
             });
           } else {
             set({
               isAuthenticated: false,
               user: null,
+              gateStatus: null,
               isLoading: false,
             });
           }
@@ -94,6 +106,7 @@ export const useWalletAuth = create<WalletAuthState>()(
           set({
             isAuthenticated: false,
             user: null,
+            gateStatus: null,
             isLoading: false,
           });
         }
@@ -197,6 +210,7 @@ export const useWalletAuth = create<WalletAuthState>()(
           set({
             isAuthenticated: false,
             user: null,
+            gateStatus: null,
             isLoading: false,
             error: null,
           });

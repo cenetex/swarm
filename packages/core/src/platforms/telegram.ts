@@ -172,6 +172,24 @@ function extractMessageContent(message: Message): MessageContent {
     });
   }
 
+  if (message.voice) {
+    mediaAttachments.push({
+      type: 'audio',
+      fileId: message.voice.file_id,
+      mimeType: message.voice.mime_type,
+      size: message.voice.file_size,
+    });
+  }
+
+  if (message.audio) {
+    mediaAttachments.push({
+      type: 'audio',
+      fileId: message.audio.file_id,
+      mimeType: message.audio.mime_type,
+      size: message.audio.file_size,
+    });
+  }
+
   if (message.animation) {
     mediaAttachments.push({
       type: 'animation',
@@ -382,6 +400,13 @@ export class TelegramAdapter extends PlatformAdapter {
               ...replyParams,
             });
           }
+          break;
+
+        case 'send_voice':
+          await this.bot.api.sendVoice(chatId, action.url, {
+            caption: action.caption,
+            ...replyParams,
+          });
           break;
 
         case 'send_sticker':

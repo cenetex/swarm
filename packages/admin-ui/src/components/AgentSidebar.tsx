@@ -1,7 +1,15 @@
 /**
- * Agent Sidebar - Discord-like agent list
+ * Agent Sidebar - Discord-like agent list with tiered access
+ * 
+ * Access Tiers:
+ * - No wallet: Browse profiles only (read-only)
+ * - Authenticated, no Orb: Browse, chat as ghost, no inhabit/create
+ * - Authenticated + Orb, not inhabiting: Can browse, chat, inhabit unclaimed
+ * - Inhabiting, has Orbs: Full admin on inhabited, chat on others, can create
+ * - Inhabiting, no Orbs: Full admin on inhabited only, chat on others, no create
  */
 import { useAgentStore } from '../store/agents';
+import { useWalletAuth } from '../store/walletAuth';
 import { ThemeToggle } from './ThemeToggle';
 import { WalletLogin } from './WalletLogin';
 import type { Agent } from '../types';
@@ -91,6 +99,34 @@ interface AgentSidebarProps {
 
 export function AgentSidebar({ className, onClose }: AgentSidebarProps) {
   const { agents, activeAgentId, createAgent, setActiveAgent, isLoading, error } = useAgentStore();
+  const { isAuthenticated, user, gateStatus } = useWalletAuth();
+
+  // Determine access level
+  const walletAddress = user?.walletAddress;
+  const inhabitedAgentId = user?.inhabitedAgentId;
+  const hasOrbs = (gateStatus?.nftsHeld || 0) > 0;
+  const canCreate = gateStatus?.canCreate || false;
+
+  // Filter agents based on access level:
+  // - If inhabiting with no orbs: only show inhabited agent
+  // - Otherwise: show all agents
+  const filteredAgents = inhabitedAgentId && !hasOrbs
+    ? agents.filter(a => a.id === inhabitedAgentId)
+    : agents;
+
+  // Sort agents: inhabited first, then created by user, then others
+  const sortedAgents = [...filteredAgents].sort((a, b) => {
+    // Inhabited agent always first
+    if (a.id === inhabitedAgentId) return -1;
+    if (b.id === inhabitedAgentId) return 1;
+    // Created by user second
+    const aCreatedByMe = a.creatorWallet === walletAddress;
+    const bCreatedByMe = b.creatorWallet === walletAddress;
+    if (aCreatedByMe && !bCreatedByMe) return -1;
+    if (bCreatedByMe && !aCreatedByMe) return 1;
+    // Then by name
+    return a.name.localeCompare(b.name);
+  });
 
   const handleCreateAgent = async () => {
     try {
@@ -106,6 +142,9 @@ export function AgentSidebar({ className, onClose }: AgentSidebarProps) {
     onClose?.();
   };
 
+  // Determine if create button should be shown
+  const showCreateButton = isAuthenticated && canCreate;
+
   return (
     <div className={`w-72 lg:w-64 bg-[var(--color-bg-secondary)] border-r border-[var(--color-border)] flex flex-col h-full ${className || ''}`}>
       {/* Header */}
@@ -117,30 +156,32 @@ export function AgentSidebar({ className, onClose }: AgentSidebarProps) {
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <button
-              onClick={handleCreateAgent}
-              disabled={isLoading}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors ${
-                isLoading ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              title="Create new agent"
-            >
-              {isLoading ? (
-                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-              ) : (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  className="w-5 h-5"
-                >
-                  <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                </svg>
-              )}
-            </button>
+            {showCreateButton && (
+              <button
+                onClick={handleCreateAgent}
+                disabled={isLoading}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors ${
+                  isLoading ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+                title={`Create new agent (${gateStatus?.availableSlots || 0} slots available)`}
+              >
+                {isLoading ? (
+                  <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className="w-5 h-5"
+                  >
+                    <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                  </svg>
+                )}
+              </button>
+            )}
             {/* Close button - only on mobile */}
             {onClose && (
               <button
@@ -171,26 +212,61 @@ export function AgentSidebar({ className, onClose }: AgentSidebarProps) {
             </svg>
             <p className="text-sm">Loading agents...</p>
           </div>
-        ) : agents.length === 0 ? (
+        ) : sortedAgents.length === 0 ? (
           <div className="text-center py-8 text-[var(--color-text-muted)]">
-            <p className="text-sm">No agents yet</p>
-            <button
-              onClick={handleCreateAgent}
-              disabled={isLoading}
-              className="mt-2 text-brand-500 hover:text-brand-400 text-sm disabled:opacity-50"
-            >
-              Create your first agent
-            </button>
+            <p className="text-sm">
+              {inhabitedAgentId && !hasOrbs 
+                ? 'You need an Orb to view other agents' 
+                : 'No agents available'}
+            </p>
+            {showCreateButton && (
+              <button
+                onClick={handleCreateAgent}
+                disabled={isLoading}
+                className="mt-2 text-brand-500 hover:text-brand-400 text-sm disabled:opacity-50"
+              >
+                Create your first agent
+              </button>
+            )}
           </div>
         ) : (
-          agents.map((agent) => (
-            <AgentListItem
-              key={agent.id}
-              agent={agent}
-              isActive={agent.id === activeAgentId}
-              onClick={() => handleSelectAgent(agent.id)}
-            />
-          ))
+          <>
+            {/* Section: Your Avatar (if inhabiting) */}
+            {inhabitedAgentId && sortedAgents.some(a => a.id === inhabitedAgentId) && (
+              <div className="mb-2">
+                <div className="px-2 py-1 text-xs font-medium text-brand-400 uppercase tracking-wider">
+                  Your Avatar
+                </div>
+                {sortedAgents.filter(a => a.id === inhabitedAgentId).map((agent) => (
+                  <AgentListItem
+                    key={agent.id}
+                    agent={agent}
+                    isActive={agent.id === activeAgentId}
+                    onClick={() => handleSelectAgent(agent.id)}
+                  />
+                ))}
+              </div>
+            )}
+            
+            {/* Section: Other Agents (if has orbs or not inhabiting yet) */}
+            {(hasOrbs || !inhabitedAgentId) && sortedAgents.filter(a => a.id !== inhabitedAgentId).length > 0 && (
+              <div>
+                {inhabitedAgentId && (
+                  <div className="px-2 py-1 text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wider">
+                    Other Agents
+                  </div>
+                )}
+                {sortedAgents.filter(a => a.id !== inhabitedAgentId).map((agent) => (
+                  <AgentListItem
+                    key={agent.id}
+                    agent={agent}
+                    isActive={agent.id === activeAgentId}
+                    onClick={() => handleSelectAgent(agent.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 

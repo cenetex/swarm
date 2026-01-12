@@ -20,7 +20,12 @@ export interface AgentConfig {
   secrets: AgentSecret[];
   createdAt: number;
   updatedAt: number;
-  // Wallet ownership
+  // Creator tracking (permanent - who created this agent)
+  creatorWallet?: string;
+  // Inhabitant tracking (current inhabitant)
+  inhabitantWallet?: string;
+  inhabitedAt?: number;
+  // Legacy fields (deprecated)
   ownerWallet?: string;
   ownerClaimedAt?: number;
 }

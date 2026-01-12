@@ -42,6 +42,7 @@ export interface AgentConfig {
   media: MediaConfig;
   scheduling: SchedulingConfig;
   behavior: BehaviorConfig;
+  voice?: VoiceConfig;
   solana?: SolanaConfig;
   tools: string[];
   secrets: string[];
@@ -118,6 +119,15 @@ export interface LLMConfig {
   fallbackModel?: string;
   temperature: number;
   maxTokens: number;
+}
+
+export interface VoiceConfig {
+  enabled: boolean;
+  defaultVoiceId?: string;
+  ttsProvider?: 'voice-clone';
+  speed?: number;
+  pitch?: number;
+  format?: 'ogg' | 'mp3' | 'wav';
 }
 
 export interface MediaConfig {
@@ -308,6 +318,7 @@ export interface SwarmResponse {
 export type ResponseAction = 
   | SendMessageAction
   | SendMediaAction
+  | SendVoiceAction
   | SendStickerAction
   | ReactAction
   | TakeSelfieAction
@@ -326,6 +337,13 @@ export interface SendMessageAction {
 export interface SendMediaAction {
   type: 'send_media';
   mediaType: 'image' | 'video' | 'animation';
+  url: string;
+  caption?: string;
+  replyToMessageId?: string;
+}
+
+export interface SendVoiceAction {
+  type: 'send_voice';
   url: string;
   caption?: string;
   replyToMessageId?: string;
@@ -678,6 +696,15 @@ export const LLMConfigSchema = z.object({
   maxTokens: z.number(),
 });
 
+export const VoiceConfigSchema = z.object({
+  enabled: z.boolean(),
+  defaultVoiceId: z.string().optional(),
+  ttsProvider: z.enum(['voice-clone']).optional(),
+  speed: z.number().optional(),
+  pitch: z.number().optional(),
+  format: z.enum(['ogg', 'mp3', 'wav']).optional(),
+});
+
 export const MediaConfigSchema = z.object({
   image: z.object({
     provider: z.enum(['openrouter', 'replicate', 'dalle']),
@@ -736,6 +763,7 @@ export const AgentConfigSchema = z.object({
   media: MediaConfigSchema,
   scheduling: SchedulingConfigSchema,
   behavior: BehaviorConfigSchema,
+  voice: VoiceConfigSchema.optional(),
   solana: SolanaConfigSchema.optional(),
   tools: z.array(z.string()),
   secrets: z.array(z.string()),
@@ -843,6 +871,13 @@ export const SendMediaActionSchema = z.object({
   replyToMessageId: z.string().optional(),
 });
 
+export const SendVoiceActionSchema = z.object({
+  type: z.literal('send_voice'),
+  url: z.string(),
+  caption: z.string().optional(),
+  replyToMessageId: z.string().optional(),
+});
+
 export const SendStickerActionSchema = z.object({
   type: z.literal('send_sticker'),
   emoji: z.string(),
@@ -887,6 +922,7 @@ export const SolanaActionSchema = z.object({
 export const ResponseActionSchema = z.discriminatedUnion('type', [
   SendMessageActionSchema,
   SendMediaActionSchema,
+  SendVoiceActionSchema,
   SendStickerActionSchema,
   ReactActionSchema,
   TakeSelfieActionSchema,
