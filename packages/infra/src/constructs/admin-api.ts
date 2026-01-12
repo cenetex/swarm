@@ -153,14 +153,17 @@ export class AdminApiConstruct extends Construct {
       timeToLiveAttribute: 'ttl',
     });
 
-    // GSI for listing by type
+    // GSI1 for inverted lookups (sk → pk)
+    // Used for:
+    // - Finding agent by inhabitant: sk=INHABITANT#<wallet> returns pk=AGENT#<agentId>
+    // - Listing items by type: sk=CONFIG returns all agents
     this.table.addGlobalSecondaryIndex({
       indexName: 'GSI1',
       partitionKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
     });
 
-    // Note: Media jobs are queried using Scan with filter (no GSI2 needed)
+    // Note: Media jobs are queried using Scan with filter (no GSI needed)
     // Jobs have TTL so the scan is bounded by recent jobs only
 
     // External provider ID lookups use a mapping item (no extra GSI).

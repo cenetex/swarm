@@ -13,7 +13,14 @@ import {
 import {
   claimAgent,
   releaseAgent,
+  inhabitAgent,
+  abandonAgent,
+  canAbandon,
+  getInhabitationInfo,
 } from '../services/agent-ownership.js';
+import { getGateStatus } from '../services/nft-gate.js';
+import { listUnclaimedAgents } from '../services/agents.js';
+import { prepareLineageMint, verifyGateBurn } from '../services/lineage-nft.js';
 
 // ============================================================================
 // Request Schemas
@@ -138,11 +145,23 @@ export async function handleChallenge(
     }
 
     const { walletAddress } = parsed.data;
+    const ipAddress = event.requestContext.http.sourceIp;
 
-    // Create challenge
-    const challenge = await createChallenge(walletAddress);
+    // Create challenge (with rate limiting)
+    const result = await createChallenge(walletAddress, ipAddress);
 
-    return jsonResponse(200, challenge, cors);
+    // Check if rate limited
+    if ('error' in result) {
+      return jsonResponse(429, {
+        error: result.error,
+        retryAfter: result.retryAfter,
+      }, {
+        ...cors,
+        'Retry-After': String(result.retryAfter),
+      });
+    }
+
+    return jsonResponse(200, result, cors);
   } catch (error) {
     console.error('[WalletAuth] Challenge error:', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
@@ -403,6 +422,301 @@ export async function handleReleaseAgent(
   }
 }
 
+// ============================================================================
+// NEW INHABITATION ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /auth/unclaimed-agents
+ * List agents available for inhabitation
+ */
+export async function handleUnclaimedAgents(
+  event: APIGatewayProxyEventV2
+): Promise<APIGatewayProxyResultV2> {
+  const cors = corsHeaders(event);
+
+  if (event.requestContext.http.method === 'OPTIONS') {
+    return { statusCode: 204, headers: cors };
+  }
+
+  try {
+    const agents = await listUnclaimedAgents();
+
+    return jsonResponse(200, {
+      agents: agents.map(a => ({
+        agentId: a.agentId,
+        name: a.name,
+        description: a.description,
+        avatarUrl: a.profileImage?.url,
+        currentEra: a.currentEra || 0,
+      })),
+    }, cors);
+  } catch (error) {
+    console.error('[WalletAuth] Unclaimed agents error:', error);
+    return jsonResponse(500, { error: 'Internal server error' }, cors);
+  }
+}
+
+/**
+ * GET /auth/gate-status
+ * Get NFT gate status for current user
+ */
+export async function handleGateStatus(
+  event: APIGatewayProxyEventV2
+): Promise<APIGatewayProxyResultV2> {
+  const cors = corsHeaders(event);
+
+  if (event.requestContext.http.method === 'OPTIONS') {
+    return { statusCode: 204, headers: cors };
+  }
+
+  try {
+    // Require authentication
+    const sessionToken = getSessionFromCookie(event);
+    if (!sessionToken) {
+      return jsonResponse(401, { error: 'Authentication required' }, cors);
+    }
+
+    const session = await getSessionWithUser(sessionToken);
+    if (!session) {
+      return jsonResponse(401, { error: 'Session expired' }, {
+        ...cors,
+        'Set-Cookie': clearSessionCookie(),
+      });
+    }
+
+    const gateStatus = await getGateStatus(session.user.walletAddress);
+
+    return jsonResponse(200, { gateStatus }, cors);
+  } catch (error) {
+    console.error('[WalletAuth] Gate status error:', error);
+    return jsonResponse(500, { error: 'Internal server error' }, cors);
+  }
+}
+
+/**
+ * GET /auth/inhabitation
+ * Get current inhabitation status (including ghost status)
+ */
+export async function handleInhabitationStatus(
+  event: APIGatewayProxyEventV2
+): Promise<APIGatewayProxyResultV2> {
+  const cors = corsHeaders(event);
+
+  if (event.requestContext.http.method === 'OPTIONS') {
+    return { statusCode: 204, headers: cors };
+  }
+
+  try {
+    // Require authentication
+    const sessionToken = getSessionFromCookie(event);
+    if (!sessionToken) {
+      return jsonResponse(401, { error: 'Authentication required' }, cors);
+    }
+
+    const session = await getSessionWithUser(sessionToken);
+    if (!session) {
+      return jsonResponse(401, { error: 'Session expired' }, {
+        ...cors,
+        'Set-Cookie': clearSessionCookie(),
+      });
+    }
+
+    const info = await getInhabitationInfo(session.user.walletAddress);
+
+    return jsonResponse(200, info, cors);
+  } catch (error) {
+    console.error('[WalletAuth] Inhabitation status error:', error);
+    return jsonResponse(500, { error: 'Internal server error' }, cors);
+  }
+}
+
+/**
+ * POST /auth/inhabit
+ * Inhabit an unclaimed agent (FREE - no NFT required)
+ */
+export async function handleInhabitAgent(
+  event: APIGatewayProxyEventV2
+): Promise<APIGatewayProxyResultV2> {
+  const cors = corsHeaders(event);
+
+  if (event.requestContext.http.method === 'OPTIONS') {
+    return { statusCode: 204, headers: cors };
+  }
+
+  try {
+    // Require authentication
+    const sessionToken = getSessionFromCookie(event);
+    if (!sessionToken) {
+      return jsonResponse(401, { error: 'Authentication required' }, cors);
+    }
+
+    const session = await getSessionWithUser(sessionToken);
+    if (!session) {
+      return jsonResponse(401, { error: 'Session expired' }, {
+        ...cors,
+        'Set-Cookie': clearSessionCookie(),
+      });
+    }
+
+    // Parse request
+    const body = JSON.parse(event.body || '{}');
+    const agentId = body.agentId;
+
+    if (!agentId || typeof agentId !== 'string') {
+      return jsonResponse(400, { error: 'agentId is required' }, cors);
+    }
+
+    // Inhabit the agent
+    const result = await inhabitAgent(session.user.walletAddress, agentId);
+
+    if (!result.success) {
+      return jsonResponse(400, { error: result.error }, cors);
+    }
+
+    return jsonResponse(200, {
+      success: true,
+      agentId: result.agentId,
+      agentName: result.agentName,
+      avatarUrl: result.avatarUrl,
+      era: result.era,
+    }, cors);
+  } catch (error) {
+    console.error('[WalletAuth] Inhabit error:', error);
+    return jsonResponse(500, { error: 'Internal server error' }, cors);
+  }
+}
+
+/**
+ * POST /auth/can-abandon
+ * Check if user can abandon their current agent
+ */
+export async function handleCanAbandon(
+  event: APIGatewayProxyEventV2
+): Promise<APIGatewayProxyResultV2> {
+  const cors = corsHeaders(event);
+
+  if (event.requestContext.http.method === 'OPTIONS') {
+    return { statusCode: 204, headers: cors };
+  }
+
+  try {
+    // Require authentication
+    const sessionToken = getSessionFromCookie(event);
+    if (!sessionToken) {
+      return jsonResponse(401, { error: 'Authentication required' }, cors);
+    }
+
+    const session = await getSessionWithUser(sessionToken);
+    if (!session) {
+      return jsonResponse(401, { error: 'Session expired' }, {
+        ...cors,
+        'Set-Cookie': clearSessionCookie(),
+      });
+    }
+
+    const result = await canAbandon(session.user.walletAddress);
+
+    return jsonResponse(200, {
+      canAbandon: result.canAbandon,
+      gateStatus: result.gateStatus,
+      inhabitedAgent: result.inhabitedAgent ? {
+        agentId: result.inhabitedAgent.agentId,
+        name: result.inhabitedAgent.name,
+        avatarUrl: result.inhabitedAgent.profileImage?.url,
+        currentEra: result.inhabitedAgent.currentEra || 0,
+      } : null,
+    }, cors);
+  } catch (error) {
+    console.error('[WalletAuth] Can abandon error:', error);
+    return jsonResponse(500, { error: 'Internal server error' }, cors);
+  }
+}
+
+/**
+ * POST /auth/abandon
+ * Abandon the currently inhabited agent (REQUIRES Gate NFT burn)
+ *
+ * Request body:
+ * - burnTxSignature: Optional signature of the Gate NFT burn transaction
+ *
+ * Returns info needed for lineage NFT minting
+ */
+export async function handleAbandonAgent(
+  event: APIGatewayProxyEventV2
+): Promise<APIGatewayProxyResultV2> {
+  const cors = corsHeaders(event);
+
+  if (event.requestContext.http.method === 'OPTIONS') {
+    return { statusCode: 204, headers: cors };
+  }
+
+  try {
+    // Require authentication
+    const sessionToken = getSessionFromCookie(event);
+    if (!sessionToken) {
+      return jsonResponse(401, { error: 'Authentication required' }, cors);
+    }
+
+    const session = await getSessionWithUser(sessionToken);
+    if (!session) {
+      return jsonResponse(401, { error: 'Session expired' }, {
+        ...cors,
+        'Set-Cookie': clearSessionCookie(),
+      });
+    }
+
+    const body = JSON.parse(event.body || '{}');
+    const burnTxSignature = body.burnTxSignature;
+
+    // Optionally verify the burn transaction
+    if (burnTxSignature) {
+      const burnVerification = await verifyGateBurn(
+        session.user.walletAddress,
+        burnTxSignature
+      );
+      if (!burnVerification.verified) {
+        return jsonResponse(400, {
+          error: 'Burn transaction verification failed',
+          details: burnVerification.error,
+        }, cors);
+      }
+    }
+
+    // Abandon the agent
+    const result = await abandonAgent(
+      session.user.walletAddress,
+      burnTxSignature
+    );
+
+    if (!result.success) {
+      return jsonResponse(400, {
+        error: result.error,
+        gateStatus: result.gateStatus,
+      }, cors);
+    }
+
+    // Prepare lineage mint info
+    const lineageMint = await prepareLineageMint(
+      result.agentId!,
+      session.user.walletAddress
+    );
+
+    return jsonResponse(200, {
+      success: true,
+      agentId: result.agentId,
+      agentName: result.agentName,
+      era: result.era,
+      lineageNftMint: result.lineageNftMint,
+      lineageMetadata: lineageMint.metadata,
+      gateStatus: result.gateStatus,
+    }, cors);
+  } catch (error) {
+    console.error('[WalletAuth] Abandon error:', error);
+    return jsonResponse(500, { error: 'Internal server error' }, cors);
+  }
+}
+
 /**
  * Main router for /auth/* endpoints
  */
@@ -441,6 +755,31 @@ export async function handleWalletAuth(
 
   if (path === '/auth/release' && method === 'POST') {
     return handleReleaseAgent(event);
+  }
+
+  // New inhabitation endpoints
+  if (path === '/auth/unclaimed-agents' && method === 'GET') {
+    return handleUnclaimedAgents(event);
+  }
+
+  if (path === '/auth/gate-status' && method === 'GET') {
+    return handleGateStatus(event);
+  }
+
+  if (path === '/auth/inhabitation' && method === 'GET') {
+    return handleInhabitationStatus(event);
+  }
+
+  if (path === '/auth/inhabit' && method === 'POST') {
+    return handleInhabitAgent(event);
+  }
+
+  if (path === '/auth/can-abandon' && method === 'GET') {
+    return handleCanAbandon(event);
+  }
+
+  if (path === '/auth/abandon' && method === 'POST') {
+    return handleAbandonAgent(event);
   }
 
   return jsonResponse(404, { error: 'Not found' }, cors);

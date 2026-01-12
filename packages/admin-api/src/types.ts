@@ -248,6 +248,8 @@ export const MessageSenderSchema = z.object({
   displayName: z.string().optional(),
   avatarUrl: z.string().optional(),
   inhabitedAgentId: z.string().optional(),
+  inhabitedAgentName: z.string().optional(),
+  isGhost: z.boolean().optional(),  // True if authenticated but no inhabited agent
 });
 
 export type MessageSender = z.infer<typeof MessageSenderSchema>;

@@ -25,6 +25,10 @@ const SESSION_TTL_HOURS = 24;
 const CHALLENGE_TTL_MINUTES = 5;
 const DOMAIN = process.env.AUTH_DOMAIN || 'admin.rati.chat';
 
+// Rate limiting configuration
+const CHALLENGE_RATE_LIMIT_PER_MINUTE = 10;
+const CHALLENGE_RATE_WINDOW_MS = 60 * 1000; // 1 minute
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -107,14 +111,97 @@ Expiration: ${expiration.toISOString()}
 This signature will not trigger any blockchain transaction or cost any fees.`;
 }
 
+// ============================================================================
+// Rate Limiting
+// ============================================================================
+
+interface RateLimitRecord {
+  pk: string; // RATELIMIT#<type>#<key>
+  sk: 'DATA';
+  count: number;
+  windowStart: number;
+  ttl: number;
+}
+
+/**
+ * Check and update rate limit for a given key
+ * Returns true if within limit, false if exceeded
+ */
+async function checkRateLimit(
+  type: string,
+  key: string,
+  maxPerWindow: number,
+  windowMs: number
+): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
+  const pk = `RATELIMIT#${type}#${key}`;
+  const now = Date.now();
+  const windowStart = Math.floor(now / windowMs) * windowMs;
+  const resetAt = windowStart + windowMs;
+  const ttl = Math.floor(resetAt / 1000) + 60; // TTL slightly after window ends
+
+  try {
+    // Try to increment counter with conditional check
+    const result = await dynamoClient.send(new UpdateCommand({
+      TableName: ADMIN_TABLE,
+      Key: { pk, sk: 'DATA' },
+      UpdateExpression: 'SET #count = if_not_exists(#count, :zero) + :one, windowStart = :ws, #ttl = :ttl',
+      ConditionExpression: 'attribute_not_exists(windowStart) OR windowStart = :ws',
+      ExpressionAttributeNames: { '#count': 'count', '#ttl': 'ttl' },
+      ExpressionAttributeValues: {
+        ':zero': 0,
+        ':one': 1,
+        ':ws': windowStart,
+        ':ttl': ttl,
+      },
+      ReturnValues: 'ALL_NEW',
+    }));
+
+    const count = (result.Attributes?.count as number) || 1;
+    const allowed = count <= maxPerWindow;
+    return { allowed, remaining: Math.max(0, maxPerWindow - count), resetAt };
+  } catch (err: unknown) {
+    // Window changed, start fresh counter
+    if (err instanceof Error && err.name === 'ConditionalCheckFailedException') {
+      await dynamoClient.send(new PutCommand({
+        TableName: ADMIN_TABLE,
+        Item: { pk, sk: 'DATA', count: 1, windowStart, ttl } as RateLimitRecord,
+      }));
+      return { allowed: true, remaining: maxPerWindow - 1, resetAt };
+    }
+    // On error, allow the request (fail open)
+    console.error('[WalletAuth] Rate limit check failed:', err);
+    return { allowed: true, remaining: maxPerWindow, resetAt: now + windowMs };
+  }
+}
+
 /**
  * Create and store a new challenge
  */
-export async function createChallenge(walletAddress: string): Promise<{
+export async function createChallenge(
+  walletAddress: string,
+  ipAddress?: string
+): Promise<{
   nonce: string;
   message: string;
   expiresAt: number;
-}> {
+} | { error: string; retryAfter: number }> {
+  // Rate limit by IP address (or wallet if no IP)
+  const rateLimitKey = ipAddress || walletAddress;
+  const rateCheck = await checkRateLimit(
+    'challenge',
+    rateLimitKey,
+    CHALLENGE_RATE_LIMIT_PER_MINUTE,
+    CHALLENGE_RATE_WINDOW_MS
+  );
+
+  if (!rateCheck.allowed) {
+    console.log(`[WalletAuth] Rate limited challenge for ${rateLimitKey.slice(0, 8)}...`);
+    return {
+      error: 'Too many requests. Please wait before trying again.',
+      retryAfter: Math.ceil((rateCheck.resetAt - Date.now()) / 1000),
+    };
+  }
+
   const nonce = generateNonce();
   const message = createChallengeMessage(walletAddress, nonce);
   const now = Date.now();
@@ -189,6 +276,14 @@ export function verifySignature(
     const signatureBytes = bs58.decode(signatureBase58);
     const publicKeyBytes = bs58.decode(publicKeyBase58);
 
+    console.log(`[WalletAuth] Verifying signature:`, {
+      messageLength: message.length,
+      messagePreview: message.substring(0, 100),
+      signatureLength: signatureBytes.length,
+      publicKeyLength: publicKeyBytes.length,
+      publicKey: publicKeyBase58.substring(0, 8),
+    });
+
     // Solana public keys are 32 bytes
     if (publicKeyBytes.length !== 32) {
       console.log(`[WalletAuth] Invalid public key length: ${publicKeyBytes.length}`);
@@ -201,7 +296,10 @@ export function verifySignature(
       return false;
     }
 
-    return nacl.sign.detached.verify(messageBytes, signatureBytes, publicKeyBytes);
+    const isValid = nacl.sign.detached.verify(messageBytes, signatureBytes, publicKeyBytes);
+    console.log(`[WalletAuth] Signature verification result: ${isValid}`);
+
+    return isValid;
   } catch (error) {
     console.error('[WalletAuth] Signature verification error:', error);
     return false;

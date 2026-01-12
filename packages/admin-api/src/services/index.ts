@@ -3,6 +3,7 @@ export * from './wallets.js';
 export * from './agents.js';
 export * from './agent-ownership.js';
 export * from './nft-gate.js';
+export * from './lineage-nft.js';
 export * from './config-sync.js';
 export * from './gallery.js';
 export * from './media-jobs.js';

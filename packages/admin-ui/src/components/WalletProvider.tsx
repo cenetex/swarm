@@ -1,6 +1,10 @@
 /**
  * Solana Wallet Provider
  * Wraps the app with Solana wallet adapter context
+ * 
+ * Note: Phantom, Solflare, and other major wallets auto-register as Standard Wallets
+ * via the Wallet Standard. We only need to add adapters for wallets that don't
+ * support the standard yet (like Coinbase).
  */
 import { useMemo, type ReactNode } from 'react';
 import {
@@ -8,11 +12,7 @@ import {
   WalletProvider as SolanaWalletProvider,
 } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import {
-  PhantomWalletAdapter,
-  SolflareWalletAdapter,
-  CoinbaseWalletAdapter,
-} from '@solana/wallet-adapter-wallets';
+import { CoinbaseWalletAdapter } from '@solana/wallet-adapter-wallets';
 
 // Import wallet adapter styles
 import '@solana/wallet-adapter-react-ui/styles.css';
@@ -25,11 +25,10 @@ interface WalletProviderProps {
 }
 
 export function WalletProvider({ children }: WalletProviderProps) {
-  // Initialize wallet adapters
+  // Initialize wallet adapters for non-standard wallets only
+  // Phantom, Solflare, etc. auto-register via Wallet Standard
   const wallets = useMemo(
     () => [
-      new PhantomWalletAdapter(),
-      new SolflareWalletAdapter(),
       new CoinbaseWalletAdapter(),
     ],
     []

@@ -8,13 +8,26 @@
  * Key concepts:
  * - INHABIT = Claim an unclaimed agent (FREE, no NFT required)
  * - ABANDON = Release an agent (REQUIRES burning a Gate NFT)
+ *
+ * Data Model (uses GSI1 for wallet→agent lookup):
+ * - Agent record: pk=AGENT#<id>, sk=CONFIG, inhabitantWallet=<wallet>
+ * - Inhabitant mapping: pk=AGENT#<id>, sk=INHABITANT#<wallet>
+ * - GSI1 query: sk=INHABITANT#<wallet> → returns pk=AGENT#<id>
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, UpdateCommand, GetCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  UpdateCommand,
+  GetCommand,
+  DeleteCommand,
+  QueryCommand,
+  PutCommand,
+} from '@aws-sdk/lib-dynamodb';
 import type { AgentRecord } from '../types.js';
 import { getGateStatus, type GateStatus } from './nft-gate.js';
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
+const GSI1_NAME = 'GSI1';
 
 const client = new DynamoDBClient({});
 const ddb = DynamoDBDocumentClient.from(client, {
@@ -44,59 +57,49 @@ export interface AbandonResult {
 export type OwnershipResult = InhabitResult;
 
 // =============================================================================
-// NEW INHABITATION API (uses inhabitantWallet field)
+// INHABITATION API (uses GSI1 for wallet→agent lookups)
 // =============================================================================
 
 /**
  * Get the agent inhabited by a wallet (if any)
- * Checks both new (inhabitantWallet) and legacy (ownerWallet) mappings
+ * Uses GSI1 to query by sk=INHABITANT#<wallet>
  */
-export async function getInhabitedAgent(walletAddress: string): Promise<AgentRecord | null> {
-  // Check new INHABITANT mapping first
-  const newMapping = await ddb.send(new GetCommand({
-    TableName: TABLE_NAME,
-    Key: {
-      pk: `INHABITANT#${walletAddress}`,
-      sk: 'AGENT',
-    },
-  }));
-
-  if (newMapping.Item?.agentId) {
-    const agentResult = await ddb.send(new GetCommand({
+export async function getInhabitedAgent(
+  walletAddress: string
+): Promise<AgentRecord | null> {
+  // Query GSI1: sk=INHABITANT#<wallet> returns pk=AGENT#<agentId>
+  const result = await ddb.send(
+    new QueryCommand({
       TableName: TABLE_NAME,
-      Key: {
-        pk: `AGENT#${newMapping.Item.agentId}`,
-        sk: 'CONFIG',
+      IndexName: GSI1_NAME,
+      KeyConditionExpression: 'sk = :sk',
+      ExpressionAttributeValues: {
+        ':sk': `INHABITANT#${walletAddress}`,
       },
-    }));
-    if (agentResult.Item) {
-      return agentResult.Item as AgentRecord;
-    }
+      Limit: 1,
+    })
+  );
+
+  if (!result.Items || result.Items.length === 0) {
+    return null;
   }
 
-  // Fall back to legacy OWNER mapping
-  const legacyMapping = await ddb.send(new GetCommand({
-    TableName: TABLE_NAME,
-    Key: {
-      pk: `OWNER#${walletAddress}`,
-      sk: 'AGENT',
-    },
-  }));
+  // Extract agentId from pk (AGENT#<agentId>)
+  const pk = result.Items[0].pk as string;
+  const agentId = pk.replace('AGENT#', '');
 
-  if (legacyMapping.Item?.agentId) {
-    const agentResult = await ddb.send(new GetCommand({
+  // Get the full agent record
+  const agentResult = await ddb.send(
+    new GetCommand({
       TableName: TABLE_NAME,
       Key: {
-        pk: `AGENT#${legacyMapping.Item.agentId}`,
+        pk: `AGENT#${agentId}`,
         sk: 'CONFIG',
       },
-    }));
-    if (agentResult.Item) {
-      return agentResult.Item as AgentRecord;
-    }
-  }
+    })
+  );
 
-  return null;
+  return (agentResult.Item as AgentRecord) || null;
 }
 
 /**
@@ -134,8 +137,8 @@ export async function inhabitAgent(
 
   const agent = agentResult.Item as AgentRecord;
 
-  // Check if already inhabited (check both new and legacy fields)
-  if (agent.inhabitantWallet || agent.ownerWallet) {
+  // Check if already inhabited
+  if (agent.inhabitantWallet) {
     return {
       success: false,
       error: `${agent.name} is already inhabited by another wallet`,
@@ -146,35 +149,40 @@ export async function inhabitAgent(
 
   try {
     // Update agent with inhabitant - condition: still no inhabitant
-    await ddb.send(new UpdateCommand({
-      TableName: TABLE_NAME,
-      Key: {
-        pk: `AGENT#${agentId}`,
-        sk: 'CONFIG',
-      },
-      UpdateExpression: 'SET inhabitantWallet = :wallet, inhabitedAt = :now, updatedAt = :now',
-      ConditionExpression: 'attribute_not_exists(inhabitantWallet) AND attribute_not_exists(ownerWallet)',
-      ExpressionAttributeValues: {
-        ':wallet': walletAddress,
-        ':now': now,
-      },
-    }));
+    await ddb.send(
+      new UpdateCommand({
+        TableName: TABLE_NAME,
+        Key: {
+          pk: `AGENT#${agentId}`,
+          sk: 'CONFIG',
+        },
+        UpdateExpression:
+          'SET inhabitantWallet = :wallet, inhabitedAt = :now, updatedAt = :now',
+        ConditionExpression: 'attribute_not_exists(inhabitantWallet)',
+        ExpressionAttributeValues: {
+          ':wallet': walletAddress,
+          ':now': now,
+        },
+      })
+    );
 
-    // Create inhabitant mapping
-    await ddb.send(new UpdateCommand({
-      TableName: TABLE_NAME,
-      Key: {
-        pk: `INHABITANT#${walletAddress}`,
-        sk: 'AGENT',
-      },
-      UpdateExpression: 'SET agentId = :agentId, inhabitedAt = :now',
-      ExpressionAttributeValues: {
-        ':agentId': agentId,
-        ':now': now,
-      },
-    }));
+    // Create inhabitant mapping record (for GSI1 lookup)
+    await ddb.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: {
+          pk: `AGENT#${agentId}`,
+          sk: `INHABITANT#${walletAddress}`,
+          agentId,
+          walletAddress,
+          inhabitedAt: now,
+        },
+      })
+    );
 
-    console.log(`[Inhabit] Wallet ${walletAddress.slice(0, 8)}... inhabited agent ${agentId}`);
+    console.log(
+      `[Inhabit] Wallet ${walletAddress.slice(0, 8)}... inhabited agent ${agentId}`
+    );
 
     return {
       success: true,
@@ -255,7 +263,7 @@ export async function abandonAgent(
   }
 
   // Verify this wallet is the inhabitant
-  if (agent.inhabitantWallet !== walletAddress && agent.ownerWallet !== walletAddress) {
+  if (agent.inhabitantWallet !== walletAddress) {
     return {
       success: false,
       error: 'You do not inhabit this agent',
@@ -267,41 +275,38 @@ export async function abandonAgent(
   const newEra = (agent.currentEra || 0) + 1;
 
   // Update agent: increment era, clear inhabitant
-  await ddb.send(new UpdateCommand({
-    TableName: TABLE_NAME,
-    Key: {
-      pk: `AGENT#${agent.agentId}`,
-      sk: 'CONFIG',
-    },
-    UpdateExpression: `
-      SET currentEra = :era, updatedAt = :now
-      REMOVE inhabitantWallet, inhabitedAt, ownerWallet, ownerClaimedAt
-    `,
-    ExpressionAttributeValues: {
-      ':era': newEra,
-      ':now': now,
-    },
-  }));
+  await ddb.send(
+    new UpdateCommand({
+      TableName: TABLE_NAME,
+      Key: {
+        pk: `AGENT#${agent.agentId}`,
+        sk: 'CONFIG',
+      },
+      UpdateExpression: `
+        SET currentEra = :era, updatedAt = :now
+        REMOVE inhabitantWallet, inhabitedAt
+      `,
+      ExpressionAttributeValues: {
+        ':era': newEra,
+        ':now': now,
+      },
+    })
+  );
 
-  // Delete inhabitant mapping
-  await ddb.send(new DeleteCommand({
-    TableName: TABLE_NAME,
-    Key: {
-      pk: `INHABITANT#${walletAddress}`,
-      sk: 'AGENT',
-    },
-  }));
+  // Delete inhabitant mapping record
+  await ddb.send(
+    new DeleteCommand({
+      TableName: TABLE_NAME,
+      Key: {
+        pk: `AGENT#${agent.agentId}`,
+        sk: `INHABITANT#${walletAddress}`,
+      },
+    })
+  );
 
-  // Also clean up legacy owner mapping if it exists
-  await ddb.send(new DeleteCommand({
-    TableName: TABLE_NAME,
-    Key: {
-      pk: `OWNER#${walletAddress}`,
-      sk: 'AGENT',
-    },
-  }));
-
-  console.log(`[Abandon] Wallet ${walletAddress.slice(0, 8)}... abandoned agent ${agent.agentId} (era ${newEra})${burnTxSignature ? `, burn tx: ${burnTxSignature}` : ''}`);
+  console.log(
+    `[Abandon] Wallet ${walletAddress.slice(0, 8)}... abandoned agent ${agent.agentId} (era ${newEra})${burnTxSignature ? `, burn tx: ${burnTxSignature}` : ''}`
+  );
 
   return {
     success: true,
@@ -348,93 +353,36 @@ export async function getInhabitationInfo(walletAddress: string): Promise<{
 }
 
 // =============================================================================
-// LEGACY API (uses ownerWallet field) - Deprecated, use new API above
+// LEGACY API - Deprecated aliases for backwards compatibility
 // =============================================================================
 
 /**
  * @deprecated Use getInhabitedAgent instead
- * Get the agent owned by a wallet (if any)
  */
-export async function getOwnedAgent(walletAddress: string): Promise<AgentRecord | null> {
-  const result = await ddb.send(new GetCommand({
-    TableName: TABLE_NAME,
-    Key: {
-      pk: `OWNER#${walletAddress}`,
-      sk: 'AGENT',
-    },
-  }));
-
-  if (!result.Item) {
-    return null;
-  }
-
-  const agentResult = await ddb.send(new GetCommand({
-    TableName: TABLE_NAME,
-    Key: {
-      pk: `AGENT#${result.Item.agentId}`,
-      sk: 'CONFIG',
-    },
-  }));
-
-  return agentResult.Item as AgentRecord | null;
-}
+export const getOwnedAgent = getInhabitedAgent;
 
 /**
  * @deprecated Use inhabitAgent instead
- * Claim ownership of an agent
  */
-export async function claimAgent(
-  walletAddress: string,
-  agentId: string
-): Promise<OwnershipResult> {
-  // Delegate to new API
-  return inhabitAgent(walletAddress, agentId);
-}
+export const claimAgent = inhabitAgent;
 
 /**
  * @deprecated Use abandonAgent instead
- * Release ownership of an agent
  */
-export async function releaseAgent(walletAddress: string): Promise<OwnershipResult> {
-  // Note: Legacy release doesn't require NFT burn - only use for migration
-  const owned = await getOwnedAgent(walletAddress);
-
-  if (!owned) {
-    return { success: false, error: 'You do not currently inhabit any agent' };
-  }
-
-  await ddb.send(new UpdateCommand({
-    TableName: TABLE_NAME,
-    Key: {
-      pk: `AGENT#${owned.agentId}`,
-      sk: 'CONFIG',
-    },
-    UpdateExpression: 'REMOVE ownerWallet, ownerClaimedAt SET updatedAt = :now',
-    ConditionExpression: 'ownerWallet = :wallet',
-    ExpressionAttributeValues: {
-      ':wallet': walletAddress,
-      ':now': Date.now(),
-    },
-  }));
-
-  await ddb.send(new DeleteCommand({
-    TableName: TABLE_NAME,
-    Key: {
-      pk: `OWNER#${walletAddress}`,
-      sk: 'AGENT',
-    },
-  }));
-
+export async function releaseAgent(
+  walletAddress: string
+): Promise<OwnershipResult> {
+  const result = await abandonAgent(walletAddress);
   return {
-    success: true,
-    agentId: owned.agentId,
-    agentName: owned.name,
+    success: result.success,
+    error: result.error,
+    agentId: result.agentId,
+    agentName: result.agentName,
   };
 }
 
 /**
  * @deprecated Use getInhabitationInfo instead
- * Get ownership info for display
  */
 export async function getOwnershipInfo(walletAddress: string): Promise<{
   inhabitsAgent: boolean;
@@ -442,16 +390,11 @@ export async function getOwnershipInfo(walletAddress: string): Promise<{
   agentName?: string;
   avatarUrl?: string;
 }> {
-  const owned = await getOwnedAgent(walletAddress);
-
-  if (!owned) {
-    return { inhabitsAgent: false };
-  }
-
+  const info = await getInhabitationInfo(walletAddress);
   return {
-    inhabitsAgent: true,
-    agentId: owned.agentId,
-    agentName: owned.name,
-    avatarUrl: owned.profileImage?.url,
+    inhabitsAgent: info.inhabitsAgent,
+    agentId: info.agentId,
+    agentName: info.agentName,
+    avatarUrl: info.avatarUrl,
   };
 }
