@@ -7,3 +7,9 @@ export {
   loadAgentConfigFromEnv,
   mergeAgentConfigs 
 } from './config.js';
+export {
+  extractThinking,
+  formatThinkingForMemory,
+  hasThinkingTags,
+  type ThinkingExtractionResult,
+} from './thinking-tags.js';

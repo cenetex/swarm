@@ -20,6 +20,7 @@ import {
   createMediaService,
   logger,
   MessageQueueItemSchema,
+  extractThinking,
   type AgentConfig,
   type ContextMessage,
   type SwarmEnvelope,
@@ -406,6 +407,7 @@ async function generateResponse(
 
   const allToolResults: Array<{ name: string; result: { success: boolean; data?: unknown; media?: { type: string; url: string } } }> = [];
   let finalContent: string | undefined;
+  let cleanFinalContent: string | undefined; // Content without thinking tags
   let iterations = 0;
   let totalTokens = 0;
 
@@ -418,6 +420,31 @@ async function generateResponse(
     if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
       // No tool calls, we have a final response
       finalContent = llmResponse.content;
+      
+      // Extract thinking tags - save to memory, strip from output
+      if (finalContent) {
+        const { cleanContent, thinkingBlocks, hasThinking } = extractThinking(finalContent);
+        cleanFinalContent = cleanContent;
+        
+        if (hasThinking && thinkingBlocks.length > 0) {
+          // Save thinking to agent's memory
+          for (const thinking of thinkingBlocks) {
+            try {
+              await stateService.saveFact(envelope.agentId, {
+                fact: `[Internal thought in ${envelope.conversationId}]: ${thinking}`,
+                about: 'thinking',
+                timestamp: Date.now(),
+              });
+            } catch (err) {
+              logger.error('Failed to save thinking to memory', { error: err });
+            }
+          }
+          logger.info('Saved thinking blocks to memory', { 
+            count: thinkingBlocks.length, 
+            agentId: envelope.agentId 
+          });
+        }
+      }
       break;
     }
 
@@ -457,14 +484,17 @@ async function generateResponse(
   // Build response actions
   let actions: ResponseAction[] = toolResultsToActions(allToolResults);
 
+  // Use clean content (without thinking tags) for user-facing messages
+  const outputContent = cleanFinalContent || finalContent;
+
   // If we got final content but no send_message action, add it
-  if (finalContent && !actions.some(a => a.type === 'send_message')) {
-    actions.push({ type: 'send_message', text: finalContent, replyToMessageId: envelope.messageId });
+  if (outputContent && !actions.some(a => a.type === 'send_message')) {
+    actions.push({ type: 'send_message', text: outputContent, replyToMessageId: envelope.messageId });
   }
 
   // If no actions at all, add the content as a message
-  if (actions.length === 0 && finalContent) {
-    actions = [{ type: 'send_message', text: finalContent, replyToMessageId: envelope.messageId }];
+  if (actions.length === 0 && outputContent) {
+    actions = [{ type: 'send_message', text: outputContent, replyToMessageId: envelope.messageId }];
   }
 
   return {

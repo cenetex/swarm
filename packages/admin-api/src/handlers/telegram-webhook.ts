@@ -38,6 +38,7 @@ import {
   createToolClient,
   registerAllTools,
 } from '@swarm/mcp-server';
+import { extractThinking } from '@swarm/core';
 import { createTelegramMCPServices } from '../services/mcp-adapter.js';
 import type { BufferedMessage, BufferedMedia, ChannelStateRecord } from '../types.js';
 
@@ -151,6 +152,49 @@ interface ChatMessage {
 }
 
 type ToolCall = z.infer<typeof _ToolCallSchema>;
+
+// === THINKING TAGS MEMORY STORAGE ===
+
+/**
+ * Save extracted thinking content to agent's memory.
+ * Thinking tags are internal reasoning that should persist but not be shown in chat.
+ */
+async function saveThinkingToMemory(
+  agentId: string,
+  thinkingBlocks: string[],
+  contextHint?: string
+): Promise<void> {
+  if (thinkingBlocks.length === 0) return;
+
+  const now = Date.now();
+  const ttl = Math.floor(now / 1000) + (90 * 24 * 60 * 60); // 90 days
+
+  for (const thinking of thinkingBlocks) {
+    // Create a deterministic ID from the thinking content for deduplication
+    const factId = Buffer.from(thinking.slice(0, 100))
+      .toString('base64')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 20);
+    
+    const factWithContext = contextHint 
+      ? `[Thinking in ${contextHint}]: ${thinking}`
+      : `[Internal thought]: ${thinking}`;
+
+    await dynamoClient.send(new PutCommand({
+      TableName: ADMIN_TABLE,
+      Item: {
+        pk: `AGENT#${agentId}`,
+        sk: `FACT#thinking#${factId}`,
+        fact: factWithContext,
+        about: 'thinking',
+        timestamp: now,
+        ttl,
+      },
+    }));
+  }
+
+  console.log(`[Telegram] Saved ${thinkingBlocks.length} thinking block(s) to memory for agent=${agentId}`);
+}
 
 // === MCP TOOL CLIENT SETUP ===
 
@@ -1255,11 +1299,26 @@ async function processChannelResponse(
       continue;
     }
 
-    // Final response
+    // Final response - extract thinking tags before sending
     if (llmResponse.content) {
+      // Extract thinking tags - store in memory, strip from chat
+      const { cleanContent, thinkingBlocks, hasThinking } = extractThinking(llmResponse.content);
+      
+      if (hasThinking) {
+        // Save thinking to agent's memory (async, don't block response)
+        saveThinkingToMemory(agentId, thinkingBlocks, `chat ${chatId}`).catch(err => {
+          console.error('[Telegram] Failed to save thinking to memory:', err);
+        });
+      }
+      
+      // Store full content (with thinking) in message history for LLM context
       messages.push({ role: 'assistant', content: llmResponse.content });
-      responseMessageId = await sendTelegramMessage(token, agentId, chatId, llmResponse.content, replyToMessageId);
-      finalResponseContent = llmResponse.content; // Capture for shared history
+      
+      // Send only clean content (without thinking) to chat
+      if (cleanContent) {
+        responseMessageId = await sendTelegramMessage(token, agentId, chatId, cleanContent, replyToMessageId);
+        finalResponseContent = cleanContent; // Use clean content for shared history
+      }
     }
 
     // Send media
