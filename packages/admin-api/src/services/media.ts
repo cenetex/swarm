@@ -741,6 +741,17 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
   // Start Replicate prediction with webhook (async - don't wait)
   const webhookUrl = process.env.REPLICATE_WEBHOOK_URL;
 
+  // Build request body - only include webhook config when URL is configured
+  const requestBody: Record<string, unknown> = {
+    version,
+    input: isNanoBanana ? nanoBananaInput : fluxInput,
+  };
+
+  if (webhookUrl) {
+    requestBody.webhook = `${webhookUrl}?jobId=${jobId}`;
+    requestBody.webhook_events_filter = ['completed'];
+  }
+
   const response = await fetch(REPLICATE_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -748,12 +759,7 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
       'Authorization': `Token ${apiKey}`,
       // Note: NOT using 'Prefer: wait' - we want async processing
     },
-    body: JSON.stringify({
-      version,
-      input: isNanoBanana ? nanoBananaInput : fluxInput,
-      webhook: webhookUrl ? `${webhookUrl}?jobId=${jobId}` : undefined,
-      webhook_events_filter: ['completed'],
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {

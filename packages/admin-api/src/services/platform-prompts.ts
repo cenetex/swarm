@@ -5,8 +5,7 @@
  * These are bundled at build time and included in the Lambda deployment.
  */
 import { readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
 // Cache for loaded prompts
 const promptCache = new Map<string, string>();
@@ -16,14 +15,12 @@ const promptCache = new Map<string, string>();
 function getPromptsDir(): string {
   // Try multiple locations (dev vs Lambda)
   const possiblePaths = [
+    // Bundled with Lambda (most likely in production)
+    '/var/task/prompts/platforms',
     // From packages/admin-api (development)
     join(process.cwd(), '..', '..', 'prompts', 'platforms'),
     // From Lambda root
     join(process.cwd(), 'prompts', 'platforms'),
-    // Relative to this file (ESM)
-    join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..', 'prompts', 'platforms'),
-    // Bundled with Lambda
-    '/var/task/prompts/platforms',
   ];
 
   for (const p of possiblePaths) {
