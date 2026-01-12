@@ -12,6 +12,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import nacl from 'tweetnacl';
 import { randomBytes } from 'crypto';
+import { checkNFTGate, type NFTGateResult } from './nft-gate.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
@@ -22,6 +23,9 @@ const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 const SESSION_TTL_HOURS = 24;
 const CHALLENGE_TTL_MINUTES = 5;
 const DOMAIN = process.env.AUTH_DOMAIN || 'admin.rati.chat';
+
+// NFT gating - skip in development for easier testing
+const SKIP_NFT_GATE = process.env.NODE_ENV === 'development' || process.env.SKIP_NFT_GATE === 'true';
 
 // ============================================================================
 // Types
@@ -459,6 +463,7 @@ export async function verifyAndCreateSession(
   success: boolean;
   session?: SessionRecord;
   user?: UserRecord;
+  nftGate?: NFTGateResult;
   error?: string;
 }> {
   // 1. Get and consume the challenge
@@ -474,15 +479,29 @@ export async function verifyAndCreateSession(
     return { success: false, error: 'Invalid signature' };
   }
 
-  // 3. Get or create user
+  // 3. Check NFT gate (unless skipped for dev)
+  let nftGate: NFTGateResult | undefined;
+  if (!SKIP_NFT_GATE) {
+    nftGate = await checkNFTGate(publicKeyBase58);
+    if (!nftGate.allowed) {
+      console.log(`[WalletAuth] NFT gate failed for wallet=${publicKeyBase58.slice(0, 8)}...`);
+      return { 
+        success: false, 
+        error: 'You need to own an Orb NFT to access this app',
+        nftGate,
+      };
+    }
+  }
+
+  // 4. Get or create user
   const user = await getOrCreateUser(publicKeyBase58);
 
-  // 4. Create session
+  // 5. Create session
   const session = await createSession(publicKeyBase58, userAgent, ipAddress);
 
   console.log(`[WalletAuth] Auth successful for wallet=${publicKeyBase58.slice(0, 8)}...`);
 
-  return { success: true, session, user };
+  return { success: true, session, user, nftGate };
 }
 
 /**

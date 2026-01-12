@@ -187,7 +187,11 @@ export async function handleVerify(
     );
 
     if (!result.success || !result.session || !result.user) {
-      return jsonResponse(401, { error: result.error || 'Authentication failed' }, cors);
+      // Include NFT gate info in error response for better UX
+      return jsonResponse(401, { 
+        error: result.error || 'Authentication failed',
+        nftGate: result.nftGate,
+      }, cors);
     }
 
     // Set session cookie
@@ -204,6 +208,8 @@ export async function handleVerify(
         displayName: result.user.displayName,
         inhabitedAgentId: result.user.inhabitedAgentId,
       },
+      // Include NFT info for display
+      nftGate: result.nftGate,
     }, {
       ...cors,
       'Set-Cookie': cookie,

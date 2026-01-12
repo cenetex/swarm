@@ -46,6 +46,12 @@ export interface AdminApiConstructProps {
   replicateApiKeyArn?: string;
 
   /**
+   * Helius API key for Solana RPC (NFT queries, etc.)
+   * Required for NFT-gated access
+   */
+  heliusApiKey?: string;
+
+  /**
    * Environment (development/production)
    */
   environment?: string;
@@ -496,13 +502,17 @@ export class AdminApiConstruct extends Construct {
       runtime: lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../../admin-api/src/handlers/wallet-auth.ts'),
       handler: 'handleWalletAuth',
-      timeout: cdk.Duration.seconds(10),
+      timeout: cdk.Duration.seconds(15), // Increased for NFT verification
       memorySize: 256,
       environment: {
         ADMIN_TABLE: this.table.tableName,
         NODE_ENV: environment,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         AUTH_DOMAIN: adminDomain || 'admin.rati.chat',
+        // Helius for NFT gating - if not set, NFT gate is skipped
+        HELIUS_API_KEY: props.heliusApiKey || '',
+        // Skip NFT gate in development
+        SKIP_NFT_GATE: environment === 'development' ? 'true' : 'false',
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],

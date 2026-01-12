@@ -16,12 +16,27 @@ export interface WalletUser {
   sessionCount?: number;
 }
 
+export interface NFTGateInfo {
+  allowed: boolean;
+  ownedCount: number;
+  requiredCollection: string;
+  ownedNFTs: Array<{
+    id: string;
+    name: string;
+    image?: string;
+  }>;
+}
+
 interface WalletAuthState {
   // Auth state
   isAuthenticated: boolean;
   isLoading: boolean;
   user: WalletUser | null;
   error: string | null;
+  
+  // NFT gating state
+  nftGateError: boolean;
+  nftGateInfo: NFTGateInfo | null;
 
   // Actions
   checkAuth: () => Promise<void>;
@@ -37,6 +52,8 @@ export const useWalletAuth = create<WalletAuthState>()(
       isLoading: false,
       user: null,
       error: null,
+      nftGateError: false,
+      nftGateInfo: null,
 
       /**
        * Check if user is already authenticated (from cookie)
@@ -118,8 +135,20 @@ export const useWalletAuth = create<WalletAuthState>()(
           });
 
           if (!verifyResponse.ok) {
-            const error = await verifyResponse.json();
-            throw new Error(error.error || 'Authentication failed');
+            const errorData = await verifyResponse.json();
+            // Check if this is an NFT gate error
+            if (errorData.nftGate && !errorData.nftGate.allowed) {
+              set({
+                isAuthenticated: false,
+                user: null,
+                isLoading: false,
+                error: errorData.error || 'NFT required for access',
+                nftGateError: true,
+                nftGateInfo: errorData.nftGate,
+              });
+              throw new Error(errorData.error || 'NFT required for access');
+            }
+            throw new Error(errorData.error || 'Authentication failed');
           }
 
           const data = await verifyResponse.json();
@@ -129,6 +158,8 @@ export const useWalletAuth = create<WalletAuthState>()(
               isAuthenticated: true,
               user: data.user,
               isLoading: false,
+              nftGateError: false,
+              nftGateInfo: data.nftGate || null,
             });
           } else {
             throw new Error('Authentication failed');
@@ -167,7 +198,7 @@ export const useWalletAuth = create<WalletAuthState>()(
         }
       },
 
-      clearError: () => set({ error: null }),
+      clearError: () => set({ error: null, nftGateError: false }),
     }),
     {
       name: 'wallet-auth',
