@@ -4,7 +4,7 @@
  * Bridges existing admin-api services to MCP server service interfaces.
  * This allows the unified tool definitions to work with our current infrastructure.
  */
-import type { AllServices, VoiceServices, NFTServices } from '@swarm/mcp-server';
+import type { AllServices, VoiceServices, NFTServices, PropertyServices } from '@swarm/mcp-server';
 import type { UserSession, SecretType } from '../types.js';
 import * as agents from '../services/agents.js';
 import * as secrets from '../services/secrets.js';
@@ -21,6 +21,7 @@ import * as voice from '../services/voice.js';
 import * as agentOwnership from '../services/agent-ownership.js';
 import * as nftGate from '../services/nft-gate.js';
 import * as lineageNft from '../services/lineage-nft.js';
+import * as propertyResearch from '../services/property-research.js';
 
 // Timeout for external API calls
 const API_TIMEOUT_MS = 10_000;
@@ -1249,6 +1250,11 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
     // NFT Services (Agent Inhabitation & Lineage)
     // =========================================================================
     nft: createNFTServices(),
+
+    // =========================================================================
+    // Property Research Services
+    // =========================================================================
+    property: createPropertyServices(_agentId, session),
   };
 }
 
@@ -1370,4 +1376,79 @@ export function createTelegramMCPServices(agentId: string): AllServices {
     accessToken: '',
   };
   return createMCPServices(agentId, telegramSession);
+}
+
+/**
+ * Create property research services
+ */
+function createPropertyServices(_agentId: string, _session: UserSession): PropertyServices {
+  // Create a web search function that uses Anthropic's web search
+  // In production, this would use the actual WebSearch tool
+  const webSearch = async (query: string): Promise<string> => {
+    // For now, return a placeholder - in production this would call
+    // the actual web search API (e.g., via Anthropic's web search feature)
+    console.log(`[PropertyResearch] Web search: ${query}`);
+
+    // Try to use a simple fetch to get search results
+    // This is a simplified implementation - production would use proper search API
+    try {
+      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+      const response = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; PropertyResearchBot/1.0)',
+        },
+      });
+
+      if (!response.ok) {
+        return `Search failed for: ${query}`;
+      }
+
+      const html = await response.text();
+      // Return raw HTML - the parser will extract what it needs
+      return html;
+    } catch (error) {
+      console.error('[PropertyResearch] Web search error:', error);
+      return `Search error for: ${query}`;
+    }
+  };
+
+  return {
+    // Authorization
+    checkAuth: async (agentId: string, walletAddress: string) => {
+      return propertyResearch.checkAuth(agentId, walletAddress);
+    },
+
+    grantAuth: async (agentId: string, walletAddress: string) => {
+      await propertyResearch.grantAuth(agentId, walletAddress);
+    },
+
+    revokeAuth: async (agentId: string, walletAddress: string) => {
+      await propertyResearch.revokeAuth(agentId, walletAddress);
+    },
+
+    // Job management
+    createJob: async (agentId: string, property, requestedBy) => {
+      return propertyResearch.createJob(agentId, property, requestedBy);
+    },
+
+    getJob: async (jobId: string) => {
+      return propertyResearch.getJob(jobId);
+    },
+
+    getJobsForAgent: async (agentId: string, statusFilter) => {
+      return propertyResearch.getJobsForAgent(
+        agentId,
+        statusFilter as 'queued' | 'researching' | 'completed' | 'failed' | undefined
+      );
+    },
+
+    deleteJob: async (jobId: string) => {
+      await propertyResearch.deleteJob(jobId);
+    },
+
+    // Research execution
+    executeResearch: async (jobId: string) => {
+      return propertyResearch.executeResearch(jobId, webSearch);
+    },
+  };
 }

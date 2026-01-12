@@ -12,6 +12,7 @@
  */
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
+import { logger } from '@swarm/core';
 import { getSessionWithUser } from '../services/wallet-auth.js';
 import { getInhabitedAgent } from '../services/agent-ownership.js';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -254,7 +255,7 @@ export async function handleGetMessages(
       sender,
     }, cors);
   } catch (error) {
-    console.error('[SharedChat] Get messages error:', error);
+    logger.error('Get messages error', error, { subsystem: 'shared-chat' });
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -316,14 +317,19 @@ export async function handleSendMessage(
     // Save message
     await addChannelMessage(channelId, message);
 
-    console.log(`[SharedChat] Message sent by ${sender.isGhost ? 'ghost' : sender.inhabitedAgentName} in channel ${channelId}`);
+    logger.info('Message sent', {
+      subsystem: 'shared-chat',
+      isGhost: sender.isGhost,
+      agentName: sender.inhabitedAgentName,
+      channelId,
+    });
 
     return jsonResponse(200, {
       success: true,
       message,
     }, cors);
   } catch (error) {
-    console.error('[SharedChat] Send message error:', error);
+    logger.error('Send message error', error, { subsystem: 'shared-chat' });
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -360,7 +366,7 @@ export async function handleGetIdentity(
 
     return jsonResponse(200, { sender }, cors);
   } catch (error) {
-    console.error('[SharedChat] Get identity error:', error);
+    logger.error('Get identity error', error, { subsystem: 'shared-chat' });
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }

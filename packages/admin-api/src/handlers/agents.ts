@@ -7,10 +7,12 @@ import type {
   APIGatewayProxyResultV2,
 } from 'aws-lambda';
 import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js';
+import { logger } from '@swarm/core';
 import * as agentService from '../services/agents.js';
 import * as secretsService from '../services/secrets.js';
 import * as logsService from '../services/logs.js';
 import * as telegramService from '../services/telegram.js';
+import { recordError } from '../services/auto-issues.js';
 import { SecretType } from '../types.js';
 
 // CORS headers - restricted to configured admin domain
@@ -164,12 +166,8 @@ export async function handler(
 
       // Special handling for Telegram bot tokens - register webhook automatically
       if (key === 'telegram_bot_token') {
-        console.log(JSON.stringify({
-          level: 'INFO',
-          subsystem: 'telegram',
-          event: 'telegram_token_stored_via_api',
-          agentId,
-        }));
+        logger.setContext({ subsystem: 'telegram', agentId });
+        logger.info('Telegram token stored via API', { event: 'telegram_token_stored_via_api' });
 
         const validation = await telegramService.validateTelegramToken(value);
         if (validation.valid) {
@@ -194,42 +192,29 @@ export async function handler(
               session,
               `Telegram webhook secret for ${agentId}`
             );
-            console.log(JSON.stringify({
-              level: 'INFO',
-              subsystem: 'telegram',
+            logger.info('Telegram webhook registered', {
               event: 'telegram_webhook_registered',
-              agentId,
               webhookUrl: webhookResult.webhookUrl,
               botUsername: validation.botInfo?.username,
-            }));
+            });
           } else {
-            console.log(JSON.stringify({
-              level: 'ERROR',
-              subsystem: 'telegram',
+            logger.error('Telegram webhook registration failed', undefined, {
               event: 'telegram_webhook_failed',
-              agentId,
               error: webhookResult.message,
-            }));
+            });
           }
         } else {
-          console.log(JSON.stringify({
-            level: 'WARN',
-            subsystem: 'telegram',
+          logger.warn('Telegram token invalid', {
             event: 'telegram_token_invalid',
-            agentId,
             error: validation.error,
-          }));
+          });
         }
       }
 
       // Special handling for Replicate API key - validate it
       if (key === 'replicate_api_key') {
-        console.log(JSON.stringify({
-          level: 'INFO',
-          subsystem: 'media',
-          event: 'replicate_key_stored_via_api',
-          agentId,
-        }));
+        logger.setContext({ subsystem: 'media', agentId });
+        logger.info('Replicate key stored via API', { event: 'replicate_key_stored_via_api' });
 
         try {
           const response = await fetch('https://api.replicate.com/v1/account', {
@@ -238,30 +223,21 @@ export async function handler(
           
           if (response.ok) {
             const account = await response.json() as { username?: string };
-            console.log(JSON.stringify({
-              level: 'INFO',
-              subsystem: 'media',
+            logger.info('Replicate key valid', {
               event: 'replicate_key_valid',
-              agentId,
               username: account.username,
-            }));
+            });
           } else {
-            console.log(JSON.stringify({
-              level: 'WARN',
-              subsystem: 'media',
+            logger.warn('Replicate key invalid', {
               event: 'replicate_key_invalid',
-              agentId,
               status: response.status,
-            }));
+            });
           }
         } catch (err) {
-          console.log(JSON.stringify({
-            level: 'WARN',
-            subsystem: 'media',
+          logger.warn('Replicate key validation error', {
             event: 'replicate_key_validation_error',
-            agentId,
             error: err instanceof Error ? err.message : 'Unknown error',
-          }));
+          });
         }
       }
 
@@ -321,14 +297,29 @@ export async function handler(
     };
 
   } catch (error) {
-    console.error('Agent handler error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    logger.setContext({ subsystem: 'agents' });
+    logger.error('Agent handler error', error);
+
+    // Record error in auto-issues system
+    recordError({
+      error: errorMessage,
+      stack: errorStack,
+      subsystem: 'agents',
+      category: 'handler_error',
+      requestId: event.requestContext.requestId,
+    }).catch(() => {
+      // Ignore recording failures
+    });
 
     return {
       statusCode: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: errorMessage,
       }),
     };
   }

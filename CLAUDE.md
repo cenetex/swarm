@@ -12,6 +12,16 @@ AWS Swarm is a multi-tenant social media agent platform that runs on AWS serverl
 - **Admin UI** (`packages/admin-ui/`) - React chat frontend
 - **Infra** (`packages/infra/`) - CDK infrastructure as code
 
+## Design Philosophy
+
+This product is **chat-first**. All user actions must be initiated and completed inside the chat experience.
+
+- Use inline chat prompts and buttons for actions (inhabitation, settings, confirmations, etc.).
+- Do **not** add standalone settings pages, modals, or separate configuration flows.
+- If a workflow needs input, render it as an inline chat tool prompt or button-driven action.
+
+See `docs/design-philosophy.md` for the canonical UI rules.
+
 ## Commit Convention
 
 We follow [Conventional Commits](https://www.conventionalcommits.org/) with scope for the package being modified.

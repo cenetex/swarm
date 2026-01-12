@@ -1,7 +1,9 @@
 import ReactMarkdown from 'react-markdown';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { ChatMessage as ChatMessageType, MessageSender } from '../types';
+import { useWalletAuth } from '../store';
 import { ToolPrompt } from './ToolPrompts';
+import { ImageModal } from './ImageModal';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -50,10 +52,14 @@ function SenderAvatar({ sender }: { sender?: MessageSender }) {
  * Parsed tool result from message content
  */
 interface ParsedToolResult {
-  type: 'image' | 'gallery' | 'success' | 'error' | 'info' | 'unknown';
+  type: 'image' | 'gallery' | 'success' | 'error' | 'info' | 'inhabit' | 'unknown';
   data: Record<string, unknown>;
   imageUrl?: string;
   message?: string;
+  action?: string;
+  agentId?: string;
+  label?: string;
+  isInhabited?: boolean;
 }
 
 /**
@@ -71,6 +77,18 @@ function processMessageContent(content: string): {
   
   // Helper to categorize a parsed JSON object
   const categorizeResult = (parsed: Record<string, unknown>): ParsedToolResult => {
+    if (parsed.action === 'inhabit_agent' && typeof parsed.agentId === 'string') {
+      return {
+        type: 'inhabit',
+        data: parsed,
+        action: 'inhabit_agent',
+        agentId: parsed.agentId,
+        label: typeof parsed.label === 'string' ? parsed.label : 'Inhabit this agent',
+        message: typeof parsed.message === 'string' ? parsed.message : undefined,
+        isInhabited: typeof parsed.isInhabited === 'boolean' ? parsed.isInhabited : undefined,
+      };
+    }
+
     // Image generation result
     if (parsed.url && typeof parsed.url === 'string') {
       const url = parsed.url;
@@ -245,6 +263,12 @@ function getFailedJobs(pendingJobs?: ChatMessageType['pendingJobs']) {
 export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const hasPendingTools = message.toolCalls?.some(tc => tc.status === 'pending');
+  const { isAuthenticated, inhabitAgent } = useWalletAuth();
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [inhabitStates, setInhabitStates] = useState<Record<string, {
+    status: 'idle' | 'loading' | 'success' | 'error';
+    error?: string;
+  }>>({});
   
   // Process message content to extract embedded JSON and images
   const { cleanedContent, embeddedImages, toolResults } = useMemo(
@@ -261,8 +285,11 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   const activeJobs = getActiveJobs(message.pendingJobs);
   const failedJobs = getFailedJobs(message.pendingJobs);
   
+  const actionResults = toolResults.filter(r => r.type === 'inhabit');
   // Filter tool results that should be shown (not images - those are rendered separately)
-  const visibleToolResults = toolResults.filter(r => r.type !== 'image' && r.type !== 'gallery');
+  const visibleToolResults = toolResults.filter(
+    r => r.type !== 'image' && r.type !== 'gallery' && r.type !== 'inhabit'
+  );
   
   // Filter out media generation tools for interactive display
   const mediaToolNames = ['generate_image', 'generate_video', 'generate_sticker', 'get_my_gallery'];
@@ -272,6 +299,7 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   const hasVisibleContent = 
     message.isLoading ||
     cleanedContent ||
+    actionResults.length > 0 ||
     visibleToolResults.length > 0 ||
     images.length > 0 ||
     interactiveToolCalls.length > 0 ||
@@ -281,6 +309,32 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   if (!hasVisibleContent) {
     return null;
   }
+
+  const handleInhabit = async (agentId: string) => {
+    if (!isAuthenticated) {
+      setInhabitStates((prev) => ({
+        ...prev,
+        [agentId]: {
+          status: 'error',
+          error: 'Connect your wallet to inhabit this agent.',
+        },
+      }));
+      return;
+    }
+
+    setInhabitStates((prev) => ({
+      ...prev,
+      [agentId]: { status: 'loading' },
+    }));
+
+    const result = await inhabitAgent(agentId);
+    setInhabitStates((prev) => ({
+      ...prev,
+      [agentId]: result.success
+        ? { status: 'success' }
+        : { status: 'error', error: result.error || 'Failed to inhabit agent' },
+    }));
+  };
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3 lg:mb-4`}>
@@ -319,6 +373,56 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
                 <ReactMarkdown>{cleanedContent}</ReactMarkdown>
               </div>
             )}
+
+            {actionResults.length > 0 && (
+              <div className={`space-y-2 ${cleanedContent ? 'mt-3' : ''}`}>
+                {actionResults.map((result, idx) => {
+                  if (!result.agentId) return null;
+                  const state = inhabitStates[result.agentId]?.status || 'idle';
+                  const isBusy = state === 'loading';
+                  const isComplete = state === 'success';
+                  const isBlocked = result.isInhabited === true;
+                  const buttonLabel = !isAuthenticated
+                    ? 'Connect wallet to inhabit'
+                    : result.label || (isBlocked ? 'Already inhabited' : 'Inhabit this agent');
+
+                  return (
+                    <div
+                      key={`${result.agentId}-${idx}`}
+                      className="rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2"
+                    >
+                      {result.message && (
+                        <div className="text-sm text-[var(--color-text-secondary)] mb-2">
+                          {result.message}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleInhabit(result.agentId!)}
+                        disabled={!isAuthenticated || isBusy || isComplete || isBlocked}
+                        className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition ${
+                          !isAuthenticated || isBlocked
+                            ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] cursor-not-allowed'
+                            : isComplete
+                              ? 'bg-green-600 text-white'
+                              : 'bg-brand-600 text-white hover:bg-brand-500'
+                        }`}
+                      >
+                        {isBusy && (
+                          <span className="w-3 h-3 border-2 border-white/70 border-t-transparent rounded-full animate-spin" />
+                        )}
+                        {isComplete ? 'Inhabited' : isBusy ? 'Inhabiting...' : buttonLabel}
+                      </button>
+                      {state === 'error' && inhabitStates[result.agentId]?.error && (
+                        <div className="mt-1 text-xs text-red-400">
+                          {inhabitStates[result.agentId]?.error}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             
             {/* Render tool result badges (success/error messages) */}
             {visibleToolResults.length > 0 && (
@@ -354,12 +458,10 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
                 images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
               }`}>
                 {images.slice(0, 4).map((url, idx) => (
-                  <a 
+                  <button 
                     key={idx} 
-                    href={url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="block rounded-lg overflow-hidden hover:opacity-90 transition-opacity"
+                    onClick={() => setSelectedImage(url)}
+                    className="block rounded-lg overflow-hidden hover:opacity-90 transition-opacity cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500"
                   >
                     <img 
                       src={url} 
@@ -367,9 +469,18 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
                       className="w-full h-auto max-h-64 object-cover"
                       loading="lazy"
                     />
-                  </a>
+                  </button>
                 ))}
               </div>
+            )}
+
+            {/* Image Modal */}
+            {selectedImage && (
+              <ImageModal
+                imageUrl={selectedImage}
+                alt="Generated image"
+                onClose={() => setSelectedImage(null)}
+              />
             )}
             
             {/* Render tool prompts inline - only for tools that need user input */}

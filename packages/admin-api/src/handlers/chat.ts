@@ -21,8 +21,10 @@ import {
   createToolClient,
   registerAllTools,
 } from '@swarm/mcp-server';
+import { logger } from '@swarm/core';
 import { createMCPServices } from '../services/mcp-adapter.js';
 import { getPlatformPromptSection } from '../services/platform-prompts.js';
+import { recordError } from '../services/auto-issues.js';
 
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
@@ -73,7 +75,7 @@ async function getLlmApiKey(): Promise<string> {
     const parsed = JSON.parse(response.SecretString);
     cachedApiKey = parsed.api_key || parsed.apiKey || parsed.API_KEY;
     if (!cachedApiKey) {
-      console.error('LLM API key not found in parsed secret. Keys available:', Object.keys(parsed));
+      logger.error('LLM API key not found in parsed secret', undefined, { keysAvailable: Object.keys(parsed) });
       throw new Error('api_key not found in secret');
     }
   } catch (e) {
@@ -81,12 +83,12 @@ async function getLlmApiKey(): Promise<string> {
     if (response.SecretString.startsWith('sk-')) {
       cachedApiKey = response.SecretString;
     } else {
-      console.error('Failed to parse LLM secret:', e);
+      logger.error('Failed to parse LLM secret', e);
       throw new Error('Invalid LLM API key format');
     }
   }
 
-  console.log('LLM API key loaded, starts with:', cachedApiKey.substring(0, 10));
+  logger.info('LLM API key loaded', { keyPrefix: cachedApiKey.substring(0, 10) });
   return cachedApiKey!;
 }
 
@@ -115,7 +117,7 @@ function sanitizeMessages(messages: AdminChatMessage[]): AdminChatMessage[] {
       // Only include tool results that have a matching tool call
       const toolCallId = (msg as ToolResult).tool_call_id;
       if (!toolCallId || !validToolCallIds.has(toolCallId)) {
-        console.log('[Chat] Skipping orphaned tool result:', toolCallId);
+        logger.info('Skipping orphaned tool result', { toolCallId });
         continue;
       }
     }
@@ -382,15 +384,13 @@ async function callLLM(
     requestBody.tool_choice = 'auto';
   }
 
-  console.log(JSON.stringify({
-    level: 'DEBUG',
-    subsystem: 'chat',
+  logger.info('LLM request', {
     event: 'llm_request',
     model: LLM_MODEL,
     messageCount: sanitizedMessages.length,
     toolsIncluded: tools.length > 0,
     toolChoice: tools.length > 0 ? 'auto' : 'none',
-  }));
+  });
 
   const response = await fetchWithTimeout(
     LLM_ENDPOINT,
@@ -409,7 +409,7 @@ async function callLLM(
 
   if (!response.ok) {
     const text = await response.text();
-    console.error('[Chat] LLM API error:', response.status, text.slice(0, 500));
+    logger.error('LLM API error', undefined, { status: response.status, responsePreview: text.slice(0, 500) });
     throw new Error(`LLM API error: ${response.status} ${text}`);
   }
 
@@ -427,15 +427,13 @@ async function callLLM(
     throw new Error('No response from LLM');
   }
 
-  console.log(JSON.stringify({
-    level: 'DEBUG',
-    subsystem: 'chat',
+  logger.info('LLM response', {
     event: 'llm_response',
     hasContent: !!choice.message?.content,
     contentLength: choice.message?.content?.length || 0,
     toolCallCount: choice.message?.tool_calls?.length || 0,
     toolNames: choice.message?.tool_calls?.map(tc => tc.function?.name) || [],
-  }));
+  });
 
   return {
     message: choice.message?.content,
@@ -542,20 +540,18 @@ async function processChat(
     try {
       openAITools = await toolClient.getOpenAIToolsWithContext(agentId);
     } catch (e) {
-      console.error('[Chat] Failed to get tools with context:', e);
+      logger.error('Failed to get tools with context', e);
       openAITools = toolClient.getOpenAITools();
     }
   }
 
   // Log tools available for debugging
-  console.log(JSON.stringify({
-    level: 'DEBUG',
-    subsystem: 'chat',
+  logger.info('Tools created', {
     event: 'tools_created',
     agentId,
     toolCount: openAITools.length,
     toolNames: openAITools.map(t => t.function.name),
-  }));
+  });
 
   const messages: AdminChatMessage[] = [
     ...conversationHistory,
@@ -588,7 +584,7 @@ async function processChat(
         try {
           args = JSON.parse(manualTool.function.arguments || '{}');
         } catch (e) {
-          console.error(`Failed to parse ${manualTool.function.name} arguments:`, e);
+          logger.error('Failed to parse tool arguments', e, { toolName: manualTool.function.name });
         }
         pendingToolCall = {
           id: manualTool.id,
@@ -636,7 +632,7 @@ async function processChat(
         try {
           toolArgs = JSON.parse(toolResult.content || '{}');
         } catch (e) {
-          console.error('Failed to parse tool result:', e);
+          logger.error('Failed to parse tool result', e);
         }
 
         // Add assistant message with tool calls
@@ -676,7 +672,7 @@ async function processChat(
           
           // Skip tools that have already failed to prevent infinite loops
           if (failedTools.has(toolName)) {
-            console.log(`[Chat] Skipping retry of failed tool: ${toolName}`);
+            logger.info('Skipping retry of failed tool', { toolName });
             return {
               tool_call_id: tc.id,
               role: 'tool' as const,
@@ -708,9 +704,9 @@ async function processChat(
               
               if (!isTransientError) {
                 failedTools.add(toolName);
-                console.log(`[Chat] Tool ${toolName} added to failedTools: ${errorMsg}`);
+                logger.info('Tool added to failedTools', { toolName, errorMsg });
               } else {
-                console.log(`[Chat] Tool ${toolName} failed with transient error (not blocking): ${errorMsg}`);
+                logger.info('Tool failed with transient error (not blocking)', { toolName, errorMsg });
               }
             }
           } catch {
@@ -723,7 +719,7 @@ async function processChat(
 
       // Extract any media from the tool results
       for (const result of toolResults) {
-        console.log(`[Chat] Tool result: ${result.tool_call_id} (${result.content?.length || 0} chars)`);
+        logger.info('Tool result', { toolCallId: result.tool_call_id, contentLength: result.content?.length || 0 });
         
         // Extract pending jobs from _pendingJob metadata (hidden from LLM)
         try {
@@ -742,7 +738,7 @@ async function processChat(
       }
 
       const mediaFromResults = extractMediaFromToolResults(toolResults);
-      console.log(`[Chat] Extracted ${mediaFromResults.length} media items from tool results`);
+      logger.info('Extracted media items from tool results', { count: mediaFromResults.length });
       allMedia.push(...mediaFromResults);
 
       // Check for profile image updates from tool results
@@ -754,7 +750,7 @@ async function processChat(
               const parsed = JSON.parse(matchingResult.content);
               if (parsed.success && (parsed.data?.url || parsed.url)) {
                 agentUpdates.profileImageUrl = parsed.data?.url || parsed.url;
-                console.log(`[Chat] Profile image updated: ${agentUpdates.profileImageUrl}`);
+                logger.info('Profile image updated', { profileImageUrl: agentUpdates.profileImageUrl });
               }
             } catch {
               // Not JSON, skip
@@ -783,7 +779,7 @@ async function processChat(
     messages.push({ role: 'assistant', content: response });
   }
 
-  console.log(`[Chat] Final response with ${allMedia.length} media items, ${pendingJobs.length} pending jobs`);
+  logger.info('Final response', { mediaCount: allMedia.length, pendingJobCount: pendingJobs.length });
   return { 
     response, 
     history: messages, 
@@ -833,6 +829,9 @@ export async function handler(
     const session = await authenticateRequest(event);
     const requestId = event.requestContext.requestId;
     
+    // Set logging context for this handler
+    logger.setContext({ subsystem: 'chat', requestId });
+    
     // Require admin access
     if (!requireAdmin(session)) {
       return {
@@ -872,15 +871,13 @@ export async function handler(
     // Parse and validate request body
     const parseResult = ChatRequestSchema.safeParse(JSON.parse(event.body || '{}'));
     if (!parseResult.success) {
-      console.error(JSON.stringify({
-        level: 'ERROR',
-        subsystem: 'chat',
+      logger.error('Validation error', undefined, {
         event: 'validation_error',
         agentId: JSON.parse(event.body || '{}').agent?.id,
         requestId,
         errors: parseResult.error.errors,
         bodyPreview: event.body?.substring(0, 500),
-      }));
+      });
       return {
         statusCode: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -893,15 +890,13 @@ export async function handler(
     const { message, history, agent } = parseResult.data;
 
     // Log request entry
-    console.log(JSON.stringify({
-      level: 'INFO',
-      subsystem: 'chat',
+    logger.info('Request received', {
       event: 'request_received',
       agentId: agent?.id,
       requestId,
       messageLength: message.length,
       historyLength: history.length,
-    }));
+    });
 
     // Process the chat with agent context
     const result = await processChat(message, history, session, agent);
@@ -926,21 +921,31 @@ export async function handler(
       }),
     };
   } catch (error) {
-    console.error(JSON.stringify({
-      level: 'ERROR',
-      subsystem: 'chat',
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    logger.error('Handler error', error, {
       event: 'handler_error',
       requestId: event.requestContext.requestId,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-    }));
+    });
+
+    // Record error in auto-issues system
+    recordError({
+      error: errorMessage,
+      stack: errorStack,
+      subsystem: 'chat',
+      category: 'handler_error',
+      requestId: event.requestContext.requestId,
+    }).catch(() => {
+      // Ignore recording failures
+    });
     
     return {
       statusCode: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: errorMessage,
       }),
     };
   }

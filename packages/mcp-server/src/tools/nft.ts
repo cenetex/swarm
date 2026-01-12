@@ -182,6 +182,9 @@ export const createNFTTools = (services: NFTServices) => [
             currentEra: status.currentEra,
             totalEras: status.totalEras,
             inhabitationUrl: services.getInhabitationUrl(context.agentId),
+            action: 'inhabit_agent',
+            agentId: context.agentId,
+            label: 'Inhabit this agent',
           },
         };
       } catch (error) {
@@ -210,6 +213,9 @@ export const createNFTTools = (services: NFTServices) => [
               url,
               message: 'Note: You are already inhabited. The user would need to wait until your current inhabitant abandons you.',
               isInhabited: true,
+              action: 'inhabit_agent',
+              agentId: context.agentId,
+              label: 'Inhabit this agent',
             },
           };
         }
@@ -220,6 +226,9 @@ export const createNFTTools = (services: NFTServices) => [
             url,
             message: 'Share this link for someone to inhabit you. Inhabitation is free!',
             isInhabited: false,
+            action: 'inhabit_agent',
+            agentId: context.agentId,
+            label: 'Inhabit this agent',
           },
         };
       } catch (error) {

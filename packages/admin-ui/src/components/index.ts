@@ -9,3 +9,4 @@ export { AgentLogsPanel } from './AgentLogsPanel';
 export { ThemeToggle } from './ThemeToggle';
 export { WalletProvider } from './WalletProvider';
 export { WalletLogin, GhostAvatar, UserAvatar } from './WalletLogin';
+export { ImageModal, useImageModal } from './ImageModal';

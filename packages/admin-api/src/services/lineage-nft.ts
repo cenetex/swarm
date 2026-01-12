@@ -12,24 +12,228 @@
  * 5. Client or backend mints Lineage NFT
  * 6. Backend updates agent state
  */
-import { Connection } from '@solana/web3.js';
+import { Connection, type VersionedTransactionResponse } from '@solana/web3.js';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import type { AgentRecord } from '../types.js';
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
-const RPC_URL = HELIUS_API_KEY
+const HELIUS_RPC_URL = HELIUS_API_KEY
   ? `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`
   : 'https://api.mainnet-beta.solana.com';
+const HELIUS_TX_URL = HELIUS_API_KEY
+  ? `https://api.helius.xyz/v0/transactions/?api-key=${HELIUS_API_KEY}`
+  : null;
 
-const connection = new Connection(RPC_URL, 'confirmed');
+const connection = new Connection(HELIUS_RPC_URL, 'confirmed');
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
 });
 
 // Gate NFT collection for burn verification
 const GATE_COLLECTION = '8GCAyy5L2o2ZPdQKo3EtYAYNKYT8Y6sqGHweintLTSJ';
+
+type HeliusParsedTransaction = {
+  type?: string;
+  description?: string;
+  events?: {
+    nft?: Record<string, unknown>;
+  };
+  tokenTransfers?: Array<{
+    mint?: string;
+  }>;
+};
+
+function isZeroTokenAmount(amount?: { amount?: string; uiAmount?: number | null }): boolean {
+  if (!amount) return true;
+  if (typeof amount.uiAmount === 'number') {
+    return amount.uiAmount === 0;
+  }
+  return amount.amount === '0';
+}
+
+function extractBurnedMints(tx: VersionedTransactionResponse): string[] {
+  const meta = tx.meta;
+  if (!meta) return [];
+
+  const preBalances = meta.preTokenBalances || [];
+  const postBalances = meta.postTokenBalances || [];
+  const postByMint = new Map<string, Array<typeof postBalances[number]>>();
+
+  for (const balance of postBalances) {
+    if (!balance.mint) continue;
+    const existing = postByMint.get(balance.mint) || [];
+    existing.push(balance);
+    postByMint.set(balance.mint, existing);
+  }
+
+  const burnedMints = new Set<string>();
+
+  for (const balance of preBalances) {
+    if (!balance.mint) continue;
+    const postForMint = postByMint.get(balance.mint) || [];
+    if (postForMint.length === 0) {
+      burnedMints.add(balance.mint);
+      continue;
+    }
+
+    const hasNonZero = postForMint.some((post) => !isZeroTokenAmount(post.uiTokenAmount));
+    if (!hasNonZero) {
+      burnedMints.add(balance.mint);
+    }
+  }
+
+  return [...burnedMints];
+}
+
+function extractHeliusMintCandidates(parsedTx: HeliusParsedTransaction | null): string[] {
+  if (!parsedTx) return [];
+  const mints = new Set<string>();
+  const addMint = (value: unknown) => {
+    if (typeof value === 'string' && value.length >= 32) {
+      mints.add(value);
+    }
+  };
+
+  const nftEvent = parsedTx.events?.nft;
+  if (nftEvent && typeof nftEvent === 'object') {
+    addMint((nftEvent as { mint?: string }).mint);
+    const metadata = (nftEvent as { metadata?: { mint?: string } }).metadata;
+    if (metadata) {
+      addMint(metadata.mint);
+    }
+    const nestedNft = (nftEvent as { nft?: { mint?: string } }).nft;
+    if (nestedNft) {
+      addMint(nestedNft.mint);
+    }
+  }
+
+  if (Array.isArray(parsedTx.tokenTransfers)) {
+    for (const transfer of parsedTx.tokenTransfers) {
+      addMint(transfer.mint);
+    }
+  }
+
+  return [...mints];
+}
+
+function extractHeliusCollection(parsedTx: HeliusParsedTransaction | null): string | null {
+  if (!parsedTx) return null;
+  const nftEvent = parsedTx.events?.nft;
+  if (!nftEvent || typeof nftEvent !== 'object') return null;
+
+  const rawCollection = (nftEvent as Record<string, unknown>).collection;
+  if (typeof rawCollection === 'string') {
+    return rawCollection;
+  }
+
+  if (rawCollection && typeof rawCollection === 'object') {
+    const collectionObj = rawCollection as { mint?: string; address?: string; id?: string };
+    return collectionObj.mint || collectionObj.address || collectionObj.id || null;
+  }
+
+  const directCollection = (nftEvent as { collectionMint?: string; collectionAddress?: string }).collectionMint
+    || (nftEvent as { collectionMint?: string; collectionAddress?: string }).collectionAddress;
+
+  return directCollection || null;
+}
+
+function isBurnTransaction(parsedTx: HeliusParsedTransaction | null, logs?: string[] | null): boolean {
+  const heliusType = parsedTx?.type;
+  if (typeof heliusType === 'string' && heliusType.toLowerCase().includes('burn')) {
+    return true;
+  }
+
+  const nftEventType = parsedTx?.events?.nft && (parsedTx.events.nft as { type?: string }).type;
+  if (typeof nftEventType === 'string' && nftEventType.toLowerCase().includes('burn')) {
+    return true;
+  }
+
+  const description = parsedTx?.description;
+  if (typeof description === 'string' && description.toLowerCase().includes('burn')) {
+    return true;
+  }
+
+  if (Array.isArray(logs)) {
+    return logs.some((log) => log.toLowerCase().includes('burn'));
+  }
+
+  return false;
+}
+
+async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusParsedTransaction | null> {
+  if (!HELIUS_TX_URL) return null;
+
+  try {
+    const response = await fetch(HELIUS_TX_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactions: [signature] }),
+    });
+
+    if (!response.ok) {
+      console.warn('[LineageNFT] Helius transaction parse failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json() as unknown;
+    if (Array.isArray(data)) {
+      return (data[0] as HeliusParsedTransaction) || null;
+    }
+
+    if (data && typeof data === 'object' && 'result' in data) {
+      const result = (data as { result?: unknown }).result;
+      if (Array.isArray(result)) {
+        return (result[0] as HeliusParsedTransaction) || null;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.warn('[LineageNFT] Helius transaction parse error:', error);
+    return null;
+  }
+}
+
+async function getAssetCollection(mint: string): Promise<string | null> {
+  if (!HELIUS_API_KEY) return null;
+
+  try {
+    const response = await fetch(HELIUS_RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'lineage-get-asset',
+        method: 'getAsset',
+        params: { id: mint },
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn('[LineageNFT] Helius getAsset failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json() as {
+      error?: { message?: string };
+      result?: { grouping?: Array<{ group_key: string; group_value: string }> };
+    };
+
+    if (data.error) {
+      console.warn('[LineageNFT] Helius getAsset error:', data.error.message || data.error);
+      return null;
+    }
+
+    const grouping = data.result?.grouping || [];
+    const collection = grouping.find((group) => group.group_key === 'collection');
+    return collection?.group_value || null;
+  } catch (error) {
+    console.warn('[LineageNFT] Helius getAsset error:', error);
+    return null;
+  }
+}
 
 export interface LineageMetadata {
   agentId: string;
@@ -71,6 +275,10 @@ export async function verifyGateBurn(
   signature: string
 ): Promise<BurnVerification> {
   try {
+    if (!HELIUS_API_KEY) {
+      return { verified: false, error: 'HELIUS_API_KEY not configured for burn verification' };
+    }
+
     const tx = await connection.getTransaction(signature, {
       maxSupportedTransactionVersion: 0,
     });
@@ -84,9 +292,6 @@ export async function verifyGateBurn(
       return { verified: false, error: 'Transaction failed or not confirmed' };
     }
 
-    // Parse the transaction to find the burn instruction
-    // For Metaplex Core NFTs, look for the burn instruction
-    // This is a simplified check - in production, verify the exact instruction
     const accountKeys = tx.transaction.message.getAccountKeys();
     const accounts = accountKeys.staticAccountKeys.map(k => k.toBase58());
 
@@ -95,14 +300,43 @@ export async function verifyGateBurn(
       return { verified: false, error: 'Wallet not involved in transaction' };
     }
 
-    // For now, we trust that if the wallet submitted a burn tx that succeeded, it's valid
-    // In production, parse the instruction data to verify it's a burn from the Gate collection
-    console.log(`[LineageNFT] Verified burn tx ${signature} for wallet ${walletAddress.slice(0, 8)}...`);
+    const [heliusParsedTx, burnedMints] = await Promise.all([
+      fetchHeliusParsedTransaction(signature),
+      Promise.resolve(extractBurnedMints(tx)),
+    ]);
 
-    return {
-      verified: true,
-      signature,
-    };
+    const heliusMints = extractHeliusMintCandidates(heliusParsedTx);
+    const burnDetected = burnedMints.length > 0 || isBurnTransaction(heliusParsedTx, tx.meta?.logMessages);
+
+    if (!burnDetected) {
+      return { verified: false, error: 'Transaction does not appear to burn an NFT' };
+    }
+
+    const heliusCollection = extractHeliusCollection(heliusParsedTx);
+    if (heliusCollection === GATE_COLLECTION) {
+      console.log(`[LineageNFT] Verified Gate burn (collection match) for ${walletAddress.slice(0, 8)}...`);
+      return { verified: true, signature };
+    }
+
+    const candidateMints = Array.from(new Set([...burnedMints, ...heliusMints]));
+    if (candidateMints.length === 0) {
+      return { verified: false, error: 'Unable to identify burned NFT mint' };
+    }
+
+    for (const mint of candidateMints) {
+      const collection = await getAssetCollection(mint);
+      if (collection === GATE_COLLECTION) {
+        console.log(`[LineageNFT] Verified Gate burn mint ${mint} for ${walletAddress.slice(0, 8)}...`);
+        return {
+          verified: true,
+          signature,
+          burnedMint: mint,
+        };
+      }
+    }
+
+    return { verified: false, error: 'Burned NFT is not from the Gate collection' };
+
   } catch (error) {
     console.error('[LineageNFT] Error verifying burn:', error);
     return { verified: false, error: 'Failed to verify burn transaction' };

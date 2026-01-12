@@ -573,6 +573,7 @@ export class AdminApiConstruct extends Construct {
         // Media generation config - REQUIRED for image/video generation
         MEDIA_BUCKET: mediaBucket?.bucketName || '',
         CDN_URL: cdnUrl || '',
+        REPLICATE_WEBHOOK_URL: replicateWebhookUrl,
         REPLICATE_API_KEY_SECRET_ARN: replicateApiKey?.secretArn || '',
       },
       bundling: {

@@ -7,13 +7,22 @@ function getLogsAgentId(pathname: string): string | null {
   return match?.[1] || null;
 }
 
+function getInhabitAgentId(pathname: string): string | null {
+  const match = pathname.match(/^\/inhabit\/([^/]+)\/?$/);
+  return match?.[1] || null;
+}
+
 function App() {
-  const { fetchAgents, activeAgentId, syncChatHistory } = useAgentStore();
+  const { agents, fetchAgents, activeAgentId, syncChatHistory, setActiveAgent, addMessage } = useAgentStore();
   const [initialized, setInitialized] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [logsAgentId, setLogsAgentId] = useState<string | null>(
     () => getLogsAgentId(window.location.pathname)
   );
+  const [inhabitAgentId, setInhabitAgentId] = useState<string | null>(
+    () => getInhabitAgentId(window.location.pathname)
+  );
+  const [pendingInhabitPrompt, setPendingInhabitPrompt] = useState(Boolean(inhabitAgentId));
 
   const isLogsRoute = useMemo(() => Boolean(logsAgentId), [logsAgentId]);
 
@@ -30,10 +39,36 @@ function App() {
   // ALWAYS sync on agent change to ensure cross-device consistency
   useEffect(() => {
     if (activeAgentId && initialized && !isLogsRoute) {
-      // Always sync from backend - it's the source of truth for cross-device
-      syncChatHistory(activeAgentId).catch(console.error);
+      const sync = async () => {
+        // Always sync from backend - it's the source of truth for cross-device
+        await syncChatHistory(activeAgentId).catch(console.error);
+
+        if (pendingInhabitPrompt && inhabitAgentId === activeAgentId) {
+          addMessage(activeAgentId, {
+            role: 'assistant',
+            content: JSON.stringify({
+              action: 'inhabit_agent',
+              agentId: activeAgentId,
+              label: 'Inhabit this agent',
+              message: 'Tap to inhabit this agent with your wallet.',
+            }),
+          });
+          setPendingInhabitPrompt(false);
+          setInhabitAgentId(null);
+        }
+      };
+
+      sync();
     }
-  }, [activeAgentId, initialized, isLogsRoute, syncChatHistory]);
+  }, [
+    activeAgentId,
+    initialized,
+    isLogsRoute,
+    syncChatHistory,
+    pendingInhabitPrompt,
+    inhabitAgentId,
+    addMessage,
+  ]);
 
   // Close sidebar when agent is selected on mobile
   useEffect(() => {
@@ -45,11 +80,22 @@ function App() {
   useEffect(() => {
     const handlePopState = () => {
       setLogsAgentId(getLogsAgentId(window.location.pathname));
+      const nextInhabitAgentId = getInhabitAgentId(window.location.pathname);
+      setInhabitAgentId(nextInhabitAgentId);
+      setPendingInhabitPrompt(Boolean(nextInhabitAgentId));
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!initialized || !inhabitAgentId) return;
+    const hasAgent = agents.some((agent) => agent.id === inhabitAgentId);
+    if (hasAgent && activeAgentId !== inhabitAgentId) {
+      setActiveAgent(inhabitAgentId);
+    }
+  }, [agents, activeAgentId, inhabitAgentId, initialized, setActiveAgent]);
 
   const openLogs = useCallback((agentId: string) => {
     const nextPath = `/agents/${agentId}/logs`;

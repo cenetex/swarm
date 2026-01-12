@@ -11,6 +11,8 @@ import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { v4 as uuid } from 'uuid';
 import * as mediaJobs from '../services/media-jobs.js';
 import * as gallery from '../services/gallery.js';
+import { recordError } from '../services/auto-issues.js';
+import { logger } from '@swarm/core';
 import type { MediaJob } from '../types.js';
 
 const s3Client = new S3Client({});
@@ -66,24 +68,25 @@ function getMediaTypeInfo(jobType: MediaJob['type']): { extension: string; conte
 export async function handler(
   event: APIGatewayProxyEventV2
 ): Promise<APIGatewayProxyResultV2> {
-  console.log('Replicate webhook received:', JSON.stringify(event, null, 2));
+  logger.setContext({ subsystem: 'replicate' });
+  logger.info('Replicate webhook received', { body: event.body });
 
   try {
     // Get job ID from query string
     const jobId = event.queryStringParameters?.jobId;
     if (!jobId) {
-      console.error('No jobId in query string');
+      logger.error('No jobId in query string');
       return { statusCode: 400, body: 'Missing jobId' };
     }
 
     // Parse webhook payload
     const prediction: ReplicatePrediction = JSON.parse(event.body || '{}');
-    console.log(`Processing webhook for job ${jobId}, prediction ${prediction.id}, status: ${prediction.status}`);
+    logger.info('Processing webhook', { jobId, predictionId: prediction.id, status: prediction.status });
 
     // Get the job record
     const job = await mediaJobs.getJob(jobId);
     if (!job) {
-      console.error(`Job not found: ${jobId}`);
+      logger.error('Job not found', undefined, { jobId });
       return { statusCode: 404, body: 'Job not found' };
     }
 
@@ -115,7 +118,7 @@ export async function handler(
       const mediaId = uuid();
       const s3Key = `agents/${job.agentId}/${folder}/${mediaId}.${extension}`;
 
-      console.log(`[Webhook] Uploading ${job.type} to S3: ${s3Key} (${mediaBuffer.length} bytes)`);
+      logger.info('Uploading media to S3', { type: job.type, s3Key, bytes: mediaBuffer.length });
 
       await s3Client.send(new PutObjectCommand({
         Bucket: MEDIA_BUCKET,
@@ -169,7 +172,7 @@ export async function handler(
         }));
       }
 
-      console.log(`[Webhook] ${job.type} generation complete: ${publicUrl}`);
+      logger.info('Media generation complete', { type: job.type, url: publicUrl });
       return { statusCode: 200, body: 'Success' };
     }
 
@@ -199,7 +202,7 @@ export async function handler(
         }));
       }
 
-      console.log(`[Webhook] ${job.type} generation failed: ${errorMessage}`);
+      logger.warn('Media generation failed', { type: job.type, error: errorMessage });
       return { statusCode: 200, body: 'Processed failure' };
     }
 
@@ -210,12 +213,26 @@ export async function handler(
 
     return { statusCode: 200, body: 'Acknowledged' };
   } catch (error) {
-    console.error('Webhook processing error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    logger.error('Webhook processing error', error);
+
+    // Record error in auto-issues system
+    recordError({
+      error: errorMessage,
+      stack: errorStack,
+      subsystem: 'replicate',
+      category: 'webhook_error',
+    }).catch(() => {
+      // Ignore recording failures
+    });
+
     return {
       statusCode: 500,
       body: JSON.stringify({
         error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: errorMessage,
       }),
     };
   }

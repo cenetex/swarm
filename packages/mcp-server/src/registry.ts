@@ -55,9 +55,10 @@ export interface ToolResult<T = unknown> {
   /** Pending async job */
   pendingJob?: {
     jobId: string;
-    type: 'image' | 'video' | 'sticker';
+    type: 'image' | 'video' | 'sticker' | 'property_research';
     prompt?: string;
     purpose?: string;
+    status?: string;
   };
   /** UI action (for admin-ui) */
   uiAction?: {
@@ -76,7 +77,7 @@ export interface ToolDefinition<TInput = any, TOutput = unknown> {
   /** Human-readable description for LLM */
   description: string;
   /** Optional category for organization */
-  category?: 'media' | 'wallet' | 'profile' | 'config' | 'gallery' | 'secrets' | 'readonly' | 'diagnostics' | 'telegram';
+  category?: 'media' | 'wallet' | 'profile' | 'config' | 'gallery' | 'secrets' | 'readonly' | 'diagnostics' | 'telegram' | 'property';
   /** Zod schema for input validation */
   inputSchema: ZodType<TInput>;
   /** Zod schema for output validation (optional) */

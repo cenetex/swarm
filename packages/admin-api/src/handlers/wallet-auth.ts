@@ -15,6 +15,7 @@ import {
   abandonAgent,
   canAbandon,
   getInhabitationInfo,
+  getInhabitedAgent,
 } from '../services/agent-ownership.js';
 import { getGateStatus } from '../services/nft-gate.js';
 import { listUnclaimedAgents } from '../services/agents.js';
@@ -603,6 +604,24 @@ export async function handleAbandonAgent(
       }, cors);
     }
 
+    const inhabitedAgent = await getInhabitedAgent(session.user.walletAddress);
+    if (!inhabitedAgent) {
+      return jsonResponse(400, {
+        error: 'You do not currently inhabit any agent',
+      }, cors);
+    }
+
+    const lineageMint = await prepareLineageMint(
+      inhabitedAgent.agentId,
+      session.user.walletAddress
+    );
+
+    if (!lineageMint.success) {
+      return jsonResponse(400, {
+        error: lineageMint.error || 'Failed to prepare lineage mint',
+      }, cors);
+    }
+
     // Abandon the agent (includes burn verification)
     const result = await abandonAgent(
       session.user.walletAddress,
@@ -615,12 +634,6 @@ export async function handleAbandonAgent(
         gateStatus: result.gateStatus,
       }, cors);
     }
-
-    // Prepare lineage mint info
-    const lineageMint = await prepareLineageMint(
-      result.agentId!,
-      session.user.walletAddress
-    );
 
     return jsonResponse(200, {
       success: true,

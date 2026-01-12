@@ -14,3 +14,4 @@ export * from './telegram.js';
 export * from './chat-voting.js';
 export * as twitterOAuth from './twitter-oauth.js';
 export * as discord from './discord.js';
+export * as propertyResearch from './property-research.js';

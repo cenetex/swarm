@@ -38,6 +38,13 @@ export {
   type LineageCollection,
   type AgentInhabitationStatus,
 } from './nft.js';
+export {
+  createPropertyTools,
+  type PropertyServices,
+  type PropertyAddress,
+  type PropertyResearchJob,
+  type ResearchProgress,
+} from './property.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';
 import { createGalleryTools } from './gallery.js';
@@ -54,6 +61,7 @@ import { createVoiceTools } from './voice.js';
 import { createDiscordTools } from './discord.js';
 import { createMemoryTools } from './memory.js';
 import { createNFTTools } from './nft.js';
+import { createPropertyTools } from './property.js';
 import type { ToolRegistry } from '../registry.js';
 
 /**
@@ -76,6 +84,7 @@ export interface AllServices {
   twitter?: import('./twitter.js').TwitterServices;
   discord?: import('./discord.js').DiscordServices;
   nft?: import('./nft.js').NFTServices;
+  property?: import('./property.js').PropertyServices;
 }
 
 /**
@@ -111,5 +120,8 @@ export function registerAllTools(
   }
   if (services.nft) {
     registry.registerAll(createNFTTools(services.nft));
+  }
+  if (services.property) {
+    registry.registerAll(createPropertyTools(services.property));
   }
 }

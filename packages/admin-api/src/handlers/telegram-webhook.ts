@@ -38,8 +38,9 @@ import {
   createToolClient,
   registerAllTools,
 } from '@swarm/mcp-server';
-import { extractThinking } from '@swarm/core';
+import { extractThinking, logger } from '@swarm/core';
 import { createTelegramMCPServices } from '../services/mcp-adapter.js';
+import { recordError } from '../services/auto-issues.js';
 import type { BufferedMessage, BufferedMedia, ChannelStateRecord } from '../types.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -196,7 +197,7 @@ async function saveThinkingToMemory(
     }));
   }
 
-  console.log(`[Telegram] Saved ${thinkingBlocks.length} thinking block(s) to memory for agent=${agentId}`);
+  logger.info('Saved thinking blocks to memory', { count: thinkingBlocks.length, agentId });
 }
 
 // === MCP TOOL CLIENT SETUP ===
@@ -279,7 +280,7 @@ async function getSecret(secretArn: string): Promise<string | null> {
     if (value) secretsCache.set(secretArn, value);
     return value;
   } catch (error) {
-    console.error('Failed to get secret:', error);
+    logger.error('Failed to get secret', error);
     return null;
   }
 }
@@ -395,7 +396,7 @@ async function startMessageProcessing(agentId: string, updateId: number): Promis
     // Check if processing marker is stale (older than PROCESSING_TTL_SECONDS)
     const staleThreshold = now - (PROCESSING_TTL_SECONDS * 1000);
     if (status === 'processing' && startedAt && startedAt < staleThreshold) {
-      console.log(`[Telegram] Taking over stale processing marker (started ${Math.round((now - startedAt) / 1000)}s ago)`);
+      logger.info('Taking over stale processing marker', { staleDurationSeconds: Math.round((now - startedAt) / 1000) });
       // Take over the stale processing marker
       try {
         await dynamoClient.send(new UpdateCommand({
@@ -441,7 +442,7 @@ async function markMessageProcessed(agentId: string, updateId: number): Promise<
       },
     }));
   } catch (err) {
-    console.warn('Failed to mark message as processed:', err);
+    logger.warn('Failed to mark message as processed', { error: err });
   }
 }
 
@@ -452,7 +453,7 @@ async function clearMessageProcessing(agentId: string, updateId: number): Promis
       Key: { pk: `TELEGRAM#${agentId}`, sk: `PROCESSED#${updateId}` },
     }));
   } catch (err) {
-    console.warn('Failed to clear message processing marker:', err);
+    logger.warn('Failed to clear message processing marker', { error: err });
   }
 }
 
@@ -465,13 +466,13 @@ function escapeTelegramMarkdownV2(text: string): string {
 async function sendTelegramMessage(token: string, agentId: string, chatId: number, text: string, replyTo?: number): Promise<number | null> {
   const canUse = await credits.canUseTool(agentId, 'send_message');
   if (!canUse.allowed) {
-    console.warn(`[Credits] send_message rate limit hit for agent=${agentId}: ${canUse.reason}`);
+    logger.warn('send_message rate limit hit', { agentId, reason: canUse.reason });
     return null;
   }
 
   const energyCheck = await credits.canUseEnergy(agentId, credits.ENERGY_COSTS.text);
   if (!energyCheck.allowed) {
-    console.warn(`[Credits] Energy limit hit for send_message (agent=${agentId}): ${energyCheck.reason}`);
+    logger.warn('Energy limit hit for send_message', { agentId, reason: energyCheck.reason });
     return null;
   }
 
@@ -493,24 +494,24 @@ async function sendTelegramMessage(token: string, agentId: string, chatId: numbe
       TELEGRAM_RETRY_COUNT
     );
     if (!response.ok) {
-      console.error('Telegram sendMessage error:', await response.text());
+      logger.error('Telegram sendMessage error', undefined, { responseText: await response.text() });
       return null;
     }
     await credits.consumeCredit(agentId, 'send_message');
     const energyConsumed = await credits.consumeEnergy(agentId, credits.ENERGY_COSTS.text);
     if (!energyConsumed) {
-      console.warn(`[Credits] Failed to consume energy for send_message: agent=${agentId}`);
+      logger.warn('Failed to consume energy for send_message', { agentId });
     }
     const data = await response.json() as { result?: { message_id: number } };
     return data.result?.message_id || null;
   } catch (error) {
-    console.error('Telegram sendMessage failed:', error);
+    logger.error('Telegram sendMessage failed', error);
     return null;
   }
 }
 
 async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string, caption?: string, replyTo?: number): Promise<void> {
-  console.log(`[Telegram] Sending photo to chat ${chatId}: ${photoUrl.slice(0, 80)}...`);
+  logger.info('Sending photo to chat', { chatId, photoUrlPreview: photoUrl.slice(0, 80) });
 
   // Download the image first, then send as buffer
   // This is more reliable than letting Telegram fetch the URL (which may be private S3)
@@ -523,7 +524,7 @@ async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string
       TELEGRAM_RETRY_COUNT
     );
     if (!imageResponse.ok) {
-      console.error(`[Telegram] Failed to download image: ${imageResponse.status}`);
+      logger.error('Failed to download image', undefined, { status: imageResponse.status });
       // Fall back to URL-based send (might work for public CDN URLs)
       try {
         const response = await fetchWithRetry(
@@ -543,16 +544,16 @@ async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string
           TELEGRAM_RETRY_COUNT
         );
         if (!response.ok) {
-          console.error(`[Telegram] sendPhoto (URL fallback) failed: ${response.status}`, await response.text());
+          logger.error('sendPhoto (URL fallback) failed', undefined, { status: response.status, responseText: await response.text() });
         }
       } catch (error) {
-        console.error('[Telegram] sendPhoto (URL fallback) failed:', error);
+        logger.error('sendPhoto (URL fallback) failed', error);
       }
       return;
     }
 
     const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-    console.log(`[Telegram] Downloaded image: ${imageBuffer.length} bytes, sending as buffer`);
+    logger.info('Downloaded image, sending as buffer', { byteCount: imageBuffer.length });
 
     // Use native FormData (Node.js 18+) with Blob
     const form = new FormData();
@@ -578,17 +579,17 @@ async function sendTelegramPhoto(token: string, chatId: number, photoUrl: string
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[Telegram] sendPhoto (buffer) failed: ${response.status} ${errorText}`);
+      logger.error('sendPhoto (buffer) failed', undefined, { status: response.status, errorText });
     } else {
-      console.log(`[Telegram] Photo sent successfully to chat ${chatId}`);
+      logger.info('Photo sent successfully', { chatId });
     }
   } catch (err) {
-    console.error(`[Telegram] Error sending photo:`, err);
+    logger.error('Error sending photo', err);
   }
 }
 
 async function sendTelegramVideo(token: string, chatId: number, videoUrl: string, caption?: string, replyTo?: number): Promise<void> {
-  console.log(`[Telegram] Sending video to chat ${chatId}: ${videoUrl.slice(0, 80)}...`);
+  logger.info('Sending video to chat', { chatId, videoUrlPreview: videoUrl.slice(0, 80) });
 
   // Download the video first, then send as buffer
   // This is more reliable than letting Telegram fetch the URL (which may be private S3)
@@ -601,7 +602,7 @@ async function sendTelegramVideo(token: string, chatId: number, videoUrl: string
       TELEGRAM_RETRY_COUNT
     );
     if (!videoResponse.ok) {
-      console.error(`[Telegram] Failed to download video: ${videoResponse.status}`);
+      logger.error('Failed to download video', undefined, { status: videoResponse.status });
       // Fall back to URL-based send (might work for public CDN URLs)
       try {
         const response = await fetchWithRetry(
@@ -621,16 +622,16 @@ async function sendTelegramVideo(token: string, chatId: number, videoUrl: string
           TELEGRAM_RETRY_COUNT
         );
         if (!response.ok) {
-          console.error(`[Telegram] sendVideo (URL fallback) failed: ${response.status}`, await response.text());
+          logger.error('sendVideo (URL fallback) failed', undefined, { status: response.status, responseText: await response.text() });
         }
       } catch (error) {
-        console.error('[Telegram] sendVideo (URL fallback) failed:', error);
+        logger.error('sendVideo (URL fallback) failed', error);
       }
       return;
     }
 
     const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
-    console.log(`[Telegram] Downloaded video: ${videoBuffer.length} bytes, sending as buffer`);
+    logger.info('Downloaded video, sending as buffer', { byteCount: videoBuffer.length });
 
     // Use native FormData (Node.js 18+) with Blob
     const form = new FormData();
@@ -656,12 +657,12 @@ async function sendTelegramVideo(token: string, chatId: number, videoUrl: string
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[Telegram] sendVideo (buffer) failed: ${response.status} ${errorText}`);
+      logger.error('sendVideo (buffer) failed', undefined, { status: response.status, errorText });
     } else {
-      console.log(`[Telegram] Video sent successfully to chat ${chatId}`);
+      logger.info('Video sent successfully', { chatId });
     }
   } catch (err) {
-    console.error(`[Telegram] Error sending video:`, err);
+    logger.error('Error sending video', err);
   }
 }
 
@@ -671,7 +672,7 @@ async function sendTelegramVideo(token: string, chatId: number, videoUrl: string
  * Note: sendSticker does NOT support captions
  */
 async function sendTelegramSticker(token: string, chatId: number, stickerUrl: string, replyTo?: number): Promise<void> {
-  console.log(`[Telegram] Sending sticker to chat ${chatId}: ${stickerUrl.slice(0, 80)}...`);
+  logger.info('Sending sticker to chat', { chatId, stickerUrlPreview: stickerUrl.slice(0, 80) });
 
   try {
     // Download the sticker first, then send as buffer
@@ -682,7 +683,7 @@ async function sendTelegramSticker(token: string, chatId: number, stickerUrl: st
       TELEGRAM_RETRY_COUNT
     );
     if (!stickerResponse.ok) {
-      console.error(`[Telegram] Failed to download sticker: ${stickerResponse.status}`);
+      logger.error('Failed to download sticker', undefined, { status: stickerResponse.status });
       // Fall back to URL-based send
       try {
         const response = await fetchWithRetry(
@@ -700,16 +701,16 @@ async function sendTelegramSticker(token: string, chatId: number, stickerUrl: st
           TELEGRAM_RETRY_COUNT
         );
         if (!response.ok) {
-          console.error(`[Telegram] sendSticker (URL fallback) failed: ${response.status}`, await response.text());
+          logger.error('sendSticker (URL fallback) failed', undefined, { status: response.status, responseText: await response.text() });
         }
       } catch (error) {
-        console.error('[Telegram] sendSticker (URL fallback) failed:', error);
+        logger.error('sendSticker (URL fallback) failed', error);
       }
       return;
     }
 
     const stickerBuffer = Buffer.from(await stickerResponse.arrayBuffer());
-    console.log(`[Telegram] Downloaded sticker: ${stickerBuffer.length} bytes, sending as buffer`);
+    logger.info('Downloaded sticker, sending as buffer', { byteCount: stickerBuffer.length });
 
     // Determine content type from URL extension
     const isWebm = /\.webm(\?.*)?$/i.test(stickerUrl);
@@ -737,12 +738,12 @@ async function sendTelegramSticker(token: string, chatId: number, stickerUrl: st
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[Telegram] sendSticker (buffer) failed: ${response.status} ${errorText}`);
+      logger.error('sendSticker (buffer) failed', undefined, { status: response.status, errorText });
     } else {
-      console.log(`[Telegram] Sticker sent successfully to chat ${chatId}`);
+      logger.info('Sticker sent successfully', { chatId });
     }
   } catch (err) {
-    console.error(`[Telegram] Error sending sticker:`, err);
+    logger.error('Error sending sticker', err);
   }
 }
 
@@ -771,7 +772,7 @@ async function sendTelegramStickerOrPhoto(
   }
 
   // Non-sticker format (e.g., PNG) - send as photo
-  console.log(`[Telegram] Sticker URL is not a sticker format, sending as photo: ${mediaUrl.slice(0, 60)}...`);
+  logger.info('Sticker URL is not a sticker format, sending as photo', { mediaUrlPreview: mediaUrl.slice(0, 60) });
   await sendTelegramPhoto(token, chatId, mediaUrl, caption, replyTo);
 }
 
@@ -788,7 +789,7 @@ async function sendChatAction(token: string, chatId: number, action: string): Pr
       TELEGRAM_RETRY_COUNT
     );
   } catch (error) {
-    console.warn('Telegram sendChatAction failed:', error);
+    logger.warn('Telegram sendChatAction failed', { error });
   }
 }
 
@@ -867,7 +868,7 @@ async function executeTool(
 
     return result;
   } catch (error) {
-    console.error(`[Telegram] Tool ${toolName} error:`, error);
+    logger.error('Tool error', error, { toolName });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
@@ -911,7 +912,7 @@ async function fetchImageUrlsFromBuffer(
           imageUrls.set(msg.messageId, url);
         }
       } catch (error) {
-        console.warn(`[Telegram] Failed to get file URL for message ${msg.messageId}:`, error);
+        logger.warn('Failed to get file URL for message', { messageId: msg.messageId, error });
       }
     })
   );
@@ -1074,7 +1075,7 @@ async function processChannelMessage(
     bufferedMessage
   );
 
-  console.log('[Telegram] Channel state:', {
+  logger.info('Channel state', {
     agentId,
     chatId,
     chatType,
@@ -1087,7 +1088,7 @@ async function processChannelMessage(
   // Evaluate if we should respond
   const decision = channelState.evaluateResponseTrigger(updatedState, botUsername, botId);
 
-  console.log('[Telegram] Response decision:', {
+  logger.info('Response decision', {
     chatId,
     shouldRespond: decision.shouldRespond,
     trigger: decision.trigger,
@@ -1199,7 +1200,7 @@ async function processChannelResponse(
   const recentImageUrls = Array.from(imageUrlMap.values());
   
   if (recentImageUrls.length > 0) {
-    console.log(`[Telegram] Including ${recentImageUrls.length} images in LLM context`);
+    logger.info('Including images in LLM context', { imageCount: recentImageUrls.length });
     systemPrompt += `\n\nNote: The user has shared ${recentImageUrls.length} image(s) in this conversation. You can see them attached to the message below.`;
   }
 
@@ -1248,7 +1249,7 @@ async function processChannelResponse(
         const toolName = tc.function.name;
 
         if (failedTools.has(toolName)) {
-          console.log(`[Telegram] Skipping retry of failed tool: ${toolName}`);
+          logger.info('Skipping retry of failed tool', { toolName });
           messages.push({
             role: 'tool',
             tool_call_id: tc.id,
@@ -1282,9 +1283,9 @@ async function processChannelResponse(
           
           if (!isTransientError) {
             failedTools.add(toolName);
-            console.log(`[Telegram] Tool ${toolName} added to failedTools: ${result.error}`);
+            logger.info('Tool added to failedTools', { toolName, error: result.error });
           } else {
-            console.log(`[Telegram] Tool ${toolName} failed with transient error (not blocking): ${result.error}`);
+            logger.info('Tool failed with transient error', { toolName, error: result.error });
           }
         }
 
@@ -1310,7 +1311,7 @@ async function processChannelResponse(
       if (hasThinking) {
         // Save thinking to agent's memory (async, don't block response)
         saveThinkingToMemory(agentId, thinkingBlocks, `chat ${chatId}`).catch(err => {
-          console.error('[Telegram] Failed to save thinking to memory:', err);
+          logger.error('Failed to save thinking to memory', err);
         });
       }
       
@@ -1341,7 +1342,7 @@ async function processChannelResponse(
 
   // Fallback if max iterations reached
   if (!responseMessageId && iterations >= maxIterations) {
-    console.warn(`[Telegram] Max iterations reached for chat ${chatId}`);
+    logger.warn('Max iterations reached', { chatId, iterations: maxIterations });
     const fallbackMessage = "Sorry, I ran into some issues processing your request. Please try again!";
     responseMessageId = await sendTelegramMessage(
       token,
@@ -1483,11 +1484,11 @@ async function handleMultiAgentMessage(
     );
   } catch (err) {
     // On initiative coordination failure, skip to avoid blocking the webhook
-    console.error('[Telegram] Initiative coordination failed, skipping:', err);
+    logger.error('Initiative coordination failed, skipping', err);
     return { responded: false, reason: 'initiative_error' };
   }
 
-  console.log('[Telegram] Multi-agent initiative result:', {
+  logger.info('Multi-agent initiative result', {
     agentId,
     chatId,
     messageId,
@@ -1573,27 +1574,24 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   const requestId = event.requestContext.requestId;
 
   // Structured log for request entry - queryable by /logs API
-  console.log(JSON.stringify({
-    level: 'INFO',
-    subsystem: 'telegram',
+  logger.setContext({ subsystem: 'telegram', agentId, requestId });
+  logger.info('Request received', {
     event: 'request_received',
-    agentId,
     clientIP,
     method: event.requestContext.http.method,
-    requestId,
-  }));
+  });
 
   const ok = () => ({ statusCode: 200, body: 'OK' });
 
   try {
     if (!agentId || !/^[a-zA-Z0-9_-]+$/.test(agentId)) {
-      console.warn('Invalid agent ID');
+      logger.warn('Invalid agent ID');
       return ok();
     }
 
     if (ENFORCE_IP_CHECK) {
       if (!clientIP || !isValidTelegramIP(clientIP)) {
-        console.warn(`Rejecting non-Telegram IP: ${clientIP || 'unknown'}`);
+        logger.warn('Rejecting non-Telegram IP', { clientIP: clientIP || 'unknown' });
         return { statusCode: 403, body: 'Forbidden' };
       }
     }
@@ -1602,21 +1600,21 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     const webhookSecret = await getWebhookSecret(agentId);
     const providedSecret = event.headers['x-telegram-bot-api-secret-token'];
     if (webhookSecret && !verifySecretToken(providedSecret, webhookSecret)) {
-      console.warn(`Invalid secret for: ${agentId}`);
+      logger.warn('Invalid secret for agent', { agentId });
       return ok();
     }
 
     // Load agent
     const agent = await getAgentConfig(agentId);
     if (!agent || !agent.platforms.telegram?.enabled) {
-      console.warn(`Agent not found or Telegram disabled: ${agentId}`);
+      logger.warn('Agent not found or Telegram disabled', { agentId });
       return ok();
     }
 
     // Get token
     const token = await getTelegramToken(agentId);
     if (!token) {
-      console.error(`No Telegram token for: ${agentId}`);
+      logger.error('No Telegram token', undefined, { agentId });
       return ok();
     }
 
@@ -1625,7 +1623,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       event.body ? JSON.parse(event.body) : {}
     );
     if (!parseResult.success) {
-      console.warn('Invalid Telegram update:', parseResult.error.message);
+      logger.warn('Invalid Telegram update', { error: parseResult.error.message });
       return ok();
     }
     const update = parseResult.data;
@@ -1653,7 +1651,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // Deduplication: Check if we already processed this update (prevents infinite loops on Lambda timeout/retry)
     const shouldProcess = await startMessageProcessing(agentId, update.update_id);
     if (!shouldProcess) {
-      console.log(`[Telegram] Skipping already processed update: ${update.update_id}`);
+      logger.info('Skipping already processed update', { updateId: update.update_id });
       return ok();
     }
 
@@ -1691,23 +1689,24 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
           if (cooldownRemaining > 0) {
             const engagementType = isDirectMention ? 'mention' : 'reply';
-            console.log(`[Telegram] Direct ${engagementType} for @${botUsername} ignored - in cooldown (${Math.round(cooldownRemaining / 1000)}s remaining)`);
+            logger.info('Direct engagement ignored - in cooldown', {
+              engagementType,
+              botUsername,
+              cooldownRemaining: Math.round(cooldownRemaining / 1000),
+            });
             await markMessageProcessed(agentId, update.update_id);
             return ok();
           }
         }
 
         const engagementType = isDirectMention ? 'mention' : 'reply-to-bot';
-        console.log(`[Telegram] Direct ${engagementType} detected for @${botUsername}, responding (bypassing initiative)`);
+        logger.info('Direct engagement detected, responding', { engagementType, botUsername });
         const result = await processChannelMessage(agentId, agent, message, token);
 
         await markMessageProcessed(agentId, update.update_id);
 
-        console.log(JSON.stringify({
-          level: 'INFO',
-          subsystem: 'telegram',
+        logger.info('Direct engagement processed', {
           event: 'direct_engagement_processed',
-          agentId,
           chatId,
           fromUser: userId,
           chatType: message.chat.type,
@@ -1716,8 +1715,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           reason: result.reason,
           engagementType,
           isReplyToBot: isReplyToThisBot,
-          requestId,
-        }));
+        });
 
         return ok();
       }
@@ -1751,10 +1749,13 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
       if (isMultiAgentEligible && channelAgents.length > 1) {
         // MULTI-AGENT MODE: Use D&D-style initiative
-        console.log(`[Telegram] Multi-agent ${message.chat.type} detected (${channelAgents.length} agents), using initiative system`);
+        logger.info('Multi-agent chat detected, using initiative system', {
+          chatType: message.chat.type,
+          agentCount: channelAgents.length,
+        });
 
         if (!agentRecord) {
-          console.warn(`[Telegram] Agent record not found: ${agentId}`);
+          logger.warn('Agent record not found', { agentId });
           return ok();
         }
 
@@ -1773,11 +1774,8 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
       await markMessageProcessed(agentId, update.update_id);
 
-      console.log(JSON.stringify({
-        level: 'INFO',
-        subsystem: 'telegram',
+      logger.info('Channel processed', {
         event: 'channel_processed',
-        agentId,
         chatId,
         fromUser: userId,
         chatType: message.chat.type,
@@ -1787,8 +1785,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         multiAgent: channelAgents.length > 1,
         agentCount: channelAgents.length,
         isChannelPost,
-        requestId,
-      }));
+      });
 
       return ok();
     } catch (error) {
@@ -1796,15 +1793,23 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       throw error;
     }
   } catch (error) {
-    console.error(JSON.stringify({
-      level: 'ERROR',
+    const errorMessage = error instanceof Error ? error.message : 'Unknown';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    logger.error('Webhook error', error, { event: 'webhook_error' });
+
+    // Record error in auto-issues system
+    recordError({
+      error: errorMessage,
+      stack: errorStack,
       subsystem: 'telegram',
-      event: 'webhook_error',
+      category: 'webhook_error',
       agentId,
       requestId,
-      error: error instanceof Error ? error.message : 'Unknown',
-      stack: error instanceof Error ? error.stack : undefined,
-    }));
+    }).catch(() => {
+      // Ignore recording failures
+    });
+
     return ok();
   }
 }
