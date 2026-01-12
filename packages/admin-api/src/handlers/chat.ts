@@ -574,8 +574,14 @@ async function processChat(
     
     if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
       // Check for manual/pause tools that need user input
+      // These tools don't have execute functions and require UI interaction
+      const manualToolNames = [
+        'request_secret',
+        'request_property_research',
+        'confirm_action',
+      ];
       const manualTool = llmResponse.toolCalls.find(tc =>
-        tc.function.name === 'request_secret'
+        manualToolNames.includes(tc.function.name)
       );
 
       if (manualTool) {
