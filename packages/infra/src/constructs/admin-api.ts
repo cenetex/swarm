@@ -533,8 +533,9 @@ export class AdminApiConstruct extends Construct {
         NODE_ENV: environment,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         AUTH_DOMAIN: adminDomain || 'admin.rati.chat',
-        // Helius for NFT gating
-        HELIUS_API_KEY: heliusApiKeySecret?.secretValue.toString() || props.heliusApiKey || '',
+        // Helius for NFT gating - pass ARN for runtime fetch instead of inline value
+        HELIUS_API_KEY_ARN: heliusApiKeySecret?.secretArn || '',
+        HELIUS_API_KEY: props.heliusApiKey || '',
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],
@@ -545,6 +546,9 @@ export class AdminApiConstruct extends Construct {
 
     // Grant permissions to wallet auth handler
     this.table.grantReadWriteData(walletAuthHandler);
+    if (heliusApiKeySecret) {
+      heliusApiKeySecret.grantRead(walletAuthHandler);
+    }
 
     const walletAuthIntegration = new integrations.HttpLambdaIntegration(
       'WalletAuthIntegration',

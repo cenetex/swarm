@@ -8,15 +8,51 @@
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import {
+  SecretsManagerClient,
+  GetSecretValueCommand,
+} from '@aws-sdk/client-secrets-manager';
 
 // Required collection for access (Orb/Gate NFTs)
 const GATE_COLLECTION = '8GCAyy5L2o2ZPdQKo3EtYAYNKYT8Y6sqGHweintLTSJ';
 
-// Helius API for NFT queries
-const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
-const HELIUS_RPC_URL = HELIUS_API_KEY
-  ? `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`
-  : 'https://api.mainnet-beta.solana.com';
+// Helius API key - can come from env var or Secrets Manager
+const HELIUS_API_KEY_ARN = process.env.HELIUS_API_KEY_ARN;
+let heliusApiKey: string | null = process.env.HELIUS_API_KEY || null;
+let heliusApiKeyFetched = false;
+
+const secretsClient = new SecretsManagerClient({});
+
+async function getHeliusApiKey(): Promise<string | null> {
+  // If we already have it from env, use it
+  if (heliusApiKey) return heliusApiKey;
+  
+  // If we've already tried fetching, don't retry
+  if (heliusApiKeyFetched) return null;
+  heliusApiKeyFetched = true;
+  
+  // Try to fetch from Secrets Manager
+  if (HELIUS_API_KEY_ARN) {
+    try {
+      const response = await secretsClient.send(new GetSecretValueCommand({
+        SecretId: HELIUS_API_KEY_ARN,
+      }));
+      heliusApiKey = response.SecretString || null;
+      return heliusApiKey;
+    } catch (error) {
+      console.error('[NFTGate] Failed to fetch Helius API key from Secrets Manager:', error);
+    }
+  }
+  
+  return null;
+}
+
+async function getHeliusRpcUrl(): Promise<string> {
+  const apiKey = await getHeliusApiKey();
+  return apiKey
+    ? `https://mainnet.helius-rpc.com/?api-key=${apiKey}`
+    : 'https://api.mainnet-beta.solana.com';
+}
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -83,7 +119,8 @@ export async function checkNFTGate(walletAddress: string): Promise<NFTGateResult
 
   try {
     // Use Helius DAS API to get NFTs by owner filtered by collection
-    const response = await fetch(HELIUS_RPC_URL, {
+    const heliusRpcUrl = await getHeliusRpcUrl();
+    const response = await fetch(heliusRpcUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
