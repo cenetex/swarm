@@ -108,18 +108,18 @@ const audioSourceSchema = z.object({
   language: z.string().optional().describe('Language hint (e.g., en, es)'),
   model: z.string().optional().describe('Transcription model name'),
   diarize: z.boolean().optional().describe('Enable speaker diarization'),
-}).refine(
-  (data) => !!(data.assetId || data.url || data.platformFileId),
-  { message: 'Provide assetId, url, or platformFileId' }
-);
+});
 
 export const createVoiceTools = (services: VoiceServices) => [
   defineTool({
     name: 'transcribe_audio',
-    description: 'Transcribe an audio asset into text for agent understanding.',
+    description: 'Transcribe an audio asset into text for agent understanding. Provide assetId, url, or platformFileId.',
     category: 'media',
     inputSchema: audioSourceSchema,
     execute: async (input): Promise<ToolResult> => {
+      if (!input.assetId && !input.url && !input.platformFileId) {
+        return { success: false, error: 'Provide assetId, url, or platformFileId' };
+      }
       const result = await services.transcribeAudio(input);
       return { success: true, data: result };
     },
@@ -211,7 +211,7 @@ export const createVoiceTools = (services: VoiceServices) => [
 
   defineTool({
     name: 'send_voice_message',
-    description: 'Send a voice message to a conversation.',
+    description: 'Send a voice message to a conversation. Provide assetId or url.',
     category: 'media',
     inputSchema: z.object({
       conversationId: z.string().min(1).describe('Conversation or chat ID'),
@@ -219,11 +219,11 @@ export const createVoiceTools = (services: VoiceServices) => [
       url: z.string().optional().describe('Public URL to audio file'),
       caption: z.string().optional().describe('Optional caption'),
       replyToMessageId: z.string().optional().describe('Message ID to reply to'),
-    }).refine(
-      (data) => !!(data.assetId || data.url),
-      { message: 'Provide assetId or url' }
-    ),
+    }),
     execute: async (input, context): Promise<ToolResult> => {
+      if (!input.assetId && !input.url) {
+        return { success: false, error: 'Provide assetId or url' };
+      }
       const result = await services.sendVoiceMessage({
         agentId: context.agentId,
         platform: context.platform,
