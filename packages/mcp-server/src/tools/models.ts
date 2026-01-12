@@ -121,12 +121,12 @@ export const createModelTools = (services: ModelServices) => [
   // Manual tool for UI-based model selection
   defineManualTool({
     name: 'request_model_selection',
-    description: 'Open a model selector UI to help choose the best model.',
+    description: 'Open a model selector UI showing ALL available models from all providers. The user will pick their preferred model.',
     platforms: ['admin-ui'], // Only available in admin UI
     inputSchema: z.object({
       preferredFamily: z.string()
         .optional()
-        .describe('Preferred model family (claude, gpt, etc.)'),
+        .describe('Optional filter to show only models from a specific provider (e.g., "anthropic", "openai"). Leave empty to show all models.'),
     }),
   }),
 ];

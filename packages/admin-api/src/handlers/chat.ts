@@ -652,7 +652,13 @@ async function processChat(
           name: uploadUrlTool.function.name,
           arguments: toolArgs,
         };
-        response = llmResponse.message || 'Please upload your image:';
+        
+        // Use appropriate fallback message based on tool type
+        if (uploadUrlTool.function.name === 'request_model_selection') {
+          response = llmResponse.message || 'Please select a model:';
+        } else {
+          response = llmResponse.message || 'Please upload your image:';
+        }
         break;
       }
       

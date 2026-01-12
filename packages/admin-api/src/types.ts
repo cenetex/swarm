@@ -80,6 +80,40 @@ export interface WalletInfo {
   createdBy: string;
 }
 
+export interface VoiceConfig {
+  enabled: boolean;
+  defaultVoiceId?: string;
+  ttsProvider?: 'voice-clone';
+  speed?: number;
+  pitch?: number;
+  format?: 'ogg' | 'mp3' | 'wav';
+}
+
+export interface VoiceProfile {
+  pk: string; // VOICE#{voiceId}
+  sk: string; // PROFILE
+  voiceId: string;
+  agentId: string;
+  status: 'creating' | 'ready' | 'failed';
+  provider: 'stable-audio' | 'voice-clone';
+  seedAssetId?: string;
+  cloneAssetId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AudioAsset {
+  pk: string; // AUDIO#{assetId}
+  sk: string; // ASSET
+  assetId: string;
+  agentId: string;
+  source: 'telegram' | 'upload' | 'stable-audio' | 'tts';
+  format: 'ogg' | 'mp3' | 'wav';
+  durationMs?: number;
+  url: string;
+  createdAt: number;
+}
+
 // Agent configuration stored in DynamoDB
 export interface AgentRecord {
   pk: string; // AGENT#{agentId}
@@ -143,6 +177,7 @@ export interface AgentRecord {
     maxTokens: number;
     useGlobalKey: boolean;
   };
+  voiceConfig?: VoiceConfig;
   
   // Creation tracking - who created this agent (permanent, for slot counting)
   creatorWallet?: string;
