@@ -8,7 +8,7 @@ import {
   PutCommand,
   GetCommand,
   UpdateCommand,
-  QueryCommand,
+  ScanCommand,
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
@@ -169,32 +169,26 @@ export async function updateJobStatus(
 
 /**
  * Get pending jobs for an agent (for status checking)
+ * Uses Scan with filter since jobs have 24h TTL (bounded scan)
  */
 export async function getPendingJobs(agentId: string): Promise<MediaJob[]> {
-  const pendingResult = await dynamoClient.send(new QueryCommand({
+  // Scan for jobs belonging to this agent that are pending or processing
+  // This is efficient because jobs have TTL (24h) so the table stays small
+  const result = await dynamoClient.send(new ScanCommand({
     TableName: ADMIN_TABLE,
-    IndexName: 'GSI2',
-    KeyConditionExpression: 'gsi2pk = :agentPk AND begins_with(gsi2sk, :pendingPrefix)',
+    FilterExpression: 'begins_with(pk, :jobPrefix) AND agentId = :agentId AND (#status = :pending OR #status = :processing)',
+    ExpressionAttributeNames: {
+      '#status': 'status',
+    },
     ExpressionAttributeValues: {
-      ':agentPk': `AGENT#${agentId}`,
-      ':pendingPrefix': 'pending#',
+      ':jobPrefix': 'MEDIAJOB#',
+      ':agentId': agentId,
+      ':pending': 'pending',
+      ':processing': 'processing',
     },
   }));
 
-  const processingResult = await dynamoClient.send(new QueryCommand({
-    TableName: ADMIN_TABLE,
-    IndexName: 'GSI2',
-    KeyConditionExpression: 'gsi2pk = :agentPk AND begins_with(gsi2sk, :processingPrefix)',
-    ExpressionAttributeValues: {
-      ':agentPk': `AGENT#${agentId}`,
-      ':processingPrefix': 'processing#',
-    },
-  }));
-
-  return [
-    ...((pendingResult.Items || []) as MediaJob[]),
-    ...((processingResult.Items || []) as MediaJob[]),
-  ];
+  return (result.Items || []) as MediaJob[];
 }
 
 /**

@@ -154,13 +154,8 @@ export class AdminApiConstruct extends Construct {
       sortKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
     });
 
-    // GSI for media jobs by agent/status
-    this.table.addGlobalSecondaryIndex({
-      indexName: 'GSI2',
-      partitionKey: { name: 'gsi2pk', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'gsi2sk', type: dynamodb.AttributeType.STRING },
-      projectionType: dynamodb.ProjectionType.ALL,
-    });
+    // Note: Media jobs are queried using Scan with filter (no GSI2 needed)
+    // Jobs have TTL so the scan is bounded by recent jobs only
 
     // External provider ID lookups use a mapping item (no extra GSI).
 
