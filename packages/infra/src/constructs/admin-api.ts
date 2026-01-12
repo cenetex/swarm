@@ -154,17 +154,13 @@ export class AdminApiConstruct extends Construct {
       sortKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
     });
 
-    // NOTE: GSI2 must be added in a separate deployment due to DynamoDB limitation
-    // (only one GSI can be added/removed per update)
-
     // GSI for media jobs by agent/status
-    // TODO: Uncomment after GSI1 is deployed (DynamoDB allows one GSI change per update)
-    // this.table.addGlobalSecondaryIndex({
-    //   indexName: 'GSI2',
-    //   partitionKey: { name: 'gsi2pk', type: dynamodb.AttributeType.STRING },
-    //   sortKey: { name: 'gsi2sk', type: dynamodb.AttributeType.STRING },
-    //   projectionType: dynamodb.ProjectionType.ALL,
-    // });
+    this.table.addGlobalSecondaryIndex({
+      indexName: 'GSI2',
+      partitionKey: { name: 'gsi2pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi2sk', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
 
     // External provider ID lookups use a mapping item (no extra GSI).
 

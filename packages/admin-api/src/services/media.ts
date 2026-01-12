@@ -106,7 +106,8 @@ async function makeUrlsAccessible(urls: string[]): Promise<string[]> {
 
 // Provider configuration
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
-const IMAGE_TRIAL_LIMIT = 3;
+const IMAGE_TRIAL_MAX_CREDITS = 3;      // Maximum credits that can be stored
+const IMAGE_TRIAL_DAILY_RECHARGE = 1;   // Credits recharged per day
 const REPLICATE_API_KEY_SECRET_ARN = process.env.REPLICATE_API_KEY_SECRET_ARN;
 
 // Cached system Replicate API key (fetched from Secrets Manager on first use)
@@ -162,32 +163,90 @@ async function getSystemReplicateKey(): Promise<string | null> {
   return null;
 }
 
-async function consumeImageGenerationTrial(agentId: string): Promise<{ allowed: boolean; remaining: number }> {
-  const now = Date.now();
+/**
+ * Get the current credits for an agent's free image generation.
+ * Credits recharge at 1 per day, up to a maximum of 3.
+ */
+async function getImageTrialCredits(agentId: string): Promise<{ credits: number; lastRecharge: number }> {
   try {
-    const result = await dynamoClient.send(new UpdateCommand({
+    const result = await dynamoClient.send(new GetCommand({
       TableName: ADMIN_TABLE,
       Key: { pk: `AGENT#${agentId}`, sk: 'IMAGE_TRIAL' },
-      UpdateExpression: 'SET used = if_not_exists(used, :zero) + :one, updatedAt = :now',
-      ConditionExpression: 'attribute_not_exists(used) OR used < :limit',
-      ExpressionAttributeValues: {
-        ':zero': 0,
-        ':one': 1,
-        ':limit': IMAGE_TRIAL_LIMIT,
-        ':now': now,
-      },
-      ReturnValues: 'ALL_NEW',
     }));
-    const used = Number((result.Attributes as { used?: number })?.used ?? 0);
-    return {
-      allowed: true,
-      remaining: Math.max(0, IMAGE_TRIAL_LIMIT - used),
-    };
-  } catch (err: unknown) {
-    if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
-      return { allowed: false, remaining: 0 };
+    
+    if (!result.Item) {
+      // New agent - start with max credits
+      return { credits: IMAGE_TRIAL_MAX_CREDITS, lastRecharge: Date.now() };
     }
-    throw err;
+    
+    const stored = result.Item as { credits?: number; lastRecharge?: number };
+    return {
+      credits: stored.credits ?? IMAGE_TRIAL_MAX_CREDITS,
+      lastRecharge: stored.lastRecharge ?? Date.now(),
+    };
+  } catch (err) {
+    console.error('[Media] Failed to get image trial credits:', err);
+    // Default to allowing one attempt on error
+    return { credits: 1, lastRecharge: Date.now() };
+  }
+}
+
+/**
+ * Calculate recharged credits based on time elapsed.
+ * Recharges 1 credit per day, up to max.
+ */
+function calculateRechargedCredits(currentCredits: number, lastRecharge: number): number {
+  const now = Date.now();
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysSinceRecharge = Math.floor((now - lastRecharge) / msPerDay);
+  
+  if (daysSinceRecharge <= 0) {
+    return currentCredits;
+  }
+  
+  const rechargedCredits = daysSinceRecharge * IMAGE_TRIAL_DAILY_RECHARGE;
+  return Math.min(currentCredits + rechargedCredits, IMAGE_TRIAL_MAX_CREDITS);
+}
+
+/**
+ * Consume one image generation trial credit.
+ * Credits recharge at 1 per day, up to a maximum of 3.
+ */
+async function consumeImageGenerationTrial(agentId: string): Promise<{ allowed: boolean; remaining: number }> {
+  const now = Date.now();
+  
+  // Get current state
+  const { credits: storedCredits, lastRecharge } = await getImageTrialCredits(agentId);
+  
+  // Calculate recharged credits
+  const currentCredits = calculateRechargedCredits(storedCredits, lastRecharge);
+  
+  if (currentCredits <= 0) {
+    console.log(`[Media] Image trial exhausted for agent=${agentId}, credits=${currentCredits}`);
+    return { allowed: false, remaining: 0 };
+  }
+  
+  // Consume one credit and update
+  const newCredits = currentCredits - 1;
+  
+  try {
+    await dynamoClient.send(new PutCommand({
+      TableName: ADMIN_TABLE,
+      Item: {
+        pk: `AGENT#${agentId}`,
+        sk: 'IMAGE_TRIAL',
+        credits: newCredits,
+        lastRecharge: now, // Reset recharge timer when we update
+        updatedAt: now,
+      },
+    }));
+    
+    console.log(`[Media] Consumed image trial credit: agent=${agentId}, remaining=${newCredits}`);
+    return { allowed: true, remaining: newCredits };
+  } catch (err) {
+    console.error('[Media] Failed to consume image trial credit:', err);
+    // Allow on write error (optimistic)
+    return { allowed: true, remaining: Math.max(0, newCredits) };
   }
 }
 
@@ -204,10 +263,10 @@ async function getImageGenerationApiKey(agentId: string): Promise<string> {
     throw new Error('No system Replicate API key configured. Please set up a global or agent Replicate API key.');
   }
 
-  // System key exists - check trial limit
+  // System key exists - check trial credits
   const trial = await consumeImageGenerationTrial(agentId);
   if (!trial.allowed) {
-    throw new Error('Free image generation trial exhausted. Please set a Replicate API key to continue.');
+    throw new Error('Free image credits exhausted. Credits recharge at 1 per day (max 3). Set your own Replicate API key for unlimited use.');
   }
 
   console.log(`[Media] Using system Replicate key for image generation: agent=${agentId}, remaining=${trial.remaining}`);
