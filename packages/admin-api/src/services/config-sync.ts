@@ -128,7 +128,13 @@ function convertToAgentConfig(record: AgentRecord): AgentConfig {
       format: record.voiceConfig.format,
       referenceUrl: record.voiceConfig.referenceUrl,
     } : undefined,
-    tools: ['send_message', 'react', 'ignore', 'wait'],
+    tools: (() => {
+      const tools = ['send_message', 'react', 'ignore', 'wait'];
+      if (record.voiceConfig?.enabled) {
+        tools.push('generate_voice_message', 'transcribe_audio');
+      }
+      return tools;
+    })(),
     secrets: [],
   };
 

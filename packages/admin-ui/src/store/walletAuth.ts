@@ -166,6 +166,7 @@ export const useWalletAuth = create<WalletAuthState>()(
               isLoading: false,
               nftGateError: false,
               nftGateInfo: data.nftGate || null,
+              gateStatus: data.gateStatus || null,
             });
           } else {
             throw new Error('Authentication failed');

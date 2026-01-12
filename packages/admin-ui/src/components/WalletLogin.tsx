@@ -34,28 +34,41 @@ export function WalletLogin({ className = '' }: WalletLoginProps) {
     checkAuth();
   }, [checkAuth]);
 
-  // When wallet connects, trigger login flow (only once per connection)
+  // When wallet connects or changes, trigger login flow
   useEffect(() => {
-    if (connected && publicKey && signMessage && !isAuthenticated && !isLoading) {
+    // Check if signMessage is available (not all wallets/states have it)
+    if (!signMessage || typeof signMessage !== 'function') {
+      return;
+    }
+
+    if (connected && publicKey && !isLoading) {
       const publicKeyStr = publicKey.toBase58();
       
-      // Only attempt login if we haven't already tried for this wallet
-      if (loginAttemptedRef.current === publicKeyStr) {
-        return; // Already attempted, don't loop
+      // If authenticated but with different wallet, logout first
+      if (isAuthenticated && user && user.walletAddress !== publicKeyStr) {
+        console.log('[WalletLogin] Wallet changed, re-authenticating...');
+        loginAttemptedRef.current = null;
+        logout().then(() => {
+          // After logout, the next render will trigger login with new wallet
+        });
+        return;
       }
       
-      loginAttemptedRef.current = publicKeyStr;
-      login(signMessage, publicKeyStr).catch((err) => {
-        console.error('Login failed:', err);
-        // Keep loginAttemptedRef set to prevent retry loop
-      });
+      // Only attempt login if we haven't already tried for this wallet
+      if (!isAuthenticated && loginAttemptedRef.current !== publicKeyStr) {
+        loginAttemptedRef.current = publicKeyStr;
+        login(signMessage, publicKeyStr).catch((err) => {
+          console.error('Login failed:', err);
+          // Keep loginAttemptedRef set to prevent retry loop
+        });
+      }
     }
     
     // Reset attempt tracker when wallet disconnects
     if (!connected) {
       loginAttemptedRef.current = null;
     }
-  }, [connected, publicKey, signMessage, isAuthenticated, isLoading, login]);
+  }, [connected, publicKey, signMessage, isAuthenticated, isLoading, login, logout, user]);
 
   // Handle connect button click
   const handleConnect = useCallback(() => {

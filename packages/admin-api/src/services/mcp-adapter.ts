@@ -4,7 +4,7 @@
  * Bridges existing admin-api services to MCP server service interfaces.
  * This allows the unified tool definitions to work with our current infrastructure.
  */
-import type { AllServices, VoiceServices } from '@swarm/mcp-server';
+import type { AllServices, VoiceServices, NFTServices } from '@swarm/mcp-server';
 import type { UserSession, SecretType } from '../types.js';
 import * as agents from '../services/agents.js';
 import * as secrets from '../services/secrets.js';
@@ -18,6 +18,9 @@ import * as gallery from '../services/gallery.js';
 import * as credits from '../services/credits.js';
 import * as mediaJobs from '../services/media-jobs.js';
 import * as voice from '../services/voice.js';
+import * as agentOwnership from '../services/agent-ownership.js';
+import * as nftGate from '../services/nft-gate.js';
+import * as lineageNft from '../services/lineage-nft.js';
 
 // Timeout for external API calls
 const API_TIMEOUT_MS = 10_000;
@@ -1240,6 +1243,92 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
       removeReaction: async (channelId, messageId, emoji) => {
         return discord.removeReaction(_agentId, channelId, messageId, emoji);
       },
+    },
+
+    // =========================================================================
+    // NFT Services (Agent Inhabitation & Lineage)
+    // =========================================================================
+    nft: createNFTServices(),
+  };
+}
+
+/**
+ * Create NFT services for agent inhabitation and lineage
+ */
+function createNFTServices(): NFTServices {
+  return {
+    // Gate NFT operations
+    getGateStatus: async (walletAddress: string) => {
+      return nftGate.getGateStatus(walletAddress);
+    },
+
+    getGateCollectionAddress: () => {
+      return nftGate.getGateCollection();
+    },
+
+    // Inhabitation operations
+    getInhabitationInfo: async (walletAddress: string) => {
+      return agentOwnership.getInhabitationInfo(walletAddress);
+    },
+
+    listUnclaimedAgents: async () => {
+      // Get all agents without an inhabitant
+      const allAgents = await agents.listAgents();
+      return allAgents
+        .filter((agent) => !agent.inhabitantWallet)
+        .map((agent) => ({
+          agentId: agent.agentId,
+          name: agent.name,
+          description: agent.description,
+          avatarUrl: agent.profileImage?.url,
+          era: agent.currentEra || 0,
+        }));
+    },
+
+    inhabitAgent: async (walletAddress: string, agentId: string) => {
+      return agentOwnership.inhabitAgent(walletAddress, agentId);
+    },
+
+    canAbandon: async (walletAddress: string) => {
+      const result = await agentOwnership.canAbandon(walletAddress);
+      return {
+        canAbandon: result.canAbandon,
+        gateStatus: result.gateStatus,
+        inhabitedAgentId: result.inhabitedAgent?.agentId,
+        inhabitedAgentName: result.inhabitedAgent?.name,
+      };
+    },
+
+    abandonAgent: async (walletAddress: string, burnTxSignature: string) => {
+      return agentOwnership.abandonAgent(walletAddress, burnTxSignature);
+    },
+
+    // Burn verification
+    verifyGateBurn: async (walletAddress: string, signature: string) => {
+      return lineageNft.verifyGateBurn(walletAddress, signature);
+    },
+
+    // Lineage NFT operations
+    getLineageCollection: async (agentId: string) => {
+      return lineageNft.getLineageCollection(agentId);
+    },
+
+    prepareLineageMint: async (agentId: string, walletAddress: string) => {
+      return lineageNft.prepareLineageMint(agentId, walletAddress);
+    },
+
+    recordLineageMint: async (
+      agentId: string,
+      walletAddress: string,
+      nftMint: string,
+      era: number,
+      burnSignature?: string
+    ) => {
+      return lineageNft.recordLineageMint(agentId, walletAddress, nftMint, era, burnSignature);
+    },
+
+    generateLineageMetadata: (metadata) => {
+      return lineageNft.generateLineageMetadataJson(metadata);
     },
   };
 }

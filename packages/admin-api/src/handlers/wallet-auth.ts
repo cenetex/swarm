@@ -217,6 +217,10 @@ export async function handleVerify(
       }, cors);
     }
 
+    // Get gate status for the wallet (for access control on frontend)
+    const { getGateStatus } = await import('../services/nft-gate.js');
+    const gateStatus = await getGateStatus(result.user.walletAddress);
+
     // Set session cookie
     const cookie = setSessionCookie(result.session.sessionToken);
 
@@ -233,6 +237,14 @@ export async function handleVerify(
       },
       // Include NFT info for display
       nftGate: result.nftGate,
+      // Include gate status for access control
+      gateStatus: {
+        nftsHeld: gateStatus.nftsHeld,
+        agentsCreated: gateStatus.agentsCreated,
+        availableSlots: gateStatus.availableSlots,
+        canCreate: gateStatus.canCreate,
+        canAbandon: gateStatus.canAbandon,
+      },
     }, {
       ...cors,
       'Set-Cookie': cookie,

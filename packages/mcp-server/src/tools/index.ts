@@ -24,6 +24,19 @@ export {
   type DiscordMessageInfo,
 } from './discord.js';
 export { createMemoryTools, type MemoryServices, type MemoryFact } from './memory.js';
+export {
+  createNFTTools,
+  type NFTServices,
+  type GateStatus,
+  type InhabitationInfo,
+  type UnclaimedAgent,
+  type InhabitResult,
+  type AbandonResult,
+  type BurnVerification,
+  type LineageMetadata,
+  type MintPreparation,
+  type LineageCollection,
+} from './nft.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';
 import { createGalleryTools } from './gallery.js';
@@ -39,6 +52,7 @@ import { createTwitterTools } from './twitter.js';
 import { createVoiceTools } from './voice.js';
 import { createDiscordTools } from './discord.js';
 import { createMemoryTools } from './memory.js';
+import { createNFTTools } from './nft.js';
 import type { ToolRegistry } from '../registry.js';
 
 /**
@@ -60,6 +74,7 @@ export interface AllServices {
   telegram?: import('./telegram.js').TelegramServices;
   twitter?: import('./twitter.js').TwitterServices;
   discord?: import('./discord.js').DiscordServices;
+  nft?: import('./nft.js').NFTServices;
 }
 
 /**
@@ -92,5 +107,8 @@ export function registerAllTools(
   }
   if (services.discord) {
     registry.registerAll(createDiscordTools(services.discord));
+  }
+  if (services.nft) {
+    registry.registerAll(createNFTTools(services.nft));
   }
 }

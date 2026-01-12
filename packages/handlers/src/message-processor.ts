@@ -270,6 +270,9 @@ function buildSystemPrompt(envelope: SwarmEnvelope): string {
 - Use ignore if the message doesn't warrant a response
 - Keep responses concise and natural
 `;
+  if (agentConfig.voice?.enabled) {
+    prompt += `- Use generate_voice_message to reply with voice when it fits\n`;
+  }
 
   return prompt;
 }
@@ -343,6 +346,36 @@ function toolResultsToActions(
   return actions;
 }
 
+async function maybeTranscribeAudio(
+  envelope: SwarmEnvelope,
+  toolClient: ReturnType<typeof createToolClient>,
+  toolContext: ToolContext
+): Promise<void> {
+  const audioAttachment = envelope.content.media?.find(m => m.type === 'audio');
+  if (!audioAttachment?.fileId) return;
+
+  const shouldTranscribe = agentConfig.voice?.enabled || agentConfig.tools.includes('transcribe_audio');
+  if (!shouldTranscribe) return;
+
+  try {
+    const result = await toolClient.execute('transcribe_audio', {
+      platformFileId: audioAttachment.fileId,
+    }, toolContext);
+
+    if (result.success) {
+      const data = result.data as { text?: string } | undefined;
+      if (data?.text) {
+        const prefix = envelope.content.text ? `${envelope.content.text}\n\n` : '';
+        envelope.content.text = `${prefix}${data.text}`;
+      }
+    }
+  } catch (error) {
+    logger.warn('Voice transcription failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /**
  * Generate response with iterative tool execution
  */
@@ -351,6 +384,7 @@ async function generateResponse(
   toolClient: ReturnType<typeof createToolClient>,
   toolContext: ToolContext
 ): Promise<SwarmResponse> {
+  await maybeTranscribeAudio(envelope, toolClient, toolContext);
   const systemPrompt = buildSystemPrompt(envelope);
   const openAITools = toolClient.getOpenAITools();
 
@@ -465,6 +499,8 @@ export const handler: SQSHandler = async (event: SQSEvent, context: Context) => 
     stateService,
     mediaService,
     secrets,
+    mediaBucket,
+    cdnUrl: getCdnUrl(),
   });
 
   const registry = new ToolRegistry();
