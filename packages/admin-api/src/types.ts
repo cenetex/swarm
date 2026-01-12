@@ -144,11 +144,23 @@ export interface AgentRecord {
     useGlobalKey: boolean;
   };
   
-  // Wallet ownership - the Solana wallet that "inhabits" this avatar
-  // 1:1 relationship: one wallet can only own one agent
+  // Creation tracking - who created this agent (permanent, for slot counting)
+  creatorWallet?: string;
+
+  // Inhabitation - the Solana wallet that currently "inhabits" this avatar
+  // 1:1 relationship: one wallet can only inhabit one agent at a time
+  // Inhabiting is FREE, but abandoning requires burning a Gate NFT
+  inhabitantWallet?: string;
+  inhabitedAt?: number;
+
+  // Legacy fields (for migration, will be removed)
   ownerWallet?: string;
   ownerClaimedAt?: number;
-  
+
+  // Lineage tracking for NFT minting on abandonment
+  nftCollectionMint?: string;     // Metaplex Core collection for this agent's lineage
+  currentEra: number;             // Increments on each abandonment (starts at 0)
+
   status: 'draft' | 'active' | 'paused' | 'deleted';
   createdAt: number;
   createdBy: string;

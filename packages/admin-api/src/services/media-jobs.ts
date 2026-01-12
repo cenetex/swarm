@@ -7,6 +7,7 @@ import {
   DynamoDBDocumentClient,
   PutCommand,
   GetCommand,
+  QueryCommand,
   UpdateCommand,
   ScanCommand,
   TransactWriteCommand,
@@ -172,23 +173,48 @@ export async function updateJobStatus(
  * Uses Scan with filter since jobs have 24h TTL (bounded scan)
  */
 export async function getPendingJobs(agentId: string): Promise<MediaJob[]> {
-  // Scan for jobs belonging to this agent that are pending or processing
-  // This is efficient because jobs have TTL (24h) so the table stays small
-  const result = await dynamoClient.send(new ScanCommand({
-    TableName: ADMIN_TABLE,
-    FilterExpression: 'begins_with(pk, :jobPrefix) AND agentId = :agentId AND (#status = :pending OR #status = :processing)',
-    ExpressionAttributeNames: {
-      '#status': 'status',
-    },
-    ExpressionAttributeValues: {
-      ':jobPrefix': 'MEDIAJOB#',
-      ':agentId': agentId,
-      ':pending': 'pending',
-      ':processing': 'processing',
-    },
-  }));
+  const scanPendingJobs = async (): Promise<MediaJob[]> => {
+    // Scan for jobs belonging to this agent that are pending or processing
+    // This is efficient because jobs have TTL (24h) so the table stays small
+    const result = await dynamoClient.send(new ScanCommand({
+      TableName: ADMIN_TABLE,
+      FilterExpression: 'begins_with(pk, :jobPrefix) AND agentId = :agentId AND (#status = :pending OR #status = :processing)',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+      },
+      ExpressionAttributeValues: {
+        ':jobPrefix': 'MEDIAJOB#',
+        ':agentId': agentId,
+        ':pending': 'pending',
+        ':processing': 'processing',
+      },
+    }));
 
-  return (result.Items || []) as MediaJob[];
+    return (result.Items || []) as MediaJob[];
+  };
+
+  try {
+    const result = await dynamoClient.send(new QueryCommand({
+      TableName: ADMIN_TABLE,
+      IndexName: 'GSI2',
+      KeyConditionExpression: 'gsi2pk = :agentKey',
+      FilterExpression: 'begins_with(gsi2sk, :pendingPrefix) OR begins_with(gsi2sk, :processingPrefix)',
+      ExpressionAttributeValues: {
+        ':agentKey': `AGENT#${agentId}`,
+        ':pendingPrefix': 'pending#',
+        ':processingPrefix': 'processing#',
+      },
+    }));
+
+    return (result.Items || []) as MediaJob[];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (!message.includes('specified index: GSI2')) {
+      throw error;
+    }
+  }
+
+  return scanPendingJobs();
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import nacl from 'tweetnacl';
+import bs58 from 'bs58';
 import { randomBytes } from 'crypto';
 import { checkNFTGate, type NFTGateResult } from './nft-gate.js';
 
@@ -176,43 +177,6 @@ async function consumeChallenge(nonce: string): Promise<ChallengeRecord | null> 
 // ============================================================================
 
 /**
- * Decode a base58 string to bytes
- */
-function base58Decode(str: string): Uint8Array {
-  const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-  const ALPHABET_MAP = new Map(ALPHABET.split('').map((c, i) => [c, BigInt(i)]));
-
-  let num = BigInt(0);
-  for (const char of str) {
-    const val = ALPHABET_MAP.get(char);
-    if (val === undefined) throw new Error(`Invalid base58 character: ${char}`);
-    num = num * BigInt(58) + val;
-  }
-
-  // Convert to bytes
-  const hex = num.toString(16).padStart(str.length * 2, '0');
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-
-  // Handle leading zeros
-  let leadingZeros = 0;
-  for (const char of str) {
-    if (char === '1') leadingZeros++;
-    else break;
-  }
-
-  if (leadingZeros > 0) {
-    const result = new Uint8Array(leadingZeros + bytes.length);
-    result.set(bytes, leadingZeros);
-    return result;
-  }
-
-  return bytes;
-}
-
-/**
  * Verify a Solana signature
  */
 export function verifySignature(
@@ -222,8 +186,8 @@ export function verifySignature(
 ): boolean {
   try {
     const messageBytes = new TextEncoder().encode(message);
-    const signatureBytes = base58Decode(signatureBase58);
-    const publicKeyBytes = base58Decode(publicKeyBase58);
+    const signatureBytes = bs58.decode(signatureBase58);
+    const publicKeyBytes = bs58.decode(publicKeyBase58);
 
     // Solana public keys are 32 bytes
     if (publicKeyBytes.length !== 32) {

@@ -12,6 +12,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import type { AgentRecord, UserSession } from '../types.js';
 import { syncAgentConfig } from './config-sync.js';
+import { getGateStatus, type GateStatus } from './nft-gate.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
@@ -32,7 +33,7 @@ function generateAgentId(name: string): string {
 }
 
 /**
- * Create a new agent
+ * Create a new agent (legacy - uses email session)
  */
 export async function createAgent(
   name: string,
@@ -56,6 +57,7 @@ export async function createAgent(
       maxTokens: 1024,
       useGlobalKey: true,
     },
+    currentEra: 0,
     status: 'draft',
     createdAt: now,
     createdBy: session.email,
@@ -73,6 +75,123 @@ export async function createAgent(
   await syncAgentConfig(agent);
 
   return agent;
+}
+
+/**
+ * Create agent result with gate status
+ */
+export interface CreateAgentResult {
+  success: boolean;
+  agent?: AgentRecord;
+  gateStatus?: GateStatus;
+  error?: 'no_gate_slot' | 'invalid_name' | 'name_taken' | 'gate_check_failed';
+}
+
+/**
+ * Create a new agent with wallet-based gating
+ * Requires the wallet to hold an unused Gate NFT slot
+ */
+export async function createAgentWithWallet(
+  name: string,
+  creatorWallet: string,
+  description?: string
+): Promise<CreateAgentResult> {
+  // 1. Check gate status (optimistic)
+  const gateStatus = await getGateStatus(creatorWallet);
+  if (!gateStatus.canCreate) {
+    console.log(`[Agents] No gate slot for wallet=${creatorWallet.slice(0, 8)}... (held=${gateStatus.nftsHeld}, created=${gateStatus.agentsCreated})`);
+    return {
+      success: false,
+      error: 'no_gate_slot',
+      gateStatus,
+    };
+  }
+
+  const agentId = generateAgentId(name);
+  const now = Date.now();
+
+  const agent: AgentRecord = {
+    pk: `AGENT#${agentId}`,
+    sk: 'CONFIG',
+    agentId,
+    name,
+    description,
+    platforms: {},
+    llmConfig: {
+      provider: 'openrouter',
+      model: 'anthropic/claude-sonnet-4',
+      temperature: 0.8,
+      maxTokens: 1024,
+      useGlobalKey: true,
+    },
+    creatorWallet,  // Track who created for slot counting
+    currentEra: 0,
+    status: 'draft',
+    createdAt: now,
+    createdBy: creatorWallet,
+    updatedAt: now,
+    updatedBy: creatorWallet,
+  };
+
+  try {
+    await dynamoClient.send(new PutCommand({
+      TableName: ADMIN_TABLE,
+      Item: agent,
+      ConditionExpression: 'attribute_not_exists(pk)',
+    }));
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'ConditionalCheckFailedException') {
+      return { success: false, error: 'name_taken', gateStatus };
+    }
+    throw err;
+  }
+
+  // 2. Re-verify gate status (pessimistic check for race conditions)
+  const finalStatus = await getGateStatus(creatorWallet);
+  if (finalStatus.agentsCreated > finalStatus.nftsHeld) {
+    // Race condition: user sold NFT between check and create
+    // Rollback by deleting the agent
+    console.log(`[Agents] Gate slot race condition for wallet=${creatorWallet.slice(0, 8)}...`);
+    await dynamoClient.send(new PutCommand({
+      TableName: ADMIN_TABLE,
+      Item: { ...agent, status: 'deleted' },
+    }));
+    return {
+      success: false,
+      error: 'no_gate_slot',
+      gateStatus: finalStatus,
+    };
+  }
+
+  // Sync to state table so handlers can access it
+  await syncAgentConfig(agent);
+
+  console.log(`[Agents] Created agent=${agentId} by wallet=${creatorWallet.slice(0, 8)}...`);
+
+  return {
+    success: true,
+    agent,
+    gateStatus: finalStatus,
+  };
+}
+
+/**
+ * List unclaimed agents (no inhabitant)
+ */
+export async function listUnclaimedAgents(): Promise<AgentRecord[]> {
+  const result = await dynamoClient.send(new ScanCommand({
+    TableName: ADMIN_TABLE,
+    FilterExpression: 'sk = :sk AND #status <> :deleted AND attribute_not_exists(inhabitantWallet) AND attribute_not_exists(ownerWallet)',
+    ExpressionAttributeNames: {
+      '#status': 'status',
+    },
+    ExpressionAttributeValues: {
+      ':sk': 'CONFIG',
+      ':deleted': 'deleted',
+    },
+  }));
+
+  return (result.Items as AgentRecord[]) || [];
 }
 
 /**

@@ -1,9 +1,13 @@
 /**
- * Agent Ownership Service
- * 
- * Manages 1:1 ownership between Solana wallets and agents.
+ * Agent Inhabitation Service
+ *
+ * Manages 1:1 inhabitation between Solana wallets and agents.
  * Each wallet can only "inhabit" one agent at a time.
- * Owning an agent lets the user appear as that avatar in chat.
+ * Inhabiting an agent lets the user appear as that avatar in chat.
+ *
+ * Key concepts:
+ * - INHABIT = Claim an unclaimed agent (FREE, no NFT required)
+ * - ABANDON = Release an agent (REQUIRES burning a Gate NFT)
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
@@ -12,15 +16,31 @@ import type { AgentRecord } from '../types.js';
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 
 const client = new DynamoDBClient({});
-const ddb = DynamoDBDocumentClient.from(client);
+const ddb = DynamoDBDocumentClient.from(client, {
+  marshallOptions: { removeUndefinedValues: true },
+});
 
-export interface OwnershipResult {
+export interface InhabitResult {
   success: boolean;
   error?: string;
   agentId?: string;
   agentName?: string;
   avatarUrl?: string;
+  era?: number;  // Which era they will be when they abandon
 }
+
+export interface AbandonResult {
+  success: boolean;
+  error?: string;
+  agentId?: string;
+  agentName?: string;
+  era?: number;
+  lineageNftMint?: string;
+  gateStatus?: GateStatus;
+}
+
+// Legacy type alias
+export type OwnershipResult = InhabitResult;
 
 /**
  * Get the agent owned by a wallet (if any)
@@ -135,8 +155,8 @@ export async function claimAgent(
       agentName: agent.name,
       avatarUrl: agent.profileImage?.url,
     };
-  } catch (err: any) {
-    if (err.name === 'ConditionalCheckFailedException') {
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'ConditionalCheckFailedException') {
       return { 
         success: false, 
         error: `${agent.name} was just claimed by another wallet`,
