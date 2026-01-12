@@ -384,7 +384,9 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
                   const isBlocked = result.isInhabited === true;
                   const buttonLabel = !isAuthenticated
                     ? 'Connect wallet to inhabit'
-                    : result.label || (isBlocked ? 'Already inhabited' : 'Inhabit this agent');
+                    : isBlocked
+                      ? 'Already inhabited'
+                      : result.label || 'Inhabit this agent';
 
                   return (
                     <div
