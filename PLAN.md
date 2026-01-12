@@ -4,7 +4,7 @@
 
 ## Implementation Status
 
-> **Last Updated:** 2026-01-10
+> **Last Updated:** 2026-01-12
 
 ### Overall Progress
 
@@ -19,38 +19,53 @@
 | Infrastructure (CDK) | ✅ DONE | Shared/per-agent stacks plus admin API/UI constructs |
 | **Lambda Layer** | ✅ DONE | `@swarm/layer` - AWS SDK, OpenAI deps |
 | Agent Templates | 🟡 PARTIAL | Templates live in DB; no repo templates. Import/export component is pending. |
-| Agent Configs | ⏳ NOT STARTED | No real agents configured yet |
-| **Admin API** | ✅ DONE | `@swarm/admin-api` - Chat handler, services, auth |
+| Agent Configs | ✅ DONE | Agents configurable via Admin UI; live agents running on Telegram |
+| **Admin API** | ✅ DONE | `@swarm/admin-api` - Chat handler, services, auth, Telegram webhook |
 | **Admin UI** | ✅ DONE | `@swarm/admin-ui` - React chat interface with multi-agent support |
 | **Admin Infra** | ✅ DONE | CDK constructs with optional custom domains |
 | **CI/CD** | ✅ DONE | GitHub Actions with layer bundling, CDK deploy, S3 sync |
 | **Secrets Management** | ✅ DONE | Write-only secrets with KMS encryption |
+| **Wallet Authentication** | ✅ DONE | Solana wallet sign-in via Phantom QR/browser extension |
+| **NFT Gating** | ✅ DONE | Gate NFT for agent creation; inhabitation/abandonment system |
+| **Voice Messages** | 🟡 PARTIAL | Voice tools added; TTS and transcription services configured |
 | **Wallet Generation** | 🟡 PARTIAL | Solana implemented; Ethereum disabled pending ethers/viem |
-| **Logs API** | 🟡 PARTIAL | `GET /agents/{id}/logs` exists; UI + standardized log schema pending. |
+| **Logs API** | 🟡 PARTIAL | `GET /agents/{id}/logs` exists; UI panel implemented (`AgentLogsPanel.tsx`) |
 | **MCP Tool Registry + Server** | 🟡 PARTIAL | Registry package created; agent scoping + registration workflow pending. |
+| **Media Generation** | ✅ DONE | Async image/video generation with webhook callbacks; Replicate integration |
+| **Property Research** | 🟡 PARTIAL | Tools and authorization prompts added; execution pending |
 | **Billing + Entitlements** | ⏳ NOT STARTED | Paid plan gating and subscription lifecycle. |
-| **Usage Metering** | ⏳ NOT STARTED | Per-agent usage tracking for billing and spend controls. |
+| **Usage Metering** | 🟡 PARTIAL | Trial credits implemented for image generation with daily recharge |
 | **Privacy + Retention Defaults** | ⏳ NOT STARTED | Stateless free tier and opt-in durable memory. |
-| Tests | 🟡 PARTIAL | Vitest coverage in admin-api/core; no end-to-end tests |
+| Tests | 🟡 PARTIAL | Vitest coverage in admin-api/core; chat tool routing tests added |
 
 ### Admin Interface Features
 
 | Feature | Status | Description |
 |---------|--------|-------------|
 | Cloudflare Access Auth | ✅ | JWT verification in handlers; policies managed in Cloudflare |
+| Wallet Authentication | ✅ | Solana wallet sign-in via Phantom (QR + browser extension) |
+| NFT Gating | ✅ | Gate NFT required for agent creation; inhabitation system |
 | Conversational Setup | ✅ | LLM-powered chat for agent configuration |
 | Agent CRUD | ✅ | Create, list, update, delete agents |
+| Agent Inhabitation | ✅ | Claim/release agents; one-to-one inhabitant model |
 | Platform Config | ✅ | Telegram/Twitter supported; Discord fields only |
 | Secret Storage | ✅ | Write-only, KMS-encrypted, Secrets Manager |
 | Global API Keys | ✅ | Shared keys with per-agent override |
 | Wallet Generation | 🟡 | Solana only; Ethereum disabled |
+| Voice Messages | 🟡 | Inbound/outbound voice; TTS + transcription tools |
 | Deploy Trigger | ❌ | Not implemented (no deploy hook yet) |
-| Logs UI | 🟡 | API exists; UI route not built yet |
+| Logs UI | ✅ | `AgentLogsPanel.tsx` component; API endpoint complete |
 | Import/Export Config | 🟡 | Templates stored in DB; add admin import/export workflow |
 | **Multi-Agent UI** | ✅ | Discord-like sidebar with agent list |
 | **Agent Avatars** | ✅ | DiceBear auto-generated avatars |
 | **Local Persistence** | ✅ | Zustand with localStorage persistence |
-| **Custom Domain** | 🟡 | Supported in CDK; deployment-dependent |
+| **Custom Domain** | ✅ | Supported in CDK; deployed at admin.rati.chat |
+| **Image Modal** | ✅ | Lightbox for viewing generated images |
+| **Tool Prompts** | ✅ | UI components for manual tool interactions |
+| **Theme Toggle** | ✅ | Dark/light mode support |
+| **Shared Chat** | ✅ | Multi-user group chat channels |
+| **Character Reference** | ✅ | Reference images for consistent image generation |
+| **Trial Credits** | ✅ | Daily recharge credits for image generation |
 
 ### Critical Path to MVP
 
@@ -66,16 +81,18 @@
 [x] Response Sender Handler
 [x] CDK Infrastructure (SharedInfrastructure + AgentConstruct)
 [x] Tool Definitions (send_message, react, ignore, wait, take_selfie)
+[x] Wallet Authentication (Solana sign-in via Phantom)
+[x] NFT Gating (Gate NFT for creation, inhabitation system)
+[x] Trial Credits (image generation with daily recharge)
+[x] First real agents running (Telegram bots live)
+[x] Voice message tools (transcription, TTS)
+[x] Async media generation (webhook callbacks)
 [ ] Billing + entitlements (paid plans, subscription lifecycle)
 [ ] Usage metering + spend controls (per-agent/tool usage tracking)
 [ ] Memory opt-in + retention defaults (stateless free tier)
 [ ] Deploy trigger from admin UI/API
-[ ] Logs schema + correlation IDs + logs UI
-[ ] Media callback contract (idempotent async jobs)
 [ ] Agent template workflow (DB-backed; import/export optional)
-[ ] First real agent config (firehorse, kyro, etc.)
-[ ] End-to-end Telegram test
-[ ] Deploy to AWS
+[ ] End-to-end automated tests
 ```
 
 ---

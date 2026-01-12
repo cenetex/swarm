@@ -16,12 +16,14 @@ Refactor `packages/admin-api/src/handlers/chat.ts` to use the OpenRouter SDK's `
 - Giant `switch` statement in `executeTool()` with 26 cases
 - Zod is already used for admin-api schemas in `packages/admin-api/src/types.ts` and Telegram webhook payload validation in `packages/admin-api/src/handlers/telegram-webhook.ts`, but admin chat tools are still JSON schema-based
 
-## Status Check (2026-01-10)
+## Status Check (2026-01-12)
 
-- No `packages/admin-api/src/tools/` directory yet
-- No `@openrouter/sdk` tool usage found in `packages/admin-api/src/handlers/chat.ts`
-- `AGENT_TOOLS` + `executeTool()` remain the primary definitions/execution path
-- Zod usage elsewhere exists (core tool definitions + zod-to-json conversion, handlers/web-chat/media-processor validation), but no admin chat tool schema migration detected
+- `packages/admin-api/src/tools/` directory **EXISTS** with files: `context-builder.ts`, `gallery.ts`, `index.ts`, `media.ts`, `models.ts`, `profile.ts`, `readonly.ts`, `schemas.ts`, `secrets.ts`, `tool-helper.ts`
+- `@openrouter/sdk` tool usage: partial adoption (manual tool handling updated in `processChat`)
+- Legacy `AGENT_TOOLS` + `executeTool()` remain the primary definitions/execution path in chat.ts
+- Zod schemas are used for tool input validation in the tools directory
+- Manual tool pause flows preserved for: `request_secret`, `request_model_selection`, upload URLs
+- Admin UI components exist for tool prompts: `ToolPrompts.tsx`
 
 ## Why Refactor?
 
