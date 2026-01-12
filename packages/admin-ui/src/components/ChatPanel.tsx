@@ -394,6 +394,35 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
         return;
       }
 
+      // Handle model selection updates
+      if (typeof resultObj.selectedModel === 'string') {
+        try {
+          const { getAgent, updateAgent: updateAgentApi } = await import('../api/agents');
+          const agent = await getAgent(activeAgent.id);
+          const currentConfig = agent.llmConfig || {
+            provider: 'openrouter',
+            model: resultObj.selectedModel,
+            temperature: 0.8,
+            maxTokens: 1024,
+            useGlobalKey: true,
+          };
+
+          await updateAgentApi(activeAgent.id, {
+            llmConfig: {
+              ...currentConfig,
+              model: resultObj.selectedModel,
+            },
+          });
+
+          updateAgent(activeAgent.id, { model: resultObj.selectedModel });
+          updateToolCallStatus();
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Failed to update model';
+          setError(errorMsg);
+        }
+        return;
+      }
+
       // Handle confirmation response
       if ('confirmed' in resultObj) {
         updateToolCallStatus();

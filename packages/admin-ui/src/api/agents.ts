@@ -3,6 +3,14 @@
  */
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
+export interface LlmConfig {
+  provider: string;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  useGlobalKey: boolean;
+}
+
 export interface AgentResponse {
   agentId: string;
   name: string;
@@ -33,6 +41,7 @@ export interface AgentResponse {
     username: string;
     enabled: boolean;
   };
+  llmConfig?: LlmConfig;
 }
 
 /**
@@ -95,7 +104,7 @@ export async function getAgent(agentId: string): Promise<AgentResponse> {
  */
 export async function updateAgent(
   agentId: string,
-  updates: Partial<Pick<AgentResponse, 'name' | 'description' | 'persona' | 'profileImage' | 'characterReference'>>
+  updates: Partial<Pick<AgentResponse, 'name' | 'description' | 'persona' | 'profileImage' | 'characterReference' | 'llmConfig'>>
 ): Promise<AgentResponse> {
   const response = await fetch(`${API_BASE}/agents/${agentId}`, {
     method: 'PUT',
