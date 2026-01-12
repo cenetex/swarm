@@ -36,13 +36,60 @@ export interface GateStatus {
   canAbandon: boolean;
 }
 
+export interface UnclaimedAgent {
+  agentId: string;
+  name: string;
+  description?: string;
+  avatarUrl?: string;
+  currentEra: number;
+}
+
+export interface InhabitationInfo {
+  isGhost: boolean;
+  inhabitsAgent: boolean;
+  agentId?: string;
+  agentName?: string;
+  avatarUrl?: string;
+  era?: number;
+  gateStatus?: GateStatus;
+}
+
+export interface CanAbandonResult {
+  canAbandon: boolean;
+  gateStatus: GateStatus;
+  inhabitedAgent: {
+    agentId: string;
+    name: string;
+    avatarUrl?: string;
+    currentEra: number;
+  } | null;
+}
+
+export interface AbandonResult {
+  success: boolean;
+  error?: string;
+  agentId?: string;
+  agentName?: string;
+  era?: number;
+  lineageMetadata?: {
+    agentId: string;
+    agentName: string;
+    era: number;
+    isGenesis: boolean;
+    abandonedAt: number;
+    inhabitantWallet: string;
+    avatarUrl?: string;
+  };
+  gateStatus?: GateStatus;
+}
+
 interface WalletAuthState {
   // Auth state
   isAuthenticated: boolean;
   isLoading: boolean;
   user: WalletUser | null;
   error: string | null;
-  
+
   // NFT gating state
   nftGateError: boolean;
   nftGateInfo: NFTGateInfo | null;
@@ -53,15 +100,18 @@ interface WalletAuthState {
   login: (signMessage: (message: Uint8Array) => Promise<Uint8Array>, publicKey: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
-  
-  // Agent ownership actions
-  claimAgent: (agentId: string) => Promise<{ success: boolean; error?: string; avatarUrl?: string }>;
-  releaseAgent: () => Promise<{ success: boolean; error?: string }>;
+
+  // Inhabitation actions
+  fetchUnclaimedAgents: () => Promise<UnclaimedAgent[]>;
+  getInhabitationStatus: () => Promise<InhabitationInfo | null>;
+  inhabitAgent: (agentId: string) => Promise<{ success: boolean; error?: string; avatarUrl?: string }>;
+  checkCanAbandon: () => Promise<CanAbandonResult | null>;
+  abandonAgent: (burnTxSignature: string) => Promise<AbandonResult>;
 }
 
 export const useWalletAuth = create<WalletAuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       isAuthenticated: false,
       isLoading: false,
       user: null,
@@ -85,7 +135,7 @@ export const useWalletAuth = create<WalletAuthState>()(
           }
 
           const data = await response.json();
-          
+
           if (data.authenticated && data.user) {
             set({
               isAuthenticated: true,
@@ -209,11 +259,57 @@ export const useWalletAuth = create<WalletAuthState>()(
       clearError: () => set({ error: null, nftGateError: false }),
 
       /**
-       * Claim ownership of an agent (inhabit avatar)
+       * Fetch list of unclaimed agents available for inhabitation
        */
-      claimAgent: async (agentId: string) => {
+      fetchUnclaimedAgents: async () => {
         try {
-          const response = await fetch(`${API_BASE}/auth/claim`, {
+          const response = await fetch(`${API_BASE}/auth/unclaimed-agents`, {
+            credentials: 'include',
+          });
+
+          if (!response.ok) {
+            console.error('[WalletAuth] Failed to fetch unclaimed agents');
+            return [];
+          }
+
+          const data = await response.json();
+          return data.agents || [];
+        } catch (error) {
+          console.error('[WalletAuth] Fetch unclaimed agents error:', error);
+          return [];
+        }
+      },
+
+      /**
+       * Get current inhabitation status (ghost vs avatar)
+       */
+      getInhabitationStatus: async () => {
+        const { isAuthenticated } = get();
+        if (!isAuthenticated) return null;
+
+        try {
+          const response = await fetch(`${API_BASE}/auth/inhabitation`, {
+            credentials: 'include',
+          });
+
+          if (!response.ok) {
+            console.error('[WalletAuth] Failed to get inhabitation status');
+            return null;
+          }
+
+          return await response.json();
+        } catch (error) {
+          console.error('[WalletAuth] Get inhabitation status error:', error);
+          return null;
+        }
+      },
+
+      /**
+       * Inhabit an unclaimed agent (FREE - no NFT required)
+       */
+      inhabitAgent: async (agentId: string) => {
+        try {
+          const response = await fetch(`${API_BASE}/auth/inhabit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ agentId }),
@@ -223,7 +319,7 @@ export const useWalletAuth = create<WalletAuthState>()(
           const data = await response.json();
 
           if (!response.ok) {
-            return { success: false, error: data.error || 'Failed to claim agent' };
+            return { success: false, error: data.error || 'Failed to inhabit agent' };
           }
 
           // Update user with new inhabited agent info
@@ -237,25 +333,65 @@ export const useWalletAuth = create<WalletAuthState>()(
 
           return { success: true, avatarUrl: data.avatarUrl };
         } catch (error) {
-          console.error('[WalletAuth] Claim agent error:', error);
-          return { success: false, error: 'Failed to claim agent' };
+          console.error('[WalletAuth] Inhabit agent error:', error);
+          return { success: false, error: 'Failed to inhabit agent' };
         }
       },
 
       /**
-       * Release ownership of current agent
+       * Check if user can abandon their current agent
+       * Requires holding at least 1 Gate NFT (which will be burned)
        */
-      releaseAgent: async () => {
+      checkCanAbandon: async () => {
+        const { isAuthenticated } = get();
+        if (!isAuthenticated) return null;
+
         try {
-          const response = await fetch(`${API_BASE}/auth/release`, {
+          const response = await fetch(`${API_BASE}/auth/can-abandon`, {
+            method: 'GET',
+            credentials: 'include',
+          });
+
+          if (!response.ok) {
+            console.error('[WalletAuth] Failed to check can abandon');
+            return null;
+          }
+
+          return await response.json();
+        } catch (error) {
+          console.error('[WalletAuth] Check can abandon error:', error);
+          return null;
+        }
+      },
+
+      /**
+       * Abandon the currently inhabited agent
+       * REQUIRES burning a Gate NFT first - pass the burn transaction signature
+       *
+       * Flow:
+       * 1. User burns Gate NFT via wallet (get signature)
+       * 2. Call this function with the burn signature
+       * 3. Backend verifies burn on-chain
+       * 4. Backend releases the agent
+       * 5. Returns lineage metadata for optional NFT minting
+       */
+      abandonAgent: async (burnTxSignature: string) => {
+        try {
+          const response = await fetch(`${API_BASE}/auth/abandon`, {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ burnTxSignature }),
             credentials: 'include',
           });
 
           const data = await response.json();
 
           if (!response.ok) {
-            return { success: false, error: data.error || 'Failed to release agent' };
+            return {
+              success: false,
+              error: data.error || 'Failed to abandon agent',
+              gateStatus: data.gateStatus,
+            };
           }
 
           // Clear inhabited agent from user
@@ -265,12 +401,20 @@ export const useWalletAuth = create<WalletAuthState>()(
               inhabitedAgentId: undefined,
               avatarUrl: undefined,
             } : null,
+            gateStatus: data.gateStatus || state.gateStatus,
           }));
 
-          return { success: true };
+          return {
+            success: true,
+            agentId: data.agentId,
+            agentName: data.agentName,
+            era: data.era,
+            lineageMetadata: data.lineageMetadata,
+            gateStatus: data.gateStatus,
+          };
         } catch (error) {
-          console.error('[WalletAuth] Release agent error:', error);
-          return { success: false, error: 'Failed to release agent' };
+          console.error('[WalletAuth] Abandon agent error:', error);
+          return { success: false, error: 'Failed to abandon agent' };
         }
       },
     }),
@@ -284,4 +428,3 @@ export const useWalletAuth = create<WalletAuthState>()(
     }
   )
 );
-

@@ -548,7 +548,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
               </button>
             )}
           </div>
-          {onOpenLogs && accessMode === 'admin' && (
+          {onOpenLogs && (accessMode === 'admin' || accessMode === 'chat') && (
             <button
               onClick={() => onOpenLogs(activeAgent.id)}
               className="px-3 py-2 rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] text-xs font-medium transition-colors"
