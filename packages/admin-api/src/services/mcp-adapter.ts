@@ -54,6 +54,31 @@ async function fetchWithTimeout(
  * Create MCP-compatible services for a specific agent
  */
 export function createMCPServices(_agentId: string, session: UserSession): AllServices {
+  const voiceEnabled = process.env.ENABLE_VOICE_TOOLS === 'true';
+  const voiceServices = voiceEnabled ? {
+    transcribeAudio: async () => {
+      throw new Error('Voice transcription not configured');
+    },
+    createVoiceSeed: async () => {
+      throw new Error('Voice seed generation not configured');
+    },
+    cloneVoiceFromSeed: async () => {
+      throw new Error('Voice cloning not configured');
+    },
+    createVoiceProfile: async () => {
+      throw new Error('Voice profile creation not configured');
+    },
+    setActiveVoiceProfile: async () => {
+      throw new Error('Voice profile updates not configured');
+    },
+    generateVoiceMessage: async () => {
+      throw new Error('Voice synthesis not configured');
+    },
+    sendVoiceMessage: async () => {
+      throw new Error('Voice messaging not configured');
+    },
+  } : undefined;
+
   return {
     // =========================================================================
     // Media Services
@@ -619,6 +644,11 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
         await media.deleteReferenceImage(agentId, imageId);
       },
     },
+
+    // =========================================================================
+    // Voice Services (optional)
+    // =========================================================================
+    voice: voiceServices,
 
     // =========================================================================
     // Telegram Services
