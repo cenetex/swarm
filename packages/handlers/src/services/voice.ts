@@ -7,7 +7,11 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const s3Client = new S3Client({});
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
-const VOICE_TTS_MODEL = process.env.VOICE_TTS_MODEL;
+
+// VOICE_TTS_MODEL: Used for voice cloning and TTS with a reference audio
+// Default: lucataco/xtts-v2 - popular voice cloning model (4.7M runs)
+const VOICE_TTS_MODEL = process.env.VOICE_TTS_MODEL || 'lucataco/xtts-v2';
+
 const OPENAI_TTS_MODEL = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
 const OPENAI_TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'alloy';
 const FETCH_TIMEOUT_MS = 10_000;

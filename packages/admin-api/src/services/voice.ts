@@ -26,8 +26,15 @@ const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
 const CDN_URL = process.env.CDN_URL;
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
 
-const STABLE_AUDIO_MODEL = process.env.STABLE_AUDIO_MODEL || process.env.VOICE_SEED_MODEL;
-const VOICE_TTS_MODEL = process.env.VOICE_TTS_MODEL;
+// Replicate models for voice generation
+// STABLE_AUDIO_MODEL: Used for generating seed audio from text prompts
+// Default: suno-ai/bark - text-to-audio model for speech/audio generation
+const STABLE_AUDIO_MODEL = process.env.STABLE_AUDIO_MODEL || process.env.VOICE_SEED_MODEL || 'suno-ai/bark';
+
+// VOICE_TTS_MODEL: Used for voice cloning and TTS with a reference audio
+// Default: lucataco/xtts-v2 - popular voice cloning model (4.7M runs)
+const VOICE_TTS_MODEL = process.env.VOICE_TTS_MODEL || 'lucataco/xtts-v2';
+
 const OPENAI_TTS_MODEL = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
 const OPENAI_TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'alloy';
 
@@ -305,10 +312,6 @@ export async function createVoiceSeed(params: {
   styleTags?: string[];
   negativeTags?: string[];
 }): Promise<{ assetId: string; url: string; durationMs?: number }> {
-  if (!STABLE_AUDIO_MODEL) {
-    throw new Error('Stable Audio model not configured');
-  }
-
   const apiKey = await getSecret(params.agentId, 'replicate_api_key');
   if (!apiKey) {
     throw new Error('Replicate API key not configured');
