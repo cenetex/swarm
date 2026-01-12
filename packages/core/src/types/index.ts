@@ -128,6 +128,7 @@ export interface VoiceConfig {
   speed?: number;
   pitch?: number;
   format?: 'ogg' | 'mp3' | 'wav';
+  referenceUrl?: string;
 }
 
 export interface MediaConfig {
@@ -703,6 +704,7 @@ export const VoiceConfigSchema = z.object({
   speed: z.number().optional(),
   pitch: z.number().optional(),
   format: z.enum(['ogg', 'mp3', 'wav']).optional(),
+  referenceUrl: z.string().optional(),
 });
 
 export const MediaConfigSchema = z.object({

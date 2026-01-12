@@ -87,6 +87,7 @@ export interface VoiceConfig {
   speed?: number;
   pitch?: number;
   format?: 'ogg' | 'mp3' | 'wav';
+  referenceUrl?: string;
 }
 
 export interface VoiceProfile {

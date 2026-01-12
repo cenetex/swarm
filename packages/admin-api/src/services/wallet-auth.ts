@@ -538,15 +538,13 @@ export async function verifyAndCreateSession(
     return { success: false, error: 'Invalid signature' };
   }
 
-  // 3. Check NFT gate
+  // 3. Check NFT gate - but don't block authentication
+  // Users without Orbs can still authenticate with limited access
   const nftGate = await checkNFTGate(publicKeyBase58);
+  
+  // Log gate status but proceed regardless
   if (!nftGate.allowed) {
-    console.log(`[WalletAuth] NFT gate failed for wallet=${publicKeyBase58.slice(0, 8)}...`);
-    return { 
-      success: false, 
-      error: 'You need to own an Orb NFT to access this app',
-      nftGate,
-    };
+    console.log(`[WalletAuth] No Orb NFT for wallet=${publicKeyBase58.slice(0, 8)}... (limited access)`);
   }
 
   // 4. Get or create user

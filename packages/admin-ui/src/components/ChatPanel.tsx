@@ -25,11 +25,18 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
   const activeAgent = useActiveAgent();
   const messages = useActiveChat();
   const { addMessage, updateMessage, removeMessage, clearChat, updateAgent, isLoading, setLoading, setError } = useAgentStore();
-  const { user: walletUser, isAuthenticated: isWalletAuthenticated } = useWalletAuth();
+  const { user: walletUser, isAuthenticated: isWalletAuthenticated, gateStatus } = useWalletAuth();
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Derive hasOrb from gateStatus
+  const hasOrb = (gateStatus?.nftsHeld ?? 0) > 0;
+
   // Determine access mode for this agent
+  // - 'browse': Not authenticated - read-only
+  // - 'limited': Authenticated but no Orb - can chat with limits
+  // - 'chat': Has Orb but not admin - full chat access
+  // - 'admin': Inhabiting or created - full admin access
   const accessMode = useMemo(() => {
     if (!isWalletAuthenticated || !walletUser) {
       return 'browse'; // Not authenticated - read-only
@@ -42,8 +49,12 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
       return 'admin'; // Full admin access
     }
     
+    if (!hasOrb) {
+      return 'limited'; // Can chat but with message limits
+    }
+    
     return 'chat'; // Can chat but no admin tools
-  }, [isWalletAuthenticated, walletUser, activeAgent]);
+  }, [isWalletAuthenticated, walletUser, activeAgent, hasOrb]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -515,8 +526,11 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
                 {accessMode === 'chat' && (
                   <span>Chat mode</span>
                 )}
+                {accessMode === 'limited' && (
+                  <span className="text-amber-400">Limited access • Get an Orb for full access</span>
+                )}
                 {accessMode === 'browse' && (
-                  <span>Browse mode - connect wallet to chat</span>
+                  <span>Connect wallet to chat</span>
                 )}
               </p>
             </div>
@@ -559,19 +573,31 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
         </div>
       </div>
 
-      {/* Input - hidden in browse mode */}
-      {accessMode !== 'browse' ? (
-        <div className="chat-input-container border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
-          <div className="max-w-3xl mx-auto">
-            <ChatInput onSend={handleSendMessage} disabled={isLoading} />
-          </div>
-        </div>
-      ) : (
+      {/* Input area - varies by access mode */}
+      {accessMode === 'browse' ? (
         <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-4">
           <div className="max-w-3xl mx-auto text-center">
             <p className="text-sm text-[var(--color-text-muted)]">
               Connect your wallet to chat with this agent
             </p>
+          </div>
+        </div>
+      ) : accessMode === 'limited' ? (
+        <div className="chat-input-container border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
+          <div className="max-w-3xl mx-auto space-y-2">
+            <ChatInput onSend={handleSendMessage} disabled={isLoading} />
+            <div className="flex items-center justify-center gap-2 text-xs text-amber-400">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>Limited mode • Get an Orb to unlock full access &amp; inhabit agents</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="chat-input-container border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
+          <div className="max-w-3xl mx-auto">
+            <ChatInput onSend={handleSendMessage} disabled={isLoading} />
           </div>
         </div>
       )}

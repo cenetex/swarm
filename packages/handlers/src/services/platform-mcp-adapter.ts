@@ -11,6 +11,7 @@ import type {
   StateService,
   MediaService,
 } from '@swarm/core';
+import { createVoiceServices } from './voice.js';
 
 export interface PlatformServicesConfig {
   agentId: string;
@@ -32,6 +33,13 @@ export interface PlatformServicesConfig {
  */
 export function createPlatformMCPServices(config: PlatformServicesConfig): AllServices {
   const { agentId, agentConfig, stateService, mediaService, wallets } = config;
+  const voiceServices = createVoiceServices({
+    agentId,
+    secrets: config.secrets,
+    voiceConfig: agentConfig.voice,
+    mediaBucket: config.mediaBucket,
+    cdnUrl: config.cdnUrl,
+  });
 
   return {
     // =========================================================================
@@ -218,5 +226,10 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         return { facts };
       },
     },
+
+    // =========================================================================
+    // Voice Services
+    // =========================================================================
+    voice: voiceServices,
   };
 }

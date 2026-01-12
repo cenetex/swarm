@@ -154,18 +154,6 @@ export const useWalletAuth = create<WalletAuthState>()(
 
           if (!verifyResponse.ok) {
             const errorData = await verifyResponse.json();
-            // Check if this is an NFT gate error
-            if (errorData.nftGate && !errorData.nftGate.allowed) {
-              set({
-                isAuthenticated: false,
-                user: null,
-                isLoading: false,
-                error: errorData.error || 'NFT required for access',
-                nftGateError: true,
-                nftGateInfo: errorData.nftGate,
-              });
-              throw new Error(errorData.error || 'NFT required for access');
-            }
             throw new Error(errorData.error || 'Authentication failed');
           }
 

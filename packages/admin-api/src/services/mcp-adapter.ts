@@ -4,7 +4,7 @@
  * Bridges existing admin-api services to MCP server service interfaces.
  * This allows the unified tool definitions to work with our current infrastructure.
  */
-import type { AllServices } from '@swarm/mcp-server';
+import type { AllServices, VoiceServices } from '@swarm/mcp-server';
 import type { UserSession, SecretType } from '../types.js';
 import * as agents from '../services/agents.js';
 import * as secrets from '../services/secrets.js';
@@ -17,6 +17,7 @@ import * as media from '../services/media.js';
 import * as gallery from '../services/gallery.js';
 import * as credits from '../services/credits.js';
 import * as mediaJobs from '../services/media-jobs.js';
+import * as voice from '../services/voice.js';
 
 // Timeout for external API calls
 const API_TIMEOUT_MS = 10_000;
@@ -54,28 +55,73 @@ async function fetchWithTimeout(
  * Create MCP-compatible services for a specific agent
  */
 export function createMCPServices(_agentId: string, session: UserSession): AllServices {
+  const agentId = _agentId;
   const voiceEnabled = process.env.ENABLE_VOICE_TOOLS === 'true';
-  const voiceServices = voiceEnabled ? {
-    transcribeAudio: async () => {
-      throw new Error('Voice transcription not configured');
+  const voiceServices: VoiceServices | undefined = voiceEnabled ? {
+    transcribeAudio: async (params: Parameters<VoiceServices['transcribeAudio']>[0]) => {
+      let audioUrl = params.url;
+      if (!audioUrl && params.platformFileId) {
+        const botToken = await getBotToken(agentId);
+        audioUrl = await telegram.getFileUrl(botToken, params.platformFileId);
+      }
+      return voice.transcribeAudio({
+        agentId,
+        assetId: params.assetId,
+        url: audioUrl,
+        language: params.language,
+        model: params.model,
+        diarize: params.diarize,
+      });
     },
-    createVoiceSeed: async () => {
-      throw new Error('Voice seed generation not configured');
+    createVoiceSeed: async (params: Parameters<VoiceServices['createVoiceSeed']>[0]) => {
+      return voice.createVoiceSeed({
+        agentId,
+        prompt: params.prompt,
+        durationMs: params.durationMs,
+        styleTags: params.styleTags,
+        negativeTags: params.negativeTags,
+      });
     },
-    cloneVoiceFromSeed: async () => {
-      throw new Error('Voice cloning not configured');
+    cloneVoiceFromSeed: async (params: Parameters<VoiceServices['cloneVoiceFromSeed']>[0]) => {
+      return voice.cloneVoiceFromSeed({
+        agentId,
+        seedAssetId: params.seedAssetId,
+        name: params.name,
+      });
     },
-    createVoiceProfile: async () => {
-      throw new Error('Voice profile creation not configured');
+    createVoiceProfile: async (params: Parameters<VoiceServices['createVoiceProfile']>[0]) => {
+      return voice.createVoiceProfile({
+        agentId,
+        seedPrompt: params.seedPrompt,
+        seedAssetId: params.seedAssetId,
+        voiceName: params.voiceName,
+      });
     },
-    setActiveVoiceProfile: async () => {
-      throw new Error('Voice profile updates not configured');
+    setActiveVoiceProfile: async (params: Parameters<VoiceServices['setActiveVoiceProfile']>[0]) => {
+      await voice.setActiveVoiceProfile(agentId, params.voiceId, session.email);
     },
-    generateVoiceMessage: async () => {
-      throw new Error('Voice synthesis not configured');
+    generateVoiceMessage: async (params: Parameters<VoiceServices['generateVoiceMessage']>[0]) => {
+      return voice.generateVoiceMessage({
+        agentId,
+        text: params.text,
+        voiceId: params.voiceId,
+        format: params.format,
+        speed: params.speed,
+        pitch: params.pitch,
+        emotion: params.emotion,
+        maxDurationMs: params.maxDurationMs,
+      });
     },
-    sendVoiceMessage: async () => {
-      throw new Error('Voice messaging not configured');
+    sendVoiceMessage: async (params: Parameters<VoiceServices['sendVoiceMessage']>[0]) => {
+      return voice.sendVoiceMessage({
+        agentId,
+        platform: params.platform,
+        conversationId: params.conversationId,
+        assetId: params.assetId,
+        url: params.url,
+        caption: params.caption,
+        replyToMessageId: params.replyToMessageId,
+      });
     },
   } : undefined;
 

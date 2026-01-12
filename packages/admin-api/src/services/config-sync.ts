@@ -78,6 +78,7 @@ interface AgentConfig {
     speed?: number;
     pitch?: number;
     format?: 'ogg' | 'mp3' | 'wav';
+    referenceUrl?: string;
   };
   tools: string[];
   secrets: string[];
@@ -125,6 +126,7 @@ function convertToAgentConfig(record: AgentRecord): AgentConfig {
       speed: record.voiceConfig.speed,
       pitch: record.voiceConfig.pitch,
       format: record.voiceConfig.format,
+      referenceUrl: record.voiceConfig.referenceUrl,
     } : undefined,
     tools: ['send_message', 'react', 'ignore', 'wait'],
     secrets: [],
