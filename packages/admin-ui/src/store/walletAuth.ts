@@ -43,6 +43,10 @@ interface WalletAuthState {
   login: (signMessage: (message: Uint8Array) => Promise<Uint8Array>, publicKey: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
+  
+  // Agent ownership actions
+  claimAgent: (agentId: string) => Promise<{ success: boolean; error?: string; avatarUrl?: string }>;
+  releaseAgent: () => Promise<{ success: boolean; error?: string }>;
 }
 
 export const useWalletAuth = create<WalletAuthState>()(
@@ -199,6 +203,72 @@ export const useWalletAuth = create<WalletAuthState>()(
       },
 
       clearError: () => set({ error: null, nftGateError: false }),
+
+      /**
+       * Claim ownership of an agent (inhabit avatar)
+       */
+      claimAgent: async (agentId: string) => {
+        try {
+          const response = await fetch(`${API_BASE}/auth/claim`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agentId }),
+            credentials: 'include',
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            return { success: false, error: data.error || 'Failed to claim agent' };
+          }
+
+          // Update user with new inhabited agent info
+          set((state) => ({
+            user: state.user ? {
+              ...state.user,
+              inhabitedAgentId: data.agentId,
+              avatarUrl: data.avatarUrl,
+            } : null,
+          }));
+
+          return { success: true, avatarUrl: data.avatarUrl };
+        } catch (error) {
+          console.error('[WalletAuth] Claim agent error:', error);
+          return { success: false, error: 'Failed to claim agent' };
+        }
+      },
+
+      /**
+       * Release ownership of current agent
+       */
+      releaseAgent: async () => {
+        try {
+          const response = await fetch(`${API_BASE}/auth/release`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            return { success: false, error: data.error || 'Failed to release agent' };
+          }
+
+          // Clear inhabited agent from user
+          set((state) => ({
+            user: state.user ? {
+              ...state.user,
+              inhabitedAgentId: undefined,
+              avatarUrl: undefined,
+            } : null,
+          }));
+
+          return { success: true };
+        } catch (error) {
+          console.error('[WalletAuth] Release agent error:', error);
+          return { success: false, error: 'Failed to release agent' };
+        }
+      },
     }),
     {
       name: 'wallet-auth',

@@ -43,13 +43,21 @@ interface AgentContext {
   persona?: string;
 }
 
+interface SenderContext {
+  walletAddress?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  inhabitedAgentId?: string;
+}
+
 /**
  * Send a chat message to the admin API
  */
 export async function sendChatMessage(
   message: string,
   history: Array<{ role: string; content: string }>,
-  agent?: AgentContext
+  agent?: AgentContext,
+  sender?: SenderContext
 ): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
@@ -70,6 +78,13 @@ export async function sendChatMessage(
         name: agent.name,
         description: agent.description,
         persona: agent.persona,
+      } : undefined,
+      // Pass sender context for message attribution
+      sender: sender ? {
+        walletAddress: sender.walletAddress,
+        displayName: sender.displayName,
+        avatarUrl: sender.avatarUrl,
+        inhabitedAgentId: sender.inhabitedAgentId,
       } : undefined,
     }),
   });

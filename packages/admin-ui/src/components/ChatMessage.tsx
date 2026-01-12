@@ -1,11 +1,49 @@
 import ReactMarkdown from 'react-markdown';
 import { useMemo } from 'react';
-import type { ChatMessage as ChatMessageType } from '../types';
+import type { ChatMessage as ChatMessageType, MessageSender } from '../types';
 import { ToolPrompt } from './ToolPrompts';
 
 interface ChatMessageProps {
   message: ChatMessageType;
   onToolSubmit?: (toolCallId: string, result: unknown) => void;
+}
+
+/**
+ * Render avatar for message sender
+ * - No sender or no wallet = ghost icon
+ * - Has inhabitedAgentId = agent avatar
+ * - Has walletAddress = wallet-based display
+ */
+function SenderAvatar({ sender }: { sender?: MessageSender }) {
+  // Ghost icon for anonymous/no wallet users
+  if (!sender || !sender.walletAddress) {
+    return (
+      <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0">
+        <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" opacity="0.5"/>
+        </svg>
+      </div>
+    );
+  }
+  
+  // Agent avatar if user inhabits an agent
+  if (sender.avatarUrl) {
+    return (
+      <img 
+        src={sender.avatarUrl} 
+        alt={sender.displayName || 'Avatar'} 
+        className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+      />
+    );
+  }
+  
+  // Wallet-connected user without avatar - show first 4 chars of wallet
+  const shortWallet = sender.walletAddress.slice(0, 4);
+  return (
+    <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center flex-shrink-0 text-white text-xs font-mono">
+      {shortWallet}
+    </div>
+  );
 }
 
 /**
@@ -246,30 +284,34 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3 lg:mb-4`}>
-      <div
-        className={`max-w-[90%] sm:max-w-[85%] lg:max-w-[80%] rounded-2xl px-3 lg:px-4 py-2.5 lg:py-3 ${
-          isUser
-            ? 'bg-brand-600 text-white rounded-br-md'
-            : 'bg-[var(--color-bg-secondary)] text-[var(--color-text)] rounded-bl-md border border-[var(--color-border)]'
-        }`}
-      >
-        {message.isLoading ? (
-          <div className="typing-indicator flex gap-1 py-2">
-            <span className="w-2 h-2 bg-[var(--color-text-muted)] rounded-full"></span>
-            <span className="w-2 h-2 bg-[var(--color-text-muted)] rounded-full"></span>
-            <span className="w-2 h-2 bg-[var(--color-text-muted)] rounded-full"></span>
-          </div>
-        ) : (
-          <>
-            {activeJobs.length > 0 && (
-              <div className="mb-2 rounded-lg border border-brand-500/20 bg-brand-500/10 px-3 py-2 text-sm text-brand-100">
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin w-4 h-4 border-2 border-brand-300 border-t-transparent rounded-full" />
-                  <span>
-                    Generating {activeJobs.length} {activeJobs.length === 1 ? activeJobs[0].type : 'items'}...
-                  </span>
+      <div className={`flex items-end gap-2 max-w-[90%] sm:max-w-[85%] lg:max-w-[80%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+        {/* Show avatar for user messages */}
+        {isUser && <SenderAvatar sender={message.sender} />}
+        
+        <div
+          className={`rounded-2xl px-3 lg:px-4 py-2.5 lg:py-3 ${
+            isUser
+              ? 'bg-brand-600 text-white rounded-br-md'
+              : 'bg-[var(--color-bg-secondary)] text-[var(--color-text)] rounded-bl-md border border-[var(--color-border)]'
+          }`}
+        >
+          {message.isLoading ? (
+            <div className="typing-indicator flex gap-1 py-2">
+              <span className="w-2 h-2 bg-[var(--color-text-muted)] rounded-full"></span>
+              <span className="w-2 h-2 bg-[var(--color-text-muted)] rounded-full"></span>
+              <span className="w-2 h-2 bg-[var(--color-text-muted)] rounded-full"></span>
+            </div>
+          ) : (
+            <>
+              {activeJobs.length > 0 && (
+                <div className="mb-2 rounded-lg border border-brand-500/20 bg-brand-500/10 px-3 py-2 text-sm text-brand-100">
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin w-4 h-4 border-2 border-brand-300 border-t-transparent rounded-full" />
+                    <span>
+                      Generating {activeJobs.length} {activeJobs.length === 1 ? activeJobs[0].type : 'items'}...
+                    </span>
+                  </div>
                 </div>
-              </div>
             )}
 
             {cleanedContent && (
@@ -395,6 +437,7 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
             )}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

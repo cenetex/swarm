@@ -143,6 +143,12 @@ export interface AgentRecord {
     maxTokens: number;
     useGlobalKey: boolean;
   };
+  
+  // Wallet ownership - the Solana wallet that "inhabits" this avatar
+  // 1:1 relationship: one wallet can only own one agent
+  ownerWallet?: string;
+  ownerClaimedAt?: number;
+  
   status: 'draft' | 'active' | 'paused' | 'deleted';
   createdAt: number;
   createdBy: string;
@@ -224,11 +230,22 @@ export const ToolCallSchema = z.object({
   }),
 });
 
+// Sender identity for chat messages
+export const MessageSenderSchema = z.object({
+  walletAddress: z.string().optional(),
+  displayName: z.string().optional(),
+  avatarUrl: z.string().optional(),
+  inhabitedAgentId: z.string().optional(),
+});
+
+export type MessageSender = z.infer<typeof MessageSenderSchema>;
+
 export const AdminChatMessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system', 'tool']),
   content: z.string(),
   tool_calls: z.array(ToolCallSchema).optional(),
   tool_call_id: z.string().optional(),
+  sender: MessageSenderSchema.optional(),
 });
 
 export const ToolResultSchema = z.object({
@@ -250,6 +267,7 @@ export const ChatRequestSchema = z.object({
   message: z.string().min(1),
   history: z.array(AdminChatMessageSchema).default([]),
   agent: AgentContextSchema.optional(),
+  sender: MessageSenderSchema.optional(),
 });
 
 // Infer types from schemas

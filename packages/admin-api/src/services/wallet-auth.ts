@@ -24,9 +24,6 @@ const SESSION_TTL_HOURS = 24;
 const CHALLENGE_TTL_MINUTES = 5;
 const DOMAIN = process.env.AUTH_DOMAIN || 'admin.rati.chat';
 
-// NFT gating - skip in development for easier testing
-const SKIP_NFT_GATE = process.env.NODE_ENV === 'development' || process.env.SKIP_NFT_GATE === 'true';
-
 // ============================================================================
 // Types
 // ============================================================================
@@ -479,18 +476,15 @@ export async function verifyAndCreateSession(
     return { success: false, error: 'Invalid signature' };
   }
 
-  // 3. Check NFT gate (unless skipped for dev)
-  let nftGate: NFTGateResult | undefined;
-  if (!SKIP_NFT_GATE) {
-    nftGate = await checkNFTGate(publicKeyBase58);
-    if (!nftGate.allowed) {
-      console.log(`[WalletAuth] NFT gate failed for wallet=${publicKeyBase58.slice(0, 8)}...`);
-      return { 
-        success: false, 
-        error: 'You need to own an Orb NFT to access this app',
-        nftGate,
-      };
-    }
+  // 3. Check NFT gate
+  const nftGate = await checkNFTGate(publicKeyBase58);
+  if (!nftGate.allowed) {
+    console.log(`[WalletAuth] NFT gate failed for wallet=${publicKeyBase58.slice(0, 8)}...`);
+    return { 
+      success: false, 
+      error: 'You need to own an Orb NFT to access this app',
+      nftGate,
+    };
   }
 
   // 4. Get or create user

@@ -2,7 +2,7 @@
  * Chat Panel - Main chat area for active agent
  */
 import { useEffect, useRef, useCallback } from 'react';
-import { useAgentStore, useActiveAgent, useActiveChat } from '../store/agents';
+import { useAgentStore, useActiveAgent, useActiveChat, useWalletAuth } from '../store';
 import { sendChatMessage, saveAgentSecret, pollJobCompletion, updateAgent as updateAgentApi, type JobStatus } from '../api';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -20,6 +20,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
   const activeAgent = useActiveAgent();
   const messages = useActiveChat();
   const { addMessage, updateMessage, removeMessage, clearChat, updateAgent, isLoading, setLoading, setError } = useAgentStore();
+  const { user: walletUser, isAuthenticated: isWalletAuthenticated } = useWalletAuth();
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -46,8 +47,16 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
     async (content: string) => {
       if (!activeAgent) return;
 
-      // Add user message
-      addMessage(activeAgent.id, { role: 'user', content });
+      // Build sender context from wallet auth
+      const sender = isWalletAuthenticated && walletUser ? {
+        walletAddress: walletUser.walletAddress,
+        displayName: walletUser.displayName,
+        avatarUrl: walletUser.avatarUrl,
+        inhabitedAgentId: walletUser.inhabitedAgentId,
+      } : undefined;
+
+      // Add user message with sender info
+      addMessage(activeAgent.id, { role: 'user', content, sender });
 
       // Add loading message
       addMessage(activeAgent.id, {
@@ -70,13 +79,13 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
             content: m.content,
           }));
 
-        // Send to API with agent context
+        // Send to API with agent context and sender info
         const response = await sendChatMessage(content, history, {
           id: activeAgent.id,
           name: activeAgent.name,
           description: activeAgent.description,
           persona: activeAgent.persona,
-        });
+        }, sender);
 
         // Update agent avatar if profile image was changed
         if (response.agentUpdates?.profileImageUrl) {

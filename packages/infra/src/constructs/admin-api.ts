@@ -509,10 +509,8 @@ export class AdminApiConstruct extends Construct {
         NODE_ENV: environment,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         AUTH_DOMAIN: adminDomain || 'admin.rati.chat',
-        // Helius for NFT gating - if not set, NFT gate is skipped
+        // Helius for NFT gating
         HELIUS_API_KEY: props.heliusApiKey || '',
-        // Skip NFT gate in development
-        SKIP_NFT_GATE: environment === 'development' ? 'true' : 'false',
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],

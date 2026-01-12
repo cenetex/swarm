@@ -20,6 +20,9 @@ export interface AgentConfig {
   secrets: AgentSecret[];
   createdAt: number;
   updatedAt: number;
+  // Wallet ownership
+  ownerWallet?: string;
+  ownerClaimedAt?: number;
 }
 
 export interface Agent extends AgentConfig {
@@ -51,6 +54,16 @@ export interface PendingJob {
   resultUrl?: string;
 }
 
+/**
+ * Sender identity for chat messages
+ */
+export interface MessageSender {
+  walletAddress?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  inhabitedAgentId?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -62,6 +75,8 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
   /** Pending async jobs (image/video generation) */
   pendingJobs?: PendingJob[];
+  /** Sender identity (for user messages) */
+  sender?: MessageSender;
 }
 
 export interface AgentChat {
