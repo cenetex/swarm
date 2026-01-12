@@ -75,6 +75,19 @@ export interface VoiceServices {
     agentId: string;
     voiceId: string;
   }) => Promise<void>;
+  /**
+   * Create a voice for the agent based on their personality/description
+   * Uses OpenAI TTS voice selection based on agent characteristics
+   */
+  createMyVoice: (params: {
+    agentId: string;
+    voiceStyle?: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
+    description?: string;
+  }) => Promise<{ voiceId: string; message: string }>;
+  /**
+   * Check if the agent has a voice configured
+   */
+  hasVoice: (agentId: string) => Promise<{ hasVoice: boolean; voiceId?: string; voiceStyle?: string }>;
   generateVoiceMessage: (params: {
     agentId: string;
     platform: string;
@@ -183,6 +196,37 @@ export const createVoiceTools = (services: VoiceServices) => [
         voiceId: input.voiceId,
       });
       return { success: true, data: { message: 'Active voice profile updated' } };
+    },
+  }),
+
+  defineTool({
+    name: 'create_my_voice',
+    description: 'Create or configure your voice for speaking. Use this if you want to send voice messages but haven\'t set up your voice yet. Choose a voice style that matches your personality.',
+    category: 'config',
+    inputSchema: z.object({
+      voiceStyle: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']).optional()
+        .describe('Voice style: alloy (neutral), echo (male), fable (storyteller), onyx (deep male), nova (female), shimmer (soft female)'),
+      description: z.string().optional()
+        .describe('Optional description of your desired voice characteristics'),
+    }),
+    execute: async (input, context): Promise<ToolResult> => {
+      const result = await services.createMyVoice({
+        agentId: context.agentId,
+        voiceStyle: input.voiceStyle,
+        description: input.description,
+      });
+      return { success: true, data: result };
+    },
+  }),
+
+  defineTool({
+    name: 'check_my_voice',
+    description: 'Check if you have a voice configured for speaking. Use this before trying to send voice messages.',
+    category: 'readonly',
+    inputSchema: z.object({}),
+    execute: async (_input, context): Promise<ToolResult> => {
+      const result = await services.hasVoice(context.agentId);
+      return { success: true, data: result };
     },
   }),
 

@@ -279,6 +279,21 @@ export function createVoiceServices(config: {
       throw new Error('Voice profile updates not supported in runtime handlers');
     },
 
+    createMyVoice: async () => {
+      throw new Error('Voice creation not supported in runtime handlers - use admin API');
+    },
+
+    hasVoice: async () => {
+      // Return voice config info from the current config
+      const hasVoiceProfile = !!(config.voiceConfig?.referenceUrl);
+      return {
+        hasVoice: hasVoiceProfile,
+        voiceId: undefined,
+        voiceStyle: config.voiceConfig?.ttsProvider,
+        referenceUrl: config.voiceConfig?.referenceUrl,
+      };
+    },
+
     generateVoiceMessage: async (params: {
       agentId: string;
       platform: string;

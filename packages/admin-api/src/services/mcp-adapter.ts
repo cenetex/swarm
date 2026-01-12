@@ -104,6 +104,17 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
     setActiveVoiceProfile: async (params: Parameters<VoiceServices['setActiveVoiceProfile']>[0]) => {
       await voice.setActiveVoiceProfile(agentId, params.voiceId, session.email);
     },
+    createMyVoice: async (params: Parameters<VoiceServices['createMyVoice']>[0]) => {
+      return voice.createMyVoice({
+        agentId: params.agentId,
+        voiceStyle: params.voiceStyle,
+        description: params.description,
+        updatedBy: session.email,
+      });
+    },
+    hasVoice: async (agentIdParam: string) => {
+      return voice.hasVoice(agentIdParam);
+    },
     generateVoiceMessage: async (params: Parameters<VoiceServices['generateVoiceMessage']>[0]) => {
       return voice.generateVoiceMessage({
         agentId,

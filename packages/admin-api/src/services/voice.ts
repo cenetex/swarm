@@ -399,6 +399,150 @@ export async function createVoiceProfile(params: {
   return { voiceId: clone.voiceId, status: clone.status };
 }
 
+/**
+ * Check if an agent has a voice configured
+ */
+export async function hasVoice(agentId: string): Promise<{
+  hasVoice: boolean;
+  voiceId?: string;
+  voiceStyle?: string;
+  referenceUrl?: string;
+}> {
+  const agent = await getAgent(agentId);
+  if (!agent) {
+    return { hasVoice: false };
+  }
+
+  const voiceConfig = agent.voiceConfig;
+  if (!voiceConfig?.enabled) {
+    return { hasVoice: false };
+  }
+
+  const hasVoiceProfile = !!(voiceConfig.defaultVoiceId || voiceConfig.referenceUrl);
+  
+  return {
+    hasVoice: hasVoiceProfile,
+    voiceId: voiceConfig.defaultVoiceId,
+    voiceStyle: voiceConfig.ttsProvider,
+    referenceUrl: voiceConfig.referenceUrl,
+  };
+}
+
+/**
+ * Create a voice for the agent based on their personality.
+ * 
+ * Pipeline:
+ * 1. Generate a "vibe" audio using Stable Audio based on agent description
+ * 2. Clone that audio into a voice profile (even if nonsense, it creates a voice)
+ * 3. Set as the agent's active voice for TTS
+ */
+export async function createMyVoice(params: {
+  agentId: string;
+  voiceStyle?: string;
+  description?: string;
+  updatedBy?: string;
+}): Promise<{ voiceId: string; message: string; previewUrl?: string }> {
+  const agent = await getAgent(params.agentId);
+  if (!agent) {
+    throw new Error(`Agent not found: ${params.agentId}`);
+  }
+
+  // Check if already has a voice
+  const existing = await hasVoice(params.agentId);
+  if (existing.hasVoice && existing.voiceId) {
+    return {
+      voiceId: existing.voiceId,
+      message: 'You already have a voice configured! Use generate_voice_message to speak.',
+      previewUrl: existing.referenceUrl,
+    };
+  }
+
+  // Build a voice prompt based on agent personality
+  const agentName = agent.name || 'Agent';
+  const agentDescription = params.description || agent.description || agent.persona || '';
+  
+  // Create a prompt for Stable Audio to generate a "voice vibe"
+  // We want something that sounds like speech patterns/intonation
+  const voicePrompt = buildVoicePrompt(agentName, agentDescription, params.voiceStyle);
+  
+  // Step 1: Generate seed audio using Stable Audio
+  let seedAssetId: string;
+  let seedUrl: string;
+  
+  try {
+    const seed = await createVoiceSeed({
+      agentId: params.agentId,
+      prompt: voicePrompt,
+      durationMs: 8000, // 8 seconds of audio for voice cloning
+      styleTags: ['voice', 'speaking', 'clear'],
+      negativeTags: ['music', 'noise', 'static', 'instrumental'],
+    });
+    seedAssetId = seed.assetId;
+    seedUrl = seed.url;
+  } catch (err) {
+    // If Stable Audio fails, we can still use a fallback
+    throw new Error(`Failed to generate voice seed: ${err instanceof Error ? err.message : 'Unknown error'}. Make sure STABLE_AUDIO_MODEL is configured.`);
+  }
+
+  // Step 2: Clone the voice from the seed audio
+  const clone = await cloneVoiceFromSeed({
+    agentId: params.agentId,
+    seedAssetId,
+    name: `${agentName}'s Voice`,
+  });
+
+  // Step 3: Set as active voice profile
+  await setActiveVoiceProfile(params.agentId, clone.voiceId, params.updatedBy || 'system');
+
+  return {
+    voiceId: clone.voiceId,
+    message: `Voice created successfully! I can now speak using generate_voice_message. My voice was crafted from: "${voicePrompt.substring(0, 100)}..."`,
+    previewUrl: seedUrl,
+  };
+}
+
+/**
+ * Build a voice prompt for Stable Audio based on agent characteristics
+ */
+function buildVoicePrompt(name: string, description: string, style?: string): string {
+  // Extract personality traits from description
+  const descLower = description.toLowerCase();
+  
+  // Detect gender/voice type hints
+  let voiceType = 'speaking voice';
+  if (descLower.includes('female') || descLower.includes('woman') || descLower.includes('girl') || descLower.includes('she ')) {
+    voiceType = 'female speaking voice';
+  } else if (descLower.includes('male') || descLower.includes('man') || descLower.includes('boy') || descLower.includes('he ')) {
+    voiceType = 'male speaking voice';
+  }
+  
+  // Detect tone hints
+  let tone = 'clear and natural';
+  if (descLower.includes('playful') || descLower.includes('fun') || descLower.includes('silly')) {
+    tone = 'playful and energetic';
+  } else if (descLower.includes('serious') || descLower.includes('professional')) {
+    tone = 'professional and articulate';
+  } else if (descLower.includes('calm') || descLower.includes('gentle') || descLower.includes('soft')) {
+    tone = 'calm and soothing';
+  } else if (descLower.includes('mysterious') || descLower.includes('enigmatic')) {
+    tone = 'mysterious and intriguing';
+  } else if (descLower.includes('wise') || descLower.includes('elder')) {
+    tone = 'wise and measured';
+  } else if (descLower.includes('young') || descLower.includes('youthful')) {
+    tone = 'youthful and vibrant';
+  }
+  
+  // Apply explicit style override if provided
+  if (style) {
+    tone = style;
+  }
+  
+  // Build the prompt
+  const prompt = `A ${voiceType}, ${tone}, speaking naturally with personality. The voice of ${name}. Clear vocal tones, expressive speech patterns, conversational delivery.`;
+  
+  return prompt;
+}
+
 export async function setActiveVoiceProfile(
   agentId: string,
   voiceId: string,
