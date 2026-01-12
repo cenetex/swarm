@@ -14,6 +14,7 @@ export { createReferenceImageTools, type ReferenceImageServices, type ReferenceI
 export { createDiagnosticsTools, type IssueSeverity, type IssueCategory } from './diagnostics.js';
 export { createTelegramTools, type TelegramServices, type TelegramUserProfile, type TelegramPhoto, type ChatModificationProposal } from './telegram.js';
 export { createTwitterTools, type TwitterServices, type TwitterConnectionStatus, type Tweet } from './twitter.js';
+export { createVoiceTools, type VoiceServices, type VoiceTranscription, type VoiceSeed, type VoiceCloneResult, type VoiceProfileResult, type VoiceMessage } from './voice.js';
 export {
   createDiscordTools,
   type DiscordServices,
@@ -35,6 +36,7 @@ import { createReferenceImageTools } from './reference.js';
 import { createDiagnosticsTools } from './diagnostics.js';
 import { createTelegramTools } from './telegram.js';
 import { createTwitterTools } from './twitter.js';
+import { createVoiceTools } from './voice.js';
 import { createDiscordTools } from './discord.js';
 import { createMemoryTools } from './memory.js';
 import type { ToolRegistry } from '../registry.js';
@@ -53,6 +55,7 @@ export interface AllServices {
   secrets: import('./secrets.js').SecretServices;
   jobs: import('./jobs.js').JobServices;
   reference: import('./reference.js').ReferenceImageServices;
+  voice?: import('./voice.js').VoiceServices;
   memory?: import('./memory.js').MemoryServices;
   telegram?: import('./telegram.js').TelegramServices;
   twitter?: import('./twitter.js').TwitterServices;
@@ -75,6 +78,9 @@ export function registerAllTools(
   registry.registerAll(createJobTools(services.jobs, services.jobCredits));
   registry.registerAll(createReferenceImageTools(services.reference));
   registry.registerAll(createDiagnosticsTools());
+  if (services.voice) {
+    registry.registerAll(createVoiceTools(services.voice));
+  }
   if (services.memory) {
     registry.registerAll(createMemoryTools(services.memory));
   }

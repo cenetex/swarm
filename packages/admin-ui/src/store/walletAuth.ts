@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import bs58 from 'bs58';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -122,9 +123,9 @@ export const useWalletAuth = create<WalletAuthState>()(
           // 2. Sign the challenge message
           const messageBytes = new TextEncoder().encode(message);
           const signatureBytes = await signMessage(messageBytes);
-          
-          // Convert signature to base58
-          const signature = base58Encode(signatureBytes);
+
+          // Convert signature to base58 using standard library
+          const signature = bs58.encode(signatureBytes);
 
           // 3. Verify signature with server
           const verifyResponse = await fetch(`${API_BASE}/auth/verify`, {
@@ -281,32 +282,3 @@ export const useWalletAuth = create<WalletAuthState>()(
   )
 );
 
-/**
- * Base58 encoding (Solana standard)
- */
-function base58Encode(bytes: Uint8Array): string {
-  const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-  
-  // Count leading zeros
-  let zeros = 0;
-  for (const byte of bytes) {
-    if (byte === 0) zeros++;
-    else break;
-  }
-
-  // Convert bytes to big integer
-  let num = BigInt(0);
-  for (const byte of bytes) {
-    num = num * BigInt(256) + BigInt(byte);
-  }
-
-  // Convert to base58
-  let result = '';
-  while (num > 0) {
-    result = ALPHABET[Number(num % BigInt(58))] + result;
-    num = num / BigInt(58);
-  }
-
-  // Add leading '1's for zeros
-  return '1'.repeat(zeros) + result;
-}
