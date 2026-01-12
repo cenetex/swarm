@@ -2,7 +2,7 @@
  * Wallet Login Button
  * Handles Solana wallet connection and authentication
  */
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useWalletAuth } from '../store/walletAuth';
@@ -30,29 +30,48 @@ export function WalletLogin({ className = '' }: WalletLoginProps) {
     clearError,
   } = useWalletAuth();
 
+  // Track if we've attempted login for current wallet connection
+  // Prevents infinite loop when login fails
+  const loginAttemptedRef = useRef<string | null>(null);
+
   // Check auth on mount
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
 
-  // When wallet connects, trigger login flow
+  // When wallet connects, trigger login flow (only once per connection)
   useEffect(() => {
     if (connected && publicKey && signMessage && !isAuthenticated && !isLoading) {
       const publicKeyStr = publicKey.toBase58();
+      
+      // Only attempt login if we haven't already tried for this wallet
+      if (loginAttemptedRef.current === publicKeyStr) {
+        return; // Already attempted, don't loop
+      }
+      
+      loginAttemptedRef.current = publicKeyStr;
       login(signMessage, publicKeyStr).catch((err) => {
         console.error('Login failed:', err);
+        // Keep loginAttemptedRef set to prevent retry loop
       });
+    }
+    
+    // Reset attempt tracker when wallet disconnects
+    if (!connected) {
+      loginAttemptedRef.current = null;
     }
   }, [connected, publicKey, signMessage, isAuthenticated, isLoading, login]);
 
   // Handle connect button click
   const handleConnect = useCallback(() => {
+    loginAttemptedRef.current = null; // Allow fresh attempt
     clearError();
     setVisible(true);
   }, [setVisible, clearError]);
 
   // Handle disconnect/logout
   const handleDisconnect = useCallback(async () => {
+    loginAttemptedRef.current = null;
     await logout();
     await disconnect();
   }, [logout, disconnect]);
