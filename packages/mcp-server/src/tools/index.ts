@@ -40,6 +40,7 @@ export {
 } from './nft.js';
 export {
   createPropertyTools,
+  buildPropertyContext,
   type PropertyServices,
   type PropertyAddress,
   type PropertyResearchJob,

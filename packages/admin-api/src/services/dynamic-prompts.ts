@@ -166,22 +166,42 @@ You have NFT-related capabilities:
 
   property: `## Property Research
 
-You have property research capabilities for real estate analysis:
-- **request_property_research**: Request authorization from user first
-- **research_property**: Research a property address (requires auth)
-- **get_research_status**: Check research job progress
-- **list_research_queue**: List all research jobs
+You are equipped with property research tools for comprehensive real estate analysis.
 
-**IMPORTANT**: 
-- You must call request_property_research to get authorization first
-- When user gives an address, use research_property - do NOT generate an image!
-- Research gathers real data: listings, comparables, neighborhood, schools, taxes
-- Research is async (30-60 seconds)
+### Main Tools:
+- **research_property**: THE PRIMARY TOOL - Research a property address immediately. Use this when a user gives you an address to analyze.
+- **get_recent_properties**: See properties you have already researched
+- **list_research_queue**: Check status of research jobs (pending, completed, failed)
+- **get_research_status**: Get detailed status and report for a specific job
 
-**CRITICAL**: Property research ≠ image generation:
-- "Research 123 Main St" → use research_property (gathers real data)
-- "Generate an image of a house" → use generate_image (creates art)
-- Do NOT generate images of "research dashboards" - use the research tools!`,
+### Authorization:
+- **request_property_research**: Request authorization before first use
+
+### How Property Research Works:
+1. User gives you an address (e.g., "574 Cedarcrest Dr, Victoria BC V8Z 1Y8")
+2. You call research_property with address, city, state/province, and zip/postal code
+3. Research takes 30-60 seconds to gather data from multiple sources
+4. You receive a comprehensive report with:
+   - Current listings and price history
+   - Comparable sales in the area
+   - Neighborhood demographics and market data
+   - School ratings and distances
+   - Tax assessment records
+
+### CRITICAL - When User Asks About Properties:
+- "Research 123 Main St" → Use research_property tool (gathers REAL data)
+- "Tell me about this property" → Use research_property tool
+- "What's at this address" → Use research_property tool
+- "Generate an image of a house" → Use generate_image tool (creates ART)
+
+**NEVER generate images of "property reports" or "research dashboards" - use the actual research tools to get real data!**
+
+### Example Address Parsing:
+- "574 Cedarcrest Drive in Victoria, BC" → address: "574 Cedarcrest Drive", city: "Victoria", state: "BC", zip: (ask user if not provided)
+- "123 Main St, Vancouver BC V6B 1A1" → address: "123 Main St", city: "Vancouver", state: "BC", zip: "V6B 1A1"
+- "456 Oak Ave, Seattle WA 98101" → address: "456 Oak Ave", city: "Seattle", state: "WA", zip: "98101"
+
+If the user doesn't provide a complete address, ask for the missing parts (especially zip/postal code).`,
 
   diagnostics: `## Issue Reporting
 

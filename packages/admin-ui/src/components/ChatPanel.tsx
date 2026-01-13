@@ -487,6 +487,28 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
         return;
       }
 
+      // Handle feature toggle updates
+      if (typeof resultObj.feature === 'string' && typeof resultObj.enabled === 'boolean') {
+        try {
+          const { toggleFeature } = await import('../api/agents');
+          await toggleFeature(
+            activeAgent.id,
+            resultObj.feature as 'media' | 'voice' | 'twitter' | 'telegram' | 'discord',
+            resultObj.enabled
+          );
+          updateToolCallStatus();
+
+          // Send follow-up to let the agent know the toggle was completed
+          const featureLabel = resultObj.feature.charAt(0).toUpperCase() + resultObj.feature.slice(1);
+          const statusLabel = resultObj.enabled ? 'enabled' : 'disabled';
+          await handleSendMessage(`I've ${statusLabel} ${featureLabel}.`);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Failed to toggle feature';
+          setError(errorMsg);
+        }
+        return;
+      }
+
       // Handle confirmation response
       if ('confirmed' in resultObj) {
         updateToolCallStatus();

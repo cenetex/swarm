@@ -777,6 +777,11 @@ export function ToolPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
     return <ModelSelectorPrompt toolCall={toolCall} onSubmit={onSubmit} disabled={disabled} />;
   }
 
+  // Check if this is a feature toggle response
+  if (args?.type === 'feature_toggle') {
+    return <FeatureTogglePrompt toolCall={toolCall} onSubmit={onSubmit} disabled={disabled} />;
+  }
+
   switch (toolCall.name) {
     case 'request_secret':
     case 'prompt_secret':

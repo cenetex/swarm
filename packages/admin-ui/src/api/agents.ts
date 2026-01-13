@@ -11,6 +11,23 @@ export interface LlmConfig {
   useGlobalKey: boolean;
 }
 
+export interface MediaConfig {
+  enabled: boolean;
+  provider?: string;
+}
+
+export interface VoiceConfig {
+  enabled: boolean;
+  provider?: string;
+}
+
+export interface PlatformConfig {
+  enabled: boolean;
+  botUsername?: string;
+  username?: string;
+  guildId?: string;
+}
+
 export interface AgentResponse {
   agentId: string;
   name: string;
@@ -20,6 +37,13 @@ export interface AgentResponse {
   createdAt: number;
   updatedAt: number;
   createdBy: string;
+  mediaConfig?: MediaConfig;
+  voiceConfig?: VoiceConfig;
+  platforms?: {
+    telegram?: PlatformConfig;
+    twitter?: PlatformConfig;
+    discord?: PlatformConfig;
+  };
   profileImage?: {
     url: string;
     s3Key?: string;
@@ -104,7 +128,7 @@ export async function getAgent(agentId: string): Promise<AgentResponse> {
  */
 export async function updateAgent(
   agentId: string,
-  updates: Partial<Pick<AgentResponse, 'name' | 'description' | 'persona' | 'profileImage' | 'characterReference' | 'llmConfig'>>
+  updates: Partial<Pick<AgentResponse, 'name' | 'description' | 'persona' | 'profileImage' | 'characterReference' | 'llmConfig' | 'mediaConfig' | 'voiceConfig' | 'platforms'>>
 ): Promise<AgentResponse> {
   const response = await fetch(`${API_BASE}/agents/${agentId}`, {
     method: 'PUT',
@@ -136,4 +160,36 @@ export async function deleteAgent(agentId: string): Promise<void> {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
     throw new Error(error.error || `HTTP ${response.status}`);
   }
+}
+
+/**
+ * Toggle a feature on/off for an agent
+ */
+export type ToggleableFeature = 'media' | 'voice' | 'twitter' | 'telegram' | 'discord';
+
+export async function toggleFeature(
+  agentId: string,
+  feature: ToggleableFeature,
+  enabled: boolean
+): Promise<AgentResponse> {
+  // Map feature names to their config paths
+  const updates: Partial<AgentResponse> = {};
+
+  switch (feature) {
+    case 'media':
+      updates.mediaConfig = { enabled };
+      break;
+    case 'voice':
+      updates.voiceConfig = { enabled };
+      break;
+    case 'twitter':
+    case 'telegram':
+    case 'discord':
+      updates.platforms = {
+        [feature]: { enabled },
+      };
+      break;
+  }
+
+  return updateAgent(agentId, updates);
 }

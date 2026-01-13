@@ -247,6 +247,50 @@ async function executeTool(
       };
     }
 
+    if (name === 'request_feature_toggle') {
+      if (!agentId) {
+        throw new Error('Agent context required for feature toggle');
+      }
+
+      const feature = args.feature as 'media' | 'voice' | 'twitter' | 'telegram';
+      const label = args.label as string;
+      const description = args.description as string | undefined;
+
+      // Get current feature state from agent config
+      const configResult = await toolClient.execute('get_my_model_config', {}, { agentId });
+      let currentState = false;
+
+      if (configResult.success) {
+        const config = configResult.data as Record<string, unknown>;
+        switch (feature) {
+          case 'media':
+            currentState = Boolean((config.mediaConfig as Record<string, unknown> | undefined)?.enabled);
+            break;
+          case 'voice':
+            currentState = Boolean((config.voiceConfig as Record<string, unknown> | undefined)?.enabled);
+            break;
+          case 'twitter':
+          case 'telegram': {
+            const platforms = config.platforms as Record<string, { enabled?: boolean }> | undefined;
+            currentState = Boolean(platforms?.[feature]?.enabled);
+            break;
+          }
+        }
+      }
+
+      return {
+        tool_call_id: toolCall.id,
+        role: 'tool',
+        content: JSON.stringify({
+          type: 'feature_toggle',
+          feature,
+          currentState,
+          label,
+          description,
+        }, null, 2),
+      };
+    }
+
     // Execute via MCP ToolClient
     const mcpResult = await toolClient.execute(name, args, { agentId: agentId || '' });
 
