@@ -16,7 +16,8 @@ export * from './gallery.js';
 export * from './features.js';
 
 import type { UserSession } from '../types.js';
-import type { Tool } from '@openrouter/sdk';
+import type { ToolDefinition } from './tool-helper.js';
+import type { ZodObject, ZodRawShape } from 'zod';
 
 // Import all tool creators
 import {
@@ -191,12 +192,12 @@ export function createAgentTools(
   agentId: string,
   session: UserSession,
   services: ToolServices
-): Tool[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): ToolDefinition<ZodObject<ZodRawShape>, any>[] {
   return [
     // Manual tools (no execute function, return to UI)
     requestSecret,
     requestModelSelection,
-    requestFeatureToggle,
     requestFeatureToggle,
 
     // Read-only tools
@@ -262,7 +263,6 @@ export const MANUAL_TOOL_NAMES = [
 export const UPLOAD_TOOL_NAMES = [
   'get_profile_upload_url',
   'get_reference_image_upload_url',
-  'set_profile_image', // When source='upload'
 ] as const;
 
 /**

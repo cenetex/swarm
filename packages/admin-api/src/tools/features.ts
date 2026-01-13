@@ -1,8 +1,8 @@
 /**
  * Feature toggle tools for enabling/disabling agent capabilities
  */
-import { tool } from '@openrouter/sdk';
-import { z } from 'zod/v4';
+import { z } from 'zod';
+import { defineTool } from './tool-helper.js';
 
 /**
  * Supported features that can be toggled
@@ -16,7 +16,7 @@ export type ToggleableFeature = typeof TOGGLEABLE_FEATURES[number];
  * The agent calls this when it detects user intent to enable/disable a feature.
  * The UI renders a toggle switch and returns the user's selection.
  */
-export const requestFeatureToggle = tool({
+export const requestFeatureToggle = defineTool({
   name: 'request_feature_toggle',
   description: 'Show the user a toggle switch to enable/disable a feature. Use when user expresses intent to turn on/off capabilities like media generation, voice, Twitter, or Telegram.',
   inputSchema: z.object({

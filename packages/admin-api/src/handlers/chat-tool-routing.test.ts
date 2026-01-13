@@ -36,6 +36,39 @@ function isUploadUrlResponse(args: Record<string, unknown>): boolean {
 }
 
 /**
+ * Check if a tool call is for an upload URL tool
+ * These tools return upload URLs and need UI interaction
+ */
+function isUploadUrlTool(toolCall: { function: { name: string; arguments?: string } }): boolean {
+  const uploadUrlTools = [
+    'get_profile_upload_url',
+    'get_reference_image_upload_url',
+    'get_character_reference_upload_url',
+  ];
+
+  const { name, arguments: args } = toolCall.function;
+
+  // Direct upload URL tools
+  if (uploadUrlTools.includes(name)) {
+    return true;
+  }
+
+  // set_profile_image with source='upload'
+  if (name === 'set_profile_image' && args) {
+    try {
+      const parsed = JSON.parse(args);
+      if (parsed.source === 'upload') {
+        return true;
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  return false;
+}
+
+/**
  * Extracted from ChatPanel.tsx - detection of character reference uploads
  * This mirrors the logic at ChatPanel.tsx:327-336
  */

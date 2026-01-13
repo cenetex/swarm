@@ -30,7 +30,6 @@ import * as credits from '../services/credits.js';
 import { getPlatformPromptSection } from '../services/platform-prompts.js';
 import * as sharedChannel from '../services/shared-channel.js';
 import * as initiative from '../services/initiative.js';
-import * as reactions from '../services/reactions.js';
 import { generateAgentStats } from '../services/agent-stats.js';
 import type { AgentRecord, SharedChannelRecord } from '../types.js';
 import {
@@ -1553,16 +1552,17 @@ async function handleMultiAgentMessage(
     }
 
     case 'react': {
-      // This agent lost initiative - maybe send a reaction via SQS
-      // Using await since handleReaction now uses SQS for reliable delivery
-      await reactions.handleReaction(
-        token,
+      // This agent lost initiative - SKIP silently instead of reacting
+      // The natural conversation flow will give this agent a chance to respond 
+      // when it sees the winner's message (or other agents' messages) come through.
+      // This prevents all bots from piling on a single user message.
+      logger.info('Lost initiative, skipping to allow natural flow', {
+        agentId,
         chatId,
         messageId,
-        text,
-        agentId
-      );
-      return { responded: false, reason: 'reacted' };
+        winnerId: initiativeResult.winnerId,
+      });
+      return { responded: false, reason: 'lost_initiative_skipped' };
     }
 
     case 'skip':

@@ -428,7 +428,9 @@ async function processChat(
       if (pauseToolCall.name === 'request_model_selection') {
         const family = typeof pendingArgs.family === 'string'
           ? pendingArgs.family
-          : undefined;
+          : typeof pendingArgs.preferredFamily === 'string'
+            ? pendingArgs.preferredFamily
+            : undefined;
         pendingArgs = await buildModelSelectorPayload(toolServices, family);
       } else if (pauseToolCall.name === 'request_feature_toggle') {
         pendingArgs = await buildFeatureTogglePayload(toolServices, pendingArgs);

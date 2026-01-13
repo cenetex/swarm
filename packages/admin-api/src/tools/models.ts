@@ -1,8 +1,8 @@
 /**
  * LLM Model management tools
  */
-import { tool } from '@openrouter/sdk';
-import { z } from 'zod/v4';
+import { z } from 'zod';
+import { defineTool } from './tool-helper.js';
 
 // Type for model info from OpenRouter
 interface OpenRouterModel {
@@ -23,7 +23,7 @@ interface OpenRouterModel {
  */
 export const listAvailableModels = (
   fetchModels: (family?: string) => Promise<OpenRouterModel[]>
-) => tool({
+) => defineTool({
   name: 'list_available_models',
   description: 'List available LLM models from OpenRouter that I can switch to. Returns model IDs, names, pricing, and context lengths.',
   inputSchema: z.object({
@@ -54,7 +54,7 @@ export const listAvailableModels = (
 export const changeMyModel = (
   _agentId: string,
   updateConfig: (config: { model?: string; temperature?: number; maxTokens?: number }) => Promise<void>
-) => tool({
+) => defineTool({
   name: 'change_my_model',
   description: 'Change my LLM model or settings. Use list_available_models first to see options.',
   inputSchema: z.object({
@@ -82,7 +82,7 @@ export const changeMyModel = (
 /**
  * Request model selection (manual - shows dropdown in UI)
  */
-export const requestModelSelection = tool({
+export const requestModelSelection = defineTool({
   name: 'request_model_selection',
   description: 'Show the user a dropdown to select a model. Use this when the user wants to choose interactively.',
   inputSchema: z.object({
