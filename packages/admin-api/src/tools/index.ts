@@ -5,7 +5,6 @@
  * Tools are created with agent context using the factory pattern.
  */
 export * from './schemas.js';
-export * from './tool-helper.js';
 
 // Export individual tool creators
 export * from './readonly.js';
@@ -17,7 +16,7 @@ export * from './gallery.js';
 export * from './features.js';
 
 import type { UserSession } from '../types.js';
-import type { ToolDefinition } from './tool-helper.js';
+import type { Tool } from '@openrouter/sdk';
 
 // Import all tool creators
 import {
@@ -192,12 +191,12 @@ export function createAgentTools(
   agentId: string,
   session: UserSession,
   services: ToolServices
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): ToolDefinition<any, any>[] {
+): Tool[] {
   return [
     // Manual tools (no execute function, return to UI)
     requestSecret,
     requestModelSelection,
+    requestFeatureToggle,
     requestFeatureToggle,
 
     // Read-only tools

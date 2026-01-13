@@ -1,8 +1,8 @@
 /**
  * Profile and wallet management tools
  */
-import { z } from 'zod';
-import { defineTool } from './tool-helper.js';
+import { tool } from '@openrouter/sdk';
+import { z } from 'zod/v4';
 import { ImageSourceSchema } from './schemas.js';
 import type { UserSession } from '../types.js';
 
@@ -13,7 +13,7 @@ export const updateMyProfile = (
   _agentId: string,
   _session: UserSession,
   updateProfile: (updates: { name?: string; description?: string; persona?: string }) => Promise<void>
-) => defineTool({
+) => tool({
   name: 'update_my_profile',
   description: 'Update my name, description, or persona',
   inputSchema: z.object({
@@ -41,7 +41,7 @@ export const createSolanaWallet = (
   _agentId: string,
   _session: UserSession,
   createWallet: (name: string) => Promise<{ publicKey: string; address: string }>
-) => defineTool({
+) => tool({
   name: 'create_solana_wallet',
   description: 'Create a new Solana wallet for myself. The private key is stored securely.',
   inputSchema: z.object({
@@ -63,7 +63,7 @@ export const createSolanaWallet = (
  */
 export const getWalletBalance = (
   getBalance: (publicKey: string) => Promise<{ sol: number; tokens: unknown[] }>
-) => defineTool({
+) => tool({
   name: 'get_wallet_balance',
   description: 'Get the SOL balance and token balances for a specific wallet',
   inputSchema: z.object({
@@ -90,7 +90,7 @@ export const setProfileImage = (
     fromGallery: (imageId: string) => Promise<{ success: boolean; url: string }>;
     getUploadUrl: () => Promise<{ uploadUrl: string; s3Key: string; publicUrl: string }>;
   }
-) => defineTool({
+) => tool({
   name: 'set_profile_image',
   description: 'Set my profile image. Can generate a new one, use a URL, select from gallery, or request the user to upload a file.',
   inputSchema: z.object({
@@ -137,7 +137,7 @@ export const setProfileImage = (
  */
 export const getProfileUploadUrl = (
   getUploadUrl: () => Promise<{ uploadUrl: string; s3Key: string; publicUrl: string }>
-) => defineTool({
+) => tool({
   name: 'get_profile_upload_url',
   description: 'Get a signed URL for the user to upload a profile image directly. Prefer using set_profile_image with source="upload" instead.',
   inputSchema: z.object({}),
@@ -157,7 +157,7 @@ export const getProfileUploadUrl = (
 export const saveUploadedProfileImage = (
   _agentId: string,
   saveProfile: (s3Key: string, publicUrl: string) => Promise<void>
-) => defineTool({
+) => tool({
   name: 'save_uploaded_profile_image',
   description: 'Save an already-uploaded image as my profile picture. Use this after the user has uploaded an image via the upload widget.',
   inputSchema: z.object({

@@ -471,12 +471,6 @@ async function sendTelegramMessage(token: string, agentId: string, chatId: numbe
     return null;
   }
 
-  const energyCheck = await credits.canUseEnergy(agentId, credits.ENERGY_COSTS.text);
-  if (!energyCheck.allowed) {
-    logger.warn('Energy limit hit for send_message', { agentId, reason: energyCheck.reason });
-    return null;
-  }
-
   try {
     const safeText = escapeTelegramMarkdownV2(text);
     const response = await fetchWithRetry(
@@ -499,10 +493,6 @@ async function sendTelegramMessage(token: string, agentId: string, chatId: numbe
       return null;
     }
     await credits.consumeCredit(agentId, 'send_message');
-    const energyConsumed = await credits.consumeEnergy(agentId, credits.ENERGY_COSTS.text);
-    if (!energyConsumed) {
-      logger.warn('Failed to consume energy for send_message', { agentId });
-    }
     const data = await response.json() as { result?: { message_id: number } };
     return data.result?.message_id || null;
   } catch (error) {

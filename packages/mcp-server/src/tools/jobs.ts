@@ -33,8 +33,15 @@ export interface CreditStatus {
   [key: string]: { used: number; limit: number; remaining: number };
 }
 
+export interface EnergyStatus {
+  current: number;
+  max: number;
+  nextRefillIn: number;
+}
+
 export interface CreditServices {
   getToolStatus: (agentId: string) => Promise<CreditStatus | Record<string, unknown>>;
+  getEnergyStatus?: (agentId: string) => Promise<EnergyStatus>;
 }
 
 // ============================================================================
@@ -122,6 +129,33 @@ export const createJobTools = (
           generate_image: status.generate_image,
           generate_video: status.generate_video,
           generate_sticker: status.generate_sticker,
+        },
+      };
+    },
+  }),
+
+  defineTool({
+    name: 'get_energy_status',
+    description: 'Check my current energy level. Energy is used for expensive operations like voice (1⚡), images (2⚡), and videos (3⚡). You gain 1 energy per hour, up to max 10.',
+    category: 'readonly',
+    inputSchema: z.object({}),
+    execute: async (_input, context): Promise<ToolResult> => {
+      if (!creditServices.getEnergyStatus) {
+        return { success: false, error: 'Energy system not available' };
+      }
+      const status = await creditServices.getEnergyStatus(context.agentId);
+
+      return {
+        success: true,
+        data: {
+          current: status.current,
+          max: status.max,
+          nextRefillIn: status.nextRefillIn > 0 ? `${status.nextRefillIn} minutes` : 'Full',
+          costs: {
+            voice: 1,
+            image: 2,
+            video: 3,
+          },
         },
       };
     },

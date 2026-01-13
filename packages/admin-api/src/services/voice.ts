@@ -15,6 +15,7 @@ import type { AudioAsset, VoiceProfile } from '../types.js';
 import { _getSecretValueInternal } from './secrets.js';
 import { syncAgentConfig } from './config-sync.js';
 import { getAgent } from './agents.js';
+import * as credits from './credits.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
@@ -452,12 +453,18 @@ export async function createMyVoice(params: {
 
   // Check if already has a voice
   const existing = await hasVoice(params.agentId);
-  if (existing.hasVoice && existing.voiceId) {
+  if (existing.hasVoice) {
     return {
-      voiceId: existing.voiceId,
+      voiceId: existing.voiceId || 'existing',
       message: 'You already have a voice configured! Use generate_voice_message to speak.',
       previewUrl: existing.referenceUrl,
     };
+  }
+
+  // Check energy cost (voice generation costs 1 energy)
+  const energyCheck = await credits.canUseEnergy(params.agentId, credits.ENERGY_COSTS.voice);
+  if (!energyCheck.allowed) {
+    throw new Error(`Not enough energy to create voice. ${energyCheck.reason}`);
   }
 
   // Build a voice prompt based on agent personality
@@ -496,6 +503,9 @@ export async function createMyVoice(params: {
 
   // Step 3: Set as active voice profile
   await setActiveVoiceProfile(params.agentId, clone.voiceId, params.updatedBy || 'system');
+
+  // Consume energy after successful creation
+  await credits.consumeEnergy(params.agentId, credits.ENERGY_COSTS.voice);
 
   return {
     voiceId: clone.voiceId,
@@ -604,6 +614,12 @@ export async function generateVoiceMessage(params: {
     throw new Error(`Agent not found: ${params.agentId}`);
   }
 
+  // Check energy cost (voice message costs 1 energy)
+  const energyCheck = await credits.canUseEnergy(params.agentId, credits.ENERGY_COSTS.voice);
+  if (!energyCheck.allowed) {
+    throw new Error(`Not enough energy to generate voice message. ${energyCheck.reason}`);
+  }
+
   const voiceConfig = agent.voiceConfig;
   const format = params.format || voiceConfig?.format || 'ogg';
   const voiceId = params.voiceId || voiceConfig?.defaultVoiceId;
@@ -655,6 +671,9 @@ export async function generateVoiceMessage(params: {
       format: detectedFormat,
     });
 
+    // Consume energy after successful generation
+    await credits.consumeEnergy(params.agentId, credits.ENERGY_COSTS.voice);
+
     return { assetId: asset.assetId, url: asset.url, format: detectedFormat };
   }
 
@@ -694,6 +713,9 @@ export async function generateVoiceMessage(params: {
     source: 'tts',
     format,
   });
+
+  // Consume energy after successful generation
+  await credits.consumeEnergy(params.agentId, credits.ENERGY_COSTS.voice);
 
   return { assetId: asset.assetId, url: asset.url, format };
 }

@@ -9,6 +9,7 @@ import type {
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js';
 import * as chatHistory from '../services/chat-history.js';
+import { OpenRouter, fromChatMessages, toChatMessage, stepCountIs } from '@openrouter/sdk';
 import {
   ChatRequestSchema,
   type AdminChatMessage,
@@ -16,40 +17,17 @@ import {
   type ToolResult,
   type UserSession,
 } from '../types.js';
-import {
-  ToolRegistry,
-  createToolClient,
-  registerAllTools,
-} from '@swarm/mcp-server';
 import { logger } from '@swarm/core';
-import { createMCPServices } from '../services/mcp-adapter.js';
-import { buildDynamicSystemPrompt, detectEnabledCategories, type ToolCategory } from '../services/dynamic-prompts.js';
+import { buildDynamicSystemPrompt, type ToolCategory } from '../services/dynamic-prompts.js';
 import { recordError } from '../services/auto-issues.js';
+import { createAgentTools, isPauseForInputTool, type ToolServices } from '../tools/index.js';
+import { createToolServices } from '../tools/services.js';
 
-const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
 
 // Timeout settings
 const LLM_TIMEOUT_MS = 60_000; // 60 seconds for LLM calls (can be slow)
-
-/**
- * Fetch with timeout using AbortController
- */
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit,
-  timeoutMs: number
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
 
 // Cache the API key after first fetch
 let cachedApiKey: string | null = null;
@@ -90,6 +68,20 @@ async function getLlmApiKey(): Promise<string> {
 
   logger.info('LLM API key loaded', { keyPrefix: cachedApiKey.substring(0, 10) });
   return cachedApiKey!;
+}
+
+let cachedOpenRouter: OpenRouter | null = null;
+
+function getOpenRouterClient(): OpenRouter {
+  if (!cachedOpenRouter) {
+    cachedOpenRouter = new OpenRouter({
+      apiKey: getLlmApiKey,
+      httpReferer: 'https://swarm.admin',
+      xTitle: 'Swarm Admin',
+      timeoutMs: LLM_TIMEOUT_MS,
+    });
+  }
+  return cachedOpenRouter;
 }
 
 /**
@@ -160,261 +152,139 @@ function buildSystemPrompt(agent?: AgentContext): string {
   return `You are a Swarm agent assistant. Please select an agent to chat with.`;
 }
 
-/**
- * Execute a tool call using MCP ToolClient
- * Agent-centric: all operations use the agent's own ID from context
- */
-async function executeTool(
-  toolCall: ToolCall,
-  toolClient: ReturnType<typeof createToolClient>,
-  agentContext?: AgentContext
-): Promise<ToolResult> {
-  const { name, arguments: argsString } = toolCall.function;
-
-  try {
-    // Handle empty or undefined arguments (common for tools with no parameters)
-    const args = argsString && argsString.trim() ? JSON.parse(argsString) : {};
-
-    // Most tools require agent context
-    if (!agentContext && !['request_secret'].includes(name)) {
-      throw new Error('Agent context required for this operation');
-    }
-
-    const agentId = agentContext?.id;
-
-    // Handle manual tools that need UI interaction (request_secret, set_profile_image with upload)
-    if (name === 'request_secret') {
-      return {
-        tool_call_id: toolCall.id,
-        role: 'tool',
-        content: JSON.stringify({
-          type: 'secret_request',
-          ...args,
-          agentId,
-        }, null, 2),
-      };
-    }
-
-    if (name === 'set_profile_image' && args.source === 'upload') {
-      return {
-        tool_call_id: toolCall.id,
-        role: 'tool',
-        content: JSON.stringify({
-          type: 'profile_upload_request',
-          agentId,
-        }, null, 2),
-      };
-    }
-
-    if (name === 'request_model_selection') {
-      if (!toolClient || !agentId) {
-        throw new Error('Tool client not initialized');
-      }
-
-      const family = typeof args.family === 'string'
-        ? args.family
-        : typeof args.preferredFamily === 'string'
-          ? args.preferredFamily
-          : undefined;
-
-      const listResult = await toolClient.execute('list_available_models', family ? { family } : {}, { agentId });
-      const configResult = await toolClient.execute('get_my_model_config', {}, { agentId });
-
-      const models = listResult.success
-        ? Array.isArray(listResult.data)
-          ? listResult.data
-          : Array.isArray((listResult.data as { models?: unknown })?.models)
-            ? (listResult.data as { models: Array<{ id: string; name: string }> }).models
-            : []
-        : [];
-      const currentModel = configResult.success
-        ? typeof (configResult.data as { model?: string } | undefined)?.model === 'string'
-          ? (configResult.data as { model?: string }).model
-          : typeof (configResult.data as { config?: { model?: string } } | undefined)?.config?.model === 'string'
-            ? (configResult.data as { config: { model?: string } }).config.model
-            : undefined
-        : undefined;
-
-      return {
-        tool_call_id: toolCall.id,
-        role: 'tool',
-        content: JSON.stringify({
-          type: 'model_selector',
-          models,
-          currentModel,
-          ...(family ? { instructions: `Showing models filtered by "${family}".` } : {}),
-        }, null, 2),
-      };
-    }
-
-    if (name === 'request_feature_toggle') {
-      if (!agentId) {
-        throw new Error('Agent context required for feature toggle');
-      }
-
-      const feature = args.feature as 'media' | 'voice' | 'twitter' | 'telegram';
-      const label = args.label as string;
-      const description = args.description as string | undefined;
-
-      // Get current feature state from agent config
-      const configResult = await toolClient.execute('get_my_model_config', {}, { agentId });
-      let currentState = false;
-
-      if (configResult.success) {
-        const config = configResult.data as Record<string, unknown>;
-        switch (feature) {
-          case 'media':
-            currentState = Boolean((config.mediaConfig as Record<string, unknown> | undefined)?.enabled);
-            break;
-          case 'voice':
-            currentState = Boolean((config.voiceConfig as Record<string, unknown> | undefined)?.enabled);
-            break;
-          case 'twitter':
-          case 'telegram': {
-            const platforms = config.platforms as Record<string, { enabled?: boolean }> | undefined;
-            currentState = Boolean(platforms?.[feature]?.enabled);
-            break;
-          }
-        }
-      }
-
-      return {
-        tool_call_id: toolCall.id,
-        role: 'tool',
-        content: JSON.stringify({
-          type: 'feature_toggle',
-          feature,
-          currentState,
-          label,
-          description,
-        }, null, 2),
-      };
-    }
-
-    // Execute via MCP ToolClient
-    const mcpResult = await toolClient.execute(name, args, { agentId: agentId || '' });
-
-    // Handle pending async jobs specially - don't expose jobId to LLM
-    // The jobId is hidden in metadata for the UI to extract
-    if (mcpResult.pendingJob) {
-      const friendlyType = mcpResult.pendingJob.type === 'video' ? 'video' : 'image';
-      return {
-        tool_call_id: toolCall.id,
-        role: 'tool',
-        content: JSON.stringify({
-          success: true,
-          message: `${friendlyType.charAt(0).toUpperCase() + friendlyType.slice(1)} generation started! I'll send it when it's ready.`,
-          // Hidden metadata for UI extraction (prefixed with _ to indicate internal)
-          _pendingJob: mcpResult.pendingJob,
-        }, null, 2),
-      };
-    }
-
-    return {
-      tool_call_id: toolCall.id,
-      role: 'tool',
-      content: JSON.stringify(mcpResult.success ? mcpResult.data : { error: true, message: mcpResult.error }, null, 2),
-    };
-  } catch (error) {
-    return {
-      tool_call_id: toolCall.id,
-      role: 'tool',
-      content: JSON.stringify({
-        error: true,
-        message: error instanceof Error ? error.message : 'Unknown error'
-      }),
-    };
+async function executeUiTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  tools: ReturnType<typeof createAgentTools>
+): Promise<Record<string, unknown>> {
+  const tool = tools.find(candidate => candidate.function.name === toolName);
+  if (!tool || tool.function.execute === undefined || tool.function.execute === false) {
+    throw new Error(`Tool ${toolName} is manual or not available`);
   }
+  const parsedArgs = tool.function.inputSchema.parse(args);
+  return await tool.function.execute(parsedArgs);
 }
 
-/**
- * Call the LLM API
- * Sanitizes messages to remove orphaned tool results that cause validation errors
- */
-async function callLLM(
-  messages: AdminChatMessage[],
-  tools: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }>,
-  agent?: AgentContext
-): Promise<{
-  message?: string;
-  toolCalls?: ToolCall[];
-}> {
-  const apiKey = await getLlmApiKey();
-  const systemPrompt = buildSystemPrompt(agent);
-
-  // Sanitize messages to ensure valid format (remove orphaned tool results)
-  const sanitizedMessages = sanitizeMessages(messages);
-
-  // Build request body - only include tools if there are any
-  const requestBody: Record<string, unknown> = {
-    model: LLM_MODEL,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      ...sanitizedMessages,
-    ],
-    max_tokens: 2048,
-  };
-
-  // Only add tools to request if we have some (empty array causes 400 errors)
-  if (tools.length > 0) {
-    requestBody.tools = tools;
-    requestBody.tool_choice = 'auto';
-  }
-
-  logger.info('LLM request', {
-    event: 'llm_request',
-    model: LLM_MODEL,
-    messageCount: sanitizedMessages.length,
-    toolsIncluded: tools.length > 0,
-    toolChoice: tools.length > 0 ? 'auto' : 'none',
-  });
-
-  const response = await fetchWithTimeout(
-    LLM_ENDPOINT,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://swarm.admin',
-        'X-Title': 'Swarm Admin',
-      },
-      body: JSON.stringify(requestBody),
-    },
-    LLM_TIMEOUT_MS
-  );
-
-  if (!response.ok) {
-    const text = await response.text();
-    logger.error('LLM API error', undefined, { status: response.status, responsePreview: text.slice(0, 500) });
-    throw new Error(`LLM API error: ${response.status} ${text}`);
-  }
-
-  const data = await response.json() as {
-    choices?: Array<{
-      message?: {
-        content?: string;
-        tool_calls?: ToolCall[];
-      };
-    }>;
-  };
-  const choice = data.choices?.[0];
-  
-  if (!choice) {
-    throw new Error('No response from LLM');
-  }
-
-  logger.info('LLM response', {
-    event: 'llm_response',
-    hasContent: !!choice.message?.content,
-    contentLength: choice.message?.content?.length || 0,
-    toolCallCount: choice.message?.tool_calls?.length || 0,
-    toolNames: choice.message?.tool_calls?.map(tc => tc.function?.name) || [],
-  });
+async function buildModelSelectorPayload(
+  services: ToolServices,
+  family?: string
+): Promise<Record<string, unknown>> {
+  const models = await services.fetchModels(family);
+  const config = await services.getAgentConfig();
+  const currentModel = typeof (config as { llmConfig?: { model?: string } } | undefined)?.llmConfig?.model === 'string'
+    ? (config as { llmConfig: { model: string } }).llmConfig.model
+    : undefined;
 
   return {
-    message: choice.message?.content,
-    toolCalls: choice.message?.tool_calls,
+    type: 'model_selector',
+    models: models.map(model => ({
+      id: model.id,
+      name: model.name,
+      pricing: model.pricing ? {
+        prompt: Number(model.pricing.prompt),
+        completion: Number(model.pricing.completion),
+      } : undefined,
+      contextLength: model.context_length,
+      provider: model.id.split('/')[0] || 'other',
+    })),
+    currentModel,
+    ...(family ? { instructions: `Showing models filtered by "${family}".` } : {}),
+  };
+}
+
+async function buildFeatureTogglePayload(
+  services: ToolServices,
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const feature = args.feature as 'media' | 'voice' | 'twitter' | 'telegram';
+  const label = args.label as string;
+  const description = args.description as string | undefined;
+  const config = await services.getAgentConfig();
+
+  let currentState = false;
+  const agentConfig = config as Record<string, unknown> | null | undefined;
+  if (agentConfig) {
+    switch (feature) {
+      case 'media':
+        currentState = Boolean((agentConfig.mediaConfig as Record<string, unknown> | undefined)?.enabled);
+        break;
+      case 'voice':
+        currentState = Boolean((agentConfig.voiceConfig as Record<string, unknown> | undefined)?.enabled);
+        break;
+      case 'twitter':
+      case 'telegram': {
+        const platforms = agentConfig.platforms as Record<string, { enabled?: boolean }> | undefined;
+        currentState = Boolean(platforms?.[feature]?.enabled);
+        break;
+      }
+    }
+  }
+
+  return {
+    type: 'feature_toggle',
+    feature,
+    currentState,
+    label,
+    description,
+  };
+}
+
+function buildPendingToolResponse(toolName: string, args: Record<string, unknown>): string {
+  if (toolName === 'request_model_selection') {
+    return 'Please select a model:';
+  }
+  if (toolName === 'request_feature_toggle') {
+    return 'Please choose your preference below:';
+  }
+  if (toolName === 'request_secret') {
+    const label = typeof args.label === 'string' ? args.label : 'the requested secret';
+    return `Please enter ${label}.`;
+  }
+  if (toolName === 'get_profile_upload_url' || toolName === 'get_reference_image_upload_url' || toolName === 'set_profile_image') {
+    return 'Please upload your image:';
+  }
+  return 'Please provide the requested input.';
+}
+
+type SdkToolCall = {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+};
+
+function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: string; content: string; toolCallId?: string }> {
+  return messages.map(message => {
+    if (message.role === 'tool') {
+      return {
+        role: 'tool',
+        content: message.content,
+        toolCallId: message.tool_call_id,
+      };
+    }
+    return {
+      role: message.role,
+      content: message.content,
+    };
+  });
+}
+
+function buildModelInput(systemPrompt: string, messages: AdminChatMessage[]) {
+  const sanitizedMessages = sanitizeMessages(messages);
+  const inputMessages = [
+    { role: 'system', content: systemPrompt },
+    ...sanitizedMessages,
+  ];
+  return fromChatMessages(toSdkMessages(inputMessages));
+}
+
+function toAdminToolCall(toolCall: SdkToolCall): ToolCall {
+  return {
+    id: toolCall.id,
+    type: 'function',
+    function: {
+      name: toolCall.name,
+      arguments: JSON.stringify(toolCall.arguments ?? {}),
+    },
   };
 }
 
@@ -500,57 +370,18 @@ async function processChat(
     arguments: Record<string, unknown>;
   };
 }> {
-  // Create MCP ToolClient for this agent context
   const agentId = agent?.id;
-  let toolClient: ReturnType<typeof createToolClient> | null = null;
-  let enabledCategories: ToolCategory[] | undefined;
-  
-  if (agentId) {
-    const registry = new ToolRegistry();
-    const mcpServices = createMCPServices(agentId, session);
-    registerAllTools(registry, mcpServices);
-    toolClient = createToolClient(registry, 'admin-ui');
-    
-    // Detect which tool categories are enabled based on available services
-    enabledCategories = detectEnabledCategories({
-      voice: !!mcpServices.voice,
-      memory: !!mcpServices.memory,
-      telegram: !!mcpServices.telegram,
-      twitter: !!mcpServices.twitter,
-      discord: !!mcpServices.discord,
-      nft: !!mcpServices.nft,
-      property: !!mcpServices.property,
-    });
-    
-    // Update agent context with enabled categories
-    if (agent) {
-      agent.enabledCategories = enabledCategories;
-    }
-    
-    logger.info('Enabled tool categories', {
-      event: 'enabled_categories',
-      agentId,
-      categories: enabledCategories,
-    });
-  }
-  
-  // Get OpenAI-formatted tools with injected context
-  let openAITools: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> = [];
-  if (toolClient && agentId) {
-    try {
-      openAITools = await toolClient.getOpenAIToolsWithContext(agentId);
-    } catch (e) {
-      logger.error('Failed to get tools with context', e);
-      openAITools = toolClient.getOpenAITools();
-    }
-  }
+  const toolServices = agentId ? createToolServices(agentId, session) : null;
+  const tools = agentId && toolServices
+    ? createAgentTools(agentId, session, toolServices)
+    : [];
 
   // Log tools available for debugging
   logger.info('Tools created', {
     event: 'tools_created',
     agentId,
-    toolCount: openAITools.length,
-    toolNames: openAITools.map(t => t.function.name),
+    toolCount: tools.length,
+    toolNames: tools.map(t => t.function.name),
   });
 
   const messages: AdminChatMessage[] = [
@@ -558,240 +389,170 @@ async function processChat(
     { role: 'user', content: userMessage },
   ];
 
-  let response: string | undefined;
+  let response = '';
   let pendingToolCall: { id: string; name: string; arguments: Record<string, unknown> } | undefined;
   const allMedia: MediaItem[] = [];
   const pendingJobs: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string; purpose?: string }> = [];
   const agentUpdates: { profileImageUrl?: string } = {};
-  const failedTools = new Set<string>(); // Track failed tools to prevent infinite retry loops
-  let iterations = 0;
-  const maxIterations = 10; // Prevent infinite loops
+  const systemPrompt = buildSystemPrompt(agent);
+  const input = buildModelInput(systemPrompt, messages);
 
-  while (iterations < maxIterations) {
-    iterations++;
+  logger.info('LLM request', {
+    event: 'llm_request',
+    model: LLM_MODEL,
+    messageCount: messages.length,
+    toolsIncluded: tools.length > 0,
+  });
 
-    const llmResponse = await callLLM(messages, openAITools, agent);
-    
-    if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
-      // Check for manual/pause tools that need user input
-      // These tools don't have execute functions and require UI interaction
-      const manualToolNames = [
-        'request_secret',
-        'request_property_research',
-        'confirm_action',
-      ];
-      const manualTool = llmResponse.toolCalls.find(tc =>
-        manualToolNames.includes(tc.function.name)
-      );
+  const modelResult = getOpenRouterClient().callModel({
+    model: LLM_MODEL,
+    input,
+    maxOutputTokens: 2048,
+    ...(tools.length > 0 ? { tools, stopWhen: stepCountIs(10) } : {}),
+  });
 
-      if (manualTool) {
-        // Don't execute manual tools - return to the frontend for user input
-        let args: Record<string, unknown> = {};
-        try {
-          args = JSON.parse(manualTool.function.arguments || '{}');
-        } catch (e) {
-          logger.error('Failed to parse tool arguments', e, { toolName: manualTool.function.name });
-        }
-        pendingToolCall = {
-          id: manualTool.id,
-          name: manualTool.function.name,
-          arguments: args,
-        };
-        
-        logger.info('Manual tool detected, setting pendingToolCall', {
-          event: 'pending_tool_call_set',
-          toolId: manualTool.id,
-          toolName: manualTool.function.name,
-          argsKeys: Object.keys(args),
-        });
+  const toolCalls = await modelResult.getToolCalls();
+  const adminToolCalls = toolCalls.map(toAdminToolCall);
 
-        // Add the assistant message with the tool call (but not executed)
-        response = llmResponse.message || '';
-        messages.push({
-          role: 'assistant',
-          content: response,
-          tool_calls: llmResponse.toolCalls,
-        });
-        break;
+  logger.info('LLM response', {
+    event: 'llm_response',
+    hasToolCalls: toolCalls.length > 0,
+    toolCallCount: toolCalls.length,
+    toolNames: toolCalls.map(tc => tc.name),
+  });
+
+  const pauseToolCall = toolCalls.find(tc => isPauseForInputTool(tc.name, tc.arguments));
+  if (pauseToolCall && toolServices) {
+    let pendingArgs = pauseToolCall.arguments || {};
+    try {
+      if (pauseToolCall.name === 'request_model_selection') {
+        const family = typeof pendingArgs.family === 'string'
+          ? pendingArgs.family
+          : undefined;
+        pendingArgs = await buildModelSelectorPayload(toolServices, family);
+      } else if (pauseToolCall.name === 'request_feature_toggle') {
+        pendingArgs = await buildFeatureTogglePayload(toolServices, pendingArgs);
+      } else if (
+        pauseToolCall.name === 'get_profile_upload_url' ||
+        pauseToolCall.name === 'get_reference_image_upload_url' ||
+        pauseToolCall.name === 'set_profile_image'
+      ) {
+        pendingArgs = await executeUiTool(pauseToolCall.name, pendingArgs, tools);
       }
-
-      // Check for upload URL tools - these need user interaction to upload
-      const uploadUrlTool = llmResponse.toolCalls.find(tc => {
-        if (tc.function.name === 'get_profile_upload_url' ||
-            tc.function.name === 'get_reference_image_upload_url' ||
-            tc.function.name === 'get_character_reference_upload_url' ||
-            tc.function.name === 'request_model_selection') {
-          return true;
-        }
-        // Also check for set_profile_image or set_character_reference with source='upload'
-        if (tc.function.name === 'set_profile_image' || tc.function.name === 'set_character_reference') {
-          try {
-            const toolArgs = JSON.parse(tc.function.arguments || '{}');
-            return toolArgs.source === 'upload';
-          } catch {
-            return false;
-          }
-        }
-        return false;
+    } catch (error) {
+      logger.error('Failed to build pending tool payload', error, {
+        toolName: pauseToolCall.name,
       });
-
-      if (uploadUrlTool) {
-        // Execute the tool to get the UI payload (upload URL or model selector)
-        if (!toolClient) {
-          throw new Error('Tool client not initialized');
-        }
-        const toolResult = await executeTool(uploadUrlTool, toolClient, agent);
-        let toolArgs: Record<string, unknown> = {};
-        try {
-          toolArgs = JSON.parse(toolResult.content || '{}');
-        } catch (e) {
-          logger.error('Failed to parse tool result', e);
-        }
-
-        // Add assistant message with tool calls
-        messages.push({
-          role: 'assistant',
-          content: llmResponse.message || '',
-          tool_calls: llmResponse.toolCalls,
-        });
-
-        // Return the upload URL result as a pending tool call for the UI
-        pendingToolCall = {
-          id: uploadUrlTool.id,
-          name: uploadUrlTool.function.name,
-          arguments: toolArgs,
-        };
-        
-        // Use appropriate fallback message based on tool type
-        if (uploadUrlTool.function.name === 'request_model_selection') {
-          response = llmResponse.message || 'Please select a model:';
-        } else {
-          response = llmResponse.message || 'Please upload your image:';
-        }
-        break;
-      }
-      
-      // Add assistant message with tool calls
-      messages.push({
-        role: 'assistant',
-        content: llmResponse.message || '',
-        tool_calls: llmResponse.toolCalls,
-      });
-
-      // Execute all tool calls, but skip already-failed tools
-      const toolResults = await Promise.all(
-        llmResponse.toolCalls.map(async (tc) => {
-          const toolName = tc.function.name;
-          
-          // Skip tools that have already failed to prevent infinite loops
-          if (failedTools.has(toolName)) {
-            logger.info('Skipping retry of failed tool', { toolName });
-            return {
-              tool_call_id: tc.id,
-              role: 'tool' as const,
-              content: JSON.stringify({ 
-                error: true, 
-                message: 'This tool already failed. Please inform the user and do not retry.' 
-              }),
-            };
-          }
-          
-          if (!toolClient) {
-            return {
-              tool_call_id: tc.id,
-              role: 'tool' as const,
-              content: JSON.stringify({ error: true, message: 'Tool client not initialized' }),
-            };
-          }
-          const result = await executeTool(tc, toolClient, agent);
-          
-          // Track failed tools, but not transient errors
-          try {
-            const parsed = JSON.parse(result.content);
-            if (parsed.error) {
-              const errorMsg = parsed.message || '';
-              const isTransientError = 
-                errorMsg.includes('Rate limited') ||
-                errorMsg.includes('not found') ||
-                errorMsg.includes('Gallery is empty');
-              
-              if (!isTransientError) {
-                failedTools.add(toolName);
-                logger.info('Tool added to failedTools', { toolName, errorMsg });
-              } else {
-                logger.info('Tool failed with transient error (not blocking)', { toolName, errorMsg });
-              }
-            }
-          } catch {
-            // Not JSON, skip
-          }
-          
-          return result;
-        })
-      );
-
-      // Extract any media from the tool results
-      for (const result of toolResults) {
-        logger.info('Tool result', { toolCallId: result.tool_call_id, contentLength: result.content?.length || 0 });
-
-        // Extract pending jobs from _pendingJob metadata (hidden from LLM)
-        if (result.content && typeof result.content === 'string') {
-          try {
-            const parsed = JSON.parse(result.content);
-            if (parsed._pendingJob) {
-              pendingJobs.push({
-                jobId: parsed._pendingJob.jobId,
-                type: parsed._pendingJob.type || 'image',
-                prompt: parsed._pendingJob.prompt,
-                purpose: parsed._pendingJob.purpose,
-              });
-            }
-          } catch {
-            // Not JSON, skip
-          }
-        }
-      }
-
-      const mediaFromResults = extractMediaFromToolResults(toolResults);
-      logger.info('Extracted media items from tool results', { count: mediaFromResults.length });
-      allMedia.push(...mediaFromResults);
-
-      // Check for profile image updates from tool results
-      for (const tc of llmResponse.toolCalls) {
-        if (tc.function.name === 'set_profile_image' || tc.function.name === 'save_uploaded_profile_image') {
-          const matchingResult = toolResults.find(r => r.tool_call_id === tc.id);
-          if (matchingResult?.content && typeof matchingResult.content === 'string') {
-            try {
-              const parsed = JSON.parse(matchingResult.content);
-              if (parsed.success && (parsed.data?.url || parsed.url)) {
-                agentUpdates.profileImageUrl = parsed.data?.url || parsed.url;
-                logger.info('Profile image updated', { profileImageUrl: agentUpdates.profileImageUrl });
-              }
-            } catch {
-              // Not JSON, skip
-            }
-          }
-        }
-      }
-
-      // Add tool results
-      for (const result of toolResults) {
-        messages.push(result as AdminChatMessage);
-      }
-
-      // Continue the loop to get the next response
-      continue;
     }
 
-    // No tool calls, we have a final response
-    response = llmResponse.message || 'I apologize, but I couldn\'t generate a response.';
-    messages.push({ role: 'assistant', content: response });
-    break;
+    pendingToolCall = {
+      id: pauseToolCall.id,
+      name: pauseToolCall.name,
+      arguments: pendingArgs,
+    };
+
+    response = buildPendingToolResponse(pauseToolCall.name, pendingArgs);
+    messages.push({
+      role: 'assistant',
+      content: response,
+      tool_calls: adminToolCalls.length > 0 ? adminToolCalls : [toAdminToolCall(pauseToolCall)],
+    });
+
+    return {
+      response,
+      history: messages,
+      pendingToolCall,
+    };
+  }
+
+  const toolResults: ToolResult[] = [];
+  if (toolCalls.length > 0) {
+    for await (const item of modelResult.getNewMessagesStream()) {
+      if (item && typeof item === 'object' && 'type' in item && item.type === 'function_call_output') {
+        const outputItem = item as { callId?: string; output?: string };
+        if (outputItem.callId && typeof outputItem.output === 'string') {
+          toolResults.push({
+            tool_call_id: outputItem.callId,
+            role: 'tool',
+            content: outputItem.output,
+          });
+        }
+      }
+    }
+  }
+
+  const finalResponse = await modelResult.getResponse();
+  const assistantMessage = toChatMessage(finalResponse);
+  response = typeof assistantMessage.content === 'string' ? assistantMessage.content : '';
+
+  if (toolCalls.length > 0) {
+    messages.push({
+      role: 'assistant',
+      content: '',
+      tool_calls: adminToolCalls,
+    });
+    for (const result of toolResults) {
+      messages.push(result as AdminChatMessage);
+    }
   }
 
   if (!response) {
-    response = 'I apologize, but I exceeded the maximum number of tool calls. Please try again with a simpler request.';
-    messages.push({ role: 'assistant', content: response });
+    response = 'I apologize, but I couldn\'t generate a response.';
+  }
+  messages.push({ role: 'assistant', content: response });
+
+  const toolCallNames = new Map(toolCalls.map(tc => [tc.id, tc.name]));
+  for (const result of toolResults) {
+    logger.info('Tool result', { toolCallId: result.tool_call_id, contentLength: result.content?.length || 0 });
+
+    if (result.content && typeof result.content === 'string') {
+      try {
+        const parsed = JSON.parse(result.content);
+        const toolName = toolCallNames.get(result.tool_call_id);
+        if (parsed._pendingJob) {
+          pendingJobs.push({
+            jobId: parsed._pendingJob.jobId,
+            type: parsed._pendingJob.type || 'image',
+            prompt: parsed._pendingJob.prompt,
+            purpose: parsed._pendingJob.purpose,
+          });
+        } else if (parsed.jobId && (parsed.status === 'pending' || parsed.status === 'processing')) {
+          pendingJobs.push({
+            jobId: parsed.jobId,
+            type: toolName === 'generate_video'
+              ? 'video'
+              : toolName === 'generate_sticker'
+                ? 'sticker'
+                : 'image',
+            prompt: parsed.prompt,
+          });
+        }
+      } catch {
+        // Not JSON, skip
+      }
+    }
+  }
+
+  const mediaFromResults = extractMediaFromToolResults(toolResults);
+  logger.info('Extracted media items from tool results', { count: mediaFromResults.length });
+  allMedia.push(...mediaFromResults);
+
+  // Check for profile image updates from tool results
+  for (const result of toolResults) {
+    const toolName = toolCallNames.get(result.tool_call_id);
+    if (toolName === 'set_profile_image' || toolName === 'save_uploaded_profile_image') {
+      if (result.content && typeof result.content === 'string') {
+        try {
+          const parsed = JSON.parse(result.content);
+          if (parsed.success && (parsed.data?.url || parsed.url || parsed.resultUrl)) {
+            agentUpdates.profileImageUrl = parsed.data?.url || parsed.url || parsed.resultUrl;
+            logger.info('Profile image updated', { profileImageUrl: agentUpdates.profileImageUrl });
+          }
+        } catch {
+          // Not JSON, skip
+        }
+      }
+    }
   }
 
   logger.info('Final response', { 

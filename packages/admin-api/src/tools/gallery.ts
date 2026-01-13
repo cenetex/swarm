@@ -1,8 +1,8 @@
 /**
  * Gallery and reference image management tools
  */
-import { z } from 'zod';
-import { defineTool } from './tool-helper.js';
+import { tool } from '@openrouter/sdk';
+import { z } from 'zod/v4';
 import { MediaTypeSchema, ReferenceImageCategorySchema } from './schemas.js';
 
 // Types
@@ -31,7 +31,7 @@ export const getReferenceImageUploadUrl = (
     s3Key: string;
     publicUrl: string;
   }>
-) => defineTool({
+) => tool({
   name: 'get_reference_image_upload_url',
   description: 'Get a signed URL to upload a reference image. Categories: profile (avatar), character (for consistency in generations), style (style references), background (scene references), other.',
   inputSchema: z.object({
@@ -64,7 +64,7 @@ export const saveReferenceImage = (
     name: string;
     description?: string;
   }) => Promise<{ id: string }>
-) => defineTool({
+) => tool({
   name: 'save_reference_image',
   description: 'Save the metadata for a reference image after it has been uploaded',
   inputSchema: z.object({
@@ -91,7 +91,7 @@ export const saveReferenceImage = (
 export const listReferenceImages = (
   _agentId: string,
   listFn: (category?: string) => Promise<ReferenceImage[]>
-) => defineTool({
+) => tool({
   name: 'list_reference_images',
   description: 'List all reference images for this agent, optionally filtered by category',
   inputSchema: z.object({
@@ -112,7 +112,7 @@ export const listReferenceImages = (
 export const deleteReferenceImage = (
   _agentId: string,
   deleteFn: (imageId: string) => Promise<void>
-) => defineTool({
+) => tool({
   name: 'delete_reference_image',
   description: 'Delete a reference image by its ID',
   inputSchema: z.object({
@@ -133,7 +133,7 @@ export const deleteReferenceImage = (
 export const getMyGallery = (
   _agentId: string,
   listFn: (type?: string, limit?: number) => Promise<GalleryItem[]>
-) => defineTool({
+) => tool({
   name: 'get_my_gallery',
   description: 'View my generated images, videos, and stickers',
   inputSchema: z.object({
@@ -155,7 +155,7 @@ export const getMyGallery = (
 export const searchGallery = (
   _agentId: string,
   searchFn: (query: string, type?: string) => Promise<GalleryItem[]>
-) => defineTool({
+) => tool({
   name: 'search_gallery',
   description: 'Search my gallery by description or prompt keywords',
   inputSchema: z.object({
@@ -179,7 +179,7 @@ export const searchGallery = (
 export const sendGalleryImage = (
   _agentId: string,
   getItemFn: (imageId: string) => Promise<GalleryItem | null>
-) => defineTool({
+) => tool({
   name: 'send_gallery_image',
   description: 'Send an image from my gallery to the chat. Use this when the user asks to see a specific image from the gallery.',
   inputSchema: z.object({

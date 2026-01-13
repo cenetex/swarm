@@ -60,7 +60,8 @@ async function fetchWithTimeout(
  */
 export function createMCPServices(_agentId: string, session: UserSession): AllServices {
   const agentId = _agentId;
-  const voiceEnabled = process.env.ENABLE_VOICE_TOOLS === 'true';
+  // Voice tools enabled by default; set ENABLE_VOICE_TOOLS=false to disable
+  const voiceEnabled = process.env.ENABLE_VOICE_TOOLS !== 'false';
   const voiceServices: VoiceServices | undefined = voiceEnabled ? {
     transcribeAudio: async (params: Parameters<VoiceServices['transcribeAudio']>[0]) => {
       let audioUrl = params.url;
@@ -224,6 +225,9 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
         // Return structured credit data
         const status = await credits.getToolStatusStructured(agentId);
         return status;
+      },
+      getEnergyStatus: async (agentId) => {
+        return credits.getEnergyStatus(agentId);
       },
     },
 

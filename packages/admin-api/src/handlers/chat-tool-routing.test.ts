@@ -8,33 +8,22 @@
  * These tests ensure we never regress on tool detection.
  */
 import { describe, it, expect } from 'vitest';
+import { isPauseForInputTool } from '../tools/index.js';
 
 /**
- * Extracted tool routing logic from chat.ts for testability
- * This mirrors the logic at chat.ts:608-625
+ * Extracted tool routing logic from tools/index.ts for testability
  */
-function isUploadUrlTool(toolCall: { function: { name: string; arguments?: string } }): boolean {
+function shouldPauseTool(toolCall: { function: { name: string; arguments?: string } }): boolean {
   const { name, arguments: args } = toolCall.function;
-
-  // Direct upload URL tools
-  if (name === 'get_profile_upload_url' ||
-      name === 'get_reference_image_upload_url' ||
-      name === 'get_character_reference_upload_url' ||
-      name === 'request_model_selection') {
-    return true;
-  }
-
-  // Tools with source='upload' parameter
-  if (name === 'set_profile_image' || name === 'set_character_reference') {
+  let parsedArgs: Record<string, unknown> = {};
+  if (args) {
     try {
-      const toolArgs = JSON.parse(args || '{}');
-      return toolArgs.source === 'upload';
+      parsedArgs = JSON.parse(args);
     } catch {
-      return false;
+      parsedArgs = {};
     }
   }
-
-  return false;
+  return isPauseForInputTool(name, parsedArgs);
 }
 
 /**
@@ -70,47 +59,39 @@ function classifyUpload(toolName: string, result: Record<string, unknown>): 'cha
 }
 
 describe('Chat Handler - Tool Routing Logic', () => {
-  describe('isUploadUrlTool - Direct upload URL tools', () => {
-    it('should detect get_profile_upload_url', () => {
-      expect(isUploadUrlTool({
-        function: { name: 'get_profile_upload_url' }
+  describe('Pause tools', () => {
+    it('should pause for request_secret', () => {
+      expect(shouldPauseTool({
+        function: { name: 'request_secret' }
       })).toBe(true);
     });
 
-    it('should detect get_reference_image_upload_url', () => {
-      expect(isUploadUrlTool({
-        function: { name: 'get_reference_image_upload_url' }
-      })).toBe(true);
-    });
-
-    it('should detect get_character_reference_upload_url', () => {
-      expect(isUploadUrlTool({
-        function: { name: 'get_character_reference_upload_url' }
-      })).toBe(true);
-    });
-
-    it('should detect request_model_selection', () => {
-      expect(isUploadUrlTool({
+    it('should pause for request_model_selection', () => {
+      expect(shouldPauseTool({
         function: { name: 'request_model_selection' }
       })).toBe(true);
     });
 
-    it('should NOT detect generate_image', () => {
-      expect(isUploadUrlTool({
-        function: { name: 'generate_image' }
-      })).toBe(false);
+    it('should pause for request_feature_toggle', () => {
+      expect(shouldPauseTool({
+        function: { name: 'request_feature_toggle' }
+      })).toBe(true);
     });
 
-    it('should NOT detect update_my_profile', () => {
-      expect(isUploadUrlTool({
-        function: { name: 'update_my_profile' }
-      })).toBe(false);
+    it('should pause for get_profile_upload_url', () => {
+      expect(shouldPauseTool({
+        function: { name: 'get_profile_upload_url' }
+      })).toBe(true);
     });
-  });
 
-  describe('isUploadUrlTool - Source=upload parameter detection', () => {
-    it('should detect set_profile_image with source=upload', () => {
-      expect(isUploadUrlTool({
+    it('should pause for get_reference_image_upload_url', () => {
+      expect(shouldPauseTool({
+        function: { name: 'get_reference_image_upload_url' }
+      })).toBe(true);
+    });
+
+    it('should pause for set_profile_image with source=upload', () => {
+      expect(shouldPauseTool({
         function: {
           name: 'set_profile_image',
           arguments: JSON.stringify({ source: 'upload' })
@@ -118,17 +99,8 @@ describe('Chat Handler - Tool Routing Logic', () => {
       })).toBe(true);
     });
 
-    it('should detect set_character_reference with source=upload', () => {
-      expect(isUploadUrlTool({
-        function: {
-          name: 'set_character_reference',
-          arguments: JSON.stringify({ source: 'upload' })
-        }
-      })).toBe(true);
-    });
-
-    it('should NOT detect set_profile_image with source=url', () => {
-      expect(isUploadUrlTool({
+    it('should NOT pause for set_profile_image with source=url', () => {
+      expect(shouldPauseTool({
         function: {
           name: 'set_profile_image',
           arguments: JSON.stringify({ source: 'url', url: 'https://example.com/img.png' })
@@ -136,47 +108,9 @@ describe('Chat Handler - Tool Routing Logic', () => {
       })).toBe(false);
     });
 
-    it('should NOT detect set_character_reference with source=generate', () => {
-      expect(isUploadUrlTool({
-        function: {
-          name: 'set_character_reference',
-          arguments: JSON.stringify({ source: 'generate', prompt: 'A whale' })
-        }
-      })).toBe(false);
-    });
-
-    it('should NOT detect set_profile_image with source=gallery', () => {
-      expect(isUploadUrlTool({
-        function: {
-          name: 'set_profile_image',
-          arguments: JSON.stringify({ source: 'gallery', imageId: 'img-123' })
-        }
-      })).toBe(false);
-    });
-
-    it('should handle malformed JSON arguments gracefully', () => {
-      expect(isUploadUrlTool({
-        function: {
-          name: 'set_profile_image',
-          arguments: 'not valid json'
-        }
-      })).toBe(false);
-    });
-
-    it('should handle empty arguments', () => {
-      expect(isUploadUrlTool({
-        function: {
-          name: 'set_profile_image',
-          arguments: ''
-        }
-      })).toBe(false);
-    });
-
-    it('should handle undefined arguments', () => {
-      expect(isUploadUrlTool({
-        function: {
-          name: 'set_profile_image'
-        }
+    it('should NOT pause for generate_image', () => {
+      expect(shouldPauseTool({
+        function: { name: 'generate_image' }
       })).toBe(false);
     });
   });

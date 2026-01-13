@@ -94,6 +94,11 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         generate_video: { used: 0, limit: 10, remaining: 10 },
         generate_sticker: { used: 0, limit: 50, remaining: 50 },
       }),
+      getEnergyStatus: async () => ({
+        current: 10,
+        max: 10,
+        nextRefillIn: 0,
+      }),
     },
 
     // =========================================================================

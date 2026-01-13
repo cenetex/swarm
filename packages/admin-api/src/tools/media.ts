@@ -1,8 +1,8 @@
 /**
  * Media generation tools (image, video, sticker)
  */
-import { z } from 'zod';
-import { defineTool } from './tool-helper.js';
+import { tool } from '@openrouter/sdk';
+import { z } from 'zod/v4';
 import { ResolutionSchema, AspectRatioSchema } from './schemas.js';
 
 // Job result type
@@ -25,7 +25,7 @@ export const generateImage = (
     resolution?: string;
     aspectRatio?: string;
   }) => Promise<MediaJob>
-) => defineTool({
+) => tool({
   name: 'generate_image',
   description: 'Generate an image using Nano Banana Pro. This is async - returns a job ID immediately. The image will be saved to my gallery when complete.',
   inputSchema: z.object({
@@ -42,6 +42,7 @@ export const generateImage = (
       jobId: job.jobId,
       status: job.status,
       message: `Image generation started! Job ID: ${job.jobId}. Check status with get_job_status.`,
+      ...(job.resultUrl ? { resultUrl: job.resultUrl } : {}),
     };
   },
 });
@@ -56,7 +57,7 @@ export const generateVideo = (
     useProfileAsReference?: boolean;
     referenceImageId?: string;
   }) => Promise<MediaJob>
-) => defineTool({
+) => tool({
   name: 'generate_video',
   description: 'Generate a video from a text prompt. Can use reference images. This is async - I will notify when complete.',
   inputSchema: z.object({
@@ -70,6 +71,7 @@ export const generateVideo = (
       jobId: job.jobId,
       status: job.status,
       message: `Video generation started! Job ID: ${job.jobId}. Videos take longer - check status with get_job_status.`,
+      ...(job.resultUrl ? { resultUrl: job.resultUrl } : {}),
     };
   },
 });
@@ -83,7 +85,7 @@ export const generateSticker = (
     prompt?: string;
     sourceImageId?: string;
   }) => Promise<MediaJob>
-) => defineTool({
+) => tool({
   name: 'generate_sticker',
   description: 'Generate a sticker (transparent background image). Can create new or convert existing.',
   inputSchema: z.object({
@@ -98,7 +100,10 @@ export const generateSticker = (
     return {
       jobId: job.jobId,
       status: job.status,
-      message: `Sticker generation started! Job ID: ${job.jobId}.`,
+      message: job.status === 'completed'
+        ? 'Sticker generated.'
+        : `Sticker generation started! Job ID: ${job.jobId}.`,
+      ...(job.resultUrl ? { resultUrl: job.resultUrl } : {}),
     };
   },
 });

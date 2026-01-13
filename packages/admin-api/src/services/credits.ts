@@ -66,11 +66,20 @@ export const TOOL_CREDITS: Record<string, {
   },
 };
 
-export const ENERGY_DAILY_LIMIT = 1000;
+/**
+ * Energy system configuration
+ * Agents get 1 energy per hour, max 10
+ */
+export const ENERGY_MAX = 10;
+export const ENERGY_PER_HOUR = 1;
+
+/**
+ * Energy costs for expensive tools
+ */
 export const ENERGY_COSTS = {
-  text: 1,
-  image: 10,
-  video: 100,
+  voice: 1,
+  image: 2,
+  video: 3,
 } as const;
 
 /**
@@ -139,11 +148,11 @@ async function getOrCreateEnergyBucket(agentId: string): Promise<CreditBucket> {
     sk,
     agentId,
     toolName: 'energy',
-    credits: ENERGY_DAILY_LIMIT,
-    maxCredits: ENERGY_DAILY_LIMIT,
+    credits: ENERGY_MAX, // Start with full energy
+    maxCredits: ENERGY_MAX,
     lastRefillAt: now,
     dailyUsed: 0,
-    dailyLimit: ENERGY_DAILY_LIMIT,
+    dailyLimit: 999999, // No daily limit for hourly system
     dailyResetAt: getNextMidnightUTC(),
   };
 
@@ -153,6 +162,17 @@ async function getOrCreateEnergyBucket(agentId: string): Promise<CreditBucket> {
   }));
 
   return bucket;
+}
+
+/**
+ * Calculate refilled energy based on time elapsed
+ * +1 energy per hour, capped at ENERGY_MAX
+ */
+function calculateEnergyRefill(bucket: CreditBucket): number {
+  const now = Date.now();
+  const hoursSinceRefill = (now - bucket.lastRefillAt) / (1000 * 60 * 60);
+  const energyToAdd = Math.floor(hoursSinceRefill * ENERGY_PER_HOUR);
+  return Math.min(bucket.credits + energyToAdd, ENERGY_MAX);
 }
 
 /**
@@ -277,31 +297,24 @@ export async function canUseEnergy(
   cost: number
 ): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
   if (cost <= 0) {
-    return { allowed: true, remaining: ENERGY_DAILY_LIMIT };
+    return { allowed: true, remaining: ENERGY_MAX };
   }
 
   const bucket = await getOrCreateEnergyBucket(agentId);
-  const now = Date.now();
 
-  // Reset daily if needed
-  let credits = bucket.credits;
-  let dailyUsed = bucket.dailyUsed;
-  let dailyResetAt = bucket.dailyResetAt;
-  if (now >= dailyResetAt) {
-    credits = ENERGY_DAILY_LIMIT;
-    dailyUsed = 0;
-    dailyResetAt = getNextMidnightUTC();
-  }
+  // Calculate current energy with hourly refill
+  const currentEnergy = calculateEnergyRefill(bucket);
 
-  if (credits < cost || dailyUsed + cost > ENERGY_DAILY_LIMIT) {
+  if (currentEnergy < cost) {
+    const hoursUntilEnough = Math.ceil((cost - currentEnergy) / ENERGY_PER_HOUR);
     return {
       allowed: false,
-      reason: `Energy limit reached (${ENERGY_DAILY_LIMIT} per day). Resets at midnight UTC.`,
-      remaining: credits,
+      reason: `Not enough energy (have ${currentEnergy}, need ${cost}). +1 energy per hour. ~${hoursUntilEnough}h until enough.`,
+      remaining: currentEnergy,
     };
   }
 
-  return { allowed: true, remaining: credits };
+  return { allowed: true, remaining: currentEnergy };
 }
 
 export async function consumeEnergy(
@@ -315,32 +328,46 @@ export async function consumeEnergy(
   const bucket = await getOrCreateEnergyBucket(agentId);
   const now = Date.now();
 
-  let credits = bucket.credits;
-  let dailyUsed = bucket.dailyUsed;
-  let dailyResetAt = bucket.dailyResetAt;
-  if (now >= dailyResetAt) {
-    credits = ENERGY_DAILY_LIMIT;
-    dailyUsed = 0;
-    dailyResetAt = getNextMidnightUTC();
-  }
+  // Calculate current energy with hourly refill
+  const currentEnergy = calculateEnergyRefill(bucket);
 
-  if (credits < cost || dailyUsed + cost > ENERGY_DAILY_LIMIT) {
+  if (currentEnergy < cost) {
     return false;
   }
 
   await dynamoClient.send(new UpdateCommand({
     TableName: ADMIN_TABLE,
     Key: { pk: bucket.pk, sk: bucket.sk },
-    UpdateExpression: 'SET credits = :credits, lastRefillAt = :now, dailyUsed = :dailyUsed, dailyResetAt = :dailyResetAt',
+    UpdateExpression: 'SET credits = :credits, lastRefillAt = :now',
     ExpressionAttributeValues: {
-      ':credits': credits - cost,
+      ':credits': currentEnergy - cost,
       ':now': now,
-      ':dailyUsed': dailyUsed + cost,
-      ':dailyResetAt': dailyResetAt,
     },
   }));
 
   return true;
+}
+
+/**
+ * Get current energy status for an agent
+ */
+export async function getEnergyStatus(
+  agentId: string
+): Promise<{ current: number; max: number; nextRefillIn: number }> {
+  const bucket = await getOrCreateEnergyBucket(agentId);
+  const now = Date.now();
+  const currentEnergy = calculateEnergyRefill(bucket);
+  
+  // Calculate minutes until next energy point
+  const msSinceRefill = now - bucket.lastRefillAt;
+  const msUntilNextRefill = (60 * 60 * 1000) - (msSinceRefill % (60 * 60 * 1000));
+  const minutesUntilNext = Math.ceil(msUntilNextRefill / (60 * 1000));
+
+  return {
+    current: currentEnergy,
+    max: ENERGY_MAX,
+    nextRefillIn: currentEnergy >= ENERGY_MAX ? 0 : minutesUntilNext,
+  };
 }
 
 /**
