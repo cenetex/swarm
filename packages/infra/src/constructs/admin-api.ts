@@ -494,6 +494,12 @@ export class AdminApiConstruct extends Construct {
       integration: agentsIntegration,
     });
 
+    this.api.addRoutes({
+      path: '/agents/{agentId}/issues',
+      methods: [apigateway.HttpMethod.GET],
+      integration: agentsIntegration,
+    });
+
     // Health check endpoint
     const healthHandler = new nodejs.NodejsFunction(this, 'HealthHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
