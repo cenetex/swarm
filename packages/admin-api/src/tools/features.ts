@@ -38,3 +38,49 @@ export const FEATURE_CONFIG_PATHS: Record<ToggleableFeature, string> = {
   twitter: 'platforms.twitter.enabled',
   telegram: 'platforms.telegram.enabled',
 };
+
+/**
+ * Request Twitter/X account connection (manual - shows OAuth button in UI)
+ *
+ * The agent calls this when it detects user intent to connect an X/Twitter account.
+ * The UI renders a "Connect X Account" button that initiates the OAuth flow.
+ */
+export const requestTwitterConnection = tool({
+  name: 'request_twitter_connection',
+  description: 'Show the user a button to connect their X/Twitter account via OAuth. Use when user wants to link their X account, enable Twitter posting, or connect to Twitter.',
+  inputSchema: z.object({
+    message: z.string().optional().describe('Optional message to show the user explaining why they should connect'),
+  }),
+  execute: false, // Manual - needs user interaction via OAuth flow
+});
+
+/**
+ * Get Twitter/X connection status
+ */
+export const getTwitterConnectionStatus = (
+  _agentId: string,
+  getStatus: () => Promise<{
+    connected: boolean;
+    username?: string;
+    userId?: string;
+    connectedAt?: number;
+  }>
+) => tool({
+  name: 'get_twitter_connection_status',
+  description: 'Check if an X/Twitter account is connected to this agent. Returns connection status and username if connected.',
+  inputSchema: z.object({}),
+  execute: async () => {
+    const status = await getStatus();
+    if (status.connected) {
+      return {
+        connected: true,
+        username: status.username,
+        message: `Connected to @${status.username}`,
+      };
+    }
+    return {
+      connected: false,
+      message: 'No X/Twitter account connected. Use request_twitter_connection to prompt the user to connect.',
+    };
+  },
+});

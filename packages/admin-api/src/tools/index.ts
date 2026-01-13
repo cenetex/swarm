@@ -64,7 +64,7 @@ import {
   sendGalleryImage,
 } from './gallery.js';
 
-import { requestFeatureToggle } from './features.js';
+import { requestFeatureToggle, requestTwitterConnection, getTwitterConnectionStatus } from './features.js';
 
 /**
  * Service dependencies for tool execution
@@ -90,6 +90,14 @@ export interface ToolServices {
     description?: string
   ) => Promise<void>;
   validateTelegramToken?: (value: string) => Promise<{ valid: boolean; username?: string; error?: string }>;
+
+  // Twitter/X connection
+  getTwitterConnectionStatus: () => Promise<{
+    connected: boolean;
+    username?: string;
+    userId?: string;
+    connectedAt?: number;
+  }>;
 
   // Media jobs
   listPendingJobs: () => Promise<unknown[]>;
@@ -197,6 +205,7 @@ export function createAgentTools(
     requestSecret,
     requestModelSelection,
     requestFeatureToggle,
+    requestTwitterConnection,
 
     // Read-only tools
     getMyModelConfig(agentId, services.getAgentConfig),
@@ -205,6 +214,7 @@ export function createAgentTools(
     getPendingJobs(agentId, services.listPendingJobs),
     getJobStatus(agentId, services.getJob),
     getToolCredits(agentId, services.getCredits),
+    getTwitterConnectionStatus(agentId, services.getTwitterConnectionStatus),
 
     // Model management
     listAvailableModels(services.fetchModels),
@@ -252,6 +262,7 @@ export const MANUAL_TOOL_NAMES = [
   'request_secret',
   'request_model_selection',
   'request_feature_toggle',
+  'request_twitter_connection',
 ] as const;
 
 /**

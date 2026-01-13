@@ -7,6 +7,7 @@ import * as agents from '../services/agents.js';
 import * as wallets from '../services/wallets.js';
 import * as secrets from '../services/secrets.js';
 import * as telegram from '../services/telegram.js';
+import * as twitterOAuth from '../services/twitter-oauth.js';
 import * as media from '../services/media.js';
 import * as gallery from '../services/gallery.js';
 import * as credits from '../services/credits.js';
@@ -73,6 +74,8 @@ export function createToolServices(agentId: string, session: UserSession): ToolS
       );
     },
     validateTelegramToken: telegram.validateTelegramToken,
+
+    getTwitterConnectionStatus: async () => twitterOAuth.getConnectionStatus(agentId),
 
     listPendingJobs: async () => mediaJobs.getPendingJobs(agentId),
     getJob: async (jobId: string) => mediaJobs.getJob(jobId),
