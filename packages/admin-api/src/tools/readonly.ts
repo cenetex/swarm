@@ -1,8 +1,8 @@
 /**
  * Read-only tools that query state without modification
  */
-import { z } from 'zod';
-import { defineTool } from './tool-helper.js';
+import { tool } from '@openrouter/sdk';
+import { z } from 'zod/v4';
 
 /**
  * Get current LLM model configuration
@@ -10,7 +10,7 @@ import { defineTool } from './tool-helper.js';
 export const getMyModelConfig = (
   _agentId: string,
   getAgentConfig: () => Promise<unknown>
-) => defineTool({
+) => tool({
   name: 'get_my_model_config',
   description: 'Get my current LLM model configuration (model, temperature, max tokens)',
   inputSchema: z.object({}),
@@ -35,7 +35,7 @@ export const getMyModelConfig = (
 export const getMyWallets = (
   _agentId: string,
   listWallets: () => Promise<unknown[]>
-) => defineTool({
+) => tool({
   name: 'get_my_wallets',
   description: 'List all my Solana wallets with their public keys and balances',
   inputSchema: z.object({}),
@@ -54,7 +54,7 @@ export const getMyWallets = (
 export const getMySecrets = (
   _agentId: string,
   listSecrets: () => Promise<unknown[]>
-) => defineTool({
+) => tool({
   name: 'get_my_secrets',
   description: 'List which secrets I have configured (not the values, just which types are set)',
   inputSchema: z.object({}),
@@ -82,7 +82,7 @@ export const getMySecrets = (
 export const getPendingJobs = (
   _agentId: string,
   listPendingJobs: () => Promise<unknown[]>
-) => defineTool({
+) => tool({
   name: 'get_pending_jobs',
   description: 'Check the status of pending media generation jobs. Images and videos are generated asynchronously.',
   inputSchema: z.object({}),
@@ -101,7 +101,7 @@ export const getPendingJobs = (
 export const getJobStatus = (
   _agentId: string,
   getJob: (jobId: string) => Promise<unknown>
-) => defineTool({
+) => tool({
   name: 'get_job_status',
   description: 'Get the status of a specific media generation job by its ID.',
   inputSchema: z.object({
@@ -122,7 +122,7 @@ export const getJobStatus = (
 export const getToolCredits = (
   _agentId: string,
   getCredits: () => Promise<unknown>
-) => defineTool({
+) => tool({
   name: 'get_tool_credits',
   description: 'Check my available credits for media generation tools',
   inputSchema: z.object({}),

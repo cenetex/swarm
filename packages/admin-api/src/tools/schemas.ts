@@ -1,7 +1,7 @@
 /**
  * Shared Zod schemas for admin tools
  */
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 // Secret types that can be stored/requested
 export const SecretTypeSchema = z.enum([

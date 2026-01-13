@@ -1,15 +1,15 @@
 /**
  * Secret management tools
  */
-import { z } from 'zod';
-import { defineTool } from './tool-helper.js';
+import { tool } from '@openrouter/sdk';
+import { z } from 'zod/v4';
 import { SecretTypeSchema } from './schemas.js';
 import type { UserSession } from '../types.js';
 
 /**
  * Request a secret from the user (manual - shows secure input in UI)
  */
-export const requestSecret = defineTool({
+export const requestSecret = tool({
   name: 'request_secret',
   description: 'Request a secret value from the user. This will display a secure input field in the UI. Use this to collect API keys, tokens, and other sensitive credentials.',
   inputSchema: z.object({
@@ -35,7 +35,7 @@ export const storeSecret = (
     description?: string
   ) => Promise<void>,
   validateToken?: (value: string) => Promise<{ valid: boolean; username?: string; error?: string }>
-) => defineTool({
+) => tool({
   name: 'store_secret',
   description: 'Store a secret value securely. Use after receiving a secret from request_secret.',
   inputSchema: z.object({
