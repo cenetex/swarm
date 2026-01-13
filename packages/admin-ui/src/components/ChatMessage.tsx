@@ -358,6 +358,15 @@ export function ChatMessage({ message, onToolSubmit }: ChatMessageProps) {
   const mediaToolNames = ['generate_image', 'generate_video', 'generate_sticker', 'get_my_gallery', 'generate_voice_message'];
   const interactiveToolCalls = message.toolCalls?.filter(tc => !mediaToolNames.includes(tc.name)) ?? [];
   
+  // DEBUG: Log tool calls to diagnose missing tool prompts
+  if (message.toolCalls && message.toolCalls.length > 0) {
+    console.log('[ChatMessage] Tool calls:', {
+      messageId: message.id,
+      allToolCalls: message.toolCalls.map(tc => ({ id: tc.id, name: tc.name, status: tc.status })),
+      interactiveToolCalls: interactiveToolCalls.map(tc => ({ id: tc.id, name: tc.name, status: tc.status })),
+    });
+  }
+  
   // Don't render empty bubbles - check if there's any visible content
   const hasVisibleContent = 
     message.isLoading ||

@@ -131,6 +131,14 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
         if (loadingMessage) {
           // Check if there's a pending tool call that needs user input
           const pendingToolCall = response.pendingToolCall;
+          
+          // DEBUG: Log pendingToolCall to diagnose missing tool prompts
+          console.log('[ChatPanel] Response received:', {
+            hasContent: !!response.response,
+            contentLength: response.response?.length,
+            pendingToolCall: pendingToolCall ? { id: pendingToolCall.id, name: pendingToolCall.name } : null,
+            pendingJobsCount: response.pendingJobs?.length || 0,
+          });
 
           // Check for pending jobs from the response (explicit pendingJobs array)
           const pendingJobsList = response.pendingJobs || [];

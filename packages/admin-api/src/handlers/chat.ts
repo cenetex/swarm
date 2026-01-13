@@ -597,6 +597,13 @@ async function processChat(
           name: manualTool.function.name,
           arguments: args,
         };
+        
+        logger.info('Manual tool detected, setting pendingToolCall', {
+          event: 'pending_tool_call_set',
+          toolId: manualTool.id,
+          toolName: manualTool.function.name,
+          argsKeys: Object.keys(args),
+        });
 
         // Add the assistant message with the tool call (but not executed)
         response = llmResponse.message || '';
@@ -787,7 +794,12 @@ async function processChat(
     messages.push({ role: 'assistant', content: response });
   }
 
-  logger.info('Final response', { mediaCount: allMedia.length, pendingJobCount: pendingJobs.length });
+  logger.info('Final response', { 
+    mediaCount: allMedia.length, 
+    pendingJobCount: pendingJobs.length,
+    hasPendingToolCall: !!pendingToolCall,
+    pendingToolCallName: pendingToolCall?.name,
+  });
   return { 
     response, 
     history: messages, 
