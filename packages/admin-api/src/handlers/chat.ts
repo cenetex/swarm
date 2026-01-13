@@ -161,8 +161,16 @@ async function executeUiTool(
   if (!tool || !hasExecuteFunction(tool)) {
     throw new Error(`Tool ${toolName} is manual or not available`);
   }
-  const parsedArgs = tool.function.inputSchema.parse(args);
-  return await tool.function.execute(parsedArgs) as Record<string, unknown>;
+  const validator = tool.function.inputSchema as unknown as {
+    safeParse: (value: unknown) =>
+      | { success: true; data: Record<string, unknown> }
+      | { success: false; error: { message: string } };
+  };
+  const parsedArgs = validator.safeParse(args);
+  if (!parsedArgs.success) {
+    throw new Error(`Invalid input for tool ${toolName}: ${parsedArgs.error.message}`);
+  }
+  return await tool.function.execute(parsedArgs.data) as Record<string, unknown>;
 }
 
 async function buildModelSelectorPayload(
