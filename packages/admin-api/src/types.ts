@@ -475,6 +475,9 @@ export interface BufferedMessage {
   isMention?: boolean;
   isReplyToBot?: boolean;
   media?: BufferedMedia[];
+  // Bot-to-bot interaction tracking
+  isFromBot?: boolean;           // True if sender is a bot
+  senderBotUsername?: string;    // Bot username if isFromBot
 }
 
 // Channel state record stored in DynamoDB
@@ -498,6 +501,10 @@ export interface ChannelStateRecord {
   lastResponseAt?: number;
   lastResponseMessageId?: number;
   pendingResponseAt?: number;  // Scheduled response time
+  
+  // Bot-to-bot interaction tracking
+  lastBotResponseAt?: number;     // Last time we responded to a bot message
+  lastBotRespondedTo?: string;    // Username of last bot we responded to
 
   // Engagement tracking
   directEngagementAt?: number;  // Last mention/reply
@@ -637,7 +644,7 @@ export interface InterestCheckResult {
   roll: number;
   modifier: number;
   dc: number;
-  reason: 'direct_engagement' | 'context_interest' | 'not_interested';
+  reason: 'direct_engagement' | 'context_interest' | 'not_interested' | 'bot_interaction_interest' | 'bot_message_skipped';
 }
 
 /**

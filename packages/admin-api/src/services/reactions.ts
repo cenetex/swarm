@@ -45,15 +45,15 @@ export interface ReactionDecision {
   delay: number; // Delay in ms before reacting
 }
 
-// Reaction configuration
+// Reaction configuration - tuned for cosy vibes
 export const REACTION_CONFIG = {
-  // Probability of reacting (0-1)
-  REACTION_PROBABILITY: 0.3,
-  // Min/max delay before reacting
-  MIN_REACTION_DELAY_MS: 1000,
-  MAX_REACTION_DELAY_MS: 5000,
-  // Cooldown between reactions from same agent
-  REACTION_COOLDOWN_MS: 30000,
+  // Probability of reacting (0-1) - reduced for less spam
+  REACTION_PROBABILITY: 0.15,
+  // Min/max delay before reacting - increased for natural feel
+  MIN_REACTION_DELAY_MS: 3000,
+  MAX_REACTION_DELAY_MS: 12000,
+  // Cooldown between reactions from same agent - increased
+  REACTION_COOLDOWN_MS: 60000,
 };
 
 /**

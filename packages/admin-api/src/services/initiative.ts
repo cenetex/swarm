@@ -32,18 +32,24 @@ const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
-// Configuration
+// Configuration - tuned for cosy, less spammy multi-agent chats
 export const INITIATIVE_CONFIG = {
   // Round timeout - how long to wait for all agents to roll
-  ROUND_TIMEOUT_MS: 5000,
+  ROUND_TIMEOUT_MS: 8000,        // Increased from 5s for more staggered responses
   // Base difficulty class for interest check
-  BASE_INTEREST_DC: 10,
+  BASE_INTEREST_DC: 14,          // Raised from 10 - agents are pickier about responding
   // DC modifiers
-  TOPIC_MATCH_BONUS: -3,     // Lower DC if message matches agent interests
-  HIGH_ACTIVITY_PENALTY: 2,  // Higher DC in busy channels
-  RECENT_RESPONSE_PENALTY: 5, // Higher DC if agent responded recently
+  TOPIC_MATCH_BONUS: -2,         // Reduced from -3, less eager to jump in
+  HIGH_ACTIVITY_PENALTY: 4,      // Increased from 2 - back off when busy
+  RECENT_RESPONSE_PENALTY: 8,    // Increased from 5 - longer "thinking" time after responding
+  // Bot-to-bot interaction penalties (new)
+  BOT_MESSAGE_PENALTY: 6,        // Higher DC for responding to bot messages
+  BOT_RESPONDED_RECENTLY_PENALTY: 10, // Very high DC if recently responded to a bot
   // TTL for initiative records
-  ROUND_TTL_SECONDS: 300,    // 5 minutes
+  ROUND_TTL_SECONDS: 300,        // 5 minutes
+  // Stagger settings for cosy vibes
+  MIN_RESPONSE_STAGGER_MS: 3000, // Minimum stagger between agents
+  MAX_RESPONSE_STAGGER_MS: 10000, // Maximum stagger
 };
 
 /**
@@ -51,17 +57,20 @@ export const INITIATIVE_CONFIG = {
  * Uses CHA for social contexts, WIS for reflective/thoughtful contexts.
  *
  * Direct mentions always pass (the mentioned agent handles it outside initiative).
+ * Bot-to-bot interactions are allowed but with higher DC to prevent spam.
  *
  * @param stats - Agent's D&D stats
  * @param message - The triggering message
  * @param recentResponseAge - Time since this agent last responded (ms)
  * @param channelActivity - Number of recent messages in channel
+ * @param lastBotResponseAge - Time since this agent last responded to a bot message (ms)
  */
 export function checkInterest(
   stats: AgentStats,
   message: BufferedMessage,
   recentResponseAge: number | null,
-  channelActivity: number
+  channelActivity: number,
+  lastBotResponseAge?: number | null
 ): InterestCheckResult {
   // Determine which stat to use based on message context
   // Social/conversational -> CHA, reflective/analytical -> WIS
@@ -75,14 +84,32 @@ export function checkInterest(
   if (channelActivity > 10) {
     dc += INITIATIVE_CONFIG.HIGH_ACTIVITY_PENALTY;
   }
+  // Even higher penalty for very active channels
+  if (channelActivity > 20) {
+    dc += INITIATIVE_CONFIG.HIGH_ACTIVITY_PENALTY;
+  }
 
   // Recent response raises DC (cooldown effect)
   if (recentResponseAge !== null && recentResponseAge < 60000) {
     dc += INITIATIVE_CONFIG.RECENT_RESPONSE_PENALTY;
   }
+  // Extra penalty if responded very recently (within 30s)
+  if (recentResponseAge !== null && recentResponseAge < 30000) {
+    dc += 4;
+  }
 
-  // Clamp DC to reasonable range
-  dc = Math.max(5, Math.min(20, dc));
+  // Bot-to-bot interaction handling - allow but make it harder
+  if (message.isFromBot) {
+    dc += INITIATIVE_CONFIG.BOT_MESSAGE_PENALTY;
+    
+    // If we recently responded to a bot, add extra penalty
+    if (lastBotResponseAge !== null && lastBotResponseAge !== undefined && lastBotResponseAge < 120000) {
+      dc += INITIATIVE_CONFIG.BOT_RESPONDED_RECENTLY_PENALTY;
+    }
+  }
+
+  // Clamp DC to reasonable range (increased max for bot interactions)
+  dc = Math.max(5, Math.min(28, dc));
 
   // Roll interest check
   const roll = rollD20();
@@ -94,7 +121,9 @@ export function checkInterest(
     roll: total,
     modifier,
     dc,
-    reason: interested ? 'context_interest' : 'not_interested',
+    reason: interested 
+      ? (message.isFromBot ? 'bot_interaction_interest' : 'context_interest') 
+      : (message.isFromBot ? 'bot_message_skipped' : 'not_interested'),
   };
 }
 
@@ -405,6 +434,7 @@ export async function getRoundRolls(
  * @param message - The triggering message
  * @param recentResponseAge - Time since this agent last responded (ms)
  * @param channelActivity - Number of recent messages
+ * @param lastBotResponseAge - Time since this agent last responded to a bot (ms)
  */
 export async function coordinateInitiative(
   chatId: number,
@@ -413,7 +443,8 @@ export async function coordinateInitiative(
   stats: AgentStats,
   message: BufferedMessage,
   recentResponseAge: number | null,
-  channelActivity: number
+  channelActivity: number,
+  lastBotResponseAge?: number | null
 ): Promise<InitiativeResult> {
   // Round ID for correlation in logs
   const roundId = `${chatId}#${messageId}`;
@@ -432,14 +463,16 @@ export async function coordinateInitiative(
     messageId,
     roundPhase: round.phase,
     roundStartedAt: round.startedAt,
+    isFromBot: message.isFromBot,
   }));
 
-  // Step 2: Interest check
+  // Step 2: Interest check (now includes bot interaction awareness)
   const interest = checkInterest(
     stats,
     message,
     recentResponseAge,
-    channelActivity
+    channelActivity,
+    lastBotResponseAge
   );
   
   // Log interest check result
@@ -456,6 +489,8 @@ export async function coordinateInitiative(
     reason: interest.reason,
     channelActivity,
     recentResponseAge,
+    lastBotResponseAge,
+    isFromBot: message.isFromBot,
   }));
 
   // Step 3: Record our roll

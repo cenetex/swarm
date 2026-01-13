@@ -69,6 +69,7 @@ const TelegramUserSchema = z.object({
   first_name: z.string(),
   last_name: z.string().optional(),
   username: z.string().optional(),
+  is_bot: z.boolean().optional(),
 });
 
 const TelegramChatSchema = z.object({
@@ -1446,6 +1447,15 @@ async function handleMultiAgentMessage(
     ? Date.now() - state.lastResponseAt
     : null;
 
+  // Check if message is from a bot (for bot-to-bot interaction handling)
+  const isFromBot = message.from?.is_bot === true;
+  const senderBotUsername = isFromBot ? message.from?.username : undefined;
+  
+  // Calculate time since last bot response (for rate limiting bot interactions)
+  const lastBotResponseAge = state.lastBotResponseAt
+    ? Date.now() - state.lastBotResponseAt
+    : null;
+
   // Create buffered message for interest check
   const bufferedMessage: BufferedMessage = {
     messageId,
@@ -1459,6 +1469,9 @@ async function handleMultiAgentMessage(
     isMention: false, // Already handled direct mentions before this
     isReplyToBot: false,
     media: msgMedia.length > 0 ? msgMedia : undefined,
+    // Bot-to-bot interaction tracking
+    isFromBot,
+    senderBotUsername,
   };
 
   // Add message to buffer (needed for context)
@@ -1470,7 +1483,7 @@ async function handleMultiAgentMessage(
     bufferedMessage
   );
 
-  // Coordinate initiative with error handling
+  // Coordinate initiative with error handling (includes bot interaction awareness)
   let initiativeResult: initiative.InitiativeResult;
   try {
     initiativeResult = await initiative.coordinateInitiative(
@@ -1480,7 +1493,8 @@ async function handleMultiAgentMessage(
       stats,
       bufferedMessage,
       recentResponseAge,
-      state.bufferSize
+      state.bufferSize,
+      lastBotResponseAge  // Pass bot response age for rate limiting
     );
   } catch (err) {
     // On initiative coordination failure, skip to avoid blocking the webhook
@@ -1497,6 +1511,7 @@ async function handleMultiAgentMessage(
     myRoll: initiativeResult.myRoll,
     winnerId: initiativeResult.winnerId,
     winnerRoll: initiativeResult.winnerRoll,
+    isFromBot,
   });
 
   switch (initiativeResult.action) {
@@ -1505,6 +1520,22 @@ async function handleMultiAgentMessage(
       const updatedState = await channelState.getChannelState(agentId, chatId);
       if (!updatedState) {
         return { responded: false, reason: 'state_not_found' };
+      }
+      
+      // Calculate a natural thinking delay for cosy pacing
+      const thinkingDelay = channelState.calculateThinkingDelay(
+        text.length,
+        isFromBot,
+        _channelAgents.length
+      );
+      
+      if (thinkingDelay > 0) {
+        logger.info('Waiting for cosy response delay', { 
+          delayMs: thinkingDelay, 
+          isFromBot,
+          agentCount: _channelAgents.length 
+        });
+        await new Promise(resolve => setTimeout(resolve, thinkingDelay));
       }
 
       const responseMessageId = await processChannelResponse(
@@ -1517,7 +1548,13 @@ async function handleMultiAgentMessage(
       );
 
       if (responseMessageId) {
-        await channelState.markResponseSent(agentId, chatId, responseMessageId);
+        // Track if we responded to a bot message (for bot-to-bot rate limiting)
+        await channelState.markResponseSent(
+          agentId, 
+          chatId, 
+          responseMessageId,
+          isFromBot ? senderBotUsername : undefined
+        );
         // Mark that winner responded (for reaction coordination)
         await initiative.markWinnerResponded(chatId, messageId);
         return { responded: true, reason: 'initiative_winner' };

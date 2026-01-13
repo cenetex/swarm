@@ -36,44 +36,52 @@ export const CHANNEL_CONFIG = {
   BUFFER_TTL_SECONDS: 3600,      // 1 hour TTL for channel state
 
   // State machine timings
-  COOLDOWN_DURATION_MS: 30000,   // 30 seconds cooldown after response (prevents spam)
-  ACTIVE_TIMEOUT_MS: 60000,      // 60 seconds before ACTIVE → IDLE
+  COOLDOWN_DURATION_MS: 60000,   // 60 seconds cooldown after response (prevents spam)
+  ACTIVE_TIMEOUT_MS: 120000,     // 2 minutes before ACTIVE → IDLE
 
   // Response triggers
-  DIRECT_ENGAGEMENT_DELAY_MS: 500,    // Small delay even for mentions (more natural)
-  MESSAGE_THRESHOLD: 5,                // Respond after N messages accumulated
-  CONVERSATION_GAP_MS: 30000,          // 30 seconds of silence triggers response
+  DIRECT_ENGAGEMENT_DELAY_MS: 2000,   // 2 second delay even for mentions (more cosy)
+  MESSAGE_THRESHOLD: 8,                // Respond after N messages accumulated (was 5)
+  CONVERSATION_GAP_MS: 45000,          // 45 seconds of silence triggers response
 
-  // Response timing
-  MIN_RESPONSE_DELAY_MS: 500,     // Minimum delay to seem natural
-  MAX_RESPONSE_DELAY_MS: 3000,    // Maximum random delay
+  // Response timing - increased for cosy vibes
+  MIN_RESPONSE_DELAY_MS: 2000,    // Minimum 2s delay to seem natural
+  MAX_RESPONSE_DELAY_MS: 8000,    // Maximum 8s random delay
 
   // Private chat rate limiting
   PRIVATE_COOLDOWN_MS: 5000,      // 5 second minimum between responses in private chats
+  
+  // Multi-agent stagger - delay added per agent in channel
+  STAGGER_DELAY_PER_AGENT_MS: 3000,   // Add 3s delay per additional agent
+  MAX_STAGGER_DELAY_MS: 15000,         // Cap stagger at 15 seconds
 };
 
 // === MULTI-AGENT DYNAMIC COOLDOWN CONFIGURATION ===
 export const MULTI_AGENT_CONFIG = {
   // Initiative system
-  INITIATIVE_ROUND_TIMEOUT_MS: 5000,    // Max time for all agents to roll
-  REACTION_WINDOW_MS: 10000,             // Time window for reactions after winner responds
+  INITIATIVE_ROUND_TIMEOUT_MS: 8000,    // 8s for all agents to roll (increased from 5s)
+  REACTION_WINDOW_MS: 15000,             // 15s window for reactions after winner responds
 
-  // Interest check
-  BASE_INTEREST_DC: 10,                  // Default difficulty class
-  MENTION_INTEREST_BONUS: 5,             // DC reduction for topic mentions
-  RECENT_RESPONSE_PENALTY: 5,            // DC increase if agent responded recently
+  // Interest check - raised thresholds for less spam
+  BASE_INTEREST_DC: 14,                  // Default difficulty class (increased from 10)
+  MENTION_INTEREST_BONUS: 3,             // DC reduction for topic mentions (reduced from 5)
+  RECENT_RESPONSE_PENALTY: 8,            // DC increase if agent responded recently (increased from 5)
 
   // Reaction limits
-  MAX_REACTIONS_PER_MESSAGE: 3,          // Max emoji reactions per agent per message
-  REACTION_COOLDOWN_MS: 5000,            // Min time between reactions
+  MAX_REACTIONS_PER_MESSAGE: 2,          // Max emoji reactions per agent per message (reduced from 3)
+  REACTION_COOLDOWN_MS: 10000,           // Min time between reactions (increased from 5000)
 
-  // Dynamic cooldown settings
-  BASE_COOLDOWN_MS: 30000,               // Base cooldown (30 seconds)
-  MIN_COOLDOWN_MS: 10000,                // Minimum cooldown during high activity (10 seconds)
-  MAX_COOLDOWN_MS: 120000,               // Maximum cooldown during quiet periods (2 minutes)
+  // Dynamic cooldown settings - increased for cosy vibes
+  BASE_COOLDOWN_MS: 60000,               // Base cooldown (60 seconds, up from 30)
+  MIN_COOLDOWN_MS: 20000,                // Minimum cooldown during high activity (20 seconds)
+  MAX_COOLDOWN_MS: 180000,               // Maximum cooldown during quiet periods (3 minutes)
   ACTIVITY_WINDOW_MS: 300000,            // 5 minute window for activity measurement
-  MESSAGES_FOR_SHORT_COOLDOWN: 20,       // Messages in window for minimum cooldown
-  QUIET_THRESHOLD_MS: 60000,             // 60 seconds of silence = "quiet"
+  MESSAGES_FOR_SHORT_COOLDOWN: 30,       // Messages in window for minimum cooldown (increased from 20)
+  QUIET_THRESHOLD_MS: 90000,             // 90 seconds of silence = "quiet" (increased from 60)
+  
+  // Bot-to-bot interaction settings
+  BOT_MESSAGE_INTEREST_DC_BONUS: 4,      // Extra DC for responding to bot messages
+  BOT_RESPONSE_RATE_LIMIT_MS: 120000,    // 2 minute cooldown between responding to bots
 };
 
 // === SHARED HISTORY CONFIGURATION ===
@@ -138,6 +146,63 @@ export function isDynamicCooldownExpired(state: ChannelStateRecord): boolean {
   const elapsed = Date.now() - state.stateChangedAt;
 
   return elapsed > dynamicCooldown;
+}
+
+/**
+ * Calculate stagger delay based on number of agents in channel.
+ * This helps space out responses when multiple bots are present.
+ * 
+ * @param agentCount - Number of agents in the channel
+ * @returns Delay in milliseconds (randomized within range)
+ */
+export function calculateStaggerDelay(agentCount: number): number {
+  if (agentCount <= 1) {
+    // Single agent: use base response delay
+    return CHANNEL_CONFIG.MIN_RESPONSE_DELAY_MS + 
+      Math.random() * (CHANNEL_CONFIG.MAX_RESPONSE_DELAY_MS - CHANNEL_CONFIG.MIN_RESPONSE_DELAY_MS);
+  }
+  
+  // Multi-agent: add per-agent stagger
+  const baseStagger = (agentCount - 1) * CHANNEL_CONFIG.STAGGER_DELAY_PER_AGENT_MS;
+  const cappedStagger = Math.min(baseStagger, CHANNEL_CONFIG.MAX_STAGGER_DELAY_MS);
+  
+  // Add randomization to prevent deterministic ordering
+  const randomFactor = 0.5 + Math.random(); // 0.5x to 1.5x
+  const totalDelay = CHANNEL_CONFIG.MIN_RESPONSE_DELAY_MS + (cappedStagger * randomFactor);
+  
+  return Math.floor(totalDelay);
+}
+
+/**
+ * Calculate a natural "thinking" delay for cosy conversation pacing.
+ * Longer delays for longer messages, bot messages, etc.
+ * 
+ * @param messageLength - Length of the incoming message
+ * @param isFromBot - Whether the triggering message is from a bot
+ * @param agentCount - Number of agents in channel
+ * @returns Delay in milliseconds
+ */
+export function calculateThinkingDelay(
+  messageLength: number,
+  isFromBot: boolean,
+  agentCount: number
+): number {
+  // Base delay
+  let delay = CHANNEL_CONFIG.MIN_RESPONSE_DELAY_MS;
+  
+  // Add reading time (roughly 200 chars per second)
+  delay += Math.min(messageLength * 5, 3000);
+  
+  // Extra delay for bot messages (think longer before responding to bots)
+  if (isFromBot) {
+    delay += 5000 + Math.random() * 5000; // 5-10s extra for bot messages
+  }
+  
+  // Add stagger for multi-agent
+  delay += calculateStaggerDelay(agentCount);
+  
+  // Cap at reasonable maximum
+  return Math.min(delay, 20000);
 }
 
 // === CHANNEL STATE MANAGEMENT ===
@@ -371,11 +436,13 @@ export async function transitionState(
 
 /**
  * Mark response sent - transitions to COOLDOWN and clears relevant state
+ * @param respondedToBotUsername - If set, tracks that we responded to a bot message
  */
 export async function markResponseSent(
   agentId: string,
   chatId: number,
-  responseMessageId: number
+  responseMessageId: number,
+  respondedToBotUsername?: string
 ): Promise<ChannelStateRecord | null> {
   const current = await getChannelState(agentId, chatId);
   if (!current) return null;
@@ -395,6 +462,11 @@ export async function markResponseSent(
     bufferSize: 0,
     updatedAt: now,
     ttl: Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS,
+    // Track bot-to-bot interactions
+    ...(respondedToBotUsername ? {
+      lastBotResponseAt: now,
+      lastBotRespondedTo: respondedToBotUsername,
+    } : {}),
   };
 
   await saveChannelState(updated);
