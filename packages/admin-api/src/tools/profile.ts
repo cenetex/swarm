@@ -3,6 +3,7 @@
  */
 import { tool } from '@openrouter/sdk';
 import { z } from 'zod/v4';
+
 import { ImageSourceSchema } from './schemas.js';
 import type { UserSession } from '../types.js';
 
@@ -128,6 +129,9 @@ export const setProfileImage = (
           purpose: 'profile',
         };
       }
+
+      default:
+        return { error: 'Invalid source type' };
     }
   },
 });

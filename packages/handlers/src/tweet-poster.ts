@@ -114,7 +114,7 @@ Respond with ONLY the tweet text, nothing else.`;
     // 30% chance to include an image
     if (Math.random() < 0.3) {
       try {
-  const mediaService = createMediaService(secrets, MEDIA_BUCKET, CDN_URL);
+        const mediaService = createMediaService(secrets, MEDIA_BUCKET, CDN_URL);
         
         const imagePromptResponse = await llmService.generateResponse({
           agentId: AGENT_ID,

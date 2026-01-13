@@ -3,6 +3,7 @@
  */
 import { tool } from '@openrouter/sdk';
 import { z } from 'zod/v4';
+
 import { SecretTypeSchema } from './schemas.js';
 import type { UserSession } from '../types.js';
 

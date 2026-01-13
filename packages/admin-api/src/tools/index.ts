@@ -15,9 +15,8 @@ export * from './media.js';
 export * from './gallery.js';
 export * from './features.js';
 
+import type { Tool } from '@openrouter/sdk';
 import type { UserSession } from '../types.js';
-import type { ToolDefinition } from './tool-helper.js';
-import type { ZodObject, ZodRawShape } from 'zod';
 
 // Import all tool creators
 import {
@@ -192,8 +191,7 @@ export function createAgentTools(
   agentId: string,
   session: UserSession,
   services: ToolServices
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): ToolDefinition<ZodObject<ZodRawShape>, any>[] {
+): Tool[] {
   return [
     // Manual tools (no execute function, return to UI)
     requestSecret,

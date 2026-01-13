@@ -9,7 +9,7 @@ import type {
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js';
 import * as chatHistory from '../services/chat-history.js';
-import { OpenRouter, fromChatMessages, toChatMessage, stepCountIs } from '@openrouter/sdk';
+import { OpenRouter, fromChatMessages, hasExecuteFunction, toChatMessage, stepCountIs, type Tool } from '@openrouter/sdk';
 import {
   ChatRequestSchema,
   type AdminChatMessage,
@@ -155,14 +155,14 @@ function buildSystemPrompt(agent?: AgentContext): string {
 async function executeUiTool(
   toolName: string,
   args: Record<string, unknown>,
-  tools: ReturnType<typeof createAgentTools>
+  tools: Tool[]
 ): Promise<Record<string, unknown>> {
   const tool = tools.find(candidate => candidate.function.name === toolName);
-  if (!tool || tool.function.execute === undefined || tool.function.execute === false) {
+  if (!tool || !hasExecuteFunction(tool)) {
     throw new Error(`Tool ${toolName} is manual or not available`);
   }
   const parsedArgs = tool.function.inputSchema.parse(args);
-  return await tool.function.execute(parsedArgs);
+  return await tool.function.execute(parsedArgs) as Record<string, unknown>;
 }
 
 async function buildModelSelectorPayload(
@@ -246,17 +246,18 @@ function buildPendingToolResponse(toolName: string, args: Record<string, unknown
   return 'Please provide the requested input.';
 }
 
+// The SDK returns ParsedToolCall with unknown types - we need to handle that
 type SdkToolCall = {
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
+  id: unknown;
+  name: unknown;
+  arguments: unknown;
 };
 
-function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: string; content: string; toolCallId?: string }> {
+function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: string; toolCallId?: string }> {
   return messages.map(message => {
     if (message.role === 'tool') {
       return {
-        role: 'tool',
+        role: 'tool' as const,
         content: message.content,
         toolCallId: message.tool_call_id,
       };
@@ -271,18 +272,20 @@ function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: string; cont
 function buildModelInput(systemPrompt: string, messages: AdminChatMessage[]) {
   const sanitizedMessages = sanitizeMessages(messages);
   const inputMessages = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system' as const, content: systemPrompt },
     ...sanitizedMessages,
   ];
-  return fromChatMessages(toSdkMessages(inputMessages));
+  // Cast to any to work around OpenRouter SDK's strict internal types
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return fromChatMessages(toSdkMessages(inputMessages) as any);
 }
 
 function toAdminToolCall(toolCall: SdkToolCall): ToolCall {
   return {
-    id: toolCall.id,
+    id: String(toolCall.id),
     type: 'function',
     function: {
-      name: toolCall.name,
+      name: String(toolCall.name),
       arguments: JSON.stringify(toolCall.arguments ?? {}),
     },
   };
@@ -381,7 +384,8 @@ async function processChat(
     event: 'tools_created',
     agentId,
     toolCount: tools.length,
-    toolNames: tools.map(t => t.function.name),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    toolNames: tools.map((t: any) => t.name),
   });
 
   const messages: AdminChatMessage[] = [
@@ -404,6 +408,7 @@ async function processChat(
     toolsIncluded: tools.length > 0,
   });
 
+  // Tools from the SDK are already in the correct format
   const modelResult = getOpenRouterClient().callModel({
     model: LLM_MODEL,
     input,
@@ -418,42 +423,51 @@ async function processChat(
     event: 'llm_response',
     hasToolCalls: toolCalls.length > 0,
     toolCallCount: toolCalls.length,
-    toolNames: toolCalls.map(tc => tc.name),
+    toolNames: toolCalls.map(tc => String(tc.name)),
   });
 
-  const pauseToolCall = toolCalls.find(tc => isPauseForInputTool(tc.name, tc.arguments));
+  // Helper to safely extract tool call args as Record<string, unknown>
+  const getToolArgs = (tc: SdkToolCall): Record<string, unknown> => {
+    if (tc.arguments && typeof tc.arguments === 'object') {
+      return tc.arguments as Record<string, unknown>;
+    }
+    return {};
+  };
+
+  const pauseToolCall = toolCalls.find(tc => isPauseForInputTool(String(tc.name), getToolArgs(tc)));
   if (pauseToolCall && toolServices) {
-    let pendingArgs = pauseToolCall.arguments || {};
+    let pendingArgs = getToolArgs(pauseToolCall);
+    const toolName = String(pauseToolCall.name);
     try {
-      if (pauseToolCall.name === 'request_model_selection') {
+      if (toolName === 'request_model_selection') {
         const family = typeof pendingArgs.family === 'string'
           ? pendingArgs.family
           : typeof pendingArgs.preferredFamily === 'string'
             ? pendingArgs.preferredFamily
             : undefined;
         pendingArgs = await buildModelSelectorPayload(toolServices, family);
-      } else if (pauseToolCall.name === 'request_feature_toggle') {
+      } else if (toolName === 'request_feature_toggle') {
         pendingArgs = await buildFeatureTogglePayload(toolServices, pendingArgs);
       } else if (
-        pauseToolCall.name === 'get_profile_upload_url' ||
-        pauseToolCall.name === 'get_reference_image_upload_url' ||
-        pauseToolCall.name === 'set_profile_image'
+        toolName === 'get_profile_upload_url' ||
+        toolName === 'get_reference_image_upload_url' ||
+        toolName === 'set_profile_image'
       ) {
-        pendingArgs = await executeUiTool(pauseToolCall.name, pendingArgs, tools);
+        pendingArgs = await executeUiTool(toolName, pendingArgs, tools);
       }
     } catch (error) {
       logger.error('Failed to build pending tool payload', error, {
-        toolName: pauseToolCall.name,
+        toolName,
       });
     }
 
     pendingToolCall = {
-      id: pauseToolCall.id,
-      name: pauseToolCall.name,
+      id: String(pauseToolCall.id),
+      name: toolName,
       arguments: pendingArgs,
     };
 
-    response = buildPendingToolResponse(pauseToolCall.name, pendingArgs);
+    response = buildPendingToolResponse(toolName, pendingArgs);
     messages.push({
       role: 'assistant',
       content: response,

@@ -943,6 +943,9 @@ async function callLLM(
 ): Promise<{ content?: string; toolCalls?: ToolCall[] }> {
   const apiKey = await getLlmApiKey();
 
+  // Sanitize agent name for HTTP header (strip non-printable and non-ASCII)
+  const safeAgentName = agent.name.replace(/[^\u0020-\u007E]/g, '').trim() || 'Agent';
+
   const response = await fetchWithRetry(
     LLM_ENDPOINT,
     {
@@ -951,7 +954,7 @@ async function callLLM(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
         'HTTP-Referer': 'https://swarm.telegram',
-        'X-Title': `Swarm Agent: ${agent.name}`,
+        'X-Title': `Swarm Agent: ${safeAgentName}`,
       },
       body: JSON.stringify({
         model: agent.llmConfig.model || LLM_MODEL,

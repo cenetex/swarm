@@ -269,6 +269,7 @@ export function createToolServices(agentId: string, session: UserSession): ToolS
         model: 'anthropic/claude-sonnet-4',
         temperature: 0.8,
         maxTokens: 1024,
+        useGlobalKey: true,
       };
       await agents.updateAgent(agentId, {
         llmConfig: {
@@ -276,6 +277,7 @@ export function createToolServices(agentId: string, session: UserSession): ToolS
           model: config.model ?? current.model,
           temperature: config.temperature ?? current.temperature,
           maxTokens: config.maxTokens ?? current.maxTokens,
+          useGlobalKey: current.useGlobalKey ?? true,
         },
       }, session);
     },
