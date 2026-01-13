@@ -7,7 +7,7 @@
  * 2. BURNING = Permission to abandon an inhabited agent
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import {
   SecretsManagerClient,
   GetSecretValueCommand,
@@ -55,6 +55,7 @@ async function getHeliusRpcUrl(): Promise<string> {
 }
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
+const CREATOR_GSI_NAME = 'GSI2';
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
 });
@@ -190,15 +191,17 @@ export async function checkNFTGate(walletAddress: string): Promise<NFTGateResult
  */
 export async function countAgentsCreatedBy(walletAddress: string): Promise<number> {
   try {
-    const result = await dynamoClient.send(new ScanCommand({
+    const result = await dynamoClient.send(new QueryCommand({
       TableName: ADMIN_TABLE,
-      FilterExpression: 'sk = :sk AND creatorWallet = :wallet AND #status <> :deleted',
+      IndexName: CREATOR_GSI_NAME,
+      KeyConditionExpression: 'creatorWallet = :wallet AND sk = :sk',
+      FilterExpression: '#status <> :deleted',
       ExpressionAttributeNames: {
         '#status': 'status',
       },
       ExpressionAttributeValues: {
-        ':sk': 'CONFIG',
         ':wallet': walletAddress,
+        ':sk': 'CONFIG',
         ':deleted': 'deleted',
       },
       Select: 'COUNT',
@@ -206,8 +209,27 @@ export async function countAgentsCreatedBy(walletAddress: string): Promise<numbe
 
     return result.Count || 0;
   } catch (error) {
-    console.error('[NFTGate] Error counting agents:', error);
-    return 0;
+    console.warn('[NFTGate] Query count agents failed, falling back to scan:', error);
+    try {
+      const result = await dynamoClient.send(new ScanCommand({
+        TableName: ADMIN_TABLE,
+        FilterExpression: 'sk = :sk AND creatorWallet = :wallet AND #status <> :deleted',
+        ExpressionAttributeNames: {
+          '#status': 'status',
+        },
+        ExpressionAttributeValues: {
+          ':sk': 'CONFIG',
+          ':wallet': walletAddress,
+          ':deleted': 'deleted',
+        },
+        Select: 'COUNT',
+      }));
+
+      return result.Count || 0;
+    } catch (scanError) {
+      console.error('[NFTGate] Error counting agents:', scanError);
+      return 0;
+    }
   }
 }
 

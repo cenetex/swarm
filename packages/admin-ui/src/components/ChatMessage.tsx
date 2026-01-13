@@ -88,6 +88,17 @@ function processMessageContent(content: string): {
   
   // Helper to categorize a parsed JSON object
   const categorizeResult = (parsed: Record<string, unknown>): ParsedToolResult => {
+    const hasSignalKey = (
+      'success' in parsed ||
+      'error' in parsed ||
+      'status' in parsed ||
+      'jobId' in parsed ||
+      'url' in parsed ||
+      'resultUrl' in parsed ||
+      'items' in parsed ||
+      'action' in parsed
+    );
+
     if (parsed.action === 'inhabit_agent' && typeof parsed.agentId === 'string') {
       return {
         type: 'inhabit',
@@ -119,7 +130,7 @@ function processMessageContent(content: string): {
     }
     
     // Success message (profile update, wallet created, etc)
-    if (parsed.message && typeof parsed.message === 'string') {
+    if (parsed.message && typeof parsed.message === 'string' && hasSignalKey) {
       if (parsed.error === true) {
         return { type: 'error', data: parsed, message: parsed.message };
       }
@@ -175,8 +186,8 @@ function processMessageContent(content: string): {
             }
           }
           toolResults.push({ type: 'gallery', data: { items: parsed } });
+          cleanedContent = cleanedContent.replace(match, '');
         }
-        cleanedContent = cleanedContent.replace(match, '');
       }
     } catch {
       // Not valid JSON, leave it
@@ -193,8 +204,10 @@ function processMessageContent(content: string): {
       const parsed = JSON.parse(match.trim());
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         const result = categorizeResult(parsed);
-        toolResults.push(result);
-        cleanedContent = cleanedContent.replace(match, '');
+        if (result.type !== 'unknown') {
+          toolResults.push(result);
+          cleanedContent = cleanedContent.replace(match, '');
+        }
       }
     } catch {
       // Not valid JSON, leave it
