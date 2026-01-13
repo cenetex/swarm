@@ -48,7 +48,7 @@ export function createToolServices(agentId: string, session: UserSession): ToolS
   return {
     getAgentConfig: async () => agents.getAgent(agentId),
     updateAgentConfig: async (updates: unknown) => {
-      await agents.updateAgent(agentId, updates as Record<string, unknown>, session);
+      await agents.updateAgent(agentId, updates as Parameters<typeof agents.updateAgent>[1], session);
     },
 
     listWallets: async () => wallets.listWallets(agentId),
