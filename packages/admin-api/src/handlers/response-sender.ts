@@ -346,7 +346,7 @@ async function processMessage(message: ResponseMessage): Promise<void> {
 
   if (!conversationId) {
     logger.error('Missing conversationId for response sender', { agentId, platform });
-    return;
+    throw new Error('Missing conversationId for response sender');
   }
 
   // Get bot token
@@ -367,7 +367,10 @@ async function processMessage(message: ResponseMessage): Promise<void> {
   if (message.type.includes('failed') || !result.success) {
     // Send error message
     const errorMessage = result.error || 'Media generation failed';
-    await sendTelegramMessage(token, chatId, `❌ ${errorMessage}`, replyTo);
+    const sent = await sendTelegramMessage(token, chatId, `❌ ${errorMessage}`, replyTo);
+    if (!sent) {
+      throw new Error('Failed to send error message to Telegram');
+    }
     return;
   }
 
@@ -383,12 +386,21 @@ async function processMessage(message: ResponseMessage): Promise<void> {
     : undefined;
 
   if (message.type === 'image_complete' || result.mediaType === 'image') {
-    await sendTelegramPhoto(token, chatId, result.mediaUrl, caption, replyTo);
+    const sent = await sendTelegramPhoto(token, chatId, result.mediaUrl, caption, replyTo);
+    if (!sent) {
+      throw new Error('Failed to send Telegram photo');
+    }
   } else if (message.type === 'video_complete' || result.mediaType === 'video') {
-    await sendTelegramVideo(token, chatId, result.mediaUrl, caption, replyTo);
+    const sent = await sendTelegramVideo(token, chatId, result.mediaUrl, caption, replyTo);
+    if (!sent) {
+      throw new Error('Failed to send Telegram video');
+    }
   } else if (message.type === 'sticker_complete' || result.mediaType === 'sticker') {
     // Stickers are sent as photos for now
-    await sendTelegramPhoto(token, chatId, result.mediaUrl, undefined, replyTo);
+    const sent = await sendTelegramPhoto(token, chatId, result.mediaUrl, undefined, replyTo);
+    if (!sent) {
+      throw new Error('Failed to send Telegram sticker as photo');
+    }
   } else {
     logger.warn('Unknown media type', { type: message.type, mediaType: result.mediaType });
   }

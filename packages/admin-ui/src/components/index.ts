@@ -6,6 +6,7 @@ export { AgentConfigModal } from './AgentConfigModal';
 export { ChatPanel } from './ChatPanel';
 export { ToolPrompt, SecretPrompt, ConfirmPrompt } from './ToolPrompts';
 export { AgentLogsPanel } from './AgentLogsPanel';
+export { IssueCard, IssueNavigation } from './IssueCard';
 export { ThemeToggle } from './ThemeToggle';
 export { WalletProvider } from './WalletProvider';
 export { WalletLogin, GhostAvatar, UserAvatar } from './WalletLogin';

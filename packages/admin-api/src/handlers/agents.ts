@@ -12,7 +12,7 @@ import * as agentService from '../services/agents.js';
 import * as secretsService from '../services/secrets.js';
 import * as logsService from '../services/logs.js';
 import * as telegramService from '../services/telegram.js';
-import { recordError } from '../services/auto-issues.js';
+import { recordError, listAgentIssues } from '../services/auto-issues.js';
 import { SecretType } from '../types.js';
 
 // CORS headers - restricted to configured admin domain
@@ -286,6 +286,24 @@ export async function handler(
         statusCode: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify(result),
+      };
+    }
+
+    // GET /agents/{id}/issues - List issues for an agent
+    const issuesMatch = path.match(/^\/agents\/([^/]+)\/issues$/);
+    if (method === 'GET' && issuesMatch) {
+      const agentId = issuesMatch[1];
+      const params = event.queryStringParameters || {};
+      const limit = params.limit ? Number.parseInt(params.limit, 10) : undefined;
+      const status = params.status as 'open' | 'resolved' | 'all' | undefined;
+      const severity = params.severity as 'low' | 'medium' | 'high' | 'critical' | undefined;
+
+      const issues = await listAgentIssues(agentId, { limit, status, severity });
+
+      return {
+        statusCode: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId, issues }),
       };
     }
 

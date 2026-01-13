@@ -3,6 +3,8 @@
  * Sends generated responses to platforms
  */
 import type { SQSEvent, Context, SQSBatchResponse, Handler } from 'aws-lambda';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { randomUUID } from 'crypto';
 import {
@@ -21,12 +23,16 @@ import {
 } from '@swarm/core';
 
 const sqs = new SQSClient({});
+const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: { removeUndefinedValues: true },
+});
 
 // Environment variables
 const MEDIA_QUEUE_URL = process.env.MEDIA_QUEUE_URL;
 const STATE_TABLE = process.env.STATE_TABLE!;
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE!;
 const AGENT_ID = process.env.AGENT_ID!;
+const IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
 
 // Services
 let stateService: ReturnType<typeof createStateService>;
@@ -36,6 +42,47 @@ let platformRegistry: PlatformRegistry;
 let outboundSender: ReturnType<typeof createOutboundSender>;
 let secrets: Record<string, string>;
 let agentConfig: AgentConfig;
+
+function getResponseKey(response: SwarmResponse, recordMessageId: string): string {
+  const anchor = response.replyToMessageId ?? response.generatedAt ?? recordMessageId;
+  return `${response.conversationId}#${anchor}`;
+}
+
+async function wasResponseHandled(responseKey: string): Promise<boolean> {
+  const result = await dynamo.send(new GetCommand({
+    TableName: STATE_TABLE,
+    Key: {
+      pk: `AGENT#${AGENT_ID}`,
+      sk: `RESPONSE#${responseKey}`,
+    },
+  }));
+  return Boolean(result.Item);
+}
+
+async function markResponseHandled(responseKey: string): Promise<void> {
+  const now = Date.now();
+  const ttl = Math.floor(now / 1000) + IDEMPOTENCY_TTL_SECONDS;
+  try {
+    await dynamo.send(new PutCommand({
+      TableName: STATE_TABLE,
+      Item: {
+        pk: `AGENT#${AGENT_ID}`,
+        sk: `RESPONSE#${responseKey}`,
+        createdAt: now,
+        ttl,
+      },
+      ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)',
+    }));
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ConditionalCheckFailedException') {
+      return;
+    }
+    logger.warn('Failed to record response idempotency', {
+      error: error instanceof Error ? error.message : String(error),
+      responseKey,
+    });
+  }
+}
 
 async function initialize(): Promise<void> {
   if (stateService) return;
@@ -109,6 +156,12 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
           bodyPreview: record.body?.slice(0, 100),
         });
         batchItemFailures.push({ itemIdentifier: record.messageId });
+        continue;
+      }
+
+      const responseKey = getResponseKey(response, record.messageId);
+      if (await wasResponseHandled(responseKey)) {
+        logger.info('Skipping already handled response', { responseKey });
         continue;
       }
 
@@ -212,6 +265,12 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       const hasSendMessageAction = actionsToSend?.some(
         (a: ResponseAction) => a.type === 'send_message'
       ) ?? false;
+      if (hasSendMessageAction && sentMessages.length === 0) {
+        sendSuccess = false;
+        logger.warn('send_message action failed to deliver', {
+          conversationId: response.conversationId,
+        });
+      }
       const shouldMarkResponse = hasActionsToSend
         ? (hasSendMessageAction ? sentMessages.length > 0 : sendSuccess)
         : false;
@@ -227,6 +286,10 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             error: error instanceof Error ? error.message : String(error),
           });
         }
+      }
+
+      if (sendSuccess) {
+        await markResponseHandled(responseKey);
       }
 
       if (actionsToSend && actionsToSend.length > 0 && !sendSuccess) {

@@ -1,10 +1,12 @@
 /**
  * Agent Logs Panel - Consolidated log view for a single agent.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAgentLogs, type AgentLogEvent } from '../api/logs';
+import { fetchAgentIssues, type AgentIssue } from '../api/issues';
 import { useActiveAgent, useAgentStore } from '../store/agents';
 import { AgentAvatar } from './AgentSidebar';
+import { IssueCard, IssueNavigation } from './IssueCard';
 
 interface AgentLogsPanelProps {
   agentId: string;
@@ -30,6 +32,12 @@ function parseLogMessage(message: string): {
   event?: string;
   json?: Record<string, unknown>;
   text: string;
+  isIssue?: boolean;
+  issueData?: {
+    severity: string;
+    title: string;
+    category: string;
+  };
 } {
   // Lambda logs often have format: "2026-01-11T00:41:56.500Z requestId INFO {...}"
   // Try to find and extract JSON from the message
@@ -38,12 +46,19 @@ function parseLogMessage(message: string): {
     try {
       const parsed = JSON.parse(jsonMatch[0]);
       if (typeof parsed === 'object' && parsed !== null) {
+        const isIssue = parsed.event === 'agent_reported_issue';
         return {
           level: typeof parsed.level === 'string' ? parsed.level.toUpperCase() : undefined,
           subsystem: parsed.subsystem,
           event: parsed.event,
           json: parsed,
           text: message,
+          isIssue,
+          issueData: isIssue && parsed.issue ? {
+            severity: parsed.issue.severity || 'medium',
+            title: parsed.issue.title || 'Issue',
+            category: parsed.issue.category || 'unknown',
+          } : undefined,
         };
       }
     } catch {
@@ -55,12 +70,19 @@ function parseLogMessage(message: string): {
   try {
     const parsed = JSON.parse(message);
     if (typeof parsed === 'object' && parsed !== null) {
+      const isIssue = parsed.event === 'agent_reported_issue';
       return {
         level: typeof parsed.level === 'string' ? parsed.level.toUpperCase() : undefined,
         subsystem: parsed.subsystem,
         event: parsed.event,
         json: parsed,
         text: message,
+        isIssue,
+        issueData: isIssue && parsed.issue ? {
+          severity: parsed.issue.severity || 'medium',
+          title: parsed.issue.title || 'Issue',
+          category: parsed.issue.category || 'unknown',
+        } : undefined,
       };
     }
   } catch {
@@ -112,14 +134,44 @@ function CompactJsonView({ json }: { json: Record<string, unknown> }) {
 }
 
 /**
+ * Get severity badge color
+ */
+function getSeverityBadgeColor(severity?: string): string {
+  switch (severity) {
+    case 'critical': return 'bg-red-500/30 text-red-300';
+    case 'high': return 'bg-orange-500/30 text-orange-300';
+    case 'medium': return 'bg-yellow-500/30 text-yellow-300';
+    case 'low': return 'bg-blue-500/30 text-blue-300';
+    default: return 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]';
+  }
+}
+
+interface LogEntryProps {
+  event: AgentLogEvent;
+  linkedIssue?: AgentIssue;
+  isActiveIssue?: boolean;
+}
+
+/**
  * Single log entry component with expand/collapse
  */
-function LogEntry({ event }: { event: AgentLogEvent }) {
+function LogEntry({ event, linkedIssue, isActiveIssue }: LogEntryProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const parsed = useMemo(() => parseLogMessage(event.message || ''), [event.message]);
   
+  // If this is an issue log entry and we have a linked issue, show special styling
+  const isIssueEntry = parsed.isIssue && linkedIssue;
+  
   return (
-    <div className="border border-[var(--color-border)] rounded-lg bg-[var(--color-bg-secondary)]/70 overflow-hidden">
+    <div 
+      className={`border rounded-lg overflow-hidden transition-all ${
+        isIssueEntry 
+          ? `border-2 ${isActiveIssue ? 'border-yellow-400 ring-2 ring-yellow-400/30' : 'border-yellow-500/50'} bg-yellow-500/5`
+          : 'border-[var(--color-border)] bg-[var(--color-bg-secondary)]/70'
+      }`}
+      data-log-timestamp={event.timestamp}
+      data-is-issue={isIssueEntry ? 'true' : undefined}
+    >
       {/* Header row - always visible */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
@@ -142,7 +194,19 @@ function LogEntry({ event }: { event: AgentLogEvent }) {
         
         {/* Subsystem + Event */}
         <div className="flex-1 min-w-0">
-          {parsed.json ? (
+          {isIssueEntry && parsed.issueData ? (
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className={`px-1.5 py-0.5 rounded-full font-medium uppercase ${getSeverityBadgeColor(parsed.issueData.severity)}`}>
+                {parsed.issueData.severity}
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]">
+                {parsed.issueData.category}
+              </span>
+              <span className="text-yellow-300 font-medium truncate">
+                {parsed.issueData.title}
+              </span>
+            </div>
+          ) : parsed.json ? (
             <CompactJsonView json={parsed.json} />
           ) : (
             <span className="text-xs text-[var(--color-text-tertiary)] truncate block">
@@ -150,16 +214,36 @@ function LogEntry({ event }: { event: AgentLogEvent }) {
             </span>
           )}
         </div>
+
+        {/* Issue indicator icon */}
+        {isIssueEntry && (
+          <svg className="w-4 h-4 text-yellow-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        )}
         
         {/* Timestamp - hidden on very small screens */}
         <span className="text-[10px] text-[var(--color-text-muted)] flex-shrink-0 hidden sm:block">
           {formatTimestamp(event.timestamp)}
         </span>
       </button>
+
+      {/* Issue card when expanded and linked to an issue */}
+      {isExpanded && linkedIssue && (
+        <div className="border-t border-yellow-500/30 p-3 bg-yellow-500/5">
+          <IssueCard 
+            issue={linkedIssue} 
+            isExpanded={true}
+            onToggle={() => {}}
+            isActive={isActiveIssue}
+          />
+        </div>
+      )}
       
-      {/* Expanded details */}
+      {/* Expanded details (for non-issue entries or to show raw log) */}
       {isExpanded && (
-        <div className="border-t border-[var(--color-border)] px-3 py-2 space-y-2">
+        <div className={`border-t px-3 py-2 space-y-2 ${linkedIssue ? 'border-yellow-500/30' : 'border-[var(--color-border)]'}`}>
           {/* Log group/stream info */}
           <div className="text-xs text-[var(--color-text-muted)] flex flex-wrap gap-3">
             {event.logGroup && (
@@ -175,9 +259,14 @@ function LogEntry({ event }: { event: AgentLogEvent }) {
           </div>
           
           {/* Full message */}
-          <pre className="text-xs text-[var(--color-text)] whitespace-pre-wrap break-all overflow-x-auto max-h-[400px] overflow-y-auto bg-[var(--color-bg)] rounded p-2">
-            {parsed.json ? JSON.stringify(parsed.json, null, 2) : parsed.text}
-          </pre>
+          <details className="group">
+            <summary className="text-xs text-[var(--color-text-tertiary)] cursor-pointer hover:text-[var(--color-text-secondary)]">
+              {linkedIssue ? 'Show raw log' : 'Full message'}
+            </summary>
+            <pre className="mt-2 text-xs text-[var(--color-text)] whitespace-pre-wrap break-all overflow-x-auto max-h-[400px] overflow-y-auto bg-[var(--color-bg)] rounded p-2">
+              {parsed.json ? JSON.stringify(parsed.json, null, 2) : parsed.text}
+            </pre>
+          </details>
         </div>
       )}
     </div>
@@ -187,6 +276,7 @@ function LogEntry({ event }: { event: AgentLogEvent }) {
 export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelProps) {
   const activeAgent = useActiveAgent();
   const { setActiveAgent } = useAgentStore();
+  const logsContainerRef = useRef<HTMLDivElement>(null);
 
   const [since, setSince] = useState(DEFAULT_SINCE);
   const [level, setLevel] = useState('');
@@ -202,6 +292,11 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
   const [logGroups, setLogGroups] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Issue state
+  const [issues, setIssues] = useState<AgentIssue[]>([]);
+  const [currentIssueIndex, setCurrentIssueIndex] = useState(0);
+  const [expandedIssueId, setExpandedIssueId] = useState<string | null>(null);
 
   useEffect(() => {
     if (agentId) {
@@ -216,15 +311,64 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
     query: appliedFilters.query || undefined,
   }), [appliedFilters]);
 
+  // Map issues to their log timestamps for linking
+  const issueByTimestamp = useMemo(() => {
+    const map = new Map<string, AgentIssue>();
+    for (const issue of issues) {
+      // Create a key from the issue timestamp
+      const isoTimestamp = new Date(issue.timestamp).toISOString();
+      map.set(isoTimestamp, issue);
+    }
+    return map;
+  }, [issues]);
+
+  // Find linked issue for a log event
+  const findLinkedIssue = useCallback((event: AgentLogEvent): AgentIssue | undefined => {
+    if (!event.timestamp) return undefined;
+    
+    // Try exact match first
+    const direct = issueByTimestamp.get(event.timestamp);
+    if (direct) return direct;
+    
+    // Check if the log message contains agent_reported_issue
+    const parsed = parseLogMessage(event.message || '');
+    if (parsed.isIssue && parsed.json) {
+      // Find matching issue by timestamp in the JSON
+      const issueTimestamp = (parsed.json as Record<string, unknown>).timestamp as string;
+      if (issueTimestamp) {
+        return issueByTimestamp.get(issueTimestamp);
+      }
+      // Fallback: match by event timestamp
+      const eventTs = new Date(event.timestamp).getTime();
+      for (const issue of issues) {
+        // Allow 5 second tolerance
+        if (Math.abs(issue.timestamp - eventTs) < 5000) {
+          return issue;
+        }
+      }
+    }
+    return undefined;
+  }, [issueByTimestamp, issues]);
+
   const loadLogs = useCallback(async () => {
     if (!agentId) return;
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetchAgentLogs(agentId, filters);
-      setLogs(response.events || []);
-      setLogGroups(response.logGroups || []);
+      const [logsResponse, issuesResponse] = await Promise.all([
+        fetchAgentLogs(agentId, filters),
+        fetchAgentIssues(agentId, { limit: 50 }),
+      ]);
+      setLogs(logsResponse.events || []);
+      setLogGroups(logsResponse.logGroups || []);
+      setIssues(issuesResponse.issues || []);
+      
+      // Auto-expand the latest issue
+      if (issuesResponse.issues?.length > 0) {
+        setExpandedIssueId(issuesResponse.issues[0].id);
+        setCurrentIssueIndex(0);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch logs');
     } finally {
@@ -235,6 +379,27 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
   useEffect(() => {
     loadLogs();
   }, [loadLogs]);
+
+  // Navigate to issue and scroll to corresponding log
+  const handleIssueNavigate = useCallback((index: number) => {
+    if (index < 0 || index >= issues.length) return;
+    
+    const issue = issues[index];
+    setCurrentIssueIndex(index);
+    setExpandedIssueId(issue.id);
+    
+    // Find and scroll to the log entry with this issue
+    if (logsContainerRef.current) {
+      const issueTimestamp = new Date(issue.timestamp).toISOString();
+      const logElement = logsContainerRef.current.querySelector(
+        `[data-is-issue="true"][data-log-timestamp="${issueTimestamp}"]`
+      ) || logsContainerRef.current.querySelector('[data-is-issue="true"]');
+      
+      if (logElement) {
+        logElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [issues]);
 
   const applyFilters = useCallback(() => {
     setAppliedFilters({
@@ -339,7 +504,18 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-4 space-y-2">
+      {/* Issue navigation bar */}
+      {issues.length > 0 && (
+        <div className="border-b border-[var(--color-border)] px-4 lg:px-6 py-2 bg-yellow-500/5">
+          <IssueNavigation
+            issues={issues}
+            currentIndex={currentIssueIndex}
+            onNavigate={handleIssueNavigate}
+          />
+        </div>
+      )}
+
+      <div ref={logsContainerRef} className="flex-1 overflow-y-auto px-4 lg:px-6 py-4 space-y-2">
         {isLoading && (
           <div className="text-[var(--color-text-tertiary)] text-sm">Loading logs…</div>
         )}
@@ -351,9 +527,18 @@ export function AgentLogsPanel({ agentId, onMenuClick, onBack }: AgentLogsPanelP
         {!isLoading && !error && logs.length === 0 && (
           <div className="text-[var(--color-text-tertiary)] text-sm">No log events found.</div>
         )}
-        {logs.map((event, index) => (
-          <LogEntry key={`${event.logStream || 'stream'}-${index}`} event={event} />
-        ))}
+        {logs.map((event, index) => {
+          const linkedIssue = findLinkedIssue(event);
+          const isActiveIssue = linkedIssue?.id === expandedIssueId;
+          return (
+            <LogEntry 
+              key={`${event.logStream || 'stream'}-${index}`} 
+              event={event}
+              linkedIssue={linkedIssue}
+              isActiveIssue={isActiveIssue}
+            />
+          );
+        })}
       </div>
     </div>
   );

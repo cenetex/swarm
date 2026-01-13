@@ -388,3 +388,87 @@ export function createErrorRecorder(defaultContext: {
     }
   };
 }
+
+/**
+ * Agent-reported issue interface (from logs)
+ */
+export interface AgentIssue {
+  id: string;
+  timestamp: number;
+  agentId: string;
+  platform: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  category: string;
+  title: string;
+  description: string;
+  userMessage?: string;
+  context?: Record<string, unknown>;
+  logStream?: string;
+}
+
+/**
+ * List issues for a specific agent by querying CloudWatch logs
+ * This finds agent_reported_issue events
+ */
+export async function listAgentIssues(
+  agentId: string,
+  options: {
+    limit?: number;
+    status?: 'open' | 'resolved' | 'all';
+    severity?: 'low' | 'medium' | 'high' | 'critical';
+  } = {}
+): Promise<AgentIssue[]> {
+  // Import logs service dynamically to avoid circular deps
+  const logsService = await import('./logs.js');
+  
+  // Query for agent_reported_issue events
+  const result = await logsService.queryAgentLogs(agentId, {
+    subsystem: 'diagnostics',
+    query: 'agent_reported_issue',
+    limit: options.limit || 50,
+    since: '7d', // Look back 7 days
+  });
+
+  const issues: AgentIssue[] = [];
+  
+  for (const event of result.events) {
+    try {
+      // Parse the log message to extract the issue JSON
+      const message = event.message || '';
+      const jsonMatch = message.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) continue;
+      
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.event !== 'agent_reported_issue') continue;
+      
+      const issue = parsed.issue;
+      if (!issue) continue;
+      
+      // Filter by severity if specified
+      if (options.severity && issue.severity !== options.severity) continue;
+      
+      issues.push({
+        id: `issue-${parsed.timestamp || event.timestamp}`,
+        timestamp: parsed.timestamp ? new Date(parsed.timestamp).getTime() : 
+                   event.timestamp ? new Date(event.timestamp).getTime() : Date.now(),
+        agentId: parsed.agentId || agentId,
+        platform: parsed.platform || 'unknown',
+        severity: issue.severity || 'medium',
+        category: issue.category || 'unknown',
+        title: issue.title || 'Untitled Issue',
+        description: issue.description || '',
+        userMessage: issue.userMessage,
+        context: issue.context,
+        logStream: event.logStream,
+      });
+    } catch {
+      // Skip malformed log entries
+      continue;
+    }
+  }
+  
+  // Sort by timestamp descending (newest first)
+  issues.sort((a, b) => b.timestamp - a.timestamp);
+  
+  return issues;
+}
