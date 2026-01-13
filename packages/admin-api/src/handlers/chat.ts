@@ -85,6 +85,82 @@ function getOpenRouterClient(): OpenRouter {
 }
 
 /**
+ * Fallback direct API call when SDK streaming validation fails
+ * Uses non-streaming API to avoid SDK's Zod validation issues with null usage fields
+ */
+async function callLlmDirectFallback(
+  model: string,
+  messages: Array<{ role: string; content: string | { type: string; text?: string; image_url?: unknown }[] }>,
+  tools?: unknown[]
+): Promise<{
+  content: string;
+  toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+}> {
+  const apiKey = await getLlmApiKey();
+  
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    max_tokens: 2048,
+    stream: false, // Disable streaming to avoid SDK validation issues
+  };
+  
+  if (tools && tools.length > 0) {
+    // Convert SDK tools to OpenAI format
+    body.tools = tools.map((t: unknown) => {
+      const tool = t as { function?: { name?: string; description?: string; parameters?: unknown } };
+      return {
+        type: 'function',
+        function: {
+          name: tool.function?.name,
+          description: tool.function?.description,
+          parameters: tool.function?.parameters,
+        },
+      };
+    });
+  }
+  
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://swarm.admin',
+      'X-Title': 'Swarm Admin',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
+  }
+  
+  const data = await response.json() as {
+    choices?: Array<{
+      message?: {
+        content?: string;
+        tool_calls?: Array<{
+          id: string;
+          function: { name: string; arguments: string };
+        }>;
+      };
+    }>;
+  };
+  
+  const choice = data.choices?.[0]?.message;
+  const content = choice?.content || '';
+  const toolCalls = (choice?.tool_calls || []).map(tc => ({
+    id: tc.id,
+    name: tc.function.name,
+    arguments: JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>,
+  }));
+  
+  return { content, toolCalls };
+}
+
+/**
  * Sanitize conversation history to ensure valid message format
  * Removes orphaned tool results and ensures proper message structure
  */
@@ -416,22 +492,79 @@ async function processChat(
     toolsIncluded: tools.length > 0,
   });
 
-  // Tools from the SDK are already in the correct format
-  const modelResult = getOpenRouterClient().callModel({
-    model: LLM_MODEL,
-    input,
-    maxOutputTokens: 2048,
-    ...(tools.length > 0 ? { tools, stopWhen: stepCountIs(10) } : {}),
-  });
+  // Try SDK first, fallback to direct API if SDK's Zod validation fails
+  let toolCalls: SdkToolCall[] = [];
+  let adminToolCalls: ToolCall[] = [];
+  let modelResult: ReturnType<typeof getOpenRouterClient.prototype.callModel> | null = null;
+  let usedFallback = false;
+  let fallbackResponse = '';
 
-  const toolCalls = await modelResult.getToolCalls();
-  const adminToolCalls = toolCalls.map(toAdminToolCall);
+  try {
+    // Tools from the SDK are already in the correct format
+    modelResult = getOpenRouterClient().callModel({
+      model: LLM_MODEL,
+      input,
+      maxOutputTokens: 2048,
+      ...(tools.length > 0 ? { tools, stopWhen: stepCountIs(10) } : {}),
+    });
+
+    toolCalls = await modelResult.getToolCalls();
+    adminToolCalls = toolCalls.map(toAdminToolCall);
+  } catch (sdkError) {
+    // Check if this is a Zod validation error (SDK bug with null usage fields)
+    const errorName = sdkError instanceof Error ? sdkError.name : '';
+    const isZodError = errorName === 'ZodError' || 
+      (sdkError instanceof Error && sdkError.message?.includes('invalid_type'));
+    
+    if (isZodError) {
+      logger.warn('SDK Zod validation error, falling back to direct API', {
+        event: 'sdk_fallback',
+        errorName,
+      });
+      
+      // Build messages for direct API call
+      const apiMessages = [
+        { role: 'system', content: systemPrompt },
+        ...toSdkMessages(sanitizeMessages(messages)),
+      ];
+      
+      const fallbackResult = await callLlmDirectFallback(
+        LLM_MODEL,
+        apiMessages as Array<{ role: string; content: string }>,
+        tools.length > 0 ? tools : undefined
+      );
+      
+      usedFallback = true;
+      fallbackResponse = fallbackResult.content;
+      
+      // Convert fallback tool calls to admin format
+      adminToolCalls = fallbackResult.toolCalls.map(tc => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: {
+          name: tc.name,
+          arguments: JSON.stringify(tc.arguments),
+        },
+      }));
+      
+      // Create pseudo-SdkToolCalls for compatibility with existing code
+      toolCalls = fallbackResult.toolCalls.map(tc => ({
+        id: tc.id,
+        name: tc.name,
+        arguments: tc.arguments,
+      })) as unknown as SdkToolCall[];
+    } else {
+      // Re-throw non-Zod errors
+      throw sdkError;
+    }
+  }
 
   logger.info('LLM response', {
     event: 'llm_response',
     hasToolCalls: toolCalls.length > 0,
     toolCallCount: toolCalls.length,
     toolNames: toolCalls.map(tc => String(tc.name)),
+    usedFallback,
   });
 
   // Helper to safely extract tool call args as Record<string, unknown>
@@ -490,7 +623,10 @@ async function processChat(
   }
 
   const toolResults: ToolResult[] = [];
-  if (toolCalls.length > 0) {
+  
+  // When using fallback, we skip the SDK's tool execution stream since we don't have it
+  // The fallback only returns tool calls, not execution results
+  if (toolCalls.length > 0 && modelResult && !usedFallback) {
     for await (const item of modelResult.getNewMessagesStream()) {
       if (item && typeof item === 'object' && 'type' in item && item.type === 'function_call_output') {
         const outputItem = item as { callId?: string; output?: string };
@@ -505,9 +641,14 @@ async function processChat(
     }
   }
 
-  const finalResponse = await modelResult.getResponse();
-  const assistantMessage = toChatMessage(finalResponse);
-  response = typeof assistantMessage.content === 'string' ? assistantMessage.content : '';
+  // Get final response - either from SDK or fallback
+  if (usedFallback) {
+    response = fallbackResponse;
+  } else if (modelResult) {
+    const finalResponse = await modelResult.getResponse();
+    const assistantMessage = toChatMessage(finalResponse);
+    response = typeof assistantMessage.content === 'string' ? assistantMessage.content : '';
+  }
 
   if (toolCalls.length > 0) {
     messages.push({
