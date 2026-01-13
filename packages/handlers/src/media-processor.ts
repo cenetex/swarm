@@ -138,7 +138,7 @@ async function initialize(): Promise<void> {
     process.env.SECRETS_ARN || `swarm/${getAgentId()}/secrets`
   );
 
-  mediaService = createMediaService(secrets, getMediaBucket(), process.env.CDN_DOMAIN);
+  mediaService = createMediaService(secrets, getMediaBucket(), process.env.CDN_URL);
 }
 
 function buildImagePrompt(action: { prompt: string; style?: string }, agent: AgentConfig): string {

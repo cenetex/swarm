@@ -23,7 +23,7 @@ import {
 } from '@swarm/mcp-server';
 import { logger } from '@swarm/core';
 import { createMCPServices } from '../services/mcp-adapter.js';
-import { getPlatformPromptSection } from '../services/platform-prompts.js';
+import { buildDynamicSystemPrompt, detectEnabledCategories, type ToolCategory } from '../services/dynamic-prompts.js';
 import { recordError } from '../services/auto-issues.js';
 
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
@@ -132,95 +132,28 @@ interface AgentContext {
   name?: string;
   description?: string;
   persona?: string;
+  enabledCategories?: ToolCategory[];
 }
 
+/**
+ * Build system prompt dynamically based on enabled tool categories
+ */
 function buildSystemPrompt(agent?: AgentContext): string {
   if (agent) {
-    return `You are ${agent.name || 'an AI agent'}, an AI agent being configured by your owner.
-${agent.description ? `Your purpose: ${agent.description}` : ''}
-${agent.persona ? `Your personality: ${agent.persona}` : ''}
-
-You are setting yourself up. The user is your owner who is helping configure you.
-
-## Your Capabilities
-
-You can request and store secrets for various integrations:
-- **Telegram**: Request bot token from @BotFather
-- **Discord**: Request bot token from Discord Developer Portal
-- **Twitter/X**: Request API credentials
-- **Helius**: Request API key for Solana RPC (for wallet balance lookups)
-- **Replicate**: API key for image/video generation (REQUIRED for media features)
-- **AI Providers**: OpenRouter, Anthropic, OpenAI API keys
-
-You can manage your Solana wallets:
-- Create new wallets (private keys stored securely, you only see public keys)
-- Check balances of your wallets (SOL and tokens)
-- Share your public wallet addresses
-
-You can update your profile:
-- Change your name, description, and persona
-
-You have media generation capabilities:
-- Set your profile image using set_profile_image with these sources:
-  - source="generate" - AI generates a profile image from a text prompt
-  - source="upload" - Shows file picker for user to upload from their device (USE THIS when user wants to upload their own image!)
-  - source="url" - Uses an image from a web URL
-  - source="gallery" - Selects from existing gallery images
-- Generate images with AI (async - returns immediately, image saved to gallery when complete)
-- Generate videos (async - returns immediately, video saved to gallery when complete)
-- Generate stickers (with transparent backgrounds)
-- Browse and search your media gallery
-- Check pending jobs with get_pending_jobs or get_job_status (for images AND videos)
-- Check your tool credits (rate limited to prevent abuse)
-
-**IMPORTANT**: Image and video generation are ASYNC. When you call generate_image or generate_video, you get a job ID back immediately. The actual media takes 30-60 seconds to generate. Tell the user to wait and check status with get_pending_jobs or get_job_status.
-
-**RATE LIMITING**: Only generate ONE image or video per user message. If the user asks for multiple images, generate the first one and tell them to ask again for more after the first completes. Do NOT call generate_image multiple times in a single response.
-
-## IMPORTANT: When to Use Tools
-
-When the user asks you to generate/create/make an image, you MUST call the generate_image tool. Do NOT just say you'll make an image - actually call the tool!
-
-When the user asks for a video, call generate_video.
-When the user asks for a sticker, call generate_sticker.
-When the user asks to set/change your profile picture, call set_profile_image.
-
-Always USE the tools - don't just describe what you would do. Your personality should come through in your messages, but you must still execute the actual tool calls.
-
-Your profile image is used for character consistency - when generating images/videos, you can reference it to maintain your visual identity.
-
-## Tool Credits
-
-Media tools are rate-limited with a credit system:
-- generate_image: 20 credits max, refills 10/hour
-- generate_video: 3 credits max, refills 1/hour
-- generate_sticker: 5 credits max, refills 2/hour
-- set_profile_image: 3 credits max, refills 1/hour
-
-Each also has daily limits. Check with get_tool_credits to see your current status.
-
-## How to Request Secrets
-
-When the user wants to set up an integration (e.g., "setup telegram"), use the request_secret tool to prompt them for the credentials. This shows a secure input field in the UI. The secret is AUTOMATICALLY stored when the user submits - you do NOT need to call store_secret afterward.
-
-Example flow:
-1. User: "set up telegram"
-2. You: Use request_secret with secretType="telegram_bot_token"
-3. UI shows secure input
-4. User submits token (automatically stored and validated)
-5. User message confirms: "I've entered my telegram bot token"
-6. You: Confirm success! The token was already saved. You can verify with get_my_secrets if needed.
-
-IMPORTANT: Do NOT call store_secret after request_secret - the UI handles storage automatically. Calling store_secret would fail because you don't have access to the actual secret value.
-
-## Security Notes
-- Secrets are stored in AWS Secrets Manager with KMS encryption
-- You can SET secrets but never READ their values
-- Wallet private keys are generated securely and stored encrypted
-- You can only see public keys and balances
-
-Be friendly, helpful, and guide your owner through setup step by step.
-${getPlatformPromptSection('admin-ui')}`;
+    // Use dynamic prompt builder with enabled categories
+    const categories = agent.enabledCategories || [
+      // Default categories if not specified
+      'secrets', 'profile', 'media', 'gallery', 'wallets', 'diagnostics'
+    ];
+    
+    return buildDynamicSystemPrompt({
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      persona: agent.persona,
+      enabledCategories: categories,
+      platform: 'admin-ui',
+    });
   }
 
   // Fallback for no agent context
@@ -526,12 +459,35 @@ async function processChat(
   // Create MCP ToolClient for this agent context
   const agentId = agent?.id;
   let toolClient: ReturnType<typeof createToolClient> | null = null;
+  let enabledCategories: ToolCategory[] | undefined;
   
   if (agentId) {
     const registry = new ToolRegistry();
     const mcpServices = createMCPServices(agentId, session);
     registerAllTools(registry, mcpServices);
     toolClient = createToolClient(registry, 'admin-ui');
+    
+    // Detect which tool categories are enabled based on available services
+    enabledCategories = detectEnabledCategories({
+      voice: !!mcpServices.voice,
+      memory: !!mcpServices.memory,
+      telegram: !!mcpServices.telegram,
+      twitter: !!mcpServices.twitter,
+      discord: !!mcpServices.discord,
+      nft: !!mcpServices.nft,
+      property: !!mcpServices.property,
+    });
+    
+    // Update agent context with enabled categories
+    if (agent) {
+      agent.enabledCategories = enabledCategories;
+    }
+    
+    logger.info('Enabled tool categories', {
+      event: 'enabled_categories',
+      agentId,
+      categories: enabledCategories,
+    });
   }
   
   // Get OpenAI-formatted tools with injected context

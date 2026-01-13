@@ -57,6 +57,11 @@ export interface AgentConstructProps {
    * Environment (dev, staging, prod)
    */
   environment?: string;
+
+  /**
+   * CDN URL for media (e.g., https://gallery.example.com)
+   */
+  cdnUrl?: string;
 }
 
 export class AgentConstruct extends Construct {
@@ -69,7 +74,7 @@ export class AgentConstruct extends Construct {
   constructor(scope: Construct, id: string, props: AgentConstructProps) {
     super(scope, id);
 
-    const { config, stateTable, activityTable, mediaBucket, dependencyLayer, handlersCodePath, environment = 'dev' } = props;
+    const { config, stateTable, activityTable, mediaBucket, dependencyLayer, handlersCodePath, environment = 'dev', cdnUrl } = props;
 
     // Create or import secrets
     if (props.secretsArn) {
@@ -133,6 +138,7 @@ export class AgentConstruct extends Construct {
       MESSAGE_QUEUE_URL: this.messageQueue.queueUrl,
       RESPONSE_QUEUE_URL: this.responseQueue.queueUrl,
       MEDIA_QUEUE_URL: this.mediaQueue.queueUrl,
+      CDN_URL: cdnUrl || '',
       ENVIRONMENT: environment,
     };
 

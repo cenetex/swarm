@@ -189,6 +189,7 @@ export class SwarmStack extends cdk.Stack {
           mediaBucket: this.shared.mediaBucket,
           dependencyLayer: this.shared.dependencyLayer,
           handlersCodePath: handlersPath,
+          cdnUrl: this.shared.cdnUrl,
           environment,
         });
 

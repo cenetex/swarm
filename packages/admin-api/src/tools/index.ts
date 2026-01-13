@@ -14,6 +14,7 @@ export * from './secrets.js';
 export * from './profile.js';
 export * from './media.js';
 export * from './gallery.js';
+export * from './features.js';
 
 import type { UserSession } from '../types.js';
 import type { ToolDefinition } from './tool-helper.js';
@@ -63,6 +64,8 @@ import {
   searchGallery,
   sendGalleryImage,
 } from './gallery.js';
+
+import { requestFeatureToggle } from './features.js';
 
 /**
  * Service dependencies for tool execution
@@ -195,6 +198,7 @@ export function createAgentTools(
     // Manual tools (no execute function, return to UI)
     requestSecret,
     requestModelSelection,
+    requestFeatureToggle,
 
     // Read-only tools
     getMyModelConfig(agentId, services.getAgentConfig),
@@ -249,6 +253,7 @@ export function createAgentTools(
 export const MANUAL_TOOL_NAMES = [
   'request_secret',
   'request_model_selection',
+  'request_feature_toggle',
 ] as const;
 
 /**

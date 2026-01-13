@@ -7,17 +7,17 @@ import type { MediaService, MediaConfig, GeneratedMedia } from '../../types/inde
 export class SwarmMediaService implements MediaService {
   private s3Client: S3Client;
   private bucketName: string;
-  private cdnDomain?: string;
+  private cdnUrl?: string;
 
   constructor(
     private readonly secrets: Record<string, string>,
     bucketName: string,
-    cdnDomain?: string,
+    cdnUrl?: string,
     region: string = 'us-east-1'
   ) {
     this.s3Client = new S3Client({ region });
     this.bucketName = bucketName;
-    this.cdnDomain = cdnDomain;
+    this.cdnUrl = normalizeCdnUrl(cdnUrl);
   }
 
   async generateImage(prompt: string, config: MediaConfig['image']): Promise<GeneratedMedia> {
@@ -53,8 +53,8 @@ export class SwarmMediaService implements MediaService {
       CacheControl: 'max-age=31536000',
     }));
 
-    if (this.cdnDomain) {
-      return `https://${this.cdnDomain}/${key}`;
+    if (this.cdnUrl) {
+      return `${this.cdnUrl}/${key}`;
     }
     
     return `https://${this.bucketName}.s3.amazonaws.com/${key}`;
@@ -348,7 +348,15 @@ export class SwarmMediaService implements MediaService {
 export function createMediaService(
   secrets: Record<string, string>,
   bucketName: string,
-  cdnDomain?: string
+  cdnUrl?: string
 ): MediaService {
-  return new SwarmMediaService(secrets, bucketName, cdnDomain);
+  return new SwarmMediaService(secrets, bucketName, cdnUrl);
+}
+
+function normalizeCdnUrl(cdnUrl?: string): string | undefined {
+  if (!cdnUrl) return undefined;
+  const trimmed = cdnUrl.trim();
+  if (!trimmed) return undefined;
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return withScheme.replace(/\/+$/, '');
 }

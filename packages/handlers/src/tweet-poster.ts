@@ -18,7 +18,7 @@ import {
 const STATE_TABLE = process.env.STATE_TABLE!;
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE!;
 const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
-const CDN_DOMAIN = process.env.CDN_DOMAIN;
+const CDN_URL = process.env.CDN_URL;
 const AGENT_ID = process.env.AGENT_ID!;
 const TWEET_TEMPLATE = process.env.TWEET_TEMPLATE || 'general';
 
@@ -114,7 +114,7 @@ Respond with ONLY the tweet text, nothing else.`;
     // 30% chance to include an image
     if (Math.random() < 0.3) {
       try {
-        const mediaService = createMediaService(secrets, MEDIA_BUCKET, CDN_DOMAIN);
+  const mediaService = createMediaService(secrets, MEDIA_BUCKET, CDN_URL);
         
         const imagePromptResponse = await llmService.generateResponse({
           agentId: AGENT_ID,
