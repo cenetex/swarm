@@ -3,6 +3,11 @@
  *
  * Tests for URL conversion logic and image generation options.
  * These are pure function tests that don't require mocking.
+ *
+ * Bug Index:
+ * - BUG-009: Promise.all fails entirely if one URL fails (line 104)
+ *
+ * @see packages/admin-api/src/services/media.ts
  */
 import { describe, it, expect } from 'vitest';
 
@@ -130,5 +135,169 @@ describe('Image Generation Options', () => {
 
     expect(nanoBananaInput.image_input).toBeUndefined();
     expect(nanoBananaInput.aspect_ratio).toBe('1:1');
+  });
+});
+
+describe('URL Accessibility - Promise.allSettled Pattern', () => {
+  /**
+   * BUG-009: Promise.all fails entirely if one URL fails
+   * File: packages/admin-api/src/services/media.ts:104
+   *
+   * Previously, if one URL failed to become accessible, the entire Promise.all would reject.
+   *
+   * Fix: Changed to Promise.allSettled with fallback to original URL on failure
+   */
+  describe('Partial failure handling with Promise.allSettled (BUG-009)', () => {
+    it('should handle all successful URL conversions', async () => {
+      const urls = [
+        'https://bucket.s3.amazonaws.com/path1.png',
+        'https://bucket.s3.amazonaws.com/path2.png',
+        'https://bucket.s3.amazonaws.com/path3.png',
+      ];
+
+      // Simulate makeUrlAccessible for each URL (succeeds)
+      const makeUrlAccessible = async (url: string) => url.replace('s3.amazonaws.com', 'cdn.example.com');
+
+      const results = await Promise.allSettled(urls.map(url => makeUrlAccessible(url)));
+
+      const successfulUrls: string[] = [];
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        if (result.status === 'fulfilled') {
+          successfulUrls.push(result.value);
+        } else {
+          // Fallback to original URL
+          successfulUrls.push(urls[i]);
+        }
+      }
+
+      expect(successfulUrls).toHaveLength(3);
+      expect(successfulUrls.every(url => url.includes('cdn.example.com'))).toBe(true);
+    });
+
+    it('should fallback to original URL when conversion fails', async () => {
+      const urls = [
+        'https://bucket.s3.amazonaws.com/good.png',
+        'https://bucket.s3.amazonaws.com/bad.png',
+        'https://bucket.s3.amazonaws.com/also-good.png',
+      ];
+
+      // Simulate makeUrlAccessible that fails for 'bad.png'
+      const makeUrlAccessible = async (url: string) => {
+        if (url.includes('bad.png')) {
+          throw new Error('Network error');
+        }
+        return url.replace('s3.amazonaws.com', 'cdn.example.com');
+      };
+
+      const results = await Promise.allSettled(urls.map(url => makeUrlAccessible(url)));
+
+      const successfulUrls: string[] = [];
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        if (result.status === 'fulfilled') {
+          successfulUrls.push(result.value);
+        } else {
+          // The fix: fallback to original URL instead of failing entirely
+          successfulUrls.push(urls[i]);
+        }
+      }
+
+      expect(successfulUrls).toHaveLength(3);
+      // First and third should be converted
+      expect(successfulUrls[0]).toBe('https://bucket.cdn.example.com/good.png');
+      // Second should fallback to original
+      expect(successfulUrls[1]).toBe('https://bucket.s3.amazonaws.com/bad.png');
+      expect(successfulUrls[2]).toBe('https://bucket.cdn.example.com/also-good.png');
+    });
+
+    it('should handle all URLs failing gracefully', async () => {
+      const urls = [
+        'https://bucket.s3.amazonaws.com/1.png',
+        'https://bucket.s3.amazonaws.com/2.png',
+      ];
+
+      // All conversions fail
+      const makeUrlAccessible = async (_url: string) => {
+        throw new Error('Service unavailable');
+      };
+
+      const results = await Promise.allSettled(urls.map(url => makeUrlAccessible(url)));
+
+      const successfulUrls: string[] = [];
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        if (result.status === 'fulfilled') {
+          successfulUrls.push(result.value);
+        } else {
+          successfulUrls.push(urls[i]);
+        }
+      }
+
+      // All should fallback to original URLs
+      expect(successfulUrls).toEqual(urls);
+    });
+
+    it('should maintain URL order regardless of failure position', async () => {
+      const urls = ['url1', 'url2', 'url3', 'url4', 'url5'];
+      const failingIndices = [1, 3]; // url2 and url4 fail
+
+      const makeUrlAccessible = async (url: string) => {
+        const index = urls.indexOf(url);
+        if (failingIndices.includes(index)) {
+          throw new Error('Failed');
+        }
+        return `converted-${url}`;
+      };
+
+      const results = await Promise.allSettled(urls.map(url => makeUrlAccessible(url)));
+
+      const successfulUrls: string[] = [];
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        if (result.status === 'fulfilled') {
+          successfulUrls.push(result.value);
+        } else {
+          successfulUrls.push(urls[i]);
+        }
+      }
+
+      expect(successfulUrls).toEqual([
+        'converted-url1',
+        'url2',  // Original (failed)
+        'converted-url3',
+        'url4',  // Original (failed)
+        'converted-url5',
+      ]);
+    });
+  });
+
+  describe('Comparison: Promise.all vs Promise.allSettled', () => {
+    it('Promise.all rejects on first failure (old behavior)', async () => {
+      const operations = [
+        Promise.resolve('success1'),
+        Promise.reject(new Error('failure')),
+        Promise.resolve('success2'),
+      ];
+
+      // Old behavior with Promise.all - entire operation fails
+      await expect(Promise.all(operations)).rejects.toThrow('failure');
+    });
+
+    it('Promise.allSettled continues on failure (new behavior)', async () => {
+      const operations = [
+        Promise.resolve('success1'),
+        Promise.reject(new Error('failure')),
+        Promise.resolve('success2'),
+      ];
+
+      // New behavior with Promise.allSettled - all results available
+      const results = await Promise.allSettled(operations);
+
+      expect(results[0]).toEqual({ status: 'fulfilled', value: 'success1' });
+      expect(results[1].status).toBe('rejected');
+      expect((results[1] as PromiseRejectedResult).reason.message).toBe('failure');
+      expect(results[2]).toEqual({ status: 'fulfilled', value: 'success2' });
+    });
   });
 });

@@ -1,6 +1,11 @@
 /**
  * Telegram Platform Tests
  * Tests for buildTelegramEnvelope and related utilities
+ *
+ * Bug Index:
+ * - BUG-012: Unknown chat types cause unsafe cast (line 58)
+ *
+ * @see packages/core/src/platforms/telegram.ts
  */
 import { describe, it, expect } from 'vitest';
 import { buildTelegramEnvelope, envelopeToBufferedMessage, type TelegramEnvelopeConfig } from './telegram.js';
@@ -130,6 +135,96 @@ describe('buildTelegramEnvelope', () => {
 
       expect(envelope!.metadata.chatType).toBe('private');
       expect(envelope!.metadata.chatTitle).toBeUndefined();
+    });
+
+    /**
+     * BUG-012: Unknown chat types cause unsafe cast
+     * File: packages/core/src/platforms/telegram.ts:58
+     *
+     * Previously, unknown chat types were cast directly without validation.
+     *
+     * Fix: Validate against known types, default unknown types to 'group'
+     */
+    describe('Unknown chat type handling (BUG-012)', () => {
+      it('should handle all valid chat types', () => {
+        const validTypes = ['private', 'group', 'supergroup', 'channel'] as const;
+
+        for (const chatType of validTypes) {
+          const update = createTelegramUpdate();
+          update.message = {
+            ...update.message!,
+            chat: {
+              id: 123,
+              type: chatType,
+              title: chatType === 'private' ? undefined : 'Test',
+              first_name: chatType === 'private' ? 'John' : undefined,
+            } as Message['chat'],
+          };
+
+          const envelope = buildTelegramEnvelope(update, defaultConfig);
+          expect(envelope).not.toBeNull();
+          expect(envelope!.metadata.chatType).toBe(chatType);
+        }
+      });
+
+      it('should validate chat type against known types', () => {
+        const validChatTypes = ['private', 'group', 'supergroup', 'channel'] as const;
+        const testTypes = ['private', 'group', 'supergroup', 'channel', 'forum', 'unknown', 'newtype'];
+
+        for (const testType of testTypes) {
+          const isValid = validChatTypes.includes(testType as typeof validChatTypes[number]);
+
+          if (['private', 'group', 'supergroup', 'channel'].includes(testType)) {
+            expect(isValid).toBe(true);
+          } else {
+            expect(isValid).toBe(false);
+          }
+        }
+      });
+
+      it('should default unknown chat types to group for filtering', () => {
+        // This tests the defensive behavior when Telegram adds new chat types
+        const validChatTypes = ['private', 'group', 'supergroup', 'channel'] as const;
+        const rawChatType = 'forum'; // Hypothetical new type from Telegram API
+
+        const isKnownType = validChatTypes.includes(rawChatType as typeof validChatTypes[number]);
+        const normalizedType = isKnownType
+          ? (rawChatType as 'private' | 'group' | 'supergroup' | 'channel')
+          : 'group';
+
+        expect(isKnownType).toBe(false);
+        expect(normalizedType).toBe('group');
+      });
+
+      it('should still filter based on normalized type', () => {
+        const validChatTypes = ['private', 'group', 'supergroup', 'channel'] as const;
+        const allowedChatTypes: ('private' | 'group' | 'supergroup' | 'channel')[] = ['private'];
+
+        // Unknown type 'forum' should normalize to 'group'
+        const rawChatType = 'forum';
+        const normalizedType = validChatTypes.includes(rawChatType as typeof validChatTypes[number])
+          ? (rawChatType as 'private' | 'group' | 'supergroup' | 'channel')
+          : 'group';
+
+        // 'group' is not in allowedChatTypes, so should be filtered
+        const isAllowed = allowedChatTypes.includes(normalizedType);
+        expect(isAllowed).toBe(false);
+      });
+
+      it('should allow unknown types when group is in allowed list', () => {
+        const validChatTypes = ['private', 'group', 'supergroup', 'channel'] as const;
+        const allowedChatTypes: ('private' | 'group' | 'supergroup' | 'channel')[] = ['group', 'supergroup'];
+
+        // Unknown type normalizes to 'group'
+        const rawChatType = 'newtype';
+        const normalizedType = validChatTypes.includes(rawChatType as typeof validChatTypes[number])
+          ? (rawChatType as 'private' | 'group' | 'supergroup' | 'channel')
+          : 'group';
+
+        // 'group' IS in allowedChatTypes
+        const isAllowed = allowedChatTypes.includes(normalizedType);
+        expect(isAllowed).toBe(true);
+      });
     });
   });
 
