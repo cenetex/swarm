@@ -108,6 +108,15 @@ export function createToolServices(agentId: string, session: UserSession): ToolS
       const job = await media.generateProfileImageAsync(agentId, prompt);
       return { jobId: job.jobId, status: job.status };
     },
+    setCharacterReference: async (source, description) => {
+      return media.setCharacterReference(agentId, source, description);
+    },
+    getCharacterReferenceUploadUrl: async () => media.getCharacterReferenceUploadUrl(agentId),
+    saveCharacterReference: async (s3Key: string, publicUrl: string, description?: string) => {
+      await agents.updateAgent(agentId, {
+        characterReference: { url: publicUrl, s3Key, description, updatedAt: Date.now() },
+      }, session);
+    },
 
     generateImage: async (params) => {
       const referenceUrls: string[] = [];

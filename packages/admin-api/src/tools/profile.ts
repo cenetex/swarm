@@ -137,6 +137,75 @@ export const setProfileImage = (
 });
 
 /**
+ * Set character reference image (full-body reference)
+ */
+export const setCharacterReference = (
+  _agentId: string,
+  handlers: {
+    generate: (prompt: string, description?: string) => Promise<{ url: string; s3Key: string }>;
+    fromUrl: (url: string, description?: string) => Promise<{ url: string; s3Key: string }>;
+    fromGallery: (imageId: string, description?: string) => Promise<{ url: string; s3Key: string }>;
+    getUploadUrl: () => Promise<{ uploadUrl: string; s3Key: string; publicUrl: string }>;
+  }
+) => tool({
+  name: 'set_character_reference',
+  description: 'Set my character reference image (full-body turnaround/model sheet) for consistent image and video generation.',
+  inputSchema: z.object({
+    source: ImageSourceSchema.describe('Where to get the character reference image'),
+    prompt: z.string().optional().describe('For generate: description of the character reference to create'),
+    url: z.string().optional().describe('For url: the image URL to use'),
+    imageId: z.string().optional().describe('For gallery: ID of an image from my gallery'),
+    description: z.string().optional().describe('Optional description of the character reference'),
+  }),
+  execute: async (params) => {
+    switch (params.source) {
+      case 'generate':
+        if (!params.prompt) {
+          return { error: 'prompt is required for generate source' };
+        }
+        return {
+          ...(await handlers.generate(params.prompt, params.description)),
+          message: 'Character reference generated and saved.',
+          description: params.description,
+        };
+
+      case 'url':
+        if (!params.url) {
+          return { error: 'url is required for url source' };
+        }
+        return {
+          ...(await handlers.fromUrl(params.url, params.description)),
+          message: 'Character reference updated from URL.',
+          description: params.description,
+        };
+
+      case 'gallery':
+        if (!params.imageId) {
+          return { error: 'imageId is required for gallery source' };
+        }
+        return {
+          ...(await handlers.fromGallery(params.imageId, params.description)),
+          message: 'Character reference updated from gallery.',
+          description: params.description,
+        };
+
+      case 'upload': {
+        const uploadInfo = await handlers.getUploadUrl();
+        return {
+          type: 'upload_widget',
+          ...uploadInfo,
+          purpose: 'character_reference',
+          description: params.description,
+        };
+      }
+
+      default:
+        return { error: 'Invalid source type' };
+    }
+  },
+});
+
+/**
  * Get profile upload URL (alternative to set_profile_image with upload)
  */
 export const getProfileUploadUrl = (
@@ -151,6 +220,28 @@ export const getProfileUploadUrl = (
       type: 'upload_widget',
       ...info,
       purpose: 'profile',
+    };
+  },
+});
+
+/**
+ * Get character reference upload URL
+ */
+export const getCharacterReferenceUploadUrl = (
+  getUploadUrl: () => Promise<{ uploadUrl: string; s3Key: string; publicUrl: string }>
+) => tool({
+  name: 'get_character_reference_upload_url',
+  description: 'Get a signed URL for the user to upload a character reference image (turnaround/model sheet).',
+  inputSchema: z.object({
+    description: z.string().optional().describe('Optional description of the character reference'),
+  }),
+  execute: async ({ description }) => {
+    const info = await getUploadUrl();
+    return {
+      type: 'upload_widget',
+      ...info,
+      purpose: 'character_reference',
+      description,
     };
   },
 });
@@ -174,6 +265,31 @@ export const saveUploadedProfileImage = (
       success: true,
       message: 'Profile image saved',
       url: publicUrl,
+    };
+  },
+});
+
+/**
+ * Save an uploaded character reference image
+ */
+export const saveUploadedCharacterReference = (
+  _agentId: string,
+  saveReference: (s3Key: string, publicUrl: string, description?: string) => Promise<void>
+) => tool({
+  name: 'save_uploaded_character_reference',
+  description: 'Save an already-uploaded image as my character reference.',
+  inputSchema: z.object({
+    s3Key: z.string().describe('The S3 key of the uploaded image'),
+    publicUrl: z.string().describe('The public URL of the uploaded image'),
+    description: z.string().optional().describe('Optional description of the character reference'),
+  }),
+  execute: async ({ s3Key, publicUrl, description }) => {
+    await saveReference(s3Key, publicUrl, description);
+    return {
+      success: true,
+      message: 'Character reference saved',
+      url: publicUrl,
+      description,
     };
   },
 });

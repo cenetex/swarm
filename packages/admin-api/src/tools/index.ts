@@ -44,8 +44,11 @@ import {
   createSolanaWallet,
   getWalletBalance,
   setProfileImage,
+  setCharacterReference,
   getProfileUploadUrl,
+  getCharacterReferenceUploadUrl,
   saveUploadedProfileImage,
+  saveUploadedCharacterReference,
 } from './profile.js';
 
 import {
@@ -111,6 +114,12 @@ export interface ToolServices {
   setProfileFromUrl: (url: string) => Promise<{ success: boolean; url: string }>;
   setProfileFromGallery: (imageId: string) => Promise<{ success: boolean; url: string }>;
   generateProfileImage: (prompt: string) => Promise<{ jobId: string; status: string }>;
+  setCharacterReference: (
+    source: { type: 'url'; url: string } | { type: 'generate'; prompt: string } | { type: 'gallery'; imageId: string },
+    description?: string
+  ) => Promise<{ url: string; s3Key: string }>;
+  getCharacterReferenceUploadUrl: () => Promise<{ uploadUrl: string; s3Key: string; publicUrl: string }>;
+  saveCharacterReference: (s3Key: string, publicUrl: string, description?: string) => Promise<void>;
 
   // Media generation
   generateImage: (params: {
@@ -233,8 +242,16 @@ export function createAgentTools(
       fromGallery: services.setProfileFromGallery,
       getUploadUrl: services.getProfileUploadUrl,
     }),
+    setCharacterReference(agentId, {
+      generate: (prompt, description) => services.setCharacterReference({ type: 'generate', prompt }, description),
+      fromUrl: (url, description) => services.setCharacterReference({ type: 'url', url }, description),
+      fromGallery: (imageId, description) => services.setCharacterReference({ type: 'gallery', imageId }, description),
+      getUploadUrl: services.getCharacterReferenceUploadUrl,
+    }),
     getProfileUploadUrl(services.getProfileUploadUrl),
+    getCharacterReferenceUploadUrl(services.getCharacterReferenceUploadUrl),
     saveUploadedProfileImage(agentId, services.saveProfileImage),
+    saveUploadedCharacterReference(agentId, services.saveCharacterReference),
 
     // Media generation
     generateImage(agentId, services.generateImage),
@@ -272,6 +289,7 @@ export const MANUAL_TOOL_NAMES = [
 export const UPLOAD_TOOL_NAMES = [
   'get_profile_upload_url',
   'get_reference_image_upload_url',
+  'get_character_reference_upload_url',
 ] as const;
 
 /**
@@ -282,6 +300,9 @@ export function isPauseForInputTool(toolName: string, args?: Record<string, unkn
     return true;
   }
   if (toolName === 'set_profile_image' && args?.source === 'upload') {
+    return true;
+  }
+  if (toolName === 'set_character_reference' && args?.source === 'upload') {
     return true;
   }
   if (UPLOAD_TOOL_NAMES.includes(toolName as typeof UPLOAD_TOOL_NAMES[number])) {

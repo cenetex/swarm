@@ -123,10 +123,25 @@ describe('Chat Handler - Tool Routing Logic', () => {
       })).toBe(true);
     });
 
+    it('should pause for get_character_reference_upload_url', () => {
+      expect(shouldPauseTool({
+        function: { name: 'get_character_reference_upload_url' }
+      })).toBe(true);
+    });
+
     it('should pause for set_profile_image with source=upload', () => {
       expect(shouldPauseTool({
         function: {
           name: 'set_profile_image',
+          arguments: JSON.stringify({ source: 'upload' })
+        }
+      })).toBe(true);
+    });
+
+    it('should pause for set_character_reference with source=upload', () => {
+      expect(shouldPauseTool({
+        function: {
+          name: 'set_character_reference',
           arguments: JSON.stringify({ source: 'upload' })
         }
       })).toBe(true);

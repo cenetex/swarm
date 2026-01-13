@@ -324,7 +324,13 @@ function buildPendingToolResponse(toolName: string, args: Record<string, unknown
     const label = typeof args.label === 'string' ? args.label : 'the requested secret';
     return `Please enter ${label}.`;
   }
-  if (toolName === 'get_profile_upload_url' || toolName === 'get_reference_image_upload_url' || toolName === 'set_profile_image') {
+  if (
+    toolName === 'get_profile_upload_url' ||
+    toolName === 'get_reference_image_upload_url' ||
+    toolName === 'get_character_reference_upload_url' ||
+    toolName === 'set_profile_image' ||
+    toolName === 'set_character_reference'
+  ) {
     return 'Please upload your image:';
   }
   return 'Please provide the requested input.';
@@ -592,7 +598,9 @@ async function processChat(
       } else if (
         toolName === 'get_profile_upload_url' ||
         toolName === 'get_reference_image_upload_url' ||
-        toolName === 'set_profile_image'
+        toolName === 'get_character_reference_upload_url' ||
+        toolName === 'set_profile_image' ||
+        toolName === 'set_character_reference'
       ) {
         pendingArgs = await executeUiTool(toolName, pendingArgs, tools);
       }
