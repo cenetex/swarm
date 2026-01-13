@@ -12,7 +12,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import type { AgentRecord, UserSession } from '../types.js';
 import { syncAgentConfig } from './config-sync.js';
-import { getGateStatus, type GateStatus } from './nft-gate.js';
+import { getGateStatus, incrementCreatorCount, decrementCreatorCount, type GateStatus } from './nft-gate.js';
 
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
@@ -156,6 +156,8 @@ export async function createAgentWithWallet(
     throw err;
   }
 
+  await incrementCreatorCount(creatorWallet);
+
   // 2. Re-verify gate status (pessimistic check for race conditions)
   const finalStatus = await getGateStatus(creatorWallet);
   if (finalStatus.agentsCreated > finalStatus.nftsHeld) {
@@ -166,6 +168,7 @@ export async function createAgentWithWallet(
       TableName: ADMIN_TABLE,
       Item: { ...agent, status: 'deleted' },
     }));
+    await decrementCreatorCount(creatorWallet);
     return {
       success: false,
       error: 'no_gate_slot',
@@ -284,6 +287,10 @@ export async function deleteAgent(
   agentId: string,
   session: UserSession
 ): Promise<void> {
+  const existing = await getAgent(agentId);
+  if (existing?.creatorWallet && existing.status !== 'deleted') {
+    await decrementCreatorCount(existing.creatorWallet);
+  }
   await updateAgent(agentId, { status: 'deleted' }, session);
 }
 

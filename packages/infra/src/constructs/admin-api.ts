@@ -164,12 +164,6 @@ export class AdminApiConstruct extends Construct {
       sortKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
     });
 
-    // GSI2 for creator wallet lookups (creatorWallet → agents)
-    this.table.addGlobalSecondaryIndex({
-      indexName: 'GSI2',
-      partitionKey: { name: 'creatorWallet', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
-    });
 
     // Note: Media jobs are queried using Scan with filter (no GSI needed)
     // Jobs have TTL so the scan is bounded by recent jobs only

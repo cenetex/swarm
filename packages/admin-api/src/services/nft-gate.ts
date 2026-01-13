@@ -7,7 +7,7 @@
  * 2. BURNING = Permission to abandon an inhabited agent
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import {
   SecretsManagerClient,
   GetSecretValueCommand,
@@ -55,10 +55,100 @@ async function getHeliusRpcUrl(): Promise<string> {
 }
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
-const CREATOR_GSI_NAME = 'GSI2';
+const CREATOR_STATS_SK = 'STATS';
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
 });
+
+function creatorStatsKey(walletAddress: string): { pk: string; sk: string } {
+  return {
+    pk: `CREATOR#${walletAddress}`,
+    sk: CREATOR_STATS_SK,
+  };
+}
+
+async function recalculateCreatorCount(walletAddress: string): Promise<number> {
+  const result = await dynamoClient.send(new ScanCommand({
+    TableName: ADMIN_TABLE,
+    FilterExpression: 'sk = :sk AND creatorWallet = :wallet AND #status <> :deleted',
+    ExpressionAttributeNames: {
+      '#status': 'status',
+    },
+    ExpressionAttributeValues: {
+      ':sk': 'CONFIG',
+      ':wallet': walletAddress,
+      ':deleted': 'deleted',
+    },
+    Select: 'COUNT',
+  }));
+
+  const count = result.Count || 0;
+
+  await dynamoClient.send(new PutCommand({
+    TableName: ADMIN_TABLE,
+    Item: {
+      ...creatorStatsKey(walletAddress),
+      agentsCreated: count,
+      updatedAt: Date.now(),
+    },
+  }));
+
+  return count;
+}
+
+export async function incrementCreatorCount(walletAddress: string): Promise<void> {
+  try {
+    await dynamoClient.send(new UpdateCommand({
+      TableName: ADMIN_TABLE,
+      Key: creatorStatsKey(walletAddress),
+      UpdateExpression: 'SET agentsCreated = if_not_exists(agentsCreated, :zero) + :one, updatedAt = :now',
+      ExpressionAttributeValues: {
+        ':zero': 0,
+        ':one': 1,
+        ':now': Date.now(),
+      },
+    }));
+  } catch (error) {
+    console.warn('[NFTGate] Failed to increment creator count, recalculating', error);
+    await recalculateCreatorCount(walletAddress).catch((recalcError) => {
+      console.error('[NFTGate] Failed to recalculate creator count', recalcError);
+    });
+  }
+}
+
+export async function decrementCreatorCount(walletAddress: string): Promise<void> {
+  try {
+    const stats = await dynamoClient.send(new GetCommand({
+      TableName: ADMIN_TABLE,
+      Key: creatorStatsKey(walletAddress),
+    }));
+
+    const current = typeof stats.Item?.agentsCreated === 'number'
+      ? stats.Item.agentsCreated as number
+      : null;
+
+    if (current === null) {
+      await recalculateCreatorCount(walletAddress);
+      return;
+    }
+
+    const nextCount = Math.max(0, current - 1);
+    await dynamoClient.send(new UpdateCommand({
+      TableName: ADMIN_TABLE,
+      Key: creatorStatsKey(walletAddress),
+      UpdateExpression: 'SET agentsCreated = :next, updatedAt = :now',
+      ExpressionAttributeValues: {
+        ':next': nextCount,
+        ':now': Date.now(),
+      },
+    }));
+  } catch (error) {
+    console.warn('[NFTGate] Failed to decrement creator count, recalculating', error);
+    await recalculateCreatorCount(walletAddress).catch((recalcError) => {
+      console.error('[NFTGate] Failed to recalculate creator count', recalcError);
+    });
+  }
+}
 
 export interface NFTAsset {
   id: string;
@@ -191,45 +281,23 @@ export async function checkNFTGate(walletAddress: string): Promise<NFTGateResult
  */
 export async function countAgentsCreatedBy(walletAddress: string): Promise<number> {
   try {
-    const result = await dynamoClient.send(new QueryCommand({
+    const stats = await dynamoClient.send(new GetCommand({
       TableName: ADMIN_TABLE,
-      IndexName: CREATOR_GSI_NAME,
-      KeyConditionExpression: 'creatorWallet = :wallet AND sk = :sk',
-      FilterExpression: '#status <> :deleted',
-      ExpressionAttributeNames: {
-        '#status': 'status',
-      },
-      ExpressionAttributeValues: {
-        ':wallet': walletAddress,
-        ':sk': 'CONFIG',
-        ':deleted': 'deleted',
-      },
-      Select: 'COUNT',
+      Key: creatorStatsKey(walletAddress),
     }));
 
-    return result.Count || 0;
-  } catch (error) {
-    console.warn('[NFTGate] Query count agents failed, falling back to scan:', error);
-    try {
-      const result = await dynamoClient.send(new ScanCommand({
-        TableName: ADMIN_TABLE,
-        FilterExpression: 'sk = :sk AND creatorWallet = :wallet AND #status <> :deleted',
-        ExpressionAttributeNames: {
-          '#status': 'status',
-        },
-        ExpressionAttributeValues: {
-          ':sk': 'CONFIG',
-          ':wallet': walletAddress,
-          ':deleted': 'deleted',
-        },
-        Select: 'COUNT',
-      }));
-
-      return result.Count || 0;
-    } catch (scanError) {
-      console.error('[NFTGate] Error counting agents:', scanError);
-      return 0;
+    if (typeof stats.Item?.agentsCreated === 'number') {
+      return stats.Item.agentsCreated as number;
     }
+  } catch (error) {
+    console.warn('[NFTGate] Failed to read creator stats, recalculating', error);
+  }
+
+  try {
+    return await recalculateCreatorCount(walletAddress);
+  } catch (scanError) {
+    console.error('[NFTGate] Error counting agents:', scanError);
+    return 0;
   }
 }
 
