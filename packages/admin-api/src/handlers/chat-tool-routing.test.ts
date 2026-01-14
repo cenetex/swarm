@@ -111,6 +111,18 @@ describe('Chat Handler - Tool Routing Logic', () => {
       })).toBe(true);
     });
 
+    it('should pause for request_twitter_connection', () => {
+      expect(shouldPauseTool({
+        function: { name: 'request_twitter_connection' }
+      })).toBe(true);
+    });
+
+    it('should pause for request_property_research', () => {
+      expect(shouldPauseTool({
+        function: { name: 'request_property_research' }
+      })).toBe(true);
+    });
+
     it('should pause for get_profile_upload_url', () => {
       expect(shouldPauseTool({
         function: { name: 'get_profile_upload_url' }

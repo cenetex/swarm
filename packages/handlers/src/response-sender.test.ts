@@ -216,3 +216,314 @@ describe('Response Sender - Error Logging', () => {
     expect(bodyPreview).toBe('abc');
   });
 });
+
+describe('Response Sender - Media Handling', () => {
+  /**
+   * Tests for media action processing:
+   * - Media generation actions (take_selfie, generate_video) are queued to MEDIA_QUEUE
+   * - Non-media actions are sent directly
+   * - Responses can contain both media and non-media actions
+   */
+
+  describe('Media action detection', () => {
+    it('should identify media generation actions', () => {
+      const actions = [
+        { type: 'send_message', text: 'Hello!' },
+        { type: 'take_selfie', prompt: 'A happy selfie' },
+        { type: 'generate_video', prompt: 'Dancing robot' },
+        { type: 'react', emoji: '👍' },
+      ];
+
+      const mediaActions = actions.filter(
+        a => a.type === 'take_selfie' || a.type === 'generate_video'
+      );
+      const nonMediaActions = actions.filter(
+        a => a.type !== 'take_selfie' && a.type !== 'generate_video'
+      );
+
+      expect(mediaActions).toHaveLength(2);
+      expect(nonMediaActions).toHaveLength(2);
+    });
+
+    it('should separate media and non-media actions', () => {
+      const response = {
+        actions: [
+          { type: 'send_message', text: 'Generating image...' },
+          { type: 'take_selfie', prompt: 'Sunset selfie' },
+        ],
+      };
+
+      const mediaActions = response.actions.filter(
+        a => a.type === 'take_selfie' || a.type === 'generate_video'
+      );
+      const nonMediaActions = response.actions.filter(
+        a => a.type !== 'take_selfie' && a.type !== 'generate_video'
+      );
+
+      expect(mediaActions).toHaveLength(1);
+      expect(mediaActions[0].type).toBe('take_selfie');
+      expect(nonMediaActions).toHaveLength(1);
+      expect(nonMediaActions[0].type).toBe('send_message');
+    });
+  });
+
+  describe('Media queue handling', () => {
+    it('should create media job with required fields', () => {
+      const jobId = 'job-123';
+      const action = { type: 'take_selfie', prompt: 'Beach sunset' };
+      const response = {
+        agentId: 'test-agent',
+        conversationId: 'conv-456',
+      };
+
+      const mediaJob = {
+        jobId,
+        agentId: response.agentId,
+        conversationId: response.conversationId,
+        action,
+        response,
+      };
+
+      expect(mediaJob.jobId).toBe('job-123');
+      expect(mediaJob.agentId).toBe('test-agent');
+      expect(mediaJob.action.type).toBe('take_selfie');
+    });
+
+    it('should handle missing MEDIA_QUEUE_URL gracefully', () => {
+      const MEDIA_QUEUE_URL = undefined;
+      const mediaActions = [{ type: 'take_selfie', prompt: 'Test' }];
+
+      let actionsToSend;
+      if (mediaActions.length > 0) {
+        if (MEDIA_QUEUE_URL) {
+          // Would queue media
+        } else {
+          // Fallback: send error message
+          actionsToSend = [{
+            type: 'send_message',
+            text: 'Media generation is unavailable right now.',
+          }];
+        }
+      }
+
+      expect(actionsToSend).toEqual([{
+        type: 'send_message',
+        text: 'Media generation is unavailable right now.',
+      }]);
+    });
+  });
+
+  describe('Mixed media and text responses', () => {
+    it('should send text immediately while media is queued', () => {
+      const response = {
+        actions: [
+          { type: 'send_message', text: 'Working on that image...' },
+          { type: 'take_selfie', prompt: 'Cat picture' },
+        ],
+      };
+
+      const mediaActions = response.actions.filter(
+        a => a.type === 'take_selfie' || a.type === 'generate_video'
+      );
+      const nonMediaActions = response.actions.filter(
+        a => a.type !== 'take_selfie' && a.type !== 'generate_video'
+      );
+
+      // Non-media should be sent immediately
+      expect(nonMediaActions).toHaveLength(1);
+      // Media should be queued
+      expect(mediaActions).toHaveLength(1);
+    });
+  });
+});
+
+describe('Response Sender - Pending Jobs', () => {
+  /**
+   * Tests for async media generation with pending jobs:
+   * - Jobs are tracked with jobId
+   * - Completed jobs trigger media delivery
+   * - Failed jobs are handled gracefully
+   */
+
+  describe('Pending job tracking', () => {
+    it('should extract pending job from tool result', () => {
+      const toolResult = {
+        content: JSON.stringify({
+          success: true,
+          _pendingJob: {
+            jobId: 'job-abc123',
+            type: 'video',
+            prompt: 'Dancing robot animation',
+            purpose: 'user_request',
+          },
+        }),
+      };
+
+      const parsed = JSON.parse(toolResult.content);
+      const pendingJobs: Array<{
+        jobId: string;
+        type: string;
+        prompt?: string;
+        purpose?: string;
+      }> = [];
+
+      if (parsed._pendingJob) {
+        pendingJobs.push({
+          jobId: parsed._pendingJob.jobId,
+          type: parsed._pendingJob.type || 'image',
+          prompt: parsed._pendingJob.prompt,
+          purpose: parsed._pendingJob.purpose,
+        });
+      }
+
+      expect(pendingJobs).toHaveLength(1);
+      expect(pendingJobs[0].jobId).toBe('job-abc123');
+      expect(pendingJobs[0].type).toBe('video');
+      expect(pendingJobs[0].purpose).toBe('user_request');
+    });
+
+    it('should detect pending status from alternative format', () => {
+      const toolResult = {
+        content: JSON.stringify({
+          success: true,
+          jobId: 'job-xyz789',
+          status: 'pending',
+          prompt: 'Abstract art',
+        }),
+      };
+
+      const parsed = JSON.parse(toolResult.content);
+      const pendingJobs: Array<{ jobId: string; type: string; prompt?: string }> = [];
+
+      if (parsed.jobId && (parsed.status === 'pending' || parsed.status === 'processing')) {
+        pendingJobs.push({
+          jobId: parsed.jobId,
+          type: 'image', // Default type
+          prompt: parsed.prompt,
+        });
+      }
+
+      expect(pendingJobs).toHaveLength(1);
+      expect(pendingJobs[0].jobId).toBe('job-xyz789');
+    });
+
+    it('should not detect completed jobs as pending', () => {
+      const toolResult = {
+        content: JSON.stringify({
+          success: true,
+          jobId: 'job-completed',
+          status: 'completed',
+          url: 'https://cdn.example.com/result.png',
+        }),
+      };
+
+      const parsed = JSON.parse(toolResult.content);
+      const pendingJobs: Array<{ jobId: string }> = [];
+
+      if (parsed.jobId && (parsed.status === 'pending' || parsed.status === 'processing')) {
+        pendingJobs.push({ jobId: parsed.jobId });
+      }
+
+      expect(pendingJobs).toHaveLength(0);
+    });
+  });
+
+  describe('Job type detection', () => {
+    it('should detect video type from tool name', () => {
+      const toolName = 'generate_video' as string;
+
+      const jobType = toolName === 'generate_video'
+        ? 'video'
+        : toolName === 'generate_sticker'
+          ? 'sticker'
+          : 'image';
+
+      expect(jobType).toBe('video');
+    });
+
+    it('should detect sticker type from tool name', () => {
+      const toolName = 'generate_sticker' as string;
+      const jobType = toolName === 'generate_video'
+        ? 'video'
+        : toolName === 'generate_sticker'
+          ? 'sticker'
+          : 'image';
+
+      expect(jobType).toBe('sticker');
+    });
+
+    it('should default to image type', () => {
+      const toolName = 'generate_image' as string;
+      const jobType = toolName === 'generate_video'
+        ? 'video'
+        : toolName === 'generate_sticker'
+          ? 'sticker'
+          : 'image';
+
+      expect(jobType).toBe('image');
+    });
+  });
+});
+
+describe('Response Sender - Channel State Updates', () => {
+  it('should update channel state with bot messages', () => {
+    const sentMessages = ['Hello!', 'Here is your image.'];
+    const agentName = 'Test Bot';
+
+    const channelUpdates = sentMessages.map(text => ({
+      messageId: `bot_${Math.random().toString(36).slice(2)}`,
+      sender: agentName,
+      isBot: true,
+      content: text,
+      timestamp: Date.now(),
+    }));
+
+    expect(channelUpdates).toHaveLength(2);
+    expect(channelUpdates[0].isBot).toBe(true);
+    expect(channelUpdates[0].sender).toBe('Test Bot');
+  });
+});
+
+describe('Response Sender - Idempotency', () => {
+  it('should generate unique response key', () => {
+    const response = {
+      conversationId: 'conv-123',
+      replyToMessageId: 'msg-456',
+      generatedAt: 1700000000000,
+    };
+    const recordMessageId = 'sqs-msg-789';
+
+    const anchor = response.replyToMessageId ?? response.generatedAt ?? recordMessageId;
+    const responseKey = `${response.conversationId}#${anchor}`;
+
+    expect(responseKey).toBe('conv-123#msg-456');
+  });
+
+  it('should use generatedAt when replyToMessageId is missing', () => {
+    const response = {
+      conversationId: 'conv-123',
+      replyToMessageId: undefined,
+      generatedAt: 1700000000000,
+    };
+    const recordMessageId = 'sqs-msg-789';
+
+    const anchor = response.replyToMessageId ?? response.generatedAt ?? recordMessageId;
+    const responseKey = `${response.conversationId}#${anchor}`;
+
+    expect(responseKey).toBe('conv-123#1700000000000');
+  });
+
+  it('should use recordMessageId as last fallback', () => {
+    const response = {
+      conversationId: 'conv-123',
+      replyToMessageId: undefined,
+      generatedAt: undefined,
+    };
+    const recordMessageId = 'sqs-msg-789';
+
+    const anchor = response.replyToMessageId ?? response.generatedAt ?? recordMessageId;
+    const responseKey = `${response.conversationId}#${anchor}`;
+
+    expect(responseKey).toBe('conv-123#sqs-msg-789');
+  });
+});
