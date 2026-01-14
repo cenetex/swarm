@@ -100,7 +100,8 @@ async function makeUrlAccessible(url: string, cdnUrl?: string): Promise<string> 
 async function runReplicatePrediction(
   apiKey: string,
   model: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  options: { pollIntervalMs?: number; maxAttempts?: number } = {}
 ): Promise<string> {
   const createResponse = await fetch(REPLICATE_ENDPOINT, {
     method: 'POST',
@@ -119,11 +120,13 @@ async function runReplicatePrediction(
 
   let prediction = await createResponse.json() as ReplicatePrediction;
   let attempts = 0;
-  const maxAttempts = 120;
-  const pollIntervalMs = 1000;
+  const maxAttempts = options.maxAttempts ?? 120;
+  const pollIntervalMs = options.pollIntervalMs ?? 1000;
 
   while (prediction.status !== 'succeeded' && prediction.status !== 'failed' && attempts < maxAttempts) {
-    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+    if (pollIntervalMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+    }
     attempts++;
 
     const pollResponse = await fetch(`${REPLICATE_ENDPOINT}/${prediction.id}`, {
@@ -203,6 +206,7 @@ export function createVoiceServices(config: {
   voiceConfig?: { ttsProvider?: 'voice-clone'; format?: AudioFormat; speed?: number; referenceUrl?: string };
   mediaBucket?: string;
   cdnUrl?: string;
+  replicatePollIntervalMs?: number;
 }) {
   const openAiKey = config.secrets.OPENAI_API_KEY || config.secrets.openai_api_key;
   const replicateKey = config.secrets.REPLICATE_API_TOKEN || config.secrets.REPLICATE_API_KEY || config.secrets.replicate_api_key;
@@ -323,10 +327,15 @@ export function createVoiceServices(config: {
           throw new Error('Voice reference URL not configured');
         }
 
-        const outputUrl = await runReplicatePrediction(replicateKey, VOICE_TTS_MODEL, {
-          text: params.text,
-          speaker_wav: await makeUrlAccessible(seedUrl, config.cdnUrl),
-        });
+        const outputUrl = await runReplicatePrediction(
+          replicateKey,
+          VOICE_TTS_MODEL,
+          {
+            text: params.text,
+            speaker_wav: await makeUrlAccessible(seedUrl, config.cdnUrl),
+          },
+          { pollIntervalMs: config.replicatePollIntervalMs }
+        );
 
         const audioResponse = await fetchWithTimeout(outputUrl);
         if (!audioResponse.ok) {

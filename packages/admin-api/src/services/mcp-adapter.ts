@@ -280,40 +280,59 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
       listWallets: async (agentId) => {
         const walletList = await wallets.listWallets(agentId);
         return Promise.all(
-          walletList
-            .filter(w => w.walletType === 'solana')
-            .map(async (w) => {
-              try {
-                const balance = await wallets.getSolanaBalance(w.publicKey, agentId);
-                return {
-                  name: w.name,
-                  publicKey: w.publicKey,
-                  walletType: 'solana' as const,
-                  solBalance: balance.solBalance || 0,
-                };
-              } catch {
-                return {
-                  name: w.name,
-                  publicKey: w.publicKey,
-                  walletType: 'solana' as const,
-                  solBalance: 0,
-                };
-              }
-            })
+          walletList.map(async (w) => {
+            try {
+              const balance = w.walletType === 'ethereum'
+                ? await wallets.getEthereumBalance(w.address, agentId)
+                : await wallets.getSolanaBalance(w.publicKey, agentId);
+              
+              return {
+                name: w.name,
+                publicKey: w.publicKey,
+                address: w.address,
+                walletType: w.walletType,
+                balance: balance.balance,
+                solBalance: w.walletType === 'solana' ? balance.balance : null,
+                ethBalance: w.walletType === 'ethereum' ? balance.balance : null,
+              };
+            } catch {
+              return {
+                name: w.name,
+                publicKey: w.publicKey,
+                address: w.address,
+                walletType: w.walletType,
+                balance: 0,
+                solBalance: 0,
+                ethBalance: 0,
+              };
+            }
+          })
         );
       },
 
-      createWallet: async (agentId, name) => {
-        const result = await wallets.generateSolanaWallet(agentId, name, session);
-        return { publicKey: result.publicKey, address: result.address };
+      createWallet: async (agentId, name, chain = 'solana') => {
+        const result = chain === 'ethereum'
+          ? await wallets.generateEthereumWallet(agentId, name, session)
+          : await wallets.generateSolanaWallet(agentId, name, session);
+        return { 
+          publicKey: result.publicKey, 
+          address: result.address,
+          walletType: result.walletType
+        };
       },
 
-      getBalance: async (publicKey, agentId) => {
-        const balance = await wallets.getSolanaBalance(publicKey, agentId);
+      getBalance: async (publicKey, agentId, chain = 'solana') => {
+        const balance = chain === 'ethereum'
+          ? await wallets.getEthereumBalance(publicKey, agentId)
+          : await wallets.getSolanaBalance(publicKey, agentId);
         return {
-          solBalance: balance.solBalance || 0,
+          balance: balance.balance,
+          chain: balance.chain,
+          solBalance: balance.chain === 'solana' ? balance.balance : undefined,
           solBalanceLamports: balance.solBalanceLamports,
-          tokens: (balance as { tokens?: unknown[] }).tokens || [],
+          ethBalance: balance.chain === 'ethereum' ? balance.balance : undefined,
+          ethBalanceWei: balance.ethBalanceWei,
+          tokens: balance.tokens || [],
         };
       },
     },

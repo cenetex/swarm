@@ -19,7 +19,7 @@ export interface PlatformServicesConfig {
   stateService: StateService;
   mediaService?: MediaService;
   secrets: Record<string, string>;
-  wallets?: Array<{ name: string; publicKey: string; walletType: 'solana' | 'ethereum' }>;
+  wallets?: Array<{ name: string; publicKey: string; address?: string; walletType: 'solana' | 'ethereum' }>;
   mediaBucket?: string;
   cdnUrl?: string;
 }
@@ -117,12 +117,14 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
       listWallets: async () => {
         if (!wallets) return [];
         return wallets
-          .filter(w => w.walletType === 'solana')
           .map(w => ({
             name: w.name,
             publicKey: w.publicKey,
-            walletType: 'solana' as const,
-            solBalance: 0,
+            address: w.address,
+            walletType: w.walletType as 'solana' | 'ethereum',
+            balance: 0,
+            solBalance: w.walletType === 'solana' ? 0 : undefined,
+            ethBalance: w.walletType === 'ethereum' ? 0 : undefined,
           }));
       },
 
@@ -130,9 +132,12 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         throw new Error('Wallet creation not allowed from platform handlers');
       },
 
-      getBalance: async () => ({
-        solBalance: 0,
-        solBalanceLamports: 0,
+      getBalance: async (_publicKey, _agentId, chain = 'solana') => ({
+        balance: 0,
+        chain,
+        solBalance: chain === 'solana' ? 0 : undefined,
+        solBalanceLamports: chain === 'solana' ? 0 : undefined,
+        ethBalance: chain === 'ethereum' ? 0 : undefined,
         tokens: [],
       }),
     },

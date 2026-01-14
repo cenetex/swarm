@@ -187,12 +187,13 @@ export class ToolRegistry {
             return 'model_selector';
         }
       })();
+      const payload = { ...(input as Record<string, unknown>), type: uiActionType };
       return {
         success: true,
         data: { type: 'manual_tool', name, input } as T,
         uiAction: {
           type: uiActionType,
-          payload: input as Record<string, unknown>,
+          payload,
         },
       };
     }
@@ -246,7 +247,9 @@ export class ToolRegistry {
       function: {
         name: tool.name,
         description: tool.description,
-        parameters: zodToJsonSchema(tool.inputSchema, { target: 'openApi3' }) as Record<string, unknown>,
+        parameters: sanitizeOpenAiSchema(
+          zodToJsonSchema(tool.inputSchema, { target: 'openApi3' }) as Record<string, unknown>
+        ),
       },
     }));
   }
@@ -283,7 +286,9 @@ export class ToolRegistry {
           function: {
             name: tool.name,
             description,
-            parameters: zodToJsonSchema(tool.inputSchema, { target: 'openApi3' }) as Record<string, unknown>,
+            parameters: sanitizeOpenAiSchema(
+              zodToJsonSchema(tool.inputSchema, { target: 'openApi3' }) as Record<string, unknown>
+            ),
           },
         };
       })
@@ -348,6 +353,12 @@ export function defineManualTool<TInput extends ZodObject<ZodRawShape>>(
   definition: Omit<Parameters<typeof defineTool<TInput, never>>[0], 'execute' | 'category'>
 ): ToolDefinition<z.infer<TInput>, never> {
   return defineTool({ ...definition, execute: false, category: 'config' });
+}
+
+function sanitizeOpenAiSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const sanitized = { ...schema };
+  delete sanitized.$schema;
+  return sanitized;
 }
 
 // Global registry singleton

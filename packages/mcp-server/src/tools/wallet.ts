@@ -13,21 +13,29 @@ import { defineTool, type ToolResult } from '../registry.js';
 export interface WalletInfo {
   name: string;
   publicKey: string;
-  walletType: 'solana';
+  address?: string;
+  walletType: 'solana' | 'ethereum';
   solBalance?: number | null;
+  ethBalance?: number | null;
+  balance?: number | null;
 }
 
 export interface WalletServices {
   listWallets: (agentId: string) => Promise<WalletInfo[]>;
   
-  createWallet: (agentId: string, name: string) => Promise<{
+  createWallet: (agentId: string, name: string, chain?: string) => Promise<{
     publicKey: string;
     address?: string;
+    walletType: string;
   }>;
   
-  getBalance: (publicKey: string, agentId: string) => Promise<{
-    solBalance: number;
+  getBalance: (publicKey: string, agentId: string, chain?: string) => Promise<{
+    balance: number;
+    chain: string;
+    solBalance?: number;
     solBalanceLamports?: number;
+    ethBalance?: number;
+    ethBalanceWei?: string;
     tokens?: unknown[];
   }>;
 }
@@ -47,7 +55,9 @@ export async function buildWalletContext(
 
   const summaries = wallets.slice(0, 3).map(w => {
     const label = w.name || w.publicKey.slice(0, 8);
-    const balance = w.solBalance != null ? ` (${w.solBalance.toFixed(2)} SOL)` : '';
+    const unit = w.walletType === 'solana' ? 'SOL' : 'ETH';
+    const balanceVal = w.walletType === 'solana' ? w.solBalance : w.ethBalance;
+    const balance = balanceVal != null ? ` (${balanceVal.toFixed(4)} ${unit})` : '';
     return `${label}${balance}`;
   });
 
@@ -68,16 +78,21 @@ export const createWalletTools = (services: WalletServices) => [
       return buildWalletContext(services, context.agentId);
     },
     execute: async (_input, context): Promise<ToolResult> => {
-      const wallets = await services.listWallets(context.agentId);
+      const walletsData = await services.listWallets(context.agentId);
 
       // Enrich with balances
       const enriched = await Promise.all(
-        wallets.map(async (w) => {
+        walletsData.map(async (w) => {
           try {
-            const balance = await services.getBalance(w.publicKey, context.agentId);
-            return { ...w, solBalance: balance.solBalance };
+            const balance = await services.getBalance(w.publicKey, context.agentId, w.walletType);
+            return { 
+              ...w, 
+              balance: balance.balance,
+              solBalance: balance.chain === 'solana' ? balance.balance : undefined,
+              ethBalance: balance.chain === 'ethereum' ? balance.balance : undefined,
+            };
           } catch {
-            return { ...w, solBalance: null };
+            return { ...w, balance: null };
           }
         })
       );
@@ -93,19 +108,41 @@ export const createWalletTools = (services: WalletServices) => [
     name: 'create_solana_wallet',
     description: 'Create a new Solana wallet. The private key is stored securely.',
     category: 'wallet',
-    platforms: ['admin-ui', 'api'], // Not exposed to Telegram for security
+    platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       name: z.string().min(1).describe('A friendly name for this wallet'),
     }),
     execute: async (input, context): Promise<ToolResult> => {
-      const result = await services.createWallet(context.agentId, input.name);
+      const result = await services.createWallet(context.agentId, input.name, 'solana');
 
       return {
         success: true,
         data: {
-          message: `Wallet "${input.name}" created!`,
+          message: `Solana wallet "${input.name}" created!`,
           publicKey: result.publicKey,
           address: result.address,
+        },
+      };
+    },
+  }),
+
+  defineTool({
+    name: 'create_ethereum_wallet',
+    description: 'Create a new Ethereum wallet. The private key is stored securely.',
+    category: 'wallet',
+    platforms: ['admin-ui', 'api'],
+    inputSchema: z.object({
+      name: z.string().min(1).describe('A friendly name for this wallet'),
+    }),
+    execute: async (input, context): Promise<ToolResult> => {
+      const result = await services.createWallet(context.agentId, input.name, 'ethereum');
+
+      return {
+        success: true,
+        data: {
+          message: `Ethereum wallet "${input.name}" created!`,
+          address: result.address,
+          publicKey: result.publicKey,
         },
       };
     },
@@ -116,16 +153,18 @@ export const createWalletTools = (services: WalletServices) => [
     description: 'Get the balance of a specific wallet.',
     category: 'wallet',
     inputSchema: z.object({
-      publicKey: z.string().describe('The wallet public key to check'),
+      address: z.string().describe('The wallet address (public key) to check'),
+      chain: z.enum(['solana', 'ethereum']).default('solana').describe('The blockchain to check'),
     }),
     execute: async (input, context): Promise<ToolResult> => {
       try {
-        const balance = await services.getBalance(input.publicKey, context.agentId);
+        const balance = await services.getBalance(input.address, context.agentId, input.chain);
         return {
           success: true,
           data: {
-            publicKey: input.publicKey,
-            solBalance: balance.solBalance,
+            address: input.address,
+            chain: input.chain,
+            balance: balance.balance,
             tokens: balance.tokens || [],
           },
         };

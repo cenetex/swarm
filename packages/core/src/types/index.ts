@@ -543,8 +543,30 @@ export interface ServiceContainer {
   state: StateService;
   llm: LLMService;
   media: MediaService;
+  usage: UsageMeteringService;
   secrets: SecretsService;
   solana?: SolanaService;
+}
+
+// =============================================================================
+// USAGE METERING TYPES
+// =============================================================================
+
+export interface UsageCredit {
+  credits: number;
+  lastRecharge: number;
+}
+
+export interface UsageConfig {
+  maxCredits: number;
+  rechargeAmount: number;
+  rechargeIntervalMs: number;
+}
+
+export interface UsageMeteringService {
+  canUseTool(agentId: string, toolId: string, config: UsageConfig): Promise<boolean>;
+  consumeCredit(agentId: string, toolId: string, config: UsageConfig): Promise<{ allowed: boolean; remaining: number }>;
+  getCredits(agentId: string, toolId: string, config: UsageConfig): Promise<UsageCredit>;
 }
 
 // Service interfaces (implemented in services/)

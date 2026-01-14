@@ -40,6 +40,14 @@ const TWITTER_APP_CREDENTIALS_ARN = process.env.TWITTER_APP_CREDENTIALS_ARN || '
 let cachedAppCredentials: { appKey: string; appSecret: string } | null = null;
 
 /**
+ * Reset cached credentials - ONLY for testing
+ * @internal
+ */
+export function _resetCacheForTesting(): void {
+  cachedAppCredentials = null;
+}
+
+/**
  * Get Twitter app credentials from Secrets Manager
  */
 async function getAppCredentials(): Promise<{ appKey: string; appSecret: string } | null> {

@@ -12,10 +12,10 @@
 |-----------|--------|-------|
 | Agent Templates | ✅ DONE | Templates service implemented with DB storage; import/export via `templates.ts` |
 | **Voice Messages** | 🟡 PARTIAL | Voice tools added; TTS and transcription services configured |
-| **Wallet Generation** | 🟡 PARTIAL | Solana implemented; Ethereum disabled pending ethers/viem |
+| **Wallet Generation** | ✅ DONE | Solana + Ethereum wallet generation implemented |
 | **Logs API** | ✅ DONE | `GET /agents/{id}/logs` exists; UI panel implemented; tests added |
 | **MCP Tool Registry + Server** | ✅ DONE | Full registry with Zod schemas, platform filtering, context builders |
-| **Property Research** | 🟡 PARTIAL | Tools and authorization prompts added; tests written; execution pending |
+| **Property Research** | 🟡 PARTIAL | Execution implemented with basic web search; production search provider pending |
 | **Usage Metering** | ✅ DONE | `DynamoDBUsageMeteringService` with credit tracking and daily recharge |
 | Tests | 🟡 PARTIAL | 30+ test files across packages; vitest coverage expanding |
 | **Tool Context + MCP Ecosystem** | 🟡 PARTIAL | Registry complete; tagging and discovery/ingestion pending |
@@ -24,10 +24,10 @@
 | **Privacy + Retention Defaults** | ⏳ NOT STARTED | Stateless free tier and opt-in durable memory. |
 | Monorepo Setup | ✅ DONE | pnpm workspaces, TypeScript configs |
 | Core Types | ✅ DONE | Comprehensive type definitions |
-| Platform Adapters | ✅ DONE | Telegram, Twitter, Web complete. Discord missing. |
+| Platform Adapters | 🟡 PARTIAL | Telegram, Twitter, Web complete. Discord adapter exists; runtime ingestion pending. |
 | Processors | ✅ DONE | Evaluator, Generator, OutboundSender complete |
 | Services | ✅ DONE | State, Activity, LLM (with retry), Secrets, Media, Solana (NFT mint placeholder) |
-| Handlers | ✅ DONE | Telegram webhook, message-processor, response-sender, web-chat, tweet-poster, mention poller |
+| Handlers | ✅ DONE | Telegram webhook, message-processor, response-sender, media-processor, web-chat, tweet-poster, mention poller |
 | Infrastructure (CDK) | ✅ DONE | Shared/per-agent stacks plus admin API/UI constructs |
 | **Lambda Layer** | ✅ DONE | `@swarm/layer` - AWS SDK, OpenAI deps |
 | Agent Configs | ✅ DONE | Agents configurable via Admin UI; live agents running on Telegram |
@@ -44,7 +44,7 @@
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| Wallet Generation | 🟡 | Solana only; Ethereum disabled |
+| Wallet Generation | ✅ | Solana + Ethereum supported |
 | Voice Messages | 🟡 | Inbound/outbound voice; TTS + transcription tools |
 | Import/Export Config | ✅ | Templates service with DB storage; export agent as template |
 | Deploy Trigger | ❌ | Not implemented (no deploy hook yet) |
@@ -145,11 +145,11 @@ To count as an MVP platform service, the system must let a user pay, activate a 
 
 7) **Reliability + Observability**
    - Standardized logs + correlation IDs.
-   - Media callback contract with idempotency + retries.
+   - ✅ Media callback contract with idempotency + retries.
    - End-to-end Telegram test + canary rollout.
 
 8) **Platform Expansion**
-   - Harden X/Twitter adapter and complete Discord adapter.
+   - Harden X/Twitter adapter and complete Discord runtime ingestion (gateway/interaction handler).
 
 ## MCP Registration Plan
 
@@ -215,16 +215,16 @@ To count as an MVP platform service, the system must let a user pay, activate a 
 6. ~~**Missing DLQ handling**~~ **FIXED**
    - DLQ configured in CDK AgentConstruct for all queues
 
+7. ~~**Ethereum wallet generation disabled**~~ **FIXED**
+    - `generateEthereumWallet` implemented with ethers; tool + tests in place.
+
+8. ~~**Media pipeline callback contract is incomplete**~~ **FIXED**
+    - Media queue + processor + response-queue fan-in + idempotency implemented.
+
 ### Remaining Issues
 
-7. **Ethereum wallet generation disabled**
-    - `generateEthereumWallet` throws; needs ethers/viem implementation.
-
-8. **Discord adapter missing**
-    - Requires implementation and gateway vs interaction decision.
-
-9. **Media pipeline callback contract is incomplete**
-    - Response-sender queues media jobs but callback routing is stubbed; define SQS response queue + idempotency.
+9. **Discord runtime ingestion incomplete**
+    - Adapter exists; gateway/interaction handler still needed.
 
 ---
 
@@ -1235,7 +1235,7 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
 3. **Admin feature gaps**
 - [ ] Add audit logging service to DynamoDB
 - [x] Add wallet balance tool (Solana)
-- [ ] Re-enable Ethereum wallet generation with ethers/viem
+- [x] Re-enable Ethereum wallet generation with ethers
 - [x] MCP Tool Registry with Zod schemas (replaces OpenRouter SDK refactor)
    - [x] Platform filtering and context builders
    - [x] Manual tool support (`execute: false`)
@@ -1269,15 +1269,15 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
    - [ ] End-to-end testing
 
 7. **Media generation in runtime pipeline**
-   - [ ] Adopt SQS-first pipeline for media jobs (enqueue from response-sender)
-   - [ ] Choose queue type (standard vs FIFO) and define ordering guarantees
-   - [ ] Add media-processor Lambda to consume `MEDIA_QUEUE_URL` and fan-in callbacks
-   - [ ] Add media-results SQS queue (or reuse response queue) for completed media callbacks
-   - [ ] Define callback contract (prefer SQS response queue; avoid Lambda-name stub)
-   - [ ] Add idempotency keys + dedupe to prevent double-sends on retries
-   - [ ] Configure DLQ, visibility timeouts, and retry policies for media jobs
+   - [x] Adopt SQS-first pipeline for media jobs (enqueue from response-sender)
+   - [x] Choose queue type (FIFO) and define ordering guarantees
+   - [x] Add media-processor Lambda to consume `MEDIA_QUEUE_URL` and fan-in callbacks
+   - [x] Add media-results SQS queue (reuse response queue) for completed media callbacks
+   - [x] Define callback contract (response queue + idempotency)
+   - [x] Add idempotency keys + dedupe to prevent double-sends on retries
+   - [x] Configure DLQ, visibility timeouts, and retry policies for media jobs
    - [ ] Handle payload size limits (SQS 256KB) via S3 pointers for large prompts/metadata
-   - [ ] Add async video callback handling for runtime pipeline
+   - [x] Add async video callback handling for runtime pipeline
 
 8. **Testing** 🟡 EXPANDING
    - [x] Expand unit tests for MessageEvaluator/ResponseGenerator
@@ -1300,7 +1300,7 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
 ### Long-term (Additional Platforms)
 
 10. **Discord adapter**
-   - [ ] Create DiscordAdapter class
+   - [x] Create DiscordAdapter class
    - [ ] Decide: Interaction webhooks vs Gateway (ECS Fargate)
    - [ ] Implement slash commands
 
@@ -1310,7 +1310,7 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
     - [ ] Standardize structured logging fields (`agentId`, `level`, `component`) for reliable filters
     - [ ] CloudWatch dashboards
     - [ ] X-Ray tracing
-    - [ ] CloudWatch alarms (Lambda errors, SQS queue depth, DLQ age)
+    - [x] CloudWatch alarms (Lambda errors, SQS queue depth, DLQ age)
 
 12. **CLI Tool**
     - [ ] `swarm agent create <name>`
@@ -1403,7 +1403,7 @@ curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
 │  │                       PLATFORM ADAPTERS (Shared)                              ││
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       ││
 │  │  │ Telegram │  │ Discord  │  │ X/Twitter│  │   Web    │  │ Farcaster│       ││
-│  │  │ [DONE]   │  │ [TODO]   │  │  [DONE]  │  │  [DONE]  │  │ [FUTURE] │       ││
+│  │  │ [DONE]   │  │ [PARTIAL]│  │  [DONE]  │  │  [DONE]  │  │ [FUTURE] │       ││
 │  │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────────┘       ││
 │  └───────┼─────────────┼─────────────┼─────────────┼────────────────────────────┘│
 │          │             │             │             │                              │
@@ -1419,14 +1419,14 @@ curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
 │  │                                                                               │ │
 │  │  ┌───────────────┐    ┌───────────────┐    ┌───────────────┐                │ │
 │  │  │ message-queue │───▶│ response-queue│───▶│  media-queue  │                │ │
-│  │  │  (SQS FIFO)   │    │  (SQS FIFO)   │    │    (SQS)      │                │ │
+│  │  │  (SQS FIFO)   │    │  (SQS FIFO)   │    │  (SQS FIFO)   │                │ │
 │  │  └───────┬───────┘    └───────┬───────┘    └───────┬───────┘                │ │
 │  │          │                    │                    │                         │ │
 │  │          ▼                    ▼                    ▼                         │ │
 │  │  ┌───────────────┐    ┌───────────────┐    ┌───────────────┐                │ │
 │  │  │   Evaluator   │    │ ResponseSender│    │ MediaProcessor│                │ │
 │  │  │   + LLM Gen   │    │   (Lambda)    │    │   (Lambda)    │                │ │
-│  │  │   (Lambda)    │    │ [DONE]        │    │ [TODO]        │                │ │
+│  │  │   (Lambda)    │    │ [DONE]        │    │ [DONE]        │                │ │
 │  │  │ [DONE]        │    │               │    │               │                │ │
 │  │  └───────────────┘    └───────────────┘    └───────────────┘                │ │
 │  └─────────────────────────────────────────────────────────────────────────────┘ │

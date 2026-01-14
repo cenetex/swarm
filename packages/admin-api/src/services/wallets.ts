@@ -4,7 +4,7 @@
  */
 import { Keypair, Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import bs58 from 'bs58';
-// NOTE: nacl import removed - was only used by disabled Ethereum wallet generation
+import { Wallet, JsonRpcProvider, formatEther } from 'ethers';
 import {
   DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
@@ -25,10 +25,20 @@ const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 // Default Solana RPC - agent can configure their own Helius key
 const DEFAULT_SOLANA_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
+// Default Ethereum RPC
+const DEFAULT_ETHEREUM_RPC = process.env.ETHEREUM_RPC_URL || 'https://cloudflare-eth.com';
+
 export interface WalletBalance {
-  publicKey: string;
-  solBalance: number;
-  solBalanceLamports: number;
+  address: string;
+  chain: 'solana' | 'ethereum';
+  balance: number;
+  balanceRaw: string;
+  // Compatibility fields
+  publicKey?: string;
+  solBalance?: number;
+  solBalanceLamports?: number;
+  ethBalance?: number;
+  ethBalanceWei?: string;
   tokens: Array<{
     mint: string;
     symbol?: string;
@@ -116,23 +126,60 @@ export async function generateSolanaWallet(
 
 /**
  * Generate a new Ethereum wallet
- *
- * @deprecated DISABLED - This function generates INVALID Ethereum addresses.
- * It uses Ed25519 (tweetnacl) instead of secp256k1 which Ethereum requires.
- * DO NOT USE until reimplemented with ethers.js or viem.
- *
- * @throws Error - Always throws to prevent use of invalid addresses
  */
 export async function generateEthereumWallet(
-  _agentId: string,
-  _name: string,
-  _session: UserSession
+  agentId: string,
+  name: string,
+  session: UserSession
 ): Promise<WalletInfo> {
-  throw new Error(
-    'Ethereum wallet generation is disabled. ' +
-    'The current implementation generates invalid addresses. ' +
-    'Use Solana wallets instead, or wait for proper Ethereum support with ethers.js.'
+  // Generate random wallet
+  const wallet = Wallet.createRandom();
+  const address = wallet.address;
+  const privateKey = wallet.privateKey;
+
+  // Store the private key securely
+  await storeSecret(
+    agentId,
+    'ethereum_wallet_key',
+    name,
+    privateKey,
+    session,
+    `Ethereum wallet "${name}" for agent ${agentId}`
   );
+
+  // Create wallet info record
+  const walletId = `${agentId}-ethereum-${name}`;
+  const now = Date.now();
+
+  const walletInfo: WalletInfo & { pk: string; sk: string } = {
+    pk: `AGENT#${agentId}`,
+    sk: `WALLET#ethereum#${name}`,
+    id: walletId,
+    agentId,
+    walletType: 'ethereum',
+    publicKey: address,
+    address,
+    name,
+    createdAt: now,
+    createdBy: session.email,
+  };
+
+  // Store wallet info in DynamoDB
+  await dynamoClient.send(new PutCommand({
+    TableName: ADMIN_TABLE,
+    Item: walletInfo,
+  }));
+
+  return {
+    id: walletInfo.id,
+    agentId: walletInfo.agentId,
+    walletType: walletInfo.walletType,
+    publicKey: walletInfo.publicKey,
+    address: walletInfo.address,
+    name: walletInfo.name,
+    createdAt: walletInfo.createdAt,
+    createdBy: walletInfo.createdBy,
+  };
 }
 
 /**
@@ -226,9 +273,36 @@ export async function getSolanaBalance(publicKeyStr: string, agentId?: string): 
   }).filter(t => t.balance > 0);
   
   return {
+    address: publicKeyStr,
+    chain: 'solana',
+    balance: balanceSol,
+    balanceRaw: balanceLamports.toString(),
+    // Compatibility
     publicKey: publicKeyStr,
     solBalance: balanceSol,
     solBalanceLamports: balanceLamports,
     tokens,
+  };
+}
+
+/**
+ * Get Ethereum wallet balance
+ */
+export async function getEthereumBalance(address: string, _agentId?: string): Promise<WalletBalance> {
+  const rpcUrl = DEFAULT_ETHEREUM_RPC;
+  const provider = new JsonRpcProvider(rpcUrl);
+
+  const balanceWei = await provider.getBalance(address);
+  const balanceEth = parseFloat(formatEther(balanceWei));
+
+  return {
+    address,
+    chain: 'ethereum',
+    balance: balanceEth,
+    balanceRaw: balanceWei.toString(),
+    // Compatibility
+    ethBalance: balanceEth,
+    ethBalanceWei: balanceWei.toString(),
+    tokens: [], // ERC20 token support can be added later
   };
 }

@@ -25,6 +25,13 @@ export default tseslint.config(
       'no-console': 'off',
     },
   },
+  // Suppress no-explicit-any in test files (mocking often requires any)
+  {
+    files: ['**/*.test.ts', '**/*.spec.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
   {
     ignores: [
       '**/dist/**',
