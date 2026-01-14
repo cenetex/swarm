@@ -10,7 +10,20 @@
  */
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
-import sharp from 'sharp';
+
+// Lazy load sharp to avoid import failures on platforms without native binaries
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let sharpModule: any = null;
+async function getSharp() {
+  if (!sharpModule) {
+    try {
+      sharpModule = await import('sharp');
+    } catch {
+      throw new Error('sharp module not available - image processing is not supported in this environment');
+    }
+  }
+  return sharpModule.default;
+}
 
 const s3Client = new S3Client({});
 
@@ -57,6 +70,7 @@ function luma(r: number, g: number, b: number): number {
  * - We also preserve pixels adjacent to colored content (the outline border)
  */
 async function removeCheckerboardBackground(imageBuffer: Buffer): Promise<Buffer> {
+  const sharp = await getSharp();
   const image = sharp(imageBuffer);
   const { data, info } = await image.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
 
@@ -292,6 +306,7 @@ export async function processImageForSticker(
   _mimeType: string = 'image/png',
   options: { removeBackground?: boolean } = { removeBackground: true }
 ): Promise<ProcessedSticker> {
+  const sharp = await getSharp();
   try {
     let workingBuffer = imageBuffer;
 
@@ -497,8 +512,9 @@ export async function getStickerSetManifest(
     if (bodyStr) {
       return JSON.parse(bodyStr) as StickerSetManifest;
     }
-  } catch (error: any) {
-    if (error?.name === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) {
+  } catch (error: unknown) {
+    const err = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+    if (err?.name === 'NoSuchKey' || err?.$metadata?.httpStatusCode === 404) {
       return null;
     }
     throw error;
