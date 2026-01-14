@@ -466,7 +466,7 @@ function generateAgentName() {
 /**
  * Generate a test report analyzing the browser agent's session
  */
-async function generateTestReport(apiUrl, testKey, screenshotsDir, history, goal, success, agentName) {
+async function generateTestReport(apiUrl, testKey, screenshotsDir, history, goal, success, agentName, walletAddress) {
   // Get final screenshot for context
   const finalScreenshotPath = path.join(screenshotsDir, 'final.png');
   let imageData = null;
@@ -569,6 +569,17 @@ async function runAutonomousBrowserTest() {
   const runId = Date.now().toString(36);
   const screenshotsDir = path.join(process.cwd(), 'test-screenshots', `run-${runId}`);
   fs.mkdirSync(screenshotsDir, { recursive: true });
+  
+  // Get wallet info (even before auth attempt)
+  const wallet = getTestWallet();
+  const walletAddress = wallet.publicKey;
+  
+  // Display wallet prominently for CI logs
+  console.log('='.repeat(50));
+  console.log('🔑 TEST SIGNING WALLET');
+  console.log(`   ${walletAddress}`);
+  console.log('='.repeat(50));
+  console.log();
   
   // Authenticate with wallet before launching browser
   let authSession = null;
@@ -697,7 +708,7 @@ Look for ways to add/create new agents, fill in any required fields creatively, 
   
   // Generate AI-powered test report
   console.log('\n📝 Generating test report...');
-  const report = await generateTestReport(apiUrl, testKey, screenshotsDir, history, goal, success, agentName);
+  const report = await generateTestReport(apiUrl, testKey, screenshotsDir, history, goal, success, agentName, walletAddress);
   
   if (report) {
     console.log('\n' + '='.repeat(50));
@@ -708,7 +719,7 @@ Look for ways to add/create new agents, fill in any required fields creatively, 
     
     // Save report to file
     const reportFile = path.join(screenshotsDir, 'report.md');
-    fs.writeFileSync(reportFile, `# Browser Test Report\n\n**Date:** ${new Date().toISOString()}\n**Goal:** ${goal}\n**Agent Name:** ${agentName}\n**Steps:** ${step}\n**Result:** ${success ? 'SUCCESS' : step >= MAX_STEPS ? 'MAX STEPS' : 'FAILED'}\n\n---\n\n${report}`);
+    fs.writeFileSync(reportFile, `# Browser Test Report\n\n**Date:** ${new Date().toISOString()}\n**Signing Wallet:** \`${walletAddress}\`\n**Goal:** ${goal}\n**Agent Name:** ${agentName}\n**Steps:** ${step}\n**Result:** ${success ? 'SUCCESS' : step >= MAX_STEPS ? 'MAX STEPS' : 'FAILED'}\n\n---\n\n${report}`);
     console.log(`\n📄 Report saved to: ${reportFile}`);
   } else {
     console.log('⚠️  Could not generate report');
@@ -720,6 +731,7 @@ Look for ways to add/create new agents, fill in any required fields creatively, 
   
   const historyFile = path.join(screenshotsDir, 'history.json');
   fs.writeFileSync(historyFile, JSON.stringify({
+    walletAddress,
     goal,
     agentName,
     steps: step,
