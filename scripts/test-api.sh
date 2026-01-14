@@ -24,10 +24,15 @@ if [ -z "$API_URL" ]; then
 fi
 
 # Get the internal test key from Lambda environment
-FUNCTION_NAME=$(aws lambda list-functions --query "Functions[?contains(FunctionName, 'ChatHandler') && contains(FunctionName, '$ENV')].FunctionName" --output text | head -1)
+# Use CloudFormation to find the function name (more reliable and requires fewer permissions)
+STACK_NAME="SwarmStack-$ENV"
+FUNCTION_NAME=$(aws cloudformation describe-stack-resources \
+  --stack-name "$STACK_NAME" \
+  --query "StackResources[?ResourceType=='AWS::Lambda::Function' && contains(LogicalResourceId, 'ChatHandler')].PhysicalResourceId" \
+  --output text 2>/dev/null | head -1)
 
 if [ -z "$FUNCTION_NAME" ]; then
-  echo "Error: Could not find ChatHandler Lambda for environment: $ENV"
+  echo "Error: Could not find ChatHandler Lambda in stack: $STACK_NAME"
   exit 1
 fi
 
