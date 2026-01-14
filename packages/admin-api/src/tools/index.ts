@@ -280,6 +280,7 @@ export const MANUAL_TOOL_NAMES = [
   'request_model_selection',
   'request_feature_toggle',
   'request_twitter_connection',
+  'request_property_research',
 ] as const;
 
 /**

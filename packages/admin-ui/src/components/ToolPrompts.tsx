@@ -4,6 +4,9 @@
  */
 import { useState, useRef, useEffect } from 'react';
 import type { ToolCall } from '../types';
+import { useActiveAgent } from '../store';
+
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 interface ToolPromptProps {
   toolCall: ToolCall;
@@ -374,7 +377,7 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
+  const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
 
   const args = toolCall.arguments as {
     models: Array<{ id: string; name: string; provider?: string; contextLength?: number; pricing?: { prompt: number; completion: number } }>;
@@ -391,7 +394,7 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
       setSelectedModel(currentModel);
       const provider = currentModel.split('/')[0];
       if (provider) {
-        setExpandedProviders(new Set([provider]));
+        setExpandedProvider(provider);
       }
     }
   }, [currentModel]);
@@ -422,23 +425,15 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
   });
 
   const toggleProvider = (provider: string) => {
-    setExpandedProviders(prev => {
-      const next = new Set(prev);
-      if (next.has(provider)) {
-        next.delete(provider);
-      } else {
-        next.add(provider);
-      }
-      return next;
-    });
+    setExpandedProvider(prev => (prev === provider ? null : provider));
   };
 
-  // Expand all when searching
+  // Keep one provider expanded when search results change
   useEffect(() => {
-    if (searchQuery) {
-      setExpandedProviders(new Set(Object.keys(groupedModels)));
-    }
-  }, [searchQuery, Object.keys(groupedModels).join(',')]);
+    if (sortedProviders.length === 0) return;
+    if (expandedProvider && sortedProviders.includes(expandedProvider)) return;
+    setExpandedProvider(sortedProviders[0]);
+  }, [expandedProvider, sortedProviders.join(',')]);
 
   const handleSubmit = async () => {
     if (!selectedModel || isSubmitting) return;
@@ -511,7 +506,7 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
       <div className="max-h-72 overflow-y-auto space-y-1">
         {sortedProviders.map((provider) => {
           const providerModels = groupedModels[provider];
-          const isExpanded = expandedProviders.has(provider);
+          const isExpanded = expandedProvider === provider;
           const hasSelectedModel = providerModels.some(m => m.id === selectedModel);
           
           return (
@@ -664,6 +659,73 @@ export function PropertyAuthPrompt({ toolCall, onSubmit, disabled }: ToolPromptP
 }
 
 /**
+ * Twitter/X Connection Prompt
+ */
+export function TwitterConnectPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
+  const activeAgent = useActiveAgent();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [started, setStarted] = useState(false);
+
+  const args = toolCall.arguments as { message?: string };
+
+  const handleConnect = async () => {
+    if (!activeAgent?.id || disabled || isSubmitting) return;
+
+    setIsSubmitting(true);
+    const url = `${API_BASE}/oauth/twitter/start?agentId=${encodeURIComponent(activeAgent.id)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+
+    try {
+      await onSubmit(toolCall.id, { started: true });
+      setStarted(true);
+    } catch {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (started) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
+        <span className="text-[var(--color-text-secondary)]">
+          Twitter connection started. Complete authorization in the new tab.
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <div className="p-2 bg-blue-500/20 rounded-lg">
+          <svg className="w-5 h-5 text-blue-300" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M13.95 10.85L20.54 3h-1.56l-5.74 6.84L8.5 3H3.1l6.92 10.09L3.1 21h1.56l5.97-7.11L15.5 21h5.4l-6.95-10.15zm-2.45 2.92l-.7-1.03L5.8 4.5h2.46l4.06 5.98.7 1.02 5.24 7.71h-2.46l-4.3-6.44z" />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <h4 className="font-medium text-[var(--color-text)]">Connect X/Twitter</h4>
+          <p className="text-sm text-[var(--color-text-secondary)] mt-1">
+            {args.message || 'Authorize this agent to post and manage tweets.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between pt-2 border-t border-[var(--color-border)]">
+        <span className="text-xs text-[var(--color-text-muted)]">
+          Opens a new window for OAuth authorization.
+        </span>
+        <button
+          onClick={handleConnect}
+          disabled={!activeAgent?.id || disabled || isSubmitting}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
+        >
+          {isSubmitting ? 'Opening...' : 'Connect X'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Feature Toggle Prompt - Toggle switch for enabling/disabling agent features
  */
 export function FeatureTogglePrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
@@ -782,6 +844,11 @@ export function ToolPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
     return <FeatureTogglePrompt toolCall={toolCall} onSubmit={onSubmit} disabled={disabled} />;
   }
 
+  // Check if this is a Twitter connect response
+  if (args?.type === 'twitter_connect') {
+    return <TwitterConnectPrompt toolCall={toolCall} onSubmit={onSubmit} disabled={disabled} />;
+  }
+
   switch (toolCall.name) {
     case 'request_secret':
     case 'prompt_secret':
@@ -792,6 +859,8 @@ export function ToolPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
       return <PropertyAuthPrompt toolCall={toolCall} onSubmit={onSubmit} disabled={disabled} />;
     case 'request_feature_toggle':
       return <FeatureTogglePrompt toolCall={toolCall} onSubmit={onSubmit} disabled={disabled} />;
+    case 'request_twitter_connection':
+      return <TwitterConnectPrompt toolCall={toolCall} onSubmit={onSubmit} disabled={disabled} />;
     default:
       // Unknown tool - show debug info
       return (

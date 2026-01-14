@@ -48,6 +48,7 @@ export const createSecretTools = (services: SecretServices) => [
     name: 'get_my_secrets',
     description: 'List my stored secrets and API keys (values are hidden).',
     category: 'secrets',
+    platforms: ['admin-ui', 'api'],
     inputSchema: z.object({}),
     execute: async (_input, context): Promise<ToolResult> => {
       const secrets = await services.listSecrets(context.agentId);

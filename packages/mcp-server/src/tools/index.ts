@@ -9,6 +9,7 @@ export { createWalletTools, type WalletServices, type WalletInfo } from './walle
 export { createModelTools, type ModelServices, type ModelInfo } from './models.js';
 export { createProfileTools, type ProfileServices } from './profile.js';
 export { createSecretTools, type SecretServices, type SecretType, type SecretInfo } from './secrets.js';
+export { createAdminTools, type AdminToolServices, type ToggleableFeature } from './admin.js';
 export { createJobTools, type JobServices, type JobInfo, type CreditServices as JobCreditServices, type CreditStatus, type EnergyStatus } from './jobs.js';
 export { createReferenceImageTools, type ReferenceImageServices, type ReferenceImage, type ReferenceImageCategory } from './reference.js';
 export { createDiagnosticsTools, type IssueSeverity, type IssueCategory } from './diagnostics.js';
@@ -53,6 +54,7 @@ import { createWalletTools } from './wallet.js';
 import { createModelTools } from './models.js';
 import { createProfileTools } from './profile.js';
 import { createSecretTools } from './secrets.js';
+import { createAdminTools } from './admin.js';
 import { createJobTools, type CreditServices as JobCreditServices } from './jobs.js';
 import { createReferenceImageTools } from './reference.js';
 import { createDiagnosticsTools } from './diagnostics.js';
@@ -101,6 +103,7 @@ export function registerAllTools(
   registry.registerAll(createModelTools(services.models));
   registry.registerAll(createProfileTools(services.profile));
   registry.registerAll(createSecretTools(services.secrets));
+  registry.registerAll(createAdminTools({ twitter: services.twitter }));
   registry.registerAll(createJobTools(services.jobs, services.jobCredits));
   registry.registerAll(createReferenceImageTools(services.reference));
   registry.registerAll(createDiagnosticsTools());

@@ -343,9 +343,10 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
 
         let models = data.data || [];
 
-        // Filter to text-capable models (exclude image-only models)
+        // Filter to text-capable models (keep entries with missing modality)
         models = models.filter(m => {
-          const modality = m.architecture?.modality || '';
+          const modality = m.architecture?.modality;
+          if (!modality) return true;
           return modality.includes('text');
         });
 

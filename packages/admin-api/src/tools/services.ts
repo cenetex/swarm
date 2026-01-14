@@ -249,7 +249,11 @@ export function createToolServices(agentId: string, session: UserSession): ToolS
       };
 
       let models = data.data || [];
-      models = models.filter(m => (m.architecture?.modality || '').includes('text'));
+      models = models.filter(m => {
+        const modality = m.architecture?.modality;
+        if (!modality) return true;
+        return modality.includes('text');
+      });
 
       if (family) {
         const normalized = family.toLowerCase();

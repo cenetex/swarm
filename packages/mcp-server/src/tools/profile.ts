@@ -65,6 +65,7 @@ export const createProfileTools = (services: ProfileServices) => [
     name: 'update_my_profile',
     description: 'Update my name, description, or persona. I use the persona to shape my personality.',
     category: 'profile',
+    platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       name: z.string().optional().describe('My display name'),
       description: z.string().optional().describe('A brief description of my purpose'),
@@ -95,6 +96,7 @@ export const createProfileTools = (services: ProfileServices) => [
     name: 'set_profile_image',
     description: 'Set my profile image from a URL, gallery image, or generate a new one.',
     category: 'profile',
+    platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       source: z.enum(['url', 'gallery', 'generate', 'upload'])
         .describe('Where to get the image from'),
@@ -212,6 +214,7 @@ export const createProfileTools = (services: ProfileServices) => [
     name: 'set_character_reference',
     description: 'Set my character reference image (full-body turnaround/model sheet) for consistent image and video generation. This is used instead of my profile image when generating full-body images.',
     category: 'profile',
+    platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       source: z.enum(['url', 'gallery', 'generate', 'upload'])
         .describe('Where to get the character reference from'),

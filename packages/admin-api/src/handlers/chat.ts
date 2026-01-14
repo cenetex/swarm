@@ -10,6 +10,7 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 import { authenticateRequest, requireAdmin } from '../auth/cloudflare-access.js';
 import * as chatHistory from '../services/chat-history.js';
 import { OpenRouter, fromChatMessages, hasExecuteFunction, toChatMessage, stepCountIs, type Tool } from '@openrouter/sdk';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 import {
   ChatRequestSchema,
   type AdminChatMessage,
@@ -20,8 +21,10 @@ import {
 import { logger } from '@swarm/core';
 import { buildDynamicSystemPrompt, type ToolCategory } from '../services/dynamic-prompts.js';
 import { recordError } from '../services/auto-issues.js';
-import { createAgentTools, isPauseForInputTool, type ToolServices } from '../tools/index.js';
-import { createToolServices } from '../tools/services.js';
+import { ToolRegistry, registerAllTools, type ToolContext, type ToolResult as McpToolResult, type AllServices } from '@swarm/mcp-server';
+import { createMCPServices } from '../services/mcp-adapter.js';
+import { isPauseForInputTool } from '../tools/index.js';
+import * as agents from '../services/agents.js';
 
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
@@ -108,13 +111,24 @@ async function callLlmDirectFallback(
   if (tools && tools.length > 0) {
     // Convert SDK tools to OpenAI format
     body.tools = tools.map((t: unknown) => {
-      const tool = t as { function?: { name?: string; description?: string; parameters?: unknown } };
+      const tool = t as {
+        function?: {
+          name?: string;
+          description?: string;
+          parameters?: unknown;
+          inputSchema?: unknown;
+        };
+      };
+      const parameters = tool.function?.parameters
+        || (tool.function?.inputSchema
+          ? zodToJsonSchema(tool.function.inputSchema as Parameters<typeof zodToJsonSchema>[0], { target: 'openApi3' })
+          : undefined);
       return {
         type: 'function',
         function: {
           name: tool.function?.name,
           description: tool.function?.description,
-          parameters: tool.function?.parameters,
+          parameters,
         },
       };
     });
@@ -228,6 +242,81 @@ function buildSystemPrompt(agent?: AgentContext): string {
   return `You are a Swarm agent assistant. Please select an agent to chat with.`;
 }
 
+function normalizeToolResult(result: McpToolResult, toolName: string): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    success: result.success,
+  };
+
+  if (result.error) {
+    payload.error = result.error;
+  }
+
+  if (result.data !== undefined) {
+    if (typeof result.data === 'object' && result.data !== null) {
+      Object.assign(payload, result.data as Record<string, unknown>);
+      payload.data = result.data;
+    } else {
+      payload.data = result.data;
+    }
+  }
+
+  if (result.media?.url && payload.url === undefined) {
+    payload.url = result.media.url;
+    payload.type = payload.type ?? result.media.type;
+  }
+
+  if (result.pendingJob) {
+    payload._pendingJob = result.pendingJob;
+    payload.jobId = payload.jobId ?? result.pendingJob.jobId;
+    payload.status = payload.status ?? result.pendingJob.status ?? 'pending';
+  }
+
+  if (result.uiAction?.payload && payload.type === undefined && result.uiAction.type === 'upload_widget') {
+    payload.type = 'upload_url';
+  }
+
+  if (!result.success && !payload.message) {
+    payload.message = `Tool ${toolName} failed${result.error ? `: ${result.error}` : ''}`;
+  }
+
+  return payload;
+}
+
+async function buildOpenRouterTools(
+  registry: ToolRegistry,
+  context: ToolContext
+): Promise<Tool[]> {
+  const toolDefs = registry.getForPlatform(context.platform);
+
+  return Promise.all(toolDefs.map(async (toolDef) => {
+    let description = toolDef.description;
+    if (toolDef.contextBuilder) {
+      const contextStr = await toolDef.contextBuilder(context);
+      if (contextStr) {
+        description = `${description}\n\n📌 ${contextStr}`;
+      }
+    }
+
+    const toolFn: Record<string, unknown> = {
+      name: toolDef.name,
+      description,
+      inputSchema: toolDef.inputSchema,
+    };
+
+    if (toolDef.execute !== false) {
+      toolFn.execute = async (params: Record<string, unknown>) => {
+        const result = await registry.execute(toolDef.name, params, context);
+        return normalizeToolResult(result, toolDef.name);
+      };
+    }
+
+    return {
+      type: 'function',
+      function: toolFn,
+    } as unknown as Tool;
+  }));
+}
+
 async function executeUiTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -250,14 +339,13 @@ async function executeUiTool(
 }
 
 async function buildModelSelectorPayload(
-  services: ToolServices,
+  services: AllServices['models'],
+  agentId: string,
   family?: string
 ): Promise<Record<string, unknown>> {
-  const models = await services.fetchModels(family);
-  const config = await services.getAgentConfig();
-  const currentModel = typeof (config as { llmConfig?: { model?: string } } | undefined)?.llmConfig?.model === 'string'
-    ? (config as { llmConfig: { model: string } }).llmConfig.model
-    : undefined;
+  const models = await services.listModels(family);
+  const config = await services.getConfig(agentId);
+  const currentModel = config?.model;
 
   return {
     type: 'model_selector',
@@ -268,8 +356,8 @@ async function buildModelSelectorPayload(
         prompt: Number(model.pricing.prompt),
         completion: Number(model.pricing.completion),
       } : undefined,
-      contextLength: model.context_length,
-      provider: model.id.split('/')[0] || 'other',
+      contextLength: (model as { context_length?: number }).context_length ?? model.contextLength,
+      provider: (model as { provider?: string }).provider || model.id.split('/')[0] || 'other',
     })),
     currentModel,
     ...(family ? { instructions: `Showing models filtered by "${family}".` } : {}),
@@ -277,13 +365,13 @@ async function buildModelSelectorPayload(
 }
 
 async function buildFeatureTogglePayload(
-  services: ToolServices,
+  agentId: string,
   args: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  const feature = args.feature as 'media' | 'voice' | 'twitter' | 'telegram';
+  const feature = args.feature as 'media' | 'voice' | 'twitter' | 'telegram' | 'discord';
   const label = args.label as string;
   const description = args.description as string | undefined;
-  const config = await services.getAgentConfig();
+  const config = await agents.getAgent(agentId);
 
   let currentState = false;
   const agentConfig = config as Record<string, unknown> | null | undefined;
@@ -297,6 +385,11 @@ async function buildFeatureTogglePayload(
         break;
       case 'twitter':
       case 'telegram': {
+        const platforms = agentConfig.platforms as Record<string, { enabled?: boolean }> | undefined;
+        currentState = Boolean(platforms?.[feature]?.enabled);
+        break;
+      }
+      case 'discord': {
         const platforms = agentConfig.platforms as Record<string, { enabled?: boolean }> | undefined;
         currentState = Boolean(platforms?.[feature]?.enabled);
         break;
@@ -323,6 +416,12 @@ function buildPendingToolResponse(toolName: string, args: Record<string, unknown
   if (toolName === 'request_secret') {
     const label = typeof args.label === 'string' ? args.label : 'the requested secret';
     return `Please enter ${label}.`;
+  }
+  if (toolName === 'request_twitter_connection') {
+    return 'Please connect your X/Twitter account:';
+  }
+  if (toolName === 'request_property_research') {
+    return 'Please grant property research access:';
   }
   if (
     toolName === 'get_profile_upload_url' ||
@@ -464,9 +563,19 @@ async function processChat(
   };
 }> {
   const agentId = agent?.id;
-  const toolServices = agentId ? createToolServices(agentId, session) : null;
-  const tools = agentId && toolServices
-    ? createAgentTools(agentId, session, toolServices)
+  const mcpServices = agentId ? createMCPServices(agentId, session) : null;
+  const toolRegistry = agentId && mcpServices ? new ToolRegistry() : null;
+  if (toolRegistry && mcpServices) {
+    registerAllTools(toolRegistry, mcpServices);
+  }
+  const toolContext: ToolContext | null = agentId ? {
+    agentId,
+    platform: 'admin-ui',
+    userId: session.userId,
+    session: { email: session.email, isAdmin: session.isAdmin },
+  } : null;
+  const tools = toolRegistry && toolContext
+    ? await buildOpenRouterTools(toolRegistry, toolContext)
     : [];
 
   // Log tools available for debugging
@@ -475,7 +584,7 @@ async function processChat(
     agentId,
     toolCount: tools.length,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    toolNames: tools.map((t: any) => t.name),
+    toolNames: tools.map((t: any) => t.function?.name ?? t.name),
   });
 
   const messages: AdminChatMessage[] = [
@@ -582,7 +691,7 @@ async function processChat(
   };
 
   const pauseToolCall = toolCalls.find(tc => isPauseForInputTool(String(tc.name), getToolArgs(tc)));
-  if (pauseToolCall && toolServices) {
+  if (pauseToolCall && mcpServices && agentId) {
     let pendingArgs = getToolArgs(pauseToolCall);
     const toolName = String(pauseToolCall.name);
     try {
@@ -592,9 +701,11 @@ async function processChat(
           : typeof pendingArgs.preferredFamily === 'string'
             ? pendingArgs.preferredFamily
             : undefined;
-        pendingArgs = await buildModelSelectorPayload(toolServices, family);
+        pendingArgs = await buildModelSelectorPayload(mcpServices.models, agentId, family);
       } else if (toolName === 'request_feature_toggle') {
-        pendingArgs = await buildFeatureTogglePayload(toolServices, pendingArgs);
+        pendingArgs = await buildFeatureTogglePayload(agentId, pendingArgs);
+      } else if (toolName === 'request_twitter_connection') {
+        pendingArgs = { type: 'twitter_connect', ...pendingArgs };
       } else if (
         toolName === 'get_profile_upload_url' ||
         toolName === 'get_reference_image_upload_url' ||

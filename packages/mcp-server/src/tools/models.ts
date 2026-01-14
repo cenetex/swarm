@@ -46,6 +46,7 @@ export const createModelTools = (services: ModelServices) => [
     name: 'list_available_models',
     description: 'List available AI models I can use. Returns model IDs and context lengths.',
     category: 'config',
+    platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       family: z.string()
         .optional()
@@ -69,6 +70,7 @@ export const createModelTools = (services: ModelServices) => [
     name: 'get_my_model_config',
     description: 'Get my current LLM model configuration.',
     category: 'config',
+    platforms: ['admin-ui', 'api'],
     inputSchema: z.object({}),
     execute: async (_input, context): Promise<ToolResult> => {
       const config = await services.getConfig(context.agentId);
@@ -84,6 +86,7 @@ export const createModelTools = (services: ModelServices) => [
     name: 'change_my_model',
     description: 'Change which AI model I use. Model ID must be from list_available_models.',
     category: 'config',
+    platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       model: z.string().describe('The model ID to use (e.g., "anthropic/claude-sonnet-4")'),
       temperature: z.number()

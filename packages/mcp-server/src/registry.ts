@@ -62,7 +62,7 @@ export interface ToolResult<T = unknown> {
   };
   /** UI action (for admin-ui) */
   uiAction?: {
-    type: 'upload_widget' | 'secret_request' | 'model_selector';
+    type: 'upload_widget' | 'secret_request' | 'model_selector' | 'feature_toggle' | 'twitter_connect' | 'property_research';
     payload: Record<string, unknown>;
   };
 }
@@ -171,11 +171,27 @@ export class ToolRegistry {
 
     // Manual tools don't execute
     if (tool.execute === false) {
+      const uiActionType = (() => {
+        switch (name) {
+          case 'request_secret':
+            return 'secret_request';
+          case 'request_model_selection':
+            return 'model_selector';
+          case 'request_feature_toggle':
+            return 'feature_toggle';
+          case 'request_twitter_connection':
+            return 'twitter_connect';
+          case 'request_property_research':
+            return 'property_research';
+          default:
+            return 'model_selector';
+        }
+      })();
       return {
         success: true,
         data: { type: 'manual_tool', name, input } as T,
         uiAction: {
-          type: name === 'request_secret' ? 'secret_request' : 'model_selector',
+          type: uiActionType,
           payload: input as Record<string, unknown>,
         },
       };
