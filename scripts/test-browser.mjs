@@ -463,6 +463,74 @@ function generateAgentName() {
   return `${adj}${noun}-${id}`;
 }
 
+/**
+ * Generate a test report analyzing the browser agent's session
+ */
+async function generateTestReport(apiUrl, testKey, screenshotsDir, history, goal, success, agentName) {
+  // Get final screenshot for context
+  const finalScreenshotPath = path.join(screenshotsDir, 'final.png');
+  let imageData = null;
+  try {
+    imageData = fs.readFileSync(finalScreenshotPath).toString('base64');
+  } catch { /* no final screenshot */ }
+  
+  const systemPrompt = `You are a QA engineer analyzing the results of an automated browser test.
+
+The test goal was: ${goal}
+
+The agent took ${history.length} steps. ${success ? 'It completed successfully.' : 'It did NOT complete the task.'}
+
+Based on the action history and final screenshot, write a concise test report covering:
+
+## Summary
+A 2-3 sentence overview of what happened.
+
+## Bugs Found
+List any bugs, broken UI elements, or unexpected behaviors discovered. If none, say "None detected."
+
+## UX Issues
+Note any confusing UI patterns, unclear labels, or poor user experience elements.
+
+## What Worked Well
+Highlight positive aspects of the application.
+
+## Recommendations
+Specific suggestions to improve the application or fix issues found.
+
+Be specific and actionable. Reference actual UI elements and behaviors observed.`;
+
+  const historyText = history.map((h, i) => `${i + 1}. ${h}`).join('\n');
+  
+  const payload = {
+    message: `Here's the action history from the test session:\n\n${historyText}\n\nPlease analyze and generate the test report.`,
+    history: [],
+    systemPrompt,
+    ...(imageData ? {
+      attachments: [{
+        type: 'image',
+        data: `data:image/png;base64,${imageData}`,
+        name: 'final-screenshot.png'
+      }]
+    } : {})
+  };
+  
+  const response = await fetch(apiUrl + '/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-internal-test-key': testKey
+    },
+    body: JSON.stringify(payload)
+  });
+  
+  if (!response.ok) {
+    return null;
+  }
+  
+  const result = await response.json();
+  return result.response || result.message || null;
+}
+
 async function runAutonomousBrowserTest() {
   console.log('🤖 Autonomous Browser Agent E2E Test');
   console.log('='.repeat(50));
@@ -627,8 +695,28 @@ Look for ways to add/create new agents, fill in any required fields creatively, 
     console.log(`   Result: ❌ FAILED`);
   }
   
-  console.log('\n📜 Action History:');
-  history.forEach((h, i) => console.log(`   ${i + 1}. ${h}`));
+  // Generate AI-powered test report
+  console.log('\n📝 Generating test report...');
+  const report = await generateTestReport(apiUrl, testKey, screenshotsDir, history, goal, success, agentName);
+  
+  if (report) {
+    console.log('\n' + '='.repeat(50));
+    console.log('📋 TEST REPORT');
+    console.log('='.repeat(50));
+    console.log(report);
+    console.log('='.repeat(50));
+    
+    // Save report to file
+    const reportFile = path.join(screenshotsDir, 'report.md');
+    fs.writeFileSync(reportFile, `# Browser Test Report\n\n**Date:** ${new Date().toISOString()}\n**Goal:** ${goal}\n**Agent Name:** ${agentName}\n**Steps:** ${step}\n**Result:** ${success ? 'SUCCESS' : step >= MAX_STEPS ? 'MAX STEPS' : 'FAILED'}\n\n---\n\n${report}`);
+    console.log(`\n📄 Report saved to: ${reportFile}`);
+  } else {
+    console.log('⚠️  Could not generate report');
+    
+    // Fallback: print action history
+    console.log('\n📜 Action History:');
+    history.forEach((h, i) => console.log(`   ${i + 1}. ${h}`));
+  }
   
   const historyFile = path.join(screenshotsDir, 'history.json');
   fs.writeFileSync(historyFile, JSON.stringify({
