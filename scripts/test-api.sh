@@ -77,5 +77,43 @@ fi
 
 # Exit with error if non-2xx status
 if [[ "$HTTP_CODE" -lt 200 ]] || [[ "$HTTP_CODE" -ge 300 ]]; then
+  echo ""
+  echo "::error::API request failed with status $HTTP_CODE"
+  echo "=========================================="
+  echo "ERROR DETAILS FOR DEBUGGING"
+  echo "=========================================="
+  echo "Environment: $ENV"
+  echo "Endpoint: $API_URL/$ENDPOINT"
+  echo "Method: $METHOD"
+  echo "Request Body: $BODY"
+  echo "Response Status: $HTTP_CODE"
+  echo "Response Body: $BODY_RESPONSE"
+  echo ""
+  
+  # Common error explanations
+  case "$HTTP_CODE" in
+    400)
+      echo "Hint: 400 Bad Request - Check request body format (Zod validation)"
+      ;;
+    401)
+      echo "Hint: 401 Unauthorized - Invalid webhook signature or missing auth"
+      ;;
+    403)
+      echo "Hint: 403 Forbidden - IP validation failed (not from Telegram) or missing x-internal-test-key"
+      echo "      For webhooks, ensure INTERNAL_TEST_KEY is set and matches header"
+      ;;
+    404)
+      echo "Hint: 404 Not Found - Agent doesn't exist or endpoint path is wrong"
+      ;;
+    500)
+      echo "Hint: 500 Internal Server Error - Check Lambda logs for stack trace"
+      echo "      Run: aws logs filter-log-events --log-group-name '/aws/lambda/SwarmStack-$ENV-AdminApiTelegramWebhookHandler*' --limit 20"
+      ;;
+    502|503|504)
+      echo "Hint: $HTTP_CODE - Lambda timeout or API Gateway issue"
+      echo "      Check CloudWatch metrics and Lambda duration"
+      ;;
+  esac
+  echo "=========================================="
   exit 1
 fi

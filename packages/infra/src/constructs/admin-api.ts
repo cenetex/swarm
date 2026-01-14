@@ -666,6 +666,8 @@ export class AdminApiConstruct extends Construct {
         LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
         API_DOMAIN: props.apiDomain || '',
         NODE_ENV: environment,
+        // Internal test key for E2E tests (bypasses IP check in non-prod)
+        INTERNAL_TEST_KEY: environment !== 'prod' ? internalTestKey : '',
         // Media generation config - REQUIRED for image/video generation
         MEDIA_BUCKET: mediaBucket?.bucketName || '',
         CDN_URL: cdnUrl || '',

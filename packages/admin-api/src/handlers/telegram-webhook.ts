@@ -52,6 +52,7 @@ const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
 const ENFORCE_IP_CHECK = process.env.ENFORCE_TELEGRAM_IP_CHECK !== 'false';
+const INTERNAL_TEST_KEY = process.env.INTERNAL_TEST_KEY;
 
 // === CONFIG ===
 // NOTE: Channel-aware config is in services/channel-state.ts (CHANNEL_CONFIG)
@@ -1619,7 +1620,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return ok();
     }
 
-    if (ENFORCE_IP_CHECK) {
+    // Allow internal test key to bypass IP check (for E2E tests)
+    const internalTestKey = event.headers['x-internal-test-key'];
+    const isInternalTest = INTERNAL_TEST_KEY && internalTestKey === INTERNAL_TEST_KEY;
+
+    if (ENFORCE_IP_CHECK && !isInternalTest) {
       if (!clientIP || !isValidTelegramIP(clientIP)) {
         logger.warn('Rejecting non-Telegram IP', { clientIP: clientIP || 'unknown' });
         return { statusCode: 403, body: 'Forbidden' };
