@@ -342,6 +342,13 @@ function parseAction(response) {
   return { observation, reasoning, type: 'WAIT', params: 'Could not parse action', raw: response };
 }
 
+/**
+ * Convert text to kebab-case for data-testid matching
+ */
+function toTestId(text) {
+  return text.toLowerCase().replace(/\s+/g, '-');
+}
+
 async function executeAction(page, action) {
   const { type, params } = action;
   
@@ -367,7 +374,7 @@ async function executeAction(page, action) {
           // Title attribute
           () => page.click(`[title*="${params}" i]`, { timeout: 2000 }),
           // Data-testid (common in React apps)
-          () => page.click(`[data-testid*="${params.toLowerCase().replace(/\s+/g, '-')}"]`, { timeout: 2000 }),
+          () => page.click(`[data-testid*="${toTestId(params)}"]`, { timeout: 2000 }),
           // Try as raw CSS selector
           () => page.click(params, { timeout: 2000 }),
           // Get first visible button with matching text using locator
@@ -413,8 +420,8 @@ async function executeAction(page, action) {
           () => page.fill(`input[name*="${selector}" i]`, text, { timeout: 2000 }),
           () => page.fill(`textarea[name*="${selector}" i]`, text, { timeout: 2000 }),
           // By data-testid
-          () => page.fill(`input[data-testid*="${selector.toLowerCase().replace(/\s+/g, '-')}" i]`, text, { timeout: 2000 }),
-          () => page.fill(`textarea[data-testid*="${selector.toLowerCase().replace(/\s+/g, '-')}" i]`, text, { timeout: 2000 }),
+          () => page.fill(`input[data-testid*="${toTestId(selector)}" i]`, text, { timeout: 2000 }),
+          () => page.fill(`textarea[data-testid*="${toTestId(selector)}" i]`, text, { timeout: 2000 }),
           // By associated label
           () => page.fill(`label:has-text("${selector}") + input`, text, { timeout: 2000 }),
           () => page.fill(`label:has-text("${selector}") ~ input`, text, { timeout: 2000 }),
