@@ -33,11 +33,13 @@ const ENV = process.argv[2] || 'staging';
 const MAX_STEPS = 25;
 const STEP_DELAY = 1500;
 
-function getStackOutput(key) {
+function getStackOutput(exportNameSuffix) {
   const stack = `SwarmStack-${ENV === 'production' ? 'prod' : ENV}`;
+  const exportName = `swarm-${exportNameSuffix}-${ENV === 'production' ? 'prod' : ENV}`;
   try {
+    // Use ExportName which is stable (not OutputKey which has CDK hash suffix)
     const result = execSync(
-      `aws cloudformation describe-stacks --stack-name ${stack} --query "Stacks[0].Outputs[?OutputKey=='${key}'].OutputValue | [0]" --output text`,
+      `aws cloudformation describe-stacks --stack-name ${stack} --query "Stacks[0].Outputs[?ExportName=='${exportName}'].OutputValue | [0]" --output text`,
       { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
     ).trim();
     return result && result !== 'None' ? result : null;
@@ -412,8 +414,8 @@ async function runAutonomousBrowserTest() {
   console.log(`Environment: ${ENV}`);
   console.log();
   
-  const adminUrl = getStackOutput('AdminUiUrl') || getStackOutput('Url');
-  const apiUrl = getStackOutput('ApiEndpoint');
+  const adminUrl = getStackOutput('admin-ui-url');
+  const apiUrl = getStackOutput('admin-api-url');
   const testKey = getInternalTestKey();
   
   if (!adminUrl) {
