@@ -19,6 +19,7 @@
     "synth": "pnpm --filter @swarm/infra synth",
     "cdk": "pnpm --filter @swarm/infra cdk",
     "test:persona": "node scripts/test-persona.mjs",
+    "test:browser": "node scripts/test-browser.mjs",
     "prepare": "husky"
   },
   "keywords": [
@@ -45,6 +46,7 @@
     "globals": "^17.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
+    "playwright": "^1.57.0",
     "prettier": "^3.0.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.52.0",
