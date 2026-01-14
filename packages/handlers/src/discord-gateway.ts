@@ -227,7 +227,7 @@ class DiscordGateway {
       logger.info('Discord gateway connected', { resume: this.shouldResume });
     });
 
-    this.ws.on('message', async (data) => {
+    this.ws.on('message', async (data: WebSocket.RawData) => {
       try {
         const payload = JSON.parse(data.toString()) as GatewayPayload;
         if (typeof payload.s === 'number') {
@@ -239,12 +239,12 @@ class DiscordGateway {
       }
     });
 
-    this.ws.on('close', (code, reason) => {
+    this.ws.on('close', (code: number, reason: Buffer) => {
       logger.warn('Discord gateway closed', { code, reason: reason.toString() });
       this.scheduleReconnect();
     });
 
-    this.ws.on('error', (error) => {
+    this.ws.on('error', (error: Error) => {
       logger.error('Discord gateway error', error);
     });
   }

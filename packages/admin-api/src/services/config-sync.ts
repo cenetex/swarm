@@ -33,9 +33,15 @@ interface AgentConfig {
     };
     discord?: {
       enabled: boolean;
-      applicationId: string;
-      publicKey: string;
-      useGateway: boolean;
+      mode: 'webhook' | 'bot' | 'hybrid';
+      applicationId?: string;
+      publicKey?: string;
+      useGateway?: boolean;
+      intents?: number;
+      respondToMentions?: boolean;
+      respondInDMs?: boolean;
+      allowedChannels?: string[];
+      allowedGuilds?: string[];
     };
     web?: {
       enabled: boolean;
@@ -177,11 +183,21 @@ function convertToAgentConfig(record: AgentRecord): AgentConfig {
 
   // Convert Discord config
   if (record.platforms.discord?.enabled) {
+    const discordConfig = record.platforms.discord;
+    const allowedGuilds = discordConfig.allowedGuilds
+      ?? (discordConfig.guildId ? [discordConfig.guildId] : undefined);
+
     config.platforms.discord = {
       enabled: true,
-      applicationId: '',
-      publicKey: '',
-      useGateway: false,
+      mode: discordConfig.mode ?? 'bot',
+      applicationId: discordConfig.applicationId,
+      publicKey: discordConfig.publicKey,
+      useGateway: discordConfig.useGateway ?? true,
+      intents: discordConfig.intents,
+      respondToMentions: discordConfig.respondToMentions ?? true,
+      respondInDMs: discordConfig.respondInDMs ?? true,
+      allowedChannels: discordConfig.allowedChannels,
+      allowedGuilds,
     };
     config.secrets.push('DISCORD_BOT_TOKEN');
   }

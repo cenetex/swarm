@@ -168,7 +168,19 @@ export interface AgentRecord {
   platforms: {
     telegram?: { enabled: boolean; botUsername?: string };
     twitter?: { enabled: boolean; username?: string };
-    discord?: { enabled: boolean; guildId?: string };
+    discord?: {
+      enabled: boolean;
+      guildId?: string;
+      mode?: 'webhook' | 'bot' | 'hybrid';
+      useGateway?: boolean;
+      intents?: number;
+      respondToMentions?: boolean;
+      respondInDMs?: boolean;
+      allowedChannels?: string[];
+      allowedGuilds?: string[];
+      applicationId?: string;
+      publicKey?: string;
+    };
     web?: { enabled: boolean };
   };
   llmConfig: {
@@ -377,6 +389,15 @@ export const AdminTools = {
     clientId: z.string().optional(),
     clientSecret: z.string().optional(),
     guildId: z.string().optional(),
+    mode: z.enum(['webhook', 'bot', 'hybrid']).optional(),
+    useGateway: z.boolean().optional(),
+    intents: z.number().optional(),
+    respondToMentions: z.boolean().optional(),
+    respondInDMs: z.boolean().optional(),
+    allowedChannels: z.array(z.string()).optional(),
+    allowedGuilds: z.array(z.string()).optional(),
+    applicationId: z.string().optional(),
+    publicKey: z.string().optional(),
   }),
 
   // AI Provider Keys

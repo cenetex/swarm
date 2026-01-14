@@ -144,7 +144,7 @@ export class DiscordAdapter extends PlatformAdapter {
       case 'webhook':
         return !!(this.credentials.webhookUrl || (this.credentials.webhookId && this.credentials.webhookToken));
       case 'bot':
-        return !!(this.credentials.botToken && this.credentials.applicationId);
+        return !!this.credentials.botToken;
       case 'hybrid':
         return !!(
           (this.credentials.webhookUrl || (this.credentials.webhookId && this.credentials.webhookToken)) &&
