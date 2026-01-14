@@ -268,7 +268,7 @@ const CATEGORY_TOOLSETS: Record<ToolCategory, ToolsetId[]> = {
 
 function resolveAllowedToolsets(categories?: ToolCategory[]): ToolsetId[] | undefined {
   if (!categories || categories.length === 0) return undefined;
-  const toolsets = new Set<ToolsetId>(['core', 'admin', 'config', 'jobs']);
+  const toolsets = new Set<ToolsetId>(['core', 'admin', 'config', 'jobs', 'models']);
 
   for (const category of categories) {
     const mapped = CATEGORY_TOOLSETS[category] || [];
@@ -330,13 +330,13 @@ async function buildOpenRouterTools(
   const filtered = allowedToolsets
     ? toolDefs.filter(tool => allowedToolsets.includes(tool.toolset || 'core'))
     : toolDefs;
-  const includeToolsets = new Set<ToolsetId>(['admin', 'config', 'jobs']);
+  const includeToolsets = new Set<ToolsetId>(['admin', 'config', 'jobs', 'models']);
   if (options.enabledCategories?.includes('telegram')) includeToolsets.add('telegram');
   if (options.enabledCategories?.includes('twitter')) includeToolsets.add('twitter');
   if (options.enabledCategories?.includes('discord')) includeToolsets.add('discord');
   const routing = routeTools(filtered, {
     text: options.userMessage,
-    maxToolsets: 3,
+    maxToolsets: 4,  // Increased to accommodate models toolset
     includeToolsets: Array.from(includeToolsets),
   });
 

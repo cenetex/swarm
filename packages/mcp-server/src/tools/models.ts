@@ -46,6 +46,7 @@ export const createModelTools = (services: ModelServices) => [
     name: 'list_available_models',
     description: 'List available AI models I can use. Returns model IDs and context lengths.',
     category: 'config',
+    toolset: 'models',
     platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       family: z.string()
@@ -70,6 +71,7 @@ export const createModelTools = (services: ModelServices) => [
     name: 'get_my_model_config',
     description: 'Get my current LLM model configuration.',
     category: 'config',
+    toolset: 'models',
     platforms: ['admin-ui', 'api'],
     inputSchema: z.object({}),
     execute: async (_input, context): Promise<ToolResult> => {
@@ -86,6 +88,7 @@ export const createModelTools = (services: ModelServices) => [
     name: 'change_my_model',
     description: 'Change which AI model I use. Model ID must be from list_available_models.',
     category: 'config',
+    toolset: 'models',
     platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       model: z.string().describe('The model ID to use (e.g., "anthropic/claude-sonnet-4")'),
@@ -125,6 +128,7 @@ export const createModelTools = (services: ModelServices) => [
   defineManualTool({
     name: 'request_model_selection',
     description: 'Open a model selector UI showing ALL available models from all providers. The user will pick their preferred model.',
+    toolset: 'models',
     platforms: ['admin-ui'], // Only available in admin UI
     inputSchema: z.object({
       preferredFamily: z.string()
