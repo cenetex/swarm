@@ -4,21 +4,21 @@
 
 ## Implementation Status
 
-> **Last Updated:** 2026-01-12
+> **Last Updated:** 2026-01-13
 
 ### Overall Progress
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Agent Templates | 🟡 PARTIAL | Templates live in DB; no repo templates. Import/export component is pending. |
+| Agent Templates | ✅ DONE | Templates service implemented with DB storage; import/export via `templates.ts` |
 | **Voice Messages** | 🟡 PARTIAL | Voice tools added; TTS and transcription services configured |
 | **Wallet Generation** | 🟡 PARTIAL | Solana implemented; Ethereum disabled pending ethers/viem |
-| **Logs API** | 🟡 PARTIAL | `GET /agents/{id}/logs` exists; UI panel implemented (`AgentLogsPanel.tsx`) |
-| **MCP Tool Registry + Server** | 🟡 PARTIAL | Registry package created; agent scoping + registration workflow pending. |
-| **Property Research** | 🟡 PARTIAL | Tools and authorization prompts added; execution pending |
-| **Usage Metering** | 🟡 PARTIAL | Trial credits implemented for image generation with daily recharge |
-| Tests | 🟡 PARTIAL | Vitest coverage in admin-api/core; chat tool routing tests added |
-| **Tool Context + MCP Ecosystem** | ⏳ NOT STARTED | Tagging, tool routing, MCP discovery/ingestion, tool catalog. |
+| **Logs API** | ✅ DONE | `GET /agents/{id}/logs` exists; UI panel implemented; tests added |
+| **MCP Tool Registry + Server** | ✅ DONE | Full registry with Zod schemas, platform filtering, context builders |
+| **Property Research** | 🟡 PARTIAL | Tools and authorization prompts added; tests written; execution pending |
+| **Usage Metering** | ✅ DONE | `DynamoDBUsageMeteringService` with credit tracking and daily recharge |
+| Tests | 🟡 PARTIAL | 30+ test files across packages; vitest coverage expanding |
+| **Tool Context + MCP Ecosystem** | 🟡 PARTIAL | Registry complete; tagging and discovery/ingestion pending |
 | **Avatar Chat Domains** | ⏳ NOT STARTED | `{avatar_wallet}.rati.chat` chat homes with NFT gating. |
 | **Billing + Entitlements** | ⏳ NOT STARTED | Paid plan gating and subscription lifecycle. |
 | **Privacy + Retention Defaults** | ⏳ NOT STARTED | Stateless free tier and opt-in durable memory. |
@@ -46,7 +46,7 @@
 |---------|--------|-------------|
 | Wallet Generation | 🟡 | Solana only; Ethereum disabled |
 | Voice Messages | 🟡 | Inbound/outbound voice; TTS + transcription tools |
-| Import/Export Config | 🟡 | Templates stored in DB; add admin import/export workflow |
+| Import/Export Config | ✅ | Templates service with DB storage; export agent as template |
 | Deploy Trigger | ❌ | Not implemented (no deploy hook yet) |
 | Cloudflare Access Auth | ✅ | JWT verification in handlers; policies managed in Cloudflare |
 | Wallet Authentication | ✅ | Solana wallet sign-in via Phantom (QR + browser extension) |
@@ -89,11 +89,12 @@
 [x] First real agents running (Telegram bots live)
 [x] Voice message tools (transcription, TTS)
 [x] Async media generation (webhook callbacks)
+[x] Usage metering service (DynamoDB-backed credit tracking)
+[x] Agent template workflow (DB-backed templates; import/export)
+[x] MCP Tool Registry (Zod schemas, platform filtering, context builders)
 [ ] Billing + entitlements (paid plans, subscription lifecycle)
-[ ] Usage metering + spend controls (per-agent/tool usage tracking)
 [ ] Memory opt-in + retention defaults (stateless free tier)
 [ ] Deploy trigger from admin UI/API
-[ ] Agent template workflow (DB-backed; import/export optional)
 [ ] End-to-end automated tests
 ```
 
@@ -114,11 +115,12 @@ To count as an MVP platform service, the system must let a user pay, activate a 
 
 ## Prioritized Plan (Next)
 
-1) **Tool Context + MCP Ecosystem**
-   - Tag taxonomy + tool metadata schema.
-   - Tool router (select max 3 toolsets).
-   - MCP catalog + ingestion pipeline.
-   - Platform MCP servers + broker/aggregator.
+1) **Tool Context + MCP Ecosystem** ✅ PARTIAL
+   - ✅ Tool registry with Zod schemas and platform filtering
+   - ✅ Context builders for dynamic tool descriptions
+   - ⏳ Tag taxonomy + tool metadata schema
+   - ⏳ Tool router (select max 3 toolsets)
+   - ⏳ MCP catalog + ingestion pipeline
 
 2) **Avatar Chat Domains**
    - Deterministic subdomain issuance.
@@ -151,20 +153,21 @@ To count as an MVP platform service, the system must let a user pay, activate a 
 
 ## MCP Registration Plan
 
-1) **Tool Context + Tagging**
-   - Add tag taxonomy to tool definitions.
-   - Auto-apply platform + feature tags.
-   - Tool router for max-3 toolsets.
+1) **Tool Context + Tagging** ✅ PARTIAL
+   - ✅ Category field on tool definitions
+   - ✅ Platform filtering in registry
+   - ⏳ Add tag taxonomy to tool definitions
+   - ⏳ Tool router for max-3 toolsets
 
 2) **MCP Catalog + Ingestion**
    - Catalog schema + validation.
    - Ingestion pipeline with tagging + trust score.
    - Allowlists and rate limits.
 
-3) **Agent Scope Enforcement**
-   - Require `agentId` in MCP metadata.
-   - Reject requests missing agent scope.
-   - Ensure tools/services enforce agent-scoped reads and writes.
+3) **Agent Scope Enforcement** ✅ DONE
+   - ✅ `agentId` required in ToolContext
+   - ✅ Context passed to all tool executions
+   - ✅ Tools receive agent scope for scoped operations
 
 4) **Client Registration**
    - Document MCP client setup (command, args, env, metadata).
@@ -747,10 +750,10 @@ export class AdminConstruct extends Construct {
 - [x] Create `packages/admin-api/` - API handlers and services
 - [x] Create `packages/admin-ui/` - React chat frontend
 - [x] Implement admin API Lambda handlers (chat.ts)
-- [x] Create admin agent with tools (20 tools implemented)
+- [x] Create admin agent with tools (20+ tools implemented)
 - [x] Add Cloudflare Access JWT validation
-- [ ] Deploy static frontend to S3/CloudFront
-- [ ] Configure admin.rati.chat domain
+- [x] Deploy static frontend to S3/CloudFront
+- [x] Configure admin.rati.chat domain
 
 #### Secrets Management
 - [x] Add `AdminSecretsService` (write-only)
@@ -763,9 +766,16 @@ export class AdminConstruct extends Construct {
 - [x] Create `WalletService` for key generation
 - [x] Implement in-Lambda keypair generation (Solana + Ethereum)
 - [x] KMS encryption for private keys
-- [ ] Add wallet balance checking tool
+- [x] Add wallet balance checking tool
 - [ ] Add devnet airdrop tool
 - [ ] Improve Ethereum generation with ethers.js
+
+#### MCP Tool Registry
+- [x] Create `packages/mcp-server/` with tool definitions
+- [x] Implement `ToolRegistry` class with Zod schemas
+- [x] Add platform filtering and context builders
+- [x] Support OpenAI and MCP output formats
+- [x] Add tests for registry and tools
 
 #### Security
 - [ ] Configure Cloudflare Access application
@@ -1000,6 +1010,8 @@ aws-swarm/
 │       │   ├── index.ts
 │       │   ├── agents.ts                # Agent CRUD
 │       │   ├── secrets.ts               # Write-only secrets
+│       │   ├── templates.ts             # [x] Agent import/export
+│       │   ├── logs.ts                  # [x] CloudWatch logs query
 │       │   └── wallets.ts               # Wallet generation
 │       └── handlers/
 │           ├── index.ts
@@ -1032,6 +1044,34 @@ aws-swarm/
 │           ├── ChatMessage.tsx
 │           ├── AgentSidebar.tsx         # Discord-like agent list
 │           └── AgentConfigModal.tsx     # Agent configuration modal
+│
+├── packages/mcp-server/                  # [x] DONE - MCP Tool Server
+│   ├── package.json
+│   ├── vitest.config.ts
+│   └── src/
+│       ├── index.ts
+│       ├── server.ts                     # MCP server implementation
+│       ├── client.ts                     # MCP client utilities
+│       ├── registry.ts                   # [x] Tool registry with Zod schemas
+│       └── tools/
+│           ├── index.ts                  # Tool exports
+│           ├── admin.ts                  # Admin tools (agents, feature toggles)
+│           ├── media.ts                  # Image/video generation tools
+│           ├── voice.ts                  # TTS and transcription
+│           ├── wallet.ts                 # Solana wallet tools
+│           ├── gallery.ts                # Image gallery management
+│           ├── profile.ts                # Profile/persona management
+│           ├── secrets.ts                # Secret management
+│           ├── telegram.ts               # Telegram-specific tools
+│           ├── twitter.ts                # Twitter tools
+│           ├── discord.ts                # Discord tools
+│           ├── memory.ts                 # Memory/state tools
+│           ├── nft.ts                    # NFT operations
+│           ├── property.ts               # Property research
+│           ├── diagnostics.ts            # Debug/health tools
+│           ├── jobs.ts                   # Async job management
+│           ├── models.ts                 # Model selection
+│           └── reference.ts              # Character reference
 │
 ├── package.json                         # [x] DONE
 ├── pnpm-workspace.yaml                  # [x] DONE
@@ -1084,6 +1124,7 @@ aws-swarm/
 │       │   ├── state.ts                 # [x] DONE
 │       │   ├── activity.ts              # [x] DONE
 │       │   ├── secrets.ts               # [x] DONE
+│       │   ├── usage.ts                 # [x] DONE - Usage metering with credits
 │       │   ├── llm/
 │       │   │   └── index.ts             # [x] DONE - Bedrock, OpenRouter, Anthropic + retry
 │       │   ├── media/
@@ -1175,7 +1216,7 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
 
 ### Immediate (Reliability + Security)
 
-1. **Fix Telegram webhook enforcement and reliability**
+1. **Fix Telegram webhook enforcement and reliability** ✅ DONE
    - [x] Reject non-Telegram IPs when `ENFORCE_TELEGRAM_IP_CHECK` is on
    - [x] Move dedup marker after successful processing (or track status)
    - [x] Consume credits on successful `generate_image`/`generate_video`
@@ -1187,27 +1228,25 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
 
 2. **Admin deployment verification**
    - [ ] Configure Cloudflare Access policies
-   - [ ] Deploy Admin UI/API via GitHub Actions
-   - [ ] Verify `/health` and `/chat` endpoints
-   - [ ] Optional: wire custom domains in DNS/Cloudflare
+   - [x] Deploy Admin UI/API via GitHub Actions
+   - [x] Verify `/health` and `/chat` endpoints
+   - [x] Wire custom domains in DNS/Cloudflare
 
 3. **Admin feature gaps**
 - [ ] Add audit logging service to DynamoDB
 - [x] Add wallet balance tool (Solana)
 - [ ] Re-enable Ethereum wallet generation with ethers/viem
-- [ ] OpenRouter SDK + Zod tool refactor (`ZOD_REFACTOR.md`) - admin chat tools still JSON; no tools module detected
-   - [ ] Feature flag for legacy tool loop fallback
-   - [ ] Preserve manual tool pause flows (`request_secret`, `request_model_selection`, upload URLs)
-   - [ ] Add schema validation error logging + sanitize error responses
-   - [ ] Add manual-tool contract tests (secret, model selector, upload URL)
-   - [ ] Normalize `pendingToolCall` payloads for admin UI compatibility
-   - [ ] Add agent config import/export (DB-backed templates; no repo files)
-   - [ ] Define agent template schema + versioning for DB storage
-   - [ ] Add validation/migration for template import payloads
-   - [ ] Ensure import/export excludes secrets (config/persona only)
-   - [ ] Hook `request_model_selection` to a UI dropdown pause-flow
-   - [ ] Build logs UI view for `GET /agents/{id}/logs`
-   - [ ] Optional: deploy trigger integration (CodePipeline/Actions)
+- [x] MCP Tool Registry with Zod schemas (replaces OpenRouter SDK refactor)
+   - [x] Platform filtering and context builders
+   - [x] Manual tool support (`execute: false`)
+   - [x] Tests for registry and individual tools
+- [x] Add agent config import/export (DB-backed templates)
+   - [x] Define agent template schema in DynamoDB
+   - [x] Export agent as template
+   - [x] Create agent from template
+- [x] Logs API endpoint for `GET /agents/{id}/logs`
+- [x] Build logs UI view component
+- [ ] Optional: deploy trigger integration (CodePipeline/Actions)
 
 ### Short-term (First Agent)
 
@@ -1240,12 +1279,17 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
    - [ ] Handle payload size limits (SQS 256KB) via S3 pointers for large prompts/metadata
    - [ ] Add async video callback handling for runtime pipeline
 
-8. **Testing**
+8. **Testing** 🟡 EXPANDING
    - [x] Expand unit tests for MessageEvaluator/ResponseGenerator
    - [x] Add integration tests with DynamoDB client logic
    - [x] End-to-end test scripts for Telegram/Web (`scripts/test-e2e.sh`)
    - [x] Integration test for SQS media pipeline
-   - [x] UI flow contract tests for manual tools (request_secret, request_model_selection, upload URLs)
+   - [x] MCP registry and tool tests
+   - [x] Templates service tests
+   - [x] Usage metering service tests
+   - [x] Twitter OAuth tests
+   - [x] Logs service tests
+   - [ ] End-to-end automated tests
 
 9. **Operational readiness**
    - [ ] Enable DynamoDB PITR + backup strategy for agent configs/state
@@ -1262,7 +1306,7 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
 
 11. **Observability**
     - [x] Consolidated logs API endpoint: `GET /agents/{agent_id}/logs`
-    - [ ] Logs UI route: `rati.chat/agents/<agent_id>/logs`
+    - [x] Logs UI route: `rati.chat/agents/<agent_id>/logs`
     - [ ] Standardize structured logging fields (`agentId`, `level`, `component`) for reliable filters
     - [ ] CloudWatch dashboards
     - [ ] X-Ray tracing
