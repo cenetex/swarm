@@ -7,6 +7,13 @@ settings:
 importers:
 
   .:
+    dependencies:
+      bs58:
+        specifier: ^6.0.0
+        version: 6.0.0
+      tweetnacl:
+        specifier: ^1.0.3
+        version: 1.0.3
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.2

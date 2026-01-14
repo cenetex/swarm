@@ -10,13 +10,24 @@
  * - A high-level goal ("explore this app and create a new AI agent")
  * - Its own history of observations and actions
  * 
+ * Authentication:
+ * - Cloudflare Access: Uses service token headers (CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET)
+ * - Wallet Auth: Uses a test wallet keypair to sign challenges programmatically
+ * 
  * Usage: node scripts/test-browser.mjs [env]
+ * 
+ * Environment Variables:
+ *   CF_ACCESS_CLIENT_ID     - Cloudflare Access service token client ID
+ *   CF_ACCESS_CLIENT_SECRET - Cloudflare Access service token client secret
+ *   TEST_WALLET_PRIVATE_KEY - Base58 encoded private key for test wallet (optional)
  */
 
 import { chromium } from 'playwright';
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import nacl from 'tweetnacl';
+import bs58 from 'bs58';
 
 const ENV = process.argv[2] || 'staging';
 const MAX_STEPS = 25;
@@ -53,6 +64,126 @@ function getInternalTestKey() {
   } catch {
     return null;
   }
+}
+
+// ============================================================================
+// Cloudflare Access Authentication
+// ============================================================================
+
+const CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID;
+const CF_ACCESS_CLIENT_SECRET = process.env.CF_ACCESS_CLIENT_SECRET;
+
+function getCloudflareAccessHeaders() {
+  if (!CF_ACCESS_CLIENT_ID || !CF_ACCESS_CLIENT_SECRET) {
+    return {};
+  }
+  return {
+    'CF-Access-Client-Id': CF_ACCESS_CLIENT_ID,
+    'CF-Access-Client-Secret': CF_ACCESS_CLIENT_SECRET,
+  };
+}
+
+// ============================================================================
+// Test Wallet for Programmatic Signing
+// ============================================================================
+
+/**
+ * Generate or load a test wallet keypair
+ * If TEST_WALLET_PRIVATE_KEY is set, use it; otherwise generate a new one
+ */
+function getTestWallet() {
+  const privateKeyBase58 = process.env.TEST_WALLET_PRIVATE_KEY;
+  
+  if (privateKeyBase58) {
+    // Load existing wallet from private key
+    const secretKey = bs58.decode(privateKeyBase58);
+    const keypair = nacl.sign.keyPair.fromSecretKey(secretKey);
+    const publicKey = bs58.encode(keypair.publicKey);
+    console.log(`📛 Using test wallet: ${publicKey.slice(0, 8)}...`);
+    return { keypair, publicKey };
+  }
+  
+  // Generate ephemeral test wallet
+  const keypair = nacl.sign.keyPair();
+  const publicKey = bs58.encode(keypair.publicKey);
+  const secretKeyBase58 = bs58.encode(keypair.secretKey);
+  console.log(`🔑 Generated ephemeral test wallet: ${publicKey.slice(0, 8)}...`);
+  console.log(`   (Set TEST_WALLET_PRIVATE_KEY=${secretKeyBase58} to reuse)`);
+  return { keypair, publicKey };
+}
+
+/**
+ * Sign a message with the test wallet
+ */
+function signMessage(message, keypair) {
+  const messageBytes = new TextEncoder().encode(message);
+  const signature = nacl.sign.detached(messageBytes, keypair.secretKey);
+  return bs58.encode(signature);
+}
+
+/**
+ * Authenticate with the API using wallet signature
+ * Returns the session cookie to use in subsequent requests
+ */
+async function authenticateWithWallet(apiUrl, testKey) {
+  const wallet = getTestWallet();
+  
+  console.log('🔐 Authenticating with wallet...');
+  
+  // Step 1: Request challenge
+  const challengeResponse = await fetch(`${apiUrl}/auth/challenge`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-internal-test-key': testKey,
+      ...getCloudflareAccessHeaders(),
+    },
+    body: JSON.stringify({ walletAddress: wallet.publicKey }),
+  });
+  
+  if (!challengeResponse.ok) {
+    const text = await challengeResponse.text();
+    throw new Error(`Challenge request failed: ${challengeResponse.status} ${text}`);
+  }
+  
+  const { nonce, message } = await challengeResponse.json();
+  console.log(`   Challenge received (nonce: ${nonce.slice(0, 16)}...)`);
+  
+  // Step 2: Sign the challenge
+  const signature = signMessage(message, wallet.keypair);
+  console.log(`   Message signed`);
+  
+  // Step 3: Verify and get session
+  const verifyResponse = await fetch(`${apiUrl}/auth/verify`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-internal-test-key': testKey,
+      ...getCloudflareAccessHeaders(),
+    },
+    body: JSON.stringify({
+      signature,
+      publicKey: wallet.publicKey,
+      nonce,
+    }),
+  });
+  
+  if (!verifyResponse.ok) {
+    const text = await verifyResponse.text();
+    throw new Error(`Verify request failed: ${verifyResponse.status} ${text}`);
+  }
+  
+  // Extract session cookie from response
+  const setCookie = verifyResponse.headers.get('set-cookie');
+  const result = await verifyResponse.json();
+  
+  console.log(`   ✅ Authenticated as ${wallet.publicKey.slice(0, 8)}...`);
+  
+  return {
+    sessionCookie: setCookie,
+    walletAddress: wallet.publicKey,
+    user: result.user,
+  };
 }
 
 async function getNextAction(apiUrl, testKey, screenshotPath, history, goal) {
@@ -301,18 +432,64 @@ async function runAutonomousBrowserTest() {
   console.log(`📍 Max Steps: ${MAX_STEPS}`);
   console.log();
   
+  // Check for Cloudflare Access credentials
+  if (!CF_ACCESS_CLIENT_ID || !CF_ACCESS_CLIENT_SECRET) {
+    console.warn('⚠️  No Cloudflare Access credentials found');
+    console.warn('   Set CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET env vars');
+    console.warn('   Create a service token at: Cloudflare Zero Trust > Access > Service Auth');
+  } else {
+    console.log('🔒 Cloudflare Access: Service token configured');
+  }
+  
   const runId = Date.now().toString(36);
   const screenshotsDir = path.join(process.cwd(), 'test-screenshots', `run-${runId}`);
   fs.mkdirSync(screenshotsDir, { recursive: true });
+  
+  // Authenticate with wallet before launching browser
+  let authSession = null;
+  try {
+    authSession = await authenticateWithWallet(apiUrl, testKey);
+  } catch (err) {
+    console.error(`⚠️  Wallet authentication failed: ${err.message}`);
+    console.error('   Continuing without authentication (may hit login wall)');
+  }
   
   const browser = await chromium.launch({ 
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
-  const context = await browser.newContext({
+  
+  // Parse the admin URL to get the domain for cookies
+  const adminUrlParsed = new URL(adminUrl);
+  
+  // Create browser context with auth headers and cookies
+  const contextOptions = {
     viewport: { width: 1280, height: 800 },
-    deviceScaleFactor: 2
-  });
+    deviceScaleFactor: 2,
+    extraHTTPHeaders: getCloudflareAccessHeaders(),
+  };
+  
+  const context = await browser.newContext(contextOptions);
+  
+  // Inject session cookie if we have one
+  if (authSession?.sessionCookie) {
+    // Parse the Set-Cookie header to extract cookie details
+    const cookieMatch = authSession.sessionCookie.match(/^([^=]+)=([^;]*)/);
+    if (cookieMatch) {
+      const [, name, value] = cookieMatch;
+      await context.addCookies([{
+        name,
+        value,
+        domain: adminUrlParsed.hostname,
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Strict',
+      }]);
+      console.log(`🍪 Session cookie injected for ${adminUrlParsed.hostname}`);
+    }
+  }
+  
   const page = await context.newPage();
   
   const agentName = generateAgentName();

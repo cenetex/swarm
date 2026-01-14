@@ -203,8 +203,11 @@ jobs:
     if: needs.deploy.outputs.environment == 'staging'
     env:
       AWS_REGION: us-east-1
-      E2E_BROWSER_AGENT_ID: ${{ secrets.E2E_WEB_AGENT_ID }}
-      E2E_AVATAR_AGENT_ID: ${{ secrets.E2E_AVATAR_AGENT_ID }}
+      # Cloudflare Access service token for bypassing Zero Trust
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      # Optional: reusable test wallet (generated fresh if not set)
+      TEST_WALLET_PRIVATE_KEY: ${{ secrets.TEST_WALLET_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -228,7 +231,7 @@ jobs:
           role-session-name: browser-staging
 
       - name: Run Browser Tests
-        run: node scripts/test-browser.mjs staging "$E2E_BROWSER_AGENT_ID" "$E2E_AVATAR_AGENT_ID"
+        run: node scripts/test-browser.mjs staging
 
       - name: Upload Screenshots
         if: always()
