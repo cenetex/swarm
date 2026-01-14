@@ -335,6 +335,9 @@ importers:
       openai:
         specifier: ^4.70.0
         version: 4.104.0(ws@8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)
+      sharp:
+        specifier: ^0.33.5
+        version: 0.33.5
 
   packages/mcp-server:
     dependencies:
