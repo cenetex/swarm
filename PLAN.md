@@ -10,6 +10,18 @@
 
 | Component | Status | Notes |
 |-----------|--------|-------|
+| Agent Templates | 🟡 PARTIAL | Templates live in DB; no repo templates. Import/export component is pending. |
+| **Voice Messages** | 🟡 PARTIAL | Voice tools added; TTS and transcription services configured |
+| **Wallet Generation** | 🟡 PARTIAL | Solana implemented; Ethereum disabled pending ethers/viem |
+| **Logs API** | 🟡 PARTIAL | `GET /agents/{id}/logs` exists; UI panel implemented (`AgentLogsPanel.tsx`) |
+| **MCP Tool Registry + Server** | 🟡 PARTIAL | Registry package created; agent scoping + registration workflow pending. |
+| **Property Research** | 🟡 PARTIAL | Tools and authorization prompts added; execution pending |
+| **Usage Metering** | 🟡 PARTIAL | Trial credits implemented for image generation with daily recharge |
+| Tests | 🟡 PARTIAL | Vitest coverage in admin-api/core; chat tool routing tests added |
+| **Tool Context + MCP Ecosystem** | ⏳ NOT STARTED | Tagging, tool routing, MCP discovery/ingestion, tool catalog. |
+| **Avatar Chat Domains** | ⏳ NOT STARTED | `{avatar_wallet}.rati.chat` chat homes with NFT gating. |
+| **Billing + Entitlements** | ⏳ NOT STARTED | Paid plan gating and subscription lifecycle. |
+| **Privacy + Retention Defaults** | ⏳ NOT STARTED | Stateless free tier and opt-in durable memory. |
 | Monorepo Setup | ✅ DONE | pnpm workspaces, TypeScript configs |
 | Core Types | ✅ DONE | Comprehensive type definitions |
 | Platform Adapters | ✅ DONE | Telegram, Twitter, Web complete. Discord missing. |
@@ -18,7 +30,6 @@
 | Handlers | ✅ DONE | Telegram webhook, message-processor, response-sender, web-chat, tweet-poster, mention poller |
 | Infrastructure (CDK) | ✅ DONE | Shared/per-agent stacks plus admin API/UI constructs |
 | **Lambda Layer** | ✅ DONE | `@swarm/layer` - AWS SDK, OpenAI deps |
-| Agent Templates | 🟡 PARTIAL | Templates live in DB; no repo templates. Import/export component is pending. |
 | Agent Configs | ✅ DONE | Agents configurable via Admin UI; live agents running on Telegram |
 | **Admin API** | ✅ DONE | `@swarm/admin-api` - Chat handler, services, auth, Telegram webhook |
 | **Admin UI** | ✅ DONE | `@swarm/admin-ui` - React chat interface with multi-agent support |
@@ -27,21 +38,16 @@
 | **Secrets Management** | ✅ DONE | Write-only secrets with KMS encryption |
 | **Wallet Authentication** | ✅ DONE | Solana wallet sign-in via Phantom QR/browser extension |
 | **NFT Gating** | ✅ DONE | Gate NFT for agent creation; inhabitation/abandonment system |
-| **Voice Messages** | 🟡 PARTIAL | Voice tools added; TTS and transcription services configured |
-| **Wallet Generation** | 🟡 PARTIAL | Solana implemented; Ethereum disabled pending ethers/viem |
-| **Logs API** | 🟡 PARTIAL | `GET /agents/{id}/logs` exists; UI panel implemented (`AgentLogsPanel.tsx`) |
-| **MCP Tool Registry + Server** | 🟡 PARTIAL | Registry package created; agent scoping + registration workflow pending. |
 | **Media Generation** | ✅ DONE | Async image/video generation with webhook callbacks; Replicate integration |
-| **Property Research** | 🟡 PARTIAL | Tools and authorization prompts added; execution pending |
-| **Billing + Entitlements** | ⏳ NOT STARTED | Paid plan gating and subscription lifecycle. |
-| **Usage Metering** | 🟡 PARTIAL | Trial credits implemented for image generation with daily recharge |
-| **Privacy + Retention Defaults** | ⏳ NOT STARTED | Stateless free tier and opt-in durable memory. |
-| Tests | 🟡 PARTIAL | Vitest coverage in admin-api/core; chat tool routing tests added |
 
 ### Admin Interface Features
 
 | Feature | Status | Description |
 |---------|--------|-------------|
+| Wallet Generation | 🟡 | Solana only; Ethereum disabled |
+| Voice Messages | 🟡 | Inbound/outbound voice; TTS + transcription tools |
+| Import/Export Config | 🟡 | Templates stored in DB; add admin import/export workflow |
+| Deploy Trigger | ❌ | Not implemented (no deploy hook yet) |
 | Cloudflare Access Auth | ✅ | JWT verification in handlers; policies managed in Cloudflare |
 | Wallet Authentication | ✅ | Solana wallet sign-in via Phantom (QR + browser extension) |
 | NFT Gating | ✅ | Gate NFT required for agent creation; inhabitation system |
@@ -51,11 +57,7 @@
 | Platform Config | ✅ | Telegram/Twitter supported; Discord fields only |
 | Secret Storage | ✅ | Write-only, KMS-encrypted, Secrets Manager |
 | Global API Keys | ✅ | Shared keys with per-agent override |
-| Wallet Generation | 🟡 | Solana only; Ethereum disabled |
-| Voice Messages | 🟡 | Inbound/outbound voice; TTS + transcription tools |
-| Deploy Trigger | ❌ | Not implemented (no deploy hook yet) |
 | Logs UI | ✅ | `AgentLogsPanel.tsx` component; API endpoint complete |
-| Import/Export Config | 🟡 | Templates stored in DB; add admin import/export workflow |
 | **Multi-Agent UI** | ✅ | Discord-like sidebar with agent list |
 | **Agent Avatars** | ✅ | DiceBear auto-generated avatars |
 | **Local Persistence** | ✅ | Zustand with localStorage persistence |
@@ -112,44 +114,79 @@ To count as an MVP platform service, the system must let a user pay, activate a 
 
 ## Prioritized Plan (Next)
 
-1) **Billing + Entitlements (MVP gate)**
+1) **Tool Context + MCP Ecosystem**
+   - Tag taxonomy + tool metadata schema.
+   - Tool router (select max 3 toolsets).
+   - MCP catalog + ingestion pipeline.
+   - Platform MCP servers + broker/aggregator.
+
+2) **Avatar Chat Domains**
+   - Deterministic subdomain issuance.
+   - NFT gate enforcement for chat rooms.
+   - Staging vs production domains.
+
+3) **Billing + Entitlements (MVP gate)**
    - Choose billing provider and plan model.
    - Implement subscription lifecycle and plan gating in runtime.
 
-2) **Usage Metering + Spend Controls**
+4) **Usage Metering + Spend Controls**
    - Track per-agent usage across handlers.
    - Enforce limits and expose usage in admin UI/API.
 
-3) **Memory Opt-In + Retention**
+5) **Memory Opt-In + Retention**
    - Stateless free tier default.
    - Paid opt-in durable memory with retention windows and deletion/export flows.
 
-4) **Control Plane Productization**
+6) **Control Plane Productization**
    - Deploy trigger from admin UI/API.
    - Template import/export + agent config versioning.
 
-5) **Reliability + Observability**
+7) **Reliability + Observability**
    - Standardized logs + correlation IDs.
    - Media callback contract with idempotency + retries.
    - End-to-end Telegram test + canary rollout.
 
-6) **Platform Expansion**
+8) **Platform Expansion**
    - Harden X/Twitter adapter and complete Discord adapter.
 
 ## MCP Registration Plan
 
-1) **Agent Scope Enforcement**
+1) **Tool Context + Tagging**
+   - Add tag taxonomy to tool definitions.
+   - Auto-apply platform + feature tags.
+   - Tool router for max-3 toolsets.
+
+2) **MCP Catalog + Ingestion**
+   - Catalog schema + validation.
+   - Ingestion pipeline with tagging + trust score.
+   - Allowlists and rate limits.
+
+3) **Agent Scope Enforcement**
    - Require `agentId` in MCP metadata.
    - Reject requests missing agent scope.
    - Ensure tools/services enforce agent-scoped reads and writes.
 
-2) **Client Registration**
+4) **Client Registration**
    - Document MCP client setup (command, args, env, metadata).
    - Provide reference config for target clients (Claude Desktop, etc.).
 
-3) **Deployment Mode**
+5) **Deployment Mode**
    - Local stdio for dev; hosted MCP service for shared access.
    - Add rate limits and audit logging for MCP calls.
+
+## Avatar Chat Domain Plan
+
+1) **Domain Assignment**
+   - Deterministic domains for staging and production.
+   - Optional vanity domains as upgrades.
+
+2) **Access Gating**
+   - NFT ownership verification.
+   - Session tokens with wallet proof.
+
+3) **Chat UX**
+   - Minimal landing page + join flow.
+   - Audit logging for join attempts.
 
 ## Known Issues & Bugs
 
@@ -1204,11 +1241,11 @@ performs channel-aware buffering and calls the LLM/tools directly without the SQ
    - [ ] Add async video callback handling for runtime pipeline
 
 8. **Testing**
-   - [ ] Expand unit tests for MessageEvaluator/ResponseGenerator
-   - [ ] Add integration tests with local DynamoDB
-   - [ ] End-to-end test scripts for Telegram/Twitter/Web
-   - [ ] Integration test for SQS media pipeline (queue → media-processor → callback)
-   - [ ] UI flow tests for manual tools (request_secret, request_model_selection, upload URLs)
+   - [x] Expand unit tests for MessageEvaluator/ResponseGenerator
+   - [x] Add integration tests with DynamoDB client logic
+   - [x] End-to-end test scripts for Telegram/Web (`scripts/test-e2e.sh`)
+   - [x] Integration test for SQS media pipeline
+   - [x] UI flow contract tests for manual tools (request_secret, request_model_selection, upload URLs)
 
 9. **Operational readiness**
    - [ ] Enable DynamoDB PITR + backup strategy for agent configs/state
