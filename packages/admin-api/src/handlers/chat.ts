@@ -485,7 +485,9 @@ type SdkToolCall = {
   arguments: unknown;
 };
 
-function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: string; toolCallId?: string }> {
+type MessageContent = string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
+
+function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: MessageContent; toolCallId?: string }> {
   return messages.map(message => {
     if (message.role === 'tool') {
       return {
@@ -496,7 +498,7 @@ function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: 'user' | 'as
     }
     return {
       role: message.role,
-      content: message.content,
+      content: message.content as MessageContent,
     };
   });
 }
@@ -585,6 +587,11 @@ function extractMediaFromToolResults(toolResults: ToolResult[]): MediaItem[] {
   return media;
 }
 
+interface ProcessChatOptions {
+  customSystemPrompt?: string;
+  attachments?: Array<{ type: 'image' | 'file'; data: string; name?: string }>;
+}
+
 /**
  * Process a chat message, executing tools as needed
  */
@@ -592,7 +599,8 @@ async function processChat(
   userMessage: string,
   conversationHistory: AdminChatMessage[],
   session: UserSession,
-  agent?: AgentContext
+  agent?: AgentContext,
+  options?: ProcessChatOptions
 ): Promise<{
   response: string;
   history: AdminChatMessage[];
@@ -642,8 +650,33 @@ async function processChat(
   const allMedia: MediaItem[] = [];
   const pendingJobs: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string; purpose?: string }> = [];
   const agentUpdates: { profileImageUrl?: string } = {};
-  const systemPrompt = buildSystemPrompt(agent);
-  const input = buildModelInput(systemPrompt, messages);
+  
+  // Use custom system prompt if provided (for e.g. browser automation agents)
+  const systemPrompt = options?.customSystemPrompt || buildSystemPrompt(agent);
+  
+  // Build the user message content - may include attachments
+  let userMessageContent: string | Array<{ type: string; text?: string; image_url?: { url: string } }> = userMessage;
+  if (options?.attachments && options.attachments.length > 0) {
+    userMessageContent = [
+      { type: 'text', text: userMessage },
+      ...options.attachments
+        .filter(a => a.type === 'image')
+        .map(a => ({
+          type: 'image_url' as const,
+          image_url: { url: a.data },
+        })),
+    ];
+  }
+  
+  // Update the last message with attachments if present
+  const messagesWithAttachments: AdminChatMessage[] = userMessageContent === userMessage
+    ? messages
+    : [
+        ...conversationHistory,
+        { role: 'user' as const, content: userMessageContent as string },
+      ];
+  
+  const input = buildModelInput(systemPrompt, messagesWithAttachments);
 
   logger.info('LLM request', {
     event: 'llm_request',
@@ -1008,7 +1041,7 @@ export async function handler(
         }),
       };
     }
-    const { message, history, agent } = parseResult.data;
+    const { message, history, agent, systemPrompt: customSystemPrompt, attachments } = parseResult.data;
 
     const agentRecord = agent?.id ? await agents.getAgent(agent.id) : null;
     const voiceEnabled = process.env.ENABLE_VOICE_TOOLS !== 'false';
@@ -1038,10 +1071,15 @@ export async function handler(
       requestId,
       messageLength: message.length,
       historyLength: history.length,
+      hasCustomPrompt: Boolean(customSystemPrompt),
+      attachmentCount: attachments?.length || 0,
     });
 
     // Process the chat with agent context
-    const result = await processChat(message, history, session, agentContext);
+    const result = await processChat(message, history, session, agentContext, {
+      customSystemPrompt,
+      attachments,
+    });
 
     // Save the updated history to DynamoDB for cross-device sync
     await chatHistory.saveChatHistory(session, result.history, agent?.id);

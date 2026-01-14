@@ -340,6 +340,12 @@ export const ChatRequestSchema = z.object({
   history: z.array(AdminChatMessageSchema).default([]),
   agent: AgentContextSchema.optional(),
   sender: MessageSenderSchema.optional(),
+  systemPrompt: z.string().optional(), // Override default system prompt
+  attachments: z.array(z.object({
+    type: z.enum(['image', 'file']),
+    data: z.string(), // base64 data URL
+    name: z.string().optional(),
+  })).optional(),
 });
 
 // Infer types from schemas
