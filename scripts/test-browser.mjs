@@ -192,12 +192,31 @@ async function getPageElements(page) {
   try {
     const buttons = await page.locator('button:visible').allTextContents();
     const links = await page.locator('a:visible').allTextContents();
+    
+    // Extract input field info including aria-label, placeholder, name, and id
     const inputs = await page.locator('input:visible, textarea:visible').evaluateAll(els => 
-      els.map(e => e.placeholder || e.name || e.id || e.type || '[unnamed]').filter(Boolean)
+      els.map(e => {
+        const ariaLabel = e.getAttribute('aria-label');
+        const placeholder = e.getAttribute('placeholder');
+        const name = e.getAttribute('name');
+        const id = e.id;
+        const dataTestId = e.getAttribute('data-testid');
+        
+        // Prefer aria-label, then placeholder, then name, then id, then data-testid
+        return ariaLabel || placeholder || name || id || dataTestId || e.type || '[unnamed]';
+      }).filter(Boolean)
     );
     
+    // Also extract buttons with aria-labels for icon buttons
+    const ariaButtons = await page.locator('button:visible[aria-label]').evaluateAll(els =>
+      els.map(e => e.getAttribute('aria-label')).filter(Boolean)
+    );
+    
+    // Merge button texts with aria-labels
+    const allButtons = [...buttons, ...ariaButtons];
+    
     // Clean up - remove empty strings and duplicates
-    const cleanButtons = [...new Set(buttons.map(b => b.trim()).filter(b => b && b.length < 50))];
+    const cleanButtons = [...new Set(allButtons.map(b => b.trim()).filter(b => b && b.length < 50))];
     const cleanLinks = [...new Set(links.map(l => l.trim()).filter(l => l && l.length < 50))];
     const cleanInputs = [...new Set(inputs.filter(i => i && i.length < 50))];
     
@@ -385,11 +404,17 @@ async function executeAction(page, action) {
         const text = params.substring(separatorIndex + 1).trim();
         
         const fillStrategies = [
+          // By aria-label (most specific for accessibility)
+          () => page.fill(`input[aria-label*="${selector}" i]`, text, { timeout: 2000 }),
+          () => page.fill(`textarea[aria-label*="${selector}" i]`, text, { timeout: 2000 }),
           // By placeholder text
           () => page.fill(`[placeholder*="${selector}" i]`, text, { timeout: 2000 }),
           // By input name
           () => page.fill(`input[name*="${selector}" i]`, text, { timeout: 2000 }),
           () => page.fill(`textarea[name*="${selector}" i]`, text, { timeout: 2000 }),
+          // By data-testid
+          () => page.fill(`input[data-testid*="${selector.toLowerCase().replace(/\s+/g, '-')}" i]`, text, { timeout: 2000 }),
+          () => page.fill(`textarea[data-testid*="${selector.toLowerCase().replace(/\s+/g, '-')}" i]`, text, { timeout: 2000 }),
           // By associated label
           () => page.fill(`label:has-text("${selector}") + input`, text, { timeout: 2000 }),
           () => page.fill(`label:has-text("${selector}") ~ input`, text, { timeout: 2000 }),
@@ -653,9 +678,10 @@ async function runAutonomousBrowserTest() {
   const page = await context.newPage();
   
   const agentName = generateAgentName();
-  const goal = `Explore this admin/chat application and create a new AI agent named "${agentName}". 
-Once you've created the agent, have a brief conversation with it to verify it works.
-Look for ways to add/create new agents, fill in any required fields creatively, and test the result.`;
+  const goal = `Create a new AI agent by clicking the create/add button (usually a + icon or "Create" button).
+After the agent is created, send it a test message like "Hello" to verify it responds.
+The agent name "${agentName}" may be auto-generated - you don't need to fill in forms manually.
+Focus on: 1) Find and click the create button, 2) Verify the agent appears, 3) Send a message.`;
 
   console.log(`🎯 Goal: Create agent "${agentName}" and test conversation`);
   console.log();

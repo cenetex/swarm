@@ -164,6 +164,8 @@ export function AgentSidebar({ className, onClose }: AgentSidebarProps) {
                   isLoading ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
                 title={`Create new agent (${gateStatus?.availableSlots || 0} slots available)`}
+                data-testid="create-agent-button"
+                aria-label="Create new agent"
               >
                 {isLoading ? (
                   <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24">
@@ -224,6 +226,7 @@ export function AgentSidebar({ className, onClose }: AgentSidebarProps) {
                 onClick={handleCreateAgent}
                 disabled={isLoading}
                 className="mt-2 text-brand-500 hover:text-brand-400 text-sm disabled:opacity-50"
+                data-testid="create-first-agent-button"
               >
                 Create your first agent
               </button>

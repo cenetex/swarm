@@ -562,6 +562,7 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
           <button
             onClick={() => useAgentStore.getState().createAgent()}
             className="px-4 lg:px-6 py-2.5 lg:py-3 bg-brand-600 hover:bg-brand-500 text-white rounded-xl font-medium transition-colors text-sm lg:text-base"
+            data-testid="create-agent-empty-state-button"
           >
             Create Your First Agent
           </button>
