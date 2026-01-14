@@ -109,9 +109,9 @@ jobs:
 
       - name: Build packages
         run: |
-          # Build layer if not cached
+          # Build layer if not cached (with Linux platform for Lambda)
           if [ "${{ steps.layer-cache.outputs.cache-hit }}" != "true" ]; then
-            cd packages/layer && mkdir -p nodejs && cp package.json nodejs/ && cd nodejs && npm i --omit=dev --legacy-peer-deps && cd ../..
+            cd packages/layer && mkdir -p nodejs && cp package.json nodejs/ && cd nodejs && npm i --omit=dev --platform=linux --arch=x64 && cd ../..
           fi
           # If CI artifacts were downloaded, reuse them; otherwise build
           if [ -d packages/core/dist ]; then

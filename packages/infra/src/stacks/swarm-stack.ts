@@ -154,6 +154,8 @@ export class SwarmStack extends cdk.Stack {
         mediaBucket: this.shared.mediaBucket,
         mediaCdn: this.shared.distribution,
         cdnUrl: this.shared.cdnUrl, // Use custom domain if configured
+        // Dependency layer with sharp for image processing
+        dependencyLayer: this.shared.dependencyLayer,
       });
     }
 

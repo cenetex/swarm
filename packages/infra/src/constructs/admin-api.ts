@@ -108,6 +108,10 @@ export interface AdminApiConstructProps {
    */
   cdnUrl?: string;
 
+  /**
+   * Lambda layer with shared dependencies (including sharp for image processing)
+   */
+  dependencyLayer?: lambda.ILayerVersion;
 }
 
 export class AdminApiConstruct extends Construct {
@@ -130,6 +134,7 @@ export class AdminApiConstruct extends Construct {
       mediaBucket,
       mediaCdn,
       cdnUrl: propsCdnUrl,
+      dependencyLayer,
     } = props;
 
     // Use provided CDN URL or fall back to distribution domain
@@ -238,6 +243,8 @@ export class AdminApiConstruct extends Construct {
       handler: 'handler',
       timeout: cdk.Duration.seconds(180), // Increased for image generation with Nano Banana Pro
       memorySize: 1024, // Increased for image processing
+      // Use dependency layer for sharp (pre-built with linux binaries)
+      layers: dependencyLayer ? [dependencyLayer] : undefined,
       environment: {
         ADMIN_TABLE: this.table.tableName,
         STATE_TABLE: stateTable?.tableName || '',
@@ -263,10 +270,8 @@ export class AdminApiConstruct extends Construct {
         INTERNAL_TEST_KEY: internalTestKey,
       },
       bundling: {
-        // Sharp must be installed separately with platform-specific binaries
+        // Sharp is provided via dependency layer (no Docker bundling needed)
         externalModules: ['@aws-sdk/*', 'sharp'],
-        nodeModules: ['sharp'], // Install sharp via npm with correct platform
-        forceDockerBundling: true, // Force Docker to ensure Linux binaries
         minify: true,
         sourceMap: true,
         commandHooks: {
