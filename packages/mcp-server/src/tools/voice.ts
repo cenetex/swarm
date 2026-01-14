@@ -128,6 +128,7 @@ export const createVoiceTools = (services: VoiceServices) => [
     name: 'transcribe_audio',
     description: 'Transcribe an audio asset into text for agent understanding. Provide assetId, url, or platformFileId.',
     category: 'media',
+    toolset: 'voice',
     inputSchema: audioSourceSchema,
     execute: async (input): Promise<ToolResult> => {
       if (!input.assetId && !input.url && !input.platformFileId) {
@@ -142,6 +143,7 @@ export const createVoiceTools = (services: VoiceServices) => [
     name: 'create_voice_seed',
     description: 'Generate a seed audio clip for voice cloning.',
     category: 'media',
+    toolset: 'voice',
     inputSchema: z.object({
       prompt: z.string().min(1).describe('Prompt describing the desired voice or sound'),
       durationMs: z.number().min(1000).max(30000).describe('Seed audio duration in milliseconds'),
@@ -158,6 +160,7 @@ export const createVoiceTools = (services: VoiceServices) => [
     name: 'clone_voice_from_seed',
     description: 'Create a voice clone from a seed audio clip.',
     category: 'config',
+    toolset: 'voice',
     inputSchema: z.object({
       seedAssetId: z.string().min(1).describe('Audio asset ID to clone from'),
       name: z.string().optional().describe('Optional name for the voice'),
@@ -172,6 +175,7 @@ export const createVoiceTools = (services: VoiceServices) => [
     name: 'create_voice_profile',
     description: 'Create or update a voice profile for the agent.',
     category: 'config',
+    toolset: 'voice',
     inputSchema: z.object({
       seedPrompt: z.string().optional().describe('Prompt for seed generation (if no seedAssetId)'),
       seedAssetId: z.string().optional().describe('Seed audio asset ID'),
@@ -187,6 +191,7 @@ export const createVoiceTools = (services: VoiceServices) => [
     name: 'set_active_voice_profile',
     description: 'Set the active/default voice profile for the agent.',
     category: 'config',
+    toolset: 'voice',
     inputSchema: z.object({
       voiceId: z.string().min(1).describe('Voice profile ID to activate'),
     }),
@@ -203,6 +208,7 @@ export const createVoiceTools = (services: VoiceServices) => [
     name: 'create_my_voice',
     description: 'Create or configure your voice for speaking. Use this if you want to send voice messages but haven\'t set up your voice yet. Choose a voice style that matches your personality.',
     category: 'config',
+    toolset: 'voice',
     inputSchema: z.object({
       voiceStyle: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']).optional()
         .describe('Voice style: alloy (neutral), echo (male), fable (storyteller), onyx (deep male), nova (female), shimmer (soft female)'),
@@ -223,6 +229,7 @@ export const createVoiceTools = (services: VoiceServices) => [
     name: 'check_my_voice',
     description: 'Check if you have a voice configured for speaking. Use this before trying to send voice messages.',
     category: 'readonly',
+    toolset: 'voice',
     inputSchema: z.object({}),
     execute: async (_input, context): Promise<ToolResult> => {
       const result = await services.hasVoice(context.agentId);
@@ -234,6 +241,7 @@ export const createVoiceTools = (services: VoiceServices) => [
     name: 'generate_voice_message',
     description: 'Generate a voice message (speech audio) from text.',
     category: 'media',
+    toolset: 'voice',
     inputSchema: z.object({
       text: z.string().min(1).describe('Text to convert to speech'),
       voiceId: z.string().optional().describe('Voice profile ID to use'),
@@ -257,6 +265,7 @@ export const createVoiceTools = (services: VoiceServices) => [
     name: 'send_voice_message',
     description: 'Send a voice message to a conversation. Provide assetId or url.',
     category: 'media',
+    toolset: 'voice',
     inputSchema: z.object({
       conversationId: z.string().min(1).describe('Conversation or chat ID'),
       assetId: z.string().optional().describe('Audio asset ID'),

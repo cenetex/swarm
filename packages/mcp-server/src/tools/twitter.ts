@@ -113,6 +113,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_status',
       description: 'Check if Twitter/X is connected for this agent. Returns connection status and username if connected.',
       category: 'readonly',
+      toolset: 'twitter',
       inputSchema: z.object({}),
       execute: async (_input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
@@ -142,6 +143,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_request_integration',
       description: 'Request Twitter/X integration for this agent. If not already connected, this will provide a link for the admin to authorize the Twitter account. Use this when you want to start posting tweets but Twitter is not yet connected.',
       category: 'config',
+      toolset: 'twitter',
       inputSchema: z.object({
         reason: z.string().optional().describe('Why you want Twitter integration (helps admin understand the request)'),
       }),
@@ -188,6 +190,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_post',
       description: 'Post a tweet to Twitter/X. Twitter must be connected first (check with twitter_status). Tweets are limited to 280 characters.',
       category: 'media',
+      toolset: 'twitter',
       inputSchema: z.object({
         text: z.string().max(280).describe('The tweet text (max 280 characters)'),
         mediaUrls: z.array(z.string()).max(4).optional().describe('Optional array of media URLs to attach (up to 4 images)'),
@@ -240,6 +243,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_get_timeline',
       description: 'Get recent tweets from my home timeline. Useful for understanding current conversations and trends I follow.',
       category: 'readonly',
+      toolset: 'twitter',
       inputSchema: z.object({
         count: z.number().min(1).max(100).optional().default(20).describe('Number of tweets to fetch (1-100, default 20)'),
       }),
@@ -275,6 +279,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_get_mentions',
       description: 'Get recent mentions of my Twitter account. Use this to see who is talking to me.',
       category: 'readonly',
+      toolset: 'twitter',
       inputSchema: z.object({
         count: z.number().min(1).max(100).optional().default(20).describe('Number of mentions to fetch (1-100, default 20)'),
         sinceId: z.string().optional().describe('Only get mentions after this tweet ID'),
@@ -312,6 +317,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_get_tweet',
       description: 'Get a specific tweet by its ID. Useful for reading context before replying.',
       category: 'readonly',
+      toolset: 'twitter',
       inputSchema: z.object({
         tweetId: z.string().describe('The ID of the tweet to fetch'),
       }),
@@ -354,6 +360,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_reply',
       description: 'Reply to a specific tweet. The reply will be threaded under the original tweet.',
       category: 'media',
+      toolset: 'twitter',
       inputSchema: z.object({
         tweetId: z.string().describe('The ID of the tweet to reply to'),
         text: z.string().max(280).describe('The reply text (max 280 characters)'),
@@ -389,6 +396,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_like',
       description: 'Like a tweet. Shows appreciation for content.',
       category: 'media',
+      toolset: 'twitter',
       inputSchema: z.object({
         tweetId: z.string().describe('The ID of the tweet to like'),
       }),
@@ -418,6 +426,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_unlike',
       description: 'Remove a like from a tweet.',
       category: 'media',
+      toolset: 'twitter',
       inputSchema: z.object({
         tweetId: z.string().describe('The ID of the tweet to unlike'),
       }),
@@ -447,6 +456,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_retweet',
       description: 'Retweet a tweet to share it with my followers.',
       category: 'media',
+      toolset: 'twitter',
       inputSchema: z.object({
         tweetId: z.string().describe('The ID of the tweet to retweet'),
       }),
@@ -476,6 +486,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_unretweet',
       description: 'Undo a retweet.',
       category: 'media',
+      toolset: 'twitter',
       inputSchema: z.object({
         tweetId: z.string().describe('The ID of the tweet to unretweet'),
       }),
@@ -505,6 +516,7 @@ export function createTwitterTools(services: TwitterServices) {
       name: 'twitter_quote',
       description: 'Quote tweet - share a tweet with my own commentary.',
       category: 'media',
+      toolset: 'twitter',
       inputSchema: z.object({
         tweetId: z.string().describe('The ID of the tweet to quote'),
         text: z.string().max(280).describe('Your commentary (max 280 characters)'),

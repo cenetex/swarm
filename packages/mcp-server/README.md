@@ -174,6 +174,48 @@ defineTool({
 4. Add rate limits and audit logging around tool execution.
 5. Document the client configuration format for your target MCP clients.
 
+## Client Configuration Examples
+
+### Claude Desktop (local stdio)
+
+```json
+{
+  "mcpServers": {
+    "swarm-tools": {
+      "command": "pnpm",
+      "args": ["--filter", "@swarm/mcp-server", "start"],
+      "env": {
+        "SWARM_AGENT_ID": "my-agent",
+        "SWARM_PLATFORM": "admin-ui"
+      }
+    }
+  }
+}
+```
+
+### Hosted MCP Server (HTTP transport)
+
+```json
+{
+  "mcpServers": {
+    "swarm-tools": {
+      "command": "node",
+      "args": ["dist/server.js"],
+      "env": {
+        "MCP_ENDPOINT": "https://mcp.example.com",
+        "SWARM_AGENT_ID": "my-agent",
+        "SWARM_PLATFORM": "admin-ui"
+      }
+    }
+  }
+}
+```
+
+### Required Metadata
+
+- `agentId` is required for every request (tool execution is scoped by agent).
+- `platform` should be set to `admin-ui`, `telegram`, `discord`, `twitter`, or `api`.
+
 ## Development
 
 ```bash

@@ -28,6 +28,8 @@ const adminEmails = app.node.tryGetContext('adminEmails') || envConfig.adminEmai
 const openRouterApiKeyArn = app.node.tryGetContext('openRouterApiKeyArn') || envConfig.openRouterApiKeyArn;
 const replicateApiKeyArn = app.node.tryGetContext('replicateApiKeyArn') || envConfig.replicateApiKeyArn;
 const heliusApiKeyArn = app.node.tryGetContext('heliusApiKeyArn') || envConfig.heliusApiKeyArn;
+const webSearchApiKeyArn = app.node.tryGetContext('webSearchApiKeyArn') || envConfig.webSearchApiKeyArn;
+const webSearchProvider = app.node.tryGetContext('webSearchProvider') || envConfig.webSearchProvider;
 const galleryDomain = app.node.tryGetContext('galleryDomain') || envConfig.galleryDomain;
 const galleryCertificateArn = app.node.tryGetContext('galleryCertificateArn') || envConfig.galleryCertificateArn;
 
@@ -49,6 +51,8 @@ new SwarmStack(app, `SwarmStack-${environment}`, {
   openRouterApiKeyArn,
   replicateApiKeyArn,
   heliusApiKeyArn,
+  webSearchApiKeyArn,
+  webSearchProvider,
   galleryDomain,
   galleryCertificateArn,
   env: {

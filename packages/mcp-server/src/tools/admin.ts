@@ -17,6 +17,7 @@ export function createAdminTools(services: AdminToolServices) {
     defineManualTool({
       name: 'request_feature_toggle',
       description: 'Show the user a toggle switch to enable or disable a feature (media, voice, Twitter, Telegram, Discord).',
+      toolset: 'admin',
       platforms: ['admin-ui'],
       inputSchema: z.object({
         feature: z.enum(TOGGLEABLE_FEATURES).describe('The feature to toggle'),
@@ -29,6 +30,7 @@ export function createAdminTools(services: AdminToolServices) {
     defineManualTool({
       name: 'request_twitter_connection',
       description: 'Prompt the admin to connect an X/Twitter account via OAuth.',
+      toolset: 'admin',
       platforms: ['admin-ui'],
       inputSchema: z.object({
         message: z.string().optional().describe('Optional message explaining why connection is needed'),
@@ -39,6 +41,7 @@ export function createAdminTools(services: AdminToolServices) {
       name: 'get_twitter_connection_status',
       description: 'Check if an X/Twitter account is connected to this agent.',
       category: 'readonly',
+      toolset: 'twitter',
       platforms: ['admin-ui', 'api'],
       inputSchema: z.object({}),
       execute: async (): Promise<ToolResult> => {

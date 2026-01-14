@@ -75,6 +75,20 @@ export class ToolClient {
   }
 
   /**
+   * Get OpenAI tools for a pre-filtered tool list
+   */
+  getOpenAIToolsForTools(tools: ToolDefinition[]): Array<{
+    type: 'function';
+    function: {
+      name: string;
+      description: string;
+      parameters: Record<string, unknown>;
+    };
+  }> {
+    return this.registry.toOpenAIFormatForTools(tools);
+  }
+
+  /**
    * Get a tool definition by name
    */
   getTool(name: string): ToolDefinition | undefined {
@@ -120,6 +134,13 @@ export class ToolClient {
     return this.registry
       .getByCategory(category)
       .filter(t => !t.platforms || t.platforms.includes(this.platform));
+  }
+
+  /**
+   * Get tool definitions for this platform
+   */
+  getToolDefinitions(): ToolDefinition[] {
+    return this.registry.getForPlatform(this.platform);
   }
 }
 

@@ -157,6 +157,7 @@ export const createNFTTools = (services: NFTServices) => [
     name: 'get_my_inhabitation_status',
     description:
       'Check if this agent is currently inhabited by a user. Returns whether someone has claimed this agent as their avatar, and the current era number.',
+    toolset: 'nft',
     inputSchema: z.object({}),
     execute: async (_input, context): Promise<ToolResult> => {
       try {
@@ -201,6 +202,7 @@ export const createNFTTools = (services: NFTServices) => [
     name: 'get_inhabitation_link',
     description:
       'Get a link that users can click to inhabit this agent. Share this link when someone wants to claim you as their avatar in shared chats.',
+    toolset: 'nft',
     inputSchema: z.object({}),
     execute: async (_input, context): Promise<ToolResult> => {
       try {

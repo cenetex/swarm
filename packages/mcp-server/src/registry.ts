@@ -13,6 +13,7 @@
  */
 import { z, type ZodType, type ZodObject, type ZodRawShape } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { CATEGORY_TOOLSET_MAP, TOOLSET_DEFAULT_TAGS, type ToolsetId, type ToolTag } from './tool-metadata.js';
 
 // ============================================================================
 // Types
@@ -77,7 +78,11 @@ export interface ToolDefinition<TInput = any, TOutput = unknown> {
   /** Human-readable description for LLM */
   description: string;
   /** Optional category for organization */
-  category?: 'media' | 'wallet' | 'profile' | 'config' | 'gallery' | 'secrets' | 'readonly' | 'diagnostics' | 'telegram' | 'property';
+  category?: 'media' | 'wallet' | 'profile' | 'config' | 'gallery' | 'secrets' | 'readonly' | 'diagnostics' | 'telegram' | 'property' | 'nft';
+  /** Toolset grouping for routing */
+  toolset?: ToolsetId;
+  /** Tags for discovery/routing */
+  tags?: ToolTag[];
   /** Zod schema for input validation */
   inputSchema: ZodType<TInput>;
   /** Zod schema for output validation (optional) */
@@ -107,7 +112,7 @@ export class ToolRegistry {
     if (this.tools.has(tool.name)) {
       console.warn(`[ToolRegistry] Overwriting existing tool: ${tool.name}`);
     }
-    this.tools.set(tool.name, tool);
+    this.tools.set(tool.name, normalizeToolDefinition(tool));
   }
 
   /**
@@ -255,6 +260,29 @@ export class ToolRegistry {
   }
 
   /**
+   * Convert a specific tool list to OpenAI function format
+   */
+  toOpenAIFormatForTools(tools: ToolDefinition[]): Array<{
+    type: 'function';
+    function: {
+      name: string;
+      description: string;
+      parameters: Record<string, unknown>;
+    };
+  }> {
+    return tools.map(tool => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: sanitizeOpenAiSchema(
+          zodToJsonSchema(tool.inputSchema, { target: 'openApi3' }) as Record<string, unknown>
+        ),
+      },
+    }));
+  }
+
+  /**
    * Convert tools to OpenAI format with context-enhanced descriptions
    */
   async toOpenAIFormatWithContext(
@@ -296,6 +324,45 @@ export class ToolRegistry {
   }
 
   /**
+   * Convert a specific tool list to OpenAI format with context
+   */
+  async toOpenAIFormatWithContextForTools(
+    context: ToolContext,
+    tools: ToolDefinition[]
+  ): Promise<Array<{
+    type: 'function';
+    function: {
+      name: string;
+      description: string;
+      parameters: Record<string, unknown>;
+    };
+  }>> {
+    return Promise.all(
+      tools.map(async tool => {
+        let description = tool.description;
+
+        if (tool.contextBuilder) {
+          const contextStr = await tool.contextBuilder(context);
+          if (contextStr) {
+            description = `${description}\n\n📌 ${contextStr}`;
+          }
+        }
+
+        return {
+          type: 'function' as const,
+          function: {
+            name: tool.name,
+            description,
+            parameters: sanitizeOpenAiSchema(
+              zodToJsonSchema(tool.inputSchema, { target: 'openApi3' }) as Record<string, unknown>
+            ),
+          },
+        };
+      })
+    );
+  }
+
+  /**
    * Convert to MCP tool format
    */
   toMCPFormat(): Array<{
@@ -307,6 +374,31 @@ export class ToolRegistry {
       name: tool.name,
       description: tool.description,
       inputSchema: zodToJsonSchema(tool.inputSchema, { target: 'jsonSchema7' }) as Record<string, unknown>,
+    }));
+  }
+
+  /**
+   * Convert to MCP tool format with metadata
+   */
+  toMCPFormatWithMetadata(): Array<{
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+    metadata: {
+      toolset: ToolsetId;
+      tags: ToolTag[];
+      category?: ToolDefinition['category'];
+    };
+  }> {
+    return this.getAll().map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: zodToJsonSchema(tool.inputSchema, { target: 'jsonSchema7' }) as Record<string, unknown>,
+      metadata: {
+        toolset: tool.toolset || 'core',
+        tags: tool.tags || [],
+        category: tool.category,
+      },
     }));
   }
 }
@@ -325,6 +417,8 @@ export function defineTool<
   name: string;
   description: string;
   category?: ToolDefinition['category'];
+  toolset?: ToolsetId;
+  tags?: ToolTag[];
   inputSchema: TInput;
   outputSchema?: ZodType<TOutput>;
   execute: ((input: z.infer<TInput>, context: ToolContext) => Promise<ToolResult<TOutput>>) | false;
@@ -359,6 +453,17 @@ function sanitizeOpenAiSchema(schema: Record<string, unknown>): Record<string, u
   const sanitized = { ...schema };
   delete sanitized.$schema;
   return sanitized;
+}
+
+function normalizeToolDefinition(tool: ToolDefinition): ToolDefinition {
+  const toolset = tool.toolset
+    || (tool.category ? CATEGORY_TOOLSET_MAP[tool.category] : undefined)
+    || 'core';
+  const tags = tool.tags && tool.tags.length > 0
+    ? tool.tags
+    : (TOOLSET_DEFAULT_TAGS[toolset] || []);
+
+  return { ...tool, toolset, tags };
 }
 
 // Global registry singleton

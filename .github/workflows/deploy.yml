@@ -164,3 +164,34 @@ jobs:
           echo "## ✅ Deployed to ${{ steps.env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "- **UI:** ${{ steps.outputs.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "- **API:** ${{ steps.outputs.outputs.api_url }}" >> $GITHUB_STEP_SUMMARY
+
+  e2e:
+    name: E2E (Staging)
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: needs.deploy.outputs.environment == 'staging'
+    env:
+      AWS_REGION: us-east-1
+      E2E_TELEGRAM_AGENT_ID: ${{ secrets.E2E_TELEGRAM_AGENT_ID }}
+      E2E_WEB_AGENT_ID: ${{ secrets.E2E_WEB_AGENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: e2e-staging
+
+      - name: Validate E2E inputs
+        run: |
+          if [ -z "$E2E_TELEGRAM_AGENT_ID" ] || [ -z "$E2E_WEB_AGENT_ID" ]; then
+            echo "::error::Missing E2E agent IDs (E2E_TELEGRAM_AGENT_ID, E2E_WEB_AGENT_ID)"
+            exit 1
+          fi
+
+      - name: Run Telegram E2E
+        run: ./scripts/test-e2e.sh telegram "$E2E_TELEGRAM_AGENT_ID" "ci-telegram-${GITHUB_RUN_ID}" staging
+
+      - name: Run Web E2E
+        run: ./scripts/test-e2e.sh web "$E2E_WEB_AGENT_ID" "ci-web-${GITHUB_RUN_ID}" staging

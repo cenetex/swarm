@@ -11,6 +11,7 @@ import {
   TelegramAdapter,
   TwitterAdapter,
   WebAdapter,
+  DiscordAdapter,
   PlatformRegistry,
   createStateService,
   createSecretsService,
@@ -128,6 +129,17 @@ async function initialize(): Promise<void> {
 
   if (agentConfig.platforms.web?.enabled) {
     platformRegistry.register(new WebAdapter(agentConfig));
+  }
+
+  if (agentConfig.platforms.discord?.enabled) {
+    platformRegistry.register(new DiscordAdapter(agentConfig, {
+      botToken: secrets.DISCORD_BOT_TOKEN || secrets.discord_bot_token,
+      webhookUrl: agentConfig.platforms.discord.webhookUrl,
+      webhookId: agentConfig.platforms.discord.webhookId,
+      webhookToken: agentConfig.platforms.discord.webhookToken,
+      applicationId: agentConfig.platforms.discord.applicationId,
+      publicKey: agentConfig.platforms.discord.publicKey,
+    }));
   }
 
   outboundSender = createOutboundSender(platformRegistry, activityService);

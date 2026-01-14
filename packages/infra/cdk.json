@@ -25,6 +25,7 @@
         "openRouterApiKeyArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:kyro/dev/openrouter-DR3vg8",
         "replicateApiKeyArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:swarm/global/replicate-api-key-CEAfun",
         "heliusApiKeyArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:swarm/global/helius-api-key-pBG5Cl",
+        "webSearchProvider": "serpapi",
         "galleryDomain": "media-staging.rati.chat",
         "galleryCertificateArn": "arn:aws:acm:us-east-1:022118847419:certificate/b7d8f8c6-c042-45d0-88fa-4893e1e3cfea"
       },
@@ -36,6 +37,7 @@
         "openRouterApiKeyArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:kyro/prod/openrouter-KchUEq",
         "replicateApiKeyArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:swarm/global/replicate-api-key-CEAfun",
         "heliusApiKeyArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:swarm/global/helius-api-key-pBG5Cl",
+        "webSearchProvider": "serpapi",
         "galleryDomain": "media.rati.chat",
         "galleryCertificateArn": "arn:aws:acm:us-east-1:022118847419:certificate/b7d8f8c6-c042-45d0-88fa-4893e1e3cfea"
       }

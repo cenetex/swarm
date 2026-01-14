@@ -45,6 +45,7 @@ export const createMemoryTools = (memory: MemoryServices) => [
     name: 'remember',
     description: 'Save an important fact about a user or topic to remember for future conversations. Use this to build persistent memory about users, their preferences, and important details.',
     category: 'readonly',
+    toolset: 'memory',
     inputSchema: z.object({
       fact: z.string().min(1).describe('The fact to remember (e.g., "User prefers dark themes" or "Alice\'s birthday is March 15")'),
       about: z.string().optional().describe('Who or what this fact is about (e.g., username, topic, or "general")'),
@@ -72,6 +73,7 @@ export const createMemoryTools = (memory: MemoryServices) => [
     name: 'recall',
     description: 'Search your memory for previously saved facts about a user or topic. Use this to remember things about users before responding.',
     category: 'readonly',
+    toolset: 'memory',
     inputSchema: z.object({
       query: z.string().min(1).describe('What to search for (e.g., a username, topic, or keyword)'),
     }),

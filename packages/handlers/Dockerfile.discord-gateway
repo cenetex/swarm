@@ -1,0 +1,28 @@
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages ./packages
+
+RUN pnpm install --frozen-lockfile
+RUN pnpm -r --filter @swarm/core --filter @swarm/mcp-server --filter @swarm/handlers build
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages ./packages
+
+COPY --from=build /app/packages/core/dist ./packages/core/dist
+COPY --from=build /app/packages/mcp-server/dist ./packages/mcp-server/dist
+COPY --from=build /app/packages/handlers/dist ./packages/handlers/dist
+
+RUN pnpm install --frozen-lockfile --prod
+
+CMD ["node", "packages/handlers/dist/discord-gateway.js"]

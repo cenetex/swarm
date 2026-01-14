@@ -25,14 +25,37 @@ vi.mock('./secrets.js', () => ({
 }));
 
 // Mock Solana
-vi.mock('@solana/web3.js', async (importOriginal) => {
-  const actual = await importOriginal() as any;
+vi.mock('@solana/web3.js', () => {
+  // Mock PublicKey class
+  class MockPublicKey {
+    private _key: Buffer;
+    constructor(value: Buffer | Uint8Array | string) {
+      if (typeof value === 'string') {
+        this._key = Buffer.from(value, 'base64');
+      } else {
+        this._key = Buffer.from(value);
+      }
+    }
+    toBase58(): string {
+      return '11111111111111111111111111111111';
+    }
+    toBuffer(): Buffer {
+      return this._key;
+    }
+  }
   return {
-    ...actual,
+    PublicKey: MockPublicKey,
+    Keypair: {
+      generate: vi.fn(() => ({
+        publicKey: new MockPublicKey(Buffer.alloc(32)),
+        secretKey: new Uint8Array(64),
+      })),
+    },
     Connection: vi.fn(() => ({
       getBalance: vi.fn().mockResolvedValue(1000000000), // 1 SOL
       getParsedTokenAccountsByOwner: vi.fn().mockResolvedValue({ value: [] }),
     })),
+    LAMPORTS_PER_SOL: 1000000000,
   };
 });
 

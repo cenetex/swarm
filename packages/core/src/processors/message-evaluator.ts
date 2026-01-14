@@ -17,6 +17,7 @@ export interface EvaluationResult {
 
 export interface MessageEvaluatorConfig {
   botUsernames: string[]; // Bot's usernames on different platforms
+  botUserIds?: string[]; // Bot user IDs for mention matching
   adminUserIds?: string[]; // Admin users who bypass cooldowns
 }
 
@@ -80,6 +81,8 @@ export class MessageEvaluator {
     switch (envelope.platform) {
       case 'telegram':
         return this.evaluateTelegram(envelope);
+      case 'discord':
+        return this.evaluateDiscord(envelope);
       case 'twitter':
         return this.evaluateTwitter(envelope);
       case 'web':
@@ -170,6 +173,44 @@ export class MessageEvaluator {
   }
 
   /**
+   * Discord-specific evaluation
+   */
+  private evaluateDiscord(envelope: SwarmEnvelope): EvaluationResult {
+    const config = this.agentConfig.platforms.discord;
+    const chatType = envelope.metadata.chatType;
+
+    if (chatType === 'private') {
+      if (config?.respondInDMs === false) {
+        return {
+          shouldRespond: false,
+          reason: 'Discord DM responses disabled',
+          priority: 'low',
+        };
+      }
+
+      return {
+        shouldRespond: true,
+        reason: 'Discord DM',
+        priority: 'normal',
+      };
+    }
+
+    if (config?.respondToMentions === false) {
+      return {
+        shouldRespond: false,
+        reason: 'Discord mentions disabled',
+        priority: 'low',
+      };
+    }
+
+    return {
+      shouldRespond: false,
+      reason: 'Discord guild message without mention',
+      priority: 'low',
+    };
+  }
+
+  /**
    * Twitter-specific evaluation (for mentions/replies)
    */
   private evaluateTwitter(_envelope: SwarmEnvelope): EvaluationResult {
@@ -213,11 +254,19 @@ export class MessageEvaluator {
    * Check if bot was mentioned in the message
    */
   private isBotMentioned(envelope: SwarmEnvelope): boolean {
+    if (envelope.metadata.isMention) {
+      return true;
+    }
+
     // Check mentions array
     for (const mention of envelope.mentions) {
       if (this.evaluatorConfig.botUsernames.some(
         username => mention.username?.toLowerCase() === username.toLowerCase()
       )) {
+        return true;
+      }
+
+      if (mention.userId && this.evaluatorConfig.botUserIds?.includes(mention.userId)) {
         return true;
       }
     }
@@ -300,11 +349,12 @@ export class MessageEvaluator {
 export function createMessageEvaluator(
   agentConfig: AgentConfig,
   stateService: StateService,
-  botUsernames: string[],
+  configOrBotUsernames: MessageEvaluatorConfig | string[],
   adminUserIds?: string[]
 ): MessageEvaluator {
-  return new MessageEvaluator(agentConfig, stateService, {
-    botUsernames,
-    adminUserIds,
-  });
+  const config = Array.isArray(configOrBotUsernames)
+    ? { botUsernames: configOrBotUsernames, adminUserIds }
+    : configOrBotUsernames;
+
+  return new MessageEvaluator(agentConfig, stateService, config);
 }

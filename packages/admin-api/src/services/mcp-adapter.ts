@@ -22,6 +22,7 @@ import * as agentOwnership from '../services/agent-ownership.js';
 import * as nftGate from '../services/nft-gate.js';
 import * as lineageNft from '../services/lineage-nft.js';
 import * as propertyResearch from '../services/property-research.js';
+import { createWebSearch } from '../services/web-search.js';
 
 // Timeout for external API calls
 const API_TIMEOUT_MS = 10_000;
@@ -1418,35 +1419,7 @@ export function createTelegramMCPServices(agentId: string): AllServices {
  * Create property research services
  */
 function createPropertyServices(_agentId: string, _session: UserSession): PropertyServices {
-  // Create a web search function that uses Anthropic's web search
-  // In production, this would use the actual WebSearch tool
-  const webSearch = async (query: string): Promise<string> => {
-    // For now, return a placeholder - in production this would call
-    // the actual web search API (e.g., via Anthropic's web search feature)
-    console.log(`[PropertyResearch] Web search: ${query}`);
-
-    // Try to use a simple fetch to get search results
-    // This is a simplified implementation - production would use proper search API
-    try {
-      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-      const response = await fetch(searchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; PropertyResearchBot/1.0)',
-        },
-      });
-
-      if (!response.ok) {
-        return `Search failed for: ${query}`;
-      }
-
-      const html = await response.text();
-      // Return raw HTML - the parser will extract what it needs
-      return html;
-    } catch (error) {
-      console.error('[PropertyResearch] Web search error:', error);
-      return `Search error for: ${query}`;
-    }
-  };
+  const webSearch = createWebSearch();
 
   return {
     // Authorization

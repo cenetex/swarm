@@ -1,36 +1,32 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 
-vi.mock('@aws-sdk/lib-dynamodb', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@aws-sdk/lib-dynamodb')>();
-  return {
-    ...actual,
-    DynamoDBDocumentClient: {
-      from: vi.fn().mockReturnValue({
-        send: vi.fn().mockImplementation((command) => {
-          if (command.input?.UpdateExpression) {
-             return Promise.resolve({ 
-               Attributes: { 
-                 agentId: 'a1', 
-                 channelId: 'c1', 
-                 platform: 'telegram',
-                 recentMessages: [],
-                 state: 'IDLE'
-               } 
-             });
-          }
-          if (command.input?.Key && !command.input?.UpdateExpression) {
-             return Promise.resolve({ Item: { agentId: 'a1', channelId: 'c1', platform: 'telegram' } });
-          }
-          return Promise.resolve({});
-        }),
+vi.mock('@aws-sdk/lib-dynamodb', () => ({
+  DynamoDBDocumentClient: {
+    from: vi.fn().mockReturnValue({
+      send: vi.fn().mockImplementation((command) => {
+        if (command.input?.UpdateExpression) {
+           return Promise.resolve({
+             Attributes: {
+               agentId: 'a1',
+               channelId: 'c1',
+               platform: 'telegram',
+               recentMessages: [],
+               state: 'IDLE'
+             }
+           });
+        }
+        if (command.input?.Key && !command.input?.UpdateExpression) {
+           return Promise.resolve({ Item: { agentId: 'a1', channelId: 'c1', platform: 'telegram' } });
+        }
+        return Promise.resolve({});
       }),
-    },
-    GetCommand: vi.fn().mockImplementation((input) => ({ input })),
-    UpdateCommand: vi.fn().mockImplementation((input) => ({ input })),
-    PutCommand: vi.fn().mockImplementation((input) => ({ input })),
-    DeleteCommand: vi.fn().mockImplementation((input) => ({ input })),
-  };
-});
+    }),
+  },
+  GetCommand: vi.fn().mockImplementation((input) => ({ input })),
+  UpdateCommand: vi.fn().mockImplementation((input) => ({ input })),
+  PutCommand: vi.fn().mockImplementation((input) => ({ input })),
+  DeleteCommand: vi.fn().mockImplementation((input) => ({ input })),
+}));
 
 const mocked = <T>(value: T) => (typeof (vi as any).mocked === 'function' ? (vi as any).mocked(value) : value as any);
 

@@ -14,8 +14,16 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as ecrAssets from 'aws-cdk-lib/aws-ecr-assets';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import type { AgentConfig } from '@swarm/core';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export interface AgentConstructProps {
   /**
@@ -62,6 +70,11 @@ export interface AgentConstructProps {
    * CDN URL for media (e.g., https://gallery.example.com)
    */
   cdnUrl?: string;
+
+  /**
+   * ECS cluster for Discord gateway workers (optional)
+   */
+  discordCluster?: ecs.ICluster;
 }
 
 export class AgentConstruct extends Construct {
@@ -74,7 +87,17 @@ export class AgentConstruct extends Construct {
   constructor(scope: Construct, id: string, props: AgentConstructProps) {
     super(scope, id);
 
-    const { config, stateTable, activityTable, mediaBucket, dependencyLayer, handlersCodePath, environment = 'dev', cdnUrl } = props;
+    const {
+      config,
+      stateTable,
+      activityTable,
+      mediaBucket,
+      dependencyLayer,
+      handlersCodePath,
+      environment = 'dev',
+      cdnUrl,
+      discordCluster,
+    } = props;
 
     // Create or import secrets
     if (props.secretsArn) {
@@ -206,6 +229,24 @@ export class AgentConstruct extends Construct {
       telegramResource.addMethod('POST', new apigateway.LambdaIntegration(telegramHandler));
     }
 
+    // Discord interactions webhook handler
+    if (config.platforms.discord?.enabled) {
+      const discordHandler = new lambda.Function(this, 'DiscordWebhook', {
+        functionName: `${config.id}-discord-webhook`,
+        runtime: lambda.Runtime.NODEJS_20_X,
+        handler: 'discord-webhook.handler',
+        code: lambda.Code.fromAsset(handlersCodePath),
+        layers: [dependencyLayer],
+        role: lambdaRole,
+        timeout: cdk.Duration.seconds(30),
+        memorySize: 512,
+        environment: commonEnv,
+      });
+
+      const discordResource = this.api.root.addResource('webhook').addResource('discord').addResource(config.id);
+      discordResource.addMethod('POST', new apigateway.LambdaIntegration(discordHandler));
+    }
+
     // Web chat handler
     if (config.platforms.web?.enabled) {
       const webHandler = new lambda.Function(this, 'WebChat', {
@@ -274,6 +315,60 @@ export class AgentConstruct extends Construct {
     mediaProcessor.addEventSource(new lambdaEventSources.SqsEventSource(this.mediaQueue, {
       batchSize: 1,
     }));
+
+    // Discord gateway worker (Fargate) for full bot ingestion
+    if (config.platforms.discord?.enabled
+      && config.platforms.discord.mode !== 'webhook'
+      && (config.platforms.discord.useGateway ?? true)) {
+      if (!discordCluster) {
+        console.warn(`Discord gateway requested for ${config.id}, but no ECS cluster provided`);
+      } else {
+        const gatewayImage = new ecrAssets.DockerImageAsset(this, 'DiscordGatewayImage', {
+          directory: path.resolve(__dirname, '../../../..'),
+          file: 'packages/handlers/Dockerfile.discord-gateway',
+        });
+
+        const logGroup = new logs.LogGroup(this, 'DiscordGatewayLogs', {
+          logGroupName: `/aws/ecs/${config.id}-discord-gateway`,
+          retention: logs.RetentionDays.ONE_WEEK,
+        });
+
+        const taskDefinition = new ecs.FargateTaskDefinition(this, 'DiscordGatewayTask', {
+          cpu: 256,
+          memoryLimitMiB: 512,
+        });
+
+        taskDefinition.addContainer('DiscordGateway', {
+          image: ecs.ContainerImage.fromDockerImageAsset(gatewayImage),
+          logging: ecs.LogDrivers.awsLogs({
+            logGroup,
+            streamPrefix: `${config.id}-discord`,
+          }),
+          environment: {
+            AGENT_ID: config.id,
+            AGENT_NAME: config.name,
+            STATE_TABLE: stateTable.tableName,
+            ACTIVITY_TABLE: activityTable.tableName,
+            MESSAGE_QUEUE_URL: this.messageQueue.queueUrl,
+            SECRETS_ARN: this.secrets.secretArn,
+            DISCORD_GATEWAY_INTENTS: String(config.platforms.discord.intents || ''),
+            ENVIRONMENT: environment,
+          },
+        });
+
+        stateTable.grantReadWriteData(taskDefinition.taskRole);
+        activityTable.grantReadWriteData(taskDefinition.taskRole);
+        this.secrets.grantRead(taskDefinition.taskRole);
+        this.messageQueue.grantSendMessages(taskDefinition.taskRole);
+
+        new ecs.FargateService(this, 'DiscordGatewayService', {
+          cluster: discordCluster,
+          taskDefinition,
+          desiredCount: 1,
+          assignPublicIp: true,
+        });
+      }
+    }
 
     const alarmPrefix = `${config.id}-${environment}`;
 

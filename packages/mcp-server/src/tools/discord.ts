@@ -148,6 +148,7 @@ export function createDiscordTools(services: DiscordServices) {
       name: 'discord_status',
       description: 'Check Discord connection status. Shows mode (webhook/bot/hybrid), connected guilds, and bot info.',
       category: 'readonly',
+      toolset: 'discord',
       inputSchema: z.object({}),
       execute: async (_input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
@@ -189,6 +190,7 @@ export function createDiscordTools(services: DiscordServices) {
       name: 'discord_send',
       description: 'Send a message to a Discord channel. Requires bot mode or hybrid mode.',
       category: 'media',
+      toolset: 'discord',
       inputSchema: z.object({
         channelId: z.string().describe('The Discord channel ID to send to'),
         content: z.string().describe('The message content'),
@@ -246,6 +248,7 @@ export function createDiscordTools(services: DiscordServices) {
       name: 'discord_webhook_send',
       description: 'Send a message via Discord webhook. Allows custom username and avatar. Works in webhook or hybrid mode.',
       category: 'media',
+      toolset: 'discord',
       inputSchema: z.object({
         content: z.string().describe('The message content'),
         username: z.string().optional().describe('Custom username for this message'),
@@ -311,6 +314,7 @@ export function createDiscordTools(services: DiscordServices) {
       name: 'discord_list_guilds',
       description: 'List Discord servers (guilds) the bot is a member of.',
       category: 'readonly',
+      toolset: 'discord',
       inputSchema: z.object({}),
       execute: async (_input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
@@ -345,6 +349,7 @@ export function createDiscordTools(services: DiscordServices) {
       name: 'discord_list_channels',
       description: 'List channels in a Discord server.',
       category: 'readonly',
+      toolset: 'discord',
       inputSchema: z.object({
         guildId: z.string().describe('The guild ID to list channels for'),
         type: z.enum(['text', 'voice', 'all']).optional().default('text').describe('Filter by channel type'),
@@ -390,6 +395,7 @@ export function createDiscordTools(services: DiscordServices) {
       name: 'discord_get_channel',
       description: 'Get information about a specific Discord channel.',
       category: 'readonly',
+      toolset: 'discord',
       inputSchema: z.object({
         channelId: z.string().describe('The channel ID to get info for'),
       }),
@@ -432,6 +438,7 @@ export function createDiscordTools(services: DiscordServices) {
       name: 'discord_get_messages',
       description: 'Get recent messages from a Discord channel. Useful for reading context.',
       category: 'readonly',
+      toolset: 'discord',
       inputSchema: z.object({
         channelId: z.string().describe('The channel ID to read from'),
         limit: z.number().min(1).max(100).optional().default(20).describe('Number of messages to fetch'),
@@ -475,6 +482,7 @@ export function createDiscordTools(services: DiscordServices) {
       name: 'discord_react',
       description: 'Add an emoji reaction to a Discord message.',
       category: 'media',
+      toolset: 'discord',
       inputSchema: z.object({
         channelId: z.string().describe('The channel ID'),
         messageId: z.string().describe('The message ID to react to'),
@@ -509,6 +517,7 @@ export function createDiscordTools(services: DiscordServices) {
       name: 'discord_unreact',
       description: 'Remove an emoji reaction from a Discord message.',
       category: 'media',
+      toolset: 'discord',
       inputSchema: z.object({
         channelId: z.string().describe('The channel ID'),
         messageId: z.string().describe('The message ID'),
@@ -547,6 +556,7 @@ export function createDiscordTools(services: DiscordServices) {
       name: 'discord_set_status',
       description: 'Set the bot\'s online status and activity message.',
       category: 'config',
+      toolset: 'discord',
       inputSchema: z.object({
         status: z.enum(['online', 'idle', 'dnd', 'invisible']).describe('Online status'),
         activity: z.string().optional().describe('Activity message (e.g., "Playing a game")'),

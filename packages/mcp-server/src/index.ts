@@ -47,6 +47,28 @@ export {
   type ToolDefinition,
 } from './registry.js';
 
+export {
+  McpCatalogEntrySchema,
+  McpCatalogSchema,
+  ingestCatalog,
+  type McpCatalog,
+  type McpCatalogEntry,
+  type CatalogIngestionOptions,
+} from './catalog.js';
+
+export {
+  TOOLSETS,
+  TOOL_TAGS,
+  type ToolsetId,
+  type ToolTag,
+} from './tool-metadata.js';
+
+export {
+  routeTools,
+  type ToolRoutingOptions,
+  type ToolRoutingResult,
+} from './tool-router.js';
+
 // Client for direct invocation
 export {
   ToolClient,

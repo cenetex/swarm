@@ -56,6 +56,7 @@ export const createJobTools = (
     name: 'get_pending_jobs',
     description: 'Get all pending media generation jobs.',
     category: 'readonly',
+    toolset: 'jobs',
     inputSchema: z.object({}),
     execute: async (_input, context): Promise<ToolResult> => {
       const jobs = await jobServices.getPendingJobs(context.agentId);
@@ -78,6 +79,7 @@ export const createJobTools = (
     name: 'get_job_status',
     description: 'Get the status of a specific media generation job.',
     category: 'readonly',
+    toolset: 'jobs',
     inputSchema: z.object({
       jobId: z.string().describe('The job ID to check'),
     }),
@@ -119,6 +121,7 @@ export const createJobTools = (
     name: 'get_tool_credits',
     description: 'Check my remaining credits for media generation tools.',
     category: 'readonly',
+    toolset: 'jobs',
     inputSchema: z.object({}),
     execute: async (_input, context): Promise<ToolResult> => {
       const status = await creditServices.getToolStatus(context.agentId);
@@ -138,6 +141,7 @@ export const createJobTools = (
     name: 'get_energy_status',
     description: 'Check my current energy level. Energy is used for expensive operations like voice (1⚡), images (2⚡), and videos (3⚡). You gain 1 energy per hour, up to max 10.',
     category: 'readonly',
+    toolset: 'jobs',
     inputSchema: z.object({}),
     execute: async (_input, context): Promise<ToolResult> => {
       if (!creditServices.getEnergyStatus) {

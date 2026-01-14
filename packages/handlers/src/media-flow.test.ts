@@ -19,10 +19,22 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
   PutCommand: vi.fn().mockImplementation((input: any) => ({ input })),
 }));
 
-vi.mock('@swarm/core', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@swarm/core')>();
+vi.mock('@swarm/core', async () => {
+  const { z: zodLib } = await import('zod');
+
+  // Create mock Zod schemas that match the structure expected by media-processor
+  const MockResponseActionSchema = zodLib.object({
+    type: zodLib.string(),
+  }).passthrough();
+
+  const MockSwarmResponseSchema = zodLib.object({
+    agentId: zodLib.string(),
+    platform: zodLib.string(),
+    conversationId: zodLib.string(),
+    actions: zodLib.array(zodLib.any()),
+  }).passthrough();
+
   return {
-    ...actual,
     createMediaService: vi.fn(() => ({
       generateImage: vi.fn().mockResolvedValue({ url: 'https://example.com/img.png' }),
       generateVideo: vi.fn().mockResolvedValue({ url: 'https://example.com/vid.mp4' }),
@@ -51,6 +63,8 @@ vi.mock('@swarm/core', async (importOriginal) => {
       warn: vi.fn(),
       error: vi.fn(),
     },
+    ResponseActionSchema: MockResponseActionSchema,
+    SwarmResponseSchema: MockSwarmResponseSchema,
   };
 });
 

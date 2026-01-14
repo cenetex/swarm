@@ -58,6 +58,16 @@ export interface AdminApiConstructProps {
   heliusApiKeyArn?: string;
 
   /**
+   * Web search API key (for property research)
+   */
+  webSearchApiKeyArn?: string;
+
+  /**
+   * Web search provider (default: serpapi)
+   */
+  webSearchProvider?: string;
+
+  /**
    * Environment (development/production)
    */
   environment?: string;
@@ -115,6 +125,7 @@ export class AdminApiConstruct extends Construct {
       adminEmails,
       environment = 'development',
       adminDomain,
+      webSearchProvider,
       stateTable,
       mediaBucket,
       mediaCdn,
@@ -205,6 +216,10 @@ export class AdminApiConstruct extends Construct {
       ? secretsmanager.Secret.fromSecretCompleteArn(this, 'HeliusApiKey', props.heliusApiKeyArn)
       : undefined;
 
+    const webSearchApiKey = props.webSearchApiKeyArn
+      ? secretsmanager.Secret.fromSecretCompleteArn(this, 'WebSearchApiKey', props.webSearchApiKeyArn)
+      : undefined;
+
     // Build webhook URL for Replicate callbacks
     const replicateWebhookUrl = props.apiDomain
       ? `https://${props.apiDomain}/webhook/replicate`
@@ -233,6 +248,8 @@ export class AdminApiConstruct extends Construct {
         LLM_ENDPOINT: 'https://openrouter.ai/api/v1/chat/completions',
         LLM_MODEL: 'anthropic/claude-sonnet-4',
         LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
+        WEB_SEARCH_PROVIDER: webSearchProvider || 'serpapi',
+        WEB_SEARCH_API_KEY_SECRET_ARN: webSearchApiKey?.secretArn || '',
         API_DOMAIN: props.apiDomain || '',
         NODE_ENV: environment,
         // Media generation config
@@ -267,6 +284,9 @@ export class AdminApiConstruct extends Construct {
     llmApiKey.grantRead(this.chatHandler);
     if (replicateApiKey) {
       replicateApiKey.grantRead(this.chatHandler);
+    }
+    if (webSearchApiKey) {
+      webSearchApiKey.grantRead(this.chatHandler);
     }
 
     // Grant permissions to state table for agent config sync

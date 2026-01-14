@@ -84,6 +84,16 @@ export interface SwarmStackProps extends cdk.StackProps {
    * ACM certificate ARN for gallery CDN (must be in us-east-1, can be same wildcard cert)
    */
   galleryCertificateArn?: string;
+
+  /**
+   * Web search API key secret ARN (for property research)
+   */
+  webSearchApiKeyArn?: string;
+
+  /**
+   * Web search provider (default: serpapi)
+   */
+  webSearchProvider?: string;
 }
 
 export class SwarmStack extends cdk.Stack {
@@ -108,6 +118,8 @@ export class SwarmStack extends cdk.Stack {
       openRouterApiKeyArn,
       replicateApiKeyArn,
       heliusApiKeyArn,
+      webSearchApiKeyArn,
+      webSearchProvider,
       galleryDomain,
       galleryCertificateArn,
     } = props;
@@ -131,6 +143,8 @@ export class SwarmStack extends cdk.Stack {
         openRouterApiKeyArn,
         replicateApiKeyArn,
         heliusApiKeyArn,
+        webSearchApiKeyArn,
+        webSearchProvider,
         environment,
         adminDomain,
         apiDomain,
@@ -191,6 +205,7 @@ export class SwarmStack extends cdk.Stack {
           handlersCodePath: handlersPath,
           cdnUrl: this.shared.cdnUrl,
           environment,
+          discordCluster: this.shared.discordCluster,
         });
 
         this.agents.set(agentDir, agent);

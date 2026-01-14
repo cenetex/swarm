@@ -9,6 +9,8 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { Construct } from 'constructs';
 
 import * as path from 'path';
@@ -53,6 +55,7 @@ export class SharedInfrastructure extends Construct {
   public readonly distribution?: cloudfront.Distribution;
   public readonly dependencyLayer: lambda.LayerVersion;
   public readonly cdnUrl?: string;
+  public readonly discordCluster: ecs.Cluster;
 
   constructor(scope: Construct, id: string, props: SharedInfrastructureProps) {
     super(scope, id);
@@ -184,6 +187,12 @@ export class SharedInfrastructure extends Construct {
       code: layerCodePath 
         ? lambda.Code.fromAsset(layerCodePath)
         : lambda.Code.fromAsset(layerPath),
+    });
+
+    const vpc = ec2.Vpc.fromLookup(this, 'DefaultVpc', { isDefault: true });
+    this.discordCluster = new ecs.Cluster(this, 'DiscordCluster', {
+      vpc,
+      clusterName: `swarm-discord-${environment}`,
     });
 
     // Outputs

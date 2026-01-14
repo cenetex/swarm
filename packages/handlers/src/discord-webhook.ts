@@ -1,11 +1,11 @@
 /**
- * Telegram Webhook Handler
- * Handles incoming Telegram bot webhooks
+ * Discord Interaction Webhook Handler
+ * Handles incoming Discord application commands and interactions.
  */
 import type { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import {
-  TelegramAdapter,
+  DiscordAdapter,
   createStateService,
   createSecretsService,
   createActivityService,
@@ -26,30 +26,27 @@ const AGENT_ID = process.env.AGENT_ID!;
 let stateService: ReturnType<typeof createStateService>;
 let activityService: ReturnType<typeof createActivityService>;
 let secretsService: ReturnType<typeof createSecretsService>;
-let telegramAdapter: TelegramAdapter;
+let discordAdapter: DiscordAdapter;
 let agentConfig: AgentConfig;
 
-/**
- * Initialize services (called once per Lambda cold start)
- */
 async function initialize(): Promise<void> {
-  if (stateService) return; // Already initialized
+  if (stateService) return;
 
   stateService = createStateService(STATE_TABLE);
   activityService = createActivityService(ACTIVITY_TABLE);
   secretsService = createSecretsService();
 
-  // Load agent config from DynamoDB or environment
   agentConfig = await stateService.getAgentConfig(AGENT_ID) || {
     id: AGENT_ID,
     name: process.env.AGENT_NAME || AGENT_ID,
     version: '1.0.0',
     persona: '',
     platforms: {
-      telegram: {
+      discord: {
         enabled: true,
-        botUsername: process.env.TELEGRAM_BOT_USERNAME || '',
-        webhookPath: `/webhook/telegram/${AGENT_ID}`,
+        mode: 'bot',
+        respondToMentions: true,
+        respondInDMs: true,
       },
     },
     llm: {
@@ -59,7 +56,7 @@ async function initialize(): Promise<void> {
       maxTokens: 1024,
     },
     media: {
-      image: { provider: 'replicate', model: 'f2ab8a5bfe79f02f0789a146cf5e73d2a4ff2684a98c2b303d1e1ff3814271db' }, // flux-schnell
+      image: { provider: 'replicate', model: 'f2ab8a5bfe79f02f0789a146cf5e73d2a4ff2684a98c2b303d1e1ff3814271db' },
     },
     scheduling: {},
     behavior: {
@@ -70,113 +67,130 @@ async function initialize(): Promise<void> {
       maxContextMessages: 20,
     },
     tools: ['send_message', 'react', 'ignore', 'wait', 'take_selfie'],
-    secrets: ['TELEGRAM_BOT_TOKEN'],
+    secrets: ['DISCORD_BOT_TOKEN'],
   };
 
-  // Get Telegram bot token
   const secrets = await secretsService.getSecretJson<Record<string, string>>(
     process.env.SECRETS_ARN || `swarm/${AGENT_ID}/secrets`
   );
 
-  telegramAdapter = new TelegramAdapter(agentConfig, secrets.TELEGRAM_BOT_TOKEN);
+  discordAdapter = new DiscordAdapter(agentConfig, {
+    botToken: secrets.DISCORD_BOT_TOKEN || secrets.discord_bot_token,
+    applicationId: agentConfig.platforms.discord?.applicationId,
+    publicKey: agentConfig.platforms.discord?.publicKey,
+    webhookUrl: agentConfig.platforms.discord?.webhookUrl,
+    webhookId: agentConfig.platforms.discord?.webhookId,
+    webhookToken: agentConfig.platforms.discord?.webhookToken,
+  });
 }
 
-/**
- * Lambda handler
- */
+function isInteraction(payload: unknown): payload is { type: number; token: string } {
+  const obj = payload as Record<string, unknown>;
+  return typeof obj.type === 'number' && typeof obj.token === 'string';
+}
+
 export async function handler(
   event: APIGatewayProxyEvent,
   context: Context
 ): Promise<APIGatewayProxyResult> {
   logger.setContext({
     agentId: AGENT_ID,
-    platform: 'telegram',
+    platform: 'discord',
     requestId: context.awsRequestId,
   });
 
   try {
     await initialize();
 
-    // Parse and verify request
-    const body = event.body ? Buffer.from(event.body, event.isBase64Encoded ? 'base64' : 'utf-8') : Buffer.from('');
+    const body = event.body
+      ? Buffer.from(event.body, event.isBase64Encoded ? 'base64' : 'utf-8')
+      : Buffer.from('');
     const headers = Object.fromEntries(
       Object.entries(event.headers).map(([k, v]) => [k.toLowerCase(), v || ''])
     );
 
-    const isValid = await telegramAdapter.verifyRequest(body, headers);
+    const isValid = await discordAdapter.verifyRequest(body, headers);
     if (!isValid) {
-      logger.warn('Invalid request signature');
+      logger.warn('Invalid Discord request signature');
       return { statusCode: 401, body: 'Unauthorized' };
     }
 
-    // Parse the message
-    let update;
+    let payload: unknown;
     try {
-      update = JSON.parse(body.toString());
+      payload = JSON.parse(body.toString());
     } catch (parseError) {
-      logger.error('Failed to parse Telegram update as JSON', parseError);
+      logger.error('Failed to parse Discord payload', parseError);
       return { statusCode: 400, body: 'Invalid JSON' };
     }
-    const envelope = await telegramAdapter.parseMessage(update);
 
-    if (!envelope) {
-      // Valid update but not a message we handle (e.g., inline query)
-      return { statusCode: 200, body: 'OK' };
+    if (isInteraction(payload) && payload.type === 1) {
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 1 }),
+      };
     }
 
-    // Log received message
+    const envelope = await discordAdapter.parseMessage(payload);
+    if (!envelope) {
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: isInteraction(payload) ? JSON.stringify({ type: 5 }) : 'OK',
+      };
+    }
+
     await activityService.logMessageReceived(
       AGENT_ID,
-      'telegram',
+      'discord',
       envelope.sender.displayName || envelope.sender.username || 'Unknown',
-      envelope.content.text || '[media]'
+      envelope.content.text || '[interaction]'
     );
 
-    // Check idempotency
     const isNewMessage = await stateService.checkAndSetIdempotency(
       envelope.metadata.idempotencyKey
     );
 
     if (!isNewMessage) {
-      logger.info('Duplicate message, skipping', { messageId: envelope.messageId });
-      return { statusCode: 200, body: 'OK' };
+      logger.info('Duplicate Discord message, skipping', { messageId: envelope.messageId });
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: isInteraction(payload) ? JSON.stringify({ type: 5 }) : 'OK',
+      };
     }
 
-    // Evaluate if we should respond
     const evaluator = createMessageEvaluator(agentConfig, stateService, {
-      botUsernames: [agentConfig.platforms.telegram?.botUsername || ''],
+      botUsernames: [],
     });
 
     const evaluation = await evaluator.evaluate(envelope);
-
     if (!evaluation.shouldRespond) {
       logger.info('Not responding', { reason: evaluation.reason });
-      return { statusCode: 200, body: 'OK' };
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: isInteraction(payload) ? JSON.stringify({ type: 5 }) : 'OK',
+      };
     }
 
-    // Update envelope with evaluation results
     envelope.metadata.shouldRespond = evaluation.shouldRespond;
     envelope.metadata.responseReason = evaluation.reason;
     envelope.metadata.priority = evaluation.priority;
 
-    // Add message to channel state
     await stateService.addMessageToChannel(
       AGENT_ID,
       envelope.conversationId,
-      'telegram',
+      'discord',
       {
         messageId: envelope.messageId,
         sender: envelope.sender.displayName || envelope.sender.username || envelope.sender.id,
         isBot: envelope.sender.isBot,
-        content: envelope.content.text || '[media]',
+        content: envelope.content.text || '[interaction]',
         timestamp: envelope.timestamp,
-      },
-      undefined,
-      envelope.metadata.chatType,
-      envelope.metadata.chatTitle
+      }
     );
 
-    // Queue for response generation
     await sqs.send(new SendMessageCommand({
       QueueUrl: MESSAGE_QUEUE_URL,
       MessageBody: JSON.stringify({
@@ -185,33 +199,34 @@ export async function handler(
         attempts: 0,
         maxAttempts: 3,
       }),
-      MessageGroupId: envelope.conversationId, // FIFO ordering by conversation
+      MessageGroupId: envelope.conversationId,
       MessageDeduplicationId: envelope.metadata.idempotencyKey,
     }));
 
-    logger.info('Message queued for processing', {
-      messageId: envelope.messageId,
-      reason: evaluation.reason,
-    });
+    logger.info('Discord message queued', { messageId: envelope.messageId });
 
-    // Return 200 immediately (async processing)
-    return { statusCode: 200, body: 'OK' };
-
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: isInteraction(payload) ? JSON.stringify({ type: 5 }) : 'OK',
+    };
   } catch (error) {
-    logger.error('Handler error', error);
-    
-    // Log error to activity feed
+    logger.error('Discord webhook handler error', error);
+
     try {
       await activityService.logError(
         AGENT_ID,
-        'telegram',
+        'discord',
         error instanceof Error ? error.message : String(error)
       );
     } catch {
       // Ignore activity logging errors
     }
 
-    // Return 200 to prevent Telegram retries
-    return { statusCode: 200, body: 'OK' };
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 5 }),
+    };
   }
 }

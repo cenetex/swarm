@@ -21,7 +21,15 @@ import {
 import { logger } from '@swarm/core';
 import { buildDynamicSystemPrompt, type ToolCategory } from '../services/dynamic-prompts.js';
 import { recordError } from '../services/auto-issues.js';
-import { ToolRegistry, registerAllTools, type ToolContext, type ToolResult as McpToolResult, type AllServices } from '@swarm/mcp-server';
+import {
+  ToolRegistry,
+  registerAllTools,
+  routeTools,
+  type ToolContext,
+  type ToolResult as McpToolResult,
+  type AllServices,
+  type ToolsetId,
+} from '@swarm/mcp-server';
 import { createMCPServices } from '../services/mcp-adapter.js';
 import { isPauseForInputTool } from '../tools/index.js';
 import * as agents from '../services/agents.js';
@@ -242,6 +250,36 @@ function buildSystemPrompt(agent?: AgentContext): string {
   return `You are a Swarm agent assistant. Please select an agent to chat with.`;
 }
 
+const CATEGORY_TOOLSETS: Record<ToolCategory, ToolsetId[]> = {
+  secrets: ['secrets'],
+  wallets: ['wallet'],
+  profile: ['profile'],
+  media: ['media'],
+  gallery: ['gallery'],
+  voice: ['voice'],
+  telegram: ['telegram'],
+  twitter: ['twitter'],
+  discord: ['discord'],
+  memory: ['memory'],
+  nft: ['nft'],
+  property: ['property'],
+  diagnostics: ['diagnostics'],
+};
+
+function resolveAllowedToolsets(categories?: ToolCategory[]): ToolsetId[] | undefined {
+  if (!categories || categories.length === 0) return undefined;
+  const toolsets = new Set<ToolsetId>(['core']);
+
+  for (const category of categories) {
+    const mapped = CATEGORY_TOOLSETS[category] || [];
+    for (const toolset of mapped) {
+      toolsets.add(toolset);
+    }
+  }
+
+  return Array.from(toolsets);
+}
+
 function normalizeToolResult(result: McpToolResult, toolName: string): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     success: result.success,
@@ -284,11 +322,20 @@ function normalizeToolResult(result: McpToolResult, toolName: string): Record<st
 
 async function buildOpenRouterTools(
   registry: ToolRegistry,
-  context: ToolContext
+  context: ToolContext,
+  options: { userMessage?: string; enabledCategories?: ToolCategory[] } = {}
 ): Promise<Tool[]> {
   const toolDefs = registry.getForPlatform(context.platform);
+  const allowedToolsets = resolveAllowedToolsets(options.enabledCategories);
+  const filtered = allowedToolsets
+    ? toolDefs.filter(tool => allowedToolsets.includes(tool.toolset || 'core'))
+    : toolDefs;
+  const routing = routeTools(filtered, {
+    text: options.userMessage,
+    maxToolsets: 3,
+  });
 
-  return Promise.all(toolDefs.map(async (toolDef) => {
+  return Promise.all(routing.tools.map(async (toolDef) => {
     let description = toolDef.description;
     if (toolDef.contextBuilder) {
       const contextStr = await toolDef.contextBuilder(context);
@@ -575,7 +622,10 @@ async function processChat(
     session: { email: session.email, isAdmin: session.isAdmin },
   } : null;
   const tools = toolRegistry && toolContext
-    ? await buildOpenRouterTools(toolRegistry, toolContext)
+    ? await buildOpenRouterTools(toolRegistry, toolContext, {
+        userMessage,
+        enabledCategories: agent?.enabledCategories,
+      })
     : [];
 
   // Log tools available for debugging
@@ -626,15 +676,18 @@ async function processChat(
     toolCalls = await modelResult.getToolCalls();
     adminToolCalls = toolCalls.map(toAdminToolCall);
   } catch (sdkError) {
-    // Check if this is a Zod validation error (SDK bug with null usage fields)
+    // Check if this is a Zod validation/schema error (SDK uses zod/v4 internally)
     const errorName = sdkError instanceof Error ? sdkError.name : '';
+    const errorMessage = sdkError instanceof Error ? sdkError.message : '';
     const isZodError = errorName === 'ZodError' || 
-      (sdkError instanceof Error && sdkError.message?.includes('invalid_type'));
+      errorMessage.includes('invalid_type') ||
+      errorMessage.includes('Invalid Zod schema');
     
     if (isZodError) {
       logger.warn('SDK Zod validation error, falling back to direct API', {
         event: 'sdk_fallback',
         errorName,
+        errorMessage,
       });
       
       // Build messages for direct API call

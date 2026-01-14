@@ -32,6 +32,7 @@ import {
   ToolRegistry,
   createToolClient,
   registerAllTools,
+  routeTools,
   type ToolContext,
 } from '@swarm/mcp-server';
 import { createPlatformMCPServices } from './services/platform-mcp-adapter.js';
@@ -398,12 +399,14 @@ async function generateResponse(
 ): Promise<SwarmResponse> {
   await maybeTranscribeAudio(envelope, toolClient, toolContext);
   const systemPrompt = buildSystemPrompt(envelope);
-  const openAITools = toolClient.getOpenAITools();
-
-  // Filter tools based on agent config
-  const enabledTools = openAITools.filter(t => 
-    agentConfig.tools.includes(t.function.name)
-  );
+  const toolDefinitions = toolClient
+    .getToolDefinitions()
+    .filter(tool => agentConfig.tools.includes(tool.name));
+  const routing = routeTools(toolDefinitions, {
+    text: envelope.content.text,
+    maxToolsets: 3,
+  });
+  const enabledTools = toolClient.getOpenAIToolsForTools(routing.tools);
 
   // Build initial messages
   const messages: LLMMessage[] = [
