@@ -252,7 +252,8 @@ ${history.length > 0 ? history.map((h, i) => `Step ${i + 1}: ${h}`).join('\n') :
   }
   
   const result = await response.json();
-  return result.message || result.content || JSON.stringify(result);
+  // The chat API returns { response: "...", history: [...] }
+  return result.response || result.message || result.content || '';
 }
 
 function parseAction(response) {
@@ -306,12 +307,29 @@ async function executeAction(page, action) {
     switch (type) {
       case 'CLICK': {
         const strategies = [
+          // Exact text match
           () => page.click(`text="${params}"`, { timeout: 2000 }),
+          // Partial/fuzzy text match  
           () => page.click(`text=${params}`, { timeout: 2000 }),
+          // Button with text
           () => page.click(`button:has-text("${params}")`, { timeout: 2000 }),
+          // Link with text
           () => page.click(`a:has-text("${params}")`, { timeout: 2000 }),
+          // Any element with text (div, span, etc)
+          () => page.click(`*:has-text("${params}"):visible`, { timeout: 2000 }),
+          // Role-based selectors
+          () => page.click(`role=button[name="${params}"]`, { timeout: 2000 }),
+          () => page.click(`role=link[name="${params}"]`, { timeout: 2000 }),
+          // Aria label
           () => page.click(`[aria-label*="${params}" i]`, { timeout: 2000 }),
+          // Title attribute
+          () => page.click(`[title*="${params}" i]`, { timeout: 2000 }),
+          // Data-testid (common in React apps)
+          () => page.click(`[data-testid*="${params.toLowerCase().replace(/\s+/g, '-')}"]`, { timeout: 2000 }),
+          // Try as raw CSS selector
           () => page.click(params, { timeout: 2000 }),
+          // Get first visible button with matching text using locator
+          () => page.locator(`button`, { hasText: params }).first().click({ timeout: 2000 }),
         ];
         
         for (const strategy of strategies) {
@@ -343,11 +361,25 @@ async function executeAction(page, action) {
         const text = params.substring(separatorIndex + 1).trim();
         
         const fillStrategies = [
+          // By placeholder text
           () => page.fill(`[placeholder*="${selector}" i]`, text, { timeout: 2000 }),
+          // By input name
           () => page.fill(`input[name*="${selector}" i]`, text, { timeout: 2000 }),
           () => page.fill(`textarea[name*="${selector}" i]`, text, { timeout: 2000 }),
+          // By associated label
           () => page.fill(`label:has-text("${selector}") + input`, text, { timeout: 2000 }),
           () => page.fill(`label:has-text("${selector}") ~ input`, text, { timeout: 2000 }),
+          () => page.fill(`label:has-text("${selector}") ~ textarea`, text, { timeout: 2000 }),
+          // By id containing text
+          () => page.fill(`input[id*="${selector.toLowerCase().replace(/\s+/g, '')}" i]`, text, { timeout: 2000 }),
+          () => page.fill(`textarea[id*="${selector.toLowerCase().replace(/\s+/g, '')}" i]`, text, { timeout: 2000 }),
+          // Role-based
+          () => page.locator(`role=textbox[name="${selector}"]`).fill(text, { timeout: 2000 }),
+          // Using getByLabel (Playwright testing library style)
+          () => page.getByLabel(selector).fill(text, { timeout: 2000 }),
+          // Using getByPlaceholder
+          () => page.getByPlaceholder(selector).fill(text, { timeout: 2000 }),
+          // Raw selector as fallback
           () => page.fill(selector, text, { timeout: 2000 }),
         ];
         
@@ -361,7 +393,30 @@ async function executeAction(page, action) {
       }
       
       case 'PRESS': {
-        await page.keyboard.press(params);
+        // Map common key names to Playwright key names
+        const keyMap = {
+          'enter': 'Enter',
+          'tab': 'Tab',
+          'escape': 'Escape',
+          'esc': 'Escape',
+          'backspace': 'Backspace',
+          'delete': 'Delete',
+          'arrowup': 'ArrowUp',
+          'arrowdown': 'ArrowDown',
+          'arrowleft': 'ArrowLeft',
+          'arrowright': 'ArrowRight',
+          'up': 'ArrowUp',
+          'down': 'ArrowDown',
+          'left': 'ArrowLeft',
+          'right': 'ArrowRight',
+          'space': 'Space',
+          'home': 'Home',
+          'end': 'End',
+          'pageup': 'PageUp',
+          'pagedown': 'PageDown',
+        };
+        const key = keyMap[params.toLowerCase()] || params;
+        await page.keyboard.press(key);
         return { success: true };
       }
       
