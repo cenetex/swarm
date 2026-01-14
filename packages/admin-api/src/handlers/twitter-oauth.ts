@@ -56,17 +56,9 @@ export async function handler(
       return handleCallback(event);
     }
 
-    // All other routes require authentication
-    const session = await authenticateRequest(event);
-    if (!requireAdmin(session)) {
-      return {
-        statusCode: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ error: 'Admin access required' }),
-      };
-    }
-
-    // GET /oauth/twitter/start?agentId=xxx - Start OAuth flow
+    // GET /oauth/twitter/start?agentId=xxx - Start OAuth flow (no auth needed)
+    // This just redirects to Twitter - the actual authorization happens there
+    // The callback will store tokens for the specified agentId
     if (method === 'GET' && path === '/oauth/twitter/start') {
       const agentId = event.queryStringParameters?.agentId;
       
@@ -110,6 +102,16 @@ export async function handler(
           authorizationUrl,
           message: 'Redirect user to authorizationUrl to authorize',
         }),
+      };
+    }
+
+    // Routes below require authentication
+    const session = await authenticateRequest(event);
+    if (!requireAdmin(session)) {
+      return {
+        statusCode: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Admin access required' }),
       };
     }
 

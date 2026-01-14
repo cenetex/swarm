@@ -141,7 +141,9 @@ You have Telegram-specific capabilities:
 You have Twitter-specific capabilities:
 - Post tweets and threads
 - Reply to mentions
-- Manage your Twitter presence`,
+- Manage your Twitter presence
+
+If Twitter is enabled but not connected, use request_twitter_connection to start OAuth.`,
 
   discord: `## Discord Features
 

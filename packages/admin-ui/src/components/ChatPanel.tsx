@@ -502,6 +502,22 @@ export function ChatPanel({ onMenuClick, onOpenLogs }: ChatPanelProps) {
           const featureLabel = resultObj.feature.charAt(0).toUpperCase() + resultObj.feature.slice(1);
           const statusLabel = resultObj.enabled ? 'enabled' : 'disabled';
           await handleSendMessage(`I've ${statusLabel} ${featureLabel}.`);
+
+          if (resultObj.feature === 'twitter' && resultObj.enabled) {
+            addMessage(activeAgent.id, {
+              role: 'assistant',
+              content: 'Please connect your X/Twitter account:',
+              toolCalls: [{
+                id: crypto.randomUUID(),
+                name: 'request_twitter_connection',
+                arguments: {
+                  type: 'twitter_connect',
+                  message: 'Authorize this agent to post and manage tweets.',
+                },
+                status: 'pending',
+              }],
+            });
+          }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to toggle feature';
           setError(errorMsg);
