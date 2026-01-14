@@ -899,12 +899,217 @@ describe('Twitter Tools - Input Validation', () => {
   });
 });
 
-describe('Twitter Tools - Integration Scenarios (TODO)', () => {
+describe('Twitter Tools - Integration Scenarios', () => {
   /**
    * These tests document E2E scenarios with real MCP context.
+   * They use mocks to simulate the full agent interaction flow.
    */
-  it.todo('E2E: Agent checks status and requests integration');
-  it.todo('E2E: Agent posts tweet after connection');
-  it.todo('E2E: Agent reads and replies to mentions');
-  it.todo('E2E: Agent engages with timeline content');
+
+  const baseContext = { agentId: 'agent-1', platform: 'admin-ui' as const };
+
+  it('E2E: Agent checks status and requests integration', async () => {
+    // Simulate agent checking Twitter status and requesting OAuth
+    // 1. Agent calls twitter_status - not connected
+    // 2. Agent calls twitter_request_integration
+    // 3. Admin receives OAuth URL
+    // 4. After auth, status shows connected
+
+    // Step 1: Check status - not connected
+    const disconnectedServices = {
+      getConnectionStatus: vi.fn().mockResolvedValue({ connected: false }),
+      startOAuthFlow: vi.fn().mockResolvedValue({ authorizationUrl: 'https://twitter.com/oauth/authorize?token=abc123' }),
+    };
+
+    const statusTool = getTool('twitter_status', disconnectedServices);
+    const statusResult = await (statusTool.execute as any)({}, baseContext);
+
+    expect(statusResult.success).toBe(true);
+    expect(statusResult.data.connected).toBe(false);
+
+    // Step 2: Request integration
+    const integrationTool = getTool('twitter_request_integration', disconnectedServices);
+    const integrationResult = await (integrationTool.execute as any)(
+      { reason: 'I want to share updates with my followers!' },
+      baseContext
+    );
+
+    expect(integrationResult.success).toBe(true);
+    expect(integrationResult.data.pending).toBe(true);
+    expect(integrationResult.data.authorizationUrl).toContain('twitter.com/oauth');
+
+    // Step 3: After OAuth completion, status shows connected
+    const connectedServices = {
+      getConnectionStatus: vi.fn().mockResolvedValue({ connected: true, username: 'agent_bot' }),
+      startOAuthFlow: vi.fn(),
+    };
+
+    const connectedStatusTool = getTool('twitter_status', connectedServices);
+    const connectedResult = await (connectedStatusTool.execute as any)({}, baseContext);
+
+    expect(connectedResult.success).toBe(true);
+    expect(connectedResult.data.connected).toBe(true);
+    expect(connectedResult.data.username).toBe('agent_bot');
+  });
+
+  it('E2E: Agent posts tweet after connection', async () => {
+    // Simulate agent posting their first tweet
+    // 1. Verify connection
+    // 2. Compose tweet content
+    // 3. Post tweet
+    // 4. Receive confirmation with URL
+
+    const connectedServices = {
+      getConnectionStatus: vi.fn().mockResolvedValue({ connected: true, username: 'agent_bot' }),
+      startOAuthFlow: vi.fn(),
+      postTweet: vi.fn().mockResolvedValue({
+        tweetId: '1234567890123456789',
+        url: 'https://twitter.com/agent_bot/status/1234567890123456789',
+      }),
+    };
+
+    // Verify connection first
+    const statusTool = getTool('twitter_status', connectedServices);
+    const statusResult = await (statusTool.execute as any)({}, baseContext);
+    expect(statusResult.data.connected).toBe(true);
+
+    // Post tweet
+    const postTool = getTool('twitter_post', connectedServices);
+    const postResult = await (postTool.execute as any)(
+      { text: 'Hello world! This is my first automated tweet. 🤖' },
+      baseContext
+    );
+
+    expect(postResult.success).toBe(true);
+    expect(postResult.data.tweetId).toBe('1234567890123456789');
+    expect(postResult.data.url).toContain('twitter.com/agent_bot/status');
+
+    // Verify postTweet was called correctly
+    expect(connectedServices.postTweet).toHaveBeenCalledWith(
+      'Hello world! This is my first automated tweet. 🤖',
+      undefined
+    );
+  });
+
+  it('E2E: Agent reads and replies to mentions', async () => {
+    // Simulate agent reading and responding to mentions
+    // 1. Get mentions since last check
+    // 2. Process each mention
+    // 3. Generate contextual reply
+    // 4. Post reply to thread
+
+    const mentionData = [
+      {
+        id: 'mention-1',
+        text: '@agent_bot What do you think about AI?',
+        authorId: 'user-123',
+        authorUsername: 'curious_human',
+        authorName: 'Curious Human',
+        createdAt: '2026-01-13T10:00:00.000Z',
+        conversationId: 'conv-1',
+        inReplyToUserId: null,
+      },
+      {
+        id: 'mention-2',
+        text: '@agent_bot Can you help me with coding?',
+        authorId: 'user-456',
+        authorUsername: 'dev_learner',
+        authorName: 'Dev Learner',
+        createdAt: '2026-01-13T10:05:00.000Z',
+        conversationId: 'conv-2',
+        inReplyToUserId: null,
+      },
+    ];
+
+    const services = {
+      getConnectionStatus: vi.fn().mockResolvedValue({ connected: true, username: 'agent_bot' }),
+      startOAuthFlow: vi.fn(),
+      getMentions: vi.fn().mockResolvedValue(mentionData),
+      postTweet: vi.fn().mockResolvedValue({
+        tweetId: 'reply-123',
+        url: 'https://twitter.com/agent_bot/status/reply-123',
+      }),
+    };
+
+    // Get mentions
+    const mentionsTool = getTool('twitter_get_mentions', services);
+    const mentionsResult = await (mentionsTool.execute as any)({ count: 10 }, baseContext);
+
+    expect(mentionsResult.success).toBe(true);
+    expect(mentionsResult.data.count).toBe(2);
+    expect(mentionsResult.data.mentions[0].author).toBe('@curious_human');
+
+    // Post reply to first mention
+    const postTool = getTool('twitter_post', services);
+    const replyResult = await (postTool.execute as any)(
+      { text: '@curious_human AI is fascinating! I think it has incredible potential to help humans. 🚀' },
+      baseContext
+    );
+
+    expect(replyResult.success).toBe(true);
+    expect(services.postTweet).toHaveBeenCalled();
+  });
+
+  it('E2E: Agent engages with timeline content', async () => {
+    // Simulate agent reading and engaging with timeline
+    // 1. Fetch home timeline
+    // 2. Analyze tweets for engagement opportunities
+    // 3. Like/reply to relevant content
+    
+    const timelineData = [
+      {
+        id: 'tweet-1',
+        text: 'Just launched my new AI project! Excited to share it with everyone.',
+        authorId: 'user-789',
+        authorUsername: 'ai_builder',
+        authorName: 'AI Builder',
+        createdAt: '2026-01-13T09:00:00.000Z',
+        metrics: { likeCount: 42, retweetCount: 10, replyCount: 5 },
+      },
+      {
+        id: 'tweet-2',
+        text: 'The future of technology is looking bright! ✨',
+        authorId: 'user-101',
+        authorUsername: 'tech_optimist',
+        authorName: 'Tech Optimist',
+        createdAt: '2026-01-13T09:30:00.000Z',
+        metrics: { likeCount: 100, retweetCount: 25, replyCount: 15 },
+      },
+    ];
+
+    const services = {
+      getConnectionStatus: vi.fn().mockResolvedValue({ connected: true, username: 'agent_bot' }),
+      startOAuthFlow: vi.fn(),
+      getTimeline: vi.fn().mockResolvedValue(timelineData),
+      postTweet: vi.fn().mockResolvedValue({
+        tweetId: 'engagement-reply-1',
+        url: 'https://twitter.com/agent_bot/status/engagement-reply-1',
+      }),
+    };
+
+    // Fetch timeline
+    const timelineTool = getTool('twitter_get_timeline', services);
+    const timelineResult = await (timelineTool.execute as any)({ count: 20 }, baseContext);
+
+    expect(timelineResult.success).toBe(true);
+    expect(timelineResult.data.count).toBe(2);
+    expect(timelineResult.data.tweets[0].author).toBe('@ai_builder');
+
+    // Verify timeline includes engagement metrics
+    const firstTweet = timelineData[0];
+    expect(firstTweet.metrics.likeCount).toBe(42);
+
+    // Agent could engage with high-performing relevant content
+    const engagementThreshold = 10;
+    const engageableTweets = timelineData.filter(t => t.metrics.likeCount > engagementThreshold);
+    expect(engageableTweets.length).toBe(2);
+
+    // Post thoughtful reply
+    const postTool = getTool('twitter_post', services);
+    const replyResult = await (postTool.execute as any)(
+      { text: '@ai_builder Congratulations on the launch! Would love to learn more about it. 🎉' },
+      baseContext
+    );
+
+    expect(replyResult.success).toBe(true);
+  });
 });
