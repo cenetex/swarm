@@ -188,39 +188,62 @@ async function authenticateWithWallet(apiUrl, testKey) {
   };
 }
 
-async function getNextAction(apiUrl, testKey, screenshotPath, history, goal) {
+async function getPageElements(page) {
+  try {
+    const buttons = await page.locator('button:visible').allTextContents();
+    const links = await page.locator('a:visible').allTextContents();
+    const inputs = await page.locator('input:visible, textarea:visible').evaluateAll(els => 
+      els.map(e => e.placeholder || e.name || e.id || e.type || '[unnamed]').filter(Boolean)
+    );
+    
+    // Clean up - remove empty strings and duplicates
+    const cleanButtons = [...new Set(buttons.map(b => b.trim()).filter(b => b && b.length < 50))];
+    const cleanLinks = [...new Set(links.map(l => l.trim()).filter(l => l && l.length < 50))];
+    const cleanInputs = [...new Set(inputs.filter(i => i && i.length < 50))];
+    
+    return { buttons: cleanButtons, links: cleanLinks, inputs: cleanInputs };
+  } catch {
+    return { buttons: [], links: [], inputs: [] };
+  }
+}
+
+async function getNextAction(apiUrl, testKey, screenshotPath, history, goal, pageElements) {
   const imageData = fs.readFileSync(screenshotPath);
   const base64Image = imageData.toString('base64');
   
+  // Format available elements for the prompt
+  const elementsSection = `
+AVAILABLE CLICKABLE ELEMENTS ON THIS PAGE:
+Buttons: ${pageElements.buttons.length > 0 ? pageElements.buttons.map(b => `"${b}"`).join(', ') : '(none visible)'}
+Links: ${pageElements.links.length > 0 ? pageElements.links.map(l => `"${l}"`).join(', ') : '(none visible)'}
+Input fields: ${pageElements.inputs.length > 0 ? pageElements.inputs.map(i => `"${i}"`).join(', ') : '(none visible)'}
+`;
+
   const systemPrompt = `You are an autonomous browser agent exploring a web application.
 
 YOUR GOAL: ${goal}
 
 You can see a screenshot of the current page state. Based on what you observe, decide on ONE action to take.
-
+${elementsSection}
 AVAILABLE ACTIONS:
-- CLICK: selector - Click an element (use visible text content, button labels, or CSS selector)
+- CLICK: text - Click a button/link using EXACT text from the lists above
 - TYPE: text - Type text into the currently focused input field  
-- FILL: selector | text - Fill a specific input field by placeholder/label
-- PRESS: key - Press a keyboard key (Enter, Tab, Escape, etc.)
-- SCROLL: direction - Scroll up or down
-- WAIT: reason - Wait and observe (use sparingly)
-- NAVIGATE: path - Navigate to a relative URL path
+- FILL: placeholder | text - Fill an input field (e.g., "Enter agent name | MyAgent")
+- PRESS: key - Press a keyboard key (Enter, Tab, Escape)
+- SCROLL: down/up - Scroll the page
+- NAVIGATE: /path - Navigate to a URL path (e.g., "/agents/new")
 - DONE: summary - Task complete, provide summary
 
-RESPONSE FORMAT (use exactly this format):
-OBSERVATION: [Describe what you see - UI elements, buttons, forms, text, sidebars, etc.]
-REASONING: [Your thought process - what are you trying to achieve? Why this action?]
-ACTION: [Exactly one action from the list above]
+CRITICAL RULES:
+1. For CLICK: Copy the EXACT text from the "Buttons" or "Links" list above
+2. For FILL: Use a value from the "Input fields" list as the first part
+3. If no suitable button exists, try NAVIGATE to /agents/new or /agents
+4. Don't invent button names - use only what's in the lists above
 
-GUIDELINES:
-- Describe the UI thoroughly before acting - what buttons, links, inputs do you see?
-- Look for "+" buttons, "New" or "Create" links, or similar UI patterns
-- When filling forms, use the agent name provided in the goal
-- For personas/descriptions, be creative and brief
-- If you see a chat interface, try sending a test message
-- When you've created an agent AND had a conversation with it, use DONE
-- If an action fails, try an alternative approach
+RESPONSE FORMAT (use exactly this format on separate lines):
+OBSERVATION: [What you see on screen]
+REASONING: [Why you're taking this action]
+ACTION: [Exactly one action, e.g., CLICK: Create New Agent]
 
 HISTORY OF YOUR ACTIONS:
 ${history.length > 0 ? history.map((h, i) => `Step ${i + 1}: ${h}`).join('\n') : '(Starting fresh - explore the interface!)'}
@@ -338,6 +361,7 @@ async function executeAction(page, action) {
             return { success: true };
           } catch { /* try next */ }
         }
+        
         return { success: false, error: `Could not find clickable element: ${params}` };
       }
       
@@ -653,8 +677,12 @@ Look for ways to add/create new agents, fill in any required fields creatively, 
       const screenshotPath = path.join(screenshotsDir, `step-${step.toString().padStart(2, '0')}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: false });
       
+      // Extract available elements from the page
+      const pageElements = await getPageElements(page);
+      console.log(`📋 Found: ${pageElements.buttons.length} buttons, ${pageElements.links.length} links, ${pageElements.inputs.length} inputs`);
+      
       console.log('🧠 Agent reasoning...');
-      const response = await getNextAction(apiUrl, testKey, screenshotPath, history, goal);
+      const response = await getNextAction(apiUrl, testKey, screenshotPath, history, goal, pageElements);
       const action = parseAction(response);
       
       console.log(`📝 Observation: ${(action.observation || '').substring(0, 120)}...`);
