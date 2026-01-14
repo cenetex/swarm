@@ -79,37 +79,9 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
         diarize: params.diarize,
       });
     },
-    createVoiceSeed: async (params: Parameters<VoiceServices['createVoiceSeed']>[0]) => {
-      return voice.createVoiceSeed({
-        agentId,
-        prompt: params.prompt,
-        durationMs: params.durationMs,
-        styleTags: params.styleTags,
-        negativeTags: params.negativeTags,
-      });
-    },
-    cloneVoiceFromSeed: async (params: Parameters<VoiceServices['cloneVoiceFromSeed']>[0]) => {
-      return voice.cloneVoiceFromSeed({
-        agentId,
-        seedAssetId: params.seedAssetId,
-        name: params.name,
-      });
-    },
-    createVoiceProfile: async (params: Parameters<VoiceServices['createVoiceProfile']>[0]) => {
-      return voice.createVoiceProfile({
-        agentId,
-        seedPrompt: params.seedPrompt,
-        seedAssetId: params.seedAssetId,
-        voiceName: params.voiceName,
-      });
-    },
-    setActiveVoiceProfile: async (params: Parameters<VoiceServices['setActiveVoiceProfile']>[0]) => {
-      await voice.setActiveVoiceProfile(agentId, params.voiceId, session.email);
-    },
     createMyVoice: async (params: Parameters<VoiceServices['createMyVoice']>[0]) => {
       return voice.createMyVoice({
         agentId: params.agentId,
-        voiceStyle: params.voiceStyle,
         description: params.description,
         updatedBy: session.email,
       });

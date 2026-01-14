@@ -433,17 +433,16 @@ export async function hasVoice(agentId: string): Promise<{
 }
 
 /**
- * Create a voice for the agent based on their personality.
+ * Create a voice for the agent based on a description.
  * 
- * Pipeline:
- * 1. Generate a "vibe" audio using Stable Audio based on agent description
- * 2. Clone that audio into a voice profile (even if nonsense, it creates a voice)
+ * Consolidated Pipeline:
+ * 1. Generate a voice seed audio using Stable Audio based on description
+ * 2. Clone that audio into a voice profile
  * 3. Set as the agent's active voice for TTS
  */
 export async function createMyVoice(params: {
   agentId: string;
-  voiceStyle?: string;
-  description?: string;
+  description: string;
   updatedBy?: string;
 }): Promise<{ voiceId: string; message: string; previewUrl?: string }> {
   const agent = await getAgent(params.agentId);
@@ -467,13 +466,12 @@ export async function createMyVoice(params: {
     throw new Error(`Not enough energy to create voice. ${energyCheck.reason}`);
   }
 
-  // Build a voice prompt based on agent personality
+  // Build a voice prompt based on the description
   const agentName = agent.name || 'Agent';
   const agentDescription = params.description || agent.description || agent.persona || '';
   
-  // Create a prompt for Stable Audio to generate a "voice vibe"
-  // We want something that sounds like speech patterns/intonation
-  const voicePrompt = buildVoicePrompt(agentName, agentDescription, params.voiceStyle);
+  // Create a prompt for Stable Audio to generate a voice
+  const voicePrompt = buildVoicePrompt(agentName, agentDescription);
   
   // Step 1: Generate seed audio using Stable Audio
   let seedAssetId: string;
@@ -517,7 +515,7 @@ export async function createMyVoice(params: {
 /**
  * Build a voice prompt for Stable Audio based on agent characteristics
  */
-function buildVoicePrompt(name: string, description: string, style?: string): string {
+function buildVoicePrompt(name: string, description: string): string {
   // Extract personality traits from description
   const descLower = description.toLowerCase();
   
@@ -529,7 +527,7 @@ function buildVoicePrompt(name: string, description: string, style?: string): st
     voiceType = 'male speaking voice';
   }
   
-  // Detect tone hints
+  // Detect tone hints from the description
   let tone = 'clear and natural';
   if (descLower.includes('playful') || descLower.includes('fun') || descLower.includes('silly')) {
     tone = 'playful and energetic';
@@ -543,11 +541,6 @@ function buildVoicePrompt(name: string, description: string, style?: string): st
     tone = 'wise and measured';
   } else if (descLower.includes('young') || descLower.includes('youthful')) {
     tone = 'youthful and vibrant';
-  }
-  
-  // Apply explicit style override if provided
-  if (style) {
-    tone = style;
   }
   
   // Build the prompt

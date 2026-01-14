@@ -15,7 +15,7 @@ export { createReferenceImageTools, type ReferenceImageServices, type ReferenceI
 export { createDiagnosticsTools, type IssueSeverity, type IssueCategory } from './diagnostics.js';
 export { createTelegramTools, type TelegramServices, type TelegramUserProfile, type TelegramPhoto, type ChatModificationProposal } from './telegram.js';
 export { createTwitterTools, type TwitterServices, type TwitterConnectionStatus, type Tweet } from './twitter.js';
-export { createVoiceTools, type VoiceServices, type VoiceTranscription, type VoiceSeed, type VoiceCloneResult, type VoiceProfileResult, type VoiceMessage } from './voice.js';
+export { createVoiceTools, type VoiceServices, type VoiceTranscription, type VoiceMessage } from './voice.js';
 export {
   createDiscordTools,
   type DiscordServices,

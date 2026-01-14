@@ -99,10 +99,11 @@ const STATE_TABLE = process.env.STATE_TABLE;
  * Convert AdminAPI AgentRecord to Core AgentConfig format
  */
 function convertToAgentConfig(record: AgentRecord): AgentConfig {
-  const defaultVoiceConfig = record.voiceConfig ?? {
+  const defaultVoiceConfig = {
     enabled: true,
     ttsProvider: 'voice-clone' as const,
     format: 'ogg' as const,
+    ...record.voiceConfig,
   };
 
   const config: AgentConfig = {

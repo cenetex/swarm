@@ -19,7 +19,7 @@ import {
   type UserSession,
 } from '../types.js';
 import { logger } from '@swarm/core';
-import { buildDynamicSystemPrompt, type ToolCategory } from '../services/dynamic-prompts.js';
+import { buildDynamicSystemPrompt, detectEnabledCategories, type ToolCategory } from '../services/dynamic-prompts.js';
 import { recordError } from '../services/auto-issues.js';
 import {
   ToolRegistry,
@@ -268,7 +268,7 @@ const CATEGORY_TOOLSETS: Record<ToolCategory, ToolsetId[]> = {
 
 function resolveAllowedToolsets(categories?: ToolCategory[]): ToolsetId[] | undefined {
   if (!categories || categories.length === 0) return undefined;
-  const toolsets = new Set<ToolsetId>(['core']);
+  const toolsets = new Set<ToolsetId>(['core', 'admin', 'config', 'jobs']);
 
   for (const category of categories) {
     const mapped = CATEGORY_TOOLSETS[category] || [];
@@ -330,9 +330,14 @@ async function buildOpenRouterTools(
   const filtered = allowedToolsets
     ? toolDefs.filter(tool => allowedToolsets.includes(tool.toolset || 'core'))
     : toolDefs;
+  const includeToolsets = new Set<ToolsetId>(['admin', 'config', 'jobs']);
+  if (options.enabledCategories?.includes('telegram')) includeToolsets.add('telegram');
+  if (options.enabledCategories?.includes('twitter')) includeToolsets.add('twitter');
+  if (options.enabledCategories?.includes('discord')) includeToolsets.add('discord');
   const routing = routeTools(filtered, {
     text: options.userMessage,
     maxToolsets: 3,
+    includeToolsets: Array.from(includeToolsets),
   });
 
   return Promise.all(routing.tools.map(async (toolDef) => {
@@ -1007,6 +1012,27 @@ export async function handler(
     }
     const { message, history, agent } = parseResult.data;
 
+    const agentRecord = agent?.id ? await agents.getAgent(agent.id) : null;
+    const voiceEnabled = process.env.ENABLE_VOICE_TOOLS !== 'false';
+    const enabledCategories = agentRecord
+      ? detectEnabledCategories({
+          voice: voiceEnabled && Boolean(agentRecord.voiceConfig?.enabled),
+          memory: false,
+          telegram: Boolean(agentRecord.platforms?.telegram?.enabled),
+          twitter: Boolean(agentRecord.platforms?.twitter?.enabled),
+          discord: Boolean(agentRecord.platforms?.discord?.enabled),
+          nft: true,
+          property: true,
+        })
+      : undefined;
+    const agentContext = agent ? {
+      id: agent.id,
+      name: agentRecord?.name ?? agent.name,
+      description: agentRecord?.description ?? agent.description,
+      persona: agentRecord?.persona ?? agent.persona,
+      enabledCategories,
+    } : undefined;
+
     // Log request entry
     logger.info('Request received', {
       event: 'request_received',
@@ -1017,7 +1043,7 @@ export async function handler(
     });
 
     // Process the chat with agent context
-    const result = await processChat(message, history, session, agent);
+    const result = await processChat(message, history, session, agentContext);
 
     // Save the updated history to DynamoDB for cross-device sync
     await chatHistory.saveChatHistory(session, result.history, agent?.id);

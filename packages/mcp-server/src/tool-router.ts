@@ -32,7 +32,7 @@ const TOOLSET_KEYWORDS: Record<ToolsetId, string[]> = {
   admin: ['admin', 'agent', 'template', 'deploy'],
   diagnostics: ['diagnostic', 'issue', 'error', 'log'],
   telegram: ['telegram', 'bot', 'chat', 'channel'],
-  twitter: ['twitter', 'tweet', 'x.com', 'dm'],
+  twitter: ['twitter', 'tweet', 'x.com', 'x account', 'x oauth', 'x api', 'x app', 'dm'],
   discord: ['discord', 'guild', 'server', 'channel', 'role'],
   property: ['property', 'real estate', 'listing', 'comps', 'assessor', 'schools', 'address'],
   memory: ['memory', 'remember', 'recall', 'note'],

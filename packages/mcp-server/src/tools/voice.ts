@@ -23,23 +23,6 @@ export interface VoiceTranscription {
   segments?: VoiceTranscriptSegment[];
 }
 
-export interface VoiceSeed {
-  assetId: string;
-  url: string;
-  durationMs?: number;
-}
-
-export interface VoiceCloneResult {
-  voiceId: string;
-  status: 'creating' | 'ready' | 'failed';
-  previewAssetId?: string;
-}
-
-export interface VoiceProfileResult {
-  voiceId: string;
-  status: 'creating' | 'ready' | 'failed';
-}
-
 export interface VoiceMessage {
   assetId: string;
   url: string;
@@ -56,34 +39,17 @@ export interface VoiceServices {
     model?: string;
     diarize?: boolean;
   }) => Promise<VoiceTranscription>;
-  createVoiceSeed: (params: {
-    prompt: string;
-    durationMs: number;
-    styleTags?: string[];
-    negativeTags?: string[];
-  }) => Promise<VoiceSeed>;
-  cloneVoiceFromSeed: (params: {
-    seedAssetId: string;
-    name?: string;
-  }) => Promise<VoiceCloneResult>;
-  createVoiceProfile: (params: {
-    seedPrompt?: string;
-    seedAssetId?: string;
-    voiceName?: string;
-  }) => Promise<VoiceProfileResult>;
-  setActiveVoiceProfile: (params: {
-    agentId: string;
-    voiceId: string;
-  }) => Promise<void>;
   /**
-   * Create a voice for the agent based on their personality/description
-   * Uses OpenAI TTS voice selection based on agent characteristics
+   * Create a voice for the agent based on a description.
+   * This is the consolidated voice creation method that:
+   * 1. Generates a voice seed audio based on the description
+   * 2. Clones the voice from the seed
+   * 3. Sets it as the agent's active voice profile
    */
   createMyVoice: (params: {
     agentId: string;
-    voiceStyle?: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
-    description?: string;
-  }) => Promise<{ voiceId: string; message: string }>;
+    description: string;
+  }) => Promise<{ voiceId: string; message: string; previewUrl?: string }>;
   /**
    * Check if the agent has a voice configured
    */
@@ -140,85 +106,17 @@ export const createVoiceTools = (services: VoiceServices) => [
   }),
 
   defineTool({
-    name: 'create_voice_seed',
-    description: 'Generate a seed audio clip for voice cloning.',
-    category: 'media',
-    toolset: 'voice',
-    inputSchema: z.object({
-      prompt: z.string().min(1).describe('Prompt describing the desired voice or sound'),
-      durationMs: z.number().min(1000).max(30000).describe('Seed audio duration in milliseconds'),
-      styleTags: z.array(z.string()).optional().describe('Optional style tags'),
-      negativeTags: z.array(z.string()).optional().describe('Optional negative tags'),
-    }),
-    execute: async (input): Promise<ToolResult> => {
-      const result = await services.createVoiceSeed(input);
-      return { success: true, data: result };
-    },
-  }),
-
-  defineTool({
-    name: 'clone_voice_from_seed',
-    description: 'Create a voice clone from a seed audio clip.',
-    category: 'config',
-    toolset: 'voice',
-    inputSchema: z.object({
-      seedAssetId: z.string().min(1).describe('Audio asset ID to clone from'),
-      name: z.string().optional().describe('Optional name for the voice'),
-    }),
-    execute: async (input): Promise<ToolResult> => {
-      const result = await services.cloneVoiceFromSeed(input);
-      return { success: true, data: result };
-    },
-  }),
-
-  defineTool({
-    name: 'create_voice_profile',
-    description: 'Create or update a voice profile for the agent.',
-    category: 'config',
-    toolset: 'voice',
-    inputSchema: z.object({
-      seedPrompt: z.string().optional().describe('Prompt for seed generation (if no seedAssetId)'),
-      seedAssetId: z.string().optional().describe('Seed audio asset ID'),
-      voiceName: z.string().optional().describe('Name for this voice profile'),
-    }),
-    execute: async (input): Promise<ToolResult> => {
-      const result = await services.createVoiceProfile(input);
-      return { success: true, data: result };
-    },
-  }),
-
-  defineTool({
-    name: 'set_active_voice_profile',
-    description: 'Set the active/default voice profile for the agent.',
-    category: 'config',
-    toolset: 'voice',
-    inputSchema: z.object({
-      voiceId: z.string().min(1).describe('Voice profile ID to activate'),
-    }),
-    execute: async (input, context): Promise<ToolResult> => {
-      await services.setActiveVoiceProfile({
-        agentId: context.agentId,
-        voiceId: input.voiceId,
-      });
-      return { success: true, data: { message: 'Active voice profile updated' } };
-    },
-  }),
-
-  defineTool({
     name: 'create_my_voice',
-    description: 'Create or configure your voice for speaking. Use this if you want to send voice messages but haven\'t set up your voice yet. Choose a voice style that matches your personality.',
+    description: 'Create your voice for speaking. This is the only tool you need to set up voice messages - it handles everything automatically: generates a voice seed based on your description, clones it into a voice profile, and sets it as your active voice. Use this when you want to send voice messages but haven\'t configured your voice yet.',
     category: 'config',
     toolset: 'voice',
     inputSchema: z.object({
-      voiceStyle: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']).optional()
-        .describe('Voice style: alloy (neutral), echo (male), fable (storyteller), onyx (deep male), nova (female), shimmer (soft female)'),
-      description: z.string().optional()
-        .describe('Optional description of your desired voice characteristics'),
+      description: z.string().min(1)
+        .describe('Description of your desired voice - include personality traits, tone, gender, age, accent, speaking style. Example: "A warm female voice with a slight Southern accent, playful and energetic, speaks quickly with enthusiasm"'),
     }),
     execute: async (input, context): Promise<ToolResult> => {
       const result = await services.createMyVoice({
         agentId: context.agentId,
-        voiceStyle: input.voiceStyle,
         description: input.description,
       });
       return { success: true, data: result };
