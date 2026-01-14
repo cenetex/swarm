@@ -24,7 +24,6 @@ import { recordError } from '../services/auto-issues.js';
 import {
   ToolRegistry,
   registerAllTools,
-  routeTools,
   type ToolContext,
   type ToolResult as McpToolResult,
   type AllServices,
@@ -323,24 +322,16 @@ function normalizeToolResult(result: McpToolResult, toolName: string): Record<st
 async function buildOpenRouterTools(
   registry: ToolRegistry,
   context: ToolContext,
-  options: { userMessage?: string; enabledCategories?: ToolCategory[] } = {}
+  options: { enabledCategories?: ToolCategory[] } = {}
 ): Promise<Tool[]> {
   const toolDefs = registry.getForPlatform(context.platform);
   const allowedToolsets = resolveAllowedToolsets(options.enabledCategories);
+  // Include all tools from allowed toolsets - no keyword-based routing
   const filtered = allowedToolsets
     ? toolDefs.filter(tool => allowedToolsets.includes(tool.toolset || 'core'))
     : toolDefs;
-  const includeToolsets = new Set<ToolsetId>(['admin', 'config', 'jobs', 'models']);
-  if (options.enabledCategories?.includes('telegram')) includeToolsets.add('telegram');
-  if (options.enabledCategories?.includes('twitter')) includeToolsets.add('twitter');
-  if (options.enabledCategories?.includes('discord')) includeToolsets.add('discord');
-  const routing = routeTools(filtered, {
-    text: options.userMessage,
-    maxToolsets: 4,  // Increased to accommodate models toolset
-    includeToolsets: Array.from(includeToolsets),
-  });
 
-  return Promise.all(routing.tools.map(async (toolDef) => {
+  return Promise.all(filtered.map(async (toolDef) => {
     let description = toolDef.description;
     if (toolDef.contextBuilder) {
       const contextStr = await toolDef.contextBuilder(context);
@@ -628,7 +619,6 @@ async function processChat(
   } : null;
   const tools = toolRegistry && toolContext
     ? await buildOpenRouterTools(toolRegistry, toolContext, {
-        userMessage,
         enabledCategories: agent?.enabledCategories,
       })
     : [];
