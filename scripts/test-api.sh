@@ -49,14 +49,33 @@ echo "Method: $METHOD"
 echo "Body: $BODY"
 echo ""
 
+# Make request and capture response
 if [ "$METHOD" == "GET" ]; then
-  curl -s "$API_URL/$ENDPOINT" \
+  RESPONSE=$(curl -s -w "\n%{http_code}" "$API_URL/$ENDPOINT" \
     -H "Content-Type: application/json" \
-    -H "x-internal-test-key: $INTERNAL_TEST_KEY" | jq .
+    -H "x-internal-test-key: $INTERNAL_TEST_KEY")
 else
-  curl -s "$API_URL/$ENDPOINT" \
+  RESPONSE=$(curl -s -w "\n%{http_code}" "$API_URL/$ENDPOINT" \
     -X "$METHOD" \
     -H "Content-Type: application/json" \
     -H "x-internal-test-key: $INTERNAL_TEST_KEY" \
-    -d "$BODY" | jq .
+    -d "$BODY")
+fi
+
+# Split response body and status code
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$d')
+
+echo "Status: $HTTP_CODE"
+
+# Try to pretty-print as JSON, fall back to plain text
+if echo "$BODY_RESPONSE" | jq . 2>/dev/null; then
+  : # Already printed by jq
+else
+  echo "Response: $BODY_RESPONSE"
+fi
+
+# Exit with error if non-2xx status
+if [[ "$HTTP_CODE" -lt 200 ]] || [[ "$HTTP_CODE" -ge 300 ]]; then
+  exit 1
 fi
