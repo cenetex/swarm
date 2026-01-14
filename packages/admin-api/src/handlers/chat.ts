@@ -794,7 +794,14 @@ async function processChat(
   // When using fallback, we skip the SDK's tool execution stream since we don't have it
   // The fallback only returns tool calls, not execution results
   if (toolCalls.length > 0 && modelResult && !usedFallback) {
+    logger.info('Processing tool execution stream', { toolCallCount: toolCalls.length });
+    let streamItemCount = 0;
     for await (const item of modelResult.getNewMessagesStream()) {
+      streamItemCount++;
+      logger.info('Stream item received', { 
+        itemType: typeof item === 'object' && item !== null && 'type' in item ? (item as { type: string }).type : 'unknown',
+        hasItem: !!item,
+      });
       if (item && typeof item === 'object' && 'type' in item && item.type === 'function_call_output') {
         const outputItem = item as { callId?: string; output?: string };
         if (outputItem.callId && typeof outputItem.output === 'string') {
@@ -806,6 +813,7 @@ async function processChat(
         }
       }
     }
+    logger.info('Tool execution stream complete', { streamItemCount, toolResultCount: toolResults.length });
   }
 
   // Get final response - either from SDK or fallback

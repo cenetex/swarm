@@ -165,6 +165,13 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
+              - Sid: LambdaList
+                Effect: Allow
+                Action:
+                  - lambda:ListFunctions
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                Resource: '*'
               - Sid: LambdaManagement
                 Effect: Allow
                 Action:

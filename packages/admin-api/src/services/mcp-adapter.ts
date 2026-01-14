@@ -22,6 +22,7 @@ import * as agentOwnership from '../services/agent-ownership.js';
 import * as nftGate from '../services/nft-gate.js';
 import * as lineageNft from '../services/lineage-nft.js';
 import * as propertyResearch from '../services/property-research.js';
+import * as stickers from '../services/stickers.js';
 import { createWebSearch } from '../services/web-search.js';
 
 // Timeout for external API calls
@@ -1264,6 +1265,11 @@ export function createMCPServices(_agentId: string, session: UserSession): AllSe
     // Property Research Services
     // =========================================================================
     property: createPropertyServices(_agentId, session),
+
+    // =========================================================================
+    // Sticker Services
+    // =========================================================================
+    stickers: stickers.createStickerServices(),
   };
 }
 

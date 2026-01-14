@@ -123,19 +123,40 @@ export async function markPostedToTwitter(
 }
 
 /**
- * Mark item as converted to sticker
+ * Mark item as converted to sticker with metadata
  */
 export async function markConvertedToSticker(
   agentId: string,
   _itemId: string,
-  sk: string
+  sk: string,
+  stickerInfo?: {
+    emoji: string;
+    setName: string;
+    fileId?: string;
+    stickerUrl?: string;
+  }
 ): Promise<void> {
-  await dynamoClient.send(new UpdateCommand({
-    TableName: ADMIN_TABLE,
-    Key: { pk: `AGENT#${agentId}`, sk },
-    UpdateExpression: 'SET convertedToSticker = :val',
-    ExpressionAttributeValues: { ':val': true },
-  }));
+  if (stickerInfo) {
+    await dynamoClient.send(new UpdateCommand({
+      TableName: ADMIN_TABLE,
+      Key: { pk: `AGENT#${agentId}`, sk },
+      UpdateExpression: 'SET convertedToSticker = :val, stickerInfo = :info',
+      ExpressionAttributeValues: {
+        ':val': true,
+        ':info': {
+          ...stickerInfo,
+          convertedAt: Date.now(),
+        },
+      },
+    }));
+  } else {
+    await dynamoClient.send(new UpdateCommand({
+      TableName: ADMIN_TABLE,
+      Key: { pk: `AGENT#${agentId}`, sk },
+      UpdateExpression: 'SET convertedToSticker = :val',
+      ExpressionAttributeValues: { ':val': true },
+    }));
+  }
 }
 
 /**

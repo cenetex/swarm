@@ -47,6 +47,13 @@ export {
   type PropertyResearchJob,
   type ResearchProgress,
 } from './property.js';
+export {
+  createStickerTools,
+  type StickerServices,
+  type StickerInfo,
+  type StickerPackInfo,
+  type GalleryItemForSticker,
+} from './stickers.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';
 import { createGalleryTools } from './gallery.js';
@@ -65,6 +72,7 @@ import { createDiscordTools } from './discord.js';
 import { createMemoryTools } from './memory.js';
 import { createNFTTools } from './nft.js';
 import { createPropertyTools } from './property.js';
+import { createStickerTools } from './stickers.js';
 import type { ToolRegistry } from '../registry.js';
 
 /**
@@ -88,6 +96,7 @@ export interface AllServices {
   discord?: import('./discord.js').DiscordServices;
   nft?: import('./nft.js').NFTServices;
   property?: import('./property.js').PropertyServices;
+  stickers?: import('./stickers.js').StickerServices;
 }
 
 /**
@@ -127,5 +136,8 @@ export function registerAllTools(
   }
   if (services.property) {
     registry.registerAll(createPropertyTools(services.property));
+  }
+  if (services.stickers) {
+    registry.registerAll(createStickerTools(services.stickers));
   }
 }

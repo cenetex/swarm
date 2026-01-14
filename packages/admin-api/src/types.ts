@@ -235,6 +235,14 @@ export interface GalleryItem {
   convertedToSticker: boolean;
   createdAt: number;
   metadata?: Record<string, unknown>;
+  // Sticker metadata (populated when converted to sticker)
+  stickerInfo?: {
+    emoji: string;
+    setName: string;
+    fileId?: string;       // Telegram file_id for direct sending
+    stickerUrl?: string;   // S3 URL of the processed sticker
+    convertedAt: number;
+  };
 }
 
 // Media generation job for async operations

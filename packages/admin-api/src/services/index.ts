@@ -11,6 +11,16 @@ export * from './credits.js';
 export * from './media.js';
 export * from './telegram-stickers.js';
 export * from './telegram.js';
+export * from './sticker-processor.js';
+// Export stickers service with explicit names to avoid conflicts with media.ts
+export {
+  createStickerServices,
+  generateSticker as generateStickerFromPrompt,
+  createStickerFromGallery,
+  getStickerPack as getStickerPackInfo,
+  getGalleryForStickers,
+  findSticker,
+} from './stickers.js';
 export * from './chat-voting.js';
 export * as twitterOAuth from './twitter-oauth.js';
 export * as discord from './discord.js';
