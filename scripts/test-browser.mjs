@@ -37,10 +37,10 @@ function getStackOutput(key) {
   const stack = `SwarmStack-${ENV === 'production' ? 'prod' : ENV}`;
   try {
     const result = execSync(
-      `aws cloudformation describe-stacks --stack-name ${stack} --query "Stacks[0].Outputs[?contains(OutputKey, '${key}')].OutputValue" --output text`,
+      `aws cloudformation describe-stacks --stack-name ${stack} --query "Stacks[0].Outputs[?OutputKey=='${key}'].OutputValue | [0]" --output text`,
       { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
     ).trim();
-    return result || null;
+    return result && result !== 'None' ? result : null;
   } catch {
     return null;
   }
