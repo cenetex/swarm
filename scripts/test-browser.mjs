@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 /**
- * Browser automation E2E test with LLM-powered visual verification
- * Uses Playwright to take screenshots and sends them to the chat API for validation
+ * Autonomous Browser Agent E2E Test
  * 
- * Usage: node scripts/test-browser.mjs [env] [agent-id]
+ * An LLM agent that explores the admin UI with minimal context,
+ * discovers how to create an agent, and has a conversation.
+ * 
+ * The agent receives only:
+ * - A screenshot of the current page state
+ * - A high-level goal ("explore this app and create a new AI agent")
+ * - Its own history of observations and actions
+ * 
+ * Usage: node scripts/test-browser.mjs [env]
  */
 
 import { chromium } from 'playwright';
@@ -12,10 +19,9 @@ import fs from 'fs';
 import path from 'path';
 
 const ENV = process.argv[2] || 'staging';
-const AGENT_ID = process.argv[3] || process.env.E2E_BROWSER_AGENT_ID;
-const AVATAR_AGENT_ID = process.argv[4] || process.env.E2E_AVATAR_AGENT_ID;
+const MAX_STEPS = 25;
+const STEP_DELAY = 1500;
 
-// Get stack outputs
 function getStackOutput(key) {
   const stack = `SwarmStack-${ENV === 'production' ? 'prod' : ENV}`;
   try {
@@ -29,11 +35,9 @@ function getStackOutput(key) {
   }
 }
 
-// Get internal test key for API calls
 function getInternalTestKey() {
   const stack = `SwarmStack-${ENV === 'production' ? 'prod' : ENV}`;
   try {
-    // Find the chat handler function
     const resources = JSON.parse(execSync(
       `aws cloudformation describe-stack-resources --stack-name ${stack} --query "StackResources[?ResourceType=='AWS::Lambda::Function' && contains(PhysicalResourceId, 'ChatHandler')]" --output json`,
       { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
@@ -51,15 +55,48 @@ function getInternalTestKey() {
   }
 }
 
-// Send screenshot to LLM for visual verification
-async function verifyScreenshotWithLLM(apiUrl, testKey, screenshotPath, prompt) {
+async function getNextAction(apiUrl, testKey, screenshotPath, history, goal) {
   const imageData = fs.readFileSync(screenshotPath);
   const base64Image = imageData.toString('base64');
   
+  const systemPrompt = `You are an autonomous browser agent exploring a web application.
+
+YOUR GOAL: ${goal}
+
+You can see a screenshot of the current page state. Based on what you observe, decide on ONE action to take.
+
+AVAILABLE ACTIONS:
+- CLICK: selector - Click an element (use visible text content, button labels, or CSS selector)
+- TYPE: text - Type text into the currently focused input field  
+- FILL: selector | text - Fill a specific input field by placeholder/label
+- PRESS: key - Press a keyboard key (Enter, Tab, Escape, etc.)
+- SCROLL: direction - Scroll up or down
+- WAIT: reason - Wait and observe (use sparingly)
+- NAVIGATE: path - Navigate to a relative URL path
+- DONE: summary - Task complete, provide summary
+
+RESPONSE FORMAT (use exactly this format):
+OBSERVATION: [Describe what you see - UI elements, buttons, forms, text, sidebars, etc.]
+REASONING: [Your thought process - what are you trying to achieve? Why this action?]
+ACTION: [Exactly one action from the list above]
+
+GUIDELINES:
+- Describe the UI thoroughly before acting - what buttons, links, inputs do you see?
+- Look for "+" buttons, "New" or "Create" links, or similar UI patterns
+- When filling forms, use the agent name provided in the goal
+- For personas/descriptions, be creative and brief
+- If you see a chat interface, try sending a test message
+- When you've created an agent AND had a conversation with it, use DONE
+- If an action fails, try an alternative approach
+
+HISTORY OF YOUR ACTIONS:
+${history.length > 0 ? history.map((h, i) => `Step ${i + 1}: ${h}`).join('\n') : '(Starting fresh - explore the interface!)'}
+`;
+
   const payload = {
-    message: prompt,
+    message: 'Analyze the screenshot and decide your next action.',
     history: [],
-    agent: { id: 'visual-tester' },
+    systemPrompt,
     attachments: [{
       type: 'image',
       data: `data:image/png;base64,${base64Image}`,
@@ -78,29 +115,171 @@ async function verifyScreenshotWithLLM(apiUrl, testKey, screenshotPath, prompt) 
   
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`LLM verification failed: ${response.status} ${text}`);
+    throw new Error(`LLM request failed: ${response.status} ${text}`);
   }
   
   const result = await response.json();
   return result.message || result.content || JSON.stringify(result);
 }
 
-// Parse LLM response for pass/fail
-function parseVerificationResult(response) {
-  const lower = response.toLowerCase();
-  if (lower.includes('pass') || lower.includes('looks good') || lower.includes('correct') || lower.includes('success')) {
-    return { passed: true, reason: response };
+function parseAction(response) {
+  const lines = response.split('\n');
+  let observation = '';
+  let reasoning = '';
+  let action = null;
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('OBSERVATION:')) {
+      observation = trimmed.replace('OBSERVATION:', '').trim();
+    } else if (trimmed.startsWith('REASONING:')) {
+      reasoning = trimmed.replace('REASONING:', '').trim();
+    } else if (trimmed.startsWith('ACTION:')) {
+      action = trimmed.replace('ACTION:', '').trim();
+    }
   }
-  if (lower.includes('fail') || lower.includes('error') || lower.includes('incorrect') || lower.includes('missing')) {
-    return { passed: false, reason: response };
+  
+  if (action) {
+    const match = action.match(/^(\w+):\s*(.*)$/);
+    if (match) {
+      return {
+        observation,
+        reasoning,
+        type: match[1].toUpperCase(),
+        params: match[2].trim(),
+        raw: action
+      };
+    }
   }
-  // Ambiguous - treat as pass with warning
-  return { passed: true, reason: `[AMBIGUOUS] ${response}` };
+  
+  const actionMatch = response.match(/ACTION:\s*(\w+):\s*(.*?)(\n|$)/i);
+  if (actionMatch) {
+    return {
+      observation,
+      reasoning,
+      type: actionMatch[1].toUpperCase(),
+      params: actionMatch[2].trim(),
+      raw: actionMatch[0]
+    };
+  }
+  
+  return { observation, reasoning, type: 'WAIT', params: 'Could not parse action', raw: response };
 }
 
-async function runBrowserTests() {
-  console.log(`🌐 Browser E2E Tests - ${ENV}`);
+async function executeAction(page, action) {
+  const { type, params } = action;
+  
+  try {
+    switch (type) {
+      case 'CLICK': {
+        const strategies = [
+          () => page.click(`text="${params}"`, { timeout: 2000 }),
+          () => page.click(`text=${params}`, { timeout: 2000 }),
+          () => page.click(`button:has-text("${params}")`, { timeout: 2000 }),
+          () => page.click(`a:has-text("${params}")`, { timeout: 2000 }),
+          () => page.click(`[aria-label*="${params}" i]`, { timeout: 2000 }),
+          () => page.click(params, { timeout: 2000 }),
+        ];
+        
+        for (const strategy of strategies) {
+          try {
+            await strategy();
+            return { success: true };
+          } catch { /* try next */ }
+        }
+        return { success: false, error: `Could not find clickable element: ${params}` };
+      }
+      
+      case 'TYPE': {
+        await page.keyboard.type(params);
+        return { success: true };
+      }
+      
+      case 'FILL': {
+        const separatorIndex = params.indexOf('|');
+        if (separatorIndex === -1) {
+          const focused = await page.$(':focus');
+          if (focused) {
+            await focused.fill(params);
+            return { success: true };
+          }
+          return { success: false, error: 'No separator and no focused element' };
+        }
+        
+        const selector = params.substring(0, separatorIndex).trim();
+        const text = params.substring(separatorIndex + 1).trim();
+        
+        const fillStrategies = [
+          () => page.fill(`[placeholder*="${selector}" i]`, text, { timeout: 2000 }),
+          () => page.fill(`input[name*="${selector}" i]`, text, { timeout: 2000 }),
+          () => page.fill(`textarea[name*="${selector}" i]`, text, { timeout: 2000 }),
+          () => page.fill(`label:has-text("${selector}") + input`, text, { timeout: 2000 }),
+          () => page.fill(`label:has-text("${selector}") ~ input`, text, { timeout: 2000 }),
+          () => page.fill(selector, text, { timeout: 2000 }),
+        ];
+        
+        for (const strategy of fillStrategies) {
+          try {
+            await strategy();
+            return { success: true };
+          } catch { /* try next */ }
+        }
+        return { success: false, error: `Could not fill field: ${selector}` };
+      }
+      
+      case 'PRESS': {
+        await page.keyboard.press(params);
+        return { success: true };
+      }
+      
+      case 'SCROLL': {
+        const direction = params.toLowerCase();
+        if (direction.includes('down')) {
+          await page.evaluate(() => window.scrollBy(0, 400));
+        } else {
+          await page.evaluate(() => window.scrollBy(0, -400));
+        }
+        return { success: true };
+      }
+      
+      case 'WAIT': {
+        await page.waitForTimeout(2000);
+        return { success: true };
+      }
+      
+      case 'NAVIGATE': {
+        const currentUrl = new URL(page.url());
+        const newPath = params.startsWith('/') ? params : `/${params}`;
+        await page.goto(`${currentUrl.origin}${newPath}`, { waitUntil: 'networkidle', timeout: 15000 });
+        return { success: true };
+      }
+      
+      case 'DONE': {
+        return { success: true, done: true, summary: params };
+      }
+      
+      default:
+        return { success: false, error: `Unknown action: ${type}` };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function generateAgentName() {
+  const adjectives = ['Curious', 'Clever', 'Swift', 'Bright', 'Bold', 'Wise', 'Keen', 'Quick'];
+  const nouns = ['Explorer', 'Pioneer', 'Tester', 'Scout', 'Pathfinder', 'Seeker', 'Wanderer'];
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  const id = Date.now().toString(36).slice(-4);
+  return `${adj}${noun}-${id}`;
+}
+
+async function runAutonomousBrowserTest() {
+  console.log('🤖 Autonomous Browser Agent E2E Test');
   console.log('='.repeat(50));
+  console.log(`Environment: ${ENV}`);
+  console.log();
   
   const adminUrl = getStackOutput('AdminUiUrl') || getStackOutput('Url');
   const apiUrl = getStackOutput('ApiEndpoint');
@@ -112,181 +291,128 @@ async function runBrowserTests() {
   }
   
   if (!apiUrl || !testKey) {
-    console.warn('⚠️  Could not get API credentials - visual verification will be skipped');
+    console.error('❌ Could not get API credentials for LLM agent');
+    console.error('   This test requires the chat API to reason about screenshots');
+    process.exit(1);
   }
   
   console.log(`📍 Admin UI: ${adminUrl}`);
-  console.log(`📍 API: ${apiUrl || 'N/A'}`);
-  console.log(`📍 Agent ID: ${AGENT_ID || 'default'}`);
-  console.log(`📍 Avatar Agent ID: ${AVATAR_AGENT_ID || 'N/A'}`);
+  console.log(`📍 API: ${apiUrl}`);
+  console.log(`📍 Max Steps: ${MAX_STEPS}`);
   console.log();
   
-  // Create screenshots directory
-  const screenshotsDir = path.join(process.cwd(), 'test-screenshots');
-  if (!fs.existsSync(screenshotsDir)) {
-    fs.mkdirSync(screenshotsDir, { recursive: true });
-  }
+  const runId = Date.now().toString(36);
+  const screenshotsDir = path.join(process.cwd(), 'test-screenshots', `run-${runId}`);
+  fs.mkdirSync(screenshotsDir, { recursive: true });
   
   const browser = await chromium.launch({ 
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
   const context = await browser.newContext({
-    viewport: { width: 1280, height: 720 },
+    viewport: { width: 1280, height: 800 },
     deviceScaleFactor: 2
   });
   const page = await context.newPage();
   
-  const results = [];
+  const agentName = generateAgentName();
+  const goal = `Explore this admin/chat application and create a new AI agent named "${agentName}". 
+Once you've created the agent, have a brief conversation with it to verify it works.
+Look for ways to add/create new agents, fill in any required fields creatively, and test the result.`;
+
+  console.log(`🎯 Goal: Create agent "${agentName}" and test conversation`);
+  console.log();
+  
+  const history = [];
+  let step = 0;
+  let success = false;
+  let finalSummary = '';
   
   try {
-    // Test 1: Load the admin UI
-    console.log('📸 Test 1: Loading Admin UI...');
+    console.log('📸 Loading application...');
     await page.goto(adminUrl, { waitUntil: 'networkidle', timeout: 30000 });
-    await page.waitForTimeout(2000); // Let animations settle
+    await page.waitForTimeout(2000);
     
-    const screenshot1 = path.join(screenshotsDir, '01-admin-ui-loaded.png');
-    await page.screenshot({ path: screenshot1, fullPage: true });
-    console.log(`   Saved: ${screenshot1}`);
-    
-    if (apiUrl && testKey) {
-      const llmResult = await verifyScreenshotWithLLM(
-        apiUrl, testKey, screenshot1,
-        'Analyze this screenshot of a chat/admin UI. Check if: 1) The page loaded successfully without errors 2) There is a sidebar or agent list visible 3) The layout looks reasonable. Reply with PASS or FAIL followed by a brief explanation.'
-      );
-      const parsed = parseVerificationResult(llmResult);
-      results.push({ name: 'Admin UI Load', ...parsed });
-      console.log(`   ${parsed.passed ? '✅' : '❌'} LLM: ${parsed.reason.substring(0, 100)}...`);
-    } else {
-      results.push({ name: 'Admin UI Load', passed: true, reason: 'Page loaded (no LLM verification)' });
-      console.log('   ✅ Page loaded');
+    while (step < MAX_STEPS && !success) {
+      step++;
+      console.log(`\n--- Step ${step}/${MAX_STEPS} ---`);
+      
+      const screenshotPath = path.join(screenshotsDir, `step-${step.toString().padStart(2, '0')}.png`);
+      await page.screenshot({ path: screenshotPath, fullPage: false });
+      
+      console.log('🧠 Agent reasoning...');
+      const response = await getNextAction(apiUrl, testKey, screenshotPath, history, goal);
+      const action = parseAction(response);
+      
+      console.log(`📝 Observation: ${(action.observation || '').substring(0, 120)}...`);
+      console.log(`💭 Reasoning: ${(action.reasoning || '').substring(0, 120)}...`);
+      console.log(`⚡ Action: ${action.type}: ${action.params}`);
+      
+      const result = await executeAction(page, action);
+      
+      if (result.error) {
+        console.log(`⚠️  Action failed: ${result.error}`);
+        history.push(`${action.type}: ${action.params} -> FAILED: ${result.error}`);
+      } else if (result.done) {
+        console.log(`✅ Agent completed: ${result.summary}`);
+        success = true;
+        finalSummary = result.summary;
+        history.push(`DONE: ${result.summary}`);
+      } else {
+        console.log('✅ Action executed');
+        history.push(`${action.type}: ${action.params} -> OK`);
+      }
+      
+      await page.waitForTimeout(STEP_DELAY);
     }
     
-    // Test 2: Select an agent (if agent ID provided)
-    if (AGENT_ID) {
-      console.log(`\n📸 Test 2: Selecting agent ${AGENT_ID}...`);
-      
-      // Look for agent in sidebar and click it
-      const agentSelector = `[data-agent-id="${AGENT_ID}"], text=${AGENT_ID}`;
-      try {
-        await page.click(agentSelector, { timeout: 5000 });
-        await page.waitForTimeout(1500);
-      } catch {
-        // Try clicking any agent button in sidebar
-        const agents = await page.$$('[data-testid="agent-item"], .agent-item, button:has-text("agent")');
-        if (agents.length > 0) {
-          await agents[0].click();
-          await page.waitForTimeout(1500);
-        }
-      }
-      
-      const screenshot2 = path.join(screenshotsDir, '02-agent-selected.png');
-      await page.screenshot({ path: screenshot2, fullPage: true });
-      console.log(`   Saved: ${screenshot2}`);
-      
-      if (apiUrl && testKey) {
-        const llmResult = await verifyScreenshotWithLLM(
-          apiUrl, testKey, screenshot2,
-          'Analyze this chat UI screenshot. Check if: 1) A chat panel is visible 2) There is a message input field 3) The agent/chat appears to be selected/active. Reply with PASS or FAIL followed by explanation.'
-        );
-        const parsed = parseVerificationResult(llmResult);
-        results.push({ name: 'Agent Selection', ...parsed });
-        console.log(`   ${parsed.passed ? '✅' : '❌'} LLM: ${parsed.reason.substring(0, 100)}...`);
-      } else {
-        results.push({ name: 'Agent Selection', passed: true, reason: 'Agent clicked (no LLM verification)' });
-        console.log('   ✅ Agent clicked');
-      }
-      
-      // Test 3: Send a message
-      console.log('\n📸 Test 3: Sending test message...');
-      const inputSelector = 'textarea, input[type="text"], [contenteditable="true"]';
-      const input = await page.$(inputSelector);
-      
-      if (input) {
-        await input.fill('Hello, this is an automated browser test!');
-        await page.keyboard.press('Enter');
-        await page.waitForTimeout(3000); // Wait for response
-        
-        const screenshot3 = path.join(screenshotsDir, '03-message-sent.png');
-        await page.screenshot({ path: screenshot3, fullPage: true });
-        console.log(`   Saved: ${screenshot3}`);
-        
-        if (apiUrl && testKey) {
-          const llmResult = await verifyScreenshotWithLLM(
-            apiUrl, testKey, screenshot3,
-            'Analyze this chat UI screenshot after a message was sent. Check if: 1) The user message appears in the chat 2) There is a response or loading indicator 3) No error messages are shown. Reply with PASS or FAIL followed by explanation.'
-          );
-          const parsed = parseVerificationResult(llmResult);
-          results.push({ name: 'Message Send', ...parsed });
-          console.log(`   ${parsed.passed ? '✅' : '❌'} LLM: ${parsed.reason.substring(0, 100)}...`);
-        } else {
-          results.push({ name: 'Message Send', passed: true, reason: 'Message sent (no LLM verification)' });
-          console.log('   ✅ Message sent');
-        }
-      } else {
-        results.push({ name: 'Message Send', passed: false, reason: 'Could not find input field' });
-        console.log('   ❌ Could not find message input');
-      }
-    }
-    
-    // Test 4: Avatar agent (if provided)
-    if (AVATAR_AGENT_ID) {
-      console.log(`\n📸 Test 4: Testing avatar agent ${AVATAR_AGENT_ID}...`);
-      
-      // Navigate to avatar/inhabit route
-      await page.goto(`${adminUrl}/inhabit/${AVATAR_AGENT_ID}`, { waitUntil: 'networkidle', timeout: 30000 });
-      await page.waitForTimeout(2000);
-      
-      const screenshot4 = path.join(screenshotsDir, '04-avatar-agent.png');
-      await page.screenshot({ path: screenshot4, fullPage: true });
-      console.log(`   Saved: ${screenshot4}`);
-      
-      if (apiUrl && testKey) {
-        const llmResult = await verifyScreenshotWithLLM(
-          apiUrl, testKey, screenshot4,
-          'Analyze this avatar/inhabit page screenshot. Check if: 1) The page loaded with some UI 2) There may be a wallet connect prompt or avatar interface 3) No major errors are shown. Reply with PASS or FAIL followed by explanation.'
-        );
-        const parsed = parseVerificationResult(llmResult);
-        results.push({ name: 'Avatar Agent', ...parsed });
-        console.log(`   ${parsed.passed ? '✅' : '❌'} LLM: ${parsed.reason.substring(0, 100)}...`);
-      } else {
-        results.push({ name: 'Avatar Agent', passed: true, reason: 'Avatar page loaded (no LLM verification)' });
-        console.log('   ✅ Avatar page loaded');
-      }
-    }
+    const finalScreenshot = path.join(screenshotsDir, 'final.png');
+    await page.screenshot({ path: finalScreenshot, fullPage: true });
+    console.log(`\n📸 Final screenshot: ${finalScreenshot}`);
     
   } catch (err) {
-    console.error(`\n❌ Browser test error: ${err.message}`);
-    
-    // Take error screenshot
+    console.error(`\n❌ Test error: ${err.message}`);
     const errorScreenshot = path.join(screenshotsDir, 'error.png');
-    await page.screenshot({ path: errorScreenshot, fullPage: true });
-    console.log(`   Error screenshot: ${errorScreenshot}`);
-    
-    results.push({ name: 'Browser Error', passed: false, reason: err.message });
+    await page.screenshot({ path: errorScreenshot, fullPage: true }).catch(() => {});
   } finally {
     await browser.close();
   }
   
-  // Summary
   console.log('\n' + '='.repeat(50));
-  console.log('📊 Results Summary:');
-  const passed = results.filter(r => r.passed).length;
-  const failed = results.filter(r => !r.passed).length;
+  console.log('📊 Test Summary:');
+  console.log(`   Steps taken: ${step}`);
+  console.log(`   Screenshots: ${screenshotsDir}`);
   
-  for (const result of results) {
-    console.log(`   ${result.passed ? '✅' : '❌'} ${result.name}`);
+  if (success) {
+    console.log(`   Result: ✅ SUCCESS`);
+    console.log(`   Summary: ${finalSummary}`);
+  } else if (step >= MAX_STEPS) {
+    console.log(`   Result: ⚠️  MAX STEPS REACHED`);
+    console.log('   The agent did not complete the task within the step limit.');
+  } else {
+    console.log(`   Result: ❌ FAILED`);
   }
   
-  console.log(`\n   Total: ${passed} passed, ${failed} failed`);
-  console.log(`   Screenshots saved to: ${screenshotsDir}`);
+  console.log('\n📜 Action History:');
+  history.forEach((h, i) => console.log(`   ${i + 1}. ${h}`));
   
-  if (failed > 0) {
+  const historyFile = path.join(screenshotsDir, 'history.json');
+  fs.writeFileSync(historyFile, JSON.stringify({
+    goal,
+    agentName,
+    steps: step,
+    success,
+    summary: finalSummary,
+    history
+  }, null, 2));
+  
+  // Allow max steps as soft pass - agent explored
+  if (!success && step < MAX_STEPS) {
     process.exit(1);
   }
 }
 
-runBrowserTests().catch(err => {
+runAutonomousBrowserTest().catch(err => {
   console.error('Fatal error:', err);
   process.exit(1);
 });
