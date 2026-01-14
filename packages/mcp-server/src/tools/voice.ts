@@ -45,11 +45,12 @@ export interface VoiceServices {
    * 1. Generates a voice seed audio based on the description
    * 2. Clones the voice from the seed
    * 3. Sets it as the agent's active voice profile
+   * 4. Generates a voice introduction message
    */
   createMyVoice: (params: {
     agentId: string;
     description: string;
-  }) => Promise<{ voiceId: string; message: string; previewUrl?: string }>;
+  }) => Promise<{ voiceId: string; message: string; previewUrl?: string; introAssetId?: string; introUrl?: string }>;
   /**
    * Check if the agent has a voice configured
    */
@@ -107,7 +108,7 @@ export const createVoiceTools = (services: VoiceServices) => [
 
   defineTool({
     name: 'create_my_voice',
-    description: 'Create your voice for speaking. This is the only tool you need to set up voice messages - it handles everything automatically: generates a voice seed based on your description, clones it into a voice profile, and sets it as your active voice. Use this when you want to send voice messages but haven\'t configured your voice yet.',
+    description: 'Create your voice for speaking. This is the only tool you need to set up voice messages - it handles everything automatically: generates a voice seed based on your description, clones it into a voice profile, sets it as your active voice, and generates a voice introduction message you can send. Use this when you want to send voice messages but haven\'t configured your voice yet.',
     category: 'config',
     toolset: 'voice',
     inputSchema: z.object({

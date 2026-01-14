@@ -439,12 +439,13 @@ export async function hasVoice(agentId: string): Promise<{
  * 1. Generate a voice seed audio using Stable Audio based on description
  * 2. Clone that audio into a voice profile
  * 3. Set as the agent's active voice for TTS
+ * 4. Generate a voice introduction message
  */
 export async function createMyVoice(params: {
   agentId: string;
   description: string;
   updatedBy?: string;
-}): Promise<{ voiceId: string; message: string; previewUrl?: string }> {
+}): Promise<{ voiceId: string; message: string; previewUrl?: string; introAssetId?: string; introUrl?: string }> {
   const agent = await getAgent(params.agentId);
   if (!agent) {
     throw new Error(`Agent not found: ${params.agentId}`);
@@ -505,10 +506,30 @@ export async function createMyVoice(params: {
   // Consume energy after successful creation
   await credits.consumeEnergy(params.agentId, credits.ENERGY_COSTS.voice);
 
+  // Step 4: Generate a voice introduction message
+  let introAssetId: string | undefined;
+  let introUrl: string | undefined;
+  const introText = `Hello! This is ${agentName}. I just got my voice set up and I'm excited to speak with you!`;
+  
+  try {
+    const introMessage = await generateVoiceMessage({
+      agentId: params.agentId,
+      text: introText,
+      format: 'ogg',
+    });
+    introAssetId = introMessage.assetId;
+    introUrl = introMessage.url;
+  } catch (err) {
+    // Non-fatal - voice was created successfully, intro message failed
+    console.warn(`Failed to generate intro message: ${err instanceof Error ? err.message : 'Unknown error'}`);
+  }
+
   return {
     voiceId: clone.voiceId,
     message: `Voice created successfully! I can now speak using generate_voice_message. My voice was crafted from: "${voicePrompt.substring(0, 100)}..."`,
     previewUrl: seedUrl,
+    introAssetId,
+    introUrl,
   };
 }
 
