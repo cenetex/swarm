@@ -107,6 +107,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate release signing wallet
+        if: steps.env.outputs.environment == 'production'
+        run: node scripts/generate-vanity-wallet.mjs RATi --secret-name RELEASE_SIGNING_KEY
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build packages
         run: |
           # Build layer if not cached (with Linux platform for Lambda)
