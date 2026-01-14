@@ -260,6 +260,9 @@ importers:
       '@swarm/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
+      ws:
+        specifier: ^8.18.0
+        version: 8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
       zod:
         specifier: ^3.24.0
         version: 3.25.76
