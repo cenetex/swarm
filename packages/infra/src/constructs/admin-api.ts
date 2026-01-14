@@ -263,6 +263,8 @@ export class AdminApiConstruct extends Construct {
         INTERNAL_TEST_KEY: internalTestKey,
       },
       bundling: {
+        // Use Docker to build for linux-x64 (required for sharp native binaries)
+        forceDockerBundling: true,
         externalModules: ['@aws-sdk/*'],
         minify: true,
         sourceMap: true,
