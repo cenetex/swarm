@@ -263,9 +263,10 @@ export class AdminApiConstruct extends Construct {
         INTERNAL_TEST_KEY: internalTestKey,
       },
       bundling: {
-        // Use Docker to build for linux-x64 (required for sharp native binaries)
-        forceDockerBundling: true,
-        externalModules: ['@aws-sdk/*'],
+        // Sharp must be installed separately with platform-specific binaries
+        externalModules: ['@aws-sdk/*', 'sharp'],
+        nodeModules: ['sharp'], // Install sharp via npm with correct platform
+        forceDockerBundling: true, // Force Docker to ensure Linux binaries
         minify: true,
         sourceMap: true,
         commandHooks: {
