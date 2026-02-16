@@ -100,7 +100,9 @@ async function getAppCredentials(deps: TwitterOAuthServiceDeps = defaultDeps): P
     };
     return cachedAppCredentials;
   } catch (error) {
-    console.error('Failed to get Twitter app credentials:', error);
+    // Don't log the full error object as it may contain sensitive credentials
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Failed to get Twitter app credentials: ${errorMessage}`);
     return null;
   }
 }
@@ -610,7 +612,9 @@ export async function getAvatarTwitterCredentials(avatarId: string, deps: Twitte
       accessSecret,
     };
   } catch (error) {
-    console.error('Failed to get Twitter credentials:', error);
+    // Don't log the full error object as it may contain sensitive credentials
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Failed to get Twitter credentials: ${errorMessage}`);
     return { configured: false };
   }
 }

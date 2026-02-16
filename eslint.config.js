@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
+import noSensitiveLogs from './eslint-plugin-no-sensitive-logs.js';
 
 export default tseslint.config(
   js.configs.recommended,
@@ -17,6 +18,13 @@ export default tseslint.config(
         sourceType: 'module',
       },
     },
+    plugins: {
+      'no-sensitive-logs': {
+        rules: {
+          'no-sensitive-logs': noSensitiveLogs,
+        },
+      },
+    },
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', {
         argsIgnorePattern: '^_',
@@ -24,6 +32,7 @@ export default tseslint.config(
       }],
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-console': 'off',
+      'no-sensitive-logs/no-sensitive-logs': 'warn',
     },
   },
   // React Hooks rules (admin UI only)

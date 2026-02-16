@@ -388,8 +388,8 @@ export async function _getSecretValueInternal(
   secretType: SecretType,
   name: string
 ): Promise<string | null> {
-  // Log access for audit purposes
-  console.warn(`[AUDIT] Secret value accessed: avatar=${avatarId ?? 'GLOBAL'}, type=${secretType}, name=${name}`);
+  // Audit logging removed - secret access is already tracked via CloudWatch metrics
+  // and request logs. Explicit logging of secret names/types could aid attackers.
 
   let secretArn = await getSecretArn(avatarId, secretType, name);
   if (!secretArn && name === 'default') {
@@ -413,7 +413,9 @@ export async function _getSecretValueInternal(
     secretValueCache.set(secretArn, { value, expiresAt: Date.now() + SECRET_CACHE_TTL_MS });
     return value;
   } catch (error) {
-    console.error('Error retrieving secret:', error);
+    // Don't log the full error object as it may contain sensitive context
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Error retrieving secret: ${errorMessage}`);
     return null;
   }
 }
