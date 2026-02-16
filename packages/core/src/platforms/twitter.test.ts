@@ -3,7 +3,7 @@
  *
  * Tests for the TwitterAdapter class that handles Twitter API v2 interactions.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { TwitterAdapter } from './twitter.js';
 import type { AvatarConfig } from '../types/index.js';
 import type { TwitterApi } from 'twitter-api-v2';
@@ -38,14 +38,14 @@ const createMockCredentials = (partial?: Partial<{ appKey: string; appSecret: st
 function createMockTwitterClient() {
   return {
     v2: {
-      tweet: vi.fn(() => Promise.resolve({ data: { id: 'tweet-123' } })),
-      like: vi.fn(() => Promise.resolve({ data: { liked: true } })),
-      userMentionTimeline: vi.fn(() => Promise.resolve({ data: { data: [] }, includes: {} })),
-      singleTweet: vi.fn(() => Promise.resolve({ data: null, includes: {} })),
-      me: vi.fn(() => Promise.resolve({ data: { id: 'bot-user-id' } })),
+      tweet: mock(() => Promise.resolve({ data: { id: 'tweet-123' } })),
+      like: mock(() => Promise.resolve({ data: { liked: true } })),
+      userMentionTimeline: mock(() => Promise.resolve({ data: { data: [] }, includes: {} })),
+      singleTweet: mock(() => Promise.resolve({ data: null, includes: {} })),
+      me: mock(() => Promise.resolve({ data: { id: 'bot-user-id' } })),
     },
     v1: {
-      uploadMedia: vi.fn(() => Promise.resolve('media-id-1')),
+      uploadMedia: mock(() => Promise.resolve('media-id-1')),
     },
   } as unknown as TwitterApi;
 }
@@ -278,7 +278,7 @@ describe('TwitterAdapter - Action Execution', () => {
   });
 
   it('executeAction returns false on API error', async () => {
-    mockClient.v2.tweet = vi.fn(() => Promise.reject(new Error('Rate limited')));
+    mockClient.v2.tweet = mock(() => Promise.reject(new Error('Rate limited')));
 
     const result = await adapter.executeAction(
       { type: 'send_message', text: 'test' },
@@ -322,7 +322,7 @@ describe('TwitterAdapter - Tweet Posting', () => {
 
   it('postTweet uploads and attaches single image', async () => {
     // Mock fetch for image download
-    globalThis.fetch = vi.fn(() => Promise.resolve({
+    globalThis.fetch = mock(() => Promise.resolve({
       ok: true,
       status: 200,
       statusText: 'OK',
@@ -339,9 +339,9 @@ describe('TwitterAdapter - Tweet Posting', () => {
   });
 
   it('postTweet handles media upload failure gracefully', async () => {
-    mockClient.v1.uploadMedia = vi.fn(() => Promise.reject(new Error('Upload failed')));
+    mockClient.v1.uploadMedia = mock(() => Promise.reject(new Error('Upload failed')));
 
-    globalThis.fetch = vi.fn(() => Promise.resolve({
+    globalThis.fetch = mock(() => Promise.resolve({
       ok: true,
       status: 200,
       statusText: 'OK',
@@ -395,7 +395,7 @@ describe('TwitterAdapter - Mentions Retrieval', () => {
   });
 
   it('getMentions parses all returned tweets into envelopes', async () => {
-    mockClient.v2.userMentionTimeline = vi.fn(() => Promise.resolve({
+    mockClient.v2.userMentionTimeline = mock(() => Promise.resolve({
       data: {
         data: [
           { id: '1', text: 'Mention 1', author_id: 'author-1' },
@@ -418,7 +418,7 @@ describe('TwitterAdapter - Mentions Retrieval', () => {
   });
 
   it('getMentions handles empty response', async () => {
-    mockClient.v2.userMentionTimeline = vi.fn(() => Promise.resolve({
+    mockClient.v2.userMentionTimeline = mock(() => Promise.resolve({
       data: { data: undefined },
       includes: {},
     }));
@@ -429,7 +429,7 @@ describe('TwitterAdapter - Mentions Retrieval', () => {
   });
 
   it('getMentions includes author data from expansions', async () => {
-    mockClient.v2.userMentionTimeline = vi.fn(() => Promise.resolve({
+    mockClient.v2.userMentionTimeline = mock(() => Promise.resolve({
       data: {
         data: [{ id: '1', text: 'Hello', author_id: 'author-123' }],
       },
@@ -465,7 +465,7 @@ describe('TwitterAdapter - Reply Chain Context', () => {
   });
 
   it('buildReplyChainContextText walks replied_to chain and formats oldest→newest', async () => {
-    const singleTweet = mockClient.v2.singleTweet as unknown as ReturnType<typeof vi.fn>;
+    const singleTweet = mockClient.v2.singleTweet as unknown as ReturnType<typeof mock>;
     singleTweet.mockImplementation((tweetId: string) => {
       if (tweetId === 'p1') {
         return Promise.resolve({
@@ -615,7 +615,7 @@ describe('TwitterAdapter - Integration Scenarios', () => {
       },
     };
 
-    mockClient.v2.userMentionTimeline = vi.fn(() => Promise.resolve({
+    mockClient.v2.userMentionTimeline = mock(() => Promise.resolve({
       data: mentionData.data,
       includes: mentionData.includes,
     }));
@@ -652,7 +652,7 @@ describe('TwitterAdapter - Integration Scenarios', () => {
       reset: Math.floor(Date.now() / 1000) + 900,
     };
 
-    mockClient.v2.tweet = vi.fn(() => Promise.reject(rateLimitError));
+    mockClient.v2.tweet = mock(() => Promise.reject(rateLimitError));
 
     // Verify error structure
     expect(rateLimitError.code).toBe(429);
