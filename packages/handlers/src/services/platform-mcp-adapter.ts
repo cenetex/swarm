@@ -41,7 +41,7 @@ import { getDynamoClient } from './dynamo-client.js';
 // @swarm/admin-api is NOT listed in handlers' package.json to avoid pulling in
 // the full admin-api bundle as a static dependency.  At runtime the module is
 // resolved via pnpm workspace hoisting.  This single helper centralises the
-// @ts-expect-error suppression and the export-shape validation so every call
+// the TS error suppression and the export-shape validation so every call
 // site stays DRY.
 // ---------------------------------------------------------------------------
 
