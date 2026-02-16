@@ -964,4 +964,143 @@ describe('Memory Service', () => {
       expect(context).toBe('');
     });
   });
+
+  // ==========================================================================
+  // Issue 35: batchWriteWithRetry — UnprocessedItems handling
+  // ==========================================================================
+  describe('batchWriteWithRetry', () => {
+    it('should complete immediately when no UnprocessedItems are returned', async () => {
+      mockSend.mockReturnValueOnce(Promise.resolve({ UnprocessedItems: {} }));
+
+      await memory.batchWriteWithRetry({
+        'test-table': [
+          { DeleteRequest: { Key: { pk: 'PK1', sk: 'SK1' } } },
+        ],
+      });
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('should complete immediately when UnprocessedItems is undefined', async () => {
+      mockSend.mockReturnValueOnce(Promise.resolve({}));
+
+      await memory.batchWriteWithRetry({
+        'test-table': [
+          { DeleteRequest: { Key: { pk: 'PK1', sk: 'SK1' } } },
+        ],
+      });
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('should retry unprocessed items up to maxRetries', async () => {
+      const unprocessedItem = { DeleteRequest: { Key: { pk: 'PK1', sk: 'SK1' } } };
+
+      // First call: returns unprocessed items
+      mockSend.mockReturnValueOnce(Promise.resolve({
+        UnprocessedItems: { 'test-table': [unprocessedItem] },
+      }));
+      // Second call (retry 1): returns unprocessed items again
+      mockSend.mockReturnValueOnce(Promise.resolve({
+        UnprocessedItems: { 'test-table': [unprocessedItem] },
+      }));
+      // Third call (retry 2): succeeds
+      mockSend.mockReturnValueOnce(Promise.resolve({ UnprocessedItems: {} }));
+
+      await memory.batchWriteWithRetry(
+        { 'test-table': [unprocessedItem] },
+        2, // maxRetries = 2
+        10, // baseDelayMs = 10 (fast for tests)
+      );
+
+      expect(mockSend).toHaveBeenCalledTimes(3);
+    });
+
+    it('should stop retrying after maxRetries and log a warning', async () => {
+      const unprocessedItem = { DeleteRequest: { Key: { pk: 'PK1', sk: 'SK1' } } };
+
+      // All calls return unprocessed items
+      mockSend.mockReturnValue(Promise.resolve({
+        UnprocessedItems: { 'test-table': [unprocessedItem] },
+      }));
+
+      await memory.batchWriteWithRetry(
+        { 'test-table': [unprocessedItem] },
+        2, // maxRetries = 2
+        10, // baseDelayMs = 10 (fast for tests)
+      );
+
+      // initial attempt + 2 retries = 3 total
+      expect(mockSend).toHaveBeenCalledTimes(3);
+    });
+
+    it('should pass only unprocessed items to subsequent retries', async () => {
+      const item1 = { DeleteRequest: { Key: { pk: 'PK1', sk: 'SK1' } } };
+      const item2 = { DeleteRequest: { Key: { pk: 'PK2', sk: 'SK2' } } };
+
+      // First call: item2 is unprocessed
+      mockSend.mockReturnValueOnce(Promise.resolve({
+        UnprocessedItems: { 'test-table': [item2] },
+      }));
+      // Second call: all processed
+      mockSend.mockReturnValueOnce(Promise.resolve({ UnprocessedItems: {} }));
+
+      await memory.batchWriteWithRetry(
+        { 'test-table': [item1, item2] },
+        3,
+        10,
+      );
+
+      expect(mockSend).toHaveBeenCalledTimes(2);
+
+      // The second call should only contain item2
+      const secondCallArg = mockSend.mock.calls[1][0];
+      const retryItems = secondCallArg.input?.RequestItems?.['test-table'];
+      expect(retryItems).toHaveLength(1);
+      expect(retryItems[0]).toEqual(item2);
+    });
+
+    it('should propagate errors from the BatchWriteCommand', async () => {
+      mockSend.mockReturnValueOnce(Promise.reject(new Error('Throughput exceeded')));
+
+      await expect(
+        memory.batchWriteWithRetry({
+          'test-table': [
+            { DeleteRequest: { Key: { pk: 'PK1', sk: 'SK1' } } },
+          ],
+        })
+      ).rejects.toThrow('Throughput exceeded');
+    });
+
+    it('should apply exponential backoff between retries', async () => {
+      const unprocessedItem = { DeleteRequest: { Key: { pk: 'PK1', sk: 'SK1' } } };
+      const callTimestamps: number[] = [];
+
+      mockSend.mockImplementation(async () => {
+        callTimestamps.push(Date.now());
+        if (callTimestamps.length < 3) {
+          return { UnprocessedItems: { 'test-table': [unprocessedItem] } };
+        }
+        return { UnprocessedItems: {} };
+      });
+
+      await memory.batchWriteWithRetry(
+        { 'test-table': [unprocessedItem] },
+        3,
+        50, // 50ms base delay
+      );
+
+      expect(callTimestamps.length).toBe(3);
+
+      // First retry delay should be ~50ms, second ~100ms
+      // Allow generous tolerance for CI/test environments
+      const delay1 = callTimestamps[1] - callTimestamps[0];
+      const delay2 = callTimestamps[2] - callTimestamps[1];
+
+      expect(delay1).toBeGreaterThanOrEqual(40); // ~50ms
+      expect(delay2).toBeGreaterThanOrEqual(80); // ~100ms
+      // Second delay should be roughly double the first
+      expect(delay2).toBeGreaterThan(delay1);
+    });
+  });
 });

@@ -164,6 +164,71 @@ export function _setRetentionDaysOverride(fn: ((avatarId: string) => Promise<num
 }
 
 // ============================================================================
+// Batch Write Helper (retry unprocessed items)
+// ============================================================================
+
+/**
+ * Send a BatchWriteCommand and retry any UnprocessedItems with exponential
+ * backoff.  DynamoDB can return unprocessed items when provisioned throughput
+ * is exceeded — silently ignoring them leads to data loss.
+ *
+ * @param requestItems - The RequestItems map for BatchWriteCommand
+ * @param maxRetries   - Maximum number of retries (default 3)
+ * @param baseDelayMs  - Base delay in ms for exponential backoff (default 100)
+ */
+export async function batchWriteWithRetry(
+  requestItems: Record<string, unknown[]>,
+  maxRetries: number = 3,
+  baseDelayMs: number = 100,
+): Promise<void> {
+  let unprocessed: Record<string, unknown[]> | undefined = requestItems;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const result = await getDynamoClient().send(new BatchWriteCommand({
+      RequestItems: unprocessed as Record<string, Array<{ DeleteRequest?: { Key: Record<string, unknown> }; PutRequest?: { Item: Record<string, unknown> } }>>,
+    }));
+
+    const remaining = result.UnprocessedItems;
+
+    // Check if there are unprocessed items remaining
+    if (!remaining || Object.keys(remaining).length === 0) {
+      return; // All items processed successfully
+    }
+
+    // If we've exhausted retries, log a warning and give up
+    if (attempt === maxRetries) {
+      const totalUnprocessed = Object.values(remaining).reduce(
+        (sum, items) => sum + (items?.length ?? 0),
+        0,
+      );
+      logger.warn('BatchWrite: unprocessed items remain after max retries', {
+        event: 'batch_write_unprocessed_items',
+        attempt,
+        maxRetries,
+        unprocessedCount: totalUnprocessed,
+      });
+      return;
+    }
+
+    // Exponential backoff before retrying
+    const delay = baseDelayMs * Math.pow(2, attempt);
+    logger.warn('BatchWrite: retrying unprocessed items', {
+      event: 'batch_write_retry',
+      attempt: attempt + 1,
+      maxRetries,
+      unprocessedCount: Object.values(remaining).reduce(
+        (sum, items) => sum + (items?.length ?? 0),
+        0,
+      ),
+      delayMs: delay,
+    });
+    await new Promise(resolve => setTimeout(resolve, delay));
+
+    unprocessed = remaining as Record<string, unknown[]>;
+  }
+}
+
+// ============================================================================
 // Validation Helpers
 // ============================================================================
 
@@ -652,18 +717,16 @@ export async function deleteMemories(avatarId: string, sks: string[]): Promise<v
 
   for (const batch of batches) {
     try {
-      await getDynamoClient().send(new BatchWriteCommand({
-        RequestItems: {
-          [ADMIN_TABLE]: batch.map(sk => ({
-            DeleteRequest: {
-              Key: {
-                pk: `MEMORY#${validAvatarId}`,
-                sk,
-              },
+      await batchWriteWithRetry({
+        [ADMIN_TABLE]: batch.map(sk => ({
+          DeleteRequest: {
+            Key: {
+              pk: `MEMORY#${validAvatarId}`,
+              sk,
             },
-          })),
-        },
-      }));
+          },
+        })),
+      });
     } catch (error) {
       errors.push(error instanceof Error ? error : new Error('Unknown error'));
     }
@@ -1717,18 +1780,16 @@ export async function deleteEdges(avatarId: string, edges: Array<{ source: strin
 
   for (const batch of batches) {
     try {
-      await getDynamoClient().send(new BatchWriteCommand({
-        RequestItems: {
-          [ADMIN_TABLE]: batch.map(e => ({
-            DeleteRequest: {
-              Key: {
-                pk: `EDGE#${validAvatarId}`,
-                sk: `${e.source}#${e.target}`,
-              },
+      await batchWriteWithRetry({
+        [ADMIN_TABLE]: batch.map(e => ({
+          DeleteRequest: {
+            Key: {
+              pk: `EDGE#${validAvatarId}`,
+              sk: `${e.source}#${e.target}`,
             },
-          })),
-        },
-      }));
+          },
+        })),
+      });
     } catch (error) {
       logger.warn('Some edge batch deletes failed', {
         event: 'edge_batch_delete_error',
