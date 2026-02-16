@@ -63,6 +63,9 @@ jobs:
       - name: Lint
         run: pnpm -r run --if-present lint
 
+      - name: Check circular dependencies
+        run: pnpm check:circular
+
   build:
     name: Build
     runs-on: ubuntu-latest
