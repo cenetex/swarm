@@ -4,7 +4,7 @@
  *
  * @see packages/core/src/platforms/discord.ts
  */
-import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { DiscordAdapter, buildDiscordEnvelope, type DiscordMessage, type DiscordInteraction, type DiscordCredentials } from './discord.js';
 import type { AvatarConfig, DiscordConfig } from '../types/index.js';
 
@@ -1003,6 +1003,7 @@ describe('DiscordAdapter', () => {
       );
 
       expect(result).toBe(true);
+      expect(capturedBody.content).toBeDefined();
     });
 
     it('should handle send_voice action by sending url as message', async () => {
