@@ -8,6 +8,7 @@ This directory contains GitHub Actions workflows and supporting infrastructure f
 
 ### CI (`ci.yml`)
 Runs on every push and pull request to `main`:
+- Runs dependency security audit (`pnpm audit --audit-level=high`)
 - Installs dependencies with pnpm
 - Builds all packages
 - Runs linting and type checking
@@ -120,6 +121,7 @@ If unset, workflow defaults to `openai/gpt-4o-mini`.
 2. **Least Privilege**: IAM role is scoped to only resources prefixed with `swarm` or `Swarm`
 3. **Environment Protection**: Production environment can require manual approval
 4. **Concurrency Control**: Deployment workflows prevent concurrent runs
+5. **Dependency Audits**: Automated security audits run on every PR/push (see [SECURITY.md](../docs/SECURITY.md))
 
 ## Troubleshooting
 

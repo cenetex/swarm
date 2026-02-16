@@ -43,6 +43,8 @@ pnpm build
 pnpm test   # optional: runs package tests
 ```
 
+For security best practices, dependency management, and vulnerability handling, see [docs/SECURITY.md](docs/SECURITY.md).
+
 ## AI Agent Onboarding
 - Start with [AGENTS.md](AGENTS.md) for triage flow, where-to-look debugging map, targeted tests, and high-leverage scripts.
 - If using VS Code Copilot/agent workflows, also read [.github/copilot-instructions.md](.github/copilot-instructions.md) for repo-specific constraints and execution discipline.
