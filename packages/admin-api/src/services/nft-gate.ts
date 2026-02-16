@@ -24,9 +24,20 @@ const WHITELISTED_NFT_COLLECTIONS = (process.env.WHITELISTED_NFT_COLLECTIONS || 
   .filter((s) => s.length > 0);
 
 // Helius API key - can come from env var or Secrets Manager
-const HELIUS_API_KEY_ARN = process.env.HELIUS_API_KEY_ARN;
+let HELIUS_API_KEY_ARN = process.env.HELIUS_API_KEY_ARN;
 let heliusApiKey: string | null = process.env.HELIUS_API_KEY || null;
 let heliusApiKeyFetched = false;
+
+/**
+ * Reset cached Helius state - ONLY for testing
+ * Re-reads HELIUS_API_KEY and HELIUS_API_KEY_ARN from process.env.
+ * @internal
+ */
+export function _resetNftGateForTesting(): void {
+  HELIUS_API_KEY_ARN = process.env.HELIUS_API_KEY_ARN;
+  heliusApiKey = process.env.HELIUS_API_KEY || null;
+  heliusApiKeyFetched = false;
+}
 
 const secretsClient = new SecretsManagerClient({});
 

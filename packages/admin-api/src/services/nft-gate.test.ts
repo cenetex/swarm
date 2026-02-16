@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { checkNFTGate } from './nft-gate.js';
+import { checkNFTGate, _resetNftGateForTesting } from './nft-gate.js';
 
 const prevEnv = process.env.ENVIRONMENT;
 const prevHeliusApiKey = process.env.HELIUS_API_KEY;
@@ -22,6 +22,8 @@ describe('nft-gate (Helius config fallbacks)', () => {
     delete process.env.HELIUS_API_KEY_ARN;
     delete process.env.DISABLE_NFT_GATE;
     delete process.env.ENVIRONMENT;
+    // Reset cached module-level Helius state so env var changes take effect
+    _resetNftGateForTesting();
   });
 
   afterEach(() => {
@@ -30,6 +32,8 @@ describe('nft-gate (Helius config fallbacks)', () => {
     restoreEnvVar('HELIUS_API_KEY_ARN', prevHeliusApiKeyArn);
     restoreEnvVar('DISABLE_NFT_GATE', prevDisableGate);
     restoreEnvVar('ADMIN_TABLE', prevAdminTable);
+    // Restore cached state to match restored env vars
+    _resetNftGateForTesting();
   });
 
   it('fails closed (0 Orbs) in prod-like env when Helius key missing', async () => {

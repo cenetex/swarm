@@ -1,5 +1,5 @@
 #!/bin/bash
-# Wrapper script to run tests via vitest
-# Usage: ./scripts/test.sh [vitest args...]
+# Wrapper script to run tests via bun
+# Usage: ./scripts/test.sh [bun test args...]
 
-exec vitest "$@"
+exec bun test "$@"
