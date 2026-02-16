@@ -768,20 +768,38 @@ export async function recallAbout(
   const validAvatarId = validateAvatarId(avatarId);
   const safeLimit = Math.min(limit, 50);
 
-  // Query with filter - over-fetch to account for filtering
-  const result = await getDynamoClient().send(new QueryCommand({
-    TableName: ADMIN_TABLE,
-    KeyConditionExpression: 'pk = :pk',
-    FilterExpression: 'about = :about',
-    ExpressionAttributeValues: {
-      ':pk': `MEMORY#${validAvatarId}`,
-      ':about': about.trim(),
-    },
-    ScanIndexForward: false,
-    Limit: safeLimit * 3,
-  }));
+  // Use pagination to collect enough filtered results without over-fetching
+  const results: AvatarMemory[] = [];
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
+  const MAX_PAGES = 10; // Safety limit to prevent infinite loops
+  let pagesQueried = 0;
 
-  return ((result.Items || []) as AvatarMemory[]).slice(0, safeLimit);
+  while (results.length < safeLimit && pagesQueried < MAX_PAGES) {
+    const result = await getDynamoClient().send(new QueryCommand({
+      TableName: ADMIN_TABLE,
+      KeyConditionExpression: 'pk = :pk',
+      FilterExpression: 'about = :about',
+      ExpressionAttributeValues: {
+        ':pk': `MEMORY#${validAvatarId}`,
+        ':about': about.trim(),
+      },
+      ScanIndexForward: false,
+      Limit: safeLimit, // Query only what we need
+      ExclusiveStartKey: lastEvaluatedKey,
+    }));
+
+    const items = (result.Items || []) as AvatarMemory[];
+    results.push(...items);
+    lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    pagesQueried++;
+
+    // Stop if no more results
+    if (!lastEvaluatedKey) {
+      break;
+    }
+  }
+
+  return results.slice(0, safeLimit);
 }
 
 /**
@@ -1639,18 +1657,38 @@ export async function getEdgesTo(
 ): Promise<MemoryEdge[]> {
   const validAvatarId = validateAvatarId(avatarId);
 
-  const result = await getDynamoClient().send(new QueryCommand({
-    TableName: ADMIN_TABLE,
-    KeyConditionExpression: 'pk = :pk',
-    FilterExpression: 'targetMemoryId = :targetId',
-    ExpressionAttributeValues: {
-      ':pk': `EDGE#${validAvatarId}`,
-      ':targetId': memoryId,
-    },
-    Limit: Math.min(limit, 100) * 3, // Over-fetch since filter is post-query
-  }));
+  // Use pagination to collect enough filtered results without over-fetching
+  const results: MemoryEdge[] = [];
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
+  const safeLimit = Math.min(limit, 100);
+  const MAX_PAGES = 10; // Safety limit to prevent infinite loops
+  let pagesQueried = 0;
 
-  return ((result.Items || []) as MemoryEdge[]).slice(0, limit);
+  while (results.length < safeLimit && pagesQueried < MAX_PAGES) {
+    const result = await getDynamoClient().send(new QueryCommand({
+      TableName: ADMIN_TABLE,
+      KeyConditionExpression: 'pk = :pk',
+      FilterExpression: 'targetMemoryId = :targetId',
+      ExpressionAttributeValues: {
+        ':pk': `EDGE#${validAvatarId}`,
+        ':targetId': memoryId,
+      },
+      Limit: safeLimit, // Query only what we need
+      ExclusiveStartKey: lastEvaluatedKey,
+    }));
+
+    const items = (result.Items || []) as MemoryEdge[];
+    results.push(...items);
+    lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    pagesQueried++;
+
+    // Stop if no more results
+    if (!lastEvaluatedKey) {
+      break;
+    }
+  }
+
+  return results.slice(0, safeLimit);
 }
 
 /**

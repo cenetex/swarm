@@ -919,6 +919,57 @@ describe('Memory Service', () => {
     });
   });
 
+  describe('recallAbout pagination', () => {
+    it('should use pagination when initial query does not return enough results', async () => {
+      const memory1: AvatarMemory = {
+        pk: 'MEMORY#test-avatar',
+        sk: 'immediate#1#uuid1',
+        id: 'uuid1',
+        avatarId: 'test-avatar',
+        tier: 'immediate',
+        type: 'fact',
+        content: 'Memory 1 about topic',
+        about: 'topic',
+        strength: 1.0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      
+      const memory2: AvatarMemory = {
+        pk: 'MEMORY#test-avatar',
+        sk: 'immediate#2#uuid2',
+        id: 'uuid2',
+        avatarId: 'test-avatar',
+        tier: 'immediate',
+        type: 'fact',
+        content: 'Memory 2 about topic',
+        about: 'topic',
+        strength: 1.0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      // First page returns 1 result with LastEvaluatedKey
+      mockSend.mockReturnValueOnce(Promise.resolve({
+        Items: [memory1],
+        LastEvaluatedKey: { pk: 'MEMORY#test-avatar', sk: 'immediate#1#uuid1' },
+      }));
+
+      // Second page returns 1 more result without LastEvaluatedKey
+      mockSend.mockReturnValueOnce(Promise.resolve({
+        Items: [memory2],
+      }));
+
+      const results = await memory.recallAbout('test-avatar', 'topic', 2);
+
+      expect(results).toHaveLength(2);
+      expect(results[0].id).toBe('uuid1');
+      expect(results[1].id).toBe('uuid2');
+      // Verify pagination was used (2 calls)
+      expect(mockSend).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('getMemoryContext', () => {
     it('should format memory context correctly', async () => {
       const coreMemories = [
