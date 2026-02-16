@@ -144,7 +144,7 @@ updates:
 
 **DO NOT** open public GitHub issues for security vulnerabilities.
 
-Instead, please report security issues by emailing: [security@example.com]
+Instead, please report security issues by contacting the project maintainers through GitHub's private vulnerability reporting feature or by email to the repository owner.
 
 Include:
 - Description of the vulnerability
@@ -202,8 +202,9 @@ See `CLAUDE.md` for implementation details.
 ## Security Contact
 
 For security concerns or questions:
-- GitHub Issues: Use `type:security` label (for non-sensitive issues)
-- Email: [security contact TBD]
+- GitHub Issues: Use `type:security` label (for non-sensitive issues only)
+- Private Vulnerability Reporting: Use GitHub's security advisory feature
+- Email: Contact repository owner through GitHub profile
 
 ## Compliance
 
