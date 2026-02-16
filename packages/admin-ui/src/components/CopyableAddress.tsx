@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { copyTextToClipboard } from '../utils/clipboard';
 import { formatAddress } from '../auth/linked-wallets';
 
@@ -12,12 +12,20 @@ interface CopyableAddressProps {
 export function CopyableAddress({ address, truncate = true, className = '', onCopied }: CopyableAddressProps) {
   const [copied, setCopied] = useState(false);
   const display = truncate ? formatAddress(address) : address;
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   const handleCopy = async () => {
     await copyTextToClipboard(address);
     setCopied(true);
     onCopied?.();
-    setTimeout(() => setCopied(false), 2000);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setCopied(false), 2000);
   };
 
   return (

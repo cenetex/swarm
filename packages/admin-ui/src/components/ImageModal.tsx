@@ -2,7 +2,7 @@
  * Image Modal Component
  * Full-screen image viewer with copy/save options
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface ImageModalProps {
   imageUrl: string;
@@ -13,6 +13,14 @@ interface ImageModalProps {
 export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps) {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'success' | 'error'>('idle');
   const [imageLoaded, setImageLoaded] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clean up copy status timer on unmount
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   // Close on escape key
   useEffect(() => {
@@ -34,11 +42,11 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
   const handleCopyImage = useCallback(async () => {
     try {
       setCopyStatus('copying');
-      
+
       // Fetch the image as a blob
       const response = await fetch(imageUrl);
       const blob = await response.blob();
-      
+
       // Try to copy as image first (works in Chrome/Edge)
       if (navigator.clipboard && 'write' in navigator.clipboard) {
         try {
@@ -48,21 +56,24 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
             }),
           ]);
           setCopyStatus('success');
-          setTimeout(() => setCopyStatus('idle'), 2000);
+          if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+          copyTimerRef.current = setTimeout(() => setCopyStatus('idle'), 2000);
           return;
         } catch {
           // Fall back to copying URL
         }
       }
-      
+
       // Fallback: copy the URL
       await navigator.clipboard.writeText(imageUrl);
       setCopyStatus('success');
-      setTimeout(() => setCopyStatus('idle'), 2000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopyStatus('idle'), 2000);
     } catch (error) {
       console.error('Failed to copy image:', error);
       setCopyStatus('error');
-      setTimeout(() => setCopyStatus('idle'), 2000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopyStatus('idle'), 2000);
     }
   }, [imageUrl]);
 

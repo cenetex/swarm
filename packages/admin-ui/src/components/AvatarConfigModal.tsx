@@ -1,7 +1,7 @@
 /**
  * Avatar Configuration Modal
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAvatarStore } from '../store/avatars';
 import { useAuth } from '../store/auth';
 import type { Avatar, AvatarSecret } from '../types';
@@ -41,6 +41,13 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
   const [selectedOrbMint, setSelectedOrbMint] = useState('');
   const [orbBusy, setOrbBusy] = useState(false);
   const [orbError, setOrbError] = useState<string | null>(null);
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     setName(avatar.name);
@@ -89,7 +96,8 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
       onClose();
     } else {
       setConfirmDelete(true);
-      setTimeout(() => setConfirmDelete(false), 3000);
+      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+      deleteTimerRef.current = setTimeout(() => setConfirmDelete(false), 3000);
     }
   };
 

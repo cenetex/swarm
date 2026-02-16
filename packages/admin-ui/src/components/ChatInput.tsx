@@ -1,4 +1,4 @@
-import { useState, useRef, FormEvent, KeyboardEvent, useCallback } from 'react';
+import { useState, useRef, useEffect, FormEvent, KeyboardEvent, useCallback } from 'react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -16,6 +16,15 @@ export function ChatInput({ onSend, onSendAudio, disabled, voiceEnabled = true, 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Clean up recording interval on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+    };
+  }, []);
 
   const startRecording = useCallback(async () => {
     try {
