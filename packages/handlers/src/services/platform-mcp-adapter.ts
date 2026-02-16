@@ -36,20 +36,25 @@ import type { TokenLaunchConfig, TokenLaunchPreflightResult, TokenLaunchResult, 
 import { getDynamoClient } from './dynamo-client.js';
 
 // Lazy-loaded token launch operations (avoids static dependency on @swarm/admin-api)
-let _tokenLaunch: {
+interface TokenLaunchModule {
   preflightTokenLaunch: (avatarId: string) => Promise<TokenLaunchPreflightResult>;
   launchToken: (avatarId: string, config: TokenLaunchConfig) => Promise<TokenLaunchResult>;
   getTokenStatus: (avatarId: string) => Promise<TokenLaunchStatus>;
-} | null = null;
+}
 
-async function getTokenLaunch() {
+let _tokenLaunch: TokenLaunchModule | null = null;
+
+async function getTokenLaunch(): Promise<TokenLaunchModule> {
   if (!_tokenLaunch) {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore - dynamic import avoids static dependency on admin-api
+    // @ts-expect-error -- @swarm/admin-api is not in handlers' dependencies to avoid a heavyweight static import; resolved at runtime via pnpm workspace hoisting
     const mod = await import('@swarm/admin-api');
-    _tokenLaunch = mod.tokenLaunch;
+    const tl = mod.tokenLaunch as TokenLaunchModule | undefined;
+    if (!tl || typeof tl.preflightTokenLaunch !== 'function' || typeof tl.launchToken !== 'function' || typeof tl.getTokenStatus !== 'function') {
+      throw new Error('Failed to load tokenLaunch from @swarm/admin-api: expected exports not found');
+    }
+    _tokenLaunch = tl;
   }
-  return _tokenLaunch!;
+  return _tokenLaunch;
 }
 
 const dynamoClient = getDynamoClient();
@@ -1346,9 +1351,14 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
     // =========================================================================
     billing: {
       createCheckoutSession: async (params) => {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore - dynamic import avoids static dependency on admin-api
-        const { createStripeCheckoutSession } = await import('@swarm/admin-api');
+        // @ts-expect-error -- @swarm/admin-api is not in handlers' dependencies to avoid a heavyweight static import; resolved at runtime via pnpm workspace hoisting
+        const mod = await import('@swarm/admin-api');
+        const createStripeCheckoutSession = mod.createStripeCheckoutSession as
+          | ((p: { accountId: string; avatarId: string; plan: string; successUrl: string; cancelUrl: string; customerId?: string; customerEmail?: string }) => Promise<{ id: string; url?: string }>)
+          | undefined;
+        if (typeof createStripeCheckoutSession !== 'function') {
+          throw new Error('Failed to load createStripeCheckoutSession from @swarm/admin-api');
+        }
         const session = await createStripeCheckoutSession({
           accountId: params.accountId,
           avatarId: params.avatarId,
@@ -1361,9 +1371,14 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         return { checkoutUrl: session.url || '', sessionId: session.id };
       },
       createPortalSession: async (params) => {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore - dynamic import avoids static dependency on admin-api
-        const { createStripeCustomerPortalSession } = await import('@swarm/admin-api');
+        // @ts-expect-error -- @swarm/admin-api is not in handlers' dependencies to avoid a heavyweight static import; resolved at runtime via pnpm workspace hoisting
+        const mod = await import('@swarm/admin-api');
+        const createStripeCustomerPortalSession = mod.createStripeCustomerPortalSession as
+          | ((p: { customerId: string; returnUrl: string }) => Promise<{ id: string; url?: string }>)
+          | undefined;
+        if (typeof createStripeCustomerPortalSession !== 'function') {
+          throw new Error('Failed to load createStripeCustomerPortalSession from @swarm/admin-api');
+        }
         const portal = await createStripeCustomerPortalSession({
           customerId: params.customerId,
           returnUrl: params.returnUrl,
