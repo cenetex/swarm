@@ -16,6 +16,10 @@ dist/
 !packages/admin-ui/src/vite-env.d.ts
 !packages/layer/*-shim/*.js
 
+# Bundled artifacts (CDK handles bundling)
+packages/handlers/*-bundle/
+packages/handlers/*.zip
+
 # CDK
 cdk.out/
 .cdk.staging/
