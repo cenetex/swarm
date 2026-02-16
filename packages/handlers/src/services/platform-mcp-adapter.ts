@@ -84,6 +84,9 @@ async function importAdminApiExport<T>(
     );
   }
 
+  // JUSTIFIED TYPE ASSERTION:
+  // Dynamic property validation requires runtime type checking of arbitrary properties.
+  // The validators map provides runtime verification of expected property types.
   for (const [prop, kind] of Object.entries(validators)) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (typeof (exported as any)[prop] !== kind) {

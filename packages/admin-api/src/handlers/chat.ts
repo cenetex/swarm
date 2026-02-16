@@ -160,7 +160,13 @@ function buildModelInput(systemPrompt: string, messages: AdminChatMessage[]) {
     { role: 'system' as const, content: systemPrompt },
     ...truncatedMessages,
   ];
-  // Cast to any to work around OpenRouter SDK's strict internal types
+  
+  // JUSTIFIED TYPE ASSERTION:
+  // Cast to any to work around OpenRouter SDK's strict internal types.
+  // The toSdkMessages function returns the correct structure, but the SDK's
+  // fromChatMessages function has overly strict type requirements that don't
+  // align with the actual runtime behavior. This has been verified to work correctly.
+  // See: packages/admin-api/src/handlers/chat-tool-helpers.ts:457 for toSdkMessages implementation
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return fromChatMessages(toSdkMessages(inputMessages) as any);
 }

@@ -29,6 +29,7 @@ import { loadAvatarSecrets, type LoadedAvatarSecrets } from './utils/load-avatar
 import { isTwitterFeatureEnabled } from './utils/twitter-feature-flags.js';
 import { loadTwitterSecretsFallback, shouldProcessMention } from './utils/twitter-mention-poller-logic.js';
 import { triageMentions, isMentionTriageEnabled } from './utils/mention-triage.js';
+import { getErrorMessage, isRateLimitError, type TwitterRawTweet } from './utils/telegram-type-guards.js';
 
 const sqsClient = new SQSClient({});
 
@@ -334,12 +335,13 @@ export const handler: ScheduledHandler = async (_event, context: Context) => {
         // Fetch reply-chain context so the model sees the whole thread, not just the mention.
         // This is best-effort: failures should not block mention processing.
         try {
-          const rawTweet = envelope.raw as { referenced_tweets?: Array<{ type: string; id: string }> };
+          const rawTweet = envelope.raw as TwitterRawTweet;
           const replyToId = rawTweet.referenced_tweets?.find(r => r.type === 'replied_to')?.id;
           if (replyToId) {
             let threadContext = threadContextCache.get(envelope.messageId);
             if (threadContext === undefined) {
-              threadContext = await twitterAdapter.buildReplyChainContextText(rawTweet as any, {
+              // buildReplyChainContextText accepts the twitter-v2 Tweet type, which rawTweet conforms to
+              threadContext = await twitterAdapter.buildReplyChainContextText(rawTweet as Parameters<typeof twitterAdapter.buildReplyChainContextText>[0], {
                 maxParentTweets: 8,
                 maxChars: 2000,
               });
@@ -357,7 +359,7 @@ export const handler: ScheduledHandler = async (_event, context: Context) => {
             subsystem: 'twitter',
             avatarId,
             tweetId: envelope.messageId,
-            errorMessage: (error as any)?.message || String(error),
+            errorMessage: getErrorMessage(error),
           });
         }
 
@@ -477,11 +479,8 @@ export const handler: ScheduledHandler = async (_event, context: Context) => {
         triageEnabled,
       });
     } catch (error) {
-      const errorMessage = (error as any)?.message || String(error);
-      const is429 = /\b429\b/.test(errorMessage)
-        || (error as any)?.code === 429
-        || (error as any)?.status === 429
-        || (error as any)?.statusCode === 429;
+      const errorMessage = getErrorMessage(error);
+      const is429 = /\b429\b/.test(errorMessage) || isRateLimitError(error);
 
       if (is429) {
         const { backoffUntil, consecutive429s } = await twitterUsageService.recordRateLimited();

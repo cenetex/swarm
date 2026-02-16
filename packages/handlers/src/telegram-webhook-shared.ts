@@ -11,6 +11,7 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { randomUUID } from 'crypto';
+import type { Update } from 'grammy/types';
 import {
   createMessageEvaluator,
   logger,
@@ -18,6 +19,7 @@ import {
   extractCorrelationIdFromApiEvent,
   hasValidInternalTestKey,
 } from '@swarm/core';
+import { getMessageFromUpdate } from './utils/telegram-type-guards.js';
 
 // --- Extracted modules ---
 import {
@@ -158,9 +160,9 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       }
     }
 
-    let update: Record<string, unknown>;
+    let update: Update;
     try {
-      update = JSON.parse(body.toString()) as Record<string, unknown>;
+      update = JSON.parse(body.toString()) as Update;
     } catch (err) {
       logger.warn('Invalid JSON', { event: 'parse_error', error: err instanceof Error ? err.message : String(err) });
       return { statusCode: 400, body: 'Invalid JSON' };
@@ -302,7 +304,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // /activate command: allow bot owner (and superadmins) to activate this bot in the current chat.
     // This must run BEFORE the chat-allowed gate so activation works in new channels.
     if (envelope.content.command?.command === 'activate') {
-      const message = (update as any).message || (update as any).edited_message || (update as any).channel_post;
+      const message = getMessageFromUpdate(update);
       const chatType = envelope.metadata.chatType;
       const chatId = envelope.conversationId;
       const chatUsername = message?.chat?.username as string | undefined;
@@ -504,7 +506,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
       // Superadmin auto-activation: if a superadmin mentions the bot in any channel, activate automatically
       if (!chatAllowed && isMentioned && isTelegramSuperadmin(envelope.sender.username)) {
-        const message = (update as any).message || (update as any).edited_message || (update as any).channel_post;
+        const message = getMessageFromUpdate(update);
         const chatUsername = message?.chat?.username as string | undefined;
         const chatTitle = message?.chat?.title as string | undefined;
 
@@ -542,7 +544,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         const isOnDmAllowlist = await isAllowedDmUser(autoActivateSenderId, autoActivateSenderUsername, allowedDmUserIds);
 
         if (isOnDmAllowlist) {
-          const message = (update as any).message || (update as any).edited_message || (update as any).channel_post;
+          const message = getMessageFromUpdate(update);
           const chatUsername = message?.chat?.username as string | undefined;
           const chatTitle = message?.chat?.title as string | undefined;
 

@@ -583,7 +583,10 @@ export class TelegramAdapter extends PlatformAdapter {
       // 2. Include duplex: 'half' for streaming uploads (required for file uploads on Node.js 20+)
       this.bot = new Bot(botToken, {
         client: {
-          // Use native fetch - cast needed due to grammy's stricter fetch typing
+          // JUSTIFIED TYPE ASSERTION:
+          // Use native fetch - cast needed because grammy's fetch typing expects a specific
+          // fetch implementation signature that's stricter than the standard globalThis.fetch.
+          // The runtime behavior is correct and has been verified to work.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           fetch: globalThis.fetch as any,
           // Base config for all fetch calls - duplex is required for streaming request bodies
