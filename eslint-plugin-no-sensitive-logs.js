@@ -18,14 +18,15 @@ const SENSITIVE_PATTERNS = [
   // Variable/property names
   /\b(token|key|secret|password|credential|auth|bearer|apikey|api_key|access_token|refresh_token|private_key|wallet_key)\b/i,
   // Object patterns that might contain sensitive data
-  /\b(request|req|response|res|headers?|cookies?|params?|body|payload)\b/,
+  /\b(request|req|response|res|headers?|cookies?|params?|body|payload)\b/i,
 ];
 
 const SAFE_PATTERNS = [
-  // Explicitly accessing .message or String() conversion
+  // Explicitly accessing .message or safe error handling patterns
   /\berror\s*\.\s*message\b/,
   /String\s*\(\s*error\s*\)/,
-  /error\s+instanceof\s+Error\s*\?\s*error\.message/,
+  /error\s+instanceof\s+Error\s*\?\s*error\.message\s*:\s*['"`][^'"`]*['"`]/,
+  /error\s+instanceof\s+Error\s*\?\s*error\.message\s*:\s*String\s*\(\s*error\s*\)/,
 ];
 
 function isSensitiveIdentifier(name) {
@@ -76,6 +77,17 @@ function getLoggedVariables(args) {
   }
   
   return variables;
+}
+
+function getMessageIdForVariable(varName) {
+  if (varName.startsWith('...')) {
+    return 'requestResponse';
+  }
+  const requestResponsePatterns = ['request', 'req', 'response', 'res', 'body', 'headers', 'params'];
+  if (requestResponsePatterns.some(p => varName.toLowerCase().includes(p))) {
+    return 'requestResponse';
+  }
+  return 'sensitiveData';
 }
 
 export default {
@@ -132,9 +144,7 @@ export default {
             if (isSensitiveIdentifier(varName)) {
               context.report({
                 node,
-                messageId: varName.startsWith('...') || ['request', 'req', 'response', 'res', 'body', 'headers', 'params'].some(p => varName.toLowerCase().includes(p))
-                  ? 'requestResponse'
-                  : 'sensitiveData',
+                messageId: getMessageIdForVariable(varName),
                 data: { name: varName },
               });
               return;

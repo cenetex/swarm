@@ -65,11 +65,13 @@ try {
 try {
   await someOperation();
 } catch (error) {
-  // Log only the error message
-  const errorMessage = error instanceof Error ? error.message : String(error);
+  // Log only the error message, with a fallback for non-Error objects
+  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
   console.error(`Operation failed: ${errorMessage}`);
 }
 ```
+
+**Note**: Use `'Unknown error'` as the fallback instead of `String(error)` to avoid accidentally logging sensitive error context.
 
 ## ✅ Safe Logging Patterns
 
@@ -78,7 +80,7 @@ Always extract and log only the error message, not the full error object:
 
 ```typescript
 catch (error) {
-  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
   console.error(`Failed to process: ${errorMessage}`);
 }
 ```
