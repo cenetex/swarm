@@ -13,8 +13,8 @@
     "build:parallel": "pnpm -r --parallel build",
     "typecheck": "pnpm -r --parallel typecheck",
     "dev": "pnpm -r --parallel dev",
-    "test": "vitest run",
-    "test:ci": "vitest run --coverage",
+    "test": "bun test",
+    "test:ci": "bun test",
     "test:plan": "RUN_PLAN_TESTS=1 bun test packages/plan-tests",
     "lint": "pnpm -r --parallel lint",
     "clean": "pnpm -r exec rm -rf dist node_modules",
@@ -61,7 +61,6 @@
     "@eslint/js": "^9.39.2",
     "@swarm/core": "workspace:*",
     "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "2.1.9",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "esbuild": "^0.27.2",
@@ -75,7 +74,6 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.52.0",
-    "vitest": "^2.0.0",
     "yaml": "^2.6.0"
   },
   "pnpm": {

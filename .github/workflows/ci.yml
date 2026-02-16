@@ -104,11 +104,14 @@ jobs:
           # to restore to `packages/<pkg>/dist`.
           path: packages
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Test
-        run: pnpm test:ci
+        run: bun test
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
