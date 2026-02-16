@@ -195,7 +195,7 @@ export async function batchWriteWithRetry(
       return; // All items processed successfully
     }
 
-    // If we've exhausted retries, log a warning and give up
+    // If we've exhausted retries, log a warning and throw
     if (attempt === maxRetries) {
       const totalUnprocessed = Object.values(remaining).reduce(
         (sum, items) => sum + (items?.length ?? 0),
@@ -207,7 +207,9 @@ export async function batchWriteWithRetry(
         maxRetries,
         unprocessedCount: totalUnprocessed,
       });
-      return;
+      throw new Error(
+        `BatchWrite failed: ${totalUnprocessed} items still unprocessed after ${maxRetries} retries`,
+      );
     }
 
     // Exponential backoff before retrying

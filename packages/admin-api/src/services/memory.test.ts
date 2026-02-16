@@ -1016,7 +1016,7 @@ describe('Memory Service', () => {
       expect(mockSend).toHaveBeenCalledTimes(3);
     });
 
-    it('should stop retrying after maxRetries and log a warning', async () => {
+    it('should throw after exhausting maxRetries with unprocessed items', async () => {
       const unprocessedItem = { DeleteRequest: { Key: { pk: 'PK1', sk: 'SK1' } } };
 
       // All calls return unprocessed items
@@ -1024,11 +1024,13 @@ describe('Memory Service', () => {
         UnprocessedItems: { 'test-table': [unprocessedItem] },
       }));
 
-      await memory.batchWriteWithRetry(
-        { 'test-table': [unprocessedItem] },
-        2, // maxRetries = 2
-        10, // baseDelayMs = 10 (fast for tests)
-      );
+      await expect(
+        memory.batchWriteWithRetry(
+          { 'test-table': [unprocessedItem] },
+          2, // maxRetries = 2
+          10, // baseDelayMs = 10 (fast for tests)
+        )
+      ).rejects.toThrow('1 items still unprocessed after 2 retries');
 
       // initial attempt + 2 retries = 3 total
       expect(mockSend).toHaveBeenCalledTimes(3);
