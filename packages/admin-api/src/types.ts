@@ -1391,7 +1391,21 @@ export interface PropertyResearchAuth {
  * - recent: Summarized memories with themes (medium-term)
  * - core: Permanent learnings, patterns, identity (long-term)
  */
-export type MemoryTier = 'immediate' | 'recent' | 'core';
+
+/**
+ * Memory tier determines storage duration and detail level
+ *
+ * Legacy tiers (backward compatible):
+ * - immediate: Last N interactions, full detail (short-term)
+ * - recent: Summarized memories with themes (medium-term)
+ * - core: Permanent learnings, patterns, identity (long-term)
+ *
+ * New durable tiers:
+ * - ephemeral: Session-scoped, auto-expires (maps to immediate)
+ * - durable: Long-term with decay (maps to recent)
+ * - archival: Permanent, cost-optimized (maps to core)
+ */
+export type MemoryTier = 'immediate' | 'recent' | 'core' | 'ephemeral' | 'durable' | 'archival';
 
 /**
  * Memory type categorizes what kind of memory this is
