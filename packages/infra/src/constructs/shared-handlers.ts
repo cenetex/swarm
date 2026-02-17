@@ -241,6 +241,7 @@ export class SharedHandlers extends Construct {
       POST_QUEUE_URL: this.postQueue.queueUrl,
       CDN_URL: cdnUrl || '',
       ENVIRONMENT: environment,
+      LOG_LEVEL: isProd ? 'warn' : 'info',
       SECRET_PREFIX: secretPrefix,
       // Runtime cache defaults (explicitly set in infra for predictable behavior).
       AVATAR_RUNTIME_CACHE_TTL_MS: '300000',
