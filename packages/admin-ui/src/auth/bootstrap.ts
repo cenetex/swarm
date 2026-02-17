@@ -1,4 +1,4 @@
-import { usePrivyAuth } from '../store/privyAuth';
+import { useAuthStore } from '../store/auth';
 import { API_BASE } from '../api/apiBase';
 
 /**
@@ -15,19 +15,20 @@ export async function bootstrapAuthFromBackendSession(): Promise<void> {
     });
 
     if (!response.ok) {
-      usePrivyAuth.getState().resetLocal();
+      useAuthStore.getState().resetLocal();
       return;
     }
 
     const data = await response.json();
     if (!data?.authenticated || !data?.user?.walletAddress) {
-      usePrivyAuth.getState().resetLocal();
+      useAuthStore.getState().resetLocal();
       return;
     }
 
-    usePrivyAuth.setState({
+    useAuthStore.setState({
       isAuthenticated: true,
       isLoading: false,
+      authProvider: 'privy',
       error: null,
       user: {
         id: data.account?.accountId || data.user.walletAddress,
@@ -43,6 +44,6 @@ export async function bootstrapAuthFromBackendSession(): Promise<void> {
     });
   } catch (err) {
     console.error('[bootstrapAuth] Auth bootstrap failed:', err);
-    usePrivyAuth.getState().resetLocal();
+    useAuthStore.getState().resetLocal();
   }
 }
