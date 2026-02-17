@@ -1,0 +1,128 @@
+name: Project Sync
+
+on:
+  issues:
+    types: [opened, edited, labeled, unlabeled, milestoned, demilestoned, closed, reopened]
+  pull_request:
+    types: [opened, closed, labeled, unlabeled]
+  schedule:
+    # Nightly reconcile at 03:00 UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (report drift only, no writes)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  issues: read
+  pull-requests: read
+  repository-projects: read
+
+env:
+  # "RATi OS Project" owned by atimics, project number 1
+  PROJECT_NUMBER: 1
+  PROJECT_OWNER: atimics
+
+jobs:
+  # ──────────────────────────────────────────────────
+  # Job 1: Sync a single issue/PR to the project board
+  # Runs on every issue or PR event (not on schedule).
+  # ──────────────────────────────────────────────────
+  sync-item:
+    name: Sync item to project
+    if: github.event_name == 'issues' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Add to project & set fields
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id || github.event.pull_request.node_id }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          ISSUE_LABELS: ${{ toJson(github.event.issue.labels.*.name || github.event.pull_request.labels.*.name) }}
+          ISSUE_MILESTONE: ${{ github.event.issue.milestone.title || github.event.pull_request.milestone.title || '' }}
+          ISSUE_STATE: ${{ github.event.issue.state || github.event.pull_request.state }}
+          PR_MERGED: ${{ github.event.pull_request.merged || 'false' }}
+        run: node .github/scripts/project-sync.mjs
+
+  # ──────────────────────────────────────────────────
+  # Job 2: On PR merge with closing keywords, move
+  # linked issues to Done.
+  # ──────────────────────────────────────────────────
+  close-on-merge:
+    name: Close linked issues on merge
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.action == 'closed'
+      && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Move linked issues to Done
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node .github/scripts/project-sync-close.mjs
+
+  # ──────────────────────────────────────────────────
+  # Job 3: Nightly reconcile — walk every open issue
+  # and fix project-field drift.
+  # ──────────────────────────────────────────────────
+  reconcile:
+    name: Nightly reconcile
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconcile all open issues
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: node .github/scripts/project-sync-reconcile.mjs
+
+  # ──────────────────────────────────────────────────
+  # Job 4: Enforce exactly one priority label on issues
+  # ──────────────────────────────────────────────────
+  check-priority-label:
+    name: Check priority label
+    if: >-
+      github.event_name == 'issues'
+      && (github.event.action == 'opened'
+        || github.event.action == 'labeled'
+        || github.event.action == 'unlabeled')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Enforce single priority label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_LABELS: ${{ toJson(github.event.issue.labels.*.name) }}
+        run: |
+          set -euo pipefail
+
+          PRIORITY_LABELS=$(echo "$ISSUE_LABELS" | jq -r '[.[] | select(startswith("priority:"))] | length')
+
+          if [ "$PRIORITY_LABELS" -eq 0 ]; then
+            echo "::warning::Issue #${ISSUE_NUMBER} has no priority label. Consider adding one (priority:high, priority:medium, or priority:low)."
+          elif [ "$PRIORITY_LABELS" -gt 1 ]; then
+            echo "::error::Issue #${ISSUE_NUMBER} has $PRIORITY_LABELS priority labels — exactly one is required."
+            exit 1
+          else
+            echo "Issue #${ISSUE_NUMBER} has exactly 1 priority label. OK."
+          fi
