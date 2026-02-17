@@ -3,6 +3,26 @@
  */
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+const VALID_LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'] as const;
+
+/**
+ * Check whether a string is a valid LogLevel value.
+ */
+export function isValidLogLevel(value: string): value is LogLevel {
+  return (VALID_LOG_LEVELS as readonly string[]).includes(value);
+}
+
+/**
+ * Parse a LOG_LEVEL environment variable, returning the level if valid or
+ * the provided fallback (default `'info'`) otherwise.
+ */
+export function parseLogLevel(envValue: string | undefined, fallback: LogLevel = 'info'): LogLevel {
+  if (envValue && isValidLogLevel(envValue)) {
+    return envValue;
+  }
+  return fallback;
+}
+
 export interface LogContext {
   avatarId?: string;
   platform?: string;
@@ -14,7 +34,7 @@ export interface LogContext {
   [key: string]: unknown;
 }
 
-class Logger {
+export class Logger {
   private context: LogContext = {};
   private minLevel: LogLevel = 'info';
 
@@ -24,6 +44,10 @@ class Logger {
     warn: 2,
     error: 3,
   };
+
+  getMinLevel(): LogLevel {
+    return this.minLevel;
+  }
 
   setMinLevel(level: LogLevel): void {
     this.minLevel = level;
@@ -122,7 +146,6 @@ class Logger {
 // Singleton instance
 export const logger = new Logger();
 
-// Set log level from environment
-if (process.env.LOG_LEVEL) {
-  logger.setMinLevel(process.env.LOG_LEVEL as LogLevel);
-}
+// Set log level from environment, with validation
+const envLogLevel = parseLogLevel(process.env.LOG_LEVEL);
+logger.setMinLevel(envLogLevel);

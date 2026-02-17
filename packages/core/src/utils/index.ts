@@ -1,7 +1,7 @@
 /**
  * Utilities barrel export
  */
-export { logger, type LogLevel, type LogContext } from './logger.js';
+export { logger, Logger, isValidLogLevel, parseLogLevel, type LogLevel, type LogContext } from './logger.js';
 export { 
   loadAvatarConfigFromFile,
   loadAvatarConfigFromEnv,
