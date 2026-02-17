@@ -233,6 +233,8 @@ export class SharedHandlers extends Construct {
       STATE_TABLE: stateTable.tableName,
       ACTIVITY_TABLE: activityTable.tableName,
       MEDIA_BUCKET: mediaBucket.bucketName,
+      // SQS payload offload uses the same media bucket with a distinct key prefix
+      SQS_OFFLOAD_BUCKET: mediaBucket.bucketName,
       MESSAGE_QUEUE_URL: this.messageQueue.queueUrl,
       RESPONSE_QUEUE_URL: this.responseQueue.queueUrl,
       MEDIA_QUEUE_URL: this.mediaQueue.queueUrl,
