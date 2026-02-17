@@ -24,6 +24,8 @@ import type * as s3 from 'aws-cdk-lib/aws-s3';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
+import { LogGroupWithRetention } from '../utils/log-group-with-retention.js';
+
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -276,6 +278,62 @@ export class SharedHandlers extends Construct {
       sourceMap: true,
     };
 
+
+    // ========================================================================
+    // CloudWatch Log Groups (explicit management replaces deprecated logRetention)
+    // ========================================================================
+    // Using LogGroupWithRetention to safely adopt existing log groups that were
+    // previously created by the logRetention custom resource or Lambda runtime.
+    const logRemovalPolicy = isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
+
+    const messageProcessorLogGroup = new LogGroupWithRetention(this, 'MessageProcessorLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-message-processor`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: logRemovalPolicy,
+    });
+
+    const telegramWebhookLogGroup = new LogGroupWithRetention(this, 'TelegramWebhookLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-telegram-webhook`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: logRemovalPolicy,
+    });
+
+    const responseSenderLogGroup = new LogGroupWithRetention(this, 'ResponseSenderLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-response-sender`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: logRemovalPolicy,
+    });
+
+    const mediaProcessorLogGroup = new LogGroupWithRetention(this, 'MediaProcessorLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-media-processor`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: logRemovalPolicy,
+    });
+
+    const twitterMentionPollerLogGroup = new LogGroupWithRetention(this, 'TwitterMentionPollerLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-twitter-mention-poller`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: logRemovalPolicy,
+    });
+
+    const autonomousTweetPosterLogGroup = new LogGroupWithRetention(this, 'AutonomousTweetPosterLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-autonomous-tweet-poster`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: logRemovalPolicy,
+    });
+
+    const moltbookHeartbeatLogGroup = new LogGroupWithRetention(this, 'MoltbookHeartbeatLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-moltbook-heartbeat`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: logRemovalPolicy,
+    });
+
+    const tweetSenderLogGroup = new LogGroupWithRetention(this, 'TweetSenderLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-tweet-sender`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: logRemovalPolicy,
+    });
+
     this.messageProcessor = new nodejs.NodejsFunction(this, 'MessageProcessor', {
       functionName: `swarm-${environment}${suffix}-message-processor`,
       runtime: lambda.Runtime.NODEJS_20_X,
@@ -290,7 +348,7 @@ export class SharedHandlers extends Construct {
       environment: commonEnv,
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      logGroup: messageProcessorLogGroup.logGroup,
     });
 
     this.telegramWebhook = new nodejs.NodejsFunction(this, 'TelegramWebhookShared', {
@@ -305,7 +363,7 @@ export class SharedHandlers extends Construct {
       environment: commonEnv,
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      logGroup: telegramWebhookLogGroup.logGroup,
     });
 
     this.messageProcessor.addEventSource(new lambdaEventSources.SqsEventSource(this.messageQueue, {
@@ -326,7 +384,7 @@ export class SharedHandlers extends Construct {
       environment: commonEnv,
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      logGroup: responseSenderLogGroup.logGroup,
     });
 
     this.responseSender.addEventSource(new lambdaEventSources.SqsEventSource(this.responseQueue, {
@@ -347,7 +405,7 @@ export class SharedHandlers extends Construct {
       environment: commonEnv,
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      logGroup: mediaProcessorLogGroup.logGroup,
     });
 
     this.mediaProcessor.addEventSource(new lambdaEventSources.SqsEventSource(this.mediaQueue, {
@@ -367,7 +425,7 @@ export class SharedHandlers extends Construct {
       environment: commonEnv,
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      logGroup: twitterMentionPollerLogGroup.logGroup,
     });
 
     this.schedulerDlq = new sqs.Queue(this, 'SchedulerDLQ', {
@@ -399,7 +457,7 @@ export class SharedHandlers extends Construct {
       environment: commonEnv,
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      logGroup: autonomousTweetPosterLogGroup.logGroup,
     });
 
     new events.Rule(this, 'AutonomousTweetSchedule', {
@@ -425,7 +483,7 @@ export class SharedHandlers extends Construct {
       environment: commonEnv,
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      logGroup: moltbookHeartbeatLogGroup.logGroup,
     });
 
     new events.Rule(this, 'MoltbookHeartbeatSchedule', {
@@ -457,7 +515,7 @@ export class SharedHandlers extends Construct {
       },
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      logGroup: tweetSenderLogGroup.logGroup,
     });
 
     this.tweetSender.addEventSource(new lambdaEventSources.SqsEventSource(this.postQueue, {
