@@ -11,7 +11,7 @@
 
 import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
+
 import type { ToolCategory, ProcessorAvatarConfig } from './types.js';
 import type { Platform } from '../types/index.js';
 
@@ -284,19 +284,13 @@ Guidelines:
 let cachedTwitterPlatformPrompt: string | null = null;
 
 function getBestEffortModuleDir(): string | null {
+  // Use __dirname which is available in CJS (esbuild Lambda bundles) and
+  // injected by bundlers.  Avoid import.meta.url which triggers an esbuild
+  // warning when the output format is CJS.
   try {
     if (typeof __dirname === 'string') return __dirname;
   } catch {
-    // ignore
-  }
-
-  const metaUrl = (import.meta as unknown as { url?: unknown } | undefined)?.url;
-  if (typeof metaUrl === 'string') {
-    try {
-      return path.dirname(fileURLToPath(metaUrl));
-    } catch {
-      return null;
-    }
+    // __dirname is not defined (pure ESM without bundler); fall through.
   }
 
   return null;
