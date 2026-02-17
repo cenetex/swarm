@@ -10,7 +10,7 @@
  * but runs as a persistent WebSocket client instead of a Lambda handler.
  */
 import WebSocket from 'ws';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { sendSqsMessage } from './services/sqs-send.js';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { randomUUID } from 'node:crypto';
 import {
@@ -49,7 +49,6 @@ const DEFAULT_INTENTS = INTENT_GUILDS | INTENT_GUILD_MESSAGES | INTENT_DIRECT_ME
 
 // ─── Shared Clients ──────────────────────────────────────────────────────────
 
-const sqs = new SQSClient({});
 const secretsClient = new SecretsManagerClient({});
 const stateService = createStateService(STATE_TABLE);
 const activityService = ACTIVITY_TABLE ? createActivityService(ACTIVITY_TABLE) : null;
@@ -244,21 +243,20 @@ async function handleDiscordMessage(
     meta.guildId as string | undefined
   );
 
-  // Enqueue to shared message queue
-  await sqs.send(new SendMessageCommand({
+  // Enqueue to shared message queue (with S3 offload for large payloads)
+  await sendSqsMessage({
     QueueUrl: MESSAGE_QUEUE_URL,
-    MessageBody: JSON.stringify({
-      envelope,
-      enqueuedAt: Date.now(),
-      attempts: 0,
-      maxAttempts: 3,
-    }),
     MessageAttributes: {
       traceId: { DataType: 'String', StringValue: traceId },
     },
     MessageGroupId: `${avatarId}#${envelope.conversationId}`,
     MessageDeduplicationId: envelope.metadata.idempotencyKey,
-  }));
+  }, {
+    envelope,
+    enqueuedAt: Date.now(),
+    attempts: 0,
+    maxAttempts: 3,
+  });
 
   logger.info('Discord message queued', {
     event: 'message_queued',
