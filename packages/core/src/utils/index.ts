@@ -37,3 +37,25 @@ export {
   hasValidInternalTestKey,
   type InternalTestKeyOptions,
 } from './internal-test-key.js';
+
+// Centralized environment variable validation
+export {
+  BaseEnvSchema,
+  TelegramWebhookEnvSchema,
+  MessageProcessorEnvSchema,
+  ResponseSenderEnvSchema,
+  TweetPosterEnvSchema,
+  AdminApiEnvSchema,
+  EnvValidationError,
+  validateEnv,
+  tryValidateEnv,
+  requireEnv,
+  optionalEnv,
+  envPrimitives,
+  type BaseEnv,
+  type TelegramWebhookEnv,
+  type MessageProcessorEnv,
+  type ResponseSenderEnv,
+  type TweetPosterEnv,
+  type AdminApiEnv,
+} from './env.js';

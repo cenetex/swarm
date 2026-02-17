@@ -52,3 +52,6 @@ export * as avatarAscend from './avatar-ascend.js';
 // Prompt building is now in @swarm/core
 // Re-export for backward compatibility
 export { buildDynamicSystemPrompt, type ToolCategory, type ProcessorAvatarConfig } from '@swarm/core';
+
+// Usage history service
+export * from './usage-history.js';
