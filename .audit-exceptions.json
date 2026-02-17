@@ -1,0 +1,15 @@
+{
+  "ignoredAdvisories": [
+    "GHSA-3gc7-fjrx-p6mg"
+  ],
+  "exceptions": [
+    {
+      "advisory": "GHSA-3gc7-fjrx-p6mg",
+      "package": "bigint-buffer",
+      "severity": "high",
+      "reason": "Package is unmaintained with no fix available. Vulnerable toBigIntLE() function is not used in our codebase - only a transitive dependency of @solana/buffer-layout-utils.",
+      "dateAdded": "2026-02-16",
+      "reviewBy": "2026-04-01"
+    }
+  ]
+}

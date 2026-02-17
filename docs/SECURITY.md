@@ -101,7 +101,7 @@ audit-level=high
 
 | Package | Severity | Issue | Reason | Target Resolution |
 |---------|----------|-------|--------|-------------------|
-| example-pkg | High | CVE-XXXX | No fix available, not exploitable in our usage | 2026-03-01 |
+| `bigint-buffer` | High | [GHSA-3gc7-fjrx-p6mg](https://github.com/advisories/GHSA-3gc7-fjrx-p6mg) | Package unmaintained (no fix available). Vulnerable `toBigIntLE()` function not used in our codebase - only transitive dependency via `@solana/buffer-layout-utils`. | 2026-04-01 |
 
 3. Create a tracking issue in GitHub
 4. Set reminder to re-evaluate monthly
