@@ -17,6 +17,8 @@ export interface LogsServiceDeps {
   logGroupPrefix: string;
   adminLogGroups: string[];
   adminLogGroupPrefixes: string[];
+  /** Cache TTL in milliseconds (default: 5 minutes). Set to 0 to disable caching. */
+  cacheTtlMs?: number;
 }
 
 const defaultLogsClient = new CloudWatchLogsClient({});
@@ -24,6 +26,7 @@ const defaultLogsClient = new CloudWatchLogsClient({});
 const DEFAULT_LOOKBACK_MINUTES = 30;
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
+const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const LOG_GROUP_PREFIX = process.env.LOG_GROUP_PREFIX || '/aws/lambda/';
 const ADMIN_LOG_GROUPS = (process.env.ADMIN_LOG_GROUPS || '')
@@ -73,6 +76,39 @@ export interface AvatarLogResult {
   };
   events: AvatarLogEvent[];
 }
+
+/* ------------------------------------------------------------------ */
+/*  Log group cache                                                    */
+/* ------------------------------------------------------------------ */
+
+interface LogGroupCacheEntry {
+  groups: string[];
+  expiresAt: number;
+}
+
+/** In-memory TTL cache keyed by avatarId. Persists across warm Lambda invocations. */
+const logGroupCache = new Map<string, LogGroupCacheEntry>();
+
+/**
+ * Clear the log group cache. Useful for testing or manual invalidation.
+ * If avatarId is provided, only that entry is cleared; otherwise the entire cache is flushed.
+ */
+export function clearLogGroupCache(avatarId?: string): void {
+  if (avatarId) {
+    logGroupCache.delete(avatarId);
+  } else {
+    logGroupCache.clear();
+  }
+}
+
+/**
+ * Return the current size of the log group cache (for testing / observability).
+ */
+export function getLogGroupCacheSize(): number {
+  return logGroupCache.size;
+}
+
+/* ------------------------------------------------------------------ */
 
 function clampLimit(limit?: number): number {
   if (!limit || Number.isNaN(limit)) return DEFAULT_LIMIT;
@@ -159,12 +195,12 @@ async function describeLogGroups(prefix: string, deps: LogsServiceDeps): Promise
   return names;
 }
 
-async function resolveLogGroups(avatarId: string, deps: LogsServiceDeps): Promise<string[]> {
+async function discoverLogGroups(avatarId: string, deps: LogsServiceDeps): Promise<string[]> {
   const logGroups = new Set<string>();
 
-  const avatarrefix = `${deps.logGroupPrefix}${avatarId}-`;
-  const avatarroups = await describeLogGroups(avatarrefix, deps);
-  avatarroups.forEach((name) => logGroups.add(name));
+  const avatarPrefix = `${deps.logGroupPrefix}${avatarId}-`;
+  const avatarGroups = await describeLogGroups(avatarPrefix, deps);
+  avatarGroups.forEach((name) => logGroups.add(name));
 
   for (const group of deps.adminLogGroups) {
     logGroups.add(group);
@@ -176,6 +212,31 @@ async function resolveLogGroups(avatarId: string, deps: LogsServiceDeps): Promis
   }
 
   return Array.from(logGroups);
+}
+
+async function resolveLogGroups(avatarId: string, deps: LogsServiceDeps): Promise<string[]> {
+  const ttl = deps.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
+
+  // Check cache (skip if caching disabled)
+  if (ttl > 0) {
+    const cached = logGroupCache.get(avatarId);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.groups;
+    }
+  }
+
+  // Cache miss or expired — discover fresh
+  const groups = await discoverLogGroups(avatarId, deps);
+
+  // Store in cache if caching is enabled
+  if (ttl > 0) {
+    logGroupCache.set(avatarId, {
+      groups,
+      expiresAt: Date.now() + ttl,
+    });
+  }
+
+  return groups;
 }
 
 async function waitForQuery(queryId: string, deps: LogsServiceDeps): Promise<{ status: QueryStatus; results: AvatarLogEvent[] }> {
