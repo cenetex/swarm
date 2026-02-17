@@ -4,7 +4,6 @@
  */
 import type { SQSEvent, Context, SQSBatchResponse, Handler } from 'aws-lambda';
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { randomUUID } from 'crypto';
 import {
   TelegramAdapter,
@@ -23,10 +22,10 @@ import {
   type ResponseAction,
 } from '@swarm/core';
 import { isAllowedDmUserById } from './telegram-webhook-shared.js';
+import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from './services/sqs-send.js';
 import { loadAvatarSecrets } from './utils/load-avatar-secrets.js';
 import { getDynamoClient } from './services/dynamo-client.js';
 
-const sqs = new SQSClient({});
 const dynamo = getDynamoClient();
 
 // Environment variables
@@ -313,10 +312,15 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       const correlationId = extractCorrelationIdFromSqsRecord(record);
 
       let response: SwarmResponse;
+      let rawBody: string = record.body;
+      let wasOffloaded = false;
       try {
-        response = JSON.parse(record.body);
+        const parsed = await parseSqsRecordBody(record.body);
+        response = parsed.payload as SwarmResponse;
+        rawBody = parsed.rawBody;
+        wasOffloaded = parsed.wasOffloaded;
       } catch (parseError) {
-        logger.error('Failed to parse message body as JSON', parseError, {
+        logger.error('Failed to parse message body', parseError, {
           event: 'parse_error',
           subsystem: 'outbound',
           messageId: record.messageId,
@@ -462,22 +466,21 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
           // Queue media generation and wait
           for (const action of mediaActions) {
             const jobId = randomUUID();
-            await sqs.send(new SendMessageCommand({
+            await sendSqsMessage({
               QueueUrl: MEDIA_QUEUE_URL,
-              MessageBody: JSON.stringify({
-                jobId,
-                avatarId,
-                conversationId: response.conversationId,
-                action,
-                response,
-                traceId,
-              }),
               MessageAttributes: traceId
                 ? { traceId: { DataType: 'String', StringValue: traceId } }
                 : undefined,
               MessageGroupId: response.conversationId,
               MessageDeduplicationId: `media_${jobId}`,
-            }));
+            }, {
+              jobId,
+              avatarId,
+              conversationId: response.conversationId,
+              action,
+              response,
+              traceId,
+            });
           }
 
           logger.info('Media generation queued', { count: mediaActions.length });
@@ -578,6 +581,11 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
           platform: response.platform,
         });
         continue;
+      }
+
+      // Clean up offloaded S3 payload (if any)
+      if (wasOffloaded) {
+        await cleanupSqsRecord(rawBody);
       }
 
       logger.info('Response sent successfully', {

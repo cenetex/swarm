@@ -84,3 +84,12 @@ export {
   _setDynamoClient as _setCanonicalDynamoClient,
   type CanonicalMemoryModule,
 } from './brain/canonical-memory.js';
+export {
+  createSqsOffloadService,
+  createSqsOffloadServiceFromEnv,
+  SQS_OFFLOAD_CONSTANTS,
+  type SqsOffloadService,
+  type SqsOffloadConfig,
+  type OffloadResult,
+  type OffloadedMessageRef,
+} from './sqs-offload.js';
