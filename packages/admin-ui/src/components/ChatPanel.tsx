@@ -15,6 +15,7 @@ import { ChatInput } from './ChatInput';
 import { AvatarDisplay } from './AvatarSidebar';
 import { PromptPreviewPanel } from './PromptPreviewPanel';
 import { PlanModal } from './PlanModal';
+import { UsageMeterPanel } from './UsageMeterPanel';
 
 // Track active polling jobs to avoid duplicate polling
 const activePollers = new Map<string, { controller: AbortController; avatarId: string }>();
@@ -35,6 +36,7 @@ export function ChatPanel({ onMenuClick, onOpenOnboarding }: ChatPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
   const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [usagePanelOpen, setUsagePanelOpen] = useState(false);
   const [isCreatingAvatar, setIsCreatingAvatar] = useState(false);
   const [showHint, setShowHint] = useState(true);
 
@@ -950,6 +952,13 @@ export function ChatPanel({ onMenuClick, onOpenOnboarding }: ChatPanelProps) {
                   Plan
                 </button>
                 <button
+                  onClick={() => setUsagePanelOpen(!usagePanelOpen)}
+                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${usagePanelOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
+                  title="View usage metering"
+                >
+                  Usage
+                </button>
+                <button
                   onClick={() => setPromptPreviewOpen(true)}
                   className="px-2 lg:px-3 py-1.5 text-xs lg:text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
                   title="Preview prompt sent to LLM"
@@ -975,6 +984,15 @@ export function ChatPanel({ onMenuClick, onOpenOnboarding }: ChatPanelProps) {
           </div>
         </header>
       ) : null}
+
+      {/* Inline Usage Meter Panel (chat-first) */}
+      {usagePanelOpen && activeAvatar && (
+        <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 lg:px-6 py-3">
+          <div className="max-w-3xl mx-auto">
+            <UsageMeterPanel avatarId={activeAvatar.id} />
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 lg:px-6 py-4">

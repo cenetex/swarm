@@ -95,6 +95,7 @@ export class SharedHandlers extends Construct {
   public readonly tweetSender: nodejs.NodejsFunction;
   public readonly moltbookHeartbeat: nodejs.NodejsFunction;
   public readonly dlq: sqs.Queue;
+  public readonly dlqProcessor: nodejs.NodejsFunction;
   public readonly schedulerDlq: sqs.Queue;
 
   constructor(scope: Construct, id: string, props: SharedHandlersProps) {
@@ -524,6 +525,52 @@ export class SharedHandlers extends Construct {
       reportBatchItemFailures: true,
     }));
 
+
+    // DLQ Processor - inspects, categorizes, and optionally redrives failed messages
+    // Runs every 15 minutes to batch-process DLQ entries
+    this.dlqProcessor = new nodejs.NodejsFunction(this, 'DlqProcessor', {
+      functionName: `swarm-${environment}${suffix}-dlq-processor`,
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(handlersEntry, 'dlq-processor.ts'),
+      handler: 'handler',
+      layers: dependencyLayer ? [dependencyLayer] : undefined,
+      role: lambdaRole,
+      timeout: cdk.Duration.minutes(2),
+      memorySize: 256,
+      environment: {
+        ...commonEnv,
+        DLQ_URL: this.dlq.queueUrl,
+        DLQ_REDRIVE_ENABLED: 'false', // Conservative default: archive only
+      },
+      bundling: bundlingOptions,
+      tracing: lambda.Tracing.ACTIVE,
+      logRetention: logs.RetentionDays.ONE_MONTH,
+    });
+
+    // Grant DLQ processor permissions to read/delete from DLQ
+    this.dlq.grantConsumeMessages(lambdaRole);
+    this.dlq.grantSendMessages(lambdaRole);
+
+    // Grant CloudWatch PutMetricData for DLQ processing metrics
+    lambdaRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['cloudwatch:PutMetricData'],
+      resources: ['*'],
+      conditions: {
+        StringEquals: {
+          'cloudwatch:namespace': `Swarm/${environment}`,
+        },
+      },
+    }));
+
+    new events.Rule(this, 'DlqProcessorSchedule', {
+      schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
+      targets: [new targets.LambdaFunction(this.dlqProcessor, {
+        deadLetterQueue: this.schedulerDlq,
+        retryAttempts: 1,
+        maxEventAge: cdk.Duration.hours(1),
+      })],
+    });
+
     // ========================================================================
     // CloudWatch Alarms
     // ========================================================================
@@ -643,6 +690,17 @@ export class SharedHandlers extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
+    const dlqProcessorErrorsAlarm = new cloudwatch.Alarm(this, 'DlqProcessorErrorsAlarm', {
+      alarmName: `${alarmPrefix}-dlq-processor-errors`,
+      metric: this.dlqProcessor.metricErrors({
+        period: cdk.Duration.minutes(15),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
     // Wire all alarms to SNS topic for notifications
     if (snsAction) {
       for (const alarm of [
@@ -656,6 +714,7 @@ export class SharedHandlers extends Construct {
         responseSenderErrorsAlarm,
         mediaProcessorErrorsAlarm,
         tweetSenderErrorsAlarm,
+        dlqProcessorErrorsAlarm,
       ]) {
         alarm.addAlarmAction(snsAction);
       }

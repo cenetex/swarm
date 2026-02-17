@@ -1,4 +1,6 @@
 import { Jimp } from 'jimp';
+import { PlatformError } from '../errors/errors.js';
+import { SwarmErrorCode } from '../errors/codes.js';
 
 export const TWITTER_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const TWITTER_TARGET_IMAGE_BYTES = TWITTER_MAX_IMAGE_BYTES - 32 * 1024;
@@ -24,7 +26,11 @@ export async function ensureTwitterImageWithinLimit(
   const normalizedMimeType = normalizeMimeType(mimeType);
 
   if (!isTwitterImageMimeType(normalizedMimeType)) {
-    throw new Error(`Unsupported Twitter image mimeType: ${mimeType}`);
+    throw new PlatformError(`Unsupported Twitter image mimeType: ${mimeType}`, {
+      code: SwarmErrorCode.PLATFORM_UNSUPPORTED_MEDIA,
+      platform: 'twitter',
+      context: { mimeType },
+    });
   }
 
   if (input.length <= TWITTER_MAX_IMAGE_BYTES) {
@@ -32,8 +38,13 @@ export async function ensureTwitterImageWithinLimit(
   }
 
   if (normalizedMimeType === 'image/gif') {
-    throw new Error(
-      `GIF too large for Twitter upload: ${input.length} bytes (max ${TWITTER_MAX_IMAGE_BYTES})`
+    throw new PlatformError(
+      `GIF too large for Twitter upload: ${input.length} bytes (max ${TWITTER_MAX_IMAGE_BYTES})`,
+      {
+        code: SwarmErrorCode.PLATFORM_MEDIA_UPLOAD_ERROR,
+        platform: 'twitter',
+        context: { sizeBytes: input.length, maxBytes: TWITTER_MAX_IMAGE_BYTES },
+      },
     );
   }
 
@@ -63,7 +74,12 @@ export async function ensureTwitterImageWithinLimit(
     }
   }
 
-  throw new Error(
-    `Image too large for Twitter upload after re-encode: ${input.length} bytes (max ${TWITTER_MAX_IMAGE_BYTES})`
+  throw new PlatformError(
+    `Image too large for Twitter upload after re-encode: ${input.length} bytes (max ${TWITTER_MAX_IMAGE_BYTES})`,
+    {
+      code: SwarmErrorCode.PLATFORM_MEDIA_UPLOAD_ERROR,
+      platform: 'twitter',
+      context: { sizeBytes: input.length, maxBytes: TWITTER_MAX_IMAGE_BYTES },
+    },
   );
 }
