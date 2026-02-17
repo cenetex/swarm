@@ -7,14 +7,14 @@
  */
 import { type ReactNode, useMemo } from 'react';
 import { UnifiedWalletProvider } from './unified-wallet';
-import { useWalletUi } from '../store/walletUi';
+import { useAuthStore } from '../store/auth';
 
 interface WalletProviderProps {
   children: ReactNode;
 }
 
 export function WalletProvider({ children }: WalletProviderProps) {
-  const setWalletError = useWalletUi((s) => s.setWalletError);
+  const setWalletError = useAuthStore((s) => s.setWalletError);
 
   const notificationCallback = useMemo(
     () => ({
