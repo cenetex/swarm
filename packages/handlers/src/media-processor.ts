@@ -3,7 +3,6 @@
  * Consumes media jobs from SQS and enqueues send_media actions back to response queue.
  */
 import type { SQSEvent, Context } from 'aws-lambda';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -22,6 +21,7 @@ import {
   type SwarmResponse,
 } from '@swarm/core/types';
 import { ensureReplicateKey } from './utils/system-replicate-key.js';
+import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from './services/sqs-send.js';
 import { checkMediaWithEnergyFallback } from './services/entitlement-enforcement.js';
 import { getDynamoClient } from './services/dynamo-client.js';
 
@@ -36,7 +36,6 @@ const MediaQueueItemSchema = z.object({
   response: SwarmResponseSchema,
 });
 
-const sqs = new SQSClient({});
 const dynamo = getDynamoClient();
 
 const IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
@@ -300,10 +299,15 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
     logger.setContext({ traceId });
 
     let parsedBody: unknown;
+    let rawBody: string = record.body;
+    let wasOffloaded = false;
     try {
-      parsedBody = JSON.parse(record.body);
+      const parsed = await parseSqsRecordBody(record.body);
+      parsedBody = parsed.payload;
+      rawBody = parsed.rawBody;
+      wasOffloaded = parsed.wasOffloaded;
     } catch (parseError) {
-      logger.error('Failed to parse message body as JSON', {
+      logger.error('Failed to parse message body', {
         event: 'parse_error',
         subsystem: 'media',
         messageId: record.messageId,
@@ -461,9 +465,8 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
         generatedAt: Date.now(),
       };
 
-      await sqs.send(new SendMessageCommand({
+      await sendSqsMessage({
         QueueUrl: getResponseQueueUrl(),
-        MessageBody: JSON.stringify(mediaResponse),
         MessageAttributes: {
           traceId: {
             DataType: 'String',
@@ -472,7 +475,12 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
         },
         MessageGroupId: item.conversationId,
         MessageDeduplicationId: `media_${item.jobId}`,
-      }));
+      }, mediaResponse);
+
+      // Clean up offloaded S3 payload from the inbound message (if any)
+      if (wasOffloaded) {
+        await cleanupSqsRecord(rawBody);
+      }
 
       logger.info('Media job completed', {
         event: 'job_completed',
