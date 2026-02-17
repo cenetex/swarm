@@ -242,6 +242,7 @@ export class AdminApiConstruct extends Construct {
 
     const isProd = environment === 'prod' || environment === 'production';
     const isPersistentEnv = isProd || environment === 'staging';
+    const logLevel = isProd ? 'warn' : 'info';
 
     // In production, cap non-Orb authenticated access to the top N most recent logins.
     // Orb holders bypass this limit (enforced in the admin-api auth layer).
@@ -466,6 +467,7 @@ export class AdminApiConstruct extends Construct {
         WEB_SEARCH_API_KEY_SECRET_ARN: webSearchApiKey?.secretArn || '',
         API_DOMAIN: props.apiDomain || '',
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         // Media generation config
         MEDIA_BUCKET: mediaBucket?.bucketName || '',
         CDN_URL: cdnUrl || '',
@@ -642,6 +644,7 @@ export class AdminApiConstruct extends Construct {
         WEB_SEARCH_API_KEY_SECRET_ARN: webSearchApiKey?.secretArn || '',
         API_DOMAIN: props.apiDomain || '',
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         // Media generation config
         MEDIA_BUCKET: mediaBucket?.bucketName || '',
         CDN_URL: cdnUrl || '',
@@ -784,6 +787,7 @@ export class AdminApiConstruct extends Construct {
           MEDIA_BUCKET: mediaBucket?.bucketName || '',
           CDN_URL: cdnUrl || '',
           NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
           ...activeUserLimitEnvVars,
         },
         bundling: {
@@ -811,6 +815,7 @@ export class AdminApiConstruct extends Construct {
         ADMIN_TABLE: this.table.tableName,
         ADMIN_EMAILS: adminEmails,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
         INTERNAL_TEST_KEY: internalTestKey,
@@ -849,6 +854,7 @@ export class AdminApiConstruct extends Construct {
       environment: {
         ADMIN_TABLE: this.table.tableName,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         ...activeUserLimitEnvVars,
       },
@@ -895,6 +901,7 @@ export class AdminApiConstruct extends Construct {
         API_DOMAIN: props.apiDomain || '',
         TELEGRAM_WEBHOOK_DOMAIN: telegramWebhookDomain,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         SECRET_PREFIX: secretPrefix,
         // Burn-to-energy configuration
@@ -1195,6 +1202,7 @@ export class AdminApiConstruct extends Construct {
       environment: {
         ADMIN_TABLE: this.table.tableName,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         INTERNAL_TEST_KEY: internalTestKey,
         ...activeUserLimitEnvVars,
@@ -1264,6 +1272,7 @@ export class AdminApiConstruct extends Construct {
       environment: {
         ADMIN_TABLE: this.table.tableName,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],
@@ -1297,6 +1306,7 @@ export class AdminApiConstruct extends Construct {
       environment: {
         ADMIN_TABLE: this.table.tableName,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],
@@ -1345,6 +1355,7 @@ export class AdminApiConstruct extends Construct {
         LLM_MAX_STEPS: '4',
         LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ALLOWED_ORIGINS: '*', // Public API allows all origins
         // Media bucket for voice audio storage
         MEDIA_BUCKET: mediaBucket?.bucketName || '',
@@ -1403,6 +1414,7 @@ export class AdminApiConstruct extends Construct {
         ADMIN_TABLE: this.table.tableName,
         ADMIN_EMAILS: adminEmails,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         ...activeUserLimitEnvVars,
       },
@@ -1444,6 +1456,7 @@ export class AdminApiConstruct extends Construct {
         ADMIN_TABLE: this.table.tableName,
         ADMIN_EMAILS: adminEmails,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         INTERNAL_TEST_KEY: internalTestKey,
       },
@@ -1478,6 +1491,7 @@ export class AdminApiConstruct extends Construct {
       environment: {
         ADMIN_TABLE: this.table.tableName,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         AUTH_DOMAIN: adminDomain || 'admin.rati.chat',
         // Helius for NFT gating - pass ARN for runtime fetch instead of inline value
@@ -1588,6 +1602,7 @@ export class AdminApiConstruct extends Construct {
       environment: {
         ADMIN_TABLE: this.table.tableName,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         AUTH_DOMAIN: adminDomain || 'admin.rati.chat',
         ADMIN_WALLETS: props.adminWallets || '',
@@ -1662,6 +1677,7 @@ export class AdminApiConstruct extends Construct {
         // Match chat/telegram model unless overridden at runtime
         LLM_MODEL: 'anthropic/claude-haiku-4.5',
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         NODE_OPTIONS: '--enable-source-maps',
         ...activeUserLimitEnvVars,
       },
@@ -1706,6 +1722,7 @@ export class AdminApiConstruct extends Construct {
         OPENROUTER_API_KEY: '', // Populated from secret at runtime
         CONSOLIDATION_MODEL: 'anthropic/claude-3-5-haiku-latest',
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ...activeUserLimitEnvVars,
       },
       bundling: {
@@ -1775,6 +1792,7 @@ export class AdminApiConstruct extends Construct {
         RESPONSE_QUEUE_URL: responseQueue.queueUrl,
         REPLICATE_WEBHOOK_SECRET: replicateWebhookSecret,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ...activeUserLimitEnvVars,
       },
       bundling: {
@@ -1814,6 +1832,7 @@ export class AdminApiConstruct extends Construct {
       environment: {
         ADMIN_TABLE: this.table.tableName,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ...activeUserLimitEnvVars,
       },
       bundling: {
@@ -1868,6 +1887,7 @@ export class AdminApiConstruct extends Construct {
         ADMIN_TABLE: this.table.tableName,
         ADMIN_EMAILS: adminEmails,
         NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
         ALLOWED_ORIGINS: allowedOrigins.join(','),
         ADMIN_UI_URL: allowedOrigins[0] || 'http://localhost:5173',
         SECRET_PREFIX: secretPrefix,
