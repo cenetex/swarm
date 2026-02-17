@@ -13,7 +13,6 @@
  * - Memory tools wired to state service
  */
 import type { SQSEvent, Context } from 'aws-lambda';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { randomUUID } from 'crypto';
 import { DEFAULT_AVATAR_CONFIG } from '@swarm/core';
 import {
@@ -41,6 +40,7 @@ import {
   type ToolContext,
 } from '@swarm/mcp-server';
 import { createPlatformMCPServices } from './services/platform-mcp-adapter.js';
+import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from './services/sqs-send.js';
 import {
   checkAndIncrementMessageUsage,
   checkToolCallLimit,
@@ -55,7 +55,6 @@ import { callLLM, stripAvatarNamePrefix, type LLMMessage } from './llm-client.js
 import { toolResultsToActions, maybeTranscribeAudio } from './tool-executor.js';
 import { buildSystemPrompt, formatBrainMemoryContext } from './context-builder.js';
 
-const sqs = new SQSClient({});
 const MAX_TOOL_ITERATIONS = 5;
 
 // Environment variable validation helper
@@ -632,10 +631,15 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
   for (const record of event.Records) {
     try {
       let parsedBody: unknown;
+      let rawBody: string = record.body;
+      let wasOffloaded = false;
       try {
-        parsedBody = JSON.parse(record.body);
+        const parsed = await parseSqsRecordBody(record.body);
+        parsedBody = parsed.payload;
+        rawBody = parsed.rawBody;
+        wasOffloaded = parsed.wasOffloaded;
       } catch (parseError) {
-        logger.error('Failed to parse message body as JSON', {
+        logger.error('Failed to parse message body', {
           messageId: record.messageId,
           error: parseError instanceof Error ? parseError.message : String(parseError),
           bodyPreview: record.body?.slice(0, 100),
@@ -804,17 +808,21 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
         tokensUsed: response.tokensUsed,
       });
 
-      // Queue response for sending
-      await sqs.send(new SendMessageCommand({
+      // Queue response for sending (with S3 offload for large payloads)
+      await sendSqsMessage({
         QueueUrl: getResponseQueueUrl(),
-        MessageBody: JSON.stringify(response),
         MessageAttributes: {
           traceId: { DataType: 'String', StringValue: traceId },
           [CORRELATION_ID_ATTR]: { DataType: 'String', StringValue: correlationId },
         },
         MessageGroupId: `${avatarId}#${envelope.conversationId}`,
         MessageDeduplicationId: `resp_${avatarId}_${envelope.conversationId}_${envelope.messageId}`,
-      }));
+      }, response);
+
+      // Clean up offloaded S3 payload from the inbound message (if any)
+      if (wasOffloaded) {
+        await cleanupSqsRecord(rawBody);
+      }
 
       // =========================================================
       // POST-RESPONSE STATE UPDATES
