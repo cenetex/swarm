@@ -11,7 +11,7 @@
  * - Responding to code task completions
  */
 import type { SQSEvent, Context, SQSBatchResponse } from 'aws-lambda';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { sendSqsMessage } from './services/sqs-send.js';
 import { randomUUID } from 'node:crypto';
 import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
@@ -26,7 +26,6 @@ import {
 } from '@swarm/core';
 import { getDynamoClient } from './services/dynamo-client.js';
 
-const sqsClient = new SQSClient({});
 const dynamoClient = getDynamoClient();
 const secretsClient = new SecretsManagerClient({});
 
@@ -260,14 +259,8 @@ async function triggerAvatarLoop(
     replyTo: msg.replyToMessageId,
   };
 
-  await sqsClient.send(new SendMessageCommand({
+  await sendSqsMessage({
     QueueUrl: MESSAGE_QUEUE_URL,
-    MessageBody: JSON.stringify({
-      envelope,
-      enqueuedAt: Date.now(),
-      attempts: 0,
-      maxAttempts: 1, // Don't retry continuations
-    }),
     MessageAttributes: {
       traceId: {
         DataType: 'String',
@@ -276,7 +269,12 @@ async function triggerAvatarLoop(
     },
     MessageGroupId: msg.conversationId,
     MessageDeduplicationId: `cont_${msg.jobId || msg.timestamp}`,
-  }));
+  }, {
+    envelope,
+    enqueuedAt: Date.now(),
+    attempts: 0,
+    maxAttempts: 1, // Don't retry continuations
+  });
 
   logger.info('Triggered avatar loop for continuation', {
     avatarId: msg.avatarId,
