@@ -1,16 +1,9 @@
-import { create } from 'zustand';
-
-interface WalletUiState {
-  walletError: string | null;
-  setWalletError: (error: string | null) => void;
-  clearWalletError: () => void;
-}
-
-export const useWalletUi = create<WalletUiState>((set) => ({
-  walletError: null,
-  setWalletError: (error) => set({ walletError: error }),
-  clearWalletError: () => set({ walletError: null }),
-}));
+/**
+ * Wallet-adapter error humanisation utilities.
+ *
+ * Previously lived in `walletUi.ts`; extracted so the store file stays
+ * focused on state management.
+ */
 
 export function humanizeWalletAdapterError(error: unknown): string {
   const anyErr = error as { name?: string; message?: string; cause?: unknown };
