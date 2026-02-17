@@ -8,6 +8,11 @@
  *
  * Follows the same multi-tenant patterns as telegram-webhook-shared.ts
  * but runs as a persistent WebSocket client instead of a Lambda handler.
+ *
+ * Caching strategy (see issue #98):
+ * - Avatar configs cached with 5-minute TTL to reduce DynamoDB reads
+ * - Bot tokens cached with 15-minute TTL (tokens rarely change)
+ * - Cache stats logged on every refresh for observability
  */
 import WebSocket from 'ws';
 import { sendSqsMessage } from './services/sqs-send.js';
@@ -63,17 +68,91 @@ interface DiscordAvatarBinding {
   botUserId?: string;
 }
 
+// ─── Caching Layer ───────────────────────────────────────────────────────────────
+
+/** TTL for cached avatar configs (5 minutes) */
+const AVATAR_CONFIG_CACHE_TTL_MS = 5 * 60_000;
+
+/** TTL for cached bot tokens (15 minutes — tokens rarely change) */
+const SECRET_CACHE_TTL_MS = 15 * 60_000;
+
+/** Cached avatar config + status, keyed by avatarId */
+interface CachedAvatarEntry {
+  config: AvatarConfig;
+  status: 'draft' | 'active' | 'paused' | 'deleted';
+  expiresAt: number;
+}
+
+const avatarConfigCache = new Map<string, CachedAvatarEntry>();
+
+/** Timestamp when the avatar list cache expires */
+let avatarListCacheExpiresAt = 0;
+
+/** Cached avatar ID list from last scan */
+let cachedAvatarIds: string[] = [];
+
+/** Cache stats for observability */
+interface CacheStats {
+  avatarListHits: number;
+  avatarListMisses: number;
+  avatarConfigHits: number;
+  avatarConfigMisses: number;
+  secretHits: number;
+  secretMisses: number;
+}
+
+const cacheStats: CacheStats = {
+  avatarListHits: 0,
+  avatarListMisses: 0,
+  avatarConfigHits: 0,
+  avatarConfigMisses: 0,
+  secretHits: 0,
+  secretMisses: 0,
+};
+
+/** Reset cache stats (for logging intervals) */
+function resetCacheStats(): CacheStats {
+  const snapshot = { ...cacheStats };
+  cacheStats.avatarListHits = 0;
+  cacheStats.avatarListMisses = 0;
+  cacheStats.avatarConfigHits = 0;
+  cacheStats.avatarConfigMisses = 0;
+  cacheStats.secretHits = 0;
+  cacheStats.secretMisses = 0;
+  return snapshot;
+}
+
+/**
+ * Invalidate all caches. Useful when we detect a config change
+ * or need to force a fresh scan.
+ */
+function invalidateAllCaches(): void {
+  avatarConfigCache.clear();
+  avatarListCacheExpiresAt = 0;
+  cachedAvatarIds = [];
+  botTokenCache.clear();
+  logger.info('All caches invalidated', {
+    event: 'cache_invalidated',
+    subsystem: 'discord',
+  });
+}
+
+// ─── Avatar Discovery ─────────────────────────────────────────────────────────────
+
 /** Cache of Discord-enabled avatar bindings, keyed by avatarId */
 const avatarBindings = new Map<string, DiscordAvatarBinding>();
 
 /** Cache of bot tokens, keyed by avatarId */
 const botTokenCache = new Map<string, { value: string; expiresAt: number }>();
-const TOKEN_TTL_MS = 5 * 60_000;
 
 async function getBotToken(avatarId: string): Promise<string | null> {
   const now = Date.now();
   const cached = botTokenCache.get(avatarId);
-  if (cached && cached.expiresAt > now) return cached.value;
+  if (cached && cached.expiresAt > now) {
+    cacheStats.secretHits++;
+    return cached.value;
+  }
+  cacheStats.secretMisses++;
 
   // Try JSON secrets blob first (standard pattern)
   const jsonSecretName = `${SECRET_PREFIX}/${avatarId}/secrets`;
@@ -85,7 +164,7 @@ async function getBotToken(avatarId: string): Promise<string | null> {
       const secrets = JSON.parse(response.SecretString) as Record<string, string>;
       const token = secrets.DISCORD_BOT_TOKEN || secrets.discord_bot_token;
       if (token) {
-        botTokenCache.set(avatarId, { value: token, expiresAt: now + TOKEN_TTL_MS });
+        botTokenCache.set(avatarId, { value: token, expiresAt: now + SECRET_CACHE_TTL_MS });
         return token;
       }
     }
@@ -101,7 +180,7 @@ async function getBotToken(avatarId: string): Promise<string | null> {
     );
     const token = response.SecretString || '';
     if (token) {
-      botTokenCache.set(avatarId, { value: token, expiresAt: now + TOKEN_TTL_MS });
+      botTokenCache.set(avatarId, { value: token, expiresAt: now + SECRET_CACHE_TTL_MS });
       return token;
     }
   } catch {
@@ -112,18 +191,66 @@ async function getBotToken(avatarId: string): Promise<string | null> {
 }
 
 /**
+ * Get avatar IDs with caching. Only queries DynamoDB when the cache expires.
+ */
+async function getAvatarIds(): Promise<string[]> {
+  const now = Date.now();
+  if (avatarListCacheExpiresAt > now && cachedAvatarIds.length > 0) {
+    cacheStats.avatarListHits++;
+    return cachedAvatarIds;
+  }
+  cacheStats.avatarListMisses++;
+
+  const ids = await stateService.listAvatars();
+  cachedAvatarIds = ids;
+  avatarListCacheExpiresAt = now + AVATAR_CONFIG_CACHE_TTL_MS;
+  return ids;
+}
+
+/**
+ * Get avatar config + status with caching. Only queries DynamoDB when expired.
+ */
+async function getAvatarConfigCached(avatarId: string): Promise<{
+  config: AvatarConfig;
+  status: 'draft' | 'active' | 'paused' | 'deleted';
+} | null> {
+  const now = Date.now();
+  const cached = avatarConfigCache.get(avatarId);
+  if (cached && cached.expiresAt > now) {
+    cacheStats.avatarConfigHits++;
+    return { config: cached.config, status: cached.status };
+  }
+  cacheStats.avatarConfigMisses++;
+
+  const result = await stateService.getAvatarConfigWithStatus(avatarId);
+  if (!result) {
+    // Remove stale cache entry if avatar no longer exists
+    avatarConfigCache.delete(avatarId);
+    return null;
+  }
+
+  avatarConfigCache.set(avatarId, {
+    config: result.config,
+    status: result.status,
+    expiresAt: now + AVATAR_CONFIG_CACHE_TTL_MS,
+  });
+
+  return result;
+}
+
+/**
  * Scan DynamoDB for all avatars with Discord enabled and load their bot tokens.
+ * Uses caching to minimize API calls on repeated invocations.
  * Returns a map of avatarId → DiscordAvatarBinding.
  */
 async function discoverDiscordAvatars(): Promise<Map<string, DiscordAvatarBinding>> {
   const bindings = new Map<string, DiscordAvatarBinding>();
 
   try {
-    // listAvatars() returns string[] of avatar IDs
-    const avatarIds = await stateService.listAvatars();
+    const avatarIds = await getAvatarIds();
 
     for (const avatarId of avatarIds) {
-      const result = await stateService.getAvatarConfigWithStatus(avatarId);
+      const result = await getAvatarConfigCached(avatarId);
       if (!result) continue;
 
       const { config, status } = result;
@@ -706,11 +833,14 @@ async function refreshAvatarBindings(): Promise<void> {
   // Reconcile gateway connections
   reconcileConnections(bindings);
 
+  // Log cache stats and reset for next interval
+  const stats = resetCacheStats();
   logger.info('Avatar refresh complete', {
     event: 'avatar_refresh_complete',
     subsystem: 'discord',
     avatarCount: bindings.size,
     connectionCount: connections.size,
+    cacheStats: stats,
   });
 }
 
@@ -728,6 +858,8 @@ async function main(): Promise<void> {
     stateTable: STATE_TABLE,
     messageQueue: MESSAGE_QUEUE_URL,
     secretPrefix: SECRET_PREFIX,
+    avatarConfigCacheTtlMs: AVATAR_CONFIG_CACHE_TTL_MS,
+    secretCacheTtlMs: SECRET_CACHE_TTL_MS,
   });
 
   // Initial avatar discovery
@@ -784,6 +916,8 @@ async function main(): Promise<void> {
       totalConnections: connections.size,
       totalAvatars: avatarBindings.size,
       connections: connectionStatus,
+      avatarConfigCacheSize: avatarConfigCache.size,
+      botTokenCacheSize: botTokenCache.size,
     });
   }, 5 * 60_000);
 }
@@ -800,4 +934,17 @@ if (isDirectExecution) {
   });
 }
 
-export { main, discoverDiscordAvatars, GatewayConnection };
+export {
+  main,
+  discoverDiscordAvatars,
+  GatewayConnection,
+  // Export caching internals for testing
+  invalidateAllCaches,
+  avatarConfigCache,
+  botTokenCache,
+  resetCacheStats,
+  AVATAR_CONFIG_CACHE_TTL_MS,
+  SECRET_CACHE_TTL_MS,
+  getAvatarIds,
+  getAvatarConfigCached,
+};
