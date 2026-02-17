@@ -17,6 +17,8 @@ import type {
   Mention,
 } from '../types/index.js';
 import { fetchWithRetry } from '../utils/fetch-retry.js';
+import { PlatformError } from '../errors/errors.js';
+import { SwarmErrorCode } from '../errors/codes.js';
 
 // Discord API types (minimal, to avoid dependency on discord.js in core)
 export interface DiscordMessage {
@@ -467,7 +469,10 @@ export class DiscordAdapter extends PlatformAdapter {
   ): Promise<void> {
     const webhookUrl = this.getWebhookUrl();
     if (!webhookUrl) {
-      throw new Error('No webhook URL configured');
+      throw new PlatformError('No webhook URL configured', {
+      code: SwarmErrorCode.PLATFORM_WEBHOOK_ERROR,
+      platform: 'discord',
+    });
     }
 
     const payload: DiscordWebhookPayload = {
@@ -491,7 +496,11 @@ export class DiscordAdapter extends PlatformAdapter {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Webhook request failed: ${error}`);
+      throw new PlatformError(`Webhook request failed: ${error}`, {
+      code: SwarmErrorCode.PLATFORM_API_ERROR,
+      platform: 'discord',
+      retryable: true,
+    });
     }
   }
 
@@ -505,7 +514,10 @@ export class DiscordAdapter extends PlatformAdapter {
     replyToMessageId?: string
   ): Promise<void> {
     if (!this.credentials.botToken) {
-      throw new Error('No bot token configured');
+      throw new PlatformError('No bot token configured', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'discord',
+    });
     }
 
     const payload: Record<string, unknown> = { content };
@@ -532,7 +544,11 @@ export class DiscordAdapter extends PlatformAdapter {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Bot API request failed: ${error}`);
+      throw new PlatformError(`Bot API request failed: ${error}`, {
+      code: SwarmErrorCode.PLATFORM_API_ERROR,
+      platform: 'discord',
+      retryable: true,
+    });
     }
   }
 
@@ -558,7 +574,10 @@ export class DiscordAdapter extends PlatformAdapter {
     emoji: string
   ): Promise<void> {
     if (!this.credentials.botToken) {
-      throw new Error('Cannot add reactions without bot token');
+      throw new PlatformError('Cannot add reactions without bot token', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'discord',
+    });
     }
 
     // URL encode the emoji
@@ -577,7 +596,10 @@ export class DiscordAdapter extends PlatformAdapter {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Failed to add reaction: ${error}`);
+      throw new PlatformError(`Failed to add reaction: ${error}`, {
+      code: SwarmErrorCode.PLATFORM_API_ERROR,
+      platform: 'discord',
+    });
     }
   }
 
@@ -623,7 +645,10 @@ export class DiscordAdapter extends PlatformAdapter {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Failed to respond to interaction: ${error}`);
+      throw new PlatformError(`Failed to respond to interaction: ${error}`, {
+      code: SwarmErrorCode.PLATFORM_API_ERROR,
+      platform: 'discord',
+    });
     }
   }
 
@@ -652,7 +677,10 @@ export class DiscordAdapter extends PlatformAdapter {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Failed to defer interaction: ${error}`);
+      throw new PlatformError(`Failed to defer interaction: ${error}`, {
+      code: SwarmErrorCode.PLATFORM_API_ERROR,
+      platform: 'discord',
+    });
     }
   }
 
@@ -676,7 +704,10 @@ export class DiscordAdapter extends PlatformAdapter {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Failed to edit interaction response: ${error}`);
+      throw new PlatformError(`Failed to edit interaction response: ${error}`, {
+      code: SwarmErrorCode.PLATFORM_API_ERROR,
+      platform: 'discord',
+    });
     }
   }
 }

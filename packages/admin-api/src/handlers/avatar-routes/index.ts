@@ -12,4 +12,5 @@ export { handleTwitterRoutes } from './twitter.js';
 export { handleApiKeyRoutes } from './api-keys.js';
 export { handleOnboardingAvatarRoutes } from './onboarding.js';
 export { handleMemoryRoutes } from './memory.js';
+export { handleUsageRoutes } from './usage.js';
 export type { RouteContext, RouteHandler } from './types.js';
