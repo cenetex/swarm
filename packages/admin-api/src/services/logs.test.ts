@@ -3,10 +3,15 @@
  * Tests CloudWatch Logs query with dependency injection
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { queryAvatarLogs, type LogsServiceDeps } from './logs.js';
+import {
+  queryAvatarLogs,
+  clearLogGroupCache,
+  getLogGroupCacheSize,
+  type LogsServiceDeps,
+} from './logs.js';
 
 // Helper to create mock deps
-function createMockDeps(): LogsServiceDeps & { mockSend: ReturnType<typeof vi.fn> } {
+function createMockDeps(overrides?: Partial<LogsServiceDeps>): LogsServiceDeps & { mockSend: ReturnType<typeof vi.fn> } {
   const mockSend = vi.fn(() => Promise.resolve({}));
 
   return {
@@ -16,6 +21,7 @@ function createMockDeps(): LogsServiceDeps & { mockSend: ReturnType<typeof vi.fn
     logGroupPrefix: '/aws/lambda/',
     adminLogGroups: [],
     adminLogGroupPrefixes: [],
+    ...overrides,
     mockSend,
   };
 }
@@ -26,6 +32,7 @@ describe('logsService', () => {
 
   beforeEach(() => {
     mockDeps = createMockDeps();
+    clearLogGroupCache(); // ensure clean cache between tests
   });
 
   it('queries CloudWatch Insights with correct limits and filters', async () => {
@@ -301,6 +308,207 @@ describe('logsService', () => {
       expect(result.filters.level).toBe('error');
       expect(result.filters.limit).toBe(50);
       expect(result.events).toHaveLength(0);
+    });
+  });
+
+  describe('log group caching', () => {
+    it('caches DescribeLogGroups results across calls for the same avatarId', async () => {
+      let describeCallCount = 0;
+      mockDeps.mockSend.mockImplementation((cmd: { constructor: { name: string } }) => {
+        const name = cmd.constructor.name;
+        if (name === 'DescribeLogGroupsCommand') {
+          describeCallCount++;
+          return Promise.resolve({
+            logGroups: [{ logGroupName: '/aws/lambda/test-avatar-webhook' }],
+          });
+        }
+        if (name === 'StartQueryCommand') {
+          return Promise.resolve({ queryId: 'q1' });
+        }
+        return Promise.resolve({ status: 'Complete', results: [] });
+      });
+
+      // First call — cache miss, should call DescribeLogGroups
+      await queryAvatarLogs(avatarId, {}, mockDeps);
+      expect(describeCallCount).toBe(1);
+
+      // Second call — cache hit, should NOT call DescribeLogGroups again
+      await queryAvatarLogs(avatarId, {}, mockDeps);
+      expect(describeCallCount).toBe(1);
+    });
+
+    it('uses separate cache entries for different avatarIds', async () => {
+      let describeCallCount = 0;
+      mockDeps.mockSend.mockImplementation((cmd: { constructor: { name: string }; input?: { logGroupNamePrefix?: string } }) => {
+        const name = cmd.constructor.name;
+        if (name === 'DescribeLogGroupsCommand') {
+          describeCallCount++;
+          const prefix = cmd.input?.logGroupNamePrefix || '';
+          return Promise.resolve({
+            logGroups: [{ logGroupName: `${prefix}webhook` }],
+          });
+        }
+        if (name === 'StartQueryCommand') {
+          return Promise.resolve({ queryId: 'q1' });
+        }
+        return Promise.resolve({ status: 'Complete', results: [] });
+      });
+
+      await queryAvatarLogs('avatar-a', {}, mockDeps);
+      expect(describeCallCount).toBe(1);
+
+      await queryAvatarLogs('avatar-b', {}, mockDeps);
+      expect(describeCallCount).toBe(2);
+
+      // Repeated calls should still be cached
+      await queryAvatarLogs('avatar-a', {}, mockDeps);
+      await queryAvatarLogs('avatar-b', {}, mockDeps);
+      expect(describeCallCount).toBe(2);
+
+      expect(getLogGroupCacheSize()).toBe(2);
+    });
+
+    it('refreshes cache after TTL expires', async () => {
+      // Use a very short TTL for testing
+      const shortTtlDeps = createMockDeps({ cacheTtlMs: 50 });
+      let describeCallCount = 0;
+
+      shortTtlDeps.mockSend.mockImplementation((cmd: { constructor: { name: string } }) => {
+        const name = cmd.constructor.name;
+        if (name === 'DescribeLogGroupsCommand') {
+          describeCallCount++;
+          return Promise.resolve({
+            logGroups: [{ logGroupName: '/aws/lambda/test-avatar-webhook' }],
+          });
+        }
+        if (name === 'StartQueryCommand') {
+          return Promise.resolve({ queryId: 'q1' });
+        }
+        return Promise.resolve({ status: 'Complete', results: [] });
+      });
+
+      // First call — populates cache
+      await queryAvatarLogs(avatarId, {}, shortTtlDeps);
+      expect(describeCallCount).toBe(1);
+
+      // Immediate second call — cache hit
+      await queryAvatarLogs(avatarId, {}, shortTtlDeps);
+      expect(describeCallCount).toBe(1);
+
+      // Wait for TTL to expire
+      await new Promise((resolve) => setTimeout(resolve, 60));
+
+      // Third call — cache expired, should re-discover
+      await queryAvatarLogs(avatarId, {}, shortTtlDeps);
+      expect(describeCallCount).toBe(2);
+    });
+
+    it('skips cache when cacheTtlMs is 0', async () => {
+      const noCacheDeps = createMockDeps({ cacheTtlMs: 0 });
+      let describeCallCount = 0;
+
+      noCacheDeps.mockSend.mockImplementation((cmd: { constructor: { name: string } }) => {
+        const name = cmd.constructor.name;
+        if (name === 'DescribeLogGroupsCommand') {
+          describeCallCount++;
+          return Promise.resolve({
+            logGroups: [{ logGroupName: '/aws/lambda/test-avatar-webhook' }],
+          });
+        }
+        if (name === 'StartQueryCommand') {
+          return Promise.resolve({ queryId: 'q1' });
+        }
+        return Promise.resolve({ status: 'Complete', results: [] });
+      });
+
+      await queryAvatarLogs(avatarId, {}, noCacheDeps);
+      await queryAvatarLogs(avatarId, {}, noCacheDeps);
+
+      // Should call DescribeLogGroups every time when cache is disabled
+      expect(describeCallCount).toBe(2);
+    });
+
+    it('clearLogGroupCache() clears all entries', async () => {
+      mockDeps.mockSend.mockImplementation((cmd: { constructor: { name: string } }) => {
+        const name = cmd.constructor.name;
+        if (name === 'DescribeLogGroupsCommand') {
+          return Promise.resolve({
+            logGroups: [{ logGroupName: 'g1' }],
+          });
+        }
+        if (name === 'StartQueryCommand') {
+          return Promise.resolve({ queryId: 'q1' });
+        }
+        return Promise.resolve({ status: 'Complete', results: [] });
+      });
+
+      await queryAvatarLogs('avatar-a', {}, mockDeps);
+      await queryAvatarLogs('avatar-b', {}, mockDeps);
+      expect(getLogGroupCacheSize()).toBe(2);
+
+      clearLogGroupCache();
+      expect(getLogGroupCacheSize()).toBe(0);
+    });
+
+    it('clearLogGroupCache(avatarId) clears only that entry', async () => {
+      mockDeps.mockSend.mockImplementation((cmd: { constructor: { name: string } }) => {
+        const name = cmd.constructor.name;
+        if (name === 'DescribeLogGroupsCommand') {
+          return Promise.resolve({
+            logGroups: [{ logGroupName: 'g1' }],
+          });
+        }
+        if (name === 'StartQueryCommand') {
+          return Promise.resolve({ queryId: 'q1' });
+        }
+        return Promise.resolve({ status: 'Complete', results: [] });
+      });
+
+      await queryAvatarLogs('avatar-a', {}, mockDeps);
+      await queryAvatarLogs('avatar-b', {}, mockDeps);
+      expect(getLogGroupCacheSize()).toBe(2);
+
+      clearLogGroupCache('avatar-a');
+      expect(getLogGroupCacheSize()).toBe(1);
+    });
+
+    it('cache includes admin log groups and prefix-discovered groups', async () => {
+      const depsWithAdmin = createMockDeps({
+        adminLogGroups: ['/aws/lambda/admin-handler'],
+        adminLogGroupPrefixes: ['/aws/lambda/shared-'],
+      });
+
+      let describeCallCount = 0;
+      depsWithAdmin.mockSend.mockImplementation((cmd: { constructor: { name: string }; input?: { logGroupNamePrefix?: string } }) => {
+        const name = cmd.constructor.name;
+        if (name === 'DescribeLogGroupsCommand') {
+          describeCallCount++;
+          const prefix = cmd.input?.logGroupNamePrefix || '';
+          if (prefix.includes('shared-')) {
+            return Promise.resolve({
+              logGroups: [{ logGroupName: '/aws/lambda/shared-logs' }],
+            });
+          }
+          return Promise.resolve({
+            logGroups: [{ logGroupName: `${prefix}webhook` }],
+          });
+        }
+        if (name === 'StartQueryCommand') {
+          return Promise.resolve({ queryId: 'q1' });
+        }
+        return Promise.resolve({ status: 'Complete', results: [] });
+      });
+
+      // First call discovers avatar groups + admin prefix groups
+      const result1 = await queryAvatarLogs(avatarId, {}, depsWithAdmin);
+      expect(describeCallCount).toBe(2); // avatar prefix + admin prefix
+      expect(result1.logGroups).toContain('/aws/lambda/admin-handler');
+      expect(result1.logGroups).toContain('/aws/lambda/shared-logs');
+
+      // Second call uses cache — no additional DescribeLogGroups calls
+      const result2 = await queryAvatarLogs(avatarId, {}, depsWithAdmin);
+      expect(describeCallCount).toBe(2); // unchanged
+      expect(result2.logGroups).toEqual(result1.logGroups);
     });
   });
 });
