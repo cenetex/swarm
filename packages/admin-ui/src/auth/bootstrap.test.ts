@@ -41,7 +41,7 @@ describe('auth bootstrap reliability', () => {
     globalThis.fetch = originalFetch;
   });
 
-  test('clears persisted Privy auth when backend session is unauthenticated', async () => {
+  test('clears persisted auth when backend session is unauthenticated', async () => {
     globalThis.fetch = vi.fn(async () => {
       return new Response(JSON.stringify({ authenticated: false }), {
         status: 200,
@@ -49,37 +49,37 @@ describe('auth bootstrap reliability', () => {
       });
     });
 
-    const { usePrivyAuth } = await import('../store/privyAuth');
+    const { useAuthStore } = await import('../store/auth');
     const { bootstrapAuthFromBackendSession } = await import('./bootstrap');
 
-    usePrivyAuth.setState({
+    useAuthStore.setState({
       isAuthenticated: true,
       user: { id: 'u1', walletAddress: 'wallet1', email: 'a@b.com' },
     } as never);
 
     await bootstrapAuthFromBackendSession();
 
-    const state = usePrivyAuth.getState();
+    const state = useAuthStore.getState();
     expect(state.isAuthenticated).toBe(false);
     expect(state.user).toBe(null);
   });
 
-  test('clears persisted Privy auth when /auth/me fails (e.g., network/401)', async () => {
+  test('clears persisted auth when /auth/me fails (e.g., network/401)', async () => {
     globalThis.fetch = vi.fn(async () => {
       return new Response('oops', { status: 401 });
     });
 
-    const { usePrivyAuth } = await import('../store/privyAuth');
+    const { useAuthStore } = await import('../store/auth');
     const { bootstrapAuthFromBackendSession } = await import('./bootstrap');
 
-    usePrivyAuth.setState({
+    useAuthStore.setState({
       isAuthenticated: true,
       user: { id: 'u1', walletAddress: 'wallet1' },
     } as never);
 
     await bootstrapAuthFromBackendSession();
 
-    const state = usePrivyAuth.getState();
+    const state = useAuthStore.getState();
     expect(state.isAuthenticated).toBe(false);
     expect(state.user).toBe(null);
   });
