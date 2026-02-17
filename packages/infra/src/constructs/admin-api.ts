@@ -11,6 +11,7 @@ import * as apigateway from 'aws-cdk-lib/aws-apigatewayv2';
 import * as integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -499,6 +500,8 @@ export class AdminApiConstruct extends Construct {
           ],
         },
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant permissions
@@ -670,6 +673,8 @@ export class AdminApiConstruct extends Construct {
           ],
         },
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Worker permissions
@@ -796,6 +801,8 @@ export class AdminApiConstruct extends Construct {
           minify: true,
           sourceMap: true,
         },
+        logRetention: logs.RetentionDays.TWO_WEEKS,
+        tracing: lambda.Tracing.ACTIVE,
       });
 
       this.mediaConvertHandler = mediaConvertHandler;
@@ -827,6 +834,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant permissions to transcribe handler
@@ -863,6 +872,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     this.table.grantReadWriteData(sharedChatHandler);
@@ -923,6 +934,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant permissions to avatars handler
@@ -1212,6 +1225,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant permissions to issues handler
@@ -1245,6 +1260,8 @@ export class AdminApiConstruct extends Construct {
         });
       `),
       handler: 'index.handler',
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     const healthIntegration = new integrations.HttpLambdaIntegration(
@@ -1279,6 +1296,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant read access to admin table for profile data
@@ -1313,6 +1332,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant read access to admin table for leaderboard data
@@ -1366,6 +1387,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant permissions to OpenAI compat handler
@@ -1423,6 +1446,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant permissions to jobs handler
@@ -1465,6 +1490,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant permissions to prompt preview handler
@@ -1508,6 +1535,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant permissions to wallet auth handler
@@ -1617,6 +1646,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     this.table.grantReadWriteData(billingHandler);
@@ -1686,6 +1717,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     this.table.grantReadWriteData(this.dreamWorker);
@@ -1730,6 +1763,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     this.table.grantReadWriteData(consolidationWorker);
@@ -1800,6 +1835,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant permissions to Replicate webhook handler
@@ -1840,6 +1877,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant permissions to response sender
@@ -1903,6 +1942,8 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      tracing: lambda.Tracing.ACTIVE,
     });
 
     // Grant read access to Twitter app credentials
