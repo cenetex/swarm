@@ -160,6 +160,12 @@ export async function loadAvatarSecrets(
   // 2) Fallback to a minimal set of per-secret keys required by Twitter + tweet generation.
   // Expand this list as we standardize secret naming.
   const keys: Array<{ secretName: string; envKey: string }> = [
+    // Telegram
+    { secretName: 'telegram_bot_token', envKey: 'TELEGRAM_BOT_TOKEN' },
+
+    // Discord
+    { secretName: 'discord_bot_token', envKey: 'DISCORD_BOT_TOKEN' },
+
     // Twitter
     { secretName: 'twitter_api_key', envKey: 'TWITTER_API_KEY' },
     { secretName: 'twitter_api_secret', envKey: 'TWITTER_API_SECRET' },
