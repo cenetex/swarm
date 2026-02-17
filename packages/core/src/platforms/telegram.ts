@@ -7,6 +7,8 @@ import type { Message, Update, MessageOrigin } from 'grammy/types';
 import { Jimp } from 'jimp';
 import { PlatformAdapter } from './base.js';
 import { fetchWithRetry } from '../utils/fetch-retry.js';
+import { PlatformError } from '../errors/errors.js';
+import { SwarmErrorCode } from '../errors/codes.js';
 import type {
   AvatarConfig,
   SwarmEnvelope,
@@ -242,7 +244,11 @@ async function fetchToInputFile(url: string, fallbackName: string, timeoutMs: nu
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`Failed to fetch media: ${res.status} - ${text}`);
+    throw new PlatformError(`Failed to fetch media: ${res.status} - ${text}`, {
+      code: SwarmErrorCode.PLATFORM_MEDIA_UPLOAD_ERROR,
+      platform: 'telegram',
+      statusCode: res.status,
+    });
   }
   const buf = Buffer.from(await res.arrayBuffer());
   const fileName = inferFileNameFromUrl(url, fallbackName);
@@ -678,7 +684,10 @@ export class TelegramAdapter extends PlatformAdapter {
     replyToMessageId?: string
   ): Promise<boolean> {
     if (!this.bot) {
-      throw new Error('Telegram bot not initialized');
+      throw new PlatformError('Telegram bot not initialized', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'telegram',
+    });
     }
 
     const chatId = parseInt(conversationId);
@@ -857,7 +866,10 @@ export class TelegramAdapter extends PlatformAdapter {
    */
   getWebhookCallback() {
     if (!this.bot) {
-      throw new Error('Telegram bot not initialized');
+      throw new PlatformError('Telegram bot not initialized', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'telegram',
+    });
     }
     return webhookCallback(this.bot, 'aws-lambda');
   }
