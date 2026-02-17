@@ -14,7 +14,7 @@
  * - Budget tracking ensures we stay within tier limits
  */
 import type { ScheduledHandler, Context } from 'aws-lambda';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { sendSqsMessage } from './services/sqs-send.js';
 import { randomUUID } from 'node:crypto';
 import {
   TwitterAdapter,
@@ -31,7 +31,6 @@ import { loadTwitterSecretsFallback, shouldProcessMention } from './utils/twitte
 import { triageMentions, isMentionTriageEnabled } from './utils/mention-triage.js';
 import { getErrorMessage, isRateLimitError, type TwitterRawTweet } from './utils/telegram-type-guards.js';
 
-const sqsClient = new SQSClient({});
 
 const STATE_TABLE = process.env.STATE_TABLE!;
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE!;
@@ -429,14 +428,8 @@ export const handler: ScheduledHandler = async (_event, context: Context) => {
         const deduplicationId = `twitter-mention-${avatarId}-${envelope.messageId}`;
         const messageGroupId = `${avatarId}#${envelope.conversationId}`;
 
-        await sqsClient.send(new SendMessageCommand({
+        await sendSqsMessage({
           QueueUrl: MESSAGE_QUEUE_URL,
-          MessageBody: JSON.stringify({
-            envelope,
-            enqueuedAt: Date.now(),
-            attempts: 0,
-            maxAttempts: 3,
-          }),
           MessageAttributes: {
             traceId: {
               DataType: 'String',
@@ -445,7 +438,12 @@ export const handler: ScheduledHandler = async (_event, context: Context) => {
           },
           MessageGroupId: messageGroupId,
           MessageDeduplicationId: deduplicationId,
-        }));
+        }, {
+          envelope,
+          enqueuedAt: Date.now(),
+          attempts: 0,
+          maxAttempts: 3,
+        });
 
         logger.debug('Message enqueued', {
           event: 'mention_enqueued',
