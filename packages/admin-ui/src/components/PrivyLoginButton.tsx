@@ -4,8 +4,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { useAuth } from '../store/auth';
-import { usePrivyAuth } from '../store/privyAuth';
+import { useAuth, useAuthStore } from '../store/auth';
 
 interface PrivyLoginButtonProps {
   className?: string;
@@ -83,7 +82,7 @@ function getSolanaWalletAddressFromPrivyUser(user: unknown): string | null {
 export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
   const { login, logout: privyLogout, ready, authenticated, user: privyUser, getAccessToken } = usePrivy();
   const { isAuthenticated, isLoading, user, logout: authLogout } = useAuth();
-  const privyAuth = usePrivyAuth();
+  const authStore = useAuthStore();
   const [walletWaitTimedOut, setWalletWaitTimedOut] = useState(false);
 
   // Track sync attempts to prevent infinite loops
@@ -112,19 +111,19 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
         ? `Privy rejected this origin (${origin}). Add it to your Privy app's allowed domains.`
         : `Privy embedded wallet iframe was blocked (CSP/frame-ancestors). Ensure ${origin} is allowed for embedded wallets in Privy.`;
 
-      privyAuth.setError(hint);
+      authStore.setError(hint);
     };
 
     window.addEventListener('unhandledrejection', onUnhandledRejection);
     return () => window.removeEventListener('unhandledrejection', onUnhandledRejection);
-  }, [privyAuth]);
+  }, [authStore]);
 
   // Sync Privy auth state with backend when Privy is authenticated and wallet is ready
   useEffect(() => {
     if (!ready) return;
     if (!authenticated) return;
     if (!privyUser) return;
-    if (privyAuth.isAuthenticated) return;
+    if (authStore.isAuthenticated) return;
     // Wait for wallet to be available before syncing
     if (!walletAddress) return;
 
@@ -141,7 +140,7 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
         lastTokenRef.current = token;
         lastWalletAddressRef.current = walletAddress;
 
-        await privyAuth.syncWithBackend(token, {
+        await authStore.syncWithBackend(token, {
           id: (privyUser as { id: string }).id,
           email: (privyUser as { email?: string })?.email,
           walletAddress,
@@ -153,13 +152,13 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
     };
 
     void doSync();
-  }, [ready, authenticated, privyUser, getAccessToken, walletAddress, privyAuth]);
+  }, [ready, authenticated, privyUser, getAccessToken, walletAddress, authStore]);
 
   // Poll for wallet creation when Privy is authenticated but wallet isn't ready yet
   // This handles the async nature of embedded wallet creation
   useEffect(() => {
     if (!isWaitingForWalletCreation) return;
-    if (privyAuth.isAuthenticated) return;
+    if (authStore.isAuthenticated) return;
 
     setWalletWaitTimedOut(false);
 
@@ -175,16 +174,16 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
     }, 12_000);
 
     return () => window.clearTimeout(timeoutId);
-  }, [isWaitingForWalletCreation, privyUser, privyAuth.isAuthenticated]);
+  }, [isWaitingForWalletCreation, privyUser, authStore.isAuthenticated]);
 
   const handleLogin = useCallback(async () => {
     // If Privy is already authenticated but backend sync hasn't happened yet, force sync
-    if (ready && authenticated && privyUser && !privyAuth.isAuthenticated) {
-      privyAuth.setLoading(true);
+    if (ready && authenticated && privyUser && !authStore.isAuthenticated) {
+      authStore.setLoading(true);
       try {
         const token = await getAccessToken();
         if (token) {
-          await privyAuth.syncWithBackend(token, {
+          await authStore.syncWithBackend(token, {
             id: (privyUser as { id: string }).id,
             email: (privyUser as { email?: string })?.email,
             walletAddress: getSolanaWalletAddressFromPrivyUser(privyUser) ?? undefined,
@@ -193,7 +192,7 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
       } catch (error) {
         console.error('[PrivyLoginButton] Privy backend sync error:', error);
       } finally {
-        privyAuth.setLoading(false);
+        authStore.setLoading(false);
       }
       return;
     }
@@ -203,7 +202,7 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
       walletChainType: 'solana-only',
       loginMethods: ['wallet', 'email', 'google', 'twitter'],
     });
-  }, [login, ready, authenticated, privyUser, privyAuth, getAccessToken]);
+  }, [login, ready, authenticated, privyUser, authStore, getAccessToken]);
 
   const handleLogout = useCallback(async () => {
     // Logout from both Privy SDK AND clear backend session/store
@@ -216,12 +215,12 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
   }, [privyLogout, authLogout]);
 
   // Determine if we're waiting for backend sync (Privy is authenticated but our store isn't)
-  const isWaitingForSync = ready && authenticated && privyUser && !privyAuth.isAuthenticated;
+  const isWaitingForSync = ready && authenticated && privyUser && !authStore.isAuthenticated;
   // Waiting for wallet = Privy authenticated but embedded wallet not yet created
   const isWaitingForWallet = isWaitingForSync && !walletAddress;
 
   // Loading state - show when auth is loading OR when Privy is authenticated but backend sync pending
-  if (isLoading || privyAuth.isLoading || isWaitingForSync) {
+  if (isLoading || authStore.isLoading || isWaitingForSync) {
     const loadingMessage = isWaitingForWallet
       ? walletWaitTimedOut
         ? 'Wallet setup blocked'
