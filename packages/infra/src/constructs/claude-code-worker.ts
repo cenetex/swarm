@@ -218,7 +218,7 @@ export class ClaudeCodeWorker extends Construct {
     this.service = new ecs.FargateService(this, 'Service', {
       cluster,
       taskDefinition: this.taskDefinition,
-      desiredCount: minCapacity > 0 ? minCapacity : 1,
+      desiredCount: minCapacity, // respect scale-to-zero when minCapacity=0
       minHealthyPercent: 0,
       maxHealthyPercent: 200,
       assignPublicIp: true, // Required for pulling images without NAT
@@ -228,7 +228,7 @@ export class ClaudeCodeWorker extends Construct {
     });
 
     // Auto-scaling based on queue depth
-    if (maxCapacity > 1) {
+    if (maxCapacity > 0) { // enable scaling even for 0→1 transitions
       const scaling = this.service.autoScaleTaskCount({
         minCapacity: Math.max(minCapacity, 0),
         maxCapacity,
