@@ -508,7 +508,7 @@ async function handleCallback(
     };
 
   } catch (error) {
-    console.error('OAuth callback error:', error);
+    console.error('OAuth callback error:', error instanceof Error ? error.message : String(error));
 
     return {
       statusCode: 302,

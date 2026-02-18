@@ -211,7 +211,7 @@ async function resolveEntitlementContext(params: {
       };
     }
   } catch (error) {
-    console.error('[Billing] Failed to resolve subscription metadata:', error);
+    console.error('[Billing] Failed to resolve subscription metadata:', error instanceof Error ? error.message : String(error));
   }
 
   return null;
@@ -422,7 +422,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     return jsonResponse(404, { error: 'Not found' }, corsHeaders);
   } catch (error) {
-    console.error('[Billing] Handler error:', error);
+    console.error('[Billing] Handler error:', error instanceof Error ? error.message : String(error));
     return jsonResponse(500, {
       error: 'Internal server error',
       message: error instanceof Error ? error.message : String(error),
