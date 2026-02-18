@@ -11,6 +11,9 @@ export * from './constants.js';
 // Types
 export * from './types/index.js';
 
+// Errors
+export * from './errors/index.js';
+
 // Platforms
 export * from './platforms/index.js';
 

@@ -1,15 +1,29 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import {
   CORRELATION_ID_ATTR,
+  TRACE_ID_ATTR,
   generateCorrelationId,
+  generateTraceId,
   extractCorrelationIdFromApiEvent,
+  extractTraceIdFromApiEvent,
   extractCorrelationIdFromSqsRecord,
+  extractTraceIdFromSqsRecord,
+  buildTraceMessageAttributes,
+  createTraceContext,
 } from './correlation.js';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 describe('correlation', () => {
   describe('CORRELATION_ID_ATTR', () => {
     it('should export the correlation ID attribute name', () => {
       expect(CORRELATION_ID_ATTR).toBe('correlationId');
+    });
+  });
+
+  describe('TRACE_ID_ATTR', () => {
+    it('should export the trace ID attribute name', () => {
+      expect(TRACE_ID_ATTR).toBe('traceId');
     });
   });
 
@@ -21,18 +35,30 @@ describe('correlation', () => {
 
     it('should generate a new UUID when requestId is not provided', () => {
       const id = generateCorrelationId();
-      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(id).toMatch(UUID_RE);
     });
 
     it('should generate a new UUID when requestId is undefined', () => {
       const id = generateCorrelationId(undefined);
-      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(id).toMatch(UUID_RE);
     });
 
     it('should generate different UUIDs on consecutive calls', () => {
       const id1 = generateCorrelationId();
       const id2 = generateCorrelationId();
       expect(id1).not.toBe(id2);
+    });
+  });
+
+  describe('generateTraceId', () => {
+    it('should generate a UUID', () => {
+      expect(generateTraceId()).toMatch(UUID_RE);
+    });
+
+    it('should generate unique values', () => {
+      const a = generateTraceId();
+      const b = generateTraceId();
+      expect(a).not.toBe(b);
     });
   });
 
@@ -74,13 +100,13 @@ describe('correlation', () => {
         requestContext: {},
       };
       const id = extractCorrelationIdFromApiEvent(event);
-      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(id).toMatch(UUID_RE);
     });
 
     it('should generate a new UUID when event is empty', () => {
       const event = {};
       const id = extractCorrelationIdFromApiEvent(event);
-      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(id).toMatch(UUID_RE);
     });
 
     it('should handle headers with undefined values', () => {
@@ -99,6 +125,26 @@ describe('correlation', () => {
     });
   });
 
+  describe('extractTraceIdFromApiEvent', () => {
+    it('should extract from x-trace-id header', () => {
+      const event = { headers: { 'x-trace-id': 'trace-abc' } };
+      expect(extractTraceIdFromApiEvent(event)).toBe('trace-abc');
+    });
+
+    it('should handle case-insensitive header', () => {
+      const event = { headers: { 'X-Trace-ID': 'trace-abc' } };
+      expect(extractTraceIdFromApiEvent(event)).toBe('trace-abc');
+    });
+
+    it('should generate a UUID when header is missing', () => {
+      expect(extractTraceIdFromApiEvent({ headers: {} })).toMatch(UUID_RE);
+    });
+
+    it('should generate a UUID when headers is undefined', () => {
+      expect(extractTraceIdFromApiEvent({})).toMatch(UUID_RE);
+    });
+  });
+
   describe('extractCorrelationIdFromSqsRecord', () => {
     it('should extract from message attributes', () => {
       const record = {
@@ -112,7 +158,7 @@ describe('correlation', () => {
     it('should generate a new UUID when messageAttributes is undefined', () => {
       const record = {};
       const id = extractCorrelationIdFromSqsRecord(record);
-      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(id).toMatch(UUID_RE);
     });
 
     it('should generate a new UUID when messageAttributes is empty', () => {
@@ -120,7 +166,7 @@ describe('correlation', () => {
         messageAttributes: {},
       };
       const id = extractCorrelationIdFromSqsRecord(record);
-      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(id).toMatch(UUID_RE);
     });
 
     it('should generate a new UUID when correlationId attribute is missing', () => {
@@ -130,7 +176,7 @@ describe('correlation', () => {
         },
       };
       const id = extractCorrelationIdFromSqsRecord(record);
-      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(id).toMatch(UUID_RE);
     });
 
     it('should generate a new UUID when stringValue is undefined', () => {
@@ -140,7 +186,56 @@ describe('correlation', () => {
         },
       };
       const id = extractCorrelationIdFromSqsRecord(record);
-      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(id).toMatch(UUID_RE);
+    });
+  });
+
+  describe('extractTraceIdFromSqsRecord', () => {
+    it('should extract from message attributes', () => {
+      const record = {
+        messageAttributes: {
+          traceId: { stringValue: 'sqs-trace-xyz' },
+        },
+      };
+      expect(extractTraceIdFromSqsRecord(record)).toBe('sqs-trace-xyz');
+    });
+
+    it('should generate a new UUID when attribute is missing', () => {
+      expect(extractTraceIdFromSqsRecord({})).toMatch(UUID_RE);
+    });
+  });
+
+  describe('buildTraceMessageAttributes', () => {
+    it('should build SQS message attributes with both IDs', () => {
+      const attrs = buildTraceMessageAttributes('corr-123', 'trace-456');
+      expect(attrs.correlationId).toEqual({
+        DataType: 'String',
+        StringValue: 'corr-123',
+      });
+      expect(attrs.traceId).toEqual({
+        DataType: 'String',
+        StringValue: 'trace-456',
+      });
+    });
+  });
+
+  describe('createTraceContext', () => {
+    it('should create context with provided values', () => {
+      const ctx = createTraceContext({
+        correlationId: 'c-1',
+        traceId: 't-1',
+        parentSpan: 'p-1',
+      });
+      expect(ctx.correlationId).toBe('c-1');
+      expect(ctx.traceId).toBe('t-1');
+      expect(ctx.parentSpan).toBe('p-1');
+    });
+
+    it('should generate IDs when not provided', () => {
+      const ctx = createTraceContext({});
+      expect(ctx.correlationId).toMatch(UUID_RE);
+      expect(ctx.traceId).toMatch(UUID_RE);
+      expect(ctx.parentSpan).toBeUndefined();
     });
   });
 });
