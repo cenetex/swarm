@@ -260,9 +260,9 @@ describe('Memory Tier Manager', () => {
     it('recommends ephemeral for new low-access memories within max age', () => {
       const metrics = makeMetrics({
         accessCount: 0,
-        strength: 0.1,
+        strength: 0.0,
         createdAt: NOW - ONE_HOUR_MS, // less than 1 day old
-        lastAccessedAt: NOW - ONE_HOUR_MS,
+        lastAccessedAt: NOW - 12 * ONE_HOUR_MS,
       });
       expect(recommendTier(metrics)).toBe('ephemeral');
     });
@@ -335,9 +335,9 @@ describe('Memory Tier Manager', () => {
           sk: 'immediate#1#a',
           tier: 'ephemeral',
           accessCount: 0,
-          strength: 0.1,
+          strength: 0.0,
           createdAt: NOW - ONE_HOUR_MS,
-          lastAccessedAt: NOW - ONE_HOUR_MS,
+          lastAccessedAt: NOW - 12 * ONE_HOUR_MS,
         }),
       ];
       const transitions = evaluateTierTransitions(metrics);
@@ -631,9 +631,9 @@ describe('Memory Tier Manager', () => {
               sk: 'immediate#1#mem-1',
               tier: 'ephemeral',
               accessCount: 0,
-              strength: 0.1,
+              strength: 0.0,
               createdAt: NOW - ONE_HOUR_MS,
-              lastAccessedAt: NOW - ONE_HOUR_MS,
+              lastAccessedAt: NOW - 12 * ONE_HOUR_MS,
             },
           ],
         }),
