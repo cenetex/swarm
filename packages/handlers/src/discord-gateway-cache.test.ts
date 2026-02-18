@@ -14,7 +14,7 @@ import {
   invalidateAllCaches,
   AVATAR_CONFIG_CACHE_TTL_MS,
   SECRET_CACHE_TTL_MS,
-} from './discord-gateway-shared.js';
+} from './discord/discord-gateway-shared.js';
 
 describe('Discord Gateway Caching', () => {
   beforeEach(() => {

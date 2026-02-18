@@ -273,14 +273,14 @@ vi.mock('../../utils/load-avatar-secrets.js', () => ({
 }));
 
 // Also mock telegram-webhook-shared (needed when running with response-sender tests)
-vi.mock('../../telegram-webhook-shared.js', () => ({
+vi.mock('../../telegram/telegram-webhook-shared.js', () => ({
   isAllowedDmUserById: vi.fn(() => Promise.resolve(false)),
 }));
 
 // ---------------------------------------------------------------------------
 // Import handler AFTER mocks are wired
 // ---------------------------------------------------------------------------
-const { handler } = await import('../../message-processor.js');
+const { handler } = await import('../../messaging/message-processor.js');
 
 // ---------------------------------------------------------------------------
 // Helpers
