@@ -1,8 +1,11 @@
 /**
  * MCP Service Adapter
- * 
+ *
  * Bridges existing admin-api services to MCP server service interfaces.
  * This allows the unified tool definitions to work with our current infrastructure.
+ *
+ * Service dependencies are resolved via the ServiceContainer rather than
+ * direct module imports, making this adapter testable with injected stubs.
  */
 import type { AllServices, VoiceServices, NFTServices, PropertyServices } from '@swarm/mcp-server';
 import {
@@ -12,42 +15,8 @@ import {
   DEFAULT_LLM_MAX_TOKENS,
 } from '@swarm/core';
 import type { UserSession, SecretType } from '../types.js';
-import * as avatars from '../services/avatars.js';
-import * as secrets from '../services/secrets.js';
-import * as wallets from '../services/wallets.js';
-import * as telegram from '../services/telegram.js';
-import { createTwitterServices } from '../services/mcp-twitter-adapter.js';
-import * as chatVoting from '../services/chat-voting.js';
-import * as discord from '../services/discord.js';
-import * as media from '../services/media.js';
-import * as gallery from '../services/gallery.js';
-import * as credits from '../services/credits.js';
-import * as mediaJobs from '../services/media-jobs.js';
-import * as voice from '../services/voice.js';
-import * as avatarwnership from '../services/avatar-ownership.js';
-import * as nftGate from '../services/nft-gate.js';
-import * as lineageNft from '../services/lineage-nft.js';
-import * as propertyResearch from '../services/property-research.js';
-import * as stickers from '../services/stickers.js';
-import * as avatarvents from '../services/avatar-observability.js';
-import * as memory from '../services/memory.js';
-import * as memoryMigration from '../services/memory-migration.js';
-import * as memoryConsolidation from '../services/memory-consolidation.js';
-import * as observability from '../services/observability.js';
-import { createMoltbookServices } from '../services/moltbook.js';
-import { diagnoseTelegram, setupTelegramIntegration } from '../services/telegram-admin.js';
-import { createWebSearch } from '../services/web-search.js';
-import { createMcpAdminServices } from '../services/mcp-config.js';
-import { validateReplicateApiKey } from '../services/replicate.js';
-import * as integrations from '../services/integrations.js';
 import type { IntegrationType, AICapability } from '../services/integrations.js';
-import { getModelsForCapability, AVAILABLE_MODELS } from '../services/models-registry.js';
-import * as tokenLaunch from '../services/token-launch.js';
-import * as entitlements from '../services/entitlements.js';
-import {
-  createStripeCheckoutSession,
-  createStripeCustomerPortalSession,
-} from '../services/stripe-billing.js';
+import { getDefaultContainer, type ServiceContainer } from '../services/service-container.js';
 
 // Timeout for external API calls
 const API_TIMEOUT_MS = 10_000;
@@ -56,12 +25,15 @@ const API_TIMEOUT_MS = 10_000;
 /**
  * Get bot token from secrets for a given avatar
  */
-async function getBotToken(avatarId: string): Promise<string> {
-  const botToken = await secrets._getSecretValueInternal(avatarId, 'telegram_bot_token', 'default');
-  if (!botToken) {
-    throw new Error('No Telegram bot token configured');
-  }
-  return botToken;
+function getBotToken(svc: ServiceContainer, avatarId: string): Promise<string> {
+  return svc.secrets._getSecretValueInternal(avatarId, 'telegram_bot_token', 'default').then(
+    (botToken) => {
+      if (!botToken) {
+        throw new Error('No Telegram bot token configured');
+      }
+      return botToken;
+    }
+  );
 }
 
 /**
@@ -83,20 +55,58 @@ async function fetchWithTimeout(
 }
 
 /**
- * Create MCP-compatible services for a specific avatar
+ * Create MCP-compatible services for a specific avatar.
+ *
+ * @param _avatarId  The avatar to bind services to
+ * @param session    The authenticated user session
+ * @param svc        Optional service container override (for testing)
  */
-export function createMCPServices(_avatarId: string, session: UserSession): AllServices {
+export function createMCPServices(
+  _avatarId: string,
+  session: UserSession,
+  svc: ServiceContainer = getDefaultContainer(),
+): AllServices {
   const avatarId = _avatarId;
+
+  // Destructure service container into local aliases.
+  // This keeps the rest of the function body unchanged while allowing
+  // tests to inject overrides via the `svc` parameter.
+  const {
+    avatars,
+    secrets,
+    wallets,
+    telegram,
+    discord,
+    media,
+    gallery,
+    credits,
+    mediaJobs,
+    voice,
+    avatarObservability: avatarvents,
+    memory,
+    memoryMigration,
+    memoryConsolidation,
+    observability,
+    chatVoting,
+    integrations,
+    tokenLaunch,
+    entitlements,
+    telegramAdmin: { diagnoseTelegram: _diagnoseTelegram, setupTelegramIntegration: _setupTelegramIntegration },
+    replicate: { validateReplicateApiKey: _validateReplicateApiKey },
+    modelsRegistry: { getModelsForCapability: _getModelsForCapability, AVAILABLE_MODELS: _AVAILABLE_MODELS },
+    stripe: { createStripeCheckoutSession: _createStripeCheckoutSession, createStripeCustomerPortalSession: _createStripeCustomerPortalSession },
+  } = svc;
+
   // Voice tools enabled by default; set ENABLE_VOICE_TOOLS=false to disable
   const voiceEnabled = process.env.ENABLE_VOICE_TOOLS !== 'false';
   const voiceServices: VoiceServices | undefined = voiceEnabled ? {
     transcribeAudio: async (params: Parameters<VoiceServices['transcribeAudio']>[0]) => {
       let audioUrl = params.url;
       if (!audioUrl && params.platformFileId) {
-        const botToken = await getBotToken(avatarId);
-        audioUrl = await telegram.getFileUrl(botToken, params.platformFileId);
+        const botToken = await getBotToken(svc, avatarId);
+        audioUrl = await svc.telegram.getFileUrl(botToken, params.platformFileId);
       }
-      return voice.transcribeAudio({
+      return svc.voice.transcribeAudio({
         avatarId,
         assetId: params.assetId,
         url: audioUrl,
@@ -528,7 +538,7 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
             message: 'Telegram bot token received, validating and registering webhook...',
           }));
 
-          const setupResult = await setupTelegramIntegration({
+          const setupResult = await _setupTelegramIntegration({
             avatarId,
             token: value,
             session,
@@ -564,7 +574,7 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
             message: 'Replicate API key received, validating...',
           }));
 
-          const validation = await validateReplicateApiKey(value);
+          const validation = await _validateReplicateApiKey(value);
           if (!validation.valid) {
             throw new Error(validation.error || 'Replicate API key invalid');
           }
@@ -752,11 +762,11 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
     // =========================================================================
     telegram: {
       diagnoseTelegram: async (avatarId: string) => {
-        return diagnoseTelegram(avatarId);
+        return _diagnoseTelegram(avatarId);
       },
 
       getUserProfilePhotos: async (avatarId, userId, options) => {
-        const botToken = await getBotToken(avatarId);
+        const botToken = await getBotToken(svc, avatarId);
         
         const result = await telegram.getUserProfilePhotos(botToken, userId, options);
         
@@ -791,47 +801,47 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
       },
 
       getBotName: async (avatarId) => {
-        const botToken = await getBotToken(avatarId);
+        const botToken = await getBotToken(svc, avatarId);
         return telegram.getBotName(botToken);
       },
 
       setBotName: async (avatarId, name, languageCode) => {
-        const botToken = await getBotToken(avatarId);
+        const botToken = await getBotToken(svc, avatarId);
         await telegram.setBotName(botToken, name, languageCode);
       },
 
       getBotDescription: async (avatarId) => {
-        const botToken = await getBotToken(avatarId);
+        const botToken = await getBotToken(svc, avatarId);
         return telegram.getBotDescription(botToken);
       },
 
       setBotDescription: async (avatarId, description, languageCode) => {
-        const botToken = await getBotToken(avatarId);
+        const botToken = await getBotToken(svc, avatarId);
         await telegram.setBotDescription(botToken, description, languageCode);
       },
 
       getBotShortDescription: async (avatarId) => {
-        const botToken = await getBotToken(avatarId);
+        const botToken = await getBotToken(svc, avatarId);
         return telegram.getBotShortDescription(botToken);
       },
 
       setBotShortDescription: async (avatarId, shortDescription, languageCode) => {
-        const botToken = await getBotToken(avatarId);
+        const botToken = await getBotToken(svc, avatarId);
         await telegram.setBotShortDescription(botToken, shortDescription, languageCode);
       },
 
       sendChatAction: async (avatarId, chatId, action) => {
-        const botToken = await getBotToken(avatarId);
+        const botToken = await getBotToken(svc, avatarId);
         await telegram.sendChatAction(botToken, chatId, action);
       },
 
       replyToMessage: async (avatarId, chatId, replyToMessageId, text) => {
-        const botToken = await getBotToken(avatarId);
+        const botToken = await getBotToken(svc, avatarId);
         return telegram.sendMessage(botToken, chatId, text, { replyToMessageId });
       },
 
       reactToMessage: async (avatarId, chatId, messageId, emoji) => {
-        const botToken = await getBotToken(avatarId);
+        const botToken = await getBotToken(svc, avatarId);
         await telegram.setMessageReaction(botToken, chatId, messageId, emoji);
       },
 
@@ -867,7 +877,7 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
       },
 
       executeModification: async (avatarId, proposalId) => {
-        const botToken = await getBotToken(avatarId);
+        const botToken = await getBotToken(svc, avatarId);
         return chatVoting.executeModification(avatarId, proposalId, botToken);
       },
     },
@@ -875,7 +885,7 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
     // =========================================================================
     // Twitter Services (extracted to mcp-twitter-adapter.ts)
     // =========================================================================
-    twitter: createTwitterServices(_avatarId),
+    twitter: svc.createTwitterServices(_avatarId),
 
     // =========================================================================
     // Discord Services
@@ -936,13 +946,13 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
 
       getAvailableModels: (integration?: string, capability?: string) => {
         if (capability && integration) {
-          return getModelsForCapability(capability as AICapability, integration);
+          return _getModelsForCapability(capability as AICapability, integration);
         } else if (capability) {
-          return getModelsForCapability(capability as AICapability);
+          return _getModelsForCapability(capability as AICapability);
         } else if (integration) {
-          return AVAILABLE_MODELS.filter(m => m.provider === integration);
+          return _AVAILABLE_MODELS.filter(m => m.provider === integration);
         }
-        return AVAILABLE_MODELS;
+        return _AVAILABLE_MODELS;
       },
 
       setModelPreference: async (integration: string, capability: string, modelId: string) => {
@@ -959,17 +969,17 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
     // =========================================================================
     // NFT Services (Avatar Inhabitation & Lineage)
     // =========================================================================
-    nft: createNFTServices(),
+    nft: createNFTServices(svc),
 
     // =========================================================================
     // Property Research Services
     // =========================================================================
-    property: createPropertyServices(_avatarId, session),
+    property: createPropertyServices(_avatarId, session, svc),
 
     // =========================================================================
     // Sticker Services
     // =========================================================================
-    stickers: stickers.createStickerServices(),
+    stickers: svc.createStickerServices(),
 
     // =========================================================================
     // Diagnostics Services (Issues & Feedback)
@@ -1017,7 +1027,7 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
     // =========================================================================
     // MCP Admin Services (Toolset & External Server Management)
     // =========================================================================
-    mcpAdmin: createMcpAdminServices(),
+    mcpAdmin: svc.createMcpAdminServices(),
 
     // =========================================================================
     // Avatar Status Services
@@ -1057,7 +1067,7 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
     // =========================================================================
     // Moltbook Services (Social network for AI agents)
     // =========================================================================
-    moltbook: createMoltbookServices(_avatarId, session),
+    moltbook: svc.createMoltbookServices(_avatarId, session),
 
     // =========================================================================
     // Token Launch Services
@@ -1079,7 +1089,7 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
     // =========================================================================
     billing: {
       createCheckoutSession: async (params) => {
-        const session = await createStripeCheckoutSession({
+        const session = await _createStripeCheckoutSession({
           accountId: params.accountId,
           avatarId: params.avatarId,
           plan: params.plan,
@@ -1094,7 +1104,7 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
         };
       },
       createPortalSession: async (params) => {
-        const portal = await createStripeCustomerPortalSession({
+        const portal = await _createStripeCustomerPortalSession({
           customerId: params.customerId,
           returnUrl: params.returnUrl,
         });
@@ -1150,7 +1160,8 @@ export function createMCPServices(_avatarId: string, session: UserSession): AllS
 /**
  * Create NFT services for ownership and lineage
  */
-function createNFTServices(): NFTServices {
+function createNFTServices(svc: ServiceContainer): NFTServices {
+  const { avatars, avatarOwnership: avatarwnership, nftGate, lineageNft } = svc;
   return {
     // Gate NFT operations
     getGateStatus: async (walletAddress: string) => {
@@ -1323,21 +1334,25 @@ function createNFTServices(): NFTServices {
 /**
  * Create MCP services for Telegram context (minimal session)
  */
-export function createTelegramMCPServices(avatarId: string): AllServices {
+export function createTelegramMCPServices(
+  avatarId: string,
+  svc: ServiceContainer = getDefaultContainer(),
+): AllServices {
   const telegramSession: UserSession = {
     email: 'telegram-user@telegram.bot',
     userId: `telegram-${avatarId}`,
     isAdmin: false,
     accessToken: '',
   };
-  return createMCPServices(avatarId, telegramSession);
+  return createMCPServices(avatarId, telegramSession, svc);
 }
 
 /**
  * Create property research services
  */
-function createPropertyServices(_avatarId: string, _session: UserSession): PropertyServices {
-  const webSearch = createWebSearch();
+function createPropertyServices(_avatarId: string, _session: UserSession, svc: ServiceContainer): PropertyServices {
+  const { propertyResearch } = svc;
+  const webSearch = svc.createWebSearch();
 
   const isPropertyResearchStatus = (
     value: string

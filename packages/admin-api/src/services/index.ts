@@ -55,3 +55,11 @@ export { buildDynamicSystemPrompt, type ToolCategory, type ProcessorAvatarConfig
 
 // Usage history service
 export * from './usage-history.js';
+
+// Service container (lightweight DI)
+export {
+  createServiceContainer,
+  getDefaultContainer,
+  _setDefaultContainer,
+  type ServiceContainer,
+} from './service-container.js';
