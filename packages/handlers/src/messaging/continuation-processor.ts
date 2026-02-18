@@ -11,7 +11,7 @@
  * - Responding to code task completions
  */
 import type { SQSEvent, Context, SQSBatchResponse } from 'aws-lambda';
-import { sendSqsMessage } from './services/sqs-send.js';
+import { sendSqsMessage } from '../services/sqs-send.js';
 import { randomUUID } from 'node:crypto';
 import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
@@ -24,7 +24,7 @@ import {
   shouldTriggerAvatarLoop,
   isProgressUpdate,
 } from '@swarm/core';
-import { getDynamoClient } from './services/dynamo-client.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
 
 const dynamoClient = getDynamoClient();
 const secretsClient = new SecretsManagerClient({});

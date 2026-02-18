@@ -19,8 +19,8 @@ import {
   logger,
   type LLMConfig,
 } from '@swarm/core';
-import { loadAvatarSecrets } from './utils/load-avatar-secrets.js';
-import { getDynamoClient } from './services/dynamo-client.js';
+import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
 
 const STATE_TABLE = process.env.STATE_TABLE;
 const ADMIN_TABLE = process.env.ADMIN_TABLE;

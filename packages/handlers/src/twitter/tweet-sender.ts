@@ -25,8 +25,8 @@ import {
 import {
   createRateLimitService,
   type RateLimitService,
-} from './services/twitter-rate-limit.js';
-import { loadAvatarSecrets } from './utils/load-avatar-secrets.js';
+} from '../services/twitter-rate-limit.js';
+import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 
 const STATE_TABLE = process.env.STATE_TABLE;
 const POST_QUEUE_URL = process.env.POST_QUEUE_URL;

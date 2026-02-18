@@ -20,10 +20,10 @@ import {
   type ResponseAction,
   type SwarmResponse,
 } from '@swarm/core/types';
-import { ensureReplicateKey } from './utils/system-replicate-key.js';
-import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from './services/sqs-send.js';
-import { checkMediaWithEnergyFallback } from './services/entitlement-enforcement.js';
-import { getDynamoClient } from './services/dynamo-client.js';
+import { ensureReplicateKey } from '../utils/system-replicate-key.js';
+import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../services/sqs-send.js';
+import { checkMediaWithEnergyFallback } from '../services/entitlement-enforcement.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
 
 // Schema for media queue items
 const MediaQueueItemSchema = z.object({

@@ -9,7 +9,7 @@
  * - Enqueues the message to the shared FIFO message queue
  */
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { sendSqsMessage } from './services/sqs-send.js';
+import { sendSqsMessage } from '../services/sqs-send.js';
 import { randomUUID } from 'crypto';
 import type { Update } from 'grammy/types';
 import {
@@ -19,7 +19,7 @@ import {
   extractCorrelationIdFromApiEvent,
   hasValidInternalTestKey,
 } from '@swarm/core';
-import { getMessageFromUpdate } from './utils/telegram-type-guards.js';
+import { getMessageFromUpdate } from '../utils/telegram-type-guards.js';
 
 // --- Extracted modules ---
 import {
@@ -286,7 +286,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (update.callback_query) {
       logger.info('Callback query received', { event: 'callback_query' });
       try {
-        const { processAdminCallbackQuery } = await import('./services/telegram-admin-handler.js');
+        const { processAdminCallbackQuery } = await import('../services/telegram-admin-handler.js');
         await processAdminCallbackQuery(avatarId, avatarConfig, update as unknown);
         return ok();
       } catch (err) {

@@ -14,7 +14,7 @@
  * - Budget tracking ensures we stay within tier limits
  */
 import type { ScheduledHandler, Context } from 'aws-lambda';
-import { sendSqsMessage } from './services/sqs-send.js';
+import { sendSqsMessage } from '../services/sqs-send.js';
 import { randomUUID } from 'node:crypto';
 import {
   TwitterAdapter,
@@ -23,13 +23,13 @@ import {
   createActivityService,
   logger,
 } from '@swarm/core';
-import { createTwitterUsageService, type TwitterUsageService } from './services/twitter-usage.js';
-import { maxTwitterId } from './utils/twitter-id.js';
-import { loadAvatarSecrets, type LoadedAvatarSecrets } from './utils/load-avatar-secrets.js';
-import { isTwitterFeatureEnabled } from './utils/twitter-feature-flags.js';
-import { loadTwitterSecretsFallback, shouldProcessMention } from './utils/twitter-mention-poller-logic.js';
-import { triageMentions, isMentionTriageEnabled } from './utils/mention-triage.js';
-import { getErrorMessage, isRateLimitError, type TwitterRawTweet } from './utils/telegram-type-guards.js';
+import { createTwitterUsageService, type TwitterUsageService } from '../services/twitter-usage.js';
+import { maxTwitterId } from '../utils/twitter-id.js';
+import { loadAvatarSecrets, type LoadedAvatarSecrets } from '../utils/load-avatar-secrets.js';
+import { isTwitterFeatureEnabled } from '../utils/twitter-feature-flags.js';
+import { loadTwitterSecretsFallback, shouldProcessMention } from '../utils/twitter-mention-poller-logic.js';
+import { triageMentions, isMentionTriageEnabled } from '../utils/mention-triage.js';
+import { getErrorMessage, isRateLimitError, type TwitterRawTweet } from '../utils/telegram-type-guards.js';
 
 
 const STATE_TABLE = process.env.STATE_TABLE!;

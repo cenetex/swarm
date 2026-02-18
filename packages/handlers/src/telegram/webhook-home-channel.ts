@@ -5,7 +5,7 @@
  */
 import { QueryCommand, DeleteCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { logger, type AvatarConfig } from '@swarm/core';
-import { getDynamoClient } from './services/dynamo-client.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
 import { mergeAllowedChats } from './webhook-chat-access.js';
 
 const dynamoClient = getDynamoClient();
@@ -34,7 +34,7 @@ export async function cleanupChannelState(avatarId: string, chatId: string): Pro
           pk: `AVATAR#${avatarId}`,
           sk: `CHANNEL#${chatId}#STATE`,
         },
-      })).catch(err => {
+      })).catch((err: unknown) => {
         logger.warn('Failed to delete channel state from STATE_TABLE', {
           avatarId,
           chatId,
@@ -53,7 +53,7 @@ export async function cleanupChannelState(avatarId: string, chatId: string): Pro
           pk: `CHANNEL#${avatarId}#${chatId}`,
           sk: 'STATE',
         },
-      })).catch(err => {
+      })).catch((err: unknown) => {
         logger.warn('Failed to delete channel state from ADMIN_TABLE', {
           avatarId,
           chatId,

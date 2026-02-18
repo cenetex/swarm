@@ -21,10 +21,10 @@ import {
   type SwarmResponse,
   type ResponseAction,
 } from '@swarm/core';
-import { isAllowedDmUserById } from './telegram-webhook-shared.js';
-import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from './services/sqs-send.js';
-import { loadAvatarSecrets } from './utils/load-avatar-secrets.js';
-import { getDynamoClient } from './services/dynamo-client.js';
+import { isAllowedDmUserById } from '../telegram/telegram-webhook-shared.js';
+import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../services/sqs-send.js';
+import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
 
 const dynamo = getDynamoClient();
 

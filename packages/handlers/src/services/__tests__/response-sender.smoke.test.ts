@@ -201,7 +201,7 @@ vi.mock('../dynamo-client.js', () => ({
   _setDynamoClient: () => {},
 }));
 
-vi.mock('../../telegram-webhook-shared.js', () => ({
+vi.mock('../../telegram/telegram-webhook-shared.js', () => ({
   isAllowedDmUserById: vi.fn(() => Promise.resolve(false)),
 }));
 
@@ -245,7 +245,7 @@ vi.mock('../../utils/system-replicate-key.js', () => ({
 // ---------------------------------------------------------------------------
 // Import handler AFTER mocks
 // ---------------------------------------------------------------------------
-const { handler } = await import('../../response-sender.js');
+const { handler } = await import('../../messaging/response-sender.js');
 
 // ---------------------------------------------------------------------------
 // Helpers

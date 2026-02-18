@@ -4,35 +4,37 @@
  * These tests validate the caching behavior in isolation, without
  * requiring actual DynamoDB or Secrets Manager connections.
  *
- * Env vars are set via bunfig.toml preload (test-preload.ts).
+ * Uses dynamic import() so env vars are set before the module evaluates.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  avatarConfigCache,
-  botTokenCache,
-  resetCacheStats,
-  invalidateAllCaches,
-  AVATAR_CONFIG_CACHE_TTL_MS,
-  SECRET_CACHE_TTL_MS,
-} from './discord-gateway-shared.js';
+
+// Must be set before the module is loaded (it reads env at module level)
+process.env.STATE_TABLE ||= 'test-state-table';
+process.env.MESSAGE_QUEUE_URL ||= 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue';
+
+const modPromise = import('./discord/discord-gateway-shared.js');
 
 describe('Discord Gateway Caching', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    const { invalidateAllCaches } = await modPromise;
     invalidateAllCaches();
   });
 
   describe('cache TTL constants', () => {
-    it('avatar config cache TTL is 5 minutes', () => {
+    it('avatar config cache TTL is 5 minutes', async () => {
+      const { AVATAR_CONFIG_CACHE_TTL_MS } = await modPromise;
       expect(AVATAR_CONFIG_CACHE_TTL_MS).toBe(5 * 60_000);
     });
 
-    it('secret cache TTL is 15 minutes', () => {
+    it('secret cache TTL is 15 minutes', async () => {
+      const { SECRET_CACHE_TTL_MS } = await modPromise;
       expect(SECRET_CACHE_TTL_MS).toBe(15 * 60_000);
     });
   });
 
   describe('invalidateAllCaches', () => {
-    it('clears avatar config cache', () => {
+    it('clears avatar config cache', async () => {
+      const { avatarConfigCache, invalidateAllCaches } = await modPromise;
       avatarConfigCache.set('test-avatar', {
         config: {} as never,
         status: 'active',
@@ -44,7 +46,8 @@ describe('Discord Gateway Caching', () => {
       expect(avatarConfigCache.size).toBe(0);
     });
 
-    it('clears bot token cache', () => {
+    it('clears bot token cache', async () => {
+      const { botTokenCache, invalidateAllCaches } = await modPromise;
       botTokenCache.set('test-avatar', {
         value: 'fake-token',
         expiresAt: Date.now() + 60_000,
@@ -57,7 +60,8 @@ describe('Discord Gateway Caching', () => {
   });
 
   describe('resetCacheStats', () => {
-    it('returns a snapshot and resets counters to zero', () => {
+    it('returns a snapshot and resets counters to zero', async () => {
+      const { resetCacheStats } = await modPromise;
       const first = resetCacheStats();
       expect(first).toEqual({
         avatarListHits: 0,
@@ -75,7 +79,8 @@ describe('Discord Gateway Caching', () => {
   });
 
   describe('botTokenCache', () => {
-    it('returns cached value when not expired', () => {
+    it('returns cached value when not expired', async () => {
+      const { botTokenCache } = await modPromise;
       const expiresAt = Date.now() + 60_000;
       botTokenCache.set('avatar-1', { value: 'token-abc', expiresAt });
 
@@ -85,7 +90,8 @@ describe('Discord Gateway Caching', () => {
       expect(entry!.expiresAt).toBe(expiresAt);
     });
 
-    it('treats entry as expired when expiresAt is in the past', () => {
+    it('treats entry as expired when expiresAt is in the past', async () => {
+      const { botTokenCache } = await modPromise;
       const expiresAt = Date.now() - 1000; // expired 1s ago
       botTokenCache.set('avatar-1', { value: 'old-token', expiresAt });
 
@@ -97,7 +103,8 @@ describe('Discord Gateway Caching', () => {
   });
 
   describe('avatarConfigCache', () => {
-    it('stores and retrieves cached configs', () => {
+    it('stores and retrieves cached configs', async () => {
+      const { avatarConfigCache, AVATAR_CONFIG_CACHE_TTL_MS } = await modPromise;
       const mockConfig = {
         id: 'test-avatar',
         name: 'Test',
@@ -116,7 +123,8 @@ describe('Discord Gateway Caching', () => {
       expect(entry!.expiresAt).toBeGreaterThan(Date.now());
     });
 
-    it('can detect expired entries', () => {
+    it('can detect expired entries', async () => {
+      const { avatarConfigCache } = await modPromise;
       avatarConfigCache.set('old-avatar', {
         config: {} as never,
         status: 'active',
