@@ -31,7 +31,6 @@ import * as chatHistory from '../services/chat-history.js';
 import {
   ChatRequestSchema,
   type AdminChatMessage,
-  type UserSession,
 } from '../types.js';
 import { createAvatarAccessChecker } from '../services/chat-access.js';
 import * as avatars from '../services/avatars.js';
@@ -49,7 +48,6 @@ import {
 import {
   sanitizeMessages,
   toSdkMessages,
-  type MediaItem,
 } from './chat-tool-helpers.js';
 import { recordError } from '../services/auto-issues.js';
 import { mapAdminChatHandlerError } from './chat-error-mapping.js';
