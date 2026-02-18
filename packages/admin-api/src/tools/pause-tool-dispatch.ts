@@ -263,21 +263,9 @@ export function createDefaultPauseDispatcher(deps: {
   });
 
   // ── Upload URL tools ─────────────────────────────────────────────────────
-  // These tools execute to generate a signed URL, then pause for file upload.
-  const uploadToolHandler = (responseTxt: string): PauseToolHandler => ({
-    buildPayload: async (args, ctx) => {
-      // These tools need to actually execute to generate the upload URL,
-      // then pause so the user can upload.
-      const toolName = ''; // Will be overridden at call site
-      void toolName;
-      return { args, responseText: responseTxt };
-    },
-    responseText: responseTxt,
-  });
-
   // Upload tools that need execution before pausing
   const executeAndPauseHandler: PauseToolHandler = {
-    buildPayload: async (args, ctx) => {
+    buildPayload: async (args, _ctx) => {
       // The caller passes the actual tool name; we identify which tool
       // from the args/context. We handle this at the dispatch call site
       // since we need the tool name which isn't part of the handler.
