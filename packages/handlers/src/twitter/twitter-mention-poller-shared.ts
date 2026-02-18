@@ -23,13 +23,13 @@ import {
   createActivityService,
   logger,
 } from '@swarm/core';
-import { createTwitterUsageService, type TwitterUsageService } from './services/twitter-usage.js';
-import { maxTwitterId } from './utils/twitter-id.js';
-import { loadAvatarSecrets, type LoadedAvatarSecrets } from './utils/load-avatar-secrets.js';
-import { isTwitterFeatureEnabled } from './utils/twitter-feature-flags.js';
-import { loadTwitterSecretsFallback, shouldProcessMention } from './utils/twitter-mention-poller-logic.js';
-import { triageMentions, isMentionTriageEnabled } from './utils/mention-triage.js';
-import { getErrorMessage, isRateLimitError, type TwitterRawTweet } from './utils/telegram-type-guards.js';
+import { createTwitterUsageService, type TwitterUsageService } from '../services/twitter-usage.js';
+import { maxTwitterId } from '../utils/twitter-id.js';
+import { loadAvatarSecrets, type LoadedAvatarSecrets } from '../utils/load-avatar-secrets.js';
+import { isTwitterFeatureEnabled } from '../utils/twitter-feature-flags.js';
+import { loadTwitterSecretsFallback, shouldProcessMention } from '../utils/twitter-mention-poller-logic.js';
+import { triageMentions, isMentionTriageEnabled } from '../utils/mention-triage.js';
+import { getErrorMessage, isRateLimitError, type TwitterRawTweet } from '../utils/telegram-type-guards.js';
 
 const sqsClient = new SQSClient({});
 

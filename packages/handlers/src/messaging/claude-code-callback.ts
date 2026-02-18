@@ -18,8 +18,8 @@ import {
   type AvatarConfig,
   type ResponseAction,
 } from '@swarm/core';
-import { extractAvatarConfigFromStateItem } from './utils/extract-avatar-config.js';
-import { getDynamoClient } from './services/dynamo-client.js';
+import { extractAvatarConfigFromStateItem } from '../utils/extract-avatar-config.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
 
 const dynamo = getDynamoClient();
 

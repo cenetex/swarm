@@ -27,15 +27,15 @@ import {
   type ContentStoreService,
   type PostMedia,
 } from '@swarm/core';
-import { loadAvatarSecrets } from './utils/load-avatar-secrets.js';
-import { checkMediaWithEnergyFallback } from './services/entitlement-enforcement.js';
-import { createRuntimeBrainService } from './services/brain.js';
+import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
+import { checkMediaWithEnergyFallback } from '../services/entitlement-enforcement.js';
+import { createRuntimeBrainService } from '../services/brain.js';
 import {
   generateAutonomousContent,
   generateImagePrompt,
   type AutonomousContentTargetType,
   type CommunityContext,
-} from './services/autonomous-content.js';
+} from '../services/autonomous-content.js';
 
 const STATE_TABLE = process.env.STATE_TABLE!;
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE!;

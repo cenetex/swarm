@@ -24,7 +24,7 @@ import {
   shouldTriggerAvatarLoop,
   isProgressUpdate,
 } from '@swarm/core';
-import { getDynamoClient } from './services/dynamo-client.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
 
 const sqsClient = new SQSClient({});
 const dynamoClient = getDynamoClient();

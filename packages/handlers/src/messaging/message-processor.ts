@@ -40,15 +40,15 @@ import {
   registerAllTools,
   type ToolContext,
 } from '@swarm/mcp-server';
-import { createPlatformMCPServices } from './services/platform-mcp-adapter.js';
+import { createPlatformMCPServices } from '../services/platform-mcp-adapter.js';
 import {
   checkAndIncrementMessageUsage,
   checkToolCallLimit,
   isMemoryWriteAllowed,
-} from './services/entitlement-enforcement.js';
-import { ensureReplicateKey } from './utils/system-replicate-key.js';
-import { loadAvatarSecrets } from './utils/load-avatar-secrets.js';
-import { createRuntimeBrainService } from './services/brain.js';
+} from '../services/entitlement-enforcement.js';
+import { ensureReplicateKey } from '../utils/system-replicate-key.js';
+import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
+import { createRuntimeBrainService } from '../services/brain.js';
 
 // Extracted modules
 import { callLLM, stripAvatarNamePrefix, type LLMMessage } from './llm-client.js';

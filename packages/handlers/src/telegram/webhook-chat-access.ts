@@ -5,7 +5,7 @@
  */
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { logger } from '@swarm/core';
-import { getDynamoClient } from './services/dynamo-client.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
 
 const dynamoClient = getDynamoClient();
 

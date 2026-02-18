@@ -22,9 +22,9 @@ import {
   type SwarmResponse,
   type ResponseAction,
 } from '@swarm/core';
-import { isAllowedDmUserById } from './telegram-webhook-shared.js';
-import { loadAvatarSecrets } from './utils/load-avatar-secrets.js';
-import { getDynamoClient } from './services/dynamo-client.js';
+import { isAllowedDmUserById } from '../telegram/telegram-webhook-shared.js';
+import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
 
 const sqs = new SQSClient({});
 const dynamo = getDynamoClient();

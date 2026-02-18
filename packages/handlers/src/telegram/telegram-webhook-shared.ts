@@ -19,7 +19,7 @@ import {
   extractCorrelationIdFromApiEvent,
   hasValidInternalTestKey,
 } from '@swarm/core';
-import { getMessageFromUpdate } from './utils/telegram-type-guards.js';
+import { getMessageFromUpdate } from '../utils/telegram-type-guards.js';
 
 // --- Extracted modules ---
 import {
@@ -287,7 +287,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (update.callback_query) {
       logger.info('Callback query received', { event: 'callback_query' });
       try {
-        const { processAdminCallbackQuery } = await import('./services/telegram-admin-handler.js');
+        const { processAdminCallbackQuery } = await import('../services/telegram-admin-handler.js');
         await processAdminCallbackQuery(avatarId, avatarConfig, update as unknown);
         return ok();
       } catch (err) {
