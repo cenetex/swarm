@@ -7,6 +7,8 @@ import { randomUUID } from 'crypto';
 import {
   createCircuitBreaker,
   logger,
+  LLMError,
+  SwarmErrorCode,
   type LLMConfig,
 } from '@swarm/core';
 
@@ -215,7 +217,9 @@ export async function callLLM(
 }> {
   const apiKey = secrets['OPENROUTER_API_KEY'] || secrets['openrouter_api_key'];
   if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY not found in secrets');
+    throw new LLMError('OPENROUTER_API_KEY not found in secrets', {
+      code: SwarmErrorCode.LLM_MISSING_API_KEY,
+    });
   }
 
   // Circuit breaker — fail fast when LLM provider is unhealthy
@@ -226,7 +230,10 @@ export async function callLLM(
       state: llmCircuitBreaker.state(),
       model: config.model,
     });
-    throw new Error('LLM circuit breaker is open — provider unhealthy');
+    throw new LLMError('LLM circuit breaker is open — provider unhealthy', {
+      code: SwarmErrorCode.LLM_CIRCUIT_OPEN,
+      model: config.model,
+    });
   }
 
   const requestBody: Record<string, unknown> = {
@@ -278,10 +285,20 @@ export async function callLLM(
         response = await doRequest(fallbackBody);
         if (!response.ok) {
           const retryText = await response.text();
-          throw new Error(`LLM API error: ${response.status} ${retryText.slice(0, 200)}`);
+          throw new LLMError(`LLM API error: ${response.status} ${retryText.slice(0, 200)}`, {
+            code: SwarmErrorCode.LLM_API_ERROR,
+            model: config.model,
+            statusCode: response.status,
+            retryable: response.status >= 500 || response.status === 429,
+          });
         }
       } else {
-        throw new Error(`LLM API error: ${response.status} ${text.slice(0, 200)}`);
+        throw new LLMError(`LLM API error: ${response.status} ${text.slice(0, 200)}`, {
+          code: SwarmErrorCode.LLM_API_ERROR,
+          model: config.model,
+          statusCode: response.status,
+          retryable: response.status >= 500 || response.status === 429,
+        });
       }
     }
 
@@ -300,7 +317,11 @@ export async function callLLM(
 
     const choice = data.choices?.[0]?.message;
     if (!choice) {
-      throw new Error('No response from LLM');
+      throw new LLMError('No response from LLM', {
+        code: SwarmErrorCode.LLM_EMPTY_RESPONSE,
+        model: config.model,
+        retryable: true,
+      });
     }
 
     // Parse proper tool_calls from the API response

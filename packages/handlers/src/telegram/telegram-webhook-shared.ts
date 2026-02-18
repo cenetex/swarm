@@ -9,7 +9,7 @@
  * - Enqueues the message to the shared FIFO message queue
  */
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { sendSqsMessage } from './services/sqs-send.js';
 import { randomUUID } from 'crypto';
 import type { Update } from 'grammy/types';
 import {
@@ -69,7 +69,6 @@ export {
 };
 export type { HomeChannelChecker };
 
-const sqs = new SQSClient({});
 
 const MESSAGE_QUEUE_URL = process.env.MESSAGE_QUEUE_URL!;
 const ADMIN_TABLE = process.env.ADMIN_TABLE;
@@ -434,21 +433,20 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           undefined
         );
 
-        await sqs.send(new SendMessageCommand({
+        await sendSqsMessage({
           QueueUrl: MESSAGE_QUEUE_URL,
-          MessageBody: JSON.stringify({
-            envelope,
-            enqueuedAt: Date.now(),
-            attempts: 0,
-            maxAttempts: 3,
-          }),
           MessageAttributes: {
             traceId: { DataType: 'String', StringValue: traceId },
             [CORRELATION_ID_ATTR]: { DataType: 'String', StringValue: correlationId },
           },
           MessageGroupId: `${avatarId}#${envelope.conversationId}`,
           MessageDeduplicationId: envelope.metadata.idempotencyKey,
-        }));
+        }, {
+          envelope,
+          enqueuedAt: Date.now(),
+          attempts: 0,
+          maxAttempts: 3,
+        });
 
         logger.info('DM message queued', {
           event: 'dm_message_queued',
@@ -654,21 +652,20 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       envelope.metadata.chatTitle
     );
 
-    await sqs.send(new SendMessageCommand({
+    await sendSqsMessage({
       QueueUrl: MESSAGE_QUEUE_URL,
-      MessageBody: JSON.stringify({
-        envelope,
-        enqueuedAt: Date.now(),
-        attempts: 0,
-        maxAttempts: 3,
-      }),
       MessageAttributes: {
         traceId: { DataType: 'String', StringValue: traceId },
         [CORRELATION_ID_ATTR]: { DataType: 'String', StringValue: correlationId },
       },
       MessageGroupId: `${avatarId}#${envelope.conversationId}`,
       MessageDeduplicationId: envelope.metadata.idempotencyKey,
-    }));
+    }, {
+      envelope,
+      enqueuedAt: Date.now(),
+      attempts: 0,
+      maxAttempts: 3,
+    });
 
     logger.info('Message queued', {
       event: 'message_queued',

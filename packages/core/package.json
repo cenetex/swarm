@@ -30,6 +30,11 @@
       "bun": "./src/services/index.ts",
       "import": "./dist/services/index.js",
       "default": "./dist/services/index.js"
+    },
+    "./errors": {
+      "bun": "./src/errors/index.ts",
+      "import": "./dist/errors/index.js",
+      "default": "./dist/errors/index.js"
     }
   },
   "scripts": {

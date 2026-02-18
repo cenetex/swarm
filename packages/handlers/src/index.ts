@@ -9,6 +9,7 @@ export { handler as twitterMentionPollerShared } from './twitter/twitter-mention
 export { handler as autonomousTweetPoster } from './twitter/autonomous-tweet-poster.js';
 export { handler as continuationProcessor } from './messaging/continuation-processor.js';
 export { getPendingContinuationContext } from './messaging/continuation-processor.js';
+export { handler as dlqProcessor } from './dlq-processor.js';
 
 // Discord gateway worker (ECS Fargate entry point)
 export { main as discordGatewayMain } from './discord/discord-gateway-shared.js';
