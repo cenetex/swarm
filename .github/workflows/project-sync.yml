@@ -17,6 +17,7 @@ on:
         type: boolean
 
 permissions:
+  contents: read
   issues: read
   pull-requests: read
   repository-projects: read
