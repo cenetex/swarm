@@ -654,9 +654,6 @@ export class TwitterAdapter extends PlatformAdapter {
         mediaAttachments.push({
           type,
           url: media.url || media.preview_image_url,
-          width: media.width,
-          height: media.height,
-          altText: media.alt_text,
         });
       }
 
