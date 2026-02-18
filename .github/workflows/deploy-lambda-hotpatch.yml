@@ -1,4 +1,4 @@
-name: Fast Deploy
+name: Deploy Lambda Hotpatch
 
 on:
   workflow_dispatch:

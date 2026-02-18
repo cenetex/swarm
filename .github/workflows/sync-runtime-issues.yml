@@ -1,4 +1,4 @@
-name: Internal Issues Sync
+name: Sync Runtime Issues
 
 on:
   workflow_dispatch:

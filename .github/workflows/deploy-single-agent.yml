@@ -1,4 +1,4 @@
-name: Deploy Agent
+name: Deploy Single Agent
 
 on:
   workflow_dispatch:

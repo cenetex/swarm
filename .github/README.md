@@ -6,33 +6,45 @@ This directory contains GitHub Actions workflows and supporting infrastructure f
 
 ## Workflows
 
-### CI (`ci.yml`)
-Runs on every push and pull request to `main`:
-- Runs dependency security audit (`pnpm audit --audit-level=high`)
-- Installs dependencies with pnpm
-- Builds all packages
-- Runs linting and type checking
-- Runs tests (when available)
-- Performs CDK synth to validate infrastructure
+### CI/CD (automatic)
 
-### Deploy (`deploy.yml`)
-Runs on push to `main` or manual trigger:
-- Builds all packages
-- Deploys CDK stacks to AWS
-- Deploys Admin UI to S3/CloudFront
+**CI** (`ci.yml`) — Every push/PR to `main`:
+- Dependency security audit, lint, build, test
 
-### Deploy Agent (`deploy-agent.yml`)
-Manual workflow to deploy individual agents:
-- Validates agent configuration exists
-- Deploys agent-specific CDK stack
+**Deploy** (`deploy.yml`) — Push to `main` (staging) or `v*` tags (production):
+- CDK infrastructure deploy, Admin UI to S3/CloudFront
+- E2E smoke tests (staging) or HTTP health checks (production)
+- Calls `deploy-cdk-reusable.yml` and `deploy-admin-ui-reusable.yml`
+
+**Release Notes** (`release-notes.yml`) — On `v*` tags:
+- Generates GitHub release with changelog
+- Optionally polishes with OpenRouter AI
+
+### Deploy (manual trigger)
+
+**Deploy Single Agent** (`deploy-single-agent.yml`):
+- Deploys one agent's CDK stack (`SwarmAgent-{id}`)
 - Outputs webhook URLs for configuration
 
-### Release Notes (`release-notes.yml`)
-Generates and publishes GitHub release notes:
-- Auto-runs on `v*` tags
-- Supports manual regeneration for any tag via `workflow_dispatch`
-- Uses deterministic git-based notes by default
-- Optionally polishes notes with OpenRouter when `OPENROUTER_API_KEY` is configured
+**Deploy Lambda Hotpatch** (`deploy-lambda-hotpatch.yml`):
+- Bypasses CDK — directly updates Lambda function code via AWS API
+- For emergency patches only; does not update infra, layers, or env vars
+
+### Project management (automatic)
+
+**Project Sync** (`project-sync.yml`):
+- Syncs issues/PRs to GitHub Project board on open/close/label events
+- Moves linked issues to "Done" on PR merge
+- Nightly reconciliation to fix drift; enforces one priority label per issue
+
+**Sync Runtime Issues** (`sync-runtime-issues.yml`) — Hourly:
+- Pulls runtime errors from AWS into GitHub Issues
+- Policy config: `.github/policy/internal-issue-sync-policy.json`
+
+### Reusable (called by deploy.yml, not invoked directly)
+
+- `deploy-cdk-reusable.yml` — CDK diff, deploy, domain association
+- `deploy-admin-ui-reusable.yml` — Build React app, sync to S3, invalidate CloudFront
 
 ## Setup Instructions
 
