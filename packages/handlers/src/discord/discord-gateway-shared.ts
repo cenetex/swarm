@@ -15,7 +15,7 @@
  * - Cache stats logged on every refresh for observability
  */
 import WebSocket from 'ws';
-import { sendSqsMessage } from './services/sqs-send.js';
+import { sendSqsMessage } from '../services/sqs-send.js';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { randomUUID } from 'node:crypto';
 import {

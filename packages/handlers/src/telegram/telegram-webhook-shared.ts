@@ -9,7 +9,7 @@
  * - Enqueues the message to the shared FIFO message queue
  */
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { sendSqsMessage } from './services/sqs-send.js';
+import { sendSqsMessage } from '../services/sqs-send.js';
 import { randomUUID } from 'crypto';
 import type { Update } from 'grammy/types';
 import {

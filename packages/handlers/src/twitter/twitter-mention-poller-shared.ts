@@ -14,7 +14,7 @@
  * - Budget tracking ensures we stay within tier limits
  */
 import type { ScheduledHandler, Context } from 'aws-lambda';
-import { sendSqsMessage } from './services/sqs-send.js';
+import { sendSqsMessage } from '../services/sqs-send.js';
 import { randomUUID } from 'node:crypto';
 import {
   TwitterAdapter,
