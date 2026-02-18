@@ -17,6 +17,7 @@ export type ChannelStateMachine = 'IDLE' | 'ACTIVE' | 'COOLDOWN';
  */
 export type ResponseTrigger =
   | 'direct_engagement'    // Mention or reply to bot
+  | 'engaged_user'         // Follow-up from recently engaged user
   | 'message_threshold'    // N messages accumulated
   | 'conversation_gap'     // Silence after activity
   | 'scheduled'            // Scheduled evaluation
@@ -66,6 +67,9 @@ export interface ChannelState {
 
   // Engagement tracking
   directEngagementAt?: number;  // Last mention/reply timestamp
+
+  // Engaged users tracking: { [userId]: engagedUntil timestamp }
+  engagedUsers?: Record<string, number>;
 
   // TTL for cleanup (DynamoDB TTL in seconds)
   ttl?: number;

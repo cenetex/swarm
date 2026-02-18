@@ -593,6 +593,7 @@ export type ChannelStateMachine = 'IDLE' | 'ACTIVE' | 'COOLDOWN';
  */
 export type ResponseTrigger =
   | 'direct_engagement'    // Mention or reply to bot
+  | 'engaged_user'         // Follow-up from recently engaged user
   | 'message_threshold'    // N messages accumulated
   | 'conversation_gap'     // Silence after activity
   | 'scheduled'            // Scheduled evaluation
@@ -642,6 +643,9 @@ export interface ChannelState {
 
   // Engagement tracking
   directEngagementAt?: number;  // Last mention/reply timestamp
+
+  // Engaged users tracking: { [userId]: engagedUntil timestamp }
+  engagedUsers?: Record<string, number>;
 
   // TTL for cleanup (DynamoDB TTL in seconds)
   ttl?: number;
@@ -1107,6 +1111,7 @@ export const ChannelStateMachineSchema = z.enum(['IDLE', 'ACTIVE', 'COOLDOWN']);
 
 export const ResponseTriggerSchema = z.enum([
   'direct_engagement',
+  'engaged_user',
   'message_threshold',
   'conversation_gap',
   'scheduled',
@@ -1151,6 +1156,7 @@ export const ChannelStateSchema = z.object({
   lastResponseMessageId: z.string().optional(),
   pendingResponseAt: z.number().optional(),
   directEngagementAt: z.number().optional(),
+  engagedUsers: z.record(z.string(), z.number()).optional(),
   ttl: z.number().optional(),
 });
 
