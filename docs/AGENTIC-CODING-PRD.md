@@ -31,7 +31,7 @@ Current-state note:
 - CI exists in .github/workflows/ci.yml with lint, build, and test jobs.
 - Deployment workflows are established (.github/workflows/deploy.yml and reusable deploy workflows).
 - Local gatekeeping exists via .husky/pre-commit and .husky/pre-push.
-- Operational and debugging scripts already exist (scripts/test-api.sh, scripts/agent-logs.sh, scripts/agent-inspect.sh).
+- Operational and debugging scripts already exist (scripts/test-api.sh, scripts/avatar-logs.sh, scripts/avatar-inspect.sh).
 - Browser and UI smoke capabilities exist (scripts/test-browser.mjs, scripts/smoke-admin-ui.mjs).
 - Issue tracking and labeling automation exists (.github/workflows/issue-management.yml and docs/ISSUE_REVIEW_LOG.md flow).
 - GitHub issue creation/assignment automation exists (scripts/gh-create-issue.sh and scripts/gh-assign-copilot.sh).

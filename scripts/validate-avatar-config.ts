@@ -4,7 +4,7 @@
 //   npx tsx scripts/validate-avatar-config.ts [path...]
 //
 // Examples:
-//   npx tsx scripts/validate-avatar-config.ts avatars/my-agent/config.yaml
+//   npx tsx scripts/validate-avatar-config.ts avatars/my-avatar/config.yaml
 //   npx tsx scripts/validate-avatar-config.ts avatars/*/config.yaml
 //   npx tsx scripts/validate-avatar-config.ts rati/examples/avatar-config.base+extensions.json
 
@@ -75,7 +75,7 @@ async function main() {
     console.log('Usage: npx tsx scripts/validate-avatar-config.ts [path...]');
     console.log('');
     console.log('Examples:');
-    console.log('  npx tsx scripts/validate-avatar-config.ts avatars/my-agent/config.yaml');
+    console.log('  npx tsx scripts/validate-avatar-config.ts avatars/my-avatar/config.yaml');
     console.log('  npx tsx scripts/validate-avatar-config.ts avatars/*/config.yaml');
     process.exit(0);
   }

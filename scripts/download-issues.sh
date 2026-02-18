@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Download Agent-Reported Issues
+# Download Avatar-Reported Issues
 #
-# Downloads issues reported by agents via report_issue tool,
+# Downloads issues reported by avatars via report_issue tool,
 # and feedback reported via report_user_feedback,
 # includes surrounding logs for context, and tracks which
 # issues have been downloaded.
@@ -158,7 +158,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}=== Agent Issue Downloader ===${NC}"
+echo -e "${BLUE}=== Avatar Issue Downloader ===${NC}"
 echo "Environment: ${ENV}"
 
 # Create output directory
@@ -284,14 +284,14 @@ run_insights_query() {
   echo "  ${label}: ${count} event(s)"
 }
 
-# Query 1: Agent-reported issues
+# Query 1: Avatar-reported issues
 run_insights_query \
   'fields @timestamp, @message, @logStream, @log | filter @message like /avatar_reported_issue/ | sort @timestamp desc' \
   "Issues" \
   "${ISSUES_DIR}/insights_issues.json" \
   "${LOG_GROUPS[@]}" &
 
-# Query 2: Agent-reported feedback
+# Query 2: Avatar-reported feedback
 run_insights_query \
   'fields @timestamp, @message, @logStream, @log | filter @message like /avatar_reported_feedback/ | sort @timestamp desc' \
   "Feedback" \
@@ -453,8 +453,8 @@ process_event() {
   EVENT_NAME=$(echo "${DATA}" | jq -r '.event // ""')
 
   if [[ "${EVENT_NAME}" == "avatar_reported_issue" ]]; then
-    local AGENT_ID SEVERITY CATEGORY TITLE
-    AGENT_ID=$(echo "${DATA}" | jq -r '.agentId // .avatarId // "unknown"')
+    local AVATAR_ID SEVERITY CATEGORY TITLE
+    AVATAR_ID=$(echo "${DATA}" | jq -r '.avatarId // .agentId // "unknown"')
     SEVERITY=$(echo "${DATA}" | jq -r '.issue.severity // "unknown"')
     CATEGORY=$(echo "${DATA}" | jq -r '.issue.category // "unknown"')
     TITLE=$(echo "${DATA}" | jq -r '.issue.title // "No title"')
@@ -463,11 +463,11 @@ process_event() {
     SHORT_ID=$(echo -n "${EVENT_ID}" | md5 2>/dev/null || echo -n "${EVENT_ID}" | md5sum | cut -d' ' -f1)
     SHORT_ID=${SHORT_ID:0:12}
     local ISSUE_FILE
-    ISSUE_FILE="${OUTPUT_DIR}/issue-${TIMESTAMP}-${AGENT_ID}-${SHORT_ID}-${SEVERITY}.json"
+    ISSUE_FILE="${OUTPUT_DIR}/issue-${TIMESTAMP}-${AVATAR_ID}-${SHORT_ID}-${SEVERITY}.json"
 
     local SEVERITY_UPPER
     SEVERITY_UPPER=$(echo "${SEVERITY}" | tr '[:lower:]' '[:upper:]')
-    echo -e "  ${BLUE}[${SEVERITY_UPPER}]${NC} ${TITLE} (${AGENT_ID})"
+    echo -e "  ${BLUE}[${SEVERITY_UPPER}]${NC} ${TITLE} (${AVATAR_ID})"
   
   # Calculate time window for context logs
     local CONTEXT_MS START_TIME END_TIME
@@ -509,8 +509,8 @@ process_event() {
   fi
 
   if [[ "${EVENT_NAME}" == "avatar_reported_feedback" ]]; then
-    local AGENT_ID SENTIMENT FEATURE CONTENT
-    AGENT_ID=$(echo "${DATA}" | jq -r '.agentId // .avatarId // "unknown"')
+    local AVATAR_ID SENTIMENT FEATURE CONTENT
+    AVATAR_ID=$(echo "${DATA}" | jq -r '.avatarId // .agentId // "unknown"')
     SENTIMENT=$(echo "${DATA}" | jq -r '.feedback.sentiment // "unknown"')
     FEATURE=$(echo "${DATA}" | jq -r '.feedback.feature // "unknown"')
     CONTENT=$(echo "${DATA}" | jq -r '.feedback.content // ""')
@@ -519,11 +519,11 @@ process_event() {
     SHORT_ID=$(echo -n "${EVENT_ID}" | md5 2>/dev/null || echo -n "${EVENT_ID}" | md5sum | cut -d' ' -f1)
     SHORT_ID=${SHORT_ID:0:12}
     local FEEDBACK_FILE
-    FEEDBACK_FILE="${OUTPUT_DIR}/feedback-${TIMESTAMP}-${AGENT_ID}-${SHORT_ID}-${SENTIMENT}.json"
+    FEEDBACK_FILE="${OUTPUT_DIR}/feedback-${TIMESTAMP}-${AVATAR_ID}-${SHORT_ID}-${SENTIMENT}.json"
 
     local SENTIMENT_UPPER
     SENTIMENT_UPPER=$(echo "${SENTIMENT}" | tr '[:lower:]' '[:upper:]')
-    echo -e "  ${BLUE}[FEEDBACK:${SENTIMENT_UPPER}]${NC} ${FEATURE} (${AGENT_ID})"
+    echo -e "  ${BLUE}[FEEDBACK:${SENTIMENT_UPPER}]${NC} ${FEATURE} (${AVATAR_ID})"
 
     local CONTEXT_MS START_TIME END_TIME
     CONTEXT_MS=$((CONTEXT_MINUTES * 60 * 1000))
@@ -565,7 +565,7 @@ process_event() {
   fi
 }
 
-# Process a runtime error event (not agent-reported, but a Lambda crash/timeout/exception)
+# Process a runtime error event (not avatar-reported, but a Lambda crash/timeout/exception)
 process_runtime_error() {
   local EVENT="$1"
 
@@ -653,7 +653,7 @@ process_runtime_error() {
     }' > "${ERROR_FILE}"
 }
 
-# Process agent-reported issues
+# Process avatar-reported issues
 while read -r EVENT; do
   while [[ $(jobs -rp | wc -l | tr -d ' ') -ge "${MAX_PARALLEL_EVENTS}" ]]; do
     sleep 0.1
@@ -661,7 +661,7 @@ while read -r EVENT; do
   process_event "${EVENT}" &
 done < <(echo "${MERGED_ISSUES}" | jq -c '.[]' 2>/dev/null)
 
-# Process agent-reported feedback
+# Process avatar-reported feedback
 while read -r EVENT; do
   while [[ $(jobs -rp | wc -l | tr -d ' ') -ge "${MAX_PARALLEL_EVENTS}" ]]; do
     sleep 0.1
@@ -686,8 +686,8 @@ echo ""
 echo -e "${GREEN}Downloaded ${ISSUE_COUNT} issue(s), ${FEEDBACK_COUNT} feedback event(s), and ${ERROR_COUNT} runtime error(s) to ${OUTPUT_DIR}/${NC}"
 echo ""
 
-# Summary by severity (agent-reported issues)
-echo -e "${BLUE}Summary by severity (issues):${NC}"
+# Summary by severity (avatar-reported issues)
+echo -e "${BLUE}Summary by severity (avatar-reported issues):${NC}"
 for SEV in critical high medium low; do
   COUNT=$(ls -1 "${OUTPUT_DIR}"/issue-*-${SEV}.json 2>/dev/null | wc -l | tr -d ' ')
   if [[ "${COUNT}" -gt 0 ]]; then
