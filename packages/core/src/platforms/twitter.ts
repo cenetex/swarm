@@ -7,6 +7,8 @@ import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 import { PlatformAdapter } from './base.js';
 import { ensureTwitterImageWithinLimit, TWITTER_MAX_IMAGE_BYTES } from './twitter-media.js';
+import { PlatformError } from '../errors/errors.js';
+import { SwarmErrorCode } from '../errors/codes.js';
 import type {
   AvatarConfig,
   SwarmEnvelope,
@@ -128,7 +130,10 @@ export class TwitterAdapter extends PlatformAdapter {
     replyToMessageId?: string
   ): Promise<boolean> {
     if (!this.client) {
-      throw new Error('Twitter client not initialized');
+      throw new PlatformError('Twitter client not initialized', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'twitter',
+    });
     }
 
     try {
@@ -183,7 +188,10 @@ export class TwitterAdapter extends PlatformAdapter {
    */
   async uploadMedia(media: Array<{ type: string; url: string }>): Promise<string[]> {
     if (!this.client) {
-      throw new Error('Twitter client not initialized');
+      throw new PlatformError('Twitter client not initialized', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'twitter',
+    });
     }
 
     const mediaIds: string[] = [];
@@ -265,7 +273,10 @@ export class TwitterAdapter extends PlatformAdapter {
     replyToTweetId?: string
   ): Promise<string> {
     if (!this.client) {
-      throw new Error('Twitter client not initialized');
+      throw new PlatformError('Twitter client not initialized', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'twitter',
+    });
     }
 
     const tweetParams: Parameters<TwitterApi['v2']['tweet']>[0] = {
@@ -302,7 +313,10 @@ export class TwitterAdapter extends PlatformAdapter {
     replyToTweetId?: string
   ): Promise<string> {
     if (!this.client) {
-      throw new Error('Twitter client not initialized');
+      throw new PlatformError('Twitter client not initialized', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'twitter',
+    });
     }
 
     const tweetParams: Parameters<TwitterApi['v2']['tweet']>[0] = {
@@ -358,7 +372,10 @@ export class TwitterAdapter extends PlatformAdapter {
     options?: { maxResults?: number }
   ): Promise<SwarmEnvelope[]> {
     if (!this.client) {
-      throw new Error('Twitter client not initialized');
+      throw new PlatformError('Twitter client not initialized', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'twitter',
+    });
     }
 
     const userId = await this.getBotUserId();
@@ -398,7 +415,10 @@ export class TwitterAdapter extends PlatformAdapter {
     options?: { maxParentTweets?: number; maxChars?: number }
   ): Promise<string | undefined> {
     if (!this.client) {
-      throw new Error('Twitter client not initialized');
+      throw new PlatformError('Twitter client not initialized', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'twitter',
+    });
     }
 
     const maxParentTweets = Math.max(1, Math.min(20, options?.maxParentTweets ?? 8));
@@ -452,7 +472,10 @@ export class TwitterAdapter extends PlatformAdapter {
 
   private async fetchTweetWithAuthor(tweetId: string): Promise<TweetWithOptionalAuthor | null> {
     if (!this.client) {
-      throw new Error('Twitter client not initialized');
+      throw new PlatformError('Twitter client not initialized', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'twitter',
+    });
     }
 
     try {
@@ -482,7 +505,10 @@ export class TwitterAdapter extends PlatformAdapter {
     media?: Array<{ type: string; url: string }>
   ): Promise<string> {
     if (!this.client) {
-      throw new Error('Twitter client not initialized');
+      throw new PlatformError('Twitter client not initialized', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'twitter',
+    });
     }
 
     const tweetParams: Parameters<TwitterApi['v2']['tweet']>[0] = {
@@ -511,7 +537,10 @@ export class TwitterAdapter extends PlatformAdapter {
     }
 
     if (!this.client) {
-      throw new Error('Twitter client not initialized');
+      throw new PlatformError('Twitter client not initialized', {
+      code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+      platform: 'twitter',
+    });
     }
 
     const me = await this.client.v2.me();
@@ -605,7 +634,10 @@ async function downloadMedia(url: string): Promise<{ buffer: Buffer; contentType
       }));
 
       if (!response.Body) {
-        throw new Error('Empty S3 response body');
+        throw new PlatformError('Empty S3 response body', {
+        code: SwarmErrorCode.PLATFORM_MEDIA_UPLOAD_ERROR,
+        platform: 'twitter',
+      });
       }
 
       const buffer = await streamToBuffer(response.Body as Readable);
@@ -630,7 +662,12 @@ async function downloadMedia(url: string): Promise<{ buffer: Buffer; contentType
   logger.debug('Twitter media download: fetching via HTTP', { url });
   const response = await fetchWithRetry(url, undefined, { maxRetries: 2, timeoutMs: 20_000 });
   if (!response.ok) {
-    throw new Error(`HTTP fetch failed: ${response.status} ${response.statusText}`);
+    throw new PlatformError(`HTTP fetch failed: ${response.status} ${response.statusText}`, {
+      code: SwarmErrorCode.PLATFORM_API_ERROR,
+      platform: 'twitter',
+      statusCode: response.status,
+      retryable: response.status >= 500,
+    });
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());

@@ -111,3 +111,12 @@ export {
   type TierMigrationResult,
   type TierEvaluationOptions,
 } from './brain/memory-tiers.js';
+export {
+  createSqsOffloadService,
+  createSqsOffloadServiceFromEnv,
+  SQS_OFFLOAD_CONSTANTS,
+  type SqsOffloadService,
+  type SqsOffloadConfig,
+  type OffloadResult,
+  type OffloadedMessageRef,
+} from './sqs-offload.js';
