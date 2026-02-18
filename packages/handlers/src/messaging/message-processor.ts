@@ -54,6 +54,7 @@ import { createRuntimeBrainService } from '../services/brain.js';
 import { callLLM, stripAvatarNamePrefix, type LLMMessage } from './llm-client.js';
 import { toolResultsToActions, maybeTranscribeAudio } from './tool-executor.js';
 import { buildSystemPrompt, formatBrainMemoryContext } from './context-builder.js';
+import { extractMediaContext, buildUserMessageContent, type MediaExtractionConfig } from './media-extractor.js';
 
 const MAX_TOOL_ITERATIONS = 5;
 const REPLY_CONTEXT_MAX_LENGTH = 200;
@@ -385,11 +386,32 @@ export function formatMentionContext(msg: { isMention?: boolean; isReplyToBot?: 
  * Convert SwarmEnvelope to ContextMessage for channel state
  */
 function envelopeToContextMessage(envelope: SwarmEnvelope): ContextMessage {
+  // Build a richer content string for media messages in channel history
+  let content = envelope.content.text || '';
+  if (!content && envelope.content.media && envelope.content.media.length > 0) {
+    const types = envelope.content.media.map(m => m.type);
+    if (types.includes('audio')) {
+      content = '[voice message]';
+    } else if (types.includes('photo')) {
+      content = '[photo]';
+    } else if (types.includes('video')) {
+      content = '[video]';
+    } else if (types.includes('animation')) {
+      content = '[GIF]';
+    } else if (types.includes('document')) {
+      content = '[document]';
+    } else {
+      content = '[media]';
+    }
+  } else if (!content) {
+    content = '[media]';
+  }
+
   return {
     messageId: envelope.messageId,
     sender: envelope.sender.displayName || envelope.sender.username || 'Unknown',
     isBot: envelope.sender.isBot,
-    content: envelope.content.text || '[media]',
+    content,
     timestamp: envelope.timestamp,
     userId: envelope.sender.id,
     username: envelope.sender.username,
@@ -517,17 +539,13 @@ async function generateResponse(
     });
   }
 
-  // Add current user message with sender attribution for group chat context
+  // Add current user message with sender attribution for group chat context.
   // Surface mention/reply context from the envelope metadata so the LLM
   // knows whether the user directly addressed it.
+  // For messages with media (images, voice, etc.), extract content so the LLM
+  // can actually see images (via vision) and read voice transcripts.
   const sender = envelope.sender.displayName || envelope.sender.username || envelope.sender.id;
   const mentionPrefix = formatMentionContext(envelope.metadata);
-  const text = envelope.content.text || (() => {
-    const mediaTypes = envelope.content.media?.map(m => m.type) || [];
-    if (mediaTypes.includes('audio')) return '[voice message received]';
-    return '[media received]';
-  })();
-
   // Resolve reply-to context for the current incoming message.
   // The context window for the current message is recentHistory (already sent to LLM).
   const currentReplyAnnotation = channelHistory
@@ -539,10 +557,59 @@ async function generateResponse(
     : undefined;
   const currentPrefix = currentReplyAnnotation ? `${currentReplyAnnotation}\n` : '';
 
-  messages.push({
-    role: 'user',
-    content: `${currentPrefix}${mentionPrefix}[${sender}]: ${text}`,
-  });
+  const hasMedia = envelope.content.media && envelope.content.media.length > 0;
+
+  if (hasMedia) {
+    const mediaConfig: MediaExtractionConfig = {
+      telegramBotToken: avatarRuntime.secrets.TELEGRAM_BOT_TOKEN || avatarRuntime.secrets.telegram_bot_token,
+      openaiApiKey: avatarRuntime.secrets.OPENAI_API_KEY || avatarRuntime.secrets.openai_api_key,
+    };
+
+    try {
+      const extraction = await extractMediaContext(envelope, mediaConfig);
+      const baseText = envelope.content.text || '';
+      const senderPrefix = `${currentPrefix}${mentionPrefix}[${sender}]: `;
+      const userContent = buildUserMessageContent(
+        senderPrefix + (baseText || ''),
+        extraction,
+      );
+
+      messages.push({
+        role: 'user',
+        content: userContent,
+      });
+
+      logger.info('Built multimodal user message', {
+        event: 'media_extraction_complete',
+        subsystem: 'media-extractor',
+        imageCount: extraction.imageUrls.length,
+        descriptionCount: extraction.mediaDescriptions.length,
+        hasAnnotation: extraction.annotation.length > 0,
+      });
+    } catch (err) {
+      // Fallback: if media extraction fails, use the old placeholder behavior
+      logger.warn('Media extraction failed, using fallback', {
+        event: 'media_extraction_error',
+        subsystem: 'media-extractor',
+        error: err instanceof Error ? err.message : String(err),
+      });
+      const text = envelope.content.text || '[media received]';
+      messages.push({
+        role: 'user',
+        content: `${currentPrefix}${mentionPrefix}[${sender}]: ${text}`,
+      });
+    }
+  } else {
+    const text = envelope.content.text || (() => {
+      const mediaTypes = envelope.content.media?.map(m => m.type) || [];
+      if (mediaTypes.includes('audio')) return '[voice message received]';
+      return '[media received]';
+    })();
+    messages.push({
+      role: 'user',
+      content: `${currentPrefix}${mentionPrefix}[${sender}]: ${text}`,
+    });
+  }
 
   const allToolResults: Array<{ name: string; result: { success: boolean; data?: unknown; media?: { type: string; url: string } } }> = [];
   let finalContent: string | undefined;
