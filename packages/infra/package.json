@@ -8,6 +8,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "watch": "tsc --watch",
+    "test": "bun test",
+    "test:update-snapshots": "bun test --update-snapshots",
     "lint": "eslint src/",
     "cdk": "cdk",
     "synth": "cdk synth",
