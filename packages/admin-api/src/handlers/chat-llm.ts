@@ -185,6 +185,83 @@ export function getOpenRouterClient(): OpenRouter {
   return cachedOpenRouter;
 }
 
+type FallbackTool = {
+  function?: {
+    name?: string;
+    description?: string;
+    parameters?: unknown;
+    inputSchema?: unknown;
+  };
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function sanitizeToolSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) {
+    return schema.map(sanitizeToolSchema);
+  }
+  if (!isRecord(schema)) {
+    return schema;
+  }
+
+  const nullable = schema.nullable === true;
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(schema)) {
+    // Provider validates against JSON Schema draft 2020-12; OpenAPI extension
+    // fields (e.g. nullable) and explicit $schema declarations can be rejected.
+    if (key === 'nullable' || key === '$schema') {
+      continue;
+    }
+    sanitized[key] = sanitizeToolSchema(value);
+  }
+
+  if (nullable) {
+    return {
+      anyOf: [
+        sanitized,
+        { type: 'null' },
+      ],
+    };
+  }
+
+  return sanitized;
+}
+
+function resolveFallbackToolParameters(tool: FallbackTool): Record<string, unknown> {
+  const explicit = tool.function?.parameters;
+  if (isRecord(explicit)) {
+    const sanitized = sanitizeToolSchema(explicit);
+    if (isRecord(sanitized)) {
+      return sanitized;
+    }
+  }
+
+  const inputSchema = tool.function?.inputSchema;
+  if (!inputSchema) {
+    return { type: 'object', additionalProperties: true };
+  }
+
+  let rawSchema: unknown;
+  try {
+    rawSchema = zodToJsonSchema(inputSchema as Parameters<typeof zodToJsonSchema>[0], { target: 'jsonSchema7' });
+  } catch {
+    // Some tools may already provide plain JSON Schema instead of Zod.
+    if (isRecord(inputSchema)) {
+      rawSchema = inputSchema;
+    } else {
+      return { type: 'object', additionalProperties: true };
+    }
+  }
+
+  const sanitized = sanitizeToolSchema(rawSchema);
+  return isRecord(sanitized)
+    ? sanitized
+    : { type: 'object', additionalProperties: true };
+}
+
 /**
  * Fallback direct API call when SDK streaming validation fails
  * Uses non-streaming API to avoid SDK's Zod validation issues with null usage fields
@@ -213,24 +290,13 @@ export async function callLlmDirectFallback(
   if (tools && tools.length > 0) {
     // Convert SDK tools to OpenAI format
     body.tools = tools.map((t: unknown) => {
-      const tool = t as {
-        function?: {
-          name?: string;
-          description?: string;
-          parameters?: unknown;
-          inputSchema?: unknown;
-        };
-      };
-      const parameters = tool.function?.parameters
-        || (tool.function?.inputSchema
-          ? zodToJsonSchema(tool.function.inputSchema as Parameters<typeof zodToJsonSchema>[0], { target: 'openApi3' })
-          : undefined);
+      const tool = t as FallbackTool;
       return {
         type: 'function',
         function: {
           name: tool.function?.name,
           description: tool.function?.description,
-          parameters,
+          parameters: resolveFallbackToolParameters(tool),
         },
       };
     });
