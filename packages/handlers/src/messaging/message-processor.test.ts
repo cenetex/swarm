@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
+import { formatMentionContext } from './message-processor.js';
 
 // Schema matching MessageQueueItemSchema
 const MessageQueueItemSchema = z.object({
@@ -741,5 +742,111 @@ Line 3 with emoji 🚀
       expect(result.toolCalls[0].arguments.text).toContain('Line 2');
       expect(result.toolCalls[0].arguments.text).toContain('🚀');
     });
+  });
+});
+
+describe('formatMentionContext', () => {
+  it('returns empty string when neither flag is set', () => {
+    expect(formatMentionContext({})).toBe('');
+    expect(formatMentionContext({ isMention: false, isReplyToBot: false })).toBe('');
+  });
+
+  it('returns [Mentioned you] prefix when isMention is true', () => {
+    expect(formatMentionContext({ isMention: true })).toBe('[Mentioned you] ');
+  });
+
+  it('returns [Reply to you] prefix when isReplyToBot is true', () => {
+    expect(formatMentionContext({ isReplyToBot: true })).toBe('[Reply to you] ');
+  });
+
+  it('returns both tags when both flags are true', () => {
+    expect(formatMentionContext({ isMention: true, isReplyToBot: true })).toBe(
+      '[Mentioned you] [Reply to you] '
+    );
+  });
+
+  it('handles undefined flags gracefully', () => {
+    expect(formatMentionContext({ isMention: undefined, isReplyToBot: undefined })).toBe('');
+  });
+});
+
+describe('Message Processor - Mention Awareness in LLM Context', () => {
+  /**
+   * These tests verify that mention/reply-to-bot context is surfaced
+   * in the LLM message formatting, so the model knows when it was
+   * directly addressed vs seeing a regular group message.
+   */
+  it('should prefix history messages with mention context when isMention is true', () => {
+    const historyMessages = [
+      { messageId: 'm1', sender: 'Alice', isBot: false, content: 'Hello everyone', timestamp: 1000, isMention: false },
+      { messageId: 'm2', sender: 'Bob', isBot: false, content: '@bot what do you think?', timestamp: 2000, isMention: true },
+      { messageId: 'm3', sender: 'Bot', isBot: true, content: 'I think it looks great!', timestamp: 3000 },
+      { messageId: 'm4', sender: 'Carol', isBot: false, content: 'Thanks bot', timestamp: 4000, isReplyToBot: true },
+    ];
+
+    // Simulate the formatting logic from generateResponse
+    const formatted = historyMessages.map(msg => ({
+      role: msg.isBot ? 'assistant' : 'user',
+      content: msg.isBot
+        ? msg.content
+        : `${formatMentionContext(msg)}[${msg.sender}]: ${msg.content}`,
+    }));
+
+    // Regular message: no prefix
+    expect(formatted[0].content).toBe('[Alice]: Hello everyone');
+
+    // Mentioned message: has [Mentioned you] prefix
+    expect(formatted[1].content).toBe('[Mentioned you] [Bob]: @bot what do you think?');
+
+    // Bot message: no prefix (assistant role)
+    expect(formatted[2].content).toBe('I think it looks great!');
+
+    // Reply to bot: has [Reply to you] prefix
+    expect(formatted[3].content).toBe('[Reply to you] [Carol]: Thanks bot');
+  });
+
+  it('should prefix the current envelope message with mention context', () => {
+    const envelope = {
+      sender: { displayName: 'Alice', username: 'alice123', id: 'u1' },
+      content: { text: '@bot help me please' },
+      metadata: { isMention: true, isReplyToBot: false },
+    };
+
+    const sender = envelope.sender.displayName || envelope.sender.username || envelope.sender.id;
+    const mentionPrefix = formatMentionContext(envelope.metadata);
+    const text = envelope.content.text;
+    const content = `${mentionPrefix}[${sender}]: ${text}`;
+
+    expect(content).toBe('[Mentioned you] [Alice]: @bot help me please');
+  });
+
+  it('should not add prefix for regular messages in current envelope', () => {
+    const envelope = {
+      sender: { displayName: 'Bob', username: 'bob456', id: 'u2' },
+      content: { text: 'just chatting' },
+      metadata: { isMention: false, isReplyToBot: false },
+    };
+
+    const sender = envelope.sender.displayName || envelope.sender.username || envelope.sender.id;
+    const mentionPrefix = formatMentionContext(envelope.metadata);
+    const text = envelope.content.text;
+    const content = `${mentionPrefix}[${sender}]: ${text}`;
+
+    expect(content).toBe('[Bob]: just chatting');
+  });
+
+  it('should handle both mention and reply on the same message', () => {
+    const envelope = {
+      sender: { displayName: 'Eve', username: 'eve', id: 'u3' },
+      content: { text: '@bot replying to your point' },
+      metadata: { isMention: true, isReplyToBot: true },
+    };
+
+    const sender = envelope.sender.displayName || envelope.sender.username || envelope.sender.id;
+    const mentionPrefix = formatMentionContext(envelope.metadata);
+    const text = envelope.content.text;
+    const content = `${mentionPrefix}[${sender}]: ${text}`;
+
+    expect(content).toBe('[Mentioned you] [Reply to you] [Eve]: @bot replying to your point');
   });
 });
