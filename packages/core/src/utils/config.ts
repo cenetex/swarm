@@ -6,6 +6,8 @@ import { readFileSync, existsSync } from 'fs';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import type { AvatarConfig } from '../types/index.js';
+import { ConfigError } from '../errors/errors.js';
+import { SwarmErrorCode } from '../errors/codes.js';
 
 // =============================================================================
 // CONFIG FILE SCHEMAS (with defaults and snake_case support)
@@ -272,7 +274,10 @@ const AvatarConfigFileSchema = z.object({
  */
 export function loadAvatarConfigFromFile(filePath: string): AvatarConfig {
   if (!existsSync(filePath)) {
-    throw new Error(`Avatar config file not found: ${filePath}`);
+    throw new ConfigError(`Avatar config file not found: ${filePath}`, {
+      code: SwarmErrorCode.CONFIG_NOT_FOUND,
+      context: { filePath },
+    });
   }
 
   const content = readFileSync(filePath, 'utf-8');
@@ -280,7 +285,10 @@ export function loadAvatarConfigFromFile(filePath: string): AvatarConfig {
 
   const result = AvatarConfigFileSchema.safeParse(parsed);
   if (!result.success) {
-    throw new Error(`Invalid avatar config: ${result.error.message}`);
+    throw new ConfigError(`Invalid avatar config: ${result.error.message}`, {
+      code: SwarmErrorCode.CONFIG_VALIDATION_ERROR,
+      context: { filePath, zodErrors: result.error.flatten() },
+    });
   }
 
   return result.data;
@@ -295,7 +303,10 @@ export function loadAvatarConfigFromEnv(avatarId: string): AvatarConfig {
   if (configJson) {
     const result = AvatarConfigFileSchema.safeParse(JSON.parse(configJson));
     if (!result.success) {
-      throw new Error(`Invalid avatar config from env: ${result.error.message}`);
+      throw new ConfigError(`Invalid avatar config from env: ${result.error.message}`, {
+        code: SwarmErrorCode.CONFIG_VALIDATION_ERROR,
+        context: { avatarId, source: 'env' },
+      });
     }
     return result.data;
   }
@@ -374,7 +385,10 @@ export function mergeAvatarConfigs(...configs: Partial<AvatarConfig>[]): AvatarC
   // Validate the merged config
   const parseResult = AvatarConfigFileSchema.safeParse(result);
   if (!parseResult.success) {
-    throw new Error(`Invalid merged avatar config: ${parseResult.error.message}`);
+    throw new ConfigError(`Invalid merged avatar config: ${parseResult.error.message}`, {
+      code: SwarmErrorCode.CONFIG_VALIDATION_ERROR,
+      context: { source: 'merge' },
+    });
   }
 
   return parseResult.data;

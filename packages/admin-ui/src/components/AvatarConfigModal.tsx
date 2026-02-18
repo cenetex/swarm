@@ -7,6 +7,7 @@ import { useAuth } from '../store/auth';
 import type { Avatar, AvatarSecret } from '../types';
 import { AvatarDisplay } from './AvatarSidebar';
 import { EnergyPanel } from './EnergyPanel';
+import { UsageMeterPanel } from './UsageMeterPanel';
 import * as avatarApi from '../api/avatars';
 
 interface AvatarConfigModalProps {
@@ -286,6 +287,9 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
 
               {/* Energy Panel */}
               <EnergyPanel avatarId={avatar.id} isAdmin={true} />
+
+              {/* Usage Metering */}
+              <UsageMeterPanel avatarId={avatar.id} />
             </div>
           )}
 
