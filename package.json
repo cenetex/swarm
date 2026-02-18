@@ -1,6 +1,5 @@
 {
   "name": "aws-swarm",
-  "version": "0.1.75",
   "description": "Social media avatar swarm framework for AWS",
   "private": true,
   "type": "module",
@@ -36,7 +35,7 @@
     "issues:sync:internal:apply": "node scripts/sync-internal-issues-to-github.mjs --config .github/policy/internal-issue-sync-policy.json --apply",
     "canary:telegram": "bun run scripts/telegram-canary.ts",
     "prepare": "husky",
-    "version:bump": "node -e \"const p=require('./package.json');const [a,b,c]=p.version.split('.').map(Number);p.version=[a,b,c+1].join('.');require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');console.log('Bumped to '+p.version)\""
+    "release": "./scripts/release.sh"
   },
   "keywords": [
     "aws",

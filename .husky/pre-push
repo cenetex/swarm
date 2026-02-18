@@ -1,47 +1,12 @@
 #!/usr/bin/env sh
 set -e
 
-# Repo pre-push: version-tag sync + CI checks.
-# Workflow: git tag v0.1.50 && git push origin main --tags
-# This hook detects the tag, updates package.json if needed,
-# creates a new commit, and moves the tag to that commit.
-#
+# Repo pre-push: CI checks (lint, build, test).
 # Skip with: SKIP_PREPUSH=1 git push
 if [ "${SKIP_PREPUSH:-}" = "1" ] || [ "${SKIP_PREPUSH:-}" = "true" ]; then
   echo "pre-push: SKIP_PREPUSH set; skipping checks"
   exit 0
 fi
-
-# ── Version-tag sync ────────────────────────────────────────
-# Find the highest v* tag pointing at HEAD
-TAG=$(git tag --points-at HEAD 2>/dev/null | grep '^v[0-9]' | sort -V | tail -1)
-
-if [ -n "$TAG" ]; then
-  TAG_VERSION="${TAG#v}"
-  PKG_VERSION=$(node -p "require('./package.json').version")
-
-  if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-    echo "pre-push: syncing package.json ${PKG_VERSION} -> ${TAG_VERSION}"
-
-    # Update package.json version field
-    node -e "
-      const fs = require('fs');
-      const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-      pkg.version = '${TAG_VERSION}';
-      fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-    "
-
-    # New commit (never amend — that rewrites history and splits the DAG)
-    git add package.json
-    git commit -m "chore: bump version to ${TAG_VERSION}" --no-verify >/dev/null 2>&1
-
-    # Move the tag to the new commit
-    git tag -f "$TAG" HEAD >/dev/null 2>&1
-
-    echo "pre-push: package.json now ${TAG_VERSION}, tag ${TAG} updated"
-  fi
-fi
-
 # ── Standard checks ─────────────────────────────────────────
 echo "pre-push: pnpm lint"
 pnpm lint

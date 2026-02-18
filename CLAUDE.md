@@ -312,6 +312,24 @@ To deploy manually via GitHub Actions:
 2. Click "Run workflow"
 3. Select branch and confirm
 
+### Releasing
+
+Releases use GitHub Releases as the sole version source. There is no `version` field in `package.json`.
+
+```bash
+# Create a patch release (default)
+./scripts/release.sh
+
+# Create a minor or major release
+./scripts/release.sh minor
+./scripts/release.sh major
+
+# Explicit version
+./scripts/release.sh v1.0.0
+```
+
+This creates a GitHub Release and tag on `main` via the `gh` CLI. The `release-notes.yml` workflow then overwrites the release body with AI-polished notes.
+
 ### Adding a New Tool to Admin Avatar
 
 1. Add tool definition in `packages/admin-api/src/handlers/chat.ts`
