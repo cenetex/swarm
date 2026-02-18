@@ -119,6 +119,9 @@ export async function getEmbeddingStats(avatarId: string): Promise<EmbeddingStat
       immediate: { total: 0, withEmbedding: 0 },
       recent: { total: 0, withEmbedding: 0 },
       core: { total: 0, withEmbedding: 0 },
+      ephemeral: { total: 0, withEmbedding: 0 },
+      durable: { total: 0, withEmbedding: 0 },
+      archival: { total: 0, withEmbedding: 0 },
     },
   };
 

@@ -1387,13 +1387,6 @@ export interface PropertyResearchAuth {
 
 /**
  * Memory tier determines storage duration and detail level
- * - immediate: Last N interactions, full detail (short-term)
- * - recent: Summarized memories with themes (medium-term)
- * - core: Permanent learnings, patterns, identity (long-term)
- */
-
-/**
- * Memory tier determines storage duration and detail level
  *
  * Legacy tiers (backward compatible):
  * - immediate: Last N interactions, full detail (short-term)

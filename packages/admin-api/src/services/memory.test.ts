@@ -381,6 +381,9 @@ describe('Memory Service', () => {
         immediate: 3,
         recent: 15,
         core: 8,
+        ephemeral: 0,
+        durable: 0,
+        archival: 0,
       });
     });
   });
@@ -865,6 +868,9 @@ describe('Memory Service', () => {
         immediate: 2,
         recent: 1,
         core: 1,
+        ephemeral: 0,
+        durable: 0,
+        archival: 0,
       });
       expect(stats.totalMemories).toBe(4);
       expect(stats.averageStrength.immediate).toBeCloseTo(0.9);

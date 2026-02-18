@@ -603,6 +603,9 @@ export async function getMemoryCounts(avatarId: string): Promise<Record<MemoryTi
     immediate: immediateResult.Count || 0,
     recent: recentResult.Count || 0,
     core: coreResult.Count || 0,
+    ephemeral: 0,
+    durable: 0,
+    archival: 0,
   };
 }
 
@@ -1519,7 +1522,7 @@ export async function getMemoryStats(avatarId: string): Promise<{
 }> {
   const validAvatarId = validateAvatarId(avatarId);
   const counts = await getMemoryCounts(validAvatarId);
-  const totalMemories = counts.immediate + counts.recent + counts.core;
+  const totalMemories = counts.immediate + counts.recent + counts.core + counts.ephemeral + counts.durable + counts.archival;
 
   // Get memories for average strength calculation
   const [immediate, recent, core] = await promiseAllWithTimeout([
@@ -1554,6 +1557,9 @@ export async function getMemoryStats(avatarId: string): Promise<{
       immediate: avgStrength(immediate),
       recent: avgStrength(recent),
       core: avgStrength(core),
+      ephemeral: 0,
+      durable: 0,
+      archival: 0,
     },
     oldestMemory,
     newestMemory,

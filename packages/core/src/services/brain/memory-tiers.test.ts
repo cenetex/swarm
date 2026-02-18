@@ -36,8 +36,6 @@ import {
   _setDynamoClient,
   type AccessMetrics,
   type DurableMemoryTier,
-  type LegacyMemoryTier,
-  type TierEvaluationOptions,
 } from './memory-tiers.js';
 
 // ============================================================================
