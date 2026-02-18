@@ -1,0 +1,5 @@
+[test]
+# Enforce minimum 40% line and function coverage.
+# Threshold is also enforced by scripts/check-coverage.sh for CI reliability.
+coverageThreshold = 0.4
+coverageSkipTestFiles = true
