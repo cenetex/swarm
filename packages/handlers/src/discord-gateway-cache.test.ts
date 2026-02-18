@@ -3,9 +3,12 @@
  *
  * These tests validate the caching behavior in isolation, without
  * requiring actual DynamoDB or Secrets Manager connections.
- *
- * Env vars are set via bunfig.toml preload (test-preload.ts).
  */
+
+// Set env vars before importing the module (which reads them at load time)
+process.env.STATE_TABLE ||= 'test-state-table';
+process.env.MESSAGE_QUEUE_URL ||= 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue';
+
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   avatarConfigCache,
