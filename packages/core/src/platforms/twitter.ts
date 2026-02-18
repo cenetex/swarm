@@ -2,7 +2,7 @@
  * Twitter/X Platform Adapter
  * Handles Twitter API v2 for posting, mentions, and DMs
  */
-import { TwitterApi, TweetV2, UserV2 } from 'twitter-api-v2';
+import { TwitterApi, TweetV2, UserV2, type MediaObjectV2 } from 'twitter-api-v2';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 import { PlatformAdapter } from './base.js';
@@ -15,6 +15,7 @@ import type {
   ResponseAction,
   SenderInfo,
   MessageContent,
+  MediaAttachment,
   TwitterConfig,
 } from '../types/index.js';
 import { fetchWithRetry } from '../utils/fetch-retry.js';
@@ -24,6 +25,8 @@ type TweetWithOptionalAuthor = TweetV2 & {
   author?: UserV2;
   author_id?: string;
   referenced_tweets?: Array<{ type: string; id: string }>;
+  in_reply_to_user_id?: string;
+  includes?: { media?: MediaObjectV2[] };
 };
 
 type TwitterV2SingleTweetClient = {
@@ -93,21 +96,35 @@ export class TwitterAdapter extends PlatformAdapter {
 
   /**
    * Parse a tweet into SwarmEnvelope
-   * Used when processing mentions or timeline tweets
+   * Used when processing mentions or timeline tweets.
+   *
+   * Parity with Telegram:
+   * - Extracts isMention / isReplyToBot metadata
+   * - Extracts media attachments from tweet includes
+   * - Sets priority to 'high' for direct engagement
    */
   async parseMessage(body: unknown): Promise<SwarmEnvelope | null> {
-    const tweet = body as TweetV2 & { 
-      author?: UserV2;
-      author_id?: string;
-    };
+    const tweet = body as TweetWithOptionalAuthor;
     
     if (!tweet.id || !tweet.text) {
       return null;
     }
 
     const sender = await this.extractSender(tweet);
-    const content = this.extractContent(tweet);
+    const content = this.extractContent(tweet, tweet.includes?.media);
     const mentions = this.extractMentions(tweet);
+
+    // Detect direct engagement (parity with Telegram adapter)
+    const botUsername = this.config.username;
+    const isMention = botUsername
+      ? new RegExp(`@${botUsername}\\b`, 'i').test(tweet.text)
+      : false;
+
+    const botUserId = this.botUserId;
+    const isReplyToBot = !!(
+      botUserId &&
+      tweet.in_reply_to_user_id === botUserId
+    );
 
     const envelope = this.createBaseEnvelope({
       messageId: tweet.id,
@@ -117,6 +134,11 @@ export class TwitterAdapter extends PlatformAdapter {
       content,
       raw: tweet,
     });
+
+    // Enrich metadata with engagement flags (parity with Telegram)
+    envelope.metadata.isMention = isMention;
+    envelope.metadata.isReplyToBot = isReplyToBot;
+    envelope.metadata.priority = (isMention || isReplyToBot) ? 'high' : 'normal';
 
     envelope.mentions = mentions;
     envelope.replyTo = tweet.referenced_tweets?.find(r => r.type === 'replied_to')?.id;
@@ -142,15 +164,34 @@ export class TwitterAdapter extends PlatformAdapter {
           await this.postTweet(action.text, action.media, replyToMessageId);
           break;
 
+        case 'send_media': {
+          // Parity with Telegram: handle send_media action for image/video/animation
+          const media = [{ type: action.mediaType, url: action.url }];
+          const caption = action.caption || '';
+          await this.postTweet(caption, media, replyToMessageId);
+          break;
+        }
+
         case 'send_voice': {
           const text = action.caption ? `${action.caption} ${action.url}` : action.url;
           await this.postTweet(text, undefined, replyToMessageId);
           break;
         }
 
+        case 'send_sticker': {
+          // Twitter doesn't have stickers - post the emoji as a tweet
+          await this.postTweet(action.emoji, undefined, replyToMessageId);
+          break;
+        }
+
         case 'react':
           // Twitter "reaction" is a like
           await this.client.v2.like(await this.getBotUserId(), action.messageId);
+          break;
+
+        case 'take_selfie':
+          // Media generation handled by media processor
+          // This action comes with pre-generated media
           break;
 
         case 'wait':
@@ -178,8 +219,8 @@ export class TwitterAdapter extends PlatformAdapter {
   }
 
   async sendTypingIndicator(_conversationId: string): Promise<void> {
-    // Twitter doesn't have typing indicators for tweets
-    // Could be implemented for DMs
+    // Twitter doesn't support typing indicators for public tweets.
+    // No-op by design (platform constraint).
   }
 
   /**
@@ -385,16 +426,23 @@ export class TwitterAdapter extends PlatformAdapter {
     const mentions = await this.client.v2.userMentionTimeline(userId, {
       since_id: sinceId,
       max_results: maxResults,
-      expansions: ['author_id', 'referenced_tweets.id'],
-      'tweet.fields': ['created_at', 'conversation_id', 'in_reply_to_user_id', 'referenced_tweets'],
+      expansions: ['author_id', 'referenced_tweets.id', 'attachments.media_keys'],
+      'tweet.fields': ['created_at', 'conversation_id', 'in_reply_to_user_id', 'referenced_tweets', 'attachments'],
       'user.fields': ['username', 'name'],
+      'media.fields': ['media_key', 'type', 'url', 'preview_image_url', 'width', 'height', 'alt_text'],
     });
 
     const envelopes: SwarmEnvelope[] = [];
     
+    const mediaIncludes = (mentions.includes as { media?: MediaObjectV2[] } | undefined)?.media;
+
     for (const tweet of mentions.data.data || []) {
       const author = mentions.includes?.users?.find(u => u.id === tweet.author_id);
-      const envelope = await this.parseMessage({ ...tweet, author });
+      const envelope = await this.parseMessage({
+        ...tweet,
+        author,
+        includes: mediaIncludes ? { media: mediaIncludes } : undefined,
+      });
       if (envelope) {
         envelopes.push(envelope);
       }
@@ -572,13 +620,49 @@ export class TwitterAdapter extends PlatformAdapter {
   }
 
   /**
-   * Extract content from tweet
+   * Extract content from tweet.
+   * When media includes are provided (from API expansions), attaches them
+   * to the content -- parity with Telegram's media extraction.
    */
-  private extractContent(tweet: TweetV2): MessageContent {
-    return {
+  private extractContent(tweet: TweetV2, mediaIncludes?: MediaObjectV2[]): MessageContent {
+    const content: MessageContent = {
       text: tweet.text,
-      // Note: Media extraction requires additional API calls with expansions
     };
+
+    // Extract media from tweet attachments + includes (parity with Telegram)
+    if (mediaIncludes && tweet.attachments?.media_keys) {
+      const mediaAttachments: MediaAttachment[] = [];
+      for (const key of tweet.attachments.media_keys) {
+        const media = mediaIncludes.find(m => m.media_key === key);
+        if (!media) continue;
+
+        let type: MediaAttachment['type'];
+        switch (media.type) {
+          case 'photo':
+            type = 'photo';
+            break;
+          case 'video':
+            type = 'video';
+            break;
+          case 'animated_gif':
+            type = 'animation';
+            break;
+          default:
+            type = 'document';
+        }
+
+        mediaAttachments.push({
+          type,
+          url: media.url || media.preview_image_url,
+        });
+      }
+
+      if (mediaAttachments.length > 0) {
+        content.media = mediaAttachments;
+      }
+    }
+
+    return content;
   }
 
   /**
