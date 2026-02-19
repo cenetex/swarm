@@ -70,7 +70,7 @@ export class OutboundSender {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         errors.push(`Action ${action.type} error: ${errorMessage}`);
-        console.error(`Failed to execute action ${action.type}:`, error);
+        console.error(`Failed to execute action ${action.type}:`, error instanceof Error ? error.message : String(error));
       }
     }
 
@@ -83,7 +83,7 @@ export class OutboundSender {
           response.actions
         );
       } catch (error) {
-        console.warn('Failed to log activity:', error);
+        console.warn('Failed to log activity:', error instanceof Error ? error.message : String(error));
       }
     }
 

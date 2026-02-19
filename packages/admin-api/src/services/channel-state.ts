@@ -238,7 +238,7 @@ export async function getChannelState(
 
     return record;
   } catch (err) {
-    console.warn('[ChannelState] Failed to get channel state:', err);
+    console.warn('[ChannelState] Failed to get channel state:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -405,7 +405,7 @@ export async function addMessageToBuffer(
       };
     } catch (err: unknown) {
       if ((err as { name?: string }).name !== 'ConditionalCheckFailedException') {
-        console.warn('[ChannelState] Failed to trim channel buffer:', err);
+        console.warn('[ChannelState] Failed to trim channel buffer:', err instanceof Error ? err.message : String(err));
       }
     }
   }
@@ -425,7 +425,7 @@ export async function saveChannelState(
       Item: state,
     }));
   } catch (err) {
-    console.warn('[ChannelState] Failed to save channel state:', err);
+    console.warn('[ChannelState] Failed to save channel state:', err instanceof Error ? err.message : String(err));
     throw err;
   }
 }
@@ -877,7 +877,7 @@ export async function getSharedHistory(
 
     return record;
   } catch (err) {
-    console.warn('[SharedHistory] Failed to get shared history:', err);
+    console.warn('[SharedHistory] Failed to get shared history:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -929,7 +929,7 @@ export async function recordBotMessage(
       totalMessages: messages.length,
     });
   } catch (err) {
-    console.error('[SharedHistory] Failed to record bot message:', err);
+    console.error('[SharedHistory] Failed to record bot message:', err instanceof Error ? err.message : String(err));
     // Don't throw - this is best-effort
   }
 }
@@ -1096,7 +1096,7 @@ export async function getKnownTelegramUsers(
     // Sort by last seen (most recent first)
     return Array.from(userMap.values()).sort((a, b) => b.lastSeen - a.lastSeen);
   } catch (err) {
-    console.warn('[ChannelState] Failed to get known Telegram users:', err);
+    console.warn('[ChannelState] Failed to get known Telegram users:', err instanceof Error ? err.message : String(err));
     return [];
   }
 }

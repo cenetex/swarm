@@ -280,7 +280,7 @@ export async function getAvatarEnergyConfig(
   try {
     burnStats = await d.getBurnStatsForEnergy(avatarId);
   } catch (error) {
-    console.warn(`[Energy] Failed to get burn stats for ${avatarId}, using tier 0 defaults:`, error);
+    console.warn(`[Energy] Failed to get burn stats for ${avatarId}, using tier 0 defaults:`, error instanceof Error ? error.message : String(error));
     burnStats = {
       maxEnergy: TIER_0_DEFAULTS.maxEnergy,
       regenPerHour: TIER_0_DEFAULTS.regenPerHour,
@@ -293,7 +293,7 @@ export async function getAvatarEnergyConfig(
     const avatar = await d.getAvatar(avatarId);
     isAscended = avatar?.isAscended === true;
   } catch (error) {
-    console.warn(`[Energy] Failed to check ascension status for ${avatarId}:`, error);
+    console.warn(`[Energy] Failed to check ascension status for ${avatarId}:`, error instanceof Error ? error.message : String(error));
   }
 
   // Apply ascension boost if applicable (+50% max energy, +50% regen)
@@ -358,7 +358,7 @@ export async function calculateRefillRate(
     return { refillPerHour, bonusPerHour, tokenBalance };
   } catch (error) {
     // On error, fall back to base rate
-    console.warn(`[Energy] Failed to get token balance for ${avatarId}, using base rate:`, error);
+    console.warn(`[Energy] Failed to get token balance for ${avatarId}, using base rate:`, error instanceof Error ? error.message : String(error));
     return {
       refillPerHour: config.baseRefillPerHour,
       bonusPerHour: 0,
@@ -772,7 +772,7 @@ async function logEnergyEvent(
     }));
   } catch (error) {
     // Don't fail the operation if logging fails
-    console.error('[Energy] Failed to log energy event:', error);
+    console.error('[Energy] Failed to log energy event:', error instanceof Error ? error.message : String(error));
   }
 }
 

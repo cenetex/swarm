@@ -26,9 +26,84 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false, // Disable sourcemaps to reduce memory usage in CI
-    chunkSizeWarningLimit: 2000, // Increase limit since we're combining chunks
-    // Let Rollup handle chunk splitting automatically.
-    // Manual chunking of React causes createContext errors due to
-    // chunk load ordering issues with Privy and other React-dependent libs.
+    // Privy SDK core + WalletConnect + EVM libs each exceed the default
+    // 500 kB limit.  Setting to 1000 kB avoids false warnings while
+    // still catching any chunk that grows beyond ~1 MB.
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // --- React core: keep react + react-dom + scheduler together to
+          // avoid duplicate-context / chunk-ordering issues with Privy,
+          // Solana wallet adapters, and other React-dependent libs.
+          if (
+            id.includes('/node_modules/react/') ||
+            id.includes('/node_modules/react-dom/') ||
+            id.includes('/node_modules/scheduler/')
+          ) {
+            return 'vendor-react';
+          }
+
+          // --- Cryptographic primitives shared by both Solana and EVM libs.
+          // Kept in their own chunk to avoid circular deps between the
+          // Solana and EVM vendor chunks.
+          if (
+            id.includes('/node_modules/@noble/') ||
+            id.includes('/node_modules/@scure/')
+          ) {
+            return 'vendor-crypto';
+          }
+
+          // --- Solana wallet stack
+          if (
+            id.includes('/node_modules/@solana/') ||
+            id.includes('/node_modules/@solana-program/') ||
+            id.includes('/node_modules/bs58/') ||
+            id.includes('/node_modules/base-x/')
+          ) {
+            return 'vendor-solana';
+          }
+
+          // --- EVM / Ethereum libs pulled in by Privy (viem, ethers, wagmi, ox).
+          // Kept separate from Privy so Privy's own internal code-splitting
+          // (lazy-loaded screens) is preserved by Rollup.
+          if (
+            id.includes('/node_modules/viem/') ||
+            id.includes('/node_modules/wagmi/') ||
+            id.includes('/node_modules/@wagmi/') ||
+            id.includes('/node_modules/ethers/') ||
+            id.includes('/node_modules/ox/')
+          ) {
+            return 'vendor-evm';
+          }
+
+          // --- Privy auth SDK + heavy transitive deps that are only
+          // used by Privy.  WalletConnect and Coinbase SDK are split
+          // into their own chunks since they are large and lazily
+          // loaded by Privy's connector screens.
+          if (
+            id.includes('/node_modules/@walletconnect/') ||
+            id.includes('/node_modules/@coinbase/')
+          ) {
+            return 'vendor-walletconnect';
+          }
+
+          // --- Privy auth SDK: do NOT force into a single chunk.
+          // Privy uses dynamic imports internally to lazy-load screens
+          // (wallet connect, funding, onboarding, TOTP enrollment, etc.).
+          // Rollup preserves these as separate auto-generated chunks.
+          // Only Privy's eagerly-loaded core ends up in the main chunk.
+          //
+          // Privy's transitive deps (styled-components, headless UI,
+          // jose, etc.) are also left for Rollup to handle.
+
+          // --- Markdown rendering pipeline (react-markdown + remark/rehype).
+          // Note: react-markdown depends on React, so placing it in a
+          // separate chunk from vendor-react creates a circular dependency.
+          // Instead, let these modules stay in the default app chunk since
+          // they are modest in size (~118 kB) and always needed for chat.
+        },
+      },
+    },
   },
 });

@@ -291,7 +291,7 @@ export async function handler(
       };
     }
 
-    console.error('Prompt preview error:', error);
+    console.error('Prompt preview error:', error instanceof Error ? error.message : String(error));
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },

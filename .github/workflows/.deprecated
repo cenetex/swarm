@@ -1,0 +1,12 @@
+# Deprecated Workflows
+#
+# This file lists GitHub Actions workflows that have been intentionally
+# removed from this repository. Do NOT reintroduce these files.
+#
+# Format:
+#   <filename> — <reason>
+
+deploy-single-agent.yml — Removed because per-agent deployment is handled
+  by the main deploy.yml workflow. A separate single-agent workflow
+  introduced maintenance burden, divergent deploy logic, and risk of
+  configuration drift. See issue #132 for details.
