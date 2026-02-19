@@ -39,13 +39,13 @@ else
     review_log_content=$(cat "$REVIEW_LOG")
 fi
 
-# Extract issue prefix for matching (e.g., issue-1768933441049-agent-1-6yan from issue-1768933441049-agent-1-6yan-xxx-high.json)
-# The review log uses wildcards like issue-1768933441049-agent-1-6yan-*-high.json
+# Extract issue prefix for matching (e.g., issue-1768933441049-avatar-1-9qhu from issue-1768933441049-avatar-1-9qhu-xxx-high.json)
+# The review log uses wildcards like issue-1768933441049-avatar-1-9qhu-*-high.json
 get_issue_prefix() {
     local filename="$1"
     # Remove extension and severity
     local base="${filename%.json}"
-    # Extract the first 4 dash-separated parts (issue-timestamp-agent/avatar-N-xxxx)
+    # Extract the first 4 dash-separated parts (issue-timestamp-avatar-N-xxxx)
     echo "$base" | sed -E 's/^(issue-[0-9]+-[a-z]+-[0-9]+-[a-z0-9]+)-.*$/\1/'
 }
 

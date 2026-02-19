@@ -8,12 +8,12 @@
 # Requires AWS credentials (used by scripts/test-api.sh to discover API + fetch INTERNAL_TEST_KEY).
 #
 # Examples:
-#   ./scripts/agent-inspect.sh staging agent-1-6yan | jq
-#   ./scripts/agent-inspect.sh staging agent-1-6yan --fast-since 24h --cloudwatch-since 7d | jq
-#   ./scripts/agent-inspect.sh staging agent-1-6yan --cloudwatch-query twitter_post --events-limit 50 | jq
+#   ./scripts/avatar-inspect.sh staging agent-1-6yan | jq
+#   ./scripts/avatar-inspect.sh staging agent-1-6yan --fast-since 24h --cloudwatch-since 7d | jq
+#   ./scripts/avatar-inspect.sh staging agent-1-6yan --cloudwatch-query twitter_post --events-limit 50 | jq
 #
 # Live view:
-#   ./scripts/agent-inspect.sh staging agent-1-6yan --watch --interval 10
+#   ./scripts/avatar-inspect.sh staging agent-1-6yan --watch --interval 10
 
 set -euo pipefail
 
@@ -173,7 +173,7 @@ render_live() {
     printf '\033c'
   fi
 
-  echo "Swarm Agent Inspect (live)"
+  echo "Swarm Avatar Inspect (live)"
   echo "env=$ENV avatarId=$AVATAR_ID interval=${INTERVAL_SECONDS}s (Ctrl-C to exit)"
   echo "generatedAt=$(echo "$json" | jq -r '.generatedAt')"
   echo ""
