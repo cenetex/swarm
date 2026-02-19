@@ -14,7 +14,6 @@
     "dev": "pnpm -r --parallel dev",
     "test": "bun test",
     "test:ci": "bun test",
-    "test:plan": "RUN_PLAN_TESTS=1 bun test packages/plan-tests",
     "lint": "pnpm -r --parallel lint",
     "check:circular": "node scripts/check-circular-deps.mjs",
     "clean": "pnpm -r exec rm -rf dist node_modules",
