@@ -220,7 +220,7 @@ export async function handler(
       };
     }
 
-    console.error('Jobs handler error:', error);
+    console.error('Jobs handler error:', error instanceof Error ? error.message : String(error));
 
     return {
       statusCode: 500,

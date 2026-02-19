@@ -58,7 +58,7 @@ async function getHeliusApiKey(): Promise<string | null> {
       heliusApiKey = response.SecretString || null;
       return heliusApiKey;
     } catch (error) {
-      console.error('[NFTGate] Failed to fetch Helius API key from Secrets Manager:', error);
+      console.error('[NFTGate] Failed to fetch Helius API key from Secrets Manager:', error instanceof Error ? error.message : String(error));
     }
   }
   
@@ -194,9 +194,9 @@ export async function incrementCreatorCount(walletAddress: string): Promise<void
       },
     }));
   } catch (error) {
-    console.warn('[NFTGate] Failed to increment creator count, recalculating', error);
+    console.warn('[NFTGate] Failed to increment creator count, recalculating', error instanceof Error ? error.message : String(error));
     await recalculateCreatorCount(walletAddress).catch((recalcError) => {
-      console.error('[NFTGate] Failed to recalculate creator count', recalcError);
+      console.error('[NFTGate] Failed to recalculate creator count', recalcError instanceof Error ? recalcError.message : String(recalcError));
     });
   }
 }
@@ -228,9 +228,9 @@ export async function decrementCreatorCount(walletAddress: string): Promise<void
       },
     }));
   } catch (error) {
-    console.warn('[NFTGate] Failed to decrement creator count, recalculating', error);
+    console.warn('[NFTGate] Failed to decrement creator count, recalculating', error instanceof Error ? error.message : String(error));
     await recalculateCreatorCount(walletAddress).catch((recalcError) => {
-      console.error('[NFTGate] Failed to recalculate creator count', recalcError);
+      console.error('[NFTGate] Failed to recalculate creator count', recalcError instanceof Error ? recalcError.message : String(recalcError));
     });
   }
 }
@@ -358,7 +358,7 @@ export async function checkNFTGate(walletAddress: string): Promise<NFTGateResult
     });
 
     if (!response.ok) {
-      console.error('[NFTGate] Helius API error:', response.status);
+      console.error(`[NFTGate] Helius API error: ${response.status}`);
       result.error = 'Failed to verify NFT ownership';
       return result;
     }
@@ -398,7 +398,7 @@ export async function checkNFTGate(walletAddress: string): Promise<NFTGateResult
 
     return result;
   } catch (error) {
-    console.error('[NFTGate] Error checking NFT ownership:', error);
+    console.error('[NFTGate] Error checking NFT ownership:', error instanceof Error ? error.message : String(error));
     result.error = 'Failed to verify NFT ownership';
     return result;
   }
@@ -418,7 +418,7 @@ export async function countAvatarsCreatedBy(walletAddress: string): Promise<numb
       return stats.Item.avatarsCreated as number;
     }
   } catch (error) {
-    console.warn('[NFTGate] Failed to read creator stats, recalculating', error);
+    console.warn('[NFTGate] Failed to read creator stats, recalculating', error instanceof Error ? error.message : String(error));
   }
 
   try {
@@ -570,7 +570,7 @@ export async function getClaimableNFTs(walletAddress: string): Promise<Claimable
     });
 
     if (!response.ok) {
-      console.error('[NFTGate] Helius API error fetching NFTs:', response.status);
+      console.error(`[NFTGate] Helius API error fetching NFTs: ${response.status}`);
       return [];
     }
 
@@ -638,7 +638,7 @@ export async function getClaimableNFTs(walletAddress: string): Promise<Claimable
               }
             }
           } catch (err) {
-            console.warn(`[NFTGate] Failed to fetch metadata for ${nft.id}:`, err);
+            console.warn(`[NFTGate] Failed to fetch metadata for ${nft.id}:`, err instanceof Error ? err.message : String(err));
           }
         }
 
@@ -652,7 +652,7 @@ export async function getClaimableNFTs(walletAddress: string): Promise<Claimable
 
     return claimableNFTs;
   } catch (error) {
-    console.error('[NFTGate] Error fetching claimable NFTs:', error);
+    console.error('[NFTGate] Error fetching claimable NFTs:', error instanceof Error ? error.message : String(error));
     return [];
   }
 }
@@ -683,7 +683,7 @@ async function getClaimedNFTMints(): Promise<Set<string>> {
     }
     return mints;
   } catch (error) {
-    console.error('[NFTGate] Error fetching claimed NFT mints:', error);
+    console.error('[NFTGate] Error fetching claimed NFT mints:', error instanceof Error ? error.message : String(error));
     return new Set();
   }
 }
@@ -718,7 +718,7 @@ export async function verifyNFTOwnership(
     });
 
     if (!response.ok) {
-      console.error('[NFTGate] Helius API error verifying NFT ownership:', response.status);
+      console.error(`[NFTGate] Helius API error verifying NFT ownership: ${response.status}`);
       return false;
     }
 
@@ -747,7 +747,7 @@ export async function verifyNFTOwnership(
 
     return isOwner;
   } catch (error) {
-    console.error('[NFTGate] Error verifying NFT ownership:', error);
+    console.error('[NFTGate] Error verifying NFT ownership:', error instanceof Error ? error.message : String(error));
     return false;
   }
 }

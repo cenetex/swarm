@@ -69,7 +69,7 @@ export function ChatInput({ onSend, onSendAudio, disabled, voiceEnabled = true, 
         setRecordingDuration(prev => prev + 1);
       }, 1000);
     } catch (error) {
-      console.error('Failed to start recording:', error);
+      console.error('Failed to start recording:', error instanceof Error ? error.message : String(error));
     }
   }, [onSendAudio]);
 

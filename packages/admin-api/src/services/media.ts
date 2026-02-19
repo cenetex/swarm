@@ -1455,7 +1455,7 @@ export async function deleteReferenceImage(
       Key: image.s3Key,
     }));
   } catch (err) {
-    console.warn('Failed to delete S3 object:', err);
+    console.warn('Failed to delete S3 object:', err instanceof Error ? err.message : String(err));
   }
 
   // Delete from DynamoDB

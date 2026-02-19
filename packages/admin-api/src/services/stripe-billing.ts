@@ -76,7 +76,7 @@ async function getSecretValue(secretArn: string): Promise<string | null> {
     );
     return response.SecretString || null;
   } catch (error) {
-    console.error('[StripeBilling] Failed to fetch secret from Secrets Manager:', error);
+    console.error('[StripeBilling] Failed to fetch secret from Secrets Manager:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }

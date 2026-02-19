@@ -139,7 +139,7 @@ export async function getTokenBalance(
     
     return totalBalance;
   } catch (error) {
-    console.error(`[WalletBalance] Error getting token balance for ${walletAddress}:`, error);
+    console.error(`[WalletBalance] Error getting token balance for ${walletAddress}:`, error instanceof Error ? error.message : String(error));
     
     // Return cached value if available, even if stale
     if (cached) {
