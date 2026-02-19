@@ -11,7 +11,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import { formatMentionContext } from './message-processor.js';
+import { formatMentionContext, buildReplyAnnotation } from './message-processor.js';
+import type { ContextMessage } from '@swarm/core';
 
 // Schema matching MessageQueueItemSchema
 const MessageQueueItemSchema = z.object({
@@ -771,11 +772,6 @@ describe('formatMentionContext', () => {
 });
 
 describe('Message Processor - Mention Awareness in LLM Context', () => {
-  /**
-   * These tests verify that mention/reply-to-bot context is surfaced
-   * in the LLM message formatting, so the model knows when it was
-   * directly addressed vs seeing a regular group message.
-   */
   it('should prefix history messages with mention context when isMention is true', () => {
     const historyMessages = [
       { messageId: 'm1', sender: 'Alice', isBot: false, content: 'Hello everyone', timestamp: 1000, isMention: false },
@@ -784,7 +780,6 @@ describe('Message Processor - Mention Awareness in LLM Context', () => {
       { messageId: 'm4', sender: 'Carol', isBot: false, content: 'Thanks bot', timestamp: 4000, isReplyToBot: true },
     ];
 
-    // Simulate the formatting logic from generateResponse
     const formatted = historyMessages.map(msg => ({
       role: msg.isBot ? 'assistant' : 'user',
       content: msg.isBot
@@ -792,16 +787,9 @@ describe('Message Processor - Mention Awareness in LLM Context', () => {
         : `${formatMentionContext(msg)}[${msg.sender}]: ${msg.content}`,
     }));
 
-    // Regular message: no prefix
     expect(formatted[0].content).toBe('[Alice]: Hello everyone');
-
-    // Mentioned message: has [Mentioned you] prefix
     expect(formatted[1].content).toBe('[Mentioned you] [Bob]: @bot what do you think?');
-
-    // Bot message: no prefix (assistant role)
     expect(formatted[2].content).toBe('I think it looks great!');
-
-    // Reply to bot: has [Reply to you] prefix
     expect(formatted[3].content).toBe('[Reply to you] [Carol]: Thanks bot');
   });
 
@@ -848,5 +836,121 @@ describe('Message Processor - Mention Awareness in LLM Context', () => {
     const content = `${mentionPrefix}[${sender}]: ${text}`;
 
     expect(content).toBe('[Mentioned you] [Reply to you] [Eve]: @bot replying to your point');
+  });
+});
+
+// =============================================================================
+// Reply-To Thread Context Resolution Tests
+// =============================================================================
+
+function makeMsg(overrides: Partial<ContextMessage> & { messageId: string; sender: string; content: string }): ContextMessage {
+  return {
+    isBot: false,
+    timestamp: Date.now(),
+    ...overrides,
+  };
+}
+
+describe('buildReplyAnnotation', () => {
+  const oldMsg = makeMsg({
+    messageId: 'msg-old',
+    sender: 'Alice',
+    content: 'This is the original message from Alice.',
+  });
+
+  const recentMsg1 = makeMsg({
+    messageId: 'msg-recent-1',
+    sender: 'Bob',
+    content: 'Recent message from Bob.',
+  });
+
+  const recentMsg2 = makeMsg({
+    messageId: 'msg-recent-2',
+    sender: 'Charlie',
+    content: 'Recent message from Charlie.',
+    replyToMessageId: 'msg-old',
+  });
+
+  const fullHistory = [oldMsg, recentMsg1, recentMsg2];
+  const contextWindow = [recentMsg1, recentMsg2]; // oldMsg NOT in window
+
+  it('returns undefined when replyToMessageId is undefined', () => {
+    expect(buildReplyAnnotation(undefined, contextWindow, fullHistory)).toBeUndefined();
+  });
+
+  it('returns undefined when replyToMessageId is empty string', () => {
+    expect(buildReplyAnnotation('', contextWindow, fullHistory)).toBeUndefined();
+  });
+
+  it('returns undefined when referenced message IS in context window', () => {
+    expect(buildReplyAnnotation('msg-recent-1', contextWindow, fullHistory)).toBeUndefined();
+  });
+
+  it('returns annotation when referenced message is NOT in context window but IS in full history', () => {
+    const result = buildReplyAnnotation('msg-old', contextWindow, fullHistory);
+    expect(result).toBeDefined();
+    expect(result).toContain('Replying to Alice');
+    expect(result).toContain('This is the original message from Alice.');
+  });
+
+  it('returns undefined when referenced message is not found anywhere', () => {
+    expect(buildReplyAnnotation('msg-nonexistent', contextWindow, fullHistory)).toBeUndefined();
+  });
+
+  it('truncates long referenced messages to 200 characters', () => {
+    const longContent = 'A'.repeat(300);
+    const longMsg = makeMsg({
+      messageId: 'msg-long',
+      sender: 'Dave',
+      content: longContent,
+    });
+    const history = [longMsg, ...contextWindow];
+
+    const result = buildReplyAnnotation('msg-long', contextWindow, history);
+    expect(result).toBeDefined();
+    expect(result).toContain('Replying to Dave');
+    expect(result).toContain('A'.repeat(200) + '...');
+    expect(result!.length).toBeLessThan(300);
+  });
+
+  it('does not truncate messages at exactly 200 characters', () => {
+    const exactContent = 'B'.repeat(200);
+    const exactMsg = makeMsg({
+      messageId: 'msg-exact',
+      sender: 'Eve',
+      content: exactContent,
+    });
+    const history = [exactMsg, ...contextWindow];
+
+    const result = buildReplyAnnotation('msg-exact', contextWindow, history);
+    expect(result).toBeDefined();
+    expect(result).toContain(exactContent);
+    expect(result).not.toContain('...');
+  });
+
+  it('handles bot messages as referenced targets', () => {
+    const botMsg = makeMsg({
+      messageId: 'msg-bot',
+      sender: 'SwarmBot',
+      content: 'I am a bot response.',
+      isBot: true,
+    });
+    const history = [botMsg, ...contextWindow];
+
+    const result = buildReplyAnnotation('msg-bot', contextWindow, history);
+    expect(result).toBeDefined();
+    expect(result).toContain('Replying to SwarmBot');
+    expect(result).toContain('I am a bot response.');
+  });
+
+  it('works with empty context window (all messages are outside window)', () => {
+    const result = buildReplyAnnotation('msg-old', [], fullHistory);
+    expect(result).toBeDefined();
+    expect(result).toContain('Replying to Alice');
+  });
+
+  it('works when context window and full history are identical (message in both)', () => {
+    const result = buildReplyAnnotation('msg-recent-1', fullHistory, fullHistory);
+    expect(result).toBeUndefined();
   });
 });
