@@ -26,6 +26,9 @@ export const CHANNEL_CONFIG = {
   MESSAGE_THRESHOLD: 5,                // Respond after N messages accumulated
   CONVERSATION_GAP_MS: 30000,          // 30 seconds of silence triggers response
 
+  // Engaged user tracking
+  ENGAGEMENT_WINDOW_MS: 5 * 60 * 1000, // 5 minutes - how long to keep responding to a user after direct engagement
+
   // Response timing
   MIN_RESPONSE_DELAY_MS: 500,     // Minimum delay to seem natural
   MAX_RESPONSE_DELAY_MS: 3000,    // Maximum random delay
@@ -72,6 +75,7 @@ export async function getChannelState(
     lastResponseMessageId: result.Item.lastResponseMessageId,
     pendingResponseAt: result.Item.pendingResponseAt,
     directEngagementAt: result.Item.directEngagementAt,
+    engagedUsers: result.Item.engagedUsers,
     ttl: result.Item.ttl,
   };
 }
@@ -200,6 +204,36 @@ export async function addMessageToChannel(
     updateParts.push('#state = if_not_exists(#state, :idle)', 'stateChangedAt = if_not_exists(stateChangedAt, :now)');
   }
 
+  // Engaged user tracking: when isDirect and we have a userId, record the sender
+  // with an engagement expiry timestamp. We always set the full engagedUsers map
+  // because DynamoDB doesn't support atomic map-key-level updates with cleanup in
+  // a single expression. We read-then-write the engagedUsers map, which is acceptable
+  // because the map is small and the engagement window is lenient.
+  const expressionAttributeNames: Record<string, string> = {
+    '#state': 'state',
+    '#ttl': 'ttl',
+  };
+
+  // Build engaged users map: start from current state if available, add/refresh sender, clean expired
+  let engagedUsersMap: Record<string, number> | undefined;
+  if (isDirect && message.userId) {
+    // We need to fetch current engagedUsers to merge. Read existing state if possible.
+    const existing = await getChannelState(docClient, tableName, avatarId, channelId);
+    const currentEngaged = existing?.engagedUsers || {};
+    const engagedUntil = now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+
+    // Clean expired entries and add/refresh current user
+    engagedUsersMap = {};
+    for (const [userId, expiresAt] of Object.entries(currentEngaged)) {
+      if (expiresAt > now) {
+        engagedUsersMap[userId] = expiresAt;
+      }
+    }
+    engagedUsersMap[message.userId] = engagedUntil;
+
+    updateParts.push('engagedUsers = :engagedUsers');
+  }
+
   const response = await docClient.send(new UpdateCommand({
     TableName: tableName,
     Key: {
@@ -207,10 +241,7 @@ export async function addMessageToChannel(
       sk: `CHANNEL#${channelId}#STATE`,
     },
     UpdateExpression: `SET ${updateParts.join(', ')}`,
-    ExpressionAttributeNames: {
-      '#state': 'state',
-      '#ttl': 'ttl',
-    },
+    ExpressionAttributeNames: expressionAttributeNames,
     ExpressionAttributeValues: {
       ':emptyList': [],
       ':newMessage': [message],
@@ -224,6 +255,7 @@ export async function addMessageToChannel(
       ...(chatType ? { ':chatType': chatType } : {}),
       ...(chatTitle ? { ':chatTitle': chatTitle } : {}),
       ...(isDirect ? { ':active': 'ACTIVE' } : { ':idle': 'IDLE' }),
+      ...(engagedUsersMap ? { ':engagedUsers': engagedUsersMap } : {}),
     },
     ReturnValues: 'ALL_NEW',
   }));
@@ -249,6 +281,7 @@ export async function addMessageToChannel(
     lastResponseMessageId: response.Attributes.lastResponseMessageId,
     pendingResponseAt: response.Attributes.pendingResponseAt,
     directEngagementAt: response.Attributes.directEngagementAt,
+    engagedUsers: response.Attributes.engagedUsers,
     ttl: response.Attributes.ttl,
     updatedAt: response.Attributes.updatedAt,
   };
@@ -384,7 +417,7 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
     };
   }
 
-  // In COOLDOWN - don't respond unless there's new direct engagement
+  // In COOLDOWN - don't respond unless there's new direct engagement or engaged user
   if (state.state === 'COOLDOWN' && !isCooldownExpired(state)) {
     // Check if there's a new direct engagement since cooldown started
     const hasNewEngagement = state.recentMessages.some(
@@ -399,6 +432,22 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
         delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
         priority: 'high',
       };
+    }
+
+    // Check if the most recent message is from an engaged user
+    if (state.engagedUsers) {
+      const lastMessage = state.recentMessages[state.recentMessages.length - 1];
+      if (lastMessage?.userId && lastMessage.timestamp > (state.stateChangedAt || 0)) {
+        const engagedUntil = state.engagedUsers[lastMessage.userId];
+        if (engagedUntil && engagedUntil > now) {
+          return {
+            shouldRespond: true,
+            trigger: 'engaged_user',
+            delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
+            priority: 'high',
+          };
+        }
+      }
     }
 
     return {
@@ -421,6 +470,22 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
       delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
       priority: 'high',
     };
+  }
+
+  // Check if the most recent message is from an engaged user (within the engagement window)
+  if (state.engagedUsers) {
+    const lastMessage = state.recentMessages[state.recentMessages.length - 1];
+    if (lastMessage?.userId) {
+      const engagedUntil = state.engagedUsers[lastMessage.userId];
+      if (engagedUntil && engagedUntil > now) {
+        return {
+          shouldRespond: true,
+          trigger: 'engaged_user',
+          delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
+          priority: 'high',
+        };
+      }
+    }
   }
 
   // In IDLE state or expired cooldown, check other triggers
