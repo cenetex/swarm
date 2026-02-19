@@ -157,7 +157,7 @@ export class BedrockLLMService implements LLMService {
         finishReason,
       };
     } catch (error) {
-      console.error('Bedrock API error:', error);
+      console.error('Bedrock API error:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   }
@@ -374,7 +374,7 @@ export class AnthropicLLMService implements LLMService {
         finishReason,
       };
     } catch (error) {
-      console.error('Anthropic API error:', error);
+      console.error('Anthropic API error:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   }
@@ -451,7 +451,7 @@ export class RetryableLLMService implements LLMService {
         return await this.primary.generateResponse(params);
       } catch (error) {
         lastError = error;
-        console.warn(`LLM request failed (attempt ${attempt + 1}/${this.config.maxRetries + 1}):`, error);
+        console.warn(`LLM request failed (attempt ${attempt + 1}/${this.config.maxRetries + 1}):`, error instanceof Error ? error.message : String(error));
 
         // Don't retry if error is not retryable
         if (!isRetryableError(error, this.config.retryableErrors)) {
@@ -473,7 +473,7 @@ export class RetryableLLMService implements LLMService {
       try {
         return await this.fallback.generateResponse(params);
       } catch (fallbackError) {
-        console.error('Fallback LLM also failed:', fallbackError);
+        console.error('Fallback LLM also failed:', fallbackError instanceof Error ? fallbackError.message : String(fallbackError));
         // Throw the original error since that's more informative
       }
     }
