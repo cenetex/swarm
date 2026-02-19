@@ -171,7 +171,7 @@ async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusPa
     });
 
     if (!response.ok) {
-      console.warn('[LineageNFT] Helius transaction parse failed:', response.status);
+      console.warn(`[LineageNFT] Helius transaction parse failed: ${response.status}`);
       return null;
     }
 
@@ -189,7 +189,7 @@ async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusPa
 
     return null;
   } catch (error) {
-    console.warn('[LineageNFT] Helius transaction parse error:', error);
+    console.warn('[LineageNFT] Helius transaction parse error:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -210,7 +210,7 @@ async function getAssetCollection(mint: string): Promise<string | null> {
     });
 
     if (!response.ok) {
-      console.warn('[LineageNFT] Helius getAsset failed:', response.status);
+      console.warn(`[LineageNFT] Helius getAsset failed: ${response.status}`);
       return null;
     }
 
@@ -228,7 +228,7 @@ async function getAssetCollection(mint: string): Promise<string | null> {
     const collection = grouping.find((group) => group.group_key === 'collection');
     return collection?.group_value || null;
   } catch (error) {
-    console.warn('[LineageNFT] Helius getAsset error:', error);
+    console.warn('[LineageNFT] Helius getAsset error:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -340,7 +340,7 @@ export async function verifyGateBurn(
     return { verified: false, error: 'Burned NFT is not from the Gate collection' };
 
   } catch (error) {
-    console.error('[LineageNFT] Error verifying burn:', error);
+    console.error('[LineageNFT] Error verifying burn:', error instanceof Error ? error.message : String(error));
     return { verified: false, error: 'Failed to verify burn transaction' };
   }
 }

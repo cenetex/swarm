@@ -171,7 +171,7 @@ export async function getConnectionStatus(avatarId: string): Promise<DiscordConn
         }));
       }
     } catch (error) {
-      console.error('Failed to fetch Discord bot info:', error);
+      console.error('Failed to fetch Discord bot info:', error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -222,15 +222,15 @@ export async function sendMessage(
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error('Discord send message failed:', error);
+      const errorText = await response.text();
+      console.error('Discord send message failed:', errorText);
       return null;
     }
 
     const message = (await response.json()) as { id: string };
     return { messageId: message.id };
   } catch (error) {
-    console.error('Discord send message error:', error);
+    console.error('Discord send message error:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -273,15 +273,15 @@ export async function sendWebhookMessage(
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error('Discord webhook message failed:', error);
+      const errorText = await response.text();
+      console.error('Discord webhook message failed:', errorText);
       return null;
     }
 
     const message = (await response.json()) as { id?: string };
     return { messageId: message.id };
   } catch (error) {
-    console.error('Discord webhook message error:', error);
+    console.error('Discord webhook message error:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -320,7 +320,7 @@ export async function getChannel(avatarId: string, channelId: string): Promise<D
       parentId: channel.parent_id,
     };
   } catch (error) {
-    console.error('Discord get channel error:', error);
+    console.error('Discord get channel error:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -358,7 +358,7 @@ export async function listChannels(avatarId: string, guildId: string): Promise<D
       parentId: c.parent_id,
     }));
   } catch (error) {
-    console.error('Discord list channels error:', error);
+    console.error('Discord list channels error:', error instanceof Error ? error.message : String(error));
     return [];
   }
 }
@@ -395,7 +395,7 @@ export async function listGuilds(avatarId: string): Promise<DiscordGuild[]> {
       memberCount: g.approximate_member_count,
     }));
   } catch (error) {
-    console.error('Discord list guilds error:', error);
+    console.error('Discord list guilds error:', error instanceof Error ? error.message : String(error));
     return [];
   }
 }
@@ -447,7 +447,7 @@ export async function getMessages(
       })),
     }));
   } catch (error) {
-    console.error('Discord get messages error:', error);
+    console.error('Discord get messages error:', error instanceof Error ? error.message : String(error));
     return [];
   }
 }
@@ -478,7 +478,7 @@ export async function addReaction(
 
     return response.ok;
   } catch (error) {
-    console.error('Discord add reaction error:', error);
+    console.error('Discord add reaction error:', error instanceof Error ? error.message : String(error));
     return false;
   }
 }
@@ -509,7 +509,7 @@ export async function removeReaction(
 
     return response.ok;
   } catch (error) {
-    console.error('Discord remove reaction error:', error);
+    console.error('Discord remove reaction error:', error instanceof Error ? error.message : String(error));
     return false;
   }
 }

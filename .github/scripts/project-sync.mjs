@@ -48,7 +48,9 @@ function gh(args) {
 function graphql(query, variables = {}) {
   const args = ["api", "graphql", "-f", `query=${query}`];
   for (const [k, v] of Object.entries(variables)) {
-    args.push("-f", `${k}=${v}`);
+    // Use -F for non-string types (numbers, booleans) so gh sends proper JSON types
+    const flag = typeof v === "number" || typeof v === "boolean" ? "-F" : "-f";
+    args.push(flag, `${k}=${v}`);
   }
   return JSON.parse(gh(args));
 }
@@ -62,7 +64,7 @@ function getProjectId() {
         projectV2(number: $number) { id }
       }
     }
-  `, { owner: PROJECT_OWNER, number: String(PROJECT_NUMBER) });
+  `, { owner: PROJECT_OWNER, number: PROJECT_NUMBER });
   return res.data.user.projectV2.id;
 }
 

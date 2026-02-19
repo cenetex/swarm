@@ -161,7 +161,7 @@ export async function sendTelegramReaction(
 
     return true;
   } catch (err) {
-    console.error('[reactions] Error sending reaction:', err);
+    console.error('[reactions] Error sending reaction:', err instanceof Error ? err.message : String(err));
     return false;
   }
 }
@@ -219,13 +219,13 @@ export async function handleReaction(
       console.log(`[reactions] Queued reaction ${decision.emoji} for message ${messageId} with ${delaySeconds}s delay`);
       return;
     } catch (err) {
-      console.warn('[reactions] SQS queue failed, falling back to fire-and-forget:', err);
+      console.warn('[reactions] SQS queue failed, falling back to fire-and-forget:', err instanceof Error ? err.message : String(err));
     }
   }
 
   // Fallback: Fire-and-forget (best-effort, may not complete if Lambda freezes)
   setTimeout(() => {
     sendTelegramReaction(token, chatId, messageId, decision.emoji!)
-      .catch((err) => console.warn('[reactions] Fire-and-forget reaction failed:', err));
+      .catch((err) => console.warn('[reactions] Fire-and-forget reaction failed:', err instanceof Error ? err.message : String(err)));
   }, decision.delay);
 }

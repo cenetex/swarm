@@ -932,7 +932,7 @@ export async function launchToken(
       avatarLaunchWallet = await getLaunchWalletV2(apiKey, twitterUsername, 'twitter');
       console.log(`[TokenLaunch] Found launch wallet: ${avatarLaunchWallet.toBase58()}`);
     } catch (err) {
-      console.error(`[TokenLaunch] Failed to find launch wallet for @${twitterUsername}:`, err);
+      console.error(`[TokenLaunch] Failed to find launch wallet for @${twitterUsername}:`, err instanceof Error ? err.message : String(err));
       return {
         success: false,
         avatarId,
@@ -1120,7 +1120,7 @@ export async function launchToken(
       vanityNote,
     };
   } catch (error) {
-    console.error('[TokenLaunch] Launch failed:', error);
+    console.error('[TokenLaunch] Launch failed:', error instanceof Error ? error.message : String(error));
     return {
       success: false,
       avatarId,
