@@ -1,7 +1,8 @@
 {
   "id": "ISSUE-005",
   "title": "Complete authentication signup test suite",
-  "status": "open",
+  "status": "closed",
+  "resolution": "All authentication tests were implemented in their respective packages. The plan-test stubs were redundant tracking placeholders and have been removed.",
   "priority": "P1",
   "milestone": "M2",
   "tags": ["testing", "authentication", "e2e"],

@@ -232,7 +232,7 @@ async function compressImageForTelegram(buf: Buffer, originalName: string): Prom
     const jpgName = originalName.replace(/\.(png|webp|gif)$/i, '.jpg');
     return { buffer: finalBuffer, fileName: jpgName };
   } catch (err) {
-    console.warn('[Telegram] Failed to compress image, sending original:', err);
+    console.warn('[Telegram] Failed to compress image, sending original:', err instanceof Error ? err.message : String(err));
     return { buffer: buf, fileName: originalName };
   }
 }
@@ -670,7 +670,7 @@ export class TelegramAdapter extends PlatformAdapter {
           if (!this.botId) this.botId = me.id;
           if (!this.config.botUsername && me.username) this.config.botUsername = me.username;
         } catch (err) {
-          console.warn('[Telegram] Failed to fetch bot identity (getMe):', err);
+          console.warn('[Telegram] Failed to fetch bot identity (getMe):', err instanceof Error ? err.message : String(err));
         }
       })();
     }
@@ -711,7 +711,7 @@ export class TelegramAdapter extends PlatformAdapter {
                 ...replyParams,
               });
             } catch (err) {
-              console.warn('[Telegram] Failed to upload photo bytes, falling back to URL send:', err);
+              console.warn('[Telegram] Failed to upload photo bytes, falling back to URL send:', err instanceof Error ? err.message : String(err));
               await this.bot.api.sendPhoto(chatId, action.url, {
                 caption: action.caption,
                 ...replyParams,
@@ -731,7 +731,7 @@ export class TelegramAdapter extends PlatformAdapter {
                 ...replyParams,
               });
             } catch (err) {
-              console.warn('[Telegram] Failed to upload animation bytes, falling back to URL send:', err);
+              console.warn('[Telegram] Failed to upload animation bytes, falling back to URL send:', err instanceof Error ? err.message : String(err));
               await this.bot.api.sendAnimation(chatId, action.url, {
                 caption: action.caption,
                 ...replyParams,
@@ -750,7 +750,7 @@ export class TelegramAdapter extends PlatformAdapter {
               ...replyParams,
             });
           } catch (err) {
-            console.warn('[Telegram] Failed to upload voice bytes, falling back to URL send:', err);
+            console.warn('[Telegram] Failed to upload voice bytes, falling back to URL send:', err instanceof Error ? err.message : String(err));
             await this.bot.api.sendVoice(chatId, action.url, {
               caption: action.caption,
               ...replyParams,
@@ -796,7 +796,7 @@ export class TelegramAdapter extends PlatformAdapter {
       
       return true;
     } catch (error) {
-      console.error('Failed to execute Telegram action:', error);
+      console.error('Failed to execute Telegram action:', error instanceof Error ? error.message : String(error));
       return false;
     }
   }
@@ -807,7 +807,7 @@ export class TelegramAdapter extends PlatformAdapter {
     try {
       await this.bot.api.sendChatAction(parseInt(conversationId), 'typing');
     } catch (error) {
-      console.warn('Failed to send typing indicator:', error);
+      console.warn('Failed to send typing indicator:', error instanceof Error ? error.message : String(error));
     }
   }
 

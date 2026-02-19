@@ -15,7 +15,6 @@
     "test": "bun test",
     "test:coverage": "bun test --coverage 2>&1 | tee /tmp/cov.txt && ./scripts/check-coverage.sh /tmp/cov.txt 40",
     "test:ci": "bun test",
-    "test:plan": "RUN_PLAN_TESTS=1 bun test packages/plan-tests",
     "lint": "pnpm -r --parallel lint",
     "check:circular": "node scripts/check-circular-deps.mjs",
     "clean": "pnpm -r exec rm -rf dist node_modules",

@@ -241,7 +241,7 @@ export function verifyWalletSignature(
     const isValid = nacl.sign.detached.verify(messageBytes, signatureBytes, publicKeyBytes);
     return isValid;
   } catch (error) {
-    console.error('[AuthOrchestrator] Signature verification error:', error);
+    console.error('[AuthOrchestrator] Signature verification error:', error instanceof Error ? error.message : String(error));
     return false;
   }
 }

@@ -552,7 +552,7 @@ export function ChatPanel({ onMenuClick, onOpenOnboarding }: ChatPanelProps) {
           handleSendMessage(`🎤 ${result.text}`);
         }
       } catch (error) {
-        console.error('Failed to transcribe audio:', error);
+        console.error('Failed to transcribe audio:', error instanceof Error ? error.message : String(error));
         setError(error instanceof Error ? error.message : 'Failed to transcribe audio');
         setLoading(false);
       }

@@ -10,14 +10,10 @@ import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
 
 // Known circular dependencies that are allowed (to be resolved over time)
-const ALLOWED_CYCLES = [
-  // These are the same cycle viewed from different entry points
-  'types/index.ts > types/service.ts > types/envelope.ts > types/platform.ts',
-  'envelope.ts > platform.ts > index.ts > service.ts',
-  'platform.ts > index.ts > service.ts',
-  'platform.ts > index.ts > service.ts > response.ts',
-  'platform.ts > index.ts > service.ts > state.ts',
-];
+// All 5 previous cycles in core/types were resolved by moving type
+// definitions into platform.ts so sibling modules no longer import
+// through the barrel (index.ts).
+const ALLOWED_CYCLES = [];
 
 function runMadge(packagePath) {
   try {
