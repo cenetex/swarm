@@ -84,6 +84,21 @@ class InMemoryStateService extends DynamoDBStateService {
       state.stateChangedAt = now;
     }
 
+    // Engaged user tracking
+    if (isDirect && message.userId) {
+      const currentEngaged = state.engagedUsers || {};
+      const engagedUntil = now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+      // Clean expired entries and add/refresh current user
+      const newEngaged: Record<string, number> = {};
+      for (const [userId, expiresAt] of Object.entries(currentEngaged)) {
+        if (expiresAt > now) {
+          newEngaged[userId] = expiresAt;
+        }
+      }
+      newEngaged[message.userId] = engagedUntil;
+      state.engagedUsers = newEngaged;
+    }
+
     if (chatType) state.chatType = chatType;
     if (chatTitle) state.chatTitle = chatTitle;
 
@@ -131,6 +146,7 @@ describe('CHANNEL_CONFIG', () => {
     expect(CHANNEL_CONFIG.MESSAGE_THRESHOLD).toBe(5);
     expect(CHANNEL_CONFIG.CONVERSATION_GAP_MS).toBe(30000);
     expect(CHANNEL_CONFIG.MIN_RESPONSE_DELAY_MS).toBeLessThan(CHANNEL_CONFIG.MAX_RESPONSE_DELAY_MS);
+    expect(CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS).toBe(5 * 60 * 1000); // 5 minutes
   });
 });
 
@@ -226,7 +242,7 @@ describe('Channel State Machine Logic', () => {
   });
 
   describe('evaluateResponseTrigger', () => {
-    // Simulate the evaluateResponseTrigger logic
+    // Simulate the evaluateResponseTrigger logic (mirrors channel-state.ts)
     function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
       const now = Date.now();
 
@@ -261,6 +277,22 @@ describe('Channel State Machine Logic', () => {
           };
         }
 
+        // Check if the most recent message is from an engaged user
+        if (state.engagedUsers) {
+          const lastMessage = state.recentMessages[state.recentMessages.length - 1];
+          if (lastMessage?.userId && lastMessage.timestamp > (state.stateChangedAt || 0)) {
+            const engagedUntil = state.engagedUsers[lastMessage.userId];
+            if (engagedUntil && engagedUntil > now) {
+              return {
+                shouldRespond: true,
+                trigger: 'engaged_user',
+                delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
+                priority: 'high',
+              };
+            }
+          }
+        }
+
         return {
           shouldRespond: false,
           trigger: 'none',
@@ -281,6 +313,22 @@ describe('Channel State Machine Logic', () => {
           delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
           priority: 'high',
         };
+      }
+
+      // Check if the most recent message is from an engaged user (within the engagement window)
+      if (state.engagedUsers) {
+        const lastMessage = state.recentMessages[state.recentMessages.length - 1];
+        if (lastMessage?.userId) {
+          const engagedUntil = state.engagedUsers[lastMessage.userId];
+          if (engagedUntil && engagedUntil > now) {
+            return {
+              shouldRespond: true,
+              trigger: 'engaged_user',
+              delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
+              priority: 'high',
+            };
+          }
+        }
       }
 
       // Check message threshold
@@ -466,6 +514,162 @@ describe('Channel State Machine Logic', () => {
       expect(decision.shouldRespond).toBe(true);
       expect(decision.trigger).toBe('message_threshold');
     });
+
+    it('should respond to follow-up from engaged user within engagement window', () => {
+      const now = Date.now();
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: [
+          // A follow-up message (no mention/reply) from user who previously engaged
+          createMessage({
+            messageId: '2',
+            userId: 'user-123',
+            sender: 'Alice',
+            content: 'Thanks for that!',
+            timestamp: now,
+          }),
+        ],
+        engagedUsers: {
+          'user-123': now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS, // Still within window
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('engaged_user');
+      expect(decision.priority).toBe('high');
+    });
+
+    it('should NOT respond to follow-up from engaged user after window expires', () => {
+      const now = Date.now();
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: [
+          createMessage({
+            messageId: '2',
+            userId: 'user-123',
+            sender: 'Alice',
+            content: 'Hey again',
+            timestamp: now,
+          }),
+        ],
+        engagedUsers: {
+          'user-123': now - 1000, // Expired 1 second ago
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      // Should not trigger engaged_user
+      expect(decision.trigger).not.toBe('engaged_user');
+    });
+
+    it('should NOT treat a non-engaged user as engaged', () => {
+      const now = Date.now();
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: [
+          createMessage({
+            messageId: '1',
+            userId: 'user-999',
+            sender: 'Bob',
+            content: 'Random message',
+            timestamp: now,
+          }),
+        ],
+        engagedUsers: {
+          'user-123': now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS, // Different user is engaged
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.trigger).not.toBe('engaged_user');
+      expect(decision.shouldRespond).toBe(false);
+    });
+
+    it('should respond to engaged user even during COOLDOWN', () => {
+      const now = Date.now();
+      const cooldownStart = now - 5000; // 5 seconds ago
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'COOLDOWN',
+        stateChangedAt: cooldownStart,
+        recentMessages: [
+          createMessage({
+            messageId: '1',
+            userId: 'user-123',
+            sender: 'Alice',
+            content: 'Follow-up during cooldown',
+            timestamp: now, // After cooldown started
+          }),
+        ],
+        engagedUsers: {
+          'user-123': now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS,
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('engaged_user');
+      expect(decision.priority).toBe('high');
+    });
+
+    it('should NOT respond to engaged user in COOLDOWN if message is before cooldown started', () => {
+      const now = Date.now();
+      const cooldownStart = now - 5000;
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'COOLDOWN',
+        stateChangedAt: cooldownStart,
+        recentMessages: [
+          createMessage({
+            messageId: '1',
+            userId: 'user-123',
+            sender: 'Alice',
+            content: 'Old message',
+            timestamp: cooldownStart - 1000, // Before cooldown started
+          }),
+        ],
+        engagedUsers: {
+          'user-123': now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS,
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
+    });
+
+    it('should handle message without userId gracefully (no engaged_user trigger)', () => {
+      const now = Date.now();
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: [
+          createMessage({
+            messageId: '1',
+            sender: 'Alice',
+            content: 'No userId set',
+            timestamp: now,
+            // userId is undefined
+          }),
+        ],
+        engagedUsers: {
+          'user-123': now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS,
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.trigger).not.toBe('engaged_user');
+    });
   });
 
   describe('State Transitions', () => {
@@ -526,6 +730,89 @@ describe('Channel State Machine Logic', () => {
       expect(result.stateChangedAt).toBeLessThanOrEqual(afterTime);
       expect(result.directEngagementAt).toBeGreaterThanOrEqual(beforeTime);
       expect(result.directEngagementAt).toBeLessThanOrEqual(afterTime);
+    });
+
+    it('records engaged user when direct engagement with userId', async () => {
+      const svc = new InMemoryStateService();
+      const beforeTime = Date.now();
+
+      const result = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice' })
+      );
+
+      expect(result.engagedUsers).toBeDefined();
+      expect(result.engagedUsers!['user-123']).toBeDefined();
+      // Engaged until should be approximately now + ENGAGEMENT_WINDOW_MS
+      expect(result.engagedUsers!['user-123']).toBeGreaterThanOrEqual(
+        beforeTime + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS
+      );
+    });
+
+    it('does NOT record engaged user for non-direct messages', async () => {
+      const svc = new InMemoryStateService();
+
+      const result = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        createMessage({ userId: 'user-123', sender: 'Alice' }) // No isMention/isReplyToBot
+      );
+
+      expect(result.engagedUsers).toBeUndefined();
+    });
+
+    it('refreshes engagement window on repeated direct engagement', async () => {
+      const svc = new InMemoryStateService();
+
+      // First engagement
+      await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '1' })
+      );
+
+      // Small delay to ensure timestamps differ
+      const beforeSecond = Date.now();
+
+      // Second engagement from same user
+      const result = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '2' })
+      );
+
+      // Window should be refreshed
+      expect(result.engagedUsers!['user-123']).toBeGreaterThanOrEqual(
+        beforeSecond + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS
+      );
+    });
+
+    it('tracks multiple engaged users', async () => {
+      const svc = new InMemoryStateService();
+
+      // First user engages
+      await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '1' })
+      );
+
+      // Second user engages
+      const result = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        createMessage({ isReplyToBot: true, userId: 'user-456', sender: 'Bob', messageId: '2' })
+      );
+
+      expect(result.engagedUsers!['user-123']).toBeDefined();
+      expect(result.engagedUsers!['user-456']).toBeDefined();
     });
 
     it('markResponseSent preserves buffer and enters COOLDOWN', async () => {
