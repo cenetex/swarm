@@ -13,6 +13,7 @@
     "typecheck": "pnpm -r --parallel typecheck",
     "dev": "pnpm -r --parallel dev",
     "test": "bun test",
+    "test:coverage": "bun test --coverage 2>&1 | tee /tmp/cov.txt && ./scripts/check-coverage.sh /tmp/cov.txt 40",
     "test:ci": "bun test",
     "lint": "pnpm -r --parallel lint",
     "check:circular": "node scripts/check-circular-deps.mjs",

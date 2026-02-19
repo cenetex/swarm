@@ -137,8 +137,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test
-        run: bun test
+      - name: Test with coverage
+        run: |
+          bun test --coverage --coverage-reporter=text --coverage-reporter=lcov 2>&1 | tee /tmp/coverage-output.txt
+
+      - name: Enforce coverage threshold (40%)
+        run: ./scripts/check-coverage.sh /tmp/coverage-output.txt 40
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
