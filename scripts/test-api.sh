@@ -4,8 +4,8 @@
 #
 # Usage:
 #   ./scripts/test-api.sh staging chat '{"message":"hello","history":[]}'
-#   ./scripts/test-api.sh staging agents
-#   ./scripts/test-api.sh dev chat '{"message":"hi","history":[],"agent":{"id":"my-agent"}}'
+#   ./scripts/test-api.sh staging avatars
+#   ./scripts/test-api.sh dev chat '{"message":"hi","history":[],"agent":{"id":"my-avatar"}}'
 #
 
 set -euo pipefail
@@ -204,7 +204,7 @@ if [[ "$HTTP_CODE" -lt 200 ]] || [[ "$HTTP_CODE" -ge 300 ]]; then
       echo "      For webhooks, ensure INTERNAL_TEST_KEY is set and matches header"
       ;;
     404)
-      echo "Hint: 404 Not Found - Agent doesn't exist or endpoint path is wrong"
+      echo "Hint: 404 Not Found - Avatar doesn't exist or endpoint path is wrong"
       ;;
     500)
       echo "Hint: 500 Internal Server Error - Check Lambda logs for stack trace"

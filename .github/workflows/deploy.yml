@@ -207,8 +207,8 @@ jobs:
     if: needs.setup.outputs.environment == 'staging'
     env:
       AWS_REGION: us-east-1
-      E2E_TELEGRAM_AGENT_ID: ${{ secrets.E2E_TELEGRAM_AGENT_ID }}
-      E2E_WEB_AGENT_ID: ${{ secrets.E2E_WEB_AGENT_ID }}
+      E2E_TELEGRAM_AVATAR_ID: ${{ secrets.E2E_TELEGRAM_AVATAR_ID }}
+      E2E_WEB_AVATAR_ID: ${{ secrets.E2E_WEB_AVATAR_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -236,16 +236,16 @@ jobs:
 
       - name: Validate E2E inputs
         run: |
-          if [ -z "$E2E_TELEGRAM_AGENT_ID" ] || [ -z "$E2E_WEB_AGENT_ID" ]; then
-            echo "::error::Missing E2E agent IDs (E2E_TELEGRAM_AGENT_ID, E2E_WEB_AGENT_ID)"
+          if [ -z "$E2E_TELEGRAM_AVATAR_ID" ] || [ -z "$E2E_WEB_AVATAR_ID" ]; then
+            echo "::error::Missing E2E avatar IDs (E2E_TELEGRAM_AVATAR_ID, E2E_WEB_AVATAR_ID)"
             exit 1
           fi
 
       - name: Run Telegram E2E
-        run: ./scripts/test-e2e.sh telegram "$E2E_TELEGRAM_AGENT_ID" "ci-telegram-${GITHUB_RUN_ID}" staging
+        run: ./scripts/test-e2e.sh telegram "$E2E_TELEGRAM_AVATAR_ID" "ci-telegram-${GITHUB_RUN_ID}" staging
 
       - name: Run Web E2E
-        run: ./scripts/test-e2e.sh web "$E2E_WEB_AGENT_ID" "ci-web-${GITHUB_RUN_ID}" staging
+        run: ./scripts/test-e2e.sh web "$E2E_WEB_AVATAR_ID" "ci-web-${GITHUB_RUN_ID}" staging
 
   prod-smoke:
     name: Smoke (Production)
