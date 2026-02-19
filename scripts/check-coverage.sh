@@ -25,7 +25,7 @@ fi
 
 # Extract the "All files" summary line
 # Format: All files  | % Funcs | % Lines |
-ALL_FILES_LINE=$(echo "$COV_OUTPUT" | grep "^All files" || true)
+ALL_FILES_LINE=$(echo "$COV_OUTPUT" | grep "All files" || true)
 
 if [ -z "$ALL_FILES_LINE" ]; then
   echo "ERROR: Could not find 'All files' line in coverage output."
