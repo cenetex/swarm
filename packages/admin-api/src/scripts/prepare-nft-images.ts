@@ -110,7 +110,7 @@ async function downloadImage(
     console.log(`Downloaded: ${filepath}`);
     return true;
   } catch (error) {
-    console.error(`Error downloading ${url}:`, error);
+    console.error(`Error downloading ${url}:`, error instanceof Error ? error.message : String(error));
     return false;
   }
 }
@@ -283,6 +283,6 @@ Example Workflow:
 // Run
 const options = parseArgs();
 prepareNFTImages(options).catch((error) => {
-  console.error('Image preparation failed:', error);
+  console.error('Image preparation failed:', error instanceof Error ? error.message : String(error));
   process.exit(1);
 });

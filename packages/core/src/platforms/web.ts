@@ -170,7 +170,7 @@ export class WebAdapter extends PlatformAdapter {
         publicKey.toBytes()
       );
     } catch (error) {
-      console.error('Wallet signature verification failed:', error);
+      console.error('Wallet signature verification failed:', error instanceof Error ? error.message : String(error));
       return false;
     }
   }

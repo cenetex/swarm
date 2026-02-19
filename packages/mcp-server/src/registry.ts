@@ -262,7 +262,7 @@ export class ToolRegistry {
 
       return result as ToolResult<T>;
     } catch (error) {
-      console.error(`[ToolRegistry] Tool ${name} error:`, error);
+      console.error(`[ToolRegistry] Tool ${name} error:`, error instanceof Error ? error.message : String(error));
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',

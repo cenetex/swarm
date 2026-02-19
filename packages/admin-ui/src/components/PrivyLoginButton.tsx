@@ -146,7 +146,7 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
           walletAddress,
         });
       } catch (error) {
-        console.error('[PrivyLoginButton] Privy backend sync error:', error);
+        console.error('[PrivyLoginButton] Privy backend sync error:', error instanceof Error ? error.message : String(error));
         syncAttemptedRef.current = false;
       }
     };
@@ -190,7 +190,7 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
           });
         }
       } catch (error) {
-        console.error('[PrivyLoginButton] Privy backend sync error:', error);
+        console.error('[PrivyLoginButton] Privy backend sync error:', error instanceof Error ? error.message : String(error));
       } finally {
         authStore.setLoading(false);
       }
