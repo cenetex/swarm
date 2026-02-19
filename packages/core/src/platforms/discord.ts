@@ -205,7 +205,7 @@ export class DiscordAdapter extends PlatformAdapter {
 
       return isValid;
     } catch (error) {
-      console.error('Failed to verify Discord signature:', error);
+      console.error('Failed to verify Discord signature:', error instanceof Error ? error.message : String(error));
       return false;
     }
   }
@@ -416,7 +416,7 @@ export class DiscordAdapter extends PlatformAdapter {
 
       return true;
     } catch (error) {
-      console.error('Failed to execute Discord action:', error);
+      console.error('Failed to execute Discord action:', error instanceof Error ? error.message : String(error));
       return false;
     }
   }
@@ -435,7 +435,7 @@ export class DiscordAdapter extends PlatformAdapter {
         },
       });
     } catch (error) {
-      console.warn('Failed to send Discord typing indicator:', error);
+      console.warn('Failed to send Discord typing indicator:', error instanceof Error ? error.message : String(error));
     }
   }
 

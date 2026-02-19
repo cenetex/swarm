@@ -73,7 +73,7 @@ export async function getDreamState(avatarId: string): Promise<DreamState | null
       reinforcedMemoryIds: result.Item.reinforcedMemoryIds,
     };
   } catch (err) {
-    console.error('[Dreams] Failed to get dream state:', err);
+    console.error('[Dreams] Failed to get dream state:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -187,7 +187,7 @@ export async function processDreamMemoryResonance(
         reinforcedIds.push(memory.id);
       } catch (err) {
         // Log but continue - don't let one failure stop the others
-        console.warn(`[Dreams] Failed to reinforce memory ${memory.id}:`, err);
+        console.warn(`[Dreams] Failed to reinforce memory ${memory.id}:`, err instanceof Error ? err.message : String(err));
       }
     }
 
@@ -198,7 +198,7 @@ export async function processDreamMemoryResonance(
 
     return reinforcedIds;
   } catch (err) {
-    console.error(`[Dreams] Memory resonance processing failed for ${avatarId}:`, err);
+    console.error(`[Dreams] Memory resonance processing failed for ${avatarId}:`, err instanceof Error ? err.message : String(err));
     return [];
   }
 }
@@ -328,7 +328,7 @@ export async function triggerDreamGenerationAsync(
     console.log(`[Dreams] Enqueued dream generation for ${avatarId}, jobId: ${result.jobId}`);
     return true;
   } catch (err) {
-    console.error(`[Dreams] Failed to enqueue dream generation for ${avatarId}:`, err);
+    console.error(`[Dreams] Failed to enqueue dream generation for ${avatarId}:`, err instanceof Error ? err.message : String(err));
     return false;
   }
 }

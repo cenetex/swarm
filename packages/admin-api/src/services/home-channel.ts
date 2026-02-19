@@ -198,7 +198,7 @@ export async function getHomeChannelByChatId(chatId: string): Promise<HomeChanne
 
     return (result.Item as HomeChannelRecord) || null;
   } catch (err) {
-    console.warn('[HomeChannel] Failed to get home channel:', err);
+    console.warn('[HomeChannel] Failed to get home channel:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -238,7 +238,7 @@ export async function getAllHomeChannels(): Promise<HomeChannelRecord[]> {
 
     return records;
   } catch (err) {
-    console.warn('[HomeChannel] Failed to get all home channels:', err);
+    console.warn('[HomeChannel] Failed to get all home channels:', err instanceof Error ? err.message : String(err));
     return [];
   }
 }

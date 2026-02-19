@@ -99,7 +99,7 @@ Summary:`;
       const response = await this.callLLM(prompt);
       return response.trim();
     } catch (error) {
-      console.error('Failed to generate channel summary:', error);
+      console.error('Failed to generate channel summary:', error instanceof Error ? error.message : String(error));
       return 'Summary unavailable';
     }
   }
@@ -184,7 +184,7 @@ Overview:`;
       const response = await this.callLLM(prompt);
       return response.trim();
     } catch (error) {
-      console.error('Failed to generate presence summary:', error);
+      console.error('Failed to generate presence summary:', error instanceof Error ? error.message : String(error));
       return 'Unable to generate cross-platform summary';
     }
   }

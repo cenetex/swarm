@@ -592,6 +592,6 @@ Examples:
 // Run
 const options = parseArgs();
 exportAvatarNFTs(options).catch((error) => {
-  console.error('Export failed:', error);
+  console.error('Export failed:', error instanceof Error ? error.message : String(error));
   process.exit(1);
 });

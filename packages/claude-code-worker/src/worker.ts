@@ -399,12 +399,12 @@ export async function runWorker(): Promise<void> {
             })
           );
         } catch (error) {
-          console.error('Error processing message:', error);
+          console.error('Error processing message:', error instanceof Error ? error.message : String(error));
           // Message will return to queue after visibility timeout
         }
       }
     } catch (error) {
-      console.error('Worker error:', error);
+      console.error('Worker error:', error instanceof Error ? error.message : String(error));
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }

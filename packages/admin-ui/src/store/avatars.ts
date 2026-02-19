@@ -261,7 +261,7 @@ export const useAvatarStore = create<AvatarState>()(
         try {
           await apiClearChatHistory(avatarId);
         } catch (error) {
-          console.error('Failed to clear chat on backend:', error);
+          console.error('Failed to clear chat on backend:', error instanceof Error ? error.message : String(error));
         }
 
         set((state) => ({
@@ -322,7 +322,7 @@ export const useAvatarStore = create<AvatarState>()(
             }));
           }
         } catch (error) {
-          console.error('Failed to sync chat history:', error);
+          console.error('Failed to sync chat history:', error instanceof Error ? error.message : String(error));
         }
       },
 
