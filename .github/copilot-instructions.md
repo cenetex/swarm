@@ -3,7 +3,7 @@
 Follow these repo-specific rules when generating code or debugging issues.
 
 ## Primary References
-- `AGENTS.md` — agent quickstart, triage flow, debugging commands, and script index.
+- `AGENTS.md` — avatar quickstart, triage flow, debugging commands, and script index.
 - `README.md` — component map and request flow.
 - `ARCHITECTURE.md` — control plane/runtime/shared-services architecture.
 - `docs/RUNBOOK.md` — incident response + DLQ/webhook recovery.
@@ -35,8 +35,8 @@ Follow these repo-specific rules when generating code or debugging issues.
 1. Reproduce with smallest scope (single package/file test).
 2. For API/runtime issues, gather evidence with scripts:
    - `./scripts/test-api.sh`
-   - `./scripts/agent-logs.sh`
-   - `./scripts/agent-inspect.sh`
+   - `./scripts/avatar-logs.sh`
+   - `./scripts/avatar-inspect.sh`
 3. For Telegram webhook issues, inspect:
    - `packages/handlers/src/telegram-webhook-shared.ts`
    - `packages/handlers/src/webhook-security.ts`
