@@ -2,9 +2,9 @@
 # Convenience wrapper for the consolidated avatar logs endpoint.
 #
 # Examples:
-#   ./scripts/agent-logs.sh staging agent-1-6yan --since 48h --query twitter_post --cloudwatch
-#   ./scripts/agent-logs.sh staging agent-1-6yan --since 2h --subsystem telegram
-#   ./scripts/agent-logs.sh staging agent-1-6yan --fast --since 2h --level ERROR
+#   ./scripts/avatar-logs.sh staging agent-1-6yan --since 48h --query twitter_post --cloudwatch
+#   ./scripts/avatar-logs.sh staging agent-1-6yan --since 2h --subsystem telegram
+#   ./scripts/avatar-logs.sh staging agent-1-6yan --fast --since 2h --level ERROR
 #
 # Notes:
 # - CloudWatch mode is slow but complete.
