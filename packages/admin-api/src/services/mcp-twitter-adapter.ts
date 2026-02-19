@@ -217,7 +217,7 @@ async function resolveMediaSources(
           continue;
         }
       } catch (error) {
-        console.warn(`Failed to resolve gallery item ${trimmed}:`, error);
+        console.warn(`Failed to resolve gallery item ${trimmed}:`, error instanceof Error ? error.message : String(error));
       }
     }
 
@@ -410,7 +410,7 @@ async function resolveGalleryIdsToUrls(
             failedGalleryIds.push(galleryId);
           }
         } catch (err) {
-          console.error(`Failed to resolve gallery item ${galleryId}:`, err);
+          console.error(`Failed to resolve gallery item ${galleryId}:`, err instanceof Error ? err.message : String(err));
           failedGalleryIds.push(galleryId);
         }
         continue;
@@ -497,7 +497,7 @@ export function createTwitterServices(avatarId: string): AllServices['twitter'] 
         const result = await twitterOAuth.startOAuthFlow(avatarId);
         return { authorizationUrl: result.authorizationUrl };
       } catch (error) {
-        console.error('Failed to start Twitter OAuth flow:', error);
+        console.error('Failed to start Twitter OAuth flow:', error instanceof Error ? error.message : String(error));
         return null;
       }
     },
@@ -657,7 +657,7 @@ export function createTwitterServices(avatarId: string): AllServices['twitter'] 
           };
         });
       } catch (error) {
-        console.error('Failed to get Twitter timeline:', error);
+        console.error('Failed to get Twitter timeline:', error instanceof Error ? error.message : String(error));
         return [];
       }
     },
@@ -698,7 +698,7 @@ export function createTwitterServices(avatarId: string): AllServices['twitter'] 
           };
         });
       } catch (error) {
-        console.error('Failed to get Twitter mentions:', error);
+        console.error('Failed to get Twitter mentions:', error instanceof Error ? error.message : String(error));
         return [];
       }
     },
@@ -743,7 +743,7 @@ export function createTwitterServices(avatarId: string): AllServices['twitter'] 
           })),
         };
       } catch (error) {
-        console.error('Failed to get tweet:', error);
+        console.error('Failed to get tweet:', error instanceof Error ? error.message : String(error));
         return null;
       }
     },
@@ -786,7 +786,7 @@ export function createTwitterServices(avatarId: string): AllServices['twitter'] 
           url: `https://x.com/${me.data.username}/status/${result.data.id}`,
         };
       } catch (error) {
-        console.error('Failed to reply to tweet:', error);
+        console.error('Failed to reply to tweet:', error instanceof Error ? error.message : String(error));
         return null;
       }
     },
@@ -808,7 +808,7 @@ export function createTwitterServices(avatarId: string): AllServices['twitter'] 
         await client.v2.like(me.data.id, tweetId);
         return true;
       } catch (error) {
-        console.error('Failed to like tweet:', error);
+        console.error('Failed to like tweet:', error instanceof Error ? error.message : String(error));
         return false;
       }
     },
@@ -830,7 +830,7 @@ export function createTwitterServices(avatarId: string): AllServices['twitter'] 
         await client.v2.unlike(me.data.id, tweetId);
         return true;
       } catch (error) {
-        console.error('Failed to unlike tweet:', error);
+        console.error('Failed to unlike tweet:', error instanceof Error ? error.message : String(error));
         return false;
       }
     },
@@ -852,7 +852,7 @@ export function createTwitterServices(avatarId: string): AllServices['twitter'] 
         await client.v2.retweet(me.data.id, tweetId);
         return true;
       } catch (error) {
-        console.error('Failed to retweet:', error);
+        console.error('Failed to retweet:', error instanceof Error ? error.message : String(error));
         return false;
       }
     },
@@ -874,7 +874,7 @@ export function createTwitterServices(avatarId: string): AllServices['twitter'] 
         await client.v2.unretweet(me.data.id, tweetId);
         return true;
       } catch (error) {
-        console.error('Failed to unretweet:', error);
+        console.error('Failed to unretweet:', error instanceof Error ? error.message : String(error));
         return false;
       }
     },
@@ -917,7 +917,7 @@ export function createTwitterServices(avatarId: string): AllServices['twitter'] 
           url: `https://x.com/${me.data.username}/status/${result.data.id}`,
         };
       } catch (error) {
-        console.error('Failed to quote tweet:', error);
+        console.error('Failed to quote tweet:', error instanceof Error ? error.message : String(error));
         return null;
       }
     },

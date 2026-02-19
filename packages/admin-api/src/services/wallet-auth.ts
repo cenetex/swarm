@@ -180,7 +180,7 @@ async function checkRateLimit(
       return { allowed: true, remaining: maxPerWindow - 1, resetAt };
     }
     // On error, allow the request (fail open)
-    console.error('[WalletAuth] Rate limit check failed:', err);
+    console.error('[WalletAuth] Rate limit check failed:', err instanceof Error ? err.message : String(err));
     return { allowed: true, remaining: maxPerWindow, resetAt: now + windowMs };
   }
 }
@@ -317,7 +317,7 @@ export function verifySignature(
 
     return isValid;
   } catch (error) {
-    console.error('[WalletAuth] Signature verification error:', error);
+    console.error('[WalletAuth] Signature verification error:', error instanceof Error ? error.message : String(error));
     return false;
   }
 }

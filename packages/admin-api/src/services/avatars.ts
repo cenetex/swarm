@@ -343,7 +343,7 @@ export async function updateAvatar(
         telegramConfig.homeChannelUsername
       );
     } catch (err) {
-      console.warn(`[Avatars] Failed to register home channel for ${avatarId}:`, err);
+      console.warn(`[Avatars] Failed to register home channel for ${avatarId}:`, err instanceof Error ? err.message : String(err));
       // Don't fail the update if home channel registration fails
     }
   }
@@ -448,7 +448,7 @@ export async function deleteAvatar(
   try {
     await removeAvatarFromAllHomeChannels(avatarId);
   } catch (err) {
-    console.warn(`[Avatars] Failed to unregister home channel for ${avatarId}:`, err);
+    console.warn(`[Avatars] Failed to unregister home channel for ${avatarId}:`, err instanceof Error ? err.message : String(err));
     // Don't fail the delete if home channel unregistration fails
   }
 
@@ -793,7 +793,7 @@ export async function getAvatarByNFTMint(mintAddress: string): Promise<AvatarRec
     }
     return null;
   } catch (error) {
-    console.error('[Avatars] Error finding avatar by NFT mint:', error);
+    console.error('[Avatars] Error finding avatar by NFT mint:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -1031,7 +1031,7 @@ export async function findAvatarByTelegramBotId(botId: number): Promise<AvatarRe
 
     return null;
   } catch (error) {
-    console.error('[Avatars] Error finding avatar by Telegram bot ID:', error);
+    console.error('[Avatars] Error finding avatar by Telegram bot ID:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -1110,7 +1110,7 @@ export async function activateAvatar(
 
     return { success: true };
   } catch (error) {
-    console.error('[Avatars] Failed to activate avatar:', error);
+    console.error('[Avatars] Failed to activate avatar:', error instanceof Error ? error.message : String(error));
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -1159,7 +1159,7 @@ export async function deactivateAvatar(
 
     return { success: true };
   } catch (error) {
-    console.error('[Avatars] Failed to deactivate avatar:', error);
+    console.error('[Avatars] Failed to deactivate avatar:', error instanceof Error ? error.message : String(error));
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

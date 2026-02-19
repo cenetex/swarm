@@ -238,7 +238,7 @@ export const handler: APIGatewayProxyHandler = async (event) => {
 
     return success(profile);
   } catch (error) {
-    console.error('[PublicProfile] Error:', error);
+    console.error('[PublicProfile] Error:', error instanceof Error ? error.message : String(error));
     return serverError('Failed to fetch profile');
   }
 };
@@ -268,7 +268,7 @@ export const leaderboardHandler: APIGatewayProxyHandler = async (event) => {
       totalAvatars: leaderboard.length,
     });
   } catch (error) {
-    console.error('[Leaderboard] Error:', error);
+    console.error('[Leaderboard] Error:', error instanceof Error ? error.message : String(error));
     return serverError('Failed to fetch leaderboard');
   }
 };

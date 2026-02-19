@@ -355,7 +355,7 @@ export async function pollAndCompleteJob(
 
     return job;
   } catch (error) {
-    console.error(`[MediaJobs] Poll error for ${jobId}:`, error);
+    console.error(`[MediaJobs] Poll error for ${jobId}:`, error instanceof Error ? error.message : String(error));
     return job;
   }
 }

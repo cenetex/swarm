@@ -335,6 +335,18 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
 }
 
 /**
+ * Build a mention/reply annotation prefix for a message.
+ * Returns a string like "[Mentioned you] " or "[Reply to you] " (or both),
+ * or empty string if neither flag is set.
+ */
+export function formatMentionContext(msg: { isMention?: boolean; isReplyToBot?: boolean }): string {
+  const tags: string[] = [];
+  if (msg.isMention) tags.push('[Mentioned you]');
+  if (msg.isReplyToBot) tags.push('[Reply to you]');
+  return tags.length > 0 ? tags.join(' ') + ' ' : '';
+}
+
+/**
  * Convert SwarmEnvelope to ContextMessage for channel state
  */
 function envelopeToContextMessage(envelope: SwarmEnvelope): ContextMessage {
@@ -436,7 +448,11 @@ async function generateResponse(
         // Only prefix user messages with sender name for group chat context.
         // Bot (assistant) messages should NOT include the name prefix,
         // otherwise the LLM learns to prefix its own responses with its name.
-        content: msg.isBot ? msg.content : `[${msg.sender}]: ${msg.content}`,
+        // Surface mention/reply-to-bot context so the LLM knows when it was
+        // directly addressed vs seeing a regular group message.
+        content: msg.isBot
+          ? msg.content
+          : `${formatMentionContext(msg)}[${msg.sender}]: ${msg.content}`,
       });
     }
 
@@ -456,7 +472,10 @@ async function generateResponse(
   }
 
   // Add current user message with sender attribution for group chat context
+  // Surface mention/reply context from the envelope metadata so the LLM
+  // knows whether the user directly addressed it.
   const sender = envelope.sender.displayName || envelope.sender.username || envelope.sender.id;
+  const mentionPrefix = formatMentionContext(envelope.metadata);
   const text = envelope.content.text || (() => {
     const mediaTypes = envelope.content.media?.map(m => m.type) || [];
     if (mediaTypes.includes('audio')) return '[voice message received]';
@@ -464,7 +483,7 @@ async function generateResponse(
   })();
   messages.push({
     role: 'user',
-    content: `[${sender}]: ${text}`,
+    content: `${mentionPrefix}[${sender}]: ${text}`,
   });
 
   const allToolResults: Array<{ name: string; result: { success: boolean; data?: unknown; media?: { type: string; url: string } } }> = [];

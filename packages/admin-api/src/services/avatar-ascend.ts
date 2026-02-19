@@ -136,7 +136,7 @@ async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusPa
     });
 
     if (!response.ok) {
-      console.warn('[AvatarAscend] Helius transaction parse failed:', response.status);
+      console.warn(`[AvatarAscend] Helius transaction parse failed: ${response.status}`);
       return null;
     }
 
@@ -154,7 +154,7 @@ async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusPa
 
     return null;
   } catch (error) {
-    console.warn('[AvatarAscend] Helius transaction parse error:', error);
+    console.warn('[AvatarAscend] Helius transaction parse error:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -175,7 +175,7 @@ async function getAssetCollection(mint: string): Promise<string | null> {
     });
 
     if (!response.ok) {
-      console.warn('[AvatarAscend] Helius getAsset failed:', response.status);
+      console.warn(`[AvatarAscend] Helius getAsset failed: ${response.status}`);
       return null;
     }
 
@@ -193,7 +193,7 @@ async function getAssetCollection(mint: string): Promise<string | null> {
     const collection = grouping.find((group) => group.group_key === 'collection');
     return collection?.group_value || null;
   } catch (error) {
-    console.warn('[AvatarAscend] Helius getAsset error:', error);
+    console.warn('[AvatarAscend] Helius getAsset error:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -217,7 +217,7 @@ export async function getNftOwner(mint: string): Promise<string | null> {
     });
 
     if (!response.ok) {
-      console.warn('[AvatarAscend] Failed to get NFT owner:', response.status);
+      console.warn(`[AvatarAscend] Failed to get NFT owner: ${response.status}`);
       return null;
     }
 
@@ -233,7 +233,7 @@ export async function getNftOwner(mint: string): Promise<string | null> {
 
     return data.result?.ownership?.owner || null;
   } catch (error) {
-    console.warn('[AvatarAscend] Error getting NFT owner:', error);
+    console.warn('[AvatarAscend] Error getting NFT owner:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -325,7 +325,7 @@ async function checkOrbOwnership(walletAddress: string): Promise<{
     });
 
     if (!response.ok) {
-      console.warn('[AvatarAscend] Failed to check orb ownership:', response.status);
+      console.warn(`[AvatarAscend] Failed to check orb ownership: ${response.status}`);
       return { hasOrb: false, ownedOrbs: [] };
     }
 
@@ -359,7 +359,7 @@ async function checkOrbOwnership(walletAddress: string): Promise<{
       })),
     };
   } catch (error) {
-    console.warn('[AvatarAscend] Error checking orb ownership:', error);
+    console.warn('[AvatarAscend] Error checking orb ownership:', error instanceof Error ? error.message : String(error));
     return { hasOrb: false, ownedOrbs: [] };
   }
 }
@@ -546,7 +546,7 @@ export async function verifyOrbBurn(
 
     return { verified: false, error: 'Burned NFT is not from the Orb/Gate collection' };
   } catch (error) {
-    console.error('[AvatarAscend] Error verifying orb burn:', error);
+    console.error('[AvatarAscend] Error verifying orb burn:', error instanceof Error ? error.message : String(error));
     return { verified: false, error: 'Failed to verify orb burn transaction' };
   }
 }
@@ -645,7 +645,7 @@ export async function verifyRatiBurn(
       burnedAmount,
     };
   } catch (error) {
-    console.error('[AvatarAscend] Error verifying RATI burn:', error);
+    console.error('[AvatarAscend] Error verifying RATI burn:', error instanceof Error ? error.message : String(error));
     return { verified: false, error: 'Failed to verify RATI burn transaction' };
   }
 }
@@ -858,7 +858,7 @@ export async function executeAscension(
         errorCode: 'ALREADY_ASCENDED',
       };
     }
-    console.error('[AvatarAscend] Error executing ascension:', error);
+    console.error('[AvatarAscend] Error executing ascension:', error instanceof Error ? error.message : String(error));
     return {
       success: false,
       error: 'Failed to execute ascension',
