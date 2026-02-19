@@ -31,6 +31,21 @@ export default defineConfig({
     // still catching any chunk that grows beyond ~1 MB.
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
+      onwarn(warning, defaultHandler) {
+        // Suppress INVALID_ANNOTATION warnings from third-party dependencies.
+        // @privy-io/react-auth and ox emit ~198 "contains an annotation that
+        // Rollup cannot interpret" warnings due to misplaced /*#__PURE__*/
+        // comments in their ESM bundles. These are harmless — Rollup strips
+        // the annotations automatically — but they create noisy build output.
+        if (
+          warning.code === 'INVALID_ANNOTATION' &&
+          warning.id &&
+          warning.id.includes('node_modules')
+        ) {
+          return;
+        }
+        defaultHandler(warning);
+      },
       output: {
         manualChunks(id) {
           // --- React core: keep react + react-dom + scheduler together to
