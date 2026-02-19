@@ -156,7 +156,7 @@ Use this section as the default workflow for AI coding/debug agents.
 4. Reproduce in the smallest scope possible:
   - package-specific tests first (see “Targeted Test Commands”)
 5. If issue is integration/runtime (not unit-level), gather logs and API evidence:
-  - `./scripts/agent-logs.sh staging <avatarId> --since 2h --level ERROR`
+  - `./scripts/avatar-logs.sh staging <avatarId> --since 2h --level ERROR`
   - `./scripts/test-api.sh staging chat '{"message":"debug","history":[]}'`
 
 ### 2) Where to Look First (by symptom)
@@ -213,8 +213,8 @@ Single file patterns:
 
 ### 4) Debug Script Index (high leverage)
 - `scripts/test-api.sh` — direct API testing with `x-internal-test-key`
-- `scripts/agent-logs.sh` — consolidated avatar logs (`fast` DynamoDB or CloudWatch mode)
-- `scripts/agent-inspect.sh` — snapshot avatar state + integrations + events + logs
+- `scripts/avatar-logs.sh` — consolidated avatar logs (`fast` DynamoDB or CloudWatch mode)
+- `scripts/avatar-inspect.sh` — snapshot avatar state + integrations + events + logs
 - `scripts/telegram-monitor.mjs` — Telegram monitoring helpers
 - `scripts/repair-telegram-webhooks.mjs` — repair webhook registrations
 - `scripts/report-telegram-webhook-mismatches.mjs` — detect webhook/secret mismatches
