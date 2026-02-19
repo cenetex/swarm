@@ -417,7 +417,7 @@ export async function searchListings(
         }
       }
     } catch (error) {
-      console.error(`[PropertyResearch] Search error for "${query}":`, error);
+      console.error(`[PropertyResearch] Search error for "${query}":`, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -463,7 +463,7 @@ export async function searchComparables(
         });
       }
     } catch (error) {
-      console.error(`[PropertyResearch] Comps search error:`, error);
+      console.error(`[PropertyResearch] Comps search error:`, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -522,7 +522,7 @@ export async function searchNeighborhood(
         neighborhood.sources.push('web search - walk score');
       }
     } catch (error) {
-      console.error(`[PropertyResearch] Neighborhood search error:`, error);
+      console.error(`[PropertyResearch] Neighborhood search error:`, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -569,7 +569,7 @@ export async function searchSchools(
       }
     }
   } catch (error) {
-    console.error(`[PropertyResearch] Schools search error:`, error);
+    console.error(`[PropertyResearch] Schools search error:`, error instanceof Error ? error.message : String(error));
   }
 
   return { schools: schools.slice(0, 10), queries: searchQueries };
@@ -621,7 +621,7 @@ export async function searchAssessor(
         break;
       }
     } catch (error) {
-      console.error(`[PropertyResearch] Assessor search error:`, error);
+      console.error(`[PropertyResearch] Assessor search error:`, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -727,7 +727,7 @@ export async function executeResearch(
       error: errorMsg,
     });
 
-    console.error(`[PropertyResearch] Failed job ${jobId}:`, error);
+    console.error(`[PropertyResearch] Failed job ${jobId}:`, error instanceof Error ? error.message : String(error));
     return await getJob(jobId);
   }
 }

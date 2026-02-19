@@ -402,7 +402,7 @@ export async function syncAvatarConfig(record: AvatarRecord): Promise<void> {
           config.platforms.twitter.verifiedType = connectionResult.Item.verifiedType;
         }
       } catch (err) {
-        console.warn(`Failed to fetch Twitter connection for ${record.avatarId}:`, err);
+        console.warn(`Failed to fetch Twitter connection for ${record.avatarId}:`, err instanceof Error ? err.message : String(err));
         // charLimit remains at default 280
       }
     } else {

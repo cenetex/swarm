@@ -441,7 +441,7 @@ export async function executeModification(
 
     return { success: true };
   } catch (err) {
-    console.error('Failed to execute chat modification:', err);
+    console.error('Failed to execute chat modification:', err instanceof Error ? err.message : String(err));
     return { success: false, error: String(err) };
   }
 }

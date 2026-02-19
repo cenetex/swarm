@@ -22,10 +22,6 @@ This directory contains GitHub Actions workflows and supporting infrastructure f
 
 ### Deploy (manual trigger)
 
-**Deploy Single Agent** (`deploy-single-agent.yml`):
-- Deploys one agent's CDK stack (`SwarmAgent-{id}`)
-- Outputs webhook URLs for configuration
-
 **Deploy Lambda Hotpatch** (`deploy-lambda-hotpatch.yml`):
 - Bypasses CDK — directly updates Lambda function code via AWS API
 - For emergency patches only; does not update infra, layers, or env vars

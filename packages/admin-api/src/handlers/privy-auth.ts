@@ -131,7 +131,7 @@ export async function handlePrivyVerify(event: APIGatewayProxyEventV2): Promise<
         details: error.details,
       }, cors);
     }
-    console.error('[PrivyAuth] Verify error:', error);
+    console.error('[PrivyAuth] Verify error:', error instanceof Error ? error.message : String(error));
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -266,7 +266,7 @@ export async function handleLinkPrivyVerify(event: APIGatewayProxyEventV2): Prom
         details: error.details,
       }, cors);
     }
-    console.error('[PrivyAuth] Link verify error:', error);
+    console.error('[PrivyAuth] Link verify error:', error instanceof Error ? error.message : String(error));
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
