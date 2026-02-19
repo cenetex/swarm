@@ -56,6 +56,41 @@ import { toolResultsToActions, maybeTranscribeAudio } from './tool-executor.js';
 import { buildSystemPrompt, formatBrainMemoryContext } from './context-builder.js';
 
 const MAX_TOOL_ITERATIONS = 5;
+const REPLY_CONTEXT_MAX_LENGTH = 200;
+
+/**
+ * Build a reply-to annotation for a message that references another message via replyToMessageId.
+ *
+ * If the referenced message is already visible in the LLM context window, returns undefined
+ * (no annotation needed — the LLM can see it). Otherwise, searches the full channel history
+ * (up to 50 messages from DynamoDB) and returns a short annotation string.
+ *
+ * @param replyToMessageId  The messageId being replied to
+ * @param contextWindow     The messages currently visible to the LLM
+ * @param fullHistory       The full channel history buffer (up to 50 messages)
+ * @returns An annotation string like `[Replying to Alice: "truncated content..."]`, or undefined
+ */
+export function buildReplyAnnotation(
+  replyToMessageId: string | undefined,
+  contextWindow: ContextMessage[],
+  fullHistory: ContextMessage[],
+): string | undefined {
+  if (!replyToMessageId) return undefined;
+
+  // Check if the referenced message is already in the context window
+  const inWindow = contextWindow.some(m => m.messageId === replyToMessageId);
+  if (inWindow) return undefined;
+
+  // Search the full history for the referenced message
+  const referenced = fullHistory.find(m => m.messageId === replyToMessageId);
+  if (!referenced) return undefined;
+
+  const truncatedContent = referenced.content.length > REPLY_CONTEXT_MAX_LENGTH
+    ? referenced.content.slice(0, REPLY_CONTEXT_MAX_LENGTH) + '...'
+    : referenced.content;
+
+  return `[Replying to ${referenced.sender}: "${truncatedContent}"]`;
+}
 
 // Environment variable validation helper
 function getRequiredEnv(name: string): string {
@@ -443,6 +478,15 @@ async function generateResponse(
     // Add history messages with proper user/assistant roles
     // Include sender name for multi-user chat context
     for (const msg of recentHistory) {
+      // If this message is a reply to something outside the visible context window,
+      // inject a brief annotation so the LLM knows what it's replying to.
+      const replyAnnotation = buildReplyAnnotation(
+        msg.replyToMessageId,
+        recentHistory,
+        channelHistory,
+      );
+      const prefix = replyAnnotation ? `${replyAnnotation}\n` : '';
+
       messages.push({
         role: msg.isBot ? 'assistant' : 'user',
         // Only prefix user messages with sender name for group chat context.
@@ -450,9 +494,11 @@ async function generateResponse(
         // otherwise the LLM learns to prefix its own responses with its name.
         // Surface mention/reply-to-bot context so the LLM knows when it was
         // directly addressed vs seeing a regular group message.
+        // Also include reply-to annotations for messages replying to content
+        // outside the visible context window.
         content: msg.isBot
-          ? msg.content
-          : `${formatMentionContext(msg)}[${msg.sender}]: ${msg.content}`,
+          ? `${prefix}${msg.content}`
+          : `${prefix}${formatMentionContext(msg)}[${msg.sender}]: ${msg.content}`,
       });
     }
 
@@ -481,9 +527,21 @@ async function generateResponse(
     if (mediaTypes.includes('audio')) return '[voice message received]';
     return '[media received]';
   })();
+
+  // Resolve reply-to context for the current incoming message.
+  // The context window for the current message is recentHistory (already sent to LLM).
+  const currentReplyAnnotation = channelHistory
+    ? buildReplyAnnotation(
+        envelope.replyTo,
+        channelHistory.filter(m => m.messageId !== envelope.messageId).slice(-maxContext),
+        channelHistory,
+      )
+    : undefined;
+  const currentPrefix = currentReplyAnnotation ? `${currentReplyAnnotation}\n` : '';
+
   messages.push({
     role: 'user',
-    content: `${mentionPrefix}[${sender}]: ${text}`,
+    content: `${currentPrefix}${mentionPrefix}[${sender}]: ${text}`,
   });
 
   const allToolResults: Array<{ name: string; result: { success: boolean; data?: unknown; media?: { type: string; url: string } } }> = [];
