@@ -33,7 +33,7 @@ export class SwarmSolanaService implements SolanaService {
         const secretKey = JSON.parse(walletSecret);
         this.wallet = Keypair.fromSecretKey(new Uint8Array(secretKey));
       } catch (error) {
-        console.error('Failed to parse wallet secret:', error);
+        console.error('Failed to parse wallet secret:', error instanceof Error ? error.message : String(error));
       }
     }
   }
@@ -67,7 +67,7 @@ export class SwarmSolanaService implements SolanaService {
         return 0;
       }
     } catch (error) {
-      console.error('Failed to get balance:', error);
+      console.error('Failed to get balance:', error instanceof Error ? error.message : String(error));
       return 0;
     }
   }
@@ -189,7 +189,7 @@ export class SwarmSolanaService implements SolanaService {
         publicKey.toBytes()
       );
     } catch (error) {
-      console.error('Signature verification failed:', error);
+      console.error('Signature verification failed:', error instanceof Error ? error.message : String(error));
       return false;
     }
   }

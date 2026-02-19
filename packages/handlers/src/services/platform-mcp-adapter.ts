@@ -1126,7 +1126,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
                 }));
               }
             } catch (error) {
-              console.error('[Discord] Failed to fetch bot info:', error);
+              console.error('[Discord] Failed to fetch bot info:', error instanceof Error ? error.message : String(error));
             }
           }
 
@@ -1169,14 +1169,14 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
 
             if (!response.ok) {
               const error = await response.text();
-              console.error('[Discord] Send message failed:', error);
+              console.error('[Discord] Send message failed:', String(error));
               return null;
             }
 
             const message = (await response.json()) as { id: string };
             return { messageId: message.id };
           } catch (error) {
-            console.error('[Discord] Send message error:', error);
+            console.error('[Discord] Send message error:', error instanceof Error ? error.message : String(error));
             return null;
           }
         },
@@ -1211,14 +1211,14 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
 
             if (!response.ok) {
               const error = await response.text();
-              console.error('[Discord] Webhook message failed:', error);
+              console.error('[Discord] Webhook message failed:', String(error));
               return null;
             }
 
             const message = (await response.json()) as { id?: string };
             return { messageId: message.id };
           } catch (error) {
-            console.error('[Discord] Webhook message error:', error);
+            console.error('[Discord] Webhook message error:', error instanceof Error ? error.message : String(error));
             return null;
           }
         },
@@ -1247,7 +1247,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
               parentId: channel.parent_id,
             };
           } catch (error) {
-            console.error('[Discord] Get channel error:', error);
+            console.error('[Discord] Get channel error:', error instanceof Error ? error.message : String(error));
             return null;
           }
         },
@@ -1275,7 +1275,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
               parentId: c.parent_id,
             }));
           } catch (error) {
-            console.error('[Discord] List channels error:', error);
+            console.error('[Discord] List channels error:', error instanceof Error ? error.message : String(error));
             return [];
           }
         },
@@ -1302,7 +1302,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
               memberCount: g.approximate_member_count,
             }));
           } catch (error) {
-            console.error('[Discord] List guilds error:', error);
+            console.error('[Discord] List guilds error:', error instanceof Error ? error.message : String(error));
             return [];
           }
         },
@@ -1338,7 +1338,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
               })),
             }));
           } catch (error) {
-            console.error('[Discord] Get messages error:', error);
+            console.error('[Discord] Get messages error:', error instanceof Error ? error.message : String(error));
             return [];
           }
         },
@@ -1357,7 +1357,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
             );
             return response.ok;
           } catch (error) {
-            console.error('[Discord] Add reaction error:', error);
+            console.error('[Discord] Add reaction error:', error instanceof Error ? error.message : String(error));
             return false;
           }
         },
@@ -1376,7 +1376,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
             );
             return response.ok;
           } catch (error) {
-            console.error('[Discord] Remove reaction error:', error);
+            console.error('[Discord] Remove reaction error:', error instanceof Error ? error.message : String(error));
             return false;
           }
         },

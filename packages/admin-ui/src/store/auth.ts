@@ -174,7 +174,7 @@ export const useAuthStore = create<AuthState>()(
             throw new Error('Backend verification failed');
           }
         } catch (error) {
-          console.error('[AuthStore] Sync error:', error);
+          console.error('[AuthStore] Sync error:', error instanceof Error ? error.message : String(error));
           set({
             ...UNAUTHENTICATED_STATE,
             error: error instanceof Error ? error.message : 'Authentication failed',
@@ -192,7 +192,7 @@ export const useAuthStore = create<AuthState>()(
             credentials: 'include',
           });
         } catch (error) {
-          console.error('[AuthStore] Logout error:', error);
+          console.error('[AuthStore] Logout error:', error instanceof Error ? error.message : String(error));
         } finally {
           set({ ...UNAUTHENTICATED_STATE });
         }

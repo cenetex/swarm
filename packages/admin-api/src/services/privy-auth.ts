@@ -76,7 +76,7 @@ async function getSecretValue(secretArn: string): Promise<string | null> {
     );
     return response.SecretString || null;
   } catch (error) {
-    console.error('[PrivyAuth] Failed to fetch secret from Secrets Manager:', error);
+    console.error('[PrivyAuth] Failed to fetch secret from Secrets Manager:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -404,7 +404,7 @@ export async function verifyPrivyAuth(
       outcome: accountResolution.outcome,
     };
   } catch (error) {
-    console.error('[PrivyAuth] Verify error:', error);
+    console.error('[PrivyAuth] Verify error:', error instanceof Error ? error.message : String(error));
     return { success: false, error: 'Authentication failed' };
   }
 }
@@ -422,7 +422,7 @@ export async function verifyPrivyAccessTokenForLink(accessToken: string): Promis
 
     return { ok: true, privyUserId, walletAddress, email };
   } catch (error) {
-    console.error('[PrivyAuth] Link verify error:', error);
+    console.error('[PrivyAuth] Link verify error:', error instanceof Error ? error.message : String(error));
     return { ok: false, error: 'Invalid authentication token' };
   }
 }

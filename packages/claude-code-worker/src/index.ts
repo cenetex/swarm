@@ -11,7 +11,7 @@ export { createClaudeCodeServices } from './services.js';
 if (process.argv[1]?.endsWith('index.js') || process.argv[1]?.endsWith('index.ts')) {
   const { runWorker } = await import('./worker.js');
   runWorker().catch((error) => {
-    console.error('Worker crashed:', error);
+    console.error('Worker crashed:', error instanceof Error ? error.message : String(error));
     process.exit(1);
   });
 }
