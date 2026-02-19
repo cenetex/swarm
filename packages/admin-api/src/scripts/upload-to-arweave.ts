@@ -514,6 +514,6 @@ Arweave URIs:
 // Run
 const options = parseArgs();
 uploadToArweave(options).catch((error) => {
-  console.error('Upload failed:', error);
+  console.error('Upload failed:', error instanceof Error ? error.message : String(error));
   process.exit(1);
 });

@@ -791,7 +791,7 @@ export async function reconcileInhabitantMappings(
       `[Reconcile] Complete: ${result.orphanedMappings} orphaned mappings, ${result.orphanedAgents} orphaned avatars, ${result.fixed} fixed`
     );
   } catch (err) {
-    console.error('[Reconcile] Error:', err);
+    console.error('[Reconcile] Error:', err instanceof Error ? err.message : String(err));
     result.errors.push(`Scan error: ${err instanceof Error ? err.message : 'Unknown'}`);
   }
 

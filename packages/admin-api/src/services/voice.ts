@@ -1011,7 +1011,7 @@ export async function sendVoiceMessage(params: {
         const converted = await convertAudioToOgg({ avatarId: params.avatarId, sourceUrl: voiceUrl });
         if (converted) telegramSourceUrl = converted;
       } catch (err) {
-        console.warn('[Voice] Media convert failed, falling back to original audio:', err);
+        console.warn('[Voice] Media convert failed, falling back to original audio:', err instanceof Error ? err.message : String(err));
       }
     }
 

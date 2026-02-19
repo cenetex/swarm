@@ -70,7 +70,7 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
       copyTimerRef.current = setTimeout(() => setCopyStatus('idle'), 2000);
     } catch (error) {
-      console.error('Failed to copy image:', error);
+      console.error('Failed to copy image:', error instanceof Error ? error.message : String(error));
       setCopyStatus('error');
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
       copyTimerRef.current = setTimeout(() => setCopyStatus('idle'), 2000);
@@ -97,7 +97,7 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Failed to save image:', error);
+      console.error('Failed to save image:', error instanceof Error ? error.message : String(error));
     }
   }, [imageUrl]);
 
