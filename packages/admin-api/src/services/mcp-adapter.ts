@@ -16,6 +16,7 @@ import {
 } from '@swarm/core';
 import type { UserSession, SecretType } from '../types.js';
 import type { IntegrationType, AICapability } from '../services/integrations.js';
+import type { TokenLaunchConfig } from '../services/token-launch.js';
 import { getDefaultContainer, type ServiceContainer } from '../services/service-container.js';
 
 // Timeout for external API calls
@@ -1076,7 +1077,7 @@ export function createMCPServices(
       preflightLaunch: async (avatarId: string) => {
         return tokenLaunch.preflightTokenLaunch(avatarId);
       },
-      launchToken: async (avatarId: string, config: tokenLaunch.TokenLaunchConfig) => {
+      launchToken: async (avatarId: string, config: TokenLaunchConfig) => {
         return tokenLaunch.launchToken(avatarId, config);
       },
       getTokenStatus: async (avatarId: string) => {
