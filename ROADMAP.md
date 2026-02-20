@@ -38,5 +38,9 @@ Milestone M3: Persistent swarm platform
 - Marketplace-ready templates and persona packs.
 - SaaS reliability and cost optimization for scale.
 
+Strategic PRDs:
+- [docs/PRD-M3-PERSISTENT-SWARM-PLATFORM.md](docs/PRD-M3-PERSISTENT-SWARM-PLATFORM.md)
+- [docs/PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md](docs/PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md)
+
 ## Legacy
 Prior planning snapshots are intentionally not kept as separate files; use git history for older iterations.
