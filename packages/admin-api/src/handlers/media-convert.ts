@@ -9,6 +9,7 @@ import { pipeline } from 'stream/promises';
 import { spawn } from 'child_process';
 import path from 'path';
 import ffmpegPath from 'ffmpeg-static';
+import { buildMediaUrl } from '../utils/media-url.js';
 
 const s3Client = new S3Client({});
 
@@ -132,10 +133,7 @@ async function uploadOutput(filePath: string, key: string, contentType: string):
     ContentType: contentType,
   }));
 
-  if (CDN_URL) {
-    return `${CDN_URL}/${key}`;
-  }
-  return `https://${MEDIA_BUCKET}.s3.amazonaws.com/${key}`;
+  return buildMediaUrl(key, MEDIA_BUCKET, CDN_URL || undefined);
 }
 
 export const handler = async (event: { body?: string } | ConvertRequest): Promise<ConvertResponse> => {

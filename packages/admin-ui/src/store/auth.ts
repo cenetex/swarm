@@ -86,6 +86,9 @@ interface AuthState {
   logout: () => Promise<void>;
   resetLocal: () => void;
 
+  // Actions – account refresh (e.g. after linking a wallet)
+  refreshAccount: () => Promise<void>;
+
   // Actions – error management
   clearError: () => void;
   setError: (error: string | null) => void;
@@ -179,6 +182,28 @@ export const useAuthStore = create<AuthState>()(
             ...UNAUTHENTICATED_STATE,
             error: error instanceof Error ? error.message : 'Authentication failed',
           });
+        }
+      },
+
+      // -- Account refresh (e.g. after linking a wallet) ----------------------
+
+      refreshAccount: async () => {
+        try {
+          const response = await fetch(`${API_BASE}/auth/me`, {
+            credentials: 'include',
+          });
+          if (!response.ok) return;
+          const data = await response.json();
+          if (data.authenticated && data.account) {
+            set({
+              account: data.account,
+              gateStatus: data.gateStatus || null,
+              gateWallet: data.gateWallet || null,
+              gateStatusByWallet: data.gateStatusByWallet || null,
+            });
+          }
+        } catch (error) {
+          console.error('[AuthStore] Refresh account error:', error instanceof Error ? error.message : String(error));
         }
       },
 

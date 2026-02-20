@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { buildMediaUrl, canonicalizeMediaUrl } from '@swarm/core';
 
 // Default S3 client - lazy initialized
 let defaultS3Client: S3Client | null = null;
@@ -104,12 +105,9 @@ async function makeUrlAccessible(url: string, cdnUrl?: string): Promise<string> 
     return url;
   }
 
+  // If CDN is configured, canonicalize S3 URL to CDN URL
   if (cdnUrl) {
-    const parsed = parseS3Key(url);
-    if (parsed) {
-      return `${cdnUrl}/${parsed.key}`;
-    }
-    return url;
+    return canonicalizeMediaUrl(url, cdnUrl);
   }
 
   const parsed = parseS3Key(url);
@@ -271,9 +269,7 @@ async function uploadAudioAsset(params: {
     CacheControl: 'max-age=31536000',
   }));
 
-  const url = params.cdnUrl
-    ? `${params.cdnUrl}/${s3Key}`
-    : `https://${params.mediaBucket}.s3.amazonaws.com/${s3Key}`;
+  const url = buildMediaUrl(s3Key, params.mediaBucket, params.cdnUrl);
 
   return { assetId, url };
 }

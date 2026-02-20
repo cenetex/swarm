@@ -1586,6 +1586,190 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
 }
 `;
 
+exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingResources + mediaCdnUrl fallback) 1`] = `
+{
+  "Outputs": {
+    "ActivityTableArnExport": {
+      "Export": {
+        "Name": "swarm-activity-table-arn-staging",
+      },
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "arn:",
+            {
+              "Ref": "AWS::Partition",
+            },
+            ":dynamodb:us-east-1:123456789012:table/swarm-activity-staging",
+          ],
+        ],
+      },
+    },
+    "AlarmTopicArnExport": {
+      "Export": {
+        "Name": "swarm-alarm-topic-arn-staging",
+      },
+      "Value": {
+        "Ref": "SharedAlarmTopicAE74B6D1",
+      },
+    },
+    "DependencyLayerArnExport": {
+      "Export": {
+        "Name": "swarm-dependency-layer-arn-staging",
+      },
+      "Value": {
+        "Ref": "SharedDependencyLayer4A51C7E0",
+      },
+    },
+    "DiscordClusterArnExport": {
+      "Export": {
+        "Name": "swarm-discord-cluster-arn-staging",
+      },
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "arn:",
+            {
+              "Ref": "AWS::Partition",
+            },
+            ":ecs:us-east-1:123456789012:cluster/swarm-discord-staging",
+          ],
+        ],
+      },
+    },
+    "MediaBucketArnExport": {
+      "Export": {
+        "Name": "swarm-media-bucket-arn-staging",
+      },
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "arn:",
+            {
+              "Ref": "AWS::Partition",
+            },
+            ":s3:::swarm-media-staging-",
+            {
+              "Ref": "AWS::AccountId",
+            },
+          ],
+        ],
+      },
+    },
+    "MediaBucketNameExport": {
+      "Export": {
+        "Name": "swarm-media-bucket-name-staging",
+      },
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "swarm-media-staging-",
+            {
+              "Ref": "AWS::AccountId",
+            },
+          ],
+        ],
+      },
+    },
+    "StateTableArnExport": {
+      "Export": {
+        "Name": "swarm-state-table-arn-staging",
+      },
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "arn:",
+            {
+              "Ref": "AWS::Partition",
+            },
+            ":dynamodb:us-east-1:123456789012:table/swarm-state-staging",
+          ],
+        ],
+      },
+    },
+    "StateTableNameExport": {
+      "Export": {
+        "Name": "swarm-state-table-name-staging",
+      },
+      "Value": "swarm-state-staging",
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "DependencyLayerArnParamF1428BC4": {
+      "Properties": {
+        "Description": "Dependency layer ARN for swarm handlers",
+        "Name": "/swarm/staging/dependency-layer-arn",
+        "Type": "String",
+        "Value": {
+          "Ref": "SharedDependencyLayer4A51C7E0",
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "SharedAlarmTopicAE74B6D1": {
+      "Properties": {
+        "DisplayName": "Swarm Alarms (staging)",
+        "TopicName": "swarm-alarms-staging",
+      },
+      "Type": "AWS::SNS::Topic",
+    },
+    "SharedDependencyLayer4A51C7E0": {
+      "Properties": {
+        "CompatibleRuntimes": [
+          "nodejs20.x",
+        ],
+        "Content": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-us-east-1",
+          "S3Key": "ASSET_HASH.zip",
+        },
+        "Description": "Shared dependencies for swarm handlers",
+        "LayerName": "swarm-deps-staging",
+      },
+      "Type": "AWS::Lambda::LayerVersion",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
+
 exports[`CDK Infrastructure Snapshots AdminUiStack snapshot (dev, no custom domain) 1`] = `
 {
   "Outputs": {

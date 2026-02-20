@@ -101,6 +101,7 @@ const stripePriceIdPro = getContextValue<string>('stripePriceIdPro', envConfig);
 const stripePriceIdEnterprise = getContextValue<string>('stripePriceIdEnterprise', envConfig);
 const galleryDomain = getContextValue<string>('galleryDomain', envConfig);
 const galleryCertificateArn = getContextValue<string>('galleryCertificateArn', envConfig);
+const mediaCdnUrl = getContextValue<string>('mediaCdnUrl', envConfig);
 const profileDomain = getContextValue<string>('profileDomain', envConfig);
 const profileCertificateArn = getContextValue<string>('profileCertificateArn', envConfig);
 const profileApiUrl = getContextValue<string>('profileApiUrl', envConfig);
@@ -160,6 +161,7 @@ const sharedInfraStack = new SharedInfraStack(app, `SwarmShared-${environment}${
   enableCdn: true,
   galleryDomain,
   galleryCertificateArn,
+  mediaCdnUrl,
   alarmNotificationEmail,
   useExistingResources,
   env: stackEnv,
