@@ -495,11 +495,16 @@ export async function getMemories(
   avatarId: string,
   options: MemoryQueryOptions = {}
 ): Promise<AvatarMemory[]> {
+  const startMs = Date.now();
   const validAvatarId = validateAvatarId(avatarId);
   const { tier, limit = 100, minStrength = 0 } = options;
 
   // Cap limit to prevent excessive reads
   const safeLimit = Math.min(limit, 500);
+
+  // When semantic query is provided, we need to over-fetch for re-ranking
+  const useSemantic = !!options.semantic?.query;
+  const fetchLimit = useSemantic ? Math.min(safeLimit * 5, 500) : safeLimit;
 
   // Build key condition
   let keyCondition = 'pk = :pk';
@@ -535,6 +540,7 @@ export async function getMemories(
   }
 
   try {
+    const queryStartMs = Date.now();
     const result = await getDynamoClient().send(new QueryCommand({
       TableName: ADMIN_TABLE,
       KeyConditionExpression: keyCondition,
@@ -544,15 +550,99 @@ export async function getMemories(
         ExpressionAttributeNames: expressionNames,
       } : {}),
       ScanIndexForward: false, // Newest first
-      Limit: safeLimit,
+      Limit: fetchLimit,
     }));
+    const queryLatencyMs = Date.now() - queryStartMs;
 
-    return (result.Items || []) as AvatarMemory[];
+    let memories = (result.Items || []) as AvatarMemory[];
+
+    // Semantic re-ranking: when a query is provided, generate an embedding
+    // and re-rank results by cosine similarity against stored embeddings.
+    // Records without embeddings are included at the end (deterministic fallback).
+    if (useSemantic && memories.length > 0) {
+      const semanticStartMs = Date.now();
+      const semanticQuery = options.semantic!.query;
+      const threshold = options.semantic!.threshold ?? 0.3;
+      let retrievalMethod: 'semantic' | 'deterministic' = 'deterministic';
+
+      try {
+        const embeddingService = getEmbeddingService();
+        const queryEmbedding = await embeddingService.embed(semanticQuery);
+        retrievalMethod = 'semantic';
+
+        // Partition into records with and without embeddings
+        const withEmbedding: Array<{ memory: AvatarMemory; similarity: number }> = [];
+        const withoutEmbedding: AvatarMemory[] = [];
+
+        for (const mem of memories) {
+          if (mem.embedding && mem.embedding.length > 0) {
+            const similarity = cosineSimilarity(queryEmbedding, mem.embedding);
+            if (similarity >= threshold) {
+              withEmbedding.push({ memory: mem, similarity });
+            }
+          } else {
+            withoutEmbedding.push(mem);
+          }
+        }
+
+        // Sort by similarity descending
+        withEmbedding.sort((a, b) => b.similarity - a.similarity);
+
+        // Merge: semantic matches first, then deterministic fallback
+        memories = [
+          ...withEmbedding.map(({ memory }) => memory),
+          ...withoutEmbedding,
+        ].slice(0, safeLimit);
+
+        const semanticLatencyMs = Date.now() - semanticStartMs;
+        logger.info('Semantic re-ranking applied in getMemories', {
+          event: 'memory_semantic_rerank',
+          avatarId: validAvatarId,
+          tier: tier ?? 'all',
+          query: semanticQuery.slice(0, 50),
+          candidateCount: result.Items?.length ?? 0,
+          withEmbeddingCount: withEmbedding.length,
+          withoutEmbeddingCount: withoutEmbedding.length,
+          resultCount: memories.length,
+          retrievalMethod,
+          queryLatencyMs,
+          semanticLatencyMs,
+          totalLatencyMs: Date.now() - startMs,
+        });
+      } catch (error) {
+        // Graceful degradation: fall back to deterministic order
+        memories = memories.slice(0, safeLimit);
+        logger.warn('Semantic re-ranking failed, using deterministic fallback', {
+          event: 'memory_semantic_rerank_fallback',
+          avatarId: validAvatarId,
+          tier: tier ?? 'all',
+          retrievalMethod: 'deterministic',
+          queryLatencyMs,
+          totalLatencyMs: Date.now() - startMs,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    } else {
+      memories = memories.slice(0, safeLimit);
+
+      logger.info('Deterministic memory retrieval completed', {
+        event: 'memory_query_complete',
+        avatarId: validAvatarId,
+        tier: tier ?? 'all',
+        retrievalMethod: 'deterministic',
+        resultCount: memories.length,
+        queryLatencyMs,
+        totalLatencyMs: Date.now() - startMs,
+      });
+    }
+
+    return memories;
   } catch (error) {
     logger.error('Failed to get memories', {
       event: 'memory_query_error',
       avatarId: validAvatarId,
       tier,
+      totalLatencyMs: Date.now() - startMs,
       error: error instanceof Error ? error.message : 'Unknown error',
     });
     return [];
@@ -831,6 +921,7 @@ export async function searchMemories(
     minSimilarity?: number;
   } = {}
 ): Promise<AvatarMemory[]> {
+  const startMs = Date.now();
   const validAvatarId = validateAvatarId(avatarId);
   const queryLower = query.toLowerCase().trim();
   const safeLimit = Math.min(limit, 50);
@@ -842,6 +933,7 @@ export async function searchMemories(
 
   // Generate query embedding for semantic search
   let queryEmbedding: number[] | null = null;
+  const embeddingStartMs = Date.now();
   if (semanticSearch) {
     try {
       const embeddingService = getEmbeddingService();
@@ -850,15 +942,18 @@ export async function searchMemories(
       logger.warn('Failed to generate query embedding, falling back to keyword search', {
         event: 'embedding_query_error',
         avatarId: validAvatarId,
+        embeddingLatencyMs: Date.now() - embeddingStartMs,
         error: error instanceof Error ? error.message : 'Unknown',
       });
     }
   }
+  const embeddingLatencyMs = Date.now() - embeddingStartMs;
 
   // Fetch candidate memories with pagination (no artificial ceiling)
   const memories: AvatarMemory[] = [];
   let lastEvaluatedKey: Record<string, unknown> | undefined;
   const MAX_CANDIDATES = 500; // Safety limit
+  const queryStartMs = Date.now();
 
   do {
     const result = await getDynamoClient().send(new QueryCommand({
@@ -875,6 +970,7 @@ export async function searchMemories(
     memories.push(...((result.Items || []) as AvatarMemory[]));
     lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
   } while (lastEvaluatedKey && memories.length < MAX_CANDIDATES);
+  const queryLatencyMs = Date.now() - queryStartMs;
   const now = Date.now();
   const dayMs = 24 * 60 * 60 * 1000;
 
@@ -937,13 +1033,22 @@ export async function searchMemories(
     .sort((a, b) => b.score - a.score)
     .slice(0, safeLimit);
 
+  // Count memories with and without embeddings for diagnostics
+  const withEmbeddingCount = memories.filter(m => m.embedding && m.embedding.length > 0).length;
+
   logger.info('Memory search completed', {
     event: 'memory_search',
     avatarId: validAvatarId,
     query: query.slice(0, 50),
     usedSemanticSearch: !!queryEmbedding,
+    retrievalMethod: queryEmbedding ? 'semantic' : 'keyword',
     candidateCount: memories.length,
+    withEmbeddingCount,
+    withoutEmbeddingCount: memories.length - withEmbeddingCount,
     resultCount: scored.length,
+    embeddingLatencyMs,
+    queryLatencyMs,
+    totalLatencyMs: Date.now() - startMs,
   });
 
   return scored.map(({ memory }) => memory);
@@ -1371,6 +1476,7 @@ export async function recall(
   query: string,
   userId?: string
 ): Promise<{ facts: Array<{ fact: string; about?: string; timestamp: number; strength: number }> }> {
+  const startMs = Date.now();
   const validAvatarId = validateAvatarId(avatarId);
   const memories = await searchMemories(validAvatarId, query, 10);
 
@@ -1378,6 +1484,14 @@ export async function recall(
   const filtered = userId
     ? memories.filter(m => !m.userId || m.userId === userId)
     : memories;
+
+  logger.info('Recall completed', {
+    event: 'memory_recall',
+    avatarId: validAvatarId,
+    query: query.slice(0, 50),
+    resultCount: filtered.length,
+    totalLatencyMs: Date.now() - startMs,
+  });
 
   return {
     facts: filtered.map(m => ({
@@ -1397,6 +1511,7 @@ export async function recall(
  * @returns Formatted memory context string
  */
 export async function getMemoryContext(avatarId: string): Promise<string> {
+  const startMs = Date.now();
   const validAvatarId = validateAvatarId(avatarId);
 
   const [coreMemories, recentMemories, identity] = await promiseAllWithTimeout([
@@ -1443,6 +1558,16 @@ export async function getMemoryContext(avatarId: string): Promise<string> {
     }
   }
 
+  logger.info('Memory context built', {
+    event: 'memory_context_built',
+    avatarId: validAvatarId,
+    retrievalMethod: 'deterministic',
+    coreCount: coreMemories.length,
+    recentCount: recentMemories.length,
+    identityCount: identity.length,
+    totalLatencyMs: Date.now() - startMs,
+  });
+
   return sections.length > 0 ? sections.join('\n') : '';
 }
 
@@ -1462,6 +1587,7 @@ export async function getMemoryContextForQuery(
     maxChars?: number;
   } = {}
 ): Promise<string> {
+  const startMs = Date.now();
   const validAvatarId = validateAvatarId(avatarId);
   const queryText = query.trim();
   if (!queryText) {
@@ -1500,6 +1626,17 @@ export async function getMemoryContextForQuery(
   }
 
   const out = sections.length > 0 ? sections.join('\n') : '';
+
+  logger.info('Query-tailored memory context built', {
+    event: 'memory_context_for_query_built',
+    avatarId: validAvatarId,
+    retrievalMethod: 'semantic',
+    query: queryText.slice(0, 50),
+    identityCount: identity.length,
+    relevantCount: picked.length,
+    totalLatencyMs: Date.now() - startMs,
+  });
+
   return out.length > maxChars ? out.slice(0, maxChars) : out;
 }
 
