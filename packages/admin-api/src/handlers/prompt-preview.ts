@@ -13,6 +13,7 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 import { authenticateRequest } from '../auth/request-auth.js';
 import { isAuthError } from '../auth/errors.js';
 import { isRequestValidationError, validateRequestBody } from '../middleware/validate.js';
+import { getCorsHeaders } from '../http/cors.js';
 import {
   buildDynamicSystemPrompt,
   type ToolCategory,
@@ -102,18 +103,11 @@ function estimateTokens(text: string): number {
 export async function handler(
   event: APIGatewayProxyEventV2
 ): Promise<APIGatewayProxyResultV2> {
+  const corsHeaders = getCorsHeaders(event);
+
   // CORS preflight
   if (event.requestContext.http.method === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-internal-test-key',
-        'Access-Control-Allow-Credentials': 'true',
-      },
-      body: '',
-    };
+    return { statusCode: 204, headers: corsHeaders };
   }
 
   try {
@@ -127,7 +121,7 @@ export async function handler(
     if (!avatarRecord) {
       return {
         statusCode: 404,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({ error: 'Avatar not found' }),
       };
     }
@@ -263,22 +257,14 @@ export async function handler(
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Credentials': 'true',
-      },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify(response),
     };
   } catch (error) {
     if (isAuthError(error)) {
       return {
         statusCode: error.statusCode,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Credentials': 'true',
-        },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({ error: error.message, details: error.details }),
       };
     }
@@ -286,7 +272,7 @@ export async function handler(
     if (isRequestValidationError(error)) {
       return {
         statusCode: error.statusCode,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({ error: error.message, details: error.details }),
       };
     }
@@ -294,7 +280,7 @@ export async function handler(
     console.error('Prompt preview error:', error instanceof Error ? error.message : String(error));
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Unknown error',
