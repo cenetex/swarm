@@ -45,6 +45,12 @@ export interface SharedInfraStackProps extends cdk.StackProps {
    * the legacy monolith stack (SwarmStack-{env}).
    */
   useExistingResources?: boolean;
+
+  /**
+   * Explicit CDN URL for media (e.g., 'https://dodxbiygmi95j.cloudfront.net').
+   * Used as a fallback when useExistingResources=true and galleryDomain is not set.
+   */
+  mediaCdnUrl?: string;
 }
 
 export class SharedInfraStack extends cdk.Stack {
@@ -80,6 +86,7 @@ export class SharedInfraStack extends cdk.Stack {
       nameSuffix,
       alarmNotificationEmail,
       useExistingResources,
+      mediaCdnUrl,
     } = props;
     const suffix = nameSuffix ?? '';
 
@@ -95,6 +102,7 @@ export class SharedInfraStack extends cdk.Stack {
       cdnCertificateArn: galleryCertificateArn,
       alarmNotificationEmail,
       useExistingResources,
+      mediaCdnUrl,
     });
 
     // Store references for cross-stack access

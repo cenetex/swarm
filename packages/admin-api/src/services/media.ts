@@ -23,6 +23,7 @@ import { _getSecretValueInternal } from './secrets.js';
 import { getReplicateVersion } from './models-registry.js';
 import type { MediaJob, GalleryItem, SecretType, AICapability } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { buildMediaUrl, canonicalizeMediaUrl } from '../utils/media-url.js';
 
 const s3Client = new S3Client({});
 const sqsClient = new SQSClient({});
@@ -106,15 +107,9 @@ async function makeUrlAccessible(url: string): Promise<string> {
     return url;
   }
 
-  // If CDN is configured, convert S3 URL to CDN URL
+  // If CDN is configured, canonicalize S3 URL to CDN URL
   if (CDN_URL) {
-    // Extract the key from S3 URL
-    const s3UrlPattern = /https:\/\/[^/]+\.s3[^/]*\.amazonaws\.com\/(.+)/;
-    const match = url.match(s3UrlPattern);
-    if (match) {
-      return `${CDN_URL}/${match[1]}`;
-    }
-    return url;
+    return canonicalizeMediaUrl(url, CDN_URL);
   }
 
   // No CDN - generate a signed URL for temporary public access
@@ -308,7 +303,7 @@ export async function getProfileImageUploadUrl(avatarId: string): Promise<{
   });
 
   const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-  const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+  const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
   return { uploadUrl, s3Key, publicUrl };
 }
@@ -335,7 +330,7 @@ export async function getReferenceImageUploadUrl(
   });
 
   const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-  const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+  const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
   return { uploadUrl, s3Key, publicUrl, category };
 }
@@ -618,7 +613,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
   // Construct public URL
   // IMPORTANT: CDN_URL should be set to your CloudFront distribution URL
   // If not set, falls back to direct S3 URL (which requires public bucket)
-  const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+  const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
   console.log(`Public URL: ${publicUrl} (CDN_URL=${CDN_URL || 'NOT SET'})`);
 
   const galleryItem = await gallery.addToGallery(avatarId, {
@@ -1041,7 +1036,7 @@ export async function generateSticker(options: GenerateStickerOptions): Promise<
   }
 
   // Add to gallery
-  const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+  const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
   const galleryItem = await gallery.addToGallery(avatarId, {
     id: stickerId,
@@ -1145,7 +1140,7 @@ export async function setProfileImage(
   // Consume credit
   await credits.consumeCredit(avatarId, 'set_profile_image');
 
-  const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+  const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
   return { url: publicUrl, s3Key };
 }
@@ -1167,7 +1162,7 @@ export async function getCharacterReferenceUploadUrl(avatarId: string): Promise<
   });
 
   const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-  const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+  const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
   return { uploadUrl, s3Key, publicUrl };
 }
@@ -1236,7 +1231,7 @@ export async function setCharacterReference(
     ContentType: 'image/png',
   }));
 
-  const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+  const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
   // Update avatar record with character reference
   // If this fails, rollback by deleting the S3 file to prevent orphaned files

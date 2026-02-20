@@ -120,6 +120,39 @@ describe('CDK Infrastructure Snapshots', () => {
     expect(sanitized).toMatchSnapshot();
   });
 
+  test('SharedInfraStack snapshot (useExistingResources + mediaCdnUrl fallback)', () => {
+    const app = new cdk.App({ context: DUMMY_VPC_CONTEXT });
+
+    const stack = new SharedInfraStack(app, 'TestSharedInfraExistingCdnFallback', {
+      environment: 'staging',
+      enableCdn: true,
+      mediaCdnUrl: 'https://dodxbiygmi95j.cloudfront.net',
+      useExistingResources: true,
+      env: TEST_ENV,
+    });
+
+    // cdnUrl should be set from mediaCdnUrl
+    expect(stack.cdnUrl).toBe('https://dodxbiygmi95j.cloudfront.net');
+
+    const template = Template.fromStack(stack);
+    const sanitized = sanitizeTemplate(template.toJSON());
+    expect(sanitized).toMatchSnapshot();
+  });
+
+  test('SharedInfraStack throws when useExistingResources + enableCdn but no CDN URL', () => {
+    const app = new cdk.App({ context: DUMMY_VPC_CONTEXT });
+
+    expect(() => {
+      new SharedInfraStack(app, 'TestSharedInfraExistingNoCdn', {
+        environment: 'staging',
+        enableCdn: true,
+        // no galleryDomain, no mediaCdnUrl
+        useExistingResources: true,
+        env: TEST_ENV,
+      });
+    }).toThrow(/CDN URL could be resolved/);
+  });
+
   test('AdminUiStack snapshot (dev, no custom domain)', () => {
     const app = new cdk.App({ context: DUMMY_VPC_CONTEXT });
 

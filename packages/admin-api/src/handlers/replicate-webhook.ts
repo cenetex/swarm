@@ -17,6 +17,7 @@ import { logger } from '@swarm/core';
 import { parseJsonBody } from '../http/request-body.js';
 import { isRequestValidationError } from '../middleware/validate.js';
 import type { MediaJob } from '../types.js';
+import { buildMediaUrl } from '../utils/media-url.js';
 
 const s3Client = new S3Client({});
 const sqsClient = new SQSClient({});
@@ -149,7 +150,7 @@ export async function handler(
         ContentType: contentType,
       }));
 
-      const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+      const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
       // Update job status
       await mediaJobs.updateJobStatus(jobId, 'completed', {

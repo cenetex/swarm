@@ -12,6 +12,7 @@
  * 3. Return immediately with { queued: true, postId }
  * This avoids Lambda timeout issues when image generation + Twitter posting exceed 120s.
  */
+import { buildMediaUrl } from '@swarm/core';
 import type { AllServices } from '@swarm/mcp-server';
 import type {
   AvatarConfig,
@@ -272,12 +273,9 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
           resolved.push(id);
           continue;
         }
-        if (cdnBase) {
-          resolved.push(`${cdnBase}/${id.replace(/^\/+/, '')}`);
+        if (cdnBase || bucket) {
+          resolved.push(buildMediaUrl(id.replace(/^\/+/, ''), bucket || '', cdnBase));
           continue;
-        }
-        if (bucket) {
-          resolved.push(`https://${bucket}.s3.amazonaws.com/${encodeURI(id.replace(/^\/+/, ''))}`);
         }
       }
     }
