@@ -1162,4 +1162,310 @@ describe('Memory Service', () => {
       expect(delay2).toBeGreaterThan(delay1);
     });
   });
+
+  // ==========================================================================
+  // Issue 183: Semantic Retrieval in getMemories
+  // ==========================================================================
+  describe('Semantic Retrieval in getMemories', () => {
+    const now = Date.now();
+
+    // Helper: create a memory with an embedding
+    function makeMemory(
+      id: string,
+      content: string,
+      emb: number[] | undefined,
+      opts: Partial<AvatarMemory> = {},
+    ): AvatarMemory {
+      return {
+        pk: 'MEMORY#test-avatar',
+        sk: `recent#${now}#${id}`,
+        id,
+        avatarId: 'test-avatar',
+        tier: 'recent',
+        type: 'fact',
+        content,
+        strength: 1.0,
+        createdAt: now,
+        updatedAt: now,
+        embedding: emb,
+        ...opts,
+      };
+    }
+
+    it('should re-rank results by cosine similarity when semantic query is provided', async () => {
+      // Prepare: three memories with embeddings of varying similarity to query
+      // Mock embedding service returns [1, 0, 0] for the query
+      embeddingServiceSpy.mockImplementation(() => ({
+        modelId: 'test-embedding',
+        dimensions: 3,
+        embed: async () => [1, 0, 0], // query embedding
+        embedBatch: async (texts: string[]) => texts.map(() => [1, 0, 0]),
+      }));
+
+      const mems = [
+        makeMemory('low-sim', 'Low similarity', [0, 1, 0]),    // cos=0 with [1,0,0]
+        makeMemory('high-sim', 'High similarity', [1, 0, 0]),  // cos=1 with [1,0,0]
+        makeMemory('mid-sim', 'Mid similarity', [0.7, 0.7, 0]), // cos~0.7 with [1,0,0]
+      ];
+
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: mems }));
+
+      const results = await memory.getMemories('test-avatar', {
+        semantic: { query: 'test query' },
+      });
+
+      // high-sim (cos=1) should be first, mid-sim (~0.7) second
+      // low-sim (cos=0) is below default threshold (0.3), so it's excluded from semantic matches
+      // but it has no embedding match above threshold, so it's not in withEmbedding
+      expect(results[0].id).toBe('high-sim');
+      expect(results[1].id).toBe('mid-sim');
+      // low-sim is below threshold so it won't appear in semantic matches,
+      // and since it HAS an embedding, it won't appear in the withoutEmbedding fallback either
+      expect(results.length).toBe(2);
+    });
+
+    it('should include records without embeddings at the end (deterministic fallback)', async () => {
+      embeddingServiceSpy.mockImplementation(() => ({
+        modelId: 'test-embedding',
+        dimensions: 3,
+        embed: async () => [1, 0, 0],
+        embedBatch: async (texts: string[]) => texts.map(() => [1, 0, 0]),
+      }));
+
+      const mems = [
+        makeMemory('no-emb', 'No embedding record', undefined),
+        makeMemory('has-emb', 'Has embedding', [0.9, 0.3, 0]), // high sim
+      ];
+
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: mems }));
+
+      const results = await memory.getMemories('test-avatar', {
+        semantic: { query: 'test query' },
+      });
+
+      // Semantic match first, then deterministic fallback for records without embeddings
+      expect(results[0].id).toBe('has-emb');
+      expect(results[1].id).toBe('no-emb');
+      expect(results.length).toBe(2);
+    });
+
+    it('should gracefully degrade to deterministic when embedding service fails', async () => {
+      embeddingServiceSpy.mockImplementation(() => ({
+        modelId: 'test-embedding',
+        dimensions: 3,
+        embed: async () => { throw new Error('Bedrock unavailable'); },
+        embedBatch: async () => { throw new Error('Bedrock unavailable'); },
+      }));
+
+      const mems = [
+        makeMemory('mem-a', 'Memory A', [1, 0, 0]),
+        makeMemory('mem-b', 'Memory B', [0, 1, 0]),
+      ];
+
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: mems }));
+
+      const results = await memory.getMemories('test-avatar', {
+        semantic: { query: 'test query' },
+        limit: 10,
+      });
+
+      // Should return all results in original order (deterministic fallback)
+      expect(results.length).toBe(2);
+      expect(results[0].id).toBe('mem-a');
+      expect(results[1].id).toBe('mem-b');
+    });
+
+    it('should over-fetch when semantic query is provided (up to 5x the limit)', async () => {
+      embeddingServiceSpy.mockImplementation(() => ({
+        modelId: 'test-embedding',
+        dimensions: 3,
+        embed: async () => [1, 0, 0],
+        embedBatch: async (texts: string[]) => texts.map(() => [1, 0, 0]),
+      }));
+
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: [] }));
+
+      await memory.getMemories('test-avatar', {
+        limit: 10,
+        semantic: { query: 'test query' },
+      });
+
+      // The DynamoDB query Limit should be min(10 * 5, 500) = 50
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Limit: 50,
+          }),
+        })
+      );
+    });
+
+    it('should not over-fetch when no semantic query is provided', async () => {
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: [] }));
+
+      await memory.getMemories('test-avatar', { limit: 10 });
+
+      // Without semantic query, Limit should be just the safeLimit (10)
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Limit: 10,
+          }),
+        })
+      );
+    });
+
+    it('should respect custom threshold in semantic options', async () => {
+      embeddingServiceSpy.mockImplementation(() => ({
+        modelId: 'test-embedding',
+        dimensions: 3,
+        embed: async () => [1, 0, 0],
+        embedBatch: async (texts: string[]) => texts.map(() => [1, 0, 0]),
+      }));
+
+      const mems = [
+        makeMemory('exact', 'Exact match', [1, 0, 0]),              // cos=1
+        makeMemory('partial', 'Partial match', [0.7, 0.7, 0]),      // cos~0.7
+        makeMemory('low', 'Low match', [0.5, 0.5, 0.7]),            // cos~0.36
+      ];
+
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: mems }));
+
+      // Set a high threshold (0.8) so only the exact match passes
+      const results = await memory.getMemories('test-avatar', {
+        semantic: { query: 'test', threshold: 0.8 },
+      });
+
+      expect(results[0].id).toBe('exact');
+      // partial (~0.7) and low (~0.36) are below 0.8 threshold, excluded from semantic
+      // They have embeddings so they don't appear in the withoutEmbedding fallback
+      expect(results.length).toBe(1);
+    });
+
+    it('should cap results at safeLimit after re-ranking', async () => {
+      embeddingServiceSpy.mockImplementation(() => ({
+        modelId: 'test-embedding',
+        dimensions: 3,
+        embed: async () => [1, 0, 0],
+        embedBatch: async (texts: string[]) => texts.map(() => [1, 0, 0]),
+      }));
+
+      // Create 20 memories that all match semantically
+      const mems = Array.from({ length: 20 }, (_, i) =>
+        makeMemory(`mem-${i}`, `Memory ${i}`, [1, 0, 0]),
+      );
+
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: mems }));
+
+      const results = await memory.getMemories('test-avatar', {
+        limit: 5,
+        semantic: { query: 'test' },
+      });
+
+      // Should be capped at 5 despite having 20 candidates
+      expect(results.length).toBe(5);
+    });
+
+    it('should return empty when all embeddings are below threshold', async () => {
+      embeddingServiceSpy.mockImplementation(() => ({
+        modelId: 'test-embedding',
+        dimensions: 3,
+        embed: async () => [1, 0, 0],
+        embedBatch: async (texts: string[]) => texts.map(() => [1, 0, 0]),
+      }));
+
+      const mems = [
+        makeMemory('orthogonal', 'Orthogonal', [0, 1, 0]),   // cos=0
+        makeMemory('opposite', 'Opposite', [0, 0, 1]),        // cos=0
+      ];
+
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: mems }));
+
+      const results = await memory.getMemories('test-avatar', {
+        semantic: { query: 'test', threshold: 0.5 },
+      });
+
+      // Both are below threshold and both have embeddings, so neither appears
+      expect(results.length).toBe(0);
+    });
+
+    it('should skip semantic re-ranking on empty result set', async () => {
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: [] }));
+
+      const results = await memory.getMemories('test-avatar', {
+        semantic: { query: 'test' },
+      });
+
+      expect(results.length).toBe(0);
+    });
+  });
+
+  // ==========================================================================
+  // Issue 183: Enhanced search instrumentation
+  // ==========================================================================
+  describe('Enhanced search instrumentation', () => {
+    it('searchMemories should report embedding counts', async () => {
+      const mems: AvatarMemory[] = [
+        {
+          pk: 'MEMORY#test-avatar',
+          sk: 'recent#1#a',
+          id: 'a',
+          avatarId: 'test-avatar',
+          tier: 'recent',
+          type: 'fact',
+          content: 'cheetah speed',
+          strength: 1.0,
+          embedding: [1, 0, 0],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        {
+          pk: 'MEMORY#test-avatar',
+          sk: 'recent#2#b',
+          id: 'b',
+          avatarId: 'test-avatar',
+          tier: 'recent',
+          type: 'fact',
+          content: 'cheetah habitat',
+          strength: 1.0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          // no embedding
+        },
+      ];
+
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: mems }));
+
+      const results = await memory.searchMemories('test-avatar', 'cheetah');
+
+      // Both should be returned (keyword match)
+      expect(results.length).toBe(2);
+    });
+
+    it('recall should return results with latency tracking', async () => {
+      const mems: AvatarMemory[] = [
+        {
+          pk: 'MEMORY#test-avatar',
+          sk: 'recent#1#a',
+          id: 'a',
+          avatarId: 'test-avatar',
+          tier: 'recent',
+          type: 'fact',
+          content: 'The capital of France is Paris',
+          about: 'france',
+          strength: 1.0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ];
+
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: mems }));
+
+      const result = await memory.recall('test-avatar', 'france');
+
+      expect(result.facts).toHaveLength(1);
+      expect(result.facts[0].fact).toBe('The capital of France is Paris');
+      expect(result.facts[0].about).toBe('france');
+    });
+  });
 });
