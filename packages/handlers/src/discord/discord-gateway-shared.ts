@@ -24,6 +24,10 @@ import {
   createMessageEvaluator,
   createActivityService,
   logger,
+  DiscordRateLimiter,
+  logIntentValidation,
+  logGatewayClose,
+  computeReconnectDelay,
   type AvatarConfig,
   type DiscordMessage,
   type Platform,
@@ -57,6 +61,13 @@ const DEFAULT_INTENTS = INTENT_GUILDS | INTENT_GUILD_MESSAGES | INTENT_DIRECT_ME
 const secretsClient = new SecretsManagerClient({});
 const stateService = createStateService(STATE_TABLE);
 const activityService = ACTIVITY_TABLE ? createActivityService(ACTIVITY_TABLE) : null;
+
+/** Shared rate limiter for Discord API calls from this worker */
+const rateLimiter = new DiscordRateLimiter({
+  maxQueueSize: 50,
+  maxBackoffMs: 60_000,
+  enableLogging: true,
+});
 
 // ─── Avatar Discovery ────────────────────────────────────────────────────────
 
@@ -521,12 +532,25 @@ class GatewayConnection {
     });
 
     this.ws.on('close', (code: number, reason: Buffer) => {
-      logger.warn('Discord gateway closed', {
-        event: 'gateway_closed',
-        subsystem: 'discord',
-        code,
-        reason: reason.toString(),
+      const closeInfo = logGatewayClose(code, reason.toString(), {
+        reconnectAttempt: this.reconnectAttempts,
+        sessionId: this.sessionId ?? undefined,
+        botUserId: this.botUserId ?? undefined,
+        avatarCount: this.avatarBindings.size,
       });
+
+      if (!closeInfo.reconnectable) {
+        logger.error(`Discord gateway close code ${code} is non-reconnectable. Stopping connection.`, undefined, {
+          event: 'gateway_non_reconnectable',
+          subsystem: 'discord',
+          closeCode: code,
+          description: closeInfo.description,
+          remediation: closeInfo.remediation,
+        });
+        this.destroyed = true;
+        return;
+      }
+
       this.scheduleReconnect();
     });
 
@@ -613,12 +637,24 @@ class GatewayConnection {
         binding.botUserId = ready.user.id;
       }
 
+      // Validate gateway intents after READY
+      const intentResult = logIntentValidation(this.intents);
+      if (!intentResult.valid) {
+        logger.error('Discord gateway intents are misconfigured. Messages may not be received.', undefined, {
+          event: 'gateway_intent_warning',
+          subsystem: 'discord',
+          missingRequired: intentResult.missingRequired,
+          diagnostics: intentResult.diagnostics,
+        });
+      }
+
       logger.info('Discord gateway ready', {
         event: 'gateway_ready',
         subsystem: 'discord',
         botUserId: this.botUserId,
         botUsername: this.botUsername,
         avatarCount: this.avatarBindings.size,
+        intentsValid: intentResult.valid,
       });
       return;
     }
@@ -691,7 +727,7 @@ class GatewayConnection {
     this.ws.send(JSON.stringify(payload));
   }
 
-  private scheduleReconnect(resume = true): void {
+  private scheduleReconnect(resume = true, closeCode?: number): void {
     if (this.destroyed) return;
 
     if (this.ws) {
@@ -705,8 +741,21 @@ class GatewayConnection {
     }
 
     this.shouldResume = resume;
-    const delay = Math.min(30_000, 1_000 * Math.pow(2, this.reconnectAttempts));
+    const delay = closeCode !== undefined
+      ? computeReconnectDelay(closeCode, this.reconnectAttempts)
+      : Math.min(30_000, 1_000 * Math.pow(2, this.reconnectAttempts));
     this.reconnectAttempts += 1;
+
+    if (delay < 0) {
+      // Non-reconnectable close code
+      logger.error('Close code is non-reconnectable, not scheduling reconnect', undefined, {
+        event: 'gateway_reconnect_aborted',
+        subsystem: 'discord',
+        closeCode,
+        attempt: this.reconnectAttempts,
+      });
+      return;
+    }
 
     logger.info('Scheduling gateway reconnect', {
       event: 'gateway_reconnect_scheduled',
@@ -938,6 +987,7 @@ export {
   main,
   discoverDiscordAvatars,
   GatewayConnection,
+  rateLimiter,
   // Export caching internals for testing
   invalidateAllCaches,
   avatarConfigCache,

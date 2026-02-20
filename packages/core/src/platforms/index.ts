@@ -31,3 +31,26 @@ export {
   TWITTER_MAX_IMAGE_BYTES,
   TWITTER_TARGET_IMAGE_BYTES,
 } from './twitter-media.js';
+
+// Discord rate limiter
+export {
+  DiscordRateLimiter,
+  extractRouteKey,
+  type RateLimitBucket,
+  type DiscordRateLimiterOptions,
+  type RateLimitedResult,
+} from './discord-rate-limiter.js';
+
+// Discord gateway utilities (intent validation, close codes, reconnect)
+export {
+  DiscordIntent,
+  REQUIRED_BOT_INTENTS,
+  RECOMMENDED_BOT_INTENTS,
+  validateIntents,
+  logIntentValidation,
+  interpretCloseCode,
+  logGatewayClose,
+  computeReconnectDelay,
+  type IntentValidationResult,
+  type CloseCodeInfo,
+} from './discord-gateway-utils.js';
