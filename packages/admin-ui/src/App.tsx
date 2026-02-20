@@ -10,7 +10,6 @@ import { ConsentBanner } from './components/ConsentBanner';
 
 // Lazy-load route-level components that aren't always needed
 const LandingPage = lazy(() => import('./components/LandingPage').then(m => ({ default: m.LandingPage })));
-const OnboardingWizard = lazy(() => import('./components/OnboardingWizard').then(m => ({ default: m.OnboardingWizard })));
 const PublicChatPage = lazy(() => import('./components/PublicChatPage').then(m => ({ default: m.PublicChatPage })));
 
 function LazyFallback() {
@@ -33,14 +32,8 @@ function getChatAvatarId(pathname: string): string | null {
   return match?.[1] || null;
 }
 
-function getOnboardingAvatarId(pathname: string): string | null {
-  // Onboarding deep link: /avatars/:id/onboarding
-  const match = pathname.match(/^\/avatars\/([^/]+)\/onboarding\/?$/);
-  return match?.[1] || null;
-}
-
 function getAvatarIdFromAvatarPath(pathname: string): string | null {
-  return getOnboardingAvatarId(pathname) || getChatAvatarId(pathname);
+  return getChatAvatarId(pathname);
 }
 
 function getBotIdFromHostname(hostname: string): string | null {
@@ -92,9 +85,6 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatAvatarId, setChatAvatarId] = useState<string | null>(
     () => getChatAvatarId(window.location.pathname)
-  );
-  const [onboardingAvatarId, setOnboardingAvatarId] = useState<string | null>(
-    () => getOnboardingAvatarId(window.location.pathname)
   );
   const [pendingOAuthResult, setPendingOAuthResult] = useState<TwitterOAuthResult | null>(
     () => parseTwitterOAuthResultFromLocation(window.location)
@@ -193,7 +183,6 @@ function App() {
   useEffect(() => {
     const handlePopState = () => {
       setChatAvatarId(getChatAvatarId(window.location.pathname));
-      setOnboardingAvatarId(getOnboardingAvatarId(window.location.pathname));
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -201,16 +190,16 @@ function App() {
   }, []);
 
   // Support deep-linking: select the target avatar once avatars are loaded.
-  // Handles /avatars/:id and /avatars/:id/onboarding.
+  // Handles /avatars/:id.
   useEffect(() => {
     if (!initialized) return;
-    const targetId = chatAvatarId || onboardingAvatarId;
+    const targetId = chatAvatarId;
     if (!targetId) return;
     const hasAvatar = avatars.some((avatar) => avatar.id === targetId);
     if (hasAvatar && activeAvatarId !== targetId) {
       setActiveAvatar(targetId);
     }
-  }, [avatars, activeAvatarId, chatAvatarId, onboardingAvatarId, initialized, setActiveAvatar]);
+  }, [avatars, activeAvatarId, chatAvatarId, initialized, setActiveAvatar]);
 
   const handleTwitterOAuthResult = useCallback(async (result: TwitterOAuthResult) => {
     if (result.avatarId) {
@@ -391,25 +380,8 @@ function App() {
   const handleSelectAvatar = useCallback((avatarId: string) => {
     setActiveAvatar(avatarId);
     setChatAvatarId(avatarId);
-    setOnboardingAvatarId(null);
     window.history.pushState({}, '', `/avatars/${avatarId}`);
   }, [setActiveAvatar]);
-
-  const handleOpenOnboarding = useCallback((avatarId: string) => {
-    setActiveAvatar(avatarId);
-    setOnboardingAvatarId(avatarId);
-    setChatAvatarId(null);
-    window.history.pushState({}, '', `/avatars/${avatarId}/onboarding`);
-  }, [setActiveAvatar]);
-
-  const handleBackToChat = useCallback((avatarId?: string) => {
-    const targetAvatarId = avatarId || activeAvatarId;
-    if (!targetAvatarId) return;
-    setActiveAvatar(targetAvatarId);
-    setChatAvatarId(targetAvatarId);
-    setOnboardingAvatarId(null);
-    window.history.pushState({}, '', `/avatars/${targetAvatarId}`);
-  }, [activeAvatarId, setActiveAvatar]);
 
   // Show loading state while checking auth (only use local authChecked state)
   if (!authChecked) {
@@ -463,20 +435,9 @@ function App() {
         </div>
 
         {/* Main Route Area */}
-        {onboardingAvatarId ? (
-          <Suspense fallback={<LazyFallback />}>
-            <OnboardingWizard
-              avatarId={onboardingAvatarId}
-              onMenuClick={() => setSidebarOpen(true)}
-              onBackToChat={() => handleBackToChat(onboardingAvatarId)}
-            />
-          </Suspense>
-        ) : (
-          <ChatPanel
-            onMenuClick={() => setSidebarOpen(true)}
-            onOpenOnboarding={handleOpenOnboarding}
-          />
-        )}
+        <ChatPanel
+          onMenuClick={() => setSidebarOpen(true)}
+        />
       </div>
       
       {/* Safe area spacer for iOS home indicator */}
