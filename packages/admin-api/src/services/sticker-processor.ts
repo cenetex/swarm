@@ -10,6 +10,7 @@
  */
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
+import { buildMediaUrl } from '../utils/media-url.js';
 
 // Lazy load sharp to avoid import failures on platforms without native binaries
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -486,8 +487,7 @@ export async function uploadStickerToS3(
 
   console.log('Uploaded sticker to S3', { s3Key, id });
 
-  const cdnUrl = process.env.CDN_URL || `https://${bucketName}.s3.amazonaws.com`;
-  const url = `${cdnUrl}/${s3Key}`;
+  const url = buildMediaUrl(s3Key, bucketName, process.env.CDN_URL);
 
   return { s3Key, id, url };
 }

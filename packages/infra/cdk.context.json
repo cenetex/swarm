@@ -104,6 +104,7 @@
     "staging": {
       "enableSharedHandlers": true,
       "useExistingResources": true,
+      "mediaCdnUrl": "https://dodxbiygmi95j.cloudfront.net",
       "adminDomain": "staging-swarm.rati.chat",
       "adminCertificateArn": "arn:aws:acm:us-east-1:022118847419:certificate/b7d8f8c6-c042-45d0-88fa-4893e1e3cfea",
       "adminEmails": "hello@ratimics.com",
