@@ -14,7 +14,6 @@ import {
   validateIntents,
   interpretCloseCode,
   computeReconnectDelay,
-  type IntentValidationResult,
 } from './discord-gateway-utils.js';
 
 // ---------------------------------------------------------------------------
