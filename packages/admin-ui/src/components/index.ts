@@ -5,6 +5,7 @@ export { AvatarSidebar, AvatarDisplay } from './AvatarSidebar';
 export { AvatarConfigModal } from './AvatarConfigModal';
 export { EnergyPanel } from './EnergyPanel';
 export { UsageMeterPanel } from './UsageMeterPanel';
+export { PlanUsagePanel } from './PlanUsagePanel';
 export { ChatPanel } from './ChatPanel';
 export { ToolPrompt, SecretPrompt, ConfirmPrompt } from './ToolPrompts';
 export { IssueCard, IssueNavigation } from './IssueCard';
