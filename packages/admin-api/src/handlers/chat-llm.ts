@@ -198,26 +198,105 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function sanitizeToolSchema(schema: unknown): unknown {
+// Keys that must be stripped from tool schemas for JSON Schema 2020-12 compliance.
+// - $schema: explicit draft declaration rejected by providers
+// - nullable: OpenAPI 3.x extension, not valid JSON Schema
+// - default: many providers reject default values in tool input schemas
+// - definitions/$defs: only valid at root; we inline $ref targets instead
+const STRIP_KEYS = new Set(['$schema', 'nullable', 'default', 'definitions', '$defs']);
+
+/**
+ * Valid JSON Schema 2020-12 type values.
+ */
+const VALID_TYPES = new Set(['string', 'number', 'integer', 'boolean', 'object', 'array', 'null']);
+
+/**
+ * Resolve a JSON Pointer reference (e.g. "#/properties/a" or "#/$defs/Foo")
+ * within a root schema object.
+ */
+function resolveRef(root: Record<string, unknown>, ref: string): unknown {
+  if (!ref.startsWith('#/')) return undefined;
+  const parts = ref.slice(2).split('/');
+  let current: unknown = root;
+  for (const part of parts) {
+    if (!isRecord(current)) return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+/**
+ * Sanitize a tool schema for JSON Schema 2020-12 compliance.
+ *
+ * Handles:
+ * - Stripping $schema, nullable, default, definitions/$defs
+ * - Converting nullable to anyOf [..., {type: "null"}]
+ * - Converting type arrays (draft-07) to anyOf (2020-12)
+ * - Resolving $ref pointers by inlining the referenced sub-schema
+ * - Validating type values
+ */
+function sanitizeToolSchema(schema: unknown, root?: Record<string, unknown>): unknown {
   if (Array.isArray(schema)) {
-    return schema.map(sanitizeToolSchema);
+    return schema.map(item => sanitizeToolSchema(item, root));
   }
   if (!isRecord(schema)) {
     return schema;
+  }
+
+  // Establish root for $ref resolution on first call
+  const effectiveRoot = root ?? (isRecord(schema) ? schema : undefined);
+
+  // Resolve $ref before any other processing
+  if (typeof schema.$ref === 'string' && effectiveRoot) {
+    const resolved = resolveRef(effectiveRoot, schema.$ref);
+    if (isRecord(resolved)) {
+      return sanitizeToolSchema(resolved, effectiveRoot);
+    }
+    // Unresolvable ref - fall back to permissive object
+    return { type: 'object' };
   }
 
   const nullable = schema.nullable === true;
   const sanitized: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(schema)) {
-    // Provider validates against JSON Schema draft 2020-12; OpenAPI extension
-    // fields (e.g. nullable) and explicit $schema declarations can be rejected.
-    if (key === 'nullable' || key === '$schema') {
+    // Strip keys that are not valid / cause provider rejections
+    if (STRIP_KEYS.has(key)) {
       continue;
     }
-    sanitized[key] = sanitizeToolSchema(value);
+    // Skip $ref (already handled above for resolvable refs)
+    if (key === '$ref') {
+      continue;
+    }
+    sanitized[key] = sanitizeToolSchema(value, effectiveRoot);
   }
 
+  // Convert type arrays (JSON Schema draft-07 shorthand) to anyOf (2020-12).
+  // e.g. { type: ["string", "null"] } -> { anyOf: [{ type: "string" }, { type: "null" }] }
+  if (Array.isArray(sanitized.type)) {
+    const types = (sanitized.type as unknown[]).filter(
+      t => typeof t === 'string' && VALID_TYPES.has(t)
+    ) as string[];
+    if (types.length > 0) {
+      // Pull out properties that belong to the individual type schemas
+      const { type: _type, ...rest } = sanitized;
+      if (types.length === 1) {
+        return { ...rest, type: types[0] };
+      }
+      return {
+        ...rest,
+        anyOf: types.map(t => ({ type: t })),
+      };
+    }
+  }
+
+  // Validate single type value
+  if (typeof sanitized.type === 'string' && !VALID_TYPES.has(sanitized.type)) {
+    // Invalid type - remove it rather than sending a bad value
+    delete sanitized.type;
+  }
+
+  // Convert OpenAPI nullable to JSON Schema 2020-12 anyOf pattern
   if (nullable) {
     return {
       anyOf: [
@@ -230,37 +309,94 @@ function sanitizeToolSchema(schema: unknown): unknown {
   return sanitized;
 }
 
-function resolveFallbackToolParameters(tool: FallbackTool): Record<string, unknown> {
+/**
+ * Validate a resolved tool schema and log diagnostics for problems.
+ * Returns true if the schema looks valid enough to send.
+ */
+function validateToolSchema(schema: Record<string, unknown>, toolName: string): boolean {
+  // Must have a type field at root level
+  if (!schema.type && !schema.anyOf && !schema.oneOf && !schema.allOf) {
+    logger.warn('Tool schema missing type/composition keyword', {
+      event: 'tool_schema_invalid',
+      subsystem: 'llm',
+      toolName,
+      issue: 'missing_type',
+    });
+    return false;
+  }
+
+  // Check for leftover $ref that was not resolved
+  const json = JSON.stringify(schema);
+  if (json.includes('"$ref"')) {
+    logger.warn('Tool schema contains unresolved $ref', {
+      event: 'tool_schema_invalid',
+      subsystem: 'llm',
+      toolName,
+      issue: 'unresolved_ref',
+    });
+    return false;
+  }
+
+  // Check for leftover $schema
+  if (json.includes('"$schema"')) {
+    logger.warn('Tool schema contains $schema declaration', {
+      event: 'tool_schema_invalid',
+      subsystem: 'llm',
+      toolName,
+      issue: 'leftover_schema_decl',
+    });
+    return false;
+  }
+
+  return true;
+}
+
+function resolveFallbackToolParameters(tool: FallbackTool, toolIndex?: number): Record<string, unknown> {
+  const toolName = tool.function?.name ?? `tool[${toolIndex ?? '?'}]`;
+
   const explicit = tool.function?.parameters;
   if (isRecord(explicit)) {
     const sanitized = sanitizeToolSchema(explicit);
     if (isRecord(sanitized)) {
+      validateToolSchema(sanitized, toolName);
       return sanitized;
     }
   }
 
   const inputSchema = tool.function?.inputSchema;
   if (!inputSchema) {
-    return { type: 'object', additionalProperties: true };
+    return { type: 'object' };
   }
 
   let rawSchema: unknown;
   try {
     rawSchema = zodToJsonSchema(inputSchema as Parameters<typeof zodToJsonSchema>[0], { target: 'jsonSchema7' });
-  } catch {
+  } catch (err) {
+    logger.warn('zodToJsonSchema conversion failed for tool, falling back to plain schema', {
+      event: 'tool_schema_conversion_error',
+      subsystem: 'llm',
+      toolName,
+      error: err instanceof Error ? err.message : String(err),
+    });
     // Some tools may already provide plain JSON Schema instead of Zod.
     if (isRecord(inputSchema)) {
       rawSchema = inputSchema;
     } else {
-      return { type: 'object', additionalProperties: true };
+      return { type: 'object' };
     }
   }
 
   const sanitized = sanitizeToolSchema(rawSchema);
-  return isRecord(sanitized)
-    ? sanitized
-    : { type: 'object', additionalProperties: true };
+  if (isRecord(sanitized)) {
+    validateToolSchema(sanitized, toolName);
+    return sanitized;
+  }
+
+  return { type: 'object' };
 }
+
+// Export for testing
+export { sanitizeToolSchema as _sanitizeToolSchema, validateToolSchema as _validateToolSchema };
 
 /**
  * Fallback direct API call when SDK streaming validation fails
@@ -288,15 +424,27 @@ export async function callLlmDirectFallback(
   };
 
   if (tools && tools.length > 0) {
-    // Convert SDK tools to OpenAI format
-    body.tools = tools.map((t: unknown) => {
+    // Convert SDK tools to OpenAI format with sanitized schemas
+    body.tools = tools.map((t: unknown, index: number) => {
       const tool = t as FallbackTool;
+      const toolName = tool.function?.name ?? `tool[${index}]`;
+      const parameters = resolveFallbackToolParameters(tool, index);
+
+      logger.info('Resolved tool schema for fallback dispatch', {
+        event: 'tool_schema_resolved',
+        subsystem: 'llm',
+        toolName,
+        toolIndex: index,
+        hasType: 'type' in parameters,
+        topLevelKeys: Object.keys(parameters),
+      });
+
       return {
         type: 'function',
         function: {
           name: tool.function?.name,
           description: tool.function?.description,
-          parameters: resolveFallbackToolParameters(tool),
+          parameters,
         },
       };
     });

@@ -445,10 +445,12 @@ export async function processChat(
           throw sdkError;
         }
 
-        logger.warn('SDK Zod validation error, falling back to direct API', {
+        // Expected: SDK requires Zod v4 schemas but our tools use Zod v3.
+        // Pre-sanitized JSON Schema parameters are used by the fallback path.
+        logger.info('SDK Zod v3/v4 mismatch, using direct API with pre-sanitized schemas', {
           event: 'sdk_fallback',
           errorName,
-          errorMessage,
+          errorMessage: errorMessage.slice(0, 120),
         });
 
         // Build messages for direct API call

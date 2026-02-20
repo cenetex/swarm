@@ -16,12 +16,14 @@ import {
   type AllServices,
 } from '@swarm/mcp-server';
 import { hasExecuteFunction, type Tool } from '@openrouter/sdk';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 import type {
   AdminChatMessage,
   ToolCall,
   ToolResult,
 } from '../types.js';
 import { isProbablyPrivateMediaUrl, redactMediaUrlsFromText } from '../utils/redact-media-urls.js';
+import { _sanitizeToolSchema } from './chat-llm.js';
 import * as avatars from '../services/avatars.js';
 
 /**
@@ -162,6 +164,44 @@ export function normalizeToolResult(result: McpToolResult, toolName: string): Re
   return payload;
 }
 
+/**
+ * Convert a Zod v3 inputSchema to a sanitized JSON Schema object suitable
+ * for LLM provider dispatch (JSON Schema draft 2020-12 compatible).
+ *
+ * The OpenRouter SDK internally requires Zod v4 schemas (checking for `_zod`),
+ * but our tools use Zod v3. Pre-converting here ensures:
+ * 1. The fallback direct API path has valid `parameters` immediately
+ * 2. Schema issues (like $ref, nullable, type arrays) are caught early
+ */
+function convertInputSchemaToParameters(
+  inputSchema: unknown,
+  toolName: string
+): Record<string, unknown> {
+  let rawSchema: unknown;
+  try {
+    rawSchema = zodToJsonSchema(
+      inputSchema as Parameters<typeof zodToJsonSchema>[0],
+      { target: 'jsonSchema7' }
+    );
+  } catch (err) {
+    logger.warn('Failed to convert tool inputSchema to JSON Schema', {
+      event: 'tool_schema_conversion_error',
+      subsystem: 'llm',
+      toolName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    // Fall back to a permissive object schema
+    return { type: 'object' };
+  }
+
+  const sanitized = _sanitizeToolSchema(rawSchema);
+  if (typeof sanitized === 'object' && sanitized !== null && !Array.isArray(sanitized)) {
+    return sanitized as Record<string, unknown>;
+  }
+
+  return { type: 'object' };
+}
+
 export async function buildOpenRouterTools(
   registry: ToolRegistry,
   context: ToolContext,
@@ -198,10 +238,18 @@ export async function buildOpenRouterTools(
       }
     }
 
+    // Pre-convert Zod v3 schema to sanitized JSON Schema.
+    // The SDK's internal Zod v4 conversion (convertZodToJsonSchema) will fail
+    // on v3 schemas, but the fallback path uses `parameters` directly.
+    const parameters = convertInputSchemaToParameters(toolDef.inputSchema, toolDef.name);
+
     const toolFn: Record<string, unknown> = {
       name: toolDef.name,
       description,
       inputSchema: toolDef.inputSchema,
+      // Pre-sanitized JSON Schema for the direct API fallback path.
+      // resolveFallbackToolParameters checks this field first.
+      parameters,
     };
 
     if (toolDef.execute !== false) {
