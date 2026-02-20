@@ -22,10 +22,6 @@ vi.mock('../services/mcp-adapter.js', () => ({
   createMCPServices: vi.fn(() => ({})),
 }));
 
-vi.mock('@swarm/core', () => ({
-  buildDynamicSystemPrompt: vi.fn(() => 'You are a test avatar.'),
-}));
-
 vi.mock('@swarm/mcp-server', () => ({
   ToolRegistry: vi.fn(() => ({
     getForPlatform: vi.fn(() => []),
