@@ -102,7 +102,10 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
 
       setPreview(response);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch preview');
+      const message = err instanceof Error ? err.message : 'Failed to fetch preview';
+      setError(message);
+      // Clear stale preview so error state is prominent
+      setPreview(null);
     } finally {
       setIsLoading(false);
     }
@@ -158,7 +161,13 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
             <div>
               <h2 className="text-sm font-semibold text-[var(--color-text)]">Prompt Preview</h2>
               <p className="text-xs text-[var(--color-text-tertiary)]">
-                {preview ? `~${formatTokenCount(preview.tokenEstimate.total)} tokens` : 'Loading...'}
+                {error
+                  ? 'Error loading preview'
+                  : preview
+                    ? `~${formatTokenCount(preview.tokenEstimate.total)} tokens`
+                    : isLoading
+                      ? 'Loading...'
+                      : 'No data'}
               </p>
             </div>
           </div>
@@ -245,13 +254,36 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
-          {error && (
-            <div className="m-4 p-3 rounded-lg bg-red-900/20 border border-red-900/40 text-sm text-red-400">
-              {error}
+          {!activeAgent && (
+            <div className="m-4 p-4 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-center">
+              <p className="text-sm text-[var(--color-text-secondary)]">
+                No avatar selected. Select an avatar to preview its prompt configuration.
+              </p>
             </div>
           )}
 
-          {isLoading && !preview && (
+          {error && (
+            <div className="m-4 p-4 rounded-lg bg-red-900/20 border border-red-900/40">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-red-400">Failed to load prompt preview</p>
+                  <p className="text-xs text-red-400/80 mt-1 break-words">{error}</p>
+                  <button
+                    onClick={loadPreview}
+                    disabled={isLoading}
+                    className="mt-2 px-3 py-1 text-xs rounded-md bg-red-900/30 hover:bg-red-900/50 text-red-300 transition-colors disabled:opacity-50"
+                  >
+                    {isLoading ? 'Retrying...' : 'Retry'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isLoading && !preview && !error && (
             <div className="p-4 text-center text-[var(--color-text-tertiary)]">
               Loading preview...
             </div>

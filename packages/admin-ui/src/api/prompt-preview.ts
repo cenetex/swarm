@@ -52,8 +52,10 @@ export async function fetchPromptPreview(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || `HTTP ${response.status}`);
+    const body = await response.json().catch(() => null);
+    const message = body?.error || body?.message || `HTTP ${response.status}`;
+    const details = body?.details ? ` (${JSON.stringify(body.details)})` : '';
+    throw new Error(`${message}${details}`);
   }
 
   return response.json();
