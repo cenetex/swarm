@@ -1,11 +1,14 @@
 # Roadmap: M1 Paid Telegram MVP (2-week slices)
 
-**Status:** Active plan (source of truth for MVP sequencing)
+**Status:** Completed milestone (archived reference)
 
-**Last reviewed:** 2026-01-25
+**Last reviewed:** 2026-02-20
 
-This document consolidates the MVP-critical work into a single execution plan.
-It is intentionally biased toward shipping a self-serve, reliable paid Telegram avatar.
+Current execution plan:
+- [PLAN.md](../PLAN.md)
+
+This document is retained as the historical execution plan for M1.
+M1 is complete; this file is no longer the active source of truth for current milestone execution.
 
 ## What “M1 done” means (acceptance criteria)
 

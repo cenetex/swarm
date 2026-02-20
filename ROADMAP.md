@@ -2,14 +2,17 @@
 
 This roadmap focuses on product and platform milestones.
 
-**Last reviewed:** 2026-02-07
+**Last reviewed:** 2026-02-20
 
 ## Current focus (early Feb 2026)
 - **M1 is complete (v1.0.1).** All items shipped: auth/onboarding, entitlements, energy unification, Orb-holder auto-boost, ascension→Pro, memory delete/export/TTL, deploy audit logging, correlation IDs, CloudWatch dashboards/alarms, Telegram canary, smoke tests, operational runbook.
 - Focus shifting to M2 planning and operational hardening.
 - See [docs/BILLING-STRATEGY.md](docs/BILLING-STRATEGY.md) for the unified web3+web2 billing model.
 
-For the execution-level, MVP-focused plan (2-week slices and P0→P3 sequencing), see:
+For the execution-level active plan, see:
+- [PLAN.md](PLAN.md)
+
+Historical M1 execution reference:
 - [docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md](docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md)
 
 ## Near (0-3 months)
