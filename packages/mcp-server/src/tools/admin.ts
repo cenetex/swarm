@@ -435,6 +435,32 @@ Returns whether the avatar is active, paused, or in draft mode.`,
         };
       },
     }),
+
+    // =========================================================================
+    // Wallet Linking Tools
+    // =========================================================================
+
+    defineManualTool({
+      name: 'request_wallet_link',
+      description: `Show the wallet linking UI to let the user link an additional Solana wallet to their account.
+
+This opens an inline prompt where the user can:
+1. Connect a Solana wallet (via Phantom or other wallet adapter)
+2. Sign a challenge message to prove ownership
+3. Link the wallet to their existing Swarm account
+
+Use this when:
+- User asks to link a wallet ("link my wallet", "add another wallet")
+- User wants to connect a new wallet to their account
+- User asks about wallet linking or account wallets
+
+The linked wallets appear in the user's account identity and affect NFT gate status.`,
+      toolset: 'admin',
+      platforms: ['admin-ui'],
+      inputSchema: z.object({
+        reason: z.string().optional().describe('Brief context for why the user wants to link a wallet'),
+      }),
+    }),
   ];
 }
 
