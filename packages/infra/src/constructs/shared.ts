@@ -73,6 +73,14 @@ export interface SharedInfrastructureProps {
    * the legacy monolith stack (SwarmStack-{env}).
    */
   useExistingResources?: boolean;
+
+  /**
+   * Explicit CDN URL for media (e.g., 'https://dodxbiygmi95j.cloudfront.net').
+   * Used as a fallback when useExistingResources=true and cdnDomain is not set.
+   * This allows the split stack to reference the existing CloudFront distribution
+   * without needing a custom domain or certificate.
+   */
+  mediaCdnUrl?: string;
 }
 
 export class SharedInfrastructure extends Construct {
@@ -91,6 +99,7 @@ export class SharedInfrastructure extends Construct {
     const {
       environment, enableCdn = true, layerCodePath, cdnDomain, cdnCertificateArn,
       nameSuffix, useExistingMediaBucket, alarmNotificationEmail, useExistingResources,
+      mediaCdnUrl,
     } = props;
     const suffix = nameSuffix ?? '';
     const isPersistentEnv = environment === 'prod' || environment === 'production' || environment === 'staging';
@@ -139,10 +148,24 @@ export class SharedInfrastructure extends Construct {
         securityGroups: [],
       });
 
-      // CDN – reference the existing distribution managed by legacy stack
-      // cdnUrl is set from known pattern; distribution object is unavailable for invalidation
-      if (enableCdn && cdnDomain) {
-        this.cdnUrl = `https://${cdnDomain}`;
+      // CDN – reference the existing distribution managed by legacy stack.
+      // Prefer cdnDomain (custom domain), then mediaCdnUrl (explicit CloudFront URL).
+      if (enableCdn) {
+        if (cdnDomain) {
+          this.cdnUrl = `https://${cdnDomain}`;
+        } else if (mediaCdnUrl) {
+          // mediaCdnUrl is the explicit CloudFront distribution URL (e.g. https://d1234.cloudfront.net)
+          this.cdnUrl = mediaCdnUrl.startsWith('https://') ? mediaCdnUrl : `https://${mediaCdnUrl}`;
+        }
+
+        // Synth-time validation: fail early if CDN is enabled but no URL could be resolved
+        if (!this.cdnUrl) {
+          throw new Error(
+            `[SharedInfrastructure] useExistingResources=true with enableCdn=true but no CDN URL could be resolved. ` +
+            `Set either 'galleryDomain' (custom domain) or 'mediaCdnUrl' (CloudFront distribution URL) ` +
+            `in cdk.context.json or via -c context args.`
+          );
+        }
       }
       // No CfnOutputs – exports from legacy stack still active
       return;

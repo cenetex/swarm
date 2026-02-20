@@ -4,7 +4,9 @@ on:
   issues:
     types: [opened, edited, labeled, unlabeled, milestoned, demilestoned, closed, reopened]
   pull_request:
-    types: [opened, closed, labeled, unlabeled]
+    types: [opened, reopened, ready_for_review, converted_to_draft, closed, labeled, unlabeled]
+  create:
+  delete:
   schedule:
     # Nightly reconcile at 03:00 UTC
     - cron: '0 3 * * *'
@@ -34,7 +36,11 @@ jobs:
   # ──────────────────────────────────────────────────
   sync-item:
     name: Sync item to project
-    if: github.event_name == 'issues' || github.event_name == 'pull_request'
+    if: >-
+      github.event_name == 'issues'
+      || github.event_name == 'pull_request'
+      || github.event_name == 'create'
+      || github.event_name == 'delete'
     runs-on: ubuntu-latest
 
     steps:
@@ -46,12 +52,19 @@ jobs:
           GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ACTION: ${{ github.event.action }}
-          ISSUE_NODE_ID: ${{ github.event.issue.node_id || github.event.pull_request.node_id }}
-          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
-          ISSUE_LABELS: ${{ toJson(github.event.issue.labels.*.name || github.event.pull_request.labels.*.name) }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id || github.event.pull_request.node_id || '' }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || '' }}
+          ISSUE_LABELS: ${{ toJson(github.event.issue.labels.*.name || github.event.pull_request.labels.*.name || '[]') }}
           ISSUE_MILESTONE: ${{ github.event.issue.milestone.title || github.event.pull_request.milestone.title || '' }}
-          ISSUE_STATE: ${{ github.event.issue.state || github.event.pull_request.state }}
+          ISSUE_STATE: ${{ github.event.issue.state || github.event.pull_request.state || '' }}
           PR_MERGED: ${{ github.event.pull_request.merged || 'false' }}
+          PR_DRAFT: ${{ github.event.pull_request.draft || 'false' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          PR_BODY: ${{ github.event.pull_request.body || '' }}
+          BRANCH_REF: ${{ github.event.ref || '' }}
+          BRANCH_REF_TYPE: ${{ github.event.ref_type || '' }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
         run: node .github/scripts/project-sync.mjs
 
   # ──────────────────────────────────────────────────

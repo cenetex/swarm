@@ -17,6 +17,7 @@ import { getAvatar } from './avatars.js';
 import * as credits from './credits.js';
 import { DEFAULT_MODELS } from './models-registry.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { buildMediaUrl, canonicalizeMediaUrl } from '../utils/media-url.js';
 
 const dynamoClient = getDynamoClient();
 const s3Client = new S3Client({});
@@ -163,12 +164,9 @@ async function makeUrlAccessible(url: string): Promise<string> {
     return url;
   }
 
+  // If CDN is configured, canonicalize S3 URL to CDN URL
   if (CDN_URL) {
-    const parsed = parseS3Key(url);
-    if (parsed) {
-      return `${CDN_URL}/${parsed.key}`;
-    }
-    return url;
+    return canonicalizeMediaUrl(url, CDN_URL);
   }
 
   const parsed = parseS3Key(url);
@@ -326,9 +324,7 @@ async function uploadAudioAsset(params: {
     CacheControl: 'max-age=31536000',
   }));
 
-  const url = CDN_URL
-    ? `${CDN_URL}/${s3Key}`
-    : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+  const url = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
   const asset: AudioAsset = {
     pk: `AUDIO#${assetId}`,

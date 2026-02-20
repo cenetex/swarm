@@ -15,6 +15,7 @@ import { v4 as uuid } from 'uuid';
 import type { MediaJob } from '../types.js';
 import * as gallery from './gallery.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { buildMediaUrl } from '../utils/media-url.js';
 
 const dynamoClient = getDynamoClient();
 const s3Client = new S3Client({});
@@ -329,7 +330,7 @@ export async function pollAndCompleteJob(
         ContentType: contentType,
       }));
 
-      const publicUrl = CDN_URL ? `${CDN_URL}/${s3Key}` : `https://${MEDIA_BUCKET}.s3.amazonaws.com/${s3Key}`;
+      const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
       await updateJobStatus(jobId, 'completed', { resultUrl: publicUrl, resultS3Key: s3Key });
 

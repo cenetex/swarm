@@ -38,6 +38,12 @@ export {
   type InternalTestKeyOptions,
 } from './internal-test-key.js';
 
+export {
+  buildMediaUrl,
+  canonicalizeMediaUrl,
+  canonicalizeMediaUrls,
+} from './media-url.js';
+
 // Centralized environment variable validation
 export {
   BaseEnvSchema,

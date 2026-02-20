@@ -13,6 +13,7 @@ export { PropertyAuthPrompt } from './PropertyAuthPrompt';
 export { TwitterConnectPrompt } from './TwitterConnectPrompt';
 export { FeatureTogglePrompt } from './FeatureTogglePrompt';
 export { IntegrationConfigPrompt } from './IntegrationConfigPrompt';
+export { WalletLinkPrompt } from './WalletLinkPrompt';
 
 // Import for use in router
 import { SecretPrompt } from './SecretPrompt';
@@ -23,6 +24,7 @@ import { PropertyAuthPrompt } from './PropertyAuthPrompt';
 import { TwitterConnectPrompt } from './TwitterConnectPrompt';
 import { FeatureTogglePrompt } from './FeatureTogglePrompt';
 import { IntegrationConfigPrompt } from './IntegrationConfigPrompt';
+import { WalletLinkPrompt } from './WalletLinkPrompt';
 
 /**
  * Route tool calls to the appropriate prompt component
@@ -78,6 +80,8 @@ export function ToolPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
       return <TwitterConnectPrompt toolCall={normalizedToolCall} onSubmit={onSubmit} disabled={disabled} />;
     case 'configure_integration':
       return <IntegrationConfigPrompt toolCall={normalizedToolCall} onSubmit={onSubmit} disabled={disabled} />;
+    case 'request_wallet_link':
+      return <WalletLinkPrompt toolCall={normalizedToolCall} onSubmit={onSubmit} disabled={disabled} />;
     default:
       // Unknown tool - show debug info
       return (

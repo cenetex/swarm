@@ -36,6 +36,8 @@ on:
         required: false
       ADMIN_CERTIFICATE_ARN:
         required: false
+      MEDIA_CDN_URL:
+        required: false
     outputs:
       distribution:
         value: ${{ jobs.cdk-deploy.outputs.distribution }}
@@ -217,6 +219,7 @@ jobs:
           SKIP_DOMAIN_ALIASES: ${{ inputs.skip_domain_aliases && 'true' || 'false' }}
           STACK_HASH: ${{ inputs.stack_hash }}
           ADMIN_CERTIFICATE_ARN: ${{ secrets.ADMIN_CERTIFICATE_ARN || '' }}
+          MEDIA_CDN_URL: ${{ secrets.MEDIA_CDN_URL || '' }}
         run: |
           ADMIN_DOMAIN=$(echo "${{ inputs.admin_url }}" | sed -E 's|^https?://||' | cut -d/ -f1)
           EXTRA_CONTEXT_ARGS="-c adminDomain=${ADMIN_DOMAIN}"
@@ -228,6 +231,10 @@ jobs:
 
           if [ -n "$ADMIN_CERTIFICATE_ARN" ]; then
             EXTRA_CONTEXT_ARGS="${EXTRA_CONTEXT_ARGS} -c adminCertificateArn=${ADMIN_CERTIFICATE_ARN}"
+          fi
+
+          if [ -n "$MEDIA_CDN_URL" ]; then
+            EXTRA_CONTEXT_ARGS="${EXTRA_CONTEXT_ARGS} -c mediaCdnUrl=${MEDIA_CDN_URL}"
           fi
 
           STACK="${{ inputs.stack }}"
@@ -291,6 +298,7 @@ jobs:
           SKIP_DOMAIN_ALIASES: ${{ inputs.skip_domain_aliases && 'true' || 'false' }}
           STACK_HASH: ${{ inputs.stack_hash }}
           ADMIN_CERTIFICATE_ARN: ${{ secrets.ADMIN_CERTIFICATE_ARN || '' }}
+          MEDIA_CDN_URL: ${{ secrets.MEDIA_CDN_URL || '' }}
         run: |
           # Clean cdk.out from diff step to prevent recursive asset copy
           rm -rf cdk.out
@@ -305,6 +313,10 @@ jobs:
 
           if [ -n "$ADMIN_CERTIFICATE_ARN" ]; then
             EXTRA_CONTEXT_ARGS="${EXTRA_CONTEXT_ARGS} -c adminCertificateArn=${ADMIN_CERTIFICATE_ARN}"
+          fi
+
+          if [ -n "$MEDIA_CDN_URL" ]; then
+            EXTRA_CONTEXT_ARGS="${EXTRA_CONTEXT_ARGS} -c mediaCdnUrl=${MEDIA_CDN_URL}"
           fi
 
           HOTSWAP=""
