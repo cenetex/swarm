@@ -93,7 +93,6 @@ export class SharedHandlers extends Construct {
   public readonly responseSender: nodejs.NodejsFunction;
   public readonly mediaProcessor: nodejs.NodejsFunction;
   public readonly tweetSender: nodejs.NodejsFunction;
-  public readonly moltbookHeartbeat: nodejs.NodejsFunction;
   public readonly dlq: sqs.Queue;
   public readonly dlqProcessor: nodejs.NodejsFunction;
   public readonly schedulerDlq: sqs.Queue;
@@ -324,12 +323,6 @@ export class SharedHandlers extends Construct {
       removalPolicy: logRemovalPolicy,
     });
 
-    const moltbookHeartbeatLogGroup = new LogGroupWithRetention(this, 'MoltbookHeartbeatLogGroup', {
-      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-moltbook-heartbeat`,
-      retention: logs.RetentionDays.ONE_MONTH,
-      removalPolicy: logRemovalPolicy,
-    });
-
     const tweetSenderLogGroup = new LogGroupWithRetention(this, 'TweetSenderLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-tweet-sender`,
       retention: logs.RetentionDays.ONE_MONTH,
@@ -465,32 +458,6 @@ export class SharedHandlers extends Construct {
     new events.Rule(this, 'AutonomousTweetSchedule', {
       schedule: events.Schedule.rate(cdk.Duration.hours(1)),
       targets: [new targets.LambdaFunction(autonomousTweetPoster, {
-        deadLetterQueue: this.schedulerDlq,
-        retryAttempts: 2,
-        maxEventAge: cdk.Duration.hours(2),
-      })],
-    });
-
-    // Moltbook Heartbeat - runs every 33 minutes, manages per-avatar timing internally
-    // Each avatar with Moltbook enabled gets feed checks and optional engagement
-    this.moltbookHeartbeat = new nodejs.NodejsFunction(this, 'MoltbookHeartbeat', {
-      functionName: `swarm-${environment}${suffix}-moltbook-heartbeat`,
-      runtime: lambda.Runtime.NODEJS_20_X,
-      entry: path.join(handlersEntry, 'social/moltbook-heartbeat.ts'),
-      handler: 'handler',
-      layers: dependencyLayer ? [dependencyLayer] : undefined,
-      role: lambdaRole,
-      timeout: cdk.Duration.minutes(5), // Longer timeout for multi-avatar processing
-      memorySize: 1024,
-      environment: commonEnv,
-      bundling: bundlingOptions,
-      tracing: lambda.Tracing.ACTIVE,
-      logGroup: moltbookHeartbeatLogGroup.logGroup,
-    });
-
-    new events.Rule(this, 'MoltbookHeartbeatSchedule', {
-      schedule: events.Schedule.rate(cdk.Duration.minutes(33)),
-      targets: [new targets.LambdaFunction(this.moltbookHeartbeat, {
         deadLetterQueue: this.schedulerDlq,
         retryAttempts: 2,
         maxEventAge: cdk.Duration.hours(2),
