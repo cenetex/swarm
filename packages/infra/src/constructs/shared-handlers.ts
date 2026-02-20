@@ -93,7 +93,7 @@ export class SharedHandlers extends Construct {
   public readonly responseSender: nodejs.NodejsFunction;
   public readonly mediaProcessor: nodejs.NodejsFunction;
   public readonly tweetSender: nodejs.NodejsFunction;
-  public readonly moltbookHeartbeat: nodejs.NodejsFunction;
+  public readonly platformHeartbeat: nodejs.NodejsFunction;
   public readonly dlq: sqs.Queue;
   public readonly dlqProcessor: nodejs.NodejsFunction;
   public readonly schedulerDlq: sqs.Queue;
@@ -324,8 +324,8 @@ export class SharedHandlers extends Construct {
       removalPolicy: logRemovalPolicy,
     });
 
-    const moltbookHeartbeatLogGroup = new LogGroupWithRetention(this, 'MoltbookHeartbeatLogGroup', {
-      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-moltbook-heartbeat`,
+    const platformHeartbeatLogGroup = new LogGroupWithRetention(this, 'PlatformHeartbeatLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-platform-heartbeat`,
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: logRemovalPolicy,
     });
@@ -471,26 +471,26 @@ export class SharedHandlers extends Construct {
       })],
     });
 
-    // Moltbook Heartbeat - runs every 33 minutes, manages per-avatar timing internally
-    // Each avatar with Moltbook enabled gets feed checks and optional engagement
-    this.moltbookHeartbeat = new nodejs.NodejsFunction(this, 'MoltbookHeartbeat', {
-      functionName: `swarm-${environment}${suffix}-moltbook-heartbeat`,
+    // Platform Heartbeat - runs every 15 minutes, manages per-avatar per-platform timing internally
+    // Each avatar gets platform-specific feed checks and optional engagement via adapters
+    this.platformHeartbeat = new nodejs.NodejsFunction(this, 'PlatformHeartbeat', {
+      functionName: `swarm-${environment}${suffix}-platform-heartbeat`,
       runtime: lambda.Runtime.NODEJS_20_X,
-      entry: path.join(handlersEntry, 'social/moltbook-heartbeat.ts'),
+      entry: path.join(handlersEntry, 'social/platform-heartbeat.ts'),
       handler: 'handler',
       layers: dependencyLayer ? [dependencyLayer] : undefined,
       role: lambdaRole,
-      timeout: cdk.Duration.minutes(5), // Longer timeout for multi-avatar processing
+      timeout: cdk.Duration.minutes(5), // Longer timeout for multi-avatar, multi-platform processing
       memorySize: 1024,
       environment: commonEnv,
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
-      logGroup: moltbookHeartbeatLogGroup.logGroup,
+      logGroup: platformHeartbeatLogGroup.logGroup,
     });
 
-    new events.Rule(this, 'MoltbookHeartbeatSchedule', {
-      schedule: events.Schedule.rate(cdk.Duration.minutes(33)),
-      targets: [new targets.LambdaFunction(this.moltbookHeartbeat, {
+    new events.Rule(this, 'PlatformHeartbeatSchedule', {
+      schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
+      targets: [new targets.LambdaFunction(this.platformHeartbeat, {
         deadLetterQueue: this.schedulerDlq,
         retryAttempts: 2,
         maxEventAge: cdk.Duration.hours(2),

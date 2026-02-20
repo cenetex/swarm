@@ -76,9 +76,9 @@ export interface StateService {
   checkAndSetTweetReply?(avatarId: string, tweetId: string): Promise<boolean>;
   hasRepliedToTweet?(avatarId: string, tweetId: string): Promise<boolean>;
 
-  // Moltbook heartbeat timing
-  getLastMoltbookHeartbeat(avatarId: string): Promise<number>;
-  setLastMoltbookHeartbeat(avatarId: string, timestamp: number): Promise<void>;
+  // Platform heartbeat timing
+  getLastHeartbeat(avatarId: string, platform: string): Promise<number>;
+  setLastHeartbeat(avatarId: string, platform: string, timestamp: number): Promise<void>;
 }
 
 /**

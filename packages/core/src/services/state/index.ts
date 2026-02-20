@@ -54,9 +54,9 @@ import {
   setLastAutonomousPostTime,
 } from './autonomous-timing.js';
 import {
-  getLastMoltbookHeartbeat,
-  setLastMoltbookHeartbeat,
-} from './moltbook-timing.js';
+  getLastHeartbeat,
+  setLastHeartbeat,
+} from './heartbeat-timing.js';
 import {
   getFacts,
   saveFact,
@@ -68,6 +68,11 @@ export {
   getChannelStatesForPlatform,
   getActiveChannels,
 } from './channel-state.js';
+
+export {
+  getLastHeartbeat,
+  setLastHeartbeat,
+} from './heartbeat-timing.js';
 
 export class DynamoDBStateService implements StateService {
   private docClient: DynamoDBDocumentClient;
@@ -443,15 +448,15 @@ export class DynamoDBStateService implements StateService {
   }
 
   // =====================================================================
-  // MOLTBOOK HEARTBEAT TIMING
+  // PLATFORM HEARTBEAT TIMING
   // =====================================================================
 
-  async getLastMoltbookHeartbeat(avatarId: string): Promise<number> {
-    return getLastMoltbookHeartbeat(this.docClient, this.tableName, avatarId);
+  async getLastHeartbeat(avatarId: string, platform: string): Promise<number> {
+    return getLastHeartbeat(this.docClient, this.tableName, avatarId, platform);
   }
 
-  async setLastMoltbookHeartbeat(avatarId: string, timestamp: number): Promise<void> {
-    return setLastMoltbookHeartbeat(this.docClient, this.tableName, avatarId, timestamp);
+  async setLastHeartbeat(avatarId: string, platform: string, timestamp: number): Promise<void> {
+    return setLastHeartbeat(this.docClient, this.tableName, avatarId, platform, timestamp);
   }
 
   // =====================================================================
