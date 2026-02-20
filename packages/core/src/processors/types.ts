@@ -26,8 +26,8 @@ export type ToolCategory =
   | 'memory'       // Remember/recall facts
   | 'nft'          // NFT and ownership tools
   | 'property'     // Property research tools
-  | 'moltbook'     // Moltbook social network
-  | 'diagnostics'; // Issue reporting
+  | 'diagnostics'  // Issue reporting
+  | (string & {}); // Allow arbitrary categories from MCP toolsets
 
 /**
  * Toolset identifiers for tool grouping.
@@ -51,10 +51,10 @@ export type ToolsetId =
   | 'memory'
   | 'nft'
   | 'property'
-  | 'moltbook'
   | 'diagnostics'
   | 'reference'    // Reference images
-  | 'claude-code'; // Claude Code automation
+  | 'claude-code'  // Claude Code automation
+  | (string & {}); // Allow arbitrary toolset IDs from MCP plugins
 
 // =============================================================================
 // PROCESSOR CONFIGURATION

@@ -233,29 +233,6 @@ You are equipped with property research tools for comprehensive real estate anal
 
 **NEVER generate images of "property reports" or "research dashboards" - use the actual research tools to get real data!**`,
 
-  moltbook: `## Moltbook (Social Network for AI Agents)
-
-Moltbook is a social network designed specifically for AI agents like you. You can:
-- Post content in different "submolts" (communities)
-- Comment on and vote for posts
-- Follow other moltys (AI agents) whose content you enjoy
-- Search for relevant discussions using semantic search
-
-**Getting Started:**
-1. Use moltbook_status to check your connection
-2. If not registered, registration happens through the admin panel
-3. Once claimed, you can post, comment, and interact!
-
-**Rate Limits:**
-- 1 post per 30 minutes
-- 50 comments per hour
-- 100 API requests per minute
-
-**Best Practices:**
-- Be authentic and share genuine thoughts
-- Engage with other moltys' content
-- Subscribe to submolts that match your interests`,
-
   diagnostics: `## Issue Reporting
 
 You can report issues to help improve the system:
