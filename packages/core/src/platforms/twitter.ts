@@ -21,6 +21,134 @@ import type {
 import { fetchWithRetry } from '../utils/fetch-retry.js';
 import { logger } from '../utils/logger.js';
 
+// ── API tier diagnostics ────────────────────────────────────────────────────
+
+/**
+ * Classification of a Twitter API error for diagnostics and retry decisions.
+ */
+export interface TwitterApiDiagnostic {
+  /** Whether the error is due to an API tier/access limitation (not transient) */
+  isTierLimited: boolean;
+  /** Whether the operation could succeed on retry */
+  isRetryable: boolean;
+  /** HTTP status code, if available */
+  statusCode?: number;
+  /** Rate-limit reset timestamp (epoch seconds), if this is a rate-limit error */
+  rateLimitReset?: number;
+  /** Human-readable description for operator logs */
+  description: string;
+}
+
+/**
+ * Classify a Twitter API error into actionable diagnostics.
+ *
+ * This inspects the error shape produced by the `twitter-api-v2` library
+ * (which attaches `.code`, `.data`, `.rateLimit` to errors) as well as
+ * standard HTTP status patterns.
+ */
+export function classifyTwitterApiError(error: unknown): TwitterApiDiagnostic {
+  if (!(error instanceof Error)) {
+    return {
+      isTierLimited: false,
+      isRetryable: false,
+      description: `Non-Error thrown: ${String(error)}`,
+    };
+  }
+
+  // The twitter-api-v2 library attaches these properties to errors.
+  const errObj = error as unknown as Record<string, unknown>;
+  const code = typeof errObj.code === 'number' ? errObj.code : undefined;
+  const statusCode = code ?? (typeof errObj.statusCode === 'number' ? errObj.statusCode : undefined);
+  const rateLimit = errObj.rateLimit as { reset?: number; remaining?: number } | undefined;
+  const dataDetail = (errObj.data as Record<string, unknown> | undefined)?.detail;
+
+  // 429 - Rate limited
+  if (statusCode === 429) {
+    return {
+      isTierLimited: false,
+      isRetryable: true,
+      statusCode: 429,
+      rateLimitReset: rateLimit?.reset,
+      description: `Rate limited by Twitter API. ${rateLimit?.reset ? `Resets at epoch ${rateLimit.reset}.` : 'No reset time provided.'}`,
+    };
+  }
+
+  // 403 - Forbidden: typically an API tier or scope limitation
+  if (statusCode === 403) {
+    const detail = typeof dataDetail === 'string' ? dataDetail : error.message;
+    return {
+      isTierLimited: true,
+      isRetryable: false,
+      statusCode: 403,
+      description: `Forbidden (403): likely API tier or scope limitation. Detail: ${detail}`,
+    };
+  }
+
+  // 401 - Unauthorized: token expired or invalid scope
+  if (statusCode === 401) {
+    const detail = typeof dataDetail === 'string' ? dataDetail : error.message;
+    return {
+      isTierLimited: detail?.toLowerCase().includes('expired') ? false : true,
+      isRetryable: false,
+      statusCode: 401,
+      description: `Unauthorized (401): ${detail}`,
+    };
+  }
+
+  // 5xx - Server errors: transient, retryable
+  if (statusCode && statusCode >= 500) {
+    return {
+      isTierLimited: false,
+      isRetryable: true,
+      statusCode,
+      description: `Twitter server error (${statusCode}): ${error.message}`,
+    };
+  }
+
+  // Network errors
+  if (
+    error.message.includes('ECONNRESET') ||
+    error.message.includes('ETIMEDOUT') ||
+    error.message.includes('fetch failed') ||
+    error.name === 'AbortError'
+  ) {
+    return {
+      isTierLimited: false,
+      isRetryable: true,
+      description: `Network error: ${error.message}`,
+    };
+  }
+
+  // Default: unknown, not retryable
+  return {
+    isTierLimited: false,
+    isRetryable: false,
+    statusCode,
+    description: `Unclassified error: ${error.message}`,
+  };
+}
+
+/**
+ * Emit a structured operator-visible diagnostic log for an API-tier limitation.
+ */
+function logTierDiagnostic(
+  feature: string,
+  diagnostic: TwitterApiDiagnostic,
+  context?: Record<string, unknown>
+): void {
+  logger.warn('Twitter API tier limitation detected', {
+    subsystem: 'twitter-adapter',
+    event: 'api_tier_limitation',
+    feature,
+    statusCode: diagnostic.statusCode,
+    isTierLimited: diagnostic.isTierLimited,
+    isRetryable: diagnostic.isRetryable,
+    rateLimitReset: diagnostic.rateLimitReset,
+    diagnosticDescription: diagnostic.description,
+    ...context,
+  });
+}
+
 type TweetWithOptionalAuthor = TweetV2 & {
   author?: UserV2;
   author_id?: string;
@@ -210,10 +338,21 @@ export class TwitterAdapter extends PlatformAdapter {
       
       return true;
     } catch (error) {
-      logger.warn('Twitter action execution failed', {
-        actionType: action.type,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
+      const diagnostic = classifyTwitterApiError(error);
+      if (diagnostic.isTierLimited) {
+        logTierDiagnostic(`executeAction:${action.type}`, diagnostic, {
+          actionType: action.type,
+        });
+      } else {
+        logger.warn('Twitter action execution failed', {
+          subsystem: 'twitter-adapter',
+          event: 'action_execution_failed',
+          actionType: action.type,
+          isRetryable: diagnostic.isRetryable,
+          statusCode: diagnostic.statusCode,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      }
       return false;
     }
   }
@@ -288,10 +427,24 @@ export class TwitterAdapter extends PlatformAdapter {
         logger.debug('Twitter media upload: success', { mediaId });
         mediaIds.push(mediaId);
       } catch (error) {
-        logger.warn('Twitter media upload failed for item', {
-          url: item.url,
-          errorMessage: error instanceof Error ? error.message : String(error),
-        });
+        const diagnostic = classifyTwitterApiError(error);
+        if (diagnostic.isTierLimited) {
+          logTierDiagnostic('uploadMedia', diagnostic, {
+            url: item.url,
+            mediaType: item.type,
+            hint: 'Media upload may require Basic or Pro API tier. Free tier has limited media upload support.',
+          });
+        } else {
+          logger.warn('Twitter media upload failed for item', {
+            subsystem: 'twitter-adapter',
+            event: 'media_upload_failed',
+            url: item.url,
+            mediaType: item.type,
+            isRetryable: diagnostic.isRetryable,
+            statusCode: diagnostic.statusCode,
+            errorMessage: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
 
@@ -344,8 +497,12 @@ export class TwitterAdapter extends PlatformAdapter {
   }
 
   /**
-   * Post a tweet to a Twitter Community
-   * Note: Community posting requires specific API access tier.
+   * Post a tweet to a Twitter Community.
+   *
+   * Community posting uses the `community_id` parameter on the v2 tweet
+   * endpoint. This may require an elevated API access tier (Basic or Pro).
+   * If the API rejects the request with 403, a structured diagnostic is
+   * logged and the error is re-thrown so callers can handle gracefully.
    */
   async postToCommunity(
     communityId: string,
@@ -382,27 +539,140 @@ export class TwitterAdapter extends PlatformAdapter {
       }
     }
 
-    const result = await this.client.v2.tweet(tweetParams);
-    return result.data.id;
+    try {
+      const result = await this.client.v2.tweet(tweetParams);
+      return result.data.id;
+    } catch (error) {
+      const diagnostic = classifyTwitterApiError(error);
+      if (diagnostic.isTierLimited) {
+        logTierDiagnostic('postToCommunity', diagnostic, {
+          communityId,
+          hint: 'Community posting requires the community_id tweet parameter, which may need Basic/Pro API tier.',
+        });
+      }
+      throw error;
+    }
   }
 
   /**
-   * Get recent tweets from a community timeline
-   * Note: This is a placeholder - community timeline access varies by API tier
+   * Get recent tweets from a community timeline.
+   *
+   * ## Contract
+   *
+   * The Twitter API v2 does not expose a dedicated community timeline
+   * endpoint at Free or Basic tiers. This method attempts a best-effort
+   * approach using the v2 search endpoint with a community-scoped query.
+   * If the search endpoint is unavailable due to API tier restrictions
+   * (Free tier has no search access), it logs a structured diagnostic and
+   * returns an empty array -- callers must handle the empty-result case.
+   *
+   * **API tier requirements:**
+   * - Free: no search access, always returns [].
+   * - Basic: search available, but community filter support varies.
+   * - Pro/Enterprise: full search with community context.
+   *
+   * @returns Parsed envelopes, or [] if the feature is unavailable.
    */
   async getCommunityTimeline(
-    _communityId: string,
-    _sinceId?: string,
-    _maxResults: number = 20
+    communityId: string,
+    sinceId?: string,
+    maxResults: number = 20
   ): Promise<SwarmEnvelope[]> {
-    // Community timeline access requires specific API permissions
-    // This is a placeholder for future implementation when API access is available
-    // Possible approaches:
-    // 1. Use search API with community filter (if available)
-    // 2. Use community-specific endpoints (Enterprise tier)
-    // 3. Scrape community page (not recommended for production)
-    logger.info('Twitter community timeline is not implemented yet');
-    return [];
+    if (!this.client) {
+      throw new PlatformError('Twitter client not initialized', {
+        code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+        platform: 'twitter',
+      });
+    }
+
+    // Clamp maxResults to API limits (10..100 for search).
+    const clampedMax = Math.min(100, Math.max(10, maxResults));
+
+    // Resolve community name from config for the search query.
+    const community = this.config.communities?.find(c => c.id === communityId);
+    const communityName = community?.name;
+
+    logger.info('Twitter community timeline: attempting search-based retrieval', {
+      subsystem: 'twitter-adapter',
+      event: 'community_timeline_attempt',
+      communityId,
+      communityName: communityName ?? '(unknown)',
+      sinceId: sinceId ?? '(none)',
+      maxResults: clampedMax,
+    });
+
+    try {
+      // Use the v2 tweet search endpoint. The query uses the "context:"
+      // annotation or a community-scoped filter. The exact query syntax for
+      // communities is not formally documented at all tiers, so we fall back
+      // to a name-based search when the community context annotation is
+      // unavailable.
+      const query = communityName
+        ? `"${communityName}" -is:retweet`
+        : `community ${communityId} -is:retweet`;
+
+      const searchResult = await this.client.v2.search(query, {
+        since_id: sinceId,
+        max_results: clampedMax,
+        expansions: ['author_id', 'referenced_tweets.id', 'attachments.media_keys'],
+        'tweet.fields': ['created_at', 'conversation_id', 'in_reply_to_user_id', 'referenced_tweets', 'attachments'],
+        'user.fields': ['username', 'name'],
+        'media.fields': ['media_key', 'type', 'url', 'preview_image_url', 'width', 'height', 'alt_text'],
+      });
+
+      const envelopes: SwarmEnvelope[] = [];
+      const mediaIncludes = (searchResult.includes as { media?: MediaObjectV2[] } | undefined)?.media;
+
+      for (const tweet of searchResult.data?.data || []) {
+        const author = searchResult.includes?.users?.find(u => u.id === tweet.author_id);
+        const envelope = await this.parseMessage({
+          ...tweet,
+          author,
+          includes: mediaIncludes ? { media: mediaIncludes } : undefined,
+        });
+        if (envelope) {
+          envelopes.push(envelope);
+        }
+      }
+
+      logger.info('Twitter community timeline: search completed', {
+        subsystem: 'twitter-adapter',
+        event: 'community_timeline_result',
+        communityId,
+        resultCount: envelopes.length,
+      });
+
+      return envelopes;
+    } catch (error) {
+      const diagnostic = classifyTwitterApiError(error);
+
+      if (diagnostic.isTierLimited) {
+        logTierDiagnostic('getCommunityTimeline', diagnostic, {
+          communityId,
+          communityName: communityName ?? '(unknown)',
+          hint: 'Community timeline search requires at least Basic API tier. Free tier has no search access. Returning empty results.',
+        });
+      } else if (diagnostic.isRetryable) {
+        logger.warn('Twitter community timeline: transient error, returning empty results', {
+          subsystem: 'twitter-adapter',
+          event: 'community_timeline_transient_error',
+          communityId,
+          statusCode: diagnostic.statusCode,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      } else {
+        logger.warn('Twitter community timeline: search failed, returning empty results', {
+          subsystem: 'twitter-adapter',
+          event: 'community_timeline_error',
+          communityId,
+          statusCode: diagnostic.statusCode,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      // Graceful degradation: callers must handle empty results.
+      return [];
+    }
   }
 
   /**
@@ -518,7 +788,17 @@ export class TwitterAdapter extends PlatformAdapter {
     return rendered;
   }
 
-  private async fetchTweetWithAuthor(tweetId: string): Promise<TweetWithOptionalAuthor | null> {
+  /**
+   * Fetch a single tweet with author expansion.
+   *
+   * Includes retry logic for transient errors (5xx, network) and
+   * structured diagnostics for API-tier limitations. Returns null
+   * on any unrecoverable error so callers can degrade gracefully.
+   */
+  private async fetchTweetWithAuthor(
+    tweetId: string,
+    retryCount: number = 1
+  ): Promise<TweetWithOptionalAuthor | null> {
     if (!this.client) {
       throw new PlatformError('Twitter client not initialized', {
       code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
@@ -526,22 +806,58 @@ export class TwitterAdapter extends PlatformAdapter {
     });
     }
 
-    try {
-      const twitterV2Client = this.client.v2 as unknown as TwitterV2SingleTweetClient;
-      const result = await twitterV2Client.singleTweet(tweetId, {
-        expansions: ['author_id', 'referenced_tweets.id'],
-        'tweet.fields': ['created_at', 'conversation_id', 'in_reply_to_user_id', 'referenced_tweets'],
-        'user.fields': ['username', 'name'],
-      });
+    let lastError: unknown;
 
-      const data = (result?.data ?? null) as TweetWithOptionalAuthor | null;
-      if (!data?.id) return null;
+    for (let attempt = 0; attempt <= retryCount; attempt++) {
+      try {
+        const twitterV2Client = this.client.v2 as unknown as TwitterV2SingleTweetClient;
+        const result = await twitterV2Client.singleTweet(tweetId, {
+          expansions: ['author_id', 'referenced_tweets.id'],
+          'tweet.fields': ['created_at', 'conversation_id', 'in_reply_to_user_id', 'referenced_tweets'],
+          'user.fields': ['username', 'name'],
+        });
 
-      const author = (result?.includes?.users as UserV2[] | undefined)?.find((u) => u.id === (data.author_id as string | undefined));
-      return { ...data, author };
-    } catch {
-      return null;
+        const data = (result?.data ?? null) as TweetWithOptionalAuthor | null;
+        if (!data?.id) return null;
+
+        const author = (result?.includes?.users as UserV2[] | undefined)?.find((u) => u.id === (data.author_id as string | undefined));
+        return { ...data, author };
+      } catch (error) {
+        lastError = error;
+        const diagnostic = classifyTwitterApiError(error);
+
+        // Tier-limited: log and bail immediately, no retry.
+        if (diagnostic.isTierLimited) {
+          logTierDiagnostic('fetchTweetWithAuthor', diagnostic, {
+            tweetId,
+            hint: 'Single tweet lookup may require Basic API tier.',
+          });
+          return null;
+        }
+
+        // Retryable: back off and try again.
+        if (diagnostic.isRetryable && attempt < retryCount) {
+          const delayMs = 500 * Math.pow(2, attempt) + Math.random() * 200;
+          logger.debug('Twitter fetchTweetWithAuthor: retrying after transient error', {
+            tweetId,
+            attempt: attempt + 1,
+            maxAttempts: retryCount + 1,
+            delayMs: Math.round(delayMs),
+            errorMessage: error instanceof Error ? error.message : String(error),
+          });
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        // Non-retryable or exhausted retries: fall through to return null.
+      }
     }
+
+    logger.debug('Twitter fetchTweetWithAuthor: all attempts failed', {
+      tweetId,
+      errorMessage: lastError instanceof Error ? lastError.message : String(lastError),
+    });
+    return null;
   }
 
   /**
