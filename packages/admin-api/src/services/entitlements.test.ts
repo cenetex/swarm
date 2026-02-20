@@ -7,6 +7,12 @@ import {
   type PlanType,
   type PlanLimits,
 } from '../types.js';
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Re-implement computeEffectiveLimits for testing (avoid DynamoDB dependencies)
 function testComputeEffectiveLimits(
@@ -133,5 +139,86 @@ describe('MemoryConfig', () => {
     expect(memoryConfig.retentionDays).toBe(30);
     expect(memoryConfig.consolidationEnabled).toBe(true);
     expect(memoryConfig.semanticSearchEnabled).toBe(true);
+  });
+});
+
+// ============================================================================
+// GSI1 Query Key Schema Tests (issue #168)
+//
+// The getEntitlement() function queries GSI1 which is an inverted index
+// (partition key = sk, sort key = pk). The old code incorrectly used
+// 'gsi1pk'/'gsi1sk' as key condition attributes, which caused
+// "Query condition missed key schema element: sk" in production.
+//
+// These tests verify the source code directly to ensure the query uses
+// the correct key attribute names matching the deployed GSI1 schema.
+// ============================================================================
+
+describe('getEntitlement - GSI1 key schema (issue #168)', () => {
+  // Read the actual entitlements.ts source to verify the query structure.
+  // This avoids module-mock interference from other test files (bun mock persistence).
+  const src = readFileSync(resolve(__dirname, 'entitlements.ts'), 'utf-8');
+
+  it('should use IndexName GSI1', () => {
+    expect(src).toContain("IndexName: 'GSI1'");
+  });
+
+  it('should query using sk (GSI1 partition key) not gsi1pk', () => {
+    // The key condition must reference 'sk' -- the actual GSI1 partition key
+    expect(src).toContain("'sk = :sk AND begins_with(pk, :pkPrefix)'");
+  });
+
+  it('should NOT use gsi1pk or gsi1sk as key condition attributes', () => {
+    // Extract only the getEntitlement function body to check key expressions
+    const fnMatch = src.match(/export async function getEntitlement[\s\S]*?^}/m);
+    expect(fnMatch).not.toBeNull();
+
+    const fnBody = fnMatch![0];
+    // The KeyConditionExpression should not reference gsi1pk or gsi1sk
+    expect(fnBody).not.toMatch(/KeyConditionExpression.*gsi1pk/);
+    expect(fnBody).not.toMatch(/KeyConditionExpression.*gsi1sk/);
+  });
+
+  it('should set :sk to AVATAR#<avatarId>', () => {
+    // Verify the expression attribute value binds correctly
+    expect(src).toContain("':sk': `AVATAR#${avatarId}`");
+  });
+
+  it('should set :pkPrefix to ENTITLEMENT#', () => {
+    expect(src).toContain("':pkPrefix': 'ENTITLEMENT#'");
+  });
+});
+
+describe('checkLimit - graceful error handling (issue #168)', () => {
+  // Verify that checkLimit wraps getEntitlement in a try/catch so that
+  // DynamoDB errors degrade gracefully to free-tier defaults.
+  const src = readFileSync(resolve(__dirname, 'entitlements.ts'), 'utf-8');
+
+  it('should wrap getEntitlement in try/catch', () => {
+    // The checkLimit function should have a try/catch around getEntitlement
+    const fnMatch = src.match(/export async function checkLimit[\s\S]*?^}/m);
+    expect(fnMatch).not.toBeNull();
+    const fnBody = fnMatch![0];
+
+    expect(fnBody).toContain('try {');
+    expect(fnBody).toContain('catch (err)');
+    expect(fnBody).toContain('getEntitlement(avatarId)');
+  });
+
+  it('should log the error with avatarId context', () => {
+    const fnMatch = src.match(/export async function checkLimit[\s\S]*?^}/m);
+    const fnBody = fnMatch![0];
+
+    expect(fnBody).toContain('console.error');
+    expect(fnBody).toContain('falling back to free tier');
+  });
+
+  it('should fall back to free tier limits after error', () => {
+    const fnMatch = src.match(/export async function checkLimit[\s\S]*?^}/m);
+    const fnBody = fnMatch![0];
+
+    // After the try/catch, entitlement may be null, and the code should
+    // use PLAN_DEFAULTS.free as fallback
+    expect(fnBody).toContain('entitlement?.limits || PLAN_DEFAULTS.free');
   });
 });
