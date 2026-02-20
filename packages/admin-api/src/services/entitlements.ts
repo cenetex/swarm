@@ -25,7 +25,6 @@ import {
 } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
 
-const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 // ============================================================================
@@ -35,16 +34,19 @@ const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 /**
  * Get entitlement for an avatar
  * Returns null if no entitlement exists (avatar uses free tier)
+ *
+ * GSI1 is an inverted index: partition key = `sk`, sort key = `pk`.
+ * Entitlement items have pk=ENTITLEMENT#<accountId>, sk=AVATAR#<avatarId>,
+ * so we query GSI1 with sk=AVATAR#<avatarId> and pk begins_with ENTITLEMENT#.
  */
 export async function getEntitlement(avatarId: string): Promise<EntitlementRecord | null> {
-  // First, try to find by avatar GSI
-  const result = await dynamoClient.send(new QueryCommand({
+  const result = await getDynamoClient().send(new QueryCommand({
     TableName: ADMIN_TABLE,
     IndexName: 'GSI1',
-    KeyConditionExpression: 'gsi1pk = :pk AND gsi1sk = :sk',
+    KeyConditionExpression: 'sk = :sk AND begins_with(pk, :pkPrefix)',
     ExpressionAttributeValues: {
-      ':pk': `AVATAR#${avatarId}`,
-      ':sk': 'ENTITLEMENT',
+      ':sk': `AVATAR#${avatarId}`,
+      ':pkPrefix': 'ENTITLEMENT#',
     },
     Limit: 1,
   }));
@@ -63,7 +65,7 @@ export async function getEntitlementByAccount(
   accountId: string,
   avatarId: string
 ): Promise<EntitlementRecord | null> {
-  const result = await dynamoClient.send(new GetCommand({
+  const result = await getDynamoClient().send(new GetCommand({
     TableName: ADMIN_TABLE,
     Key: {
       pk: `ENTITLEMENT#${accountId}`,
@@ -78,7 +80,7 @@ export async function getEntitlementByAccount(
  * Get all entitlements for an account
  */
 export async function getAccountEntitlements(accountId: string): Promise<EntitlementRecord[]> {
-  const result = await dynamoClient.send(new QueryCommand({
+  const result = await getDynamoClient().send(new QueryCommand({
     TableName: ADMIN_TABLE,
     KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
     ExpressionAttributeValues: {
@@ -156,12 +158,13 @@ export async function setEntitlement(params: {
     createdBy: existing?.createdBy || actorId,
     updatedAt: now,
     updatedBy: actorId,
-    // GSI for looking up by avatar
+    // Legacy attributes — GSI1 is an inverted index (sk→pk), so the actual
+    // GSI1 lookup uses the sk/pk columns directly.  Kept for backward compat.
     gsi1pk: `AVATAR#${avatarId}`,
     gsi1sk: 'ENTITLEMENT',
   };
 
-  await dynamoClient.send(new PutCommand({
+  await getDynamoClient().send(new PutCommand({
     TableName: ADMIN_TABLE,
     Item: entitlement,
   }));
@@ -179,7 +182,7 @@ export async function findEntitlementByStripeSubscriptionId(
   let lastEvaluatedKey: Record<string, unknown> | undefined;
 
   do {
-    const result = await dynamoClient.send(new ScanCommand({
+    const result = await getDynamoClient().send(new ScanCommand({
       TableName: ADMIN_TABLE,
       FilterExpression: 'stripeSubscriptionId = :subscriptionId',
       ExpressionAttributeValues: {
@@ -211,7 +214,7 @@ export async function setEntitlementStatus(
 ): Promise<void> {
   const now = Date.now();
   if (status === 'suspended') {
-    await dynamoClient.send(new UpdateCommand({
+    await getDynamoClient().send(new UpdateCommand({
       TableName: ADMIN_TABLE,
       Key: {
         pk: `ENTITLEMENT#${accountId}`,
@@ -237,7 +240,7 @@ export async function setEntitlementStatus(
     return;
   }
 
-  await dynamoClient.send(new UpdateCommand({
+  await getDynamoClient().send(new UpdateCommand({
     TableName: ADMIN_TABLE,
     Key: {
       pk: `ENTITLEMENT#${accountId}`,
@@ -274,7 +277,7 @@ export async function updateEntitlementPlan(
 
   const limits = computeEffectiveLimits(plan, existing.overrides);
 
-  await dynamoClient.send(new UpdateCommand({
+  await getDynamoClient().send(new UpdateCommand({
     TableName: ADMIN_TABLE,
     Key: {
       pk: `ENTITLEMENT#${accountId}`,
@@ -305,7 +308,7 @@ export async function suspendEntitlement(
   reason: string,
   actorId: string
 ): Promise<void> {
-  await dynamoClient.send(new UpdateCommand({
+  await getDynamoClient().send(new UpdateCommand({
     TableName: ADMIN_TABLE,
     Key: {
       pk: `ENTITLEMENT#${accountId}`,
@@ -341,7 +344,7 @@ function getTodayString(): string {
 export async function getUsage(avatarId: string, date?: string): Promise<UsageRecord | null> {
   const dateStr = date || getTodayString();
 
-  const result = await dynamoClient.send(new GetCommand({
+  const result = await getDynamoClient().send(new GetCommand({
     TableName: ADMIN_TABLE,
     Key: {
       pk: `USAGE#${avatarId}`,
@@ -364,7 +367,7 @@ export async function incrementUsage(
   // TTL: 35 days from today (covers billing cycle + buffer)
   const ttl = Math.floor(Date.now() / 1000) + (35 * 24 * 60 * 60);
 
-  const result = await dynamoClient.send(new UpdateCommand({
+  const result = await getDynamoClient().send(new UpdateCommand({
     TableName: ADMIN_TABLE,
     Key: {
       pk: `USAGE#${avatarId}`,
@@ -409,14 +412,26 @@ export interface LimitCheckResult {
 }
 
 /**
- * Check if an action is allowed based on entitlements and usage
+ * Check if an action is allowed based on entitlements and usage.
+ *
+ * If the entitlement lookup fails (e.g. DynamoDB error), the function
+ * degrades gracefully to free-tier defaults so that media generation
+ * is not blocked by transient infrastructure issues.
  */
 export async function checkLimit(
   avatarId: string,
   limitType: 'messages' | 'media' | 'voice' | 'tools'
 ): Promise<LimitCheckResult> {
   // Get entitlement (or use free tier defaults)
-  const entitlement = await getEntitlement(avatarId);
+  let entitlement: EntitlementRecord | null = null;
+  try {
+    entitlement = await getEntitlement(avatarId);
+  } catch (err) {
+    console.error('[Entitlements] getEntitlement failed, falling back to free tier', {
+      avatarId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
   const limits = entitlement?.limits || PLAN_DEFAULTS.free;
 
   // Check if entitlement is active
