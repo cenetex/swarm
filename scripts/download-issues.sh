@@ -11,7 +11,7 @@
 # log groups (single API call instead of N×filter-log-events).
 #
 # Usage:
-#   ./scripts/download-issues.sh [staging|prod] [--all] [--errors] [--since DURATION] [--all-context] [--profile PROFILE]
+#   ./scripts/download-issues.sh [staging|prod] [--all] [--errors] [--since DURATION] [--all-context] [--profile PROFILE] [--dry-run]
 #
 # Options:
 #   staging|prod    Environment to query (default: staging)
@@ -20,29 +20,30 @@
 #   --since DURATION  Time window, e.g. '1h', '6h', '7d' (default: 24h for --all)
 #   --all-context   Include context from all log groups (slower)
 #   --profile NAME  AWS CLI profile to use
+#   --dry-run       Print discovered log groups and exit
 #
 
 set -e
 
-ENV="${1:-staging}"
+# ── Arg parsing ──────────────────────────────────────────────────────────
+# Defaults
+ENV="staging"
 DOWNLOAD_ALL=""
 ALL_CONTEXT=""
 SCAN_ERRORS=""
 SINCE_DURATION=""
 AWS_PROFILE_ARG=""
-
-shift 0 || true
-
-if [[ "${1:-}" == "staging" || "${1:-}" == "prod" ]]; then
-  ENV="$1"
-  shift
-fi
+DRY_RUN=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    staging|prod)
+      ENV="$1"
+      ;;
     --all) DOWNLOAD_ALL="--all" ;;
     --all-context) ALL_CONTEXT="--all-context" ;;
     --errors) SCAN_ERRORS="1" ;;
+    --dry-run) DRY_RUN="1" ;;
     --since)
       shift
       if [[ -z "${1:-}" ]]; then
@@ -61,12 +62,19 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown arg: $1" >&2
-      echo "Usage: ./scripts/download-issues.sh [staging|prod] [--all] [--errors] [--since DURATION] [--all-context] [--profile PROFILE]" >&2
+      echo "Usage: ./scripts/download-issues.sh [staging|prod] [--all] [--errors] [--since DURATION] [--all-context] [--profile PROFILE] [--dry-run]" >&2
       exit 2
       ;;
   esac
   shift
 done
+
+# Colors (defined early so they are available in all output paths)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
 # Configuration
 REGION="us-east-1"
@@ -103,6 +111,7 @@ fi
 # We discover broadly to avoid missing any handlers.
 LOG_GROUP_PREFIXES=(
   "/aws/lambda/SwarmStack-${ENV}-"
+  "/aws/lambda/SwarmApi-${ENV}-"
   "/aws/lambda/swarm-${ENV}"
   "/aws/lambda/swarm-claude-code-callback-${ENV}"
   "/aws/ecs/"
@@ -132,7 +141,7 @@ done
 # shellcheck disable=SC2207
 ALL_LAMBDA_GROUPS=( $(aws logs describe-log-groups \
   --log-group-name-prefix "/aws/lambda/" \
-  --region "${REGION}" \
+  "${AWS_COMMON_ARGS[@]}" \
   --query 'logGroups[].logGroupName' \
   --output text 2>/dev/null || true) )
 for G in "${ALL_LAMBDA_GROUPS[@]}"; do
@@ -151,12 +160,12 @@ if [[ "${#LOG_GROUPS[@]}" -eq 0 ]]; then
   exit 1
 fi
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# ── Dry-run mode: print discovered groups and exit ───────────────────────
+if [[ -n "${DRY_RUN}" ]]; then
+  echo "Discovered ${#LOG_GROUPS[@]} log group(s) for env=${ENV}:"
+  printf '  %s\n' "${LOG_GROUPS[@]}"
+  exit 0
+fi
 
 echo -e "${BLUE}=== Avatar Issue Downloader ===${NC}"
 echo "Environment: ${ENV}"
