@@ -4,7 +4,7 @@
  * Tests for the TwitterAdapter class that handles Twitter API v2 interactions.
  */
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
-import { TwitterAdapter } from './twitter.js';
+import { TwitterAdapter, classifyTwitterApiError } from './twitter.js';
 import type { AvatarConfig } from '../types/index.js';
 import type { TwitterApi } from 'twitter-api-v2';
 
@@ -712,5 +712,558 @@ describe('TwitterAdapter - Integration Scenarios', () => {
       accessSecret: newTokens.accessSecret,
     });
     expect(updatedCredentials.accessToken).toBe('new-access-token');
+  });
+});
+
+// ── New tests for parity & reliability changes (issue #185) ──────────────────
+
+describe('classifyTwitterApiError', () => {
+  it('returns non-retryable for non-Error values', () => {
+    const diag = classifyTwitterApiError('string error');
+    expect(diag.isTierLimited).toBe(false);
+    expect(diag.isRetryable).toBe(false);
+    expect(diag.description).toContain('Non-Error thrown');
+  });
+
+  it('classifies 429 as retryable, not tier-limited', () => {
+    const err = new Error('Too Many Requests') as any;
+    err.code = 429;
+    err.rateLimit = { reset: 1700000000, remaining: 0 };
+
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isTierLimited).toBe(false);
+    expect(diag.isRetryable).toBe(true);
+    expect(diag.statusCode).toBe(429);
+    expect(diag.rateLimitReset).toBe(1700000000);
+    expect(diag.description).toContain('Rate limited');
+  });
+
+  it('classifies 429 without rateLimit reset', () => {
+    const err = new Error('Too Many Requests') as any;
+    err.code = 429;
+
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isRetryable).toBe(true);
+    expect(diag.rateLimitReset).toBeUndefined();
+    expect(diag.description).toContain('No reset time');
+  });
+
+  it('classifies 403 as tier-limited', () => {
+    const err = new Error('Forbidden') as any;
+    err.code = 403;
+    err.data = { detail: 'You are not permitted to access this resource' };
+
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isTierLimited).toBe(true);
+    expect(diag.isRetryable).toBe(false);
+    expect(diag.statusCode).toBe(403);
+    expect(diag.description).toContain('Forbidden (403)');
+    expect(diag.description).toContain('not permitted');
+  });
+
+  it('classifies 403 without data.detail uses error message', () => {
+    const err = new Error('Some 403 message') as any;
+    err.code = 403;
+
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isTierLimited).toBe(true);
+    expect(diag.description).toContain('Some 403 message');
+  });
+
+  it('classifies 401 as tier-limited (non-expired)', () => {
+    const err = new Error('Unauthorized') as any;
+    err.code = 401;
+    err.data = { detail: 'Invalid token scope' };
+
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isTierLimited).toBe(true);
+    expect(diag.isRetryable).toBe(false);
+    expect(diag.statusCode).toBe(401);
+  });
+
+  it('classifies 401 with expired token as not tier-limited', () => {
+    const err = new Error('token expired') as any;
+    err.code = 401;
+    err.data = { detail: 'Access token has expired' };
+
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isTierLimited).toBe(false);
+    expect(diag.isRetryable).toBe(false);
+    expect(diag.statusCode).toBe(401);
+  });
+
+  it('classifies 500 as retryable server error', () => {
+    const err = new Error('Internal Server Error') as any;
+    err.code = 500;
+
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isTierLimited).toBe(false);
+    expect(diag.isRetryable).toBe(true);
+    expect(diag.statusCode).toBe(500);
+    expect(diag.description).toContain('server error');
+  });
+
+  it('classifies 503 as retryable server error', () => {
+    const err = new Error('Service Unavailable') as any;
+    err.code = 503;
+
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isRetryable).toBe(true);
+    expect(diag.statusCode).toBe(503);
+  });
+
+  it('classifies ECONNRESET as retryable network error', () => {
+    const err = new Error('read ECONNRESET');
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isTierLimited).toBe(false);
+    expect(diag.isRetryable).toBe(true);
+    expect(diag.description).toContain('Network error');
+  });
+
+  it('classifies ETIMEDOUT as retryable network error', () => {
+    const err = new Error('connect ETIMEDOUT 1.2.3.4:443');
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isRetryable).toBe(true);
+    expect(diag.description).toContain('Network error');
+  });
+
+  it('classifies fetch failed as retryable network error', () => {
+    const err = new Error('fetch failed');
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isRetryable).toBe(true);
+  });
+
+  it('classifies AbortError as retryable network error', () => {
+    const err = new Error('The operation was aborted');
+    err.name = 'AbortError';
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isRetryable).toBe(true);
+  });
+
+  it('classifies unknown errors as non-retryable', () => {
+    const err = new Error('Something unexpected happened');
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isTierLimited).toBe(false);
+    expect(diag.isRetryable).toBe(false);
+    expect(diag.description).toContain('Unclassified');
+  });
+
+  it('uses statusCode when code is not a number', () => {
+    const err = new Error('fail') as any;
+    err.code = 'ENOENT'; // non-numeric code
+    err.statusCode = 502;
+
+    const diag = classifyTwitterApiError(err);
+    expect(diag.isRetryable).toBe(true);
+    expect(diag.statusCode).toBe(502);
+  });
+});
+
+describe('TwitterAdapter - executeAction diagnostics', () => {
+  let adapter: TwitterAdapter;
+  let mockClient: ReturnType<typeof createMockTwitterClient>;
+
+  beforeEach(() => {
+    mockClient = createMockTwitterClient();
+    adapter = new TwitterAdapter(createMockAvatarConfig(), createMockCredentials(), mockClient);
+  });
+
+  it('returns false and logs tier diagnostic on 403 error', async () => {
+    const err = new Error('Forbidden') as any;
+    err.code = 403;
+    err.data = { detail: 'Not authorized for this endpoint' };
+    mockClient.v2.tweet = mock(() => Promise.reject(err));
+
+    const result = await adapter.executeAction(
+      { type: 'send_message', text: 'test' },
+      'conv-1'
+    );
+
+    expect(result).toBe(false);
+  });
+
+  it('returns false on retryable 500 error', async () => {
+    const err = new Error('Internal Server Error') as any;
+    err.code = 500;
+    mockClient.v2.tweet = mock(() => Promise.reject(err));
+
+    const result = await adapter.executeAction(
+      { type: 'send_message', text: 'test' },
+      'conv-1'
+    );
+
+    expect(result).toBe(false);
+  });
+});
+
+describe('TwitterAdapter - postToCommunity', () => {
+  let adapter: TwitterAdapter;
+  let mockClient: ReturnType<typeof createMockTwitterClient>;
+
+  beforeEach(() => {
+    mockClient = createMockTwitterClient();
+    adapter = new TwitterAdapter(createMockAvatarConfig(), createMockCredentials(), mockClient);
+  });
+
+  it('posts a community tweet successfully', async () => {
+    const result = await adapter.postToCommunity('community-1', 'Hello community!');
+    expect(result).toBe('tweet-123');
+    expect(mockClient.v2.tweet).toHaveBeenCalled();
+
+    const tweetCall = (mockClient.v2.tweet as unknown as ReturnType<typeof mock>).mock.calls[0][0];
+    expect((tweetCall as any).community_id).toBe('community-1');
+  });
+
+  it('includes reply params when replying in community', async () => {
+    await adapter.postToCommunity('community-1', 'Reply', undefined, 'reply-to-id');
+
+    const tweetCall = (mockClient.v2.tweet as unknown as ReturnType<typeof mock>).mock.calls[0][0];
+    expect(tweetCall.reply).toEqual({ in_reply_to_tweet_id: 'reply-to-id' });
+  });
+
+  it('re-throws on 403 tier-limited error with diagnostic', async () => {
+    const err = new Error('Forbidden') as any;
+    err.code = 403;
+    err.data = { detail: 'Community posting not available' };
+    mockClient.v2.tweet = mock(() => Promise.reject(err));
+
+    await expect(
+      adapter.postToCommunity('community-1', 'Hello')
+    ).rejects.toThrow('Forbidden');
+  });
+
+  it('re-throws non-tier errors without swallowing', async () => {
+    const err = new Error('Network failure');
+    mockClient.v2.tweet = mock(() => Promise.reject(err));
+
+    await expect(
+      adapter.postToCommunity('community-1', 'Hello')
+    ).rejects.toThrow('Network failure');
+  });
+
+  it('throws when client not initialized', async () => {
+    const unconfiguredAdapter = new TwitterAdapter(
+      createMockAvatarConfig(false),
+      createMockCredentials()
+    );
+
+    await expect(
+      unconfiguredAdapter.postToCommunity('community-1', 'Hello')
+    ).rejects.toThrow('Twitter client not initialized');
+  });
+});
+
+function createMockAvatarConfigWithCommunities(): AvatarConfig {
+  return {
+    id: 'test-avatar',
+    name: 'Test Avatar',
+    version: '1.0.0',
+    persona: 'Test persona',
+    platforms: {
+      twitter: {
+        enabled: true,
+        username: 'test_bot',
+        features: ['mention_replies', 'community_posts'],
+        communities: [
+          { id: 'comm-123', name: 'Test Community', postFrequency: 1 },
+        ],
+      },
+    },
+    llm: { provider: 'openrouter', model: 'test', temperature: 0.7, maxTokens: 1024 },
+    media: { image: { provider: 'replicate', model: 'flux' } },
+    scheduling: {},
+    behavior: { responseDelayMs: [0, 0], typingIndicator: false, ignoreBots: true, cooldownMinutes: 0, maxContextMessages: 10 },
+    tools: [],
+    secrets: [],
+  };
+}
+
+function createMockTwitterClientWithSearch() {
+  return {
+    v2: {
+      tweet: mock(() => Promise.resolve({ data: { id: 'tweet-123' } })),
+      like: mock(() => Promise.resolve({ data: { liked: true } })),
+      userMentionTimeline: mock(() => Promise.resolve({ data: { data: [] }, includes: {} })),
+      singleTweet: mock(() => Promise.resolve({ data: null, includes: {} })),
+      me: mock(() => Promise.resolve({ data: { id: 'bot-user-id' } })),
+      search: mock(() => Promise.resolve({
+        data: {
+          data: [
+            { id: 'ct-1', text: 'Community tweet 1', author_id: 'u1', created_at: '2026-01-20T10:00:00Z' },
+            { id: 'ct-2', text: 'Community tweet 2', author_id: 'u2', created_at: '2026-01-20T11:00:00Z' },
+          ],
+        },
+        includes: {
+          users: [
+            { id: 'u1', username: 'alice', name: 'Alice' },
+            { id: 'u2', username: 'bob', name: 'Bob' },
+          ],
+        },
+      })),
+    },
+    v1: {
+      uploadMedia: mock(() => Promise.resolve('media-id-1')),
+    },
+  } as unknown as TwitterApi;
+}
+
+describe('TwitterAdapter - getCommunityTimeline', () => {
+  it('throws when client not initialized', async () => {
+    const unconfiguredAdapter = new TwitterAdapter(
+      createMockAvatarConfig(false),
+      createMockCredentials()
+    );
+
+    await expect(
+      unconfiguredAdapter.getCommunityTimeline('comm-123')
+    ).rejects.toThrow('Twitter client not initialized');
+  });
+
+  it('returns parsed envelopes on successful search', async () => {
+    const mockClient = createMockTwitterClientWithSearch();
+    const adapter = new TwitterAdapter(
+      createMockAvatarConfigWithCommunities(),
+      createMockCredentials(),
+      mockClient
+    );
+
+    const result = await adapter.getCommunityTimeline('comm-123');
+
+    expect(result).toHaveLength(2);
+    expect(result[0].messageId).toBe('ct-1');
+    expect(result[0].content.text).toBe('Community tweet 1');
+    expect(result[1].messageId).toBe('ct-2');
+    expect(result[1].sender.username).toBe('bob');
+
+    // Verify search was called with community name
+    const searchMock = mockClient.v2.search as unknown as ReturnType<typeof mock>;
+    expect(searchMock).toHaveBeenCalledTimes(1);
+    const query = searchMock.mock.calls[0][0] as string;
+    expect(query).toContain('Test Community');
+    expect(query).toContain('-is:retweet');
+  });
+
+  it('uses community ID in query when name not found', async () => {
+    const mockClient = createMockTwitterClientWithSearch();
+    const adapter = new TwitterAdapter(
+      createMockAvatarConfigWithCommunities(),
+      createMockCredentials(),
+      mockClient
+    );
+
+    // Search for a community ID not in config
+    await adapter.getCommunityTimeline('unknown-comm');
+
+    const searchMock = mockClient.v2.search as unknown as ReturnType<typeof mock>;
+    const query = searchMock.mock.calls[0][0] as string;
+    expect(query).toContain('community unknown-comm');
+    expect(query).toContain('-is:retweet');
+  });
+
+  it('passes sinceId to the search call', async () => {
+    const mockClient = createMockTwitterClientWithSearch();
+    const adapter = new TwitterAdapter(
+      createMockAvatarConfigWithCommunities(),
+      createMockCredentials(),
+      mockClient
+    );
+
+    await adapter.getCommunityTimeline('comm-123', 'since-tweet-99');
+
+    const searchMock = mockClient.v2.search as unknown as ReturnType<typeof mock>;
+    const opts = searchMock.mock.calls[0][1] as Record<string, unknown>;
+    expect(opts.since_id).toBe('since-tweet-99');
+  });
+
+  it('clamps maxResults to API range (10..100)', async () => {
+    const mockClient = createMockTwitterClientWithSearch();
+    const adapter = new TwitterAdapter(
+      createMockAvatarConfigWithCommunities(),
+      createMockCredentials(),
+      mockClient
+    );
+
+    // maxResults below minimum should be clamped to 10
+    await adapter.getCommunityTimeline('comm-123', undefined, 3);
+
+    const searchMock = mockClient.v2.search as unknown as ReturnType<typeof mock>;
+    const opts = searchMock.mock.calls[0][1] as Record<string, unknown>;
+    expect(opts.max_results).toBe(10);
+  });
+
+  it('returns empty array on 403 tier-limited error (graceful degradation)', async () => {
+    const mockClient = createMockTwitterClientWithSearch();
+    const err = new Error('Forbidden') as any;
+    err.code = 403;
+    err.data = { detail: 'Search not available on Free tier' };
+    (mockClient.v2 as any).search = mock(() => Promise.reject(err));
+
+    const adapter = new TwitterAdapter(
+      createMockAvatarConfigWithCommunities(),
+      createMockCredentials(),
+      mockClient
+    );
+
+    const result = await adapter.getCommunityTimeline('comm-123');
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array on transient 500 error (graceful degradation)', async () => {
+    const mockClient = createMockTwitterClientWithSearch();
+    const err = new Error('Internal Server Error') as any;
+    err.code = 500;
+    (mockClient.v2 as any).search = mock(() => Promise.reject(err));
+
+    const adapter = new TwitterAdapter(
+      createMockAvatarConfigWithCommunities(),
+      createMockCredentials(),
+      mockClient
+    );
+
+    const result = await adapter.getCommunityTimeline('comm-123');
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array on unknown error (graceful degradation)', async () => {
+    const mockClient = createMockTwitterClientWithSearch();
+    (mockClient.v2 as any).search = mock(() => Promise.reject(new Error('Something broke')));
+
+    const adapter = new TwitterAdapter(
+      createMockAvatarConfigWithCommunities(),
+      createMockCredentials(),
+      mockClient
+    );
+
+    const result = await adapter.getCommunityTimeline('comm-123');
+    expect(result).toEqual([]);
+  });
+
+  it('handles empty search results', async () => {
+    const mockClient = createMockTwitterClientWithSearch();
+    (mockClient.v2 as any).search = mock(() => Promise.resolve({
+      data: { data: undefined },
+      includes: {},
+    }));
+
+    const adapter = new TwitterAdapter(
+      createMockAvatarConfigWithCommunities(),
+      createMockCredentials(),
+      mockClient
+    );
+
+    const result = await adapter.getCommunityTimeline('comm-123');
+    expect(result).toEqual([]);
+  });
+});
+
+describe('TwitterAdapter - fetchTweetWithAuthor retry logic', () => {
+  it('retries on transient 500 error and returns null after exhausting retries', async () => {
+    const mockClient = createMockTwitterClient();
+    const err = new Error('Internal Server Error') as any;
+    err.code = 500;
+    (mockClient.v2 as any).singleTweet = mock(() => Promise.reject(err));
+
+    const adapter = new TwitterAdapter(createMockAvatarConfig(), createMockCredentials(), mockClient);
+
+    // buildReplyChainContextText calls fetchTweetWithAuthor internally
+    const context = await adapter.buildReplyChainContextText({
+      id: 'm1',
+      text: '@test_bot hi',
+      referenced_tweets: [{ type: 'replied_to', id: 'p1' }],
+    } as any);
+
+    // Should return undefined since fetchTweetWithAuthor returns null after retries
+    expect(context).toBeUndefined();
+
+    // singleTweet should have been called multiple times (initial + retry)
+    const singleTweetMock = mockClient.v2.singleTweet as unknown as ReturnType<typeof mock>;
+    expect(singleTweetMock.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('does not retry on tier-limited 403 error', async () => {
+    const mockClient = createMockTwitterClient();
+    const err = new Error('Forbidden') as any;
+    err.code = 403;
+    err.data = { detail: 'Not available on Free tier' };
+    (mockClient.v2 as any).singleTweet = mock(() => Promise.reject(err));
+
+    const adapter = new TwitterAdapter(createMockAvatarConfig(), createMockCredentials(), mockClient);
+
+    const context = await adapter.buildReplyChainContextText({
+      id: 'm1',
+      text: '@test_bot hi',
+      referenced_tweets: [{ type: 'replied_to', id: 'p1' }],
+    } as any);
+
+    expect(context).toBeUndefined();
+
+    // singleTweet should have been called only once (no retry for tier-limited)
+    const singleTweetMock = mockClient.v2.singleTweet as unknown as ReturnType<typeof mock>;
+    expect(singleTweetMock.mock.calls.length).toBe(1);
+  });
+
+  it('succeeds after initial transient error on retry', async () => {
+    const mockClient = createMockTwitterClient();
+    let callCount = 0;
+    (mockClient.v2 as any).singleTweet = mock((tweetId: string) => {
+      callCount++;
+      if (callCount === 1) {
+        const err = new Error('Internal Server Error') as any;
+        err.code = 500;
+        return Promise.reject(err);
+      }
+      // Succeed on retry
+      return Promise.resolve({
+        data: {
+          id: tweetId,
+          text: 'Parent tweet content',
+          author_id: 'u2',
+        },
+        includes: {
+          users: [{ id: 'u2', username: 'alice', name: 'Alice' }],
+        },
+      });
+    });
+
+    const adapter = new TwitterAdapter(createMockAvatarConfig(), createMockCredentials(), mockClient);
+
+    const context = await adapter.buildReplyChainContextText({
+      id: 'm1',
+      text: '@test_bot hi',
+      referenced_tweets: [{ type: 'replied_to', id: 'p1' }],
+    } as any);
+
+    expect(context).toBeTruthy();
+    expect(context!).toContain('@alice: Parent tweet content');
+    expect(callCount).toBe(2); // first attempt failed, second succeeded
+  });
+});
+
+describe('TwitterAdapter - parseMessage engagement flags', () => {
+  it('sets isMention to true when tweet mentions the bot username', async () => {
+    const adapter = new TwitterAdapter(createMockAvatarConfig(), createMockCredentials());
+    const tweet = { id: '1', text: 'Hello @test_bot what do you think?' };
+    const envelope = await adapter.parseMessage(tweet);
+
+    expect(envelope!.metadata.isMention).toBe(true);
+    expect(envelope!.metadata.priority).toBe('high');
+  });
+
+  it('sets isMention to false when bot username is not mentioned', async () => {
+    const adapter = new TwitterAdapter(createMockAvatarConfig(), createMockCredentials());
+    const tweet = { id: '1', text: 'Hello @other_user' };
+    const envelope = await adapter.parseMessage(tweet);
+
+    expect(envelope!.metadata.isMention).toBe(false);
+    expect(envelope!.metadata.priority).toBe('normal');
+  });
+
+  it('detects isMention case-insensitively', async () => {
+    const adapter = new TwitterAdapter(createMockAvatarConfig(), createMockCredentials());
+    const tweet = { id: '1', text: 'Hey @TEST_BOT!' };
+    const envelope = await adapter.parseMessage(tweet);
+
+    expect(envelope!.metadata.isMention).toBe(true);
+    expect(envelope!.metadata.priority).toBe('high');
   });
 });
