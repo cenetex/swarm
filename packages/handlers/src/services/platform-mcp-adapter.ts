@@ -121,6 +121,9 @@ async function getTokenLaunch(): Promise<TokenLaunchModule> {
 }
 
 const dynamoClient = getDynamoClient();
+const DYNAMODB_TABLE_NAME_ALLOWED_CHARS_REGEX = /^[A-Za-z0-9_.-]+$/;
+const DYNAMODB_TABLE_NAME_MIN_LENGTH = 3;
+const DYNAMODB_TABLE_NAME_MAX_LENGTH = 255;
 
 /** Cached validated ADMIN_TABLE value. */
 let _adminTable: string | undefined;
@@ -132,11 +135,23 @@ let _adminTable: string | undefined;
  */
 export function getAdminTable(): string {
   if (!_adminTable) {
-    const val = process.env.ADMIN_TABLE;
+    const val = process.env.ADMIN_TABLE?.trim();
     if (!val) {
       throw new Error(
         'ADMIN_TABLE environment variable is required but not set. ' +
         'Refusing to fall back to a hardcoded table name.',
+      );
+    }
+    if (val.length < DYNAMODB_TABLE_NAME_MIN_LENGTH || val.length > DYNAMODB_TABLE_NAME_MAX_LENGTH) {
+      throw new Error(
+        `ADMIN_TABLE environment variable is invalid. ` +
+        `Expected ${DYNAMODB_TABLE_NAME_MIN_LENGTH}-${DYNAMODB_TABLE_NAME_MAX_LENGTH} characters, got ${val.length}.`,
+      );
+    }
+    if (!DYNAMODB_TABLE_NAME_ALLOWED_CHARS_REGEX.test(val)) {
+      throw new Error(
+        'ADMIN_TABLE environment variable is invalid. ' +
+        'Expected only characters matching [A-Za-z0-9_.-].',
       );
     }
     _adminTable = val;

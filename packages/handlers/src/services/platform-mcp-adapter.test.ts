@@ -41,9 +41,47 @@ describe('getAdminTable', () => {
     );
   });
 
+  it('throws when ADMIN_TABLE is whitespace only', () => {
+    process.env.ADMIN_TABLE = '   ';
+    expect(() => getAdminTable()).toThrow(
+      'ADMIN_TABLE environment variable is required but not set',
+    );
+  });
+
   it('returns the env value when ADMIN_TABLE is set', () => {
     process.env.ADMIN_TABLE = 'SwarmAdmin-staging';
     expect(getAdminTable()).toBe('SwarmAdmin-staging');
+  });
+
+  it('trims surrounding whitespace from ADMIN_TABLE', () => {
+    process.env.ADMIN_TABLE = '  SwarmAdmin-staging  ';
+    expect(getAdminTable()).toBe('SwarmAdmin-staging');
+  });
+
+  it('throws when ADMIN_TABLE contains invalid characters', () => {
+    process.env.ADMIN_TABLE = 'Swarm Admin staging';
+    expect(() => getAdminTable()).toThrow(
+      'ADMIN_TABLE environment variable is invalid',
+    );
+  });
+
+  it('throws when ADMIN_TABLE is shorter than DynamoDB minimum length', () => {
+    process.env.ADMIN_TABLE = 'ab';
+    expect(() => getAdminTable()).toThrow(
+      'Expected 3-255 characters',
+    );
+  });
+
+  it('accepts ADMIN_TABLE at DynamoDB maximum length', () => {
+    process.env.ADMIN_TABLE = 'a'.repeat(255);
+    expect(getAdminTable()).toBe('a'.repeat(255));
+  });
+
+  it('throws when ADMIN_TABLE exceeds DynamoDB maximum length', () => {
+    process.env.ADMIN_TABLE = 'a'.repeat(256);
+    expect(() => getAdminTable()).toThrow(
+      'Expected 3-255 characters',
+    );
   });
 
   it('caches the value across calls', () => {
