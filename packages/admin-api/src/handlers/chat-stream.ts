@@ -285,7 +285,7 @@ export async function handler(
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           error: 'Invalid request',
-          details: parseResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`),
+          details: parseResult.error.issues.map((e) => `${(e.path as PropertyKey[]).map(String).join('.')}: ${e.message}`),
         }),
       };
     }

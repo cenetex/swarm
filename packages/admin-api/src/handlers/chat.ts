@@ -1304,7 +1304,7 @@ export async function handler(
         event: 'validation_error',
         avatarId: (requestBody.avatar as { id?: string } | undefined)?.id,
         requestId,
-        errors: parseResult.error.errors,
+        errors: parseResult.error.issues,
         bodyPreview: event.body?.substring(0, 500),
       });
       return {
@@ -1312,7 +1312,7 @@ export async function handler(
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           error: 'Invalid request',
-          details: parseResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`),
+          details: parseResult.error.issues.map((e) => `${(e.path as PropertyKey[]).map(String).join('.')}: ${e.message}`),
         }),
       };
     }

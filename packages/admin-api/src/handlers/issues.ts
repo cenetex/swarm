@@ -35,7 +35,7 @@ const IssueCreateSchema = z.object({
   category: z.string().optional(),
   avatarId: z.string().optional(),
   requestId: z.string().optional(),
-  context: z.record(z.unknown()).optional(),
+  context: z.record(z.string(), z.unknown()).optional(),
 });
 
 const ISSUE_STATUSES = ['open', 'acknowledged', 'investigating', 'resolved', 'wontfix'] as const;

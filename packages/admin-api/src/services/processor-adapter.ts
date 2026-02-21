@@ -23,7 +23,7 @@ import {
   registerAllTools,
   type ToolContext,
 } from '@swarm/mcp-server';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { z } from 'zod';
 import type { UserSession } from '../types.js';
 import * as avatars from './avatars.js';
 import * as memory from './memory.js';
@@ -102,7 +102,7 @@ async function convertToolsToLLMFormat(
           name: tool.name,
           description,
           parameters: inputSchema
-            ? sanitizeOpenAiSchema(zodToJsonSchema(inputSchema as Parameters<typeof zodToJsonSchema>[0], { target: 'openApi3' }) as Record<string, unknown>)
+            ? sanitizeOpenAiSchema((() => { const { $schema: _, ...rest } = z.toJSONSchema(inputSchema as any) as Record<string, unknown>; return rest; })())
             : {},
         },
       };

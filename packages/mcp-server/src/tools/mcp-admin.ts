@@ -222,7 +222,7 @@ The server will be added but disabled by default.`,
       command: z.string().optional().describe('For stdio: command to run (e.g., "npx", "node")'),
       args: z.array(z.string()).optional().describe('For stdio: command arguments'),
       url: z.string().optional().describe('For SSE: server URL'),
-      env: z.record(z.string()).optional().describe('Environment variables to set'),
+      env: z.record(z.string(), z.string()).optional().describe('Environment variables to set'),
     }),
     execute: async (input, context): Promise<ToolResult> => {
       const avatarId = input.avatarId || context.avatarId;

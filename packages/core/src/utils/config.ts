@@ -184,7 +184,7 @@ const SchedulingConfigFileSchema = z.object({
   tweets: val.tweets,
   mentionCheck: val.mentionCheck || val.mention_check,
   maintenance: val.maintenance,
-})).default({});
+})).default({ tweets: undefined, mentionCheck: undefined, maintenance: undefined });
 
 const BehaviorConfigFileSchema = z.object({
   response_delay_ms: z.tuple([z.number(), z.number()]).optional(),
@@ -203,7 +203,13 @@ const BehaviorConfigFileSchema = z.object({
   ignoreBots: val.ignoreBots ?? val.ignore_bots ?? true,
   cooldownMinutes: val.cooldownMinutes ?? val.cooldown_minutes ?? 5,
   maxContextMessages: val.maxContextMessages ?? val.max_context_messages ?? 20,
-})).default({});
+})).default({
+  responseDelayMs: [1000, 3000] as [number, number],
+  typingIndicator: true,
+  ignoreBots: true,
+  cooldownMinutes: 5,
+  maxContextMessages: 20,
+});
 
 const SolanaFeatureFileSchema = z.enum([
   'token_gating',

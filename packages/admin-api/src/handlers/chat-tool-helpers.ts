@@ -16,7 +16,7 @@ import {
   type AllServices,
 } from '@swarm/mcp-server';
 import { hasExecuteFunction, type Tool } from '@openrouter/sdk';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { z } from 'zod';
 import type {
   AdminChatMessage,
   ToolCall,
@@ -179,10 +179,8 @@ function convertInputSchemaToParameters(
 ): Record<string, unknown> {
   let rawSchema: unknown;
   try {
-    rawSchema = zodToJsonSchema(
-      inputSchema as Parameters<typeof zodToJsonSchema>[0],
-      { target: 'jsonSchema7' }
-    );
+    const { $schema: _, ...rest } = z.toJSONSchema(inputSchema as any) as Record<string, unknown>;
+    rawSchema = rest;
   } catch (err) {
     logger.warn('Failed to convert tool inputSchema to JSON Schema', {
       event: 'tool_schema_conversion_error',

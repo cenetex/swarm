@@ -714,7 +714,7 @@ async function handleChatCompletions(
     const body = JSON.parse(event.body || '{}');
     const parseResult = ChatCompletionRequestSchema.safeParse(body);
     if (!parseResult.success) {
-      const errorDetails = parseResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+      const errorDetails = parseResult.error.issues.map((e) => `${(e.path as PropertyKey[]).map(String).join('.')}: ${e.message}`).join(', ');
       return errorResponse(400, `Invalid request: ${errorDetails}`, 'invalid_request_error', undefined, corsHeaders);
     }
     request = parseResult.data;

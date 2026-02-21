@@ -231,7 +231,7 @@ export function createPresenceTools(services: PresenceServices) {
         message: z.string().min(1).max(4096).describe('Message text to post'),
         options: z.object({
           parseMode: z.string().optional().describe('Parse mode (HTML, Markdown) for Telegram'),
-          embed: z.record(z.unknown()).optional().describe('Embed data for Discord'),
+          embed: z.record(z.string(), z.unknown()).optional().describe('Embed data for Discord'),
         }).optional(),
       }),
       execute: async (input, _context): Promise<ToolResult> => {

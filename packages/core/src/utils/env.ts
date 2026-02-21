@@ -330,11 +330,7 @@ export function requireEnv(name: string, source: Record<string, string | undefin
   if (!value) {
     throw new EnvValidationError(
       new z.ZodError([{
-        code: 'too_small',
-        minimum: 1,
-        type: 'string',
-        inclusive: true,
-        exact: false,
+        code: 'custom',
         message: `Required environment variable ${name} is not set`,
         path: [name],
       }]),

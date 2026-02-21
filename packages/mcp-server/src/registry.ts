@@ -12,7 +12,12 @@
  * 5. Type-safe input/output validation
  */
 import { z, type ZodType, type ZodObject, type ZodRawShape } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+
+/** Convert a zod schema to JSON Schema, stripping the $schema field for OpenAI/MCP compat */
+function zodToJsonSchema(schema: ZodType<any>, _opts?: { target?: string }): Record<string, unknown> {
+  const { $schema: _, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
+  return rest;
+}
 import { CATEGORY_TOOLSET_MAP, TOOLSET_DEFAULT_TAGS, type ToolsetId, type ToolTag } from './tool-metadata.js';
 
 // ============================================================================
@@ -214,8 +219,8 @@ export class ToolRegistry {
     // Validate input
     const parseResult = tool.inputSchema.safeParse(input);
     if (!parseResult.success) {
-      const issues = parseResult.error.errors.map(e => ({
-        path: e.path.map(p => String(p)),
+      const issues = parseResult.error.issues.map((e) => ({
+        path: e.path.map((p: PropertyKey) => String(p)),
         message: e.message,
       }));
 
@@ -243,7 +248,7 @@ export class ToolRegistry {
 
       return {
         success: false,
-        error: `Validation error: ${parseResult.error.errors.map(e => e.message).join(', ')}`,
+        error: `Validation error: ${parseResult.error.issues.map((e) => e.message).join(', ')}`,
         data: extra as T,
       };
     }
@@ -462,7 +467,7 @@ export function defineTool<
   contextBuilder?: (context: ToolContext) => Promise<string | undefined>;
   shouldShow?: (context: ToolContext) => Promise<boolean>;
 }): ToolDefinition<z.infer<TInput>, TOutput> {
-  return definition as ToolDefinition<z.infer<TInput>, TOutput>;
+  return definition as unknown as ToolDefinition<z.infer<TInput>, TOutput>;
 }
 
 /**

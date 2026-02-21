@@ -9,7 +9,6 @@ import type {
   APIGatewayProxyResultV2,
 } from 'aws-lambda';
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { authenticateRequest } from '../auth/request-auth.js';
 import { isAuthError } from '../auth/errors.js';
 import { isRequestValidationError, validateRequestBody } from '../middleware/validate.js';
@@ -218,7 +217,7 @@ export async function handler(
           name: tool.name,
           description,
           toolset: tool.toolset || 'core',
-          parameters: zodToJsonSchema(tool.inputSchema, { target: 'openApi3' }) as Record<string, unknown>,
+          parameters: (() => { const { $schema: _, ...rest } = z.toJSONSchema(tool.inputSchema) as Record<string, unknown>; return rest; })(),
         };
       })
     );

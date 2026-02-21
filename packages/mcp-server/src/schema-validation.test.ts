@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+const zodToJsonSchema = (schema: any) => { const { $schema: _, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>; return rest; };
 import { ToolRegistry, defineTool } from './registry.js';
 
 describe('Schema Validation - Basic Types', () => {

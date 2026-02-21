@@ -781,7 +781,7 @@ export const IgnoreActionSchema = z.object({
 export const SolanaActionSchema = z.object({
   type: z.literal('solana'),
   operation: z.enum(['transfer', 'mint_nft', 'verify_balance', 'airdrop']),
-  params: z.record(z.unknown()),
+  params: z.record(z.string(), z.unknown()),
 });
 
 export const ResponseActionSchema = z.discriminatedUnion('type', [

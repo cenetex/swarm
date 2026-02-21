@@ -10,8 +10,7 @@ import {
   Tool,
 } from '@aws-sdk/client-bedrock-runtime';
 import Anthropic from '@anthropic-ai/sdk';
-import { zodToJsonSchema } from 'zod-to-json-schema';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type {
   LLMService,
   LLMConfig,
@@ -83,7 +82,8 @@ async function fetchWithRetry(
  * Convert a Zod schema to JSON Schema for LLM tool definitions
  */
 function convertZodToJsonSchema(schema: z.ZodSchema): Record<string, unknown> {
-  return zodToJsonSchema(schema, { target: 'openApi3' }) as Record<string, unknown>;
+  const { $schema: _, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
+  return rest;
 }
 
 export class BedrockLLMService implements LLMService {

@@ -10,7 +10,7 @@ import {
   logger,
 } from '@swarm/core';
 import { OpenRouter } from '@openrouter/sdk';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { z } from 'zod';
 
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 export const LLM_MODEL = process.env.LLM_MODEL || DEFAULT_LLM_MODEL;
@@ -370,7 +370,8 @@ function resolveFallbackToolParameters(tool: FallbackTool, toolIndex?: number): 
 
   let rawSchema: unknown;
   try {
-    rawSchema = zodToJsonSchema(inputSchema as Parameters<typeof zodToJsonSchema>[0], { target: 'jsonSchema7' });
+    const { $schema: _, ...rest } = z.toJSONSchema(inputSchema as any) as Record<string, unknown>;
+    rawSchema = rest;
   } catch (err) {
     logger.warn('zodToJsonSchema conversion failed for tool, falling back to plain schema', {
       event: 'tool_schema_conversion_error',
