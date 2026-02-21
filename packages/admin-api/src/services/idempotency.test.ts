@@ -360,6 +360,79 @@ describe('clear', () => {
 });
 
 // ============================================================================
+// remove() behavior
+// ============================================================================
+describe('remove', () => {
+  it('should send a DeleteCommand to DynamoDB', async () => {
+    const { store, mockSend } = createTestStore<string>();
+
+    // Set the key first
+    mockSend.mockResolvedValueOnce({}); // PutCommand
+    await store.set('remove-key', 'value');
+
+    // Remove the key
+    mockSend.mockResolvedValueOnce({}); // DeleteCommand
+    await store.remove('remove-key');
+
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    const deleteCall = mockSend.mock.calls[1][0];
+    expect(deleteCall.input.Key.pk).toBe('IDEMPOTENCY#remove-key');
+    expect(deleteCall.input.Key.sk).toBe('IDEMPOTENCY');
+  });
+
+  it('should remove the key from memory fallback', async () => {
+    const nowMs = 1000;
+    const { store, mockSend } = createTestStore<string>({ now: () => nowMs, ttlMs: 5000 });
+
+    // Set via DynamoDB + memory
+    mockSend.mockResolvedValueOnce({}); // PutCommand
+    await store.set('mem-remove-key', 'value');
+
+    // Remove succeeds in DynamoDB + memory
+    mockSend.mockResolvedValueOnce({}); // DeleteCommand
+    await store.remove('mem-remove-key');
+
+    // Get falls back to memory -- key should be gone
+    mockSend.mockRejectedValueOnce(new Error('DynamoDB unavailable'));
+    const result = await store.get('mem-remove-key');
+    expect(result).toBeNull();
+  });
+
+  it('should remove from memory even when DynamoDB delete fails', async () => {
+    const nowMs = 1000;
+    const { store, mockSend } = createTestStore<string>({ now: () => nowMs, ttlMs: 5000 });
+
+    // Set via DynamoDB + memory
+    mockSend.mockResolvedValueOnce({});
+    await store.set('fail-remove-key', 'value');
+
+    // Remove fails in DynamoDB
+    mockSend.mockRejectedValueOnce(new Error('DynamoDB unavailable'));
+    await store.remove('fail-remove-key');
+
+    // Memory fallback should not have the key
+    mockSend.mockRejectedValueOnce(new Error('DynamoDB unavailable'));
+    const result = await store.get('fail-remove-key');
+    expect(result).toBeNull();
+  });
+
+  it('should allow re-claiming a removed key', async () => {
+    const { store, mockSend } = createTestStore<string>();
+
+    // Set, remove, then set again
+    mockSend.mockResolvedValueOnce({}); // first set
+    await store.set('reclaim-key', 'first');
+
+    mockSend.mockResolvedValueOnce({}); // remove
+    await store.remove('reclaim-key');
+
+    mockSend.mockResolvedValueOnce({}); // second set succeeds (key was removed)
+    const result = await store.set('reclaim-key', 'second');
+    expect(result).toBe(true);
+  });
+});
+
+// ============================================================================
 // Condition expression correctness
 // ============================================================================
 describe('condition expression', () => {
