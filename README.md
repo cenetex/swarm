@@ -2,6 +2,12 @@
 
 AI avatar stack for Telegram-first social bots, with a chat-based admin UI, Solana wallet authentication, NFT gating, channel-aware webhook handler, reusable media/gallery services, and an SQS-driven processing pipeline.
 
+## Start Here by Goal
+- **Ship or debug runtime behavior**: [AGENTS.md](AGENTS.md) for triage/test workflow, then [docs/RUNBOOK.md](docs/RUNBOOK.md) and [docs/MONITORING-OPERATOR-GUIDE.md](docs/MONITORING-OPERATOR-GUIDE.md) for incidents.
+- **Understand system architecture quickly**: [ARCHITECTURE.md](ARCHITECTURE.md), the component map below, then [docs/UNIFIED-AGENT-BRAIN-RFC.md](docs/UNIFIED-AGENT-BRAIN-RFC.md) for the tool/runtime model.
+- **Pick roadmap work**: [ROADMAP.md](ROADMAP.md), [PLAN.md](PLAN.md), [docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md](docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md), [docs/ROADMAP-M2-MULTI-PLATFORM.md](docs/ROADMAP-M2-MULTI-PLATFORM.md).
+- **Operate safely in production**: [docs/SECURITY.md](docs/SECURITY.md), [docs/PRODUCTION-DEPLOYMENT-CHECKLIST.md](docs/PRODUCTION-DEPLOYMENT-CHECKLIST.md), and [docs/OPERATIONS-REPORTS.md](docs/OPERATIONS-REPORTS.md).
+
 ## Highlights
 - **Solana Wallet Authentication**: Sign in with Phantom wallet (QR code on mobile, browser extension on desktop). NFT gating controls avatar creation and inhabitation.
 - Chat-driven admin console (React) for creating and configuring avatars, syncing chat history across devices, and driving setup actions through LLM tool calls.
@@ -18,13 +24,26 @@ AI avatar stack for Telegram-first social bots, with a chat-based admin UI, Sola
 - Infra: [packages/infra](packages/infra) — CDK app/constructs for queues, tables, buckets, and stacks.
 - MCP Server: [packages/mcp-server](packages/mcp-server) — Unified tool registry for MCP-compatible clients and Lambda handlers.
 
-## Web → Telegram Flow
+## Runtime Modes
+- **Avatar webhook path**: Telegram updates hit `/webhook/telegram/{avatarId}` and can be processed with channel-aware gating plus tool execution for low-friction iteration.
+- **Queue-backed runtime path**: Ingested envelopes move through SQS (`ingest -> message-processor -> response-sender`) for higher throughput and clearer operational isolation.
+
+## Narrative: Web -> Telegram
 1) **Create/configure via web**: Admin UI calls the admin API to create avatars and chat with the setup bot ([packages/admin-ui/src/api](packages/admin-ui/src/api)). Avatar metadata is stored in DynamoDB and synced to the runtime state table ([packages/admin-api/src/services/avatars.ts](packages/admin-api/src/services/avatars.ts)). Secrets are collected via tool calls and saved to Secrets Manager.
-2) **Telegram webhook ingest**: Telegram sends updates to `/webhook/telegram/{avatarId}`. The handler validates the secret token/IP, deduplicates updates, loads avatar config/secrets, and enqueues work into the shared runtime ([packages/handlers/src/telegram-webhook-shared.ts](packages/handlers/src/telegram-webhook-shared.ts)).
+2) **Telegram webhook ingest**: Telegram sends updates to `/webhook/telegram/{avatarId}`. The handler validates the secret token/IP, deduplicates updates, loads avatar config/secrets, and enqueues work into the shared runtime ([packages/handlers/src/telegram/telegram-webhook-shared.ts](packages/handlers/src/telegram/telegram-webhook-shared.ts)).
 3) **Channel-aware gating**: Messages are buffered and run through a state machine (IDLE → ACTIVE → COOLDOWN) to avoid over-replying and to group context ([packages/admin-api/src/services/channel-state.ts](packages/admin-api/src/services/channel-state.ts)).
 4) **LLM + tools**: The handler calls the configured OpenRouter model with tool definitions for image/video generation, gallery lookup, and wallet info. Tool executions use media, gallery, wallet, and credit services before replying.
 5) **Respond on Telegram**: Replies and media are sent via the Telegram Bot API with typing indicators and optional media uploads; gallery items can be replayed, and video generation jobs report back when ready.
-6) **SQS processing path** (runtime): For deployed avatars using the shared pipeline, inbound envelopes go to the message queue, `message-processor` generates actions with the core response generator, and `response-sender` dispatches to Telegram/Twitter/Web adapters while recording activity and channel state ([packages/handlers/src/message-processor.ts](packages/handlers/src/message-processor.ts), [packages/handlers/src/response-sender.ts](packages/handlers/src/response-sender.ts)).
+6) **SQS processing path** (runtime): For deployed avatars using the shared pipeline, inbound envelopes go to the message queue, `message-processor` generates actions with the core response generator, and `response-sender` dispatches to Telegram/Twitter/Web adapters while recording activity and channel state ([packages/handlers/src/messaging/message-processor.ts](packages/handlers/src/messaging/message-processor.ts), [packages/handlers/src/messaging/response-sender.ts](packages/handlers/src/messaging/response-sender.ts)).
+
+## Debugging Jump Table
+| Symptom | Start Here | Fast Evidence |
+| --- | --- | --- |
+| Telegram webhook rejects requests or avatar stays silent | [packages/handlers/src/telegram/telegram-webhook-shared.ts](packages/handlers/src/telegram/telegram-webhook-shared.ts), [packages/handlers/src/telegram/webhook-security.ts](packages/handlers/src/telegram/webhook-security.ts), [docs/RUNBOOK.md](docs/RUNBOOK.md) | `./scripts/avatar-logs.sh staging <avatarId> --since 2h --level ERROR` |
+| Admin chat LLM/tool calls fail | [packages/admin-api/src/handlers/chat.ts](packages/admin-api/src/handlers/chat.ts), [packages/admin-api/src/handlers/chat-llm.ts](packages/admin-api/src/handlers/chat-llm.ts), [packages/admin-api/src/services/mcp-adapter.ts](packages/admin-api/src/services/mcp-adapter.ts) | `./scripts/test-api.sh staging chat '{"message":"debug","history":[]}'` |
+| Inbound message accepted but no outbound send | [packages/handlers/src/messaging/message-processor.ts](packages/handlers/src/messaging/message-processor.ts), [packages/handlers/src/messaging/response-sender.ts](packages/handlers/src/messaging/response-sender.ts), [packages/handlers/src/messaging/continuation-processor.ts](packages/handlers/src/messaging/continuation-processor.ts) | `./scripts/avatar-logs.sh staging <avatarId> --since 2h --query timeout` |
+| Avatar config/secrets drift across services | [packages/admin-api/src/services/avatars.ts](packages/admin-api/src/services/avatars.ts), [packages/admin-api/src/services/config-sync.ts](packages/admin-api/src/services/config-sync.ts), [packages/admin-api/src/services/secrets.ts](packages/admin-api/src/services/secrets.ts) | `./scripts/avatar-inspect.sh staging <avatarId>` |
+| Admin UI session/auth returns 401/403 | [packages/admin-api/src/auth](packages/admin-api/src/auth), [packages/admin-api/src/handlers/wallet-auth.ts](packages/admin-api/src/handlers/wallet-auth.ts), [docs/AUTHENTICATION-IMPROVEMENTS.md](docs/AUTHENTICATION-IMPROVEMENTS.md) | `./scripts/test-api.sh staging avatars GET` |
 
 ## Capabilities
 - **Media tools**: Image generation (Nano Banana Pro / Flux-like), async video jobs with webhook callbacks, sticker creation, profile/reference image uploads, and gallery reuse ([packages/admin-api/src/services/media.ts](packages/admin-api/src/services/media.ts), [packages/admin-api/src/services/gallery.ts](packages/admin-api/src/services/gallery.ts)).
@@ -40,7 +59,9 @@ git clone https://github.com/atimics/aws-swarm.git
 cd aws-swarm
 pnpm install
 pnpm build
-pnpm test   # optional: runs package tests
+pnpm lint
+pnpm typecheck
+bun test    # optional: workspace tests
 ```
 
 For security best practices, dependency management, and vulnerability handling, see [docs/SECURITY.md](docs/SECURITY.md).
@@ -66,10 +87,12 @@ Local dev expects AWS credentials and the core tables/buckets configured (see CD
 ## Commands
 ```bash
 pnpm build        # Build all packages
-pnpm test         # Run tests
 pnpm dev          # Optional: package-level watch
+pnpm lint         # Lint configured packages
+pnpm typecheck    # Type-check all packages
+bun test          # Run tests
 pnpm cdk diff     # Preview infra changes
-pnpm cdk deploy   # Deploy stacks (see infra package scripts)
+pnpm synth        # Synthesize infra templates
 ```
 
 ## License
