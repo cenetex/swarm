@@ -18,3 +18,21 @@ describe('AdminApiConstruct chat worker IAM permissions (issue #232)', () => {
     expect(workerPermissionsMatch).not.toBeNull();
   });
 });
+
+describe('AdminApiConstruct entitlement fallback alarm (issue #232)', () => {
+  it('defines an EntitlementFallbackAlarm on the Swarm/EntitlementFallback metric', () => {
+    expect(src).toContain("'EntitlementFallbackAlarm'");
+    expect(src).toContain("namespace: 'Swarm'");
+    expect(src).toContain("metricName: 'EntitlementFallback'");
+    expect(src).toContain("Subsystem: 'Entitlements'");
+  });
+
+  it('wires the entitlement fallback alarm to SNS notifications', () => {
+    expect(src).toContain('entitlementFallbackAlarm');
+    // Verify it appears in the alarm array that gets wired to snsAction
+    const alarmArrayMatch = src.match(
+      /for \(const alarm of \[[\s\S]*?entitlementFallbackAlarm[\s\S]*?\]\)/
+    );
+    expect(alarmArrayMatch).not.toBeNull();
+  });
+});

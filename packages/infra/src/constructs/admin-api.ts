@@ -2262,6 +2262,29 @@ export class AdminApiConstruct extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
+    // Entitlement fallback alarm (issue #232)
+    // Fires when getEntitlement fails repeatedly and the system degrades to free tier.
+    // The EMF metric is emitted by the entitlements service under the Swarm namespace.
+    const entitlementFallbackAlarm = new cloudwatch.Alarm(this, 'EntitlementFallbackAlarm', {
+      alarmName: `${alarmPrefix}-entitlement-fallback`,
+      alarmDescription:
+        'Entitlement lookups are failing and falling back to free tier defaults. ' +
+        'Check IAM permissions on the admin table GSI1 and DynamoDB health.',
+      metric: new cloudwatch.Metric({
+        namespace: 'Swarm',
+        metricName: 'EntitlementFallback',
+        dimensionsMap: {
+          Subsystem: 'Entitlements',
+        },
+        period: cdk.Duration.minutes(15),
+        statistic: 'Sum',
+      }),
+      threshold: 5,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
     // Wire all alarms to SNS topic for notifications
     if (snsAction) {
       for (const alarm of [
@@ -2276,6 +2299,7 @@ export class AdminApiConstruct extends Construct {
         publicProfileErrorsAlarm,
         leaderboardErrorsAlarm,
         bedrockEmbeddingErrorsAlarm,
+        entitlementFallbackAlarm,
       ]) {
         alarm.addAlarmAction(snsAction);
       }

@@ -221,4 +221,12 @@ describe('checkLimit - graceful error handling (issue #168)', () => {
     // use PLAN_DEFAULTS.free as fallback
     expect(fnBody).toContain('entitlement?.limits || PLAN_DEFAULTS.free');
   });
+
+  it('should emit an EntitlementFallback EMF metric on failure (issue #232)', () => {
+    const fnMatch = src.match(/export async function checkLimit[\s\S]*?^}/m);
+    const fnBody = fnMatch![0];
+
+    // The catch block should call emitMetric to publish a CloudWatch metric
+    expect(fnBody).toContain("emitMetric('Entitlements', 'EntitlementFallback', 1, 'Count')");
+  });
 });

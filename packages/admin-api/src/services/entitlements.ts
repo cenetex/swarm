@@ -24,6 +24,7 @@ import {
   PLAN_DEFAULTS,
 } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { emitMetric } from '@swarm/core';
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
@@ -431,6 +432,8 @@ export async function checkLimit(
       avatarId,
       error: err instanceof Error ? err.message : String(err),
     });
+    // Emit EMF metric so CloudWatch can alarm on sustained fallback rate
+    emitMetric('Entitlements', 'EntitlementFallback', 1, 'Count');
   }
   const limits = entitlement?.limits || PLAN_DEFAULTS.free;
 

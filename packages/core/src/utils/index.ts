@@ -44,6 +44,16 @@ export {
   canonicalizeMediaUrls,
 } from './media-url.js';
 
+// Metrics (CloudWatch Embedded Metric Format)
+export {
+  MetricsLogger,
+  createMetricsLogger,
+  emitMetric,
+  type MetricUnit,
+  type MetricDatum,
+  type MetricsLoggerOptions,
+} from './metrics.js';
+
 // Centralized environment variable validation
 export {
   BaseEnvSchema,
