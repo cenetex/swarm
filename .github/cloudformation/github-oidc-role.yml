@@ -1,17 +1,22 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'IAM OIDC Provider and Role for GitHub Actions deployments'
+Description: >-
+  IAM OIDC Provider and workflow-scoped roles for GitHub Actions.
+  Implements least-privilege by splitting into three roles:
+    1. Deploy   - full CDK/CloudFormation deploy (main branch & tags only)
+    2. Hotpatch - fast Lambda code-only updates (manual dispatch only)
+    3. Reporting - read-only access for cost reports & runtime issue sync
 
 Parameters:
   GitHubOrg:
     Type: String
     Description: GitHub organization or username
     Default: atimics
-  
+
   GitHubRepo:
     Type: String
     Description: GitHub repository name
     Default: aws-swarm
-  
+
   OIDCProviderArn:
     Type: String
     Description: ARN of existing GitHub OIDC provider (leave empty to create new)
@@ -21,7 +26,9 @@ Conditions:
   CreateOIDCProvider: !Equals [!Ref OIDCProviderArn, '']
 
 Resources:
+  # ─────────────────────────────────────────────────────────────
   # GitHub OIDC Identity Provider
+  # ─────────────────────────────────────────────────────────────
   GitHubOIDCProvider:
     Type: AWS::IAM::OIDCProvider
     Condition: CreateOIDCProvider
@@ -33,12 +40,18 @@ Resources:
         - 6938fd4d98bab03faadb97b34396831e3780aea1
         - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
 
-  # IAM Role for GitHub Actions
-  GitHubActionsRole:
+  # ═══════════════════════════════════════════════════════════════
+  # ROLE 1: Deploy  (deploy.yml, deploy-cdk-reusable, deploy-admin-ui-reusable)
+  #
+  # Trust: main branch pushes + version tags + environment dispatches
+  # This is the only role with write access to infrastructure.
+  # ═══════════════════════════════════════════════════════════════
+  DeployRole:
     Type: AWS::IAM::Role
     Properties:
+      # Keep original name for backward compatibility with existing GitHub secrets
       RoleName: !Sub '${GitHubRepo}-github-actions'
-      Description: !Sub 'Role for GitHub Actions to deploy ${GitHubOrg}/${GitHubRepo}'
+      Description: !Sub 'Deploy role for ${GitHubOrg}/${GitHubRepo} — CDK + Admin UI'
       MaxSessionDuration: 3600
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -54,147 +67,85 @@ Resources:
               StringEquals:
                 'token.actions.githubusercontent.com:aud': sts.amazonaws.com
               StringLike:
-                'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubOrg}/${GitHubRepo}:*'
-      
+                'token.actions.githubusercontent.com:sub':
+                  # Only main branch and version tags can assume deploy role
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/main'
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:ref:refs/tags/v*'
+                  # workflow_dispatch uses environment protection rules
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:staging'
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:production'
+
+      ManagedPolicyArns:
+        - !Ref CDKBootstrapPolicy
+        - !Ref LambdaAndAPIGatewayPolicy
+
       Policies:
-        # CDK Bootstrap permissions
-        - PolicyName: CDKBootstrap
+        # ── CloudFormation + SSM: CDK deploy, stack management, cross-stack params ──
+        # Replaces the previous cloudformation:* wildcard with explicit actions.
+        - PolicyName: CloudFormationAndSSM
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              - Sid: AssumeBootstrapRoles
-                Effect: Allow
-                Action: sts:AssumeRole
-                Resource:
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/cdk-*'
-
-        # Permissions required to run `cdk bootstrap` (create/update/rollback CDKToolkit)
-        - PolicyName: CDKBootstrapResources
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Sid: IAMForBootstrap
+              - Sid: CFNSwarmStacks
                 Effect: Allow
                 Action:
-                  - iam:AttachRolePolicy
-                  - iam:CreatePolicy
-                  - iam:CreatePolicyVersion
-                  - iam:CreateRole
-                  - iam:DeletePolicy
-                  - iam:DeletePolicyVersion
-                  - iam:DeleteRole
-                  - iam:DeleteRolePolicy
-                  - iam:DetachRolePolicy
-                  - iam:GetPolicy
-                  - iam:GetPolicyVersion
-                  - iam:GetRole
-                  - iam:ListPolicyVersions
-                  - iam:PassRole
-                  - iam:PutRolePolicy
-                  - iam:TagPolicy
-                  - iam:TagRole
-                  - iam:UntagPolicy
-                  - iam:UntagRole
-                  - iam:UpdateAssumeRolePolicy
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:ListStackResources
+                  - cloudformation:TagResource
+                  - cloudformation:UntagResource
                 Resource:
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/cdk-hnb659fds-*'
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/cdk-hnb659fds-*'
-
-              - Sid: S3ForBootstrap
+                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/Swarm*/*'
+                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/swarm*/*'
+                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/CDKToolkit/*'
+              - Sid: CFNGlobalRead
                 Effect: Allow
                 Action:
-                  - s3:CreateBucket
-                  - s3:DeleteBucket
-                  - s3:GetBucketLocation
-                  - s3:GetBucketPolicy
-                  - s3:GetEncryptionConfiguration
-                  - s3:GetLifecycleConfiguration
-                  - s3:GetObject*
-                  - s3:ListBucket
-                  - s3:PutEncryptionConfiguration
-                  - s3:PutLifecycleConfiguration
-                  - s3:PutBucketOwnershipControls
-                  - s3:PutBucketPolicy
-                  - s3:PutBucketPublicAccessBlock
-                  - s3:PutBucketTagging
-                  - s3:PutBucketVersioning
-                  - s3:PutObject*
-                  - s3:DeleteObject*
-                Resource:
-                  - !Sub 'arn:aws:s3:::cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}'
-                  - !Sub 'arn:aws:s3:::cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}/*'
-
-              - Sid: ECRForBootstrap
-                Effect: Allow
-                Action:
-                  - ecr:CreateRepository
-                  - ecr:DeleteRepository
-                  - ecr:DescribeRepositories
-                  - ecr:GetAuthorizationToken
-                  - ecr:SetRepositoryPolicy
-                  - ecr:TagResource
-                  - ecr:UntagResource
-                Resource:
-                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cdk-hnb659fds-container-assets-${AWS::AccountId}-${AWS::Region}'
-                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cdk-hnb659fds-container-assets-${AWS::AccountId}-${AWS::Region}/*'
-
-              # GetAuthorizationToken does not support resource-level permissions
-              - Sid: ECRAuthWildcard
-                Effect: Allow
-                Action:
-                  - ecr:GetAuthorizationToken
+                  - cloudformation:ListStacks
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ValidateTemplate
                 Resource: '*'
-
-              - Sid: SSMForBootstrap
+              - Sid: SSMBootstrapRead
                 Effect: Allow
                 Action:
-                  - ssm:DeleteParameter
                   - ssm:GetParameter
-                  - ssm:PutParameter
+                  - ssm:GetParameters
                 Resource:
                   - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cdk-bootstrap/*'
+              - Sid: SSMSwarmParams
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:PutParameter
+                  - ssm:DeleteParameter
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/swarm/*'
 
-              # CDK bootstrap may create a KMS key for the assets bucket.
-              - Sid: KMSForBootstrap
-                Effect: Allow
-                Action:
-                  - kms:CreateAlias
-                  - kms:CreateKey
-                  - kms:DescribeKey
-                  - kms:EnableKeyRotation
-                  - kms:GetKeyPolicy
-                  - kms:PutKeyPolicy
-                  - kms:TagResource
-                Resource: '*'
-        
-        # CloudFormation permissions
-        - PolicyName: CloudFormation
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Sid: CloudFormationFullAccess
-                Effect: Allow
-                Action:
-                  - cloudformation:*
-                Resource: '*'
-              - Sid: DescribeStacks
-                Effect: Allow
-                Action:
-                  - cloudformation:DescribeStacks
-                  - cloudformation:ListStacks
-                Resource: '*'
-        
-        # S3 permissions for CDK assets and Admin UI
-        - PolicyName: S3Access
+        # ── S3 + ECR: CDK assets, container images, Admin UI bucket ──
+        - PolicyName: S3AndECR
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Sid: CDKAssets
                 Effect: Allow
                 Action:
-                  - s3:GetObject*
-                  - s3:PutObject*
-                  - s3:DeleteObject*
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
                   - s3:ListBucket
                   - s3:GetBucketLocation
                 Resource:
@@ -203,20 +154,14 @@ Resources:
               - Sid: AdminUIBucket
                 Effect: Allow
                 Action:
-                  - s3:GetObject*
-                  - s3:PutObject*
-                  - s3:DeleteObject*
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
                   - s3:ListBucket
                   - s3:GetBucketLocation
                 Resource:
                   - 'arn:aws:s3:::swarm-admin-ui-*'
                   - 'arn:aws:s3:::swarm-admin-ui-*/*'
-
-        # ECR permissions (if using container images)
-        - PolicyName: ECRAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
               - Sid: ECRAuth
                 Effect: Allow
                 Action:
@@ -233,102 +178,61 @@ Resources:
                   - ecr:UploadLayerPart
                   - ecr:CompleteLayerUpload
                 Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cdk-*'
-        
-        # SSM Parameter Store (for CDK bootstrap version and swarm cross-stack params)
-        - PolicyName: SSMAccess
+
+        # ── DynamoDB + SQS: CDK-managed tables and queues ──
+        # Replaces previous dynamodb:* and sqs:* wildcards.
+        - PolicyName: DynamoDBAndSQS
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              - Sid: SSMRead
+              - Sid: DynamoDBTableManagement
                 Effect: Allow
                 Action:
-                  - ssm:GetParameter
-                  - ssm:GetParameters
-                Resource:
-                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cdk-bootstrap/*'
-              - Sid: SSMSwarmParams
-                Effect: Allow
-                Action:
-                  - ssm:GetParameter
-                  - ssm:GetParameters
-                  - ssm:PutParameter
-                  - ssm:DeleteParameter
-                Resource:
-                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/swarm/*'
-        
-        # CloudFront invalidation
-        - PolicyName: CloudFrontAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Sid: InvalidateCache
-                Effect: Allow
-                Action:
-                  - cloudfront:CreateInvalidation
-                  - cloudfront:GetInvalidation
-                  - cloudfront:AssociateAlias
-                Resource: '*'
-        
-        # Lambda permissions (for deploying functions)
-        - PolicyName: LambdaAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Sid: LambdaList
-                Effect: Allow
-                Action:
-                  - lambda:ListFunctions
-                  - lambda:GetFunction
-                  - lambda:GetFunctionConfiguration
-                Resource: '*'
-              - Sid: LambdaManagement
-                Effect: Allow
-                Action:
-                  - lambda:*
-                Resource:
-                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:Swarm*'
-                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:swarm*'
-        
-        # API Gateway permissions
-        - PolicyName: APIGatewayAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Sid: APIGateway
-                Effect: Allow
-                Action:
-                  - apigateway:*
-                Resource:
-                  - !Sub 'arn:aws:apigateway:${AWS::Region}::/*'
-        
-        # DynamoDB permissions
-        - PolicyName: DynamoDBAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Sid: DynamoDB
-                Effect: Allow
-                Action:
-                  - dynamodb:*
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:UpdateTable
+                  - dynamodb:UpdateTimeToLive
+                  - dynamodb:UpdateContinuousBackups
+                  - dynamodb:DescribeContinuousBackups
+                  - dynamodb:ListTagsOfResource
+                  - dynamodb:TagResource
+                  - dynamodb:UntagResource
                 Resource:
                   - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Swarm*'
                   - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/swarm*'
-        
-        # SQS permissions
-        - PolicyName: SQSAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Sid: SQS
+              - Sid: DynamoDBGlobalRead
                 Effect: Allow
                 Action:
-                  - sqs:*
+                  - dynamodb:DescribeLimits
+                  - dynamodb:ListTables
+                Resource: '*'
+              - Sid: SQSQueueManagement
+                Effect: Allow
+                Action:
+                  - sqs:CreateQueue
+                  - sqs:DeleteQueue
+                  - sqs:GetQueueAttributes
+                  - sqs:GetQueueUrl
+                  - sqs:SetQueueAttributes
+                  - sqs:TagQueue
+                  - sqs:UntagQueue
+                  - sqs:ListQueueTags
+                  - sqs:AddPermission
+                  - sqs:RemovePermission
                 Resource:
                   - !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:Swarm*'
                   - !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:swarm*'
-        
-        # Secrets Manager permissions
-        - PolicyName: SecretsManagerAccess
+              - Sid: SQSGlobalList
+                Effect: Allow
+                Action:
+                  - sqs:ListQueues
+                Resource: '*'
+
+        # ── Secrets Manager + KMS: CDK-managed secrets and encryption keys ──
+        # Replaces previous kms:Create*/Describe*/Enable*/etc. wildcards.
+        - PolicyName: SecretsAndKMS
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -340,37 +244,41 @@ Resources:
                   - secretsmanager:DeleteSecret
                   - secretsmanager:DescribeSecret
                   - secretsmanager:TagResource
+                  - secretsmanager:UntagResource
+                  - secretsmanager:GetResourcePolicy
+                  - secretsmanager:PutResourcePolicy
+                  - secretsmanager:DeleteResourcePolicy
                 Resource:
                   - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:swarm/*'
-        
-        # KMS permissions
-        - PolicyName: KMSAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Sid: KMS
+              - Sid: KMSKeyManagement
                 Effect: Allow
                 Action:
-                  - kms:Create*
-                  - kms:Describe*
-                  - kms:Enable*
-                  - kms:List*
-                  - kms:Put*
-                  - kms:Update*
-                  - kms:Revoke*
-                  - kms:Disable*
-                  - kms:Get*
-                  - kms:Delete*
+                  - kms:CreateKey
+                  - kms:CreateAlias
+                  - kms:DeleteAlias
+                  - kms:UpdateAlias
+                  - kms:DescribeKey
+                  - kms:EnableKey
+                  - kms:DisableKey
+                  - kms:EnableKeyRotation
+                  - kms:DisableKeyRotation
+                  - kms:GetKeyPolicy
+                  - kms:GetKeyRotationStatus
+                  - kms:PutKeyPolicy
+                  - kms:ListAliases
+                  - kms:ListResourceTags
                   - kms:TagResource
                   - kms:UntagResource
                   - kms:ScheduleKeyDeletion
                   - kms:CancelKeyDeletion
+                # KMS does not support resource-level permissions for CreateKey.
+                # The alias condition limits which keys can be managed.
                 Resource: '*'
                 Condition:
                   StringLike:
                     'kms:RequestAlias': 'alias/swarm/*'
-        
-        # IAM permissions (for creating roles)
+
+        # ── IAM: CDK-managed Lambda/ECS execution roles ──
         - PolicyName: IAMAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -386,11 +294,14 @@ Resources:
                   - iam:DeleteRolePolicy
                   - iam:GetRole
                   - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
                   - iam:PassRole
                   - iam:TagRole
                   - iam:UntagRole
                   - iam:UpdateRole
                   - iam:UpdateRoleDescription
+                  - iam:UpdateAssumeRolePolicy
                 Resource:
                   - !Sub 'arn:aws:iam::${AWS::AccountId}:role/Swarm*'
                   - !Sub 'arn:aws:iam::${AWS::AccountId}:role/swarm*'
@@ -404,9 +315,10 @@ Resources:
                     'iam:AWSServiceName':
                       - lambda.amazonaws.com
                       - apigateway.amazonaws.com
-        
-        # Logs permissions
-        - PolicyName: LogsAccess
+                      - ecs.amazonaws.com
+
+        # ── Logs + ECS + EC2 + CloudFront: CDK-managed infrastructure ──
+        - PolicyName: LogsECSCloudFront
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -419,6 +331,8 @@ Resources:
                   - logs:DeleteRetentionPolicy
                   - logs:TagLogGroup
                   - logs:UntagLogGroup
+                  - logs:TagResource
+                  - logs:UntagResource
                 Resource:
                   - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/Swarm*'
                   - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/swarm*'
@@ -427,7 +341,6 @@ Resources:
                 Action:
                   - logs:CreateLogGroup
                   - logs:DeleteLogGroup
-                  - logs:DescribeLogGroups
                   - logs:PutRetentionPolicy
                   - logs:DeleteRetentionPolicy
                   - logs:TagLogGroup
@@ -436,20 +349,418 @@ Resources:
                   - logs:UntagResource
                 Resource:
                   - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/swarm-*'
+              - Sid: LogsDescribe
+                Effect: Allow
+                Action:
+                  - logs:DescribeLogGroups
+                Resource: '*'
+              - Sid: ECSManagement
+                Effect: Allow
+                Action:
+                  - ecs:CreateCluster
+                  - ecs:DeleteCluster
+                  - ecs:DescribeClusters
+                  - ecs:CreateService
+                  - ecs:DeleteService
+                  - ecs:DescribeServices
+                  - ecs:UpdateService
+                  - ecs:RegisterTaskDefinition
+                  - ecs:DeregisterTaskDefinition
+                  - ecs:DescribeTaskDefinition
+                  - ecs:ListTaskDefinitions
+                  - ecs:TagResource
+                  - ecs:UntagResource
+                # ECS has limited resource-level permission support.
+                # Cluster/service names start with swarm- (enforced by CDK).
+                Resource: '*'
+              - Sid: EC2Describe
+                Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeNetworkInterfaces
+                Resource: '*'
+              - Sid: CloudFrontInvalidate
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                  - cloudfront:GetInvalidation
+                  - cloudfront:AssociateAlias
+                # CloudFront does not support resource-level permissions for these actions.
+                # TODO: scope to specific distribution IDs once stable.
+                Resource: '*'
 
       Tags:
         - Key: Project
           Value: aws-swarm
         - Key: ManagedBy
           Value: CloudFormation
+        - Key: Role
+          Value: deploy
+
+  # ─────────────────────────────────────────────────────────────
+  # Managed Policies for Deploy Role
+  # (Extracted from inline to stay under the 10,240-char inline policy limit)
+  # ─────────────────────────────────────────────────────────────
+
+  # CDK Bootstrap: assume CDK execution roles + bootstrap resources
+  CDKBootstrapPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${GitHubRepo}-deploy-cdk-bootstrap'
+      Description: CDK bootstrap permissions (assume roles, S3, ECR, SSM, KMS)
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AssumeBootstrapRoles
+            Effect: Allow
+            Action: sts:AssumeRole
+            Resource:
+              - !Sub 'arn:aws:iam::${AWS::AccountId}:role/cdk-*'
+          - Sid: IAMForBootstrap
+            Effect: Allow
+            Action:
+              - iam:AttachRolePolicy
+              - iam:CreatePolicy
+              - iam:CreatePolicyVersion
+              - iam:CreateRole
+              - iam:DeletePolicy
+              - iam:DeletePolicyVersion
+              - iam:DeleteRole
+              - iam:DeleteRolePolicy
+              - iam:DetachRolePolicy
+              - iam:GetPolicy
+              - iam:GetPolicyVersion
+              - iam:GetRole
+              - iam:ListPolicyVersions
+              - iam:PassRole
+              - iam:PutRolePolicy
+              - iam:TagPolicy
+              - iam:TagRole
+              - iam:UntagPolicy
+              - iam:UntagRole
+              - iam:UpdateAssumeRolePolicy
+            Resource:
+              - !Sub 'arn:aws:iam::${AWS::AccountId}:role/cdk-hnb659fds-*'
+              - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/cdk-hnb659fds-*'
+          - Sid: S3ForBootstrap
+            Effect: Allow
+            Action:
+              - s3:CreateBucket
+              - s3:DeleteBucket
+              - s3:GetBucketLocation
+              - s3:GetBucketPolicy
+              - s3:GetEncryptionConfiguration
+              - s3:GetLifecycleConfiguration
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:ListBucket
+              - s3:PutEncryptionConfiguration
+              - s3:PutLifecycleConfiguration
+              - s3:PutBucketOwnershipControls
+              - s3:PutBucketPolicy
+              - s3:PutBucketPublicAccessBlock
+              - s3:PutBucketTagging
+              - s3:PutBucketVersioning
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:DeleteObjectVersion
+            Resource:
+              - !Sub 'arn:aws:s3:::cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}'
+              - !Sub 'arn:aws:s3:::cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}/*'
+          - Sid: ECRForBootstrap
+            Effect: Allow
+            Action:
+              - ecr:CreateRepository
+              - ecr:DeleteRepository
+              - ecr:DescribeRepositories
+              - ecr:SetRepositoryPolicy
+              - ecr:TagResource
+              - ecr:UntagResource
+            Resource:
+              - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cdk-hnb659fds-container-assets-${AWS::AccountId}-${AWS::Region}'
+          # ecr:GetAuthorizationToken does not support resource-level permissions
+          - Sid: ECRAuthWildcard
+            Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+            Resource: '*'
+          - Sid: SSMForBootstrap
+            Effect: Allow
+            Action:
+              - ssm:DeleteParameter
+              - ssm:GetParameter
+              - ssm:PutParameter
+            Resource:
+              - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cdk-bootstrap/*'
+          # CDK bootstrap may create a KMS key for the assets bucket
+          - Sid: KMSForBootstrap
+            Effect: Allow
+            Action:
+              - kms:CreateAlias
+              - kms:CreateKey
+              - kms:DescribeKey
+              - kms:EnableKeyRotation
+              - kms:GetKeyPolicy
+              - kms:PutKeyPolicy
+              - kms:TagResource
+            Resource: '*'
+
+  # Lambda + API Gateway: CDK-managed functions and APIs
+  # Replaces previous lambda:* and apigateway:* wildcards.
+  LambdaAndAPIGatewayPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${GitHubRepo}-deploy-lambda-apigw'
+      Description: Lambda and API Gateway management for CDK deploy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: LambdaGlobalRead
+            Effect: Allow
+            Action:
+              - lambda:ListFunctions
+              - lambda:GetAccountSettings
+            Resource: '*'
+          - Sid: LambdaSwarmManagement
+            Effect: Allow
+            Action:
+              - lambda:CreateFunction
+              - lambda:DeleteFunction
+              - lambda:GetFunction
+              - lambda:GetFunctionConfiguration
+              - lambda:GetFunctionCodeSigningConfig
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+              - lambda:PublishVersion
+              - lambda:CreateAlias
+              - lambda:DeleteAlias
+              - lambda:UpdateAlias
+              - lambda:GetAlias
+              - lambda:ListAliases
+              - lambda:ListVersionsByFunction
+              - lambda:AddPermission
+              - lambda:RemovePermission
+              - lambda:GetPolicy
+              - lambda:PutFunctionConcurrency
+              - lambda:DeleteFunctionConcurrency
+              - lambda:TagResource
+              - lambda:UntagResource
+              - lambda:ListTags
+              - lambda:PutFunctionEventInvokeConfig
+              - lambda:DeleteFunctionEventInvokeConfig
+              - lambda:GetFunctionEventInvokeConfig
+              - lambda:CreateEventSourceMapping
+              - lambda:DeleteEventSourceMapping
+              - lambda:GetEventSourceMapping
+              - lambda:UpdateEventSourceMapping
+              - lambda:ListEventSourceMappings
+            Resource:
+              - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:Swarm*'
+              - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:swarm*'
+              - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:event-source-mapping:*'
+          - Sid: LambdaLayerManagement
+            Effect: Allow
+            Action:
+              - lambda:PublishLayerVersion
+              - lambda:DeleteLayerVersion
+              - lambda:GetLayerVersion
+              - lambda:ListLayerVersions
+            Resource:
+              - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:layer:Swarm*'
+              - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:layer:swarm*'
+          - Sid: APIGatewayManagement
+            Effect: Allow
+            Action:
+              - apigateway:GET
+              - apigateway:POST
+              - apigateway:PUT
+              - apigateway:PATCH
+              - apigateway:DELETE
+              - apigateway:TagResource
+              - apigateway:UntagResource
+              - apigateway:UpdateRestApiPolicy
+            Resource:
+              - !Sub 'arn:aws:apigateway:${AWS::Region}::/*'
+
+  # ═══════════════════════════════════════════════════════════════
+  # ROLE 2: Hotpatch  (deploy-lambda-hotpatch.yml)
+  #
+  # Trust: environment-scoped (manual dispatch only)
+  # Minimal permissions: update Lambda function code only.
+  # ═══════════════════════════════════════════════════════════════
+  HotpatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${GitHubRepo}-github-hotpatch'
+      Description: !Sub 'Hotpatch role for ${GitHubOrg}/${GitHubRepo} — Lambda code updates only'
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOIDCProvider
+                - !GetAtt GitHubOIDCProvider.Arn
+                - !Ref OIDCProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+              StringLike:
+                'token.actions.githubusercontent.com:sub':
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:staging'
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:production'
+
+      Policies:
+        - PolicyName: LambdaHotpatch
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: LambdaCodeUpdate
+                Effect: Allow
+                Action:
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:UpdateFunctionCode
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:swarm-*'
+              - Sid: STSIdentity
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: '*'
+
+      Tags:
+        - Key: Project
+          Value: aws-swarm
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Role
+          Value: hotpatch
+
+  # ═══════════════════════════════════════════════════════════════
+  # ROLE 3: Reporting  (cost-activity-report.yml, sync-runtime-issues.yml)
+  #
+  # Trust: environment-scoped (schedule + workflow_dispatch)
+  # Read-only access to CloudFormation outputs, DynamoDB, Cost Explorer,
+  # and Lambda configuration (for extracting env vars).
+  # ═══════════════════════════════════════════════════════════════
+  ReportingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${GitHubRepo}-github-reporting'
+      Description: !Sub 'Read-only reporting role for ${GitHubOrg}/${GitHubRepo}'
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOIDCProvider
+                - !GetAtt GitHubOIDCProvider.Arn
+                - !Ref OIDCProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+              StringLike:
+                'token.actions.githubusercontent.com:sub':
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:staging'
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:production'
+
+      Policies:
+        - PolicyName: ReportingReadOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # cost-activity-report.yml + sync-runtime-issues.yml: read stack outputs
+              - Sid: CFNDescribe
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackResources
+                Resource:
+                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/Swarm*/*'
+                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/swarm*/*'
+              - Sid: CFNList
+                Effect: Allow
+                Action:
+                  - cloudformation:ListStacks
+                Resource: '*'
+              # cost-activity-report.yml: scan DynamoDB for usage metrics
+              - Sid: DynamoDBRead
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:DescribeTable
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Swarm*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/swarm*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Swarm*/index/*'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/swarm*/index/*'
+              # cost-activity-report.yml: query AWS Cost Explorer
+              - Sid: CostExplorer
+                Effect: Allow
+                Action:
+                  - ce:GetCostAndUsage
+                  - ce:GetCostForecast
+                Resource: '*'
+              # sync-runtime-issues.yml: read Lambda env vars for API URL + internal key
+              - Sid: LambdaConfigRead
+                Effect: Allow
+                Action:
+                  - lambda:GetFunctionConfiguration
+                  - lambda:GetFunction
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:Swarm*'
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:swarm*'
+              - Sid: STSIdentity
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: '*'
+
+      Tags:
+        - Key: Project
+          Value: aws-swarm
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Role
+          Value: reporting
 
 Outputs:
+  # Backward-compatible: existing GitHub secret AWS_ROLE_ARN points here
+  DeployRoleArn:
+    Description: ARN of the Deploy role (set as AWS_ROLE_ARN in GitHub environment secrets)
+    Value: !GetAtt DeployRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DeployRoleArn'
+
+  # Alias for backward compatibility
   RoleArn:
-    Description: ARN of the GitHub Actions role (add this to GitHub secrets as AWS_ROLE_ARN)
-    Value: !GetAtt GitHubActionsRole.Arn
+    Description: (Deprecated) Alias for DeployRoleArn — use DeployRoleArn instead
+    Value: !GetAtt DeployRole.Arn
     Export:
       Name: !Sub '${AWS::StackName}-RoleArn'
-  
+
+  HotpatchRoleArn:
+    Description: ARN of the Hotpatch role (set as AWS_HOTPATCH_ROLE_ARN in GitHub environment secrets)
+    Value: !GetAtt HotpatchRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-HotpatchRoleArn'
+
+  ReportingRoleArn:
+    Description: ARN of the Reporting role (set as AWS_REPORTING_ROLE_ARN in GitHub environment secrets)
+    Value: !GetAtt ReportingRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ReportingRoleArn'
+
   OIDCProviderArn:
     Description: ARN of the GitHub OIDC provider
     Value: !If

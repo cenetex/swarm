@@ -47,7 +47,9 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          # Use dedicated hotpatch role (least-privilege: Lambda code updates only).
+          # Falls back to deploy role if hotpatch role secret is not yet configured.
+          role-to-assume: ${{ secrets.AWS_HOTPATCH_ROLE_ARN || secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: fast-deploy-${{ inputs.environment }}
 

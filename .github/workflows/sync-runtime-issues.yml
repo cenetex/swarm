@@ -44,7 +44,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          # Use dedicated read-only reporting role (least-privilege).
+          # Falls back to deploy role if reporting role secret is not yet configured.
+          role-to-assume: ${{ secrets.AWS_REPORTING_ROLE_ARN || secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: internal-issues-sync
 
