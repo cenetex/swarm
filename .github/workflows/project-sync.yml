@@ -114,7 +114,38 @@ jobs:
         run: node .github/scripts/project-sync-reconcile.mjs
 
   # ──────────────────────────────────────────────────
-  # Job 4: Enforce exactly one priority label on issues
+  # Job 4: Enforce P0 WIP cap — alert when active
+  # high-priority issues exceed configured limit.
+  # Runs on nightly reconcile, manual dispatch, and
+  # issue events that may change WIP count.
+  # ──────────────────────────────────────────────────
+  wip-cap-check:
+    name: P0 WIP cap check
+    if: >-
+      github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'issues'
+        && (github.event.action == 'labeled'
+          || github.event.action == 'unlabeled'
+          || github.event.action == 'milestoned'
+          || github.event.action == 'demilestoned'
+          || github.event.action == 'opened'
+          || github.event.action == 'closed'
+          || github.event.action == 'reopened'))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enforce WIP cap
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: node .github/scripts/wip-cap-check.mjs
+
+  # ──────────────────────────────────────────────────
+  # Job 5: Enforce exactly one priority label on issues
   # ──────────────────────────────────────────────────
   check-priority-label:
     name: Check priority label
