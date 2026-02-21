@@ -1,0 +1,15 @@
+# CODEOWNERS — auto-request reviews for security-critical paths
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+* @atimics
+
+# Core platform packages
+packages/core/ @atimics
+packages/handlers/ @atimics
+packages/admin-api/ @atimics
+packages/admin-ui/ @atimics
+packages/infra/ @atimics
+
+# CI/CD and governance
+.github/ @atimics
