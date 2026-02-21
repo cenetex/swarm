@@ -121,7 +121,34 @@ async function getTokenLaunch(): Promise<TokenLaunchModule> {
 }
 
 const dynamoClient = getDynamoClient();
-const ADMIN_TABLE = process.env.ADMIN_TABLE || 'SwarmAdmin-prod';
+
+/** Cached validated ADMIN_TABLE value. */
+let _adminTable: string | undefined;
+
+/**
+ * Return the ADMIN_TABLE env value, throwing on first access if it is not set.
+ * This avoids the previous `|| 'SwarmAdmin-prod'` fallback that could silently
+ * route non-production workloads to the production table.
+ */
+export function getAdminTable(): string {
+  if (!_adminTable) {
+    const val = process.env.ADMIN_TABLE;
+    if (!val) {
+      throw new Error(
+        'ADMIN_TABLE environment variable is required but not set. ' +
+        'Refusing to fall back to a hardcoded table name.',
+      );
+    }
+    _adminTable = val;
+  }
+  return _adminTable;
+}
+
+/** @internal Reset cached table name — test-only. */
+export function _resetAdminTableCache(): void {
+  _adminTable = undefined;
+}
+
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
 /**
@@ -480,7 +507,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
       getGallery: async (_avatarId: string, options?: { type?: 'image' | 'video' | 'sticker'; limit?: number }) => {
         try {
           const result = await dynamoClient.send(new QueryCommand({
-            TableName: ADMIN_TABLE,
+            TableName: getAdminTable(),
             KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
             ExpressionAttributeValues: {
               ':pk': `AVATAR#${avatarId}`,
@@ -518,7 +545,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
       getGalleryItem: async (_avatarId: string, itemId: string) => {
         try {
           const result = await dynamoClient.send(new QueryCommand({
-            TableName: ADMIN_TABLE,
+            TableName: getAdminTable(),
             KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
             FilterExpression: 'id = :id',
             ExpressionAttributeValues: {
@@ -555,7 +582,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         // Simple search by prompt text
         try {
           const result = await dynamoClient.send(new QueryCommand({
-            TableName: ADMIN_TABLE,
+            TableName: getAdminTable(),
             KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
             ExpressionAttributeValues: {
               ':pk': `AVATAR#${avatarId}`,
@@ -1450,9 +1477,9 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         return { portalUrl: portal.url || '' };
       },
       getBillingStatus: async (targetAvatarId: string) => {
-        // Query ADMIN_TABLE directly to avoid cross-package dependency
+        // Query admin table directly to avoid cross-package dependency
         const result = await dynamoClient.send(new QueryCommand({
-          TableName: ADMIN_TABLE,
+          TableName: getAdminTable(),
           IndexName: 'GSI1',
           KeyConditionExpression: 'gsi1pk = :pk AND gsi1sk = :sk',
           ExpressionAttributeValues: {
@@ -1492,7 +1519,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
       getUsage: async (targetAvatarId: string, date?: string) => {
         const dateStr = date || new Date().toISOString().split('T')[0];
         const result = await dynamoClient.send(new GetCommand({
-          TableName: ADMIN_TABLE,
+          TableName: getAdminTable(),
           Key: {
             pk: `USAGE#${targetAvatarId}`,
             sk: `DAY#${dateStr}`,
