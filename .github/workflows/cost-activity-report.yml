@@ -125,6 +125,7 @@ jobs:
           COST_PER_IMAGE_GEN_USD: ${{ vars.COST_PER_IMAGE_GEN_USD }}
           COST_PER_VIDEO_GEN_USD: ${{ vars.COST_PER_VIDEO_GEN_USD }}
           COST_PER_STICKER_GEN_USD: ${{ vars.COST_PER_STICKER_GEN_USD }}
+          MONTHLY_BUDGET_USD: ${{ vars.MONTHLY_BUDGET_USD }}
         run: |
           mkdir -p test-outputs/reports
           node scripts/generate-cost-activity-report.mjs \

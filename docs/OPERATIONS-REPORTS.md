@@ -18,6 +18,25 @@ The workflow writes:
 
 Both are uploaded as workflow artifacts.
 
+## Cost Response Playbook
+
+For cost anomaly triage, containment, and follow-up actions, use:
+
+- `docs/COST-CONTROLS-PLAYBOOK.md`
+
+## Automatic Cost-Control Signals
+
+Each generated report now includes a `signals` block (in JSON and markdown summary table) with machine-evaluated statuses for:
+
+- `awsCostJump`
+- `costPerMessageJump`
+- `spendRiseActivityFlat`
+- `projectedMonthEndSpendBreach`
+
+These are evaluated using the thresholds defined in `docs/COST-CONTROLS-PLAYBOOK.md`.
+
+For budget projection, set `MONTHLY_BUDGET_USD` as a repository/environment variable in GitHub Actions.
+
 ## Data Sources
 
 - Activity usage counters from DynamoDB daily usage records:
@@ -52,6 +71,7 @@ Set repository/environment variables to turn usage into estimated USD:
 - `COST_PER_IMAGE_GEN_USD`
 - `COST_PER_VIDEO_GEN_USD`
 - `COST_PER_STICKER_GEN_USD`
+- `MONTHLY_BUDGET_USD` (enables projected month-end spend breach signal)
 
 If these are unset, estimated usage cost is reported as `0` and AWS Cost Explorer remains the primary cost signal.
 
@@ -62,4 +82,3 @@ The workflow role (`AWS_ROLE_ARN`) should include at minimum:
 - `cloudformation:DescribeStacks`
 - `dynamodb:Query` on the admin table
 - `ce:GetCostAndUsage` (if `include_aws_cost=true`)
-
