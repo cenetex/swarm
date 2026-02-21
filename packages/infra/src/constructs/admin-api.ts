@@ -682,6 +682,13 @@ export class AdminApiConstruct extends Construct {
 
     // Worker permissions
     this.table.grantReadWriteData(this.chatWorkerHandler);
+    // Grant permission to query GSI1 (for entitlement lookups)
+    this.chatWorkerHandler.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['dynamodb:Query'],
+        resources: [`${this.table.tableArn}/index/GSI1`],
+      })
+    );
     llmApiKey.grantRead(this.chatWorkerHandler);
     dreamQueue.grantSendMessages(this.chatWorkerHandler);
     if (replicateApiKey) {
