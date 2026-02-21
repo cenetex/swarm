@@ -72,7 +72,7 @@ jobs:
 
       - name: Cache Lambda Layer
         id: layer-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: packages/layer/nodejs
           key: layer-${{ hashFiles('packages/layer/package.json', 'packages/layer/node-fetch-shim/**', 'packages/layer/abort-controller-shim/**') }}
