@@ -5,92 +5,114 @@
  * Called by the project-sync workflow on issue/PR/branch events.
  * 1. Adds the item to the GitHub Project (idempotent).
  * 2. Maps issue labels to project single-select fields (Priority, Status).
- * 3. Sets the milestone-derived "Target" iteration if the milestone matches
- *    the Roadmap naming convention (Roadmap: Now / Next / Later).
- * 4. Syncs issue status based on branch/PR lifecycle:
- *    - Branch created for issue → In progress
- *    - Branch deleted (no open PR) → Todo
- *    - PR opened/reopened (ready for review) → In review
- *    - PR converted to draft → In progress
- *    - PR closed without merge → Todo (if no other open PRs)
- *    - PR merged → Done
- *
- * Status precedence: Done > In review > In progress > Todo
- * The `status:blocked` label overrides all non-Done states with "Blocked".
+ * 3. Sets Iteration from roadmap milestones:
+ *    - Roadmap: Now  -> current iteration
+ *    - Roadmap: Next -> next iteration
+ *    - Roadmap: Later -> no automatic assignment
+ * 4. Syncs issue status based on branch/PR lifecycle.
+ *    - status:blocked label maps to Status="Blocked" when available.
  *
  * Required env vars (set by the workflow):
- *   GH_TOKEN, PROJECT_OWNER (default "atimics"), PROJECT_NUMBER (default 1),
- *   ISSUE_NODE_ID, ISSUE_LABELS (JSON array of label name strings),
- *   ISSUE_MILESTONE (string), ISSUE_STATE (open|closed),
- *   EVENT_NAME (issues|pull_request|create|delete), EVENT_ACTION,
+ *   GH_TOKEN, PROJECT_OWNER, PROJECT_NUMBER,
+ *   ISSUE_NODE_ID, ISSUE_LABELS, ISSUE_MILESTONE, ISSUE_STATE,
+ *   EVENT_NAME, EVENT_ACTION,
  *   PR_MERGED, PR_DRAFT, PR_NUMBER, PR_BODY,
- *   BRANCH_REF, BRANCH_REF_TYPE, REPO_OWNER, REPO_NAME
+ *   BRANCH_REF, BRANCH_REF_TYPE
  */
 
 import { execFileSync } from "node:child_process";
 
-// ── Config ──────────────────────────────────────────────────────────────────
-
 const PROJECT_OWNER = process.env.PROJECT_OWNER || "atimics";
 const PROJECT_NUMBER = Number(process.env.PROJECT_NUMBER || "1");
 
-/** Map repo labels → Project Priority field option names */
+const MAX_GH_RETRIES = Number(process.env.PROJECT_SYNC_GH_MAX_RETRIES || "5");
+const BASE_BACKOFF_MS = Number(process.env.PROJECT_SYNC_GH_BACKOFF_MS || "1200");
+
 const PRIORITY_MAP = {
   "priority:high": "P0",
   "priority:medium": "P1",
   "priority:low": "P2",
 };
 
-/** Status precedence (higher number wins) */
-const STATUS_PRECEDENCE = {
-  "Todo": 0,
-  "In progress": 1,
-  "In review": 2,
-  "Done": 3,
-};
-
-/** Regex to extract issue number from branch name: <type>/issue-<number>-<slug> */
 const BRANCH_ISSUE_RE = /issue-(\d+)/;
-
-/** Closing keyword regex for PR body */
 const CLOSING_KEYWORD_RE = /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi;
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+const SINGLE_SELECT_FIELD_CACHE = new Map();
+let ITERATION_FIELD_CACHE = null;
+
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function isRetryableGhFailure(error) {
+  const text = [error?.message, error?.stdout, error?.stderr]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+
+  return (
+    text.includes("rate limit") ||
+    text.includes("secondary rate") ||
+    text.includes("stream disconnected") ||
+    text.includes("timed out") ||
+    text.includes("connection reset")
+  );
+}
 
 function gh(args) {
-  const result = execFileSync("gh", args, {
-    encoding: "utf-8",
-    env: { ...process.env },
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return result.trim();
+  for (let attempt = 0; attempt <= MAX_GH_RETRIES; attempt += 1) {
+    try {
+      const result = execFileSync("gh", args, {
+        encoding: "utf-8",
+        env: { ...process.env },
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      return result.trim();
+    } catch (error) {
+      if (!isRetryableGhFailure(error) || attempt === MAX_GH_RETRIES) {
+        throw error;
+      }
+      const waitMs = BASE_BACKOFF_MS * (attempt + 1);
+      console.log(`gh retry ${attempt + 1}/${MAX_GH_RETRIES} after ${waitMs}ms`);
+      sleepMs(waitMs);
+    }
+  }
+
+  throw new Error("unreachable");
 }
 
 function graphql(query, variables = {}) {
   const args = ["api", "graphql", "-f", `query=${query}`];
   for (const [k, v] of Object.entries(variables)) {
-    // Use -F for non-string types (numbers, booleans) so gh sends proper JSON types
     const flag = typeof v === "number" || typeof v === "boolean" ? "-F" : "-f";
     args.push(flag, `${k}=${v}`);
   }
   return JSON.parse(gh(args));
 }
 
-// ── Resolve project metadata ────────────────────────────────────────────────
-
 function getProjectId() {
-  const res = graphql(`
+  const res = graphql(
+    `
     query($owner: String!, $number: Int!) {
       user(login: $owner) {
         projectV2(number: $number) { id }
       }
     }
-  `, { owner: PROJECT_OWNER, number: PROJECT_NUMBER });
+  `,
+    { owner: PROJECT_OWNER, number: PROJECT_NUMBER },
+  );
+
   return res.data.user.projectV2.id;
 }
 
-function getFieldOptionId(projectId, fieldName, optionName) {
-  const res = graphql(`
+function getSingleSelectFieldMeta(projectId, fieldName) {
+  const cacheKey = `${projectId}:${fieldName}`;
+  if (SINGLE_SELECT_FIELD_CACHE.has(cacheKey)) {
+    return SINGLE_SELECT_FIELD_CACHE.get(cacheKey);
+  }
+
+  const res = graphql(
+    `
     query($projectId: ID!) {
       node(id: $projectId) {
         ... on ProjectV2 {
@@ -103,30 +125,146 @@ function getFieldOptionId(projectId, fieldName, optionName) {
         }
       }
     }
-  `, { projectId });
-  const field = res.data.node.field;
-  if (!field || !field.options) return null;
-  const opt = field.options.find((o) => o.name === optionName);
-  return opt ? { fieldId: field.id, optionId: opt.id } : null;
+  `,
+    { projectId },
+  );
+
+  const field = res.data.node.field || null;
+  SINGLE_SELECT_FIELD_CACHE.set(cacheKey, field);
+  return field;
 }
 
-// ── Add item to project ────────────────────────────────────────────────────
+function getFieldOptionId(projectId, fieldName, optionName) {
+  const field = getSingleSelectFieldMeta(projectId, fieldName);
+  if (!field || !field.options) return null;
+  const option = field.options.find((opt) => opt.name === optionName);
+  return option ? { fieldId: field.id, optionId: option.id } : null;
+}
+
+function getIterationFieldMeta(projectId) {
+  if (ITERATION_FIELD_CACHE) return ITERATION_FIELD_CACHE;
+
+  const res = graphql(
+    `
+    query($projectId: ID!) {
+      node(id: $projectId) {
+        ... on ProjectV2 {
+          field(name: "Iteration") {
+            ... on ProjectV2IterationField {
+              id
+              configuration {
+                iterations {
+                  id
+                  title
+                  startDate
+                  duration
+                }
+                completedIterations {
+                  id
+                  title
+                  startDate
+                  duration
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `,
+    { projectId },
+  );
+
+  ITERATION_FIELD_CACHE = res.data.node.field || null;
+  return ITERATION_FIELD_CACHE;
+}
+
+function resolveCurrentAndNextIterations(iterations) {
+  const sorted = [...iterations].sort(
+    (a, b) => Date.parse(a.startDate) - Date.parse(b.startDate),
+  );
+
+  if (sorted.length === 0) {
+    return { currentIteration: null, nextIteration: null };
+  }
+
+  const now = new Date();
+  let currentIteration = sorted.find((iteration) => {
+    const start = new Date(`${iteration.startDate}T00:00:00.000Z`);
+    const durationDays = iteration.duration || 14;
+    const end = new Date(start.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    return now >= start && now < end;
+  });
+
+  if (!currentIteration) {
+    currentIteration =
+      sorted.find((iteration) => now < new Date(`${iteration.startDate}T00:00:00.000Z`)) || sorted[0];
+  }
+
+  const nextIteration =
+    sorted.find(
+      (iteration) => Date.parse(iteration.startDate) > Date.parse(currentIteration.startDate),
+    ) || null;
+
+  return { currentIteration, nextIteration };
+}
+
+function resolveIterationFromMilestone(projectId, milestoneTitle) {
+  const normalized = String(milestoneTitle || "").trim().toLowerCase();
+  if (!normalized) return null;
+
+  if (normalized === "roadmap: later") {
+    console.log("  Iteration: milestone is Roadmap: Later — skipping automatic assignment");
+    return null;
+  }
+
+  if (normalized !== "roadmap: now" && normalized !== "roadmap: next") {
+    return null;
+  }
+
+  const iterationField = getIterationFieldMeta(projectId);
+  if (!iterationField) {
+    console.log("  Iteration field not found — skipping automatic assignment");
+    return null;
+  }
+
+  const liveIterations = iterationField.configuration?.iterations || [];
+  const { currentIteration, nextIteration } = resolveCurrentAndNextIterations(liveIterations);
+
+  if (normalized === "roadmap: now") {
+    if (!currentIteration) {
+      console.log("  Could not resolve current iteration for Roadmap: Now");
+      return null;
+    }
+    return { fieldId: iterationField.id, iteration: currentIteration };
+  }
+
+  if (!nextIteration) {
+    console.log("  Could not resolve next iteration for Roadmap: Next");
+    return null;
+  }
+
+  return { fieldId: iterationField.id, iteration: nextIteration };
+}
 
 function addItemToProject(projectId, contentId) {
-  const res = graphql(`
+  const res = graphql(
+    `
     mutation($projectId: ID!, $contentId: ID!) {
       addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
         item { id }
       }
     }
-  `, { projectId, contentId });
+  `,
+    { projectId, contentId },
+  );
+
   return res.data.addProjectV2ItemById.item.id;
 }
 
-// ── Update a single-select field ───────────────────────────────────────────
-
-function setFieldValue(projectId, itemId, fieldId, optionId) {
-  graphql(`
+function setSingleSelectFieldValue(projectId, itemId, fieldId, optionId) {
+  graphql(
+    `
     mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
       updateProjectV2ItemFieldValue(input: {
         projectId: $projectId,
@@ -137,44 +275,112 @@ function setFieldValue(projectId, itemId, fieldId, optionId) {
         projectV2Item { id }
       }
     }
-  `, { projectId, itemId, fieldId, optionId });
+  `,
+    { projectId, itemId, fieldId, optionId },
+  );
 }
 
-// ── Issue resolution helpers ───────────────────────────────────────────────
+function setIterationFieldValue(projectId, itemId, fieldId, iterationId) {
+  graphql(
+    `
+    mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $iterationId: String!) {
+      updateProjectV2ItemFieldValue(input: {
+        projectId: $projectId,
+        itemId: $itemId,
+        fieldId: $fieldId,
+        value: { iterationId: $iterationId }
+      }) {
+        projectV2Item { id }
+      }
+    }
+  `,
+    { projectId, itemId, fieldId, iterationId },
+  );
+}
 
-/**
- * Extract issue number from a branch name matching <type>/issue-<number>-<slug>.
- * Returns the issue number or null.
- */
+function clearFieldValue(projectId, itemId, fieldId) {
+  graphql(
+    `
+    mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) {
+      clearProjectV2ItemFieldValue(input: {
+        projectId: $projectId,
+        itemId: $itemId,
+        fieldId: $fieldId
+      }) {
+        projectV2Item { id }
+      }
+    }
+  `,
+    { projectId, itemId, fieldId },
+  );
+}
+
+function setStatusWithFallback(projectId, itemId, requestedStatus, contextLabel = "") {
+  let resolved = getFieldOptionId(projectId, "Status", requestedStatus);
+  let resolvedStatus = requestedStatus;
+
+  if (!resolved && requestedStatus === "In review") {
+    resolved = getFieldOptionId(projectId, "Status", "In progress");
+    resolvedStatus = "In progress";
+    if (resolved) {
+      console.log(`${contextLabel}Status fallback: In review -> In progress`);
+    }
+  }
+
+  if (!resolved) {
+    console.log(`${contextLabel}Status option '${requestedStatus}' not found — skipping`);
+    return false;
+  }
+
+  setSingleSelectFieldValue(projectId, itemId, resolved.fieldId, resolved.optionId);
+  console.log(`${contextLabel}Status -> ${resolvedStatus}`);
+  return true;
+}
+
+function setIterationFromMilestone(projectId, itemId, milestoneTitle, contextLabel = "") {
+  const normalized = String(milestoneTitle || "").trim().toLowerCase();
+  if (!normalized || normalized === "roadmap: later") {
+    const iterationField = getIterationFieldMeta(projectId);
+    if (!iterationField) {
+      return false;
+    }
+
+    clearFieldValue(projectId, itemId, iterationField.id);
+    const reason = normalized === "roadmap: later" ? "Roadmap: Later" : "no milestone";
+    console.log(`${contextLabel}Iteration cleared (${reason})`);
+    return true;
+  }
+
+  const resolved = resolveIterationFromMilestone(projectId, milestoneTitle);
+  if (!resolved) {
+    return false;
+  }
+
+  setIterationFieldValue(projectId, itemId, resolved.fieldId, resolved.iteration.id);
+  console.log(`${contextLabel}Iteration -> ${resolved.iteration.title}`);
+  return true;
+}
+
 function issueNumberFromBranch(branchName) {
-  const match = branchName.match(BRANCH_ISSUE_RE);
+  const match = String(branchName || "").match(BRANCH_ISSUE_RE);
   return match ? Number(match[1]) : null;
 }
 
-/**
- * Extract issue numbers linked to a PR via closing keywords in the body
- * and the GitHub closingIssuesReferences API.
- * Returns a Set of issue numbers.
- */
 function resolveLinkedIssues(prNumber, prBody) {
   const issues = new Set();
 
-  // 1. Preferred: closingIssuesReferences from GH API
   if (prNumber) {
     try {
       const prJson = gh(["pr", "view", String(prNumber), "--json", "closingIssuesReferences"]);
       const parsed = JSON.parse(prJson);
-      if (parsed.closingIssuesReferences) {
-        for (const ref of parsed.closingIssuesReferences) {
-          issues.add(ref.number);
-        }
+      for (const ref of parsed.closingIssuesReferences || []) {
+        issues.add(ref.number);
       }
     } catch {
-      // Not all gh versions support this — fall through to regex
+      // Fallback to body regex below.
     }
   }
 
-  // 2. Fallback: closing keywords in PR body
   if (prBody) {
     let match;
     while ((match = CLOSING_KEYWORD_RE.exec(prBody)) !== null) {
@@ -185,39 +391,42 @@ function resolveLinkedIssues(prNumber, prBody) {
   return issues;
 }
 
-/**
- * Resolve the node_id for an issue by number. Returns null if not found.
- */
-function getIssueNodeId(issueNumber) {
+function getIssueNodeData(issueNumber) {
   try {
-    const json = gh(["issue", "view", String(issueNumber), "--json", "id,labels,state"]);
+    const json = gh([
+      "issue",
+      "view",
+      String(issueNumber),
+      "--json",
+      "id,labels,state,milestone",
+    ]);
     return JSON.parse(json);
   } catch {
     return null;
   }
 }
 
-/**
- * Check if there are any open non-draft PRs linked to this issue (via branch name or closing refs).
- * Returns { hasOpenPR: boolean, hasReadyPR: boolean }
- */
 function checkOpenPRsForIssue(issueNumber) {
   let hasOpenPR = false;
   let hasReadyPR = false;
 
   try {
     const prsJson = gh([
-      "pr", "list",
-      "--state", "open",
-      "--limit", "100",
-      "--json", "number,headRefName,body,isDraft",
+      "pr",
+      "list",
+      "--state",
+      "open",
+      "--limit",
+      "100",
+      "--json",
+      "number,headRefName,body,isDraft",
     ]);
     const prs = JSON.parse(prsJson);
 
     for (const pr of prs) {
-      // Check if this PR references the issue
       const branchIssue = issueNumberFromBranch(pr.headRefName);
       const bodyIssues = new Set();
+
       if (pr.body) {
         let match;
         const re = /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi;
@@ -234,55 +443,44 @@ function checkOpenPRsForIssue(issueNumber) {
       }
     }
   } catch {
-    // If we can't list PRs, assume no open PRs
+    // If PR listing fails, conservatively keep default false/false.
   }
 
   return { hasOpenPR, hasReadyPR };
 }
 
-// ── Status computation ─────────────────────────────────────────────────────
-
-/**
- * Apply status to an issue in the project, respecting precedence.
- * Returns true if the status was set.
- */
 function applyIssueStatus(projectId, issueNumber, desiredStatus) {
-  const issueData = getIssueNodeId(issueNumber);
+  const issueData = getIssueNodeData(issueNumber);
   if (!issueData) {
     console.log(`  #${issueNumber}: could not resolve issue — skipping`);
     return false;
   }
 
-  const labels = (issueData.labels || []).map((l) => l.name);
+  const labels = (issueData.labels || []).map((label) => label.name);
   const issueState = (issueData.state || "open").toLowerCase();
+  const contextLabel = `  #${issueNumber}: `;
 
-  // status:blocked overrides all non-Done states
-  if (labels.includes("status:blocked") && desiredStatus !== "Done") {
-    console.log(`  #${issueNumber}: has status:blocked label — not overriding to ${desiredStatus}`);
-    return false;
-  }
-
-  // If issue is closed and we're trying to set a non-Done status, skip
   if (issueState === "closed" && desiredStatus !== "Done") {
-    console.log(`  #${issueNumber}: issue is closed — not setting ${desiredStatus}`);
+    console.log(`${contextLabel}issue is closed — not setting ${desiredStatus}`);
     return false;
   }
 
   const itemId = addItemToProject(projectId, issueData.id);
-  const info = getFieldOptionId(projectId, "Status", desiredStatus);
-  if (info) {
-    setFieldValue(projectId, itemId, info.fieldId, info.optionId);
-    console.log(`  #${issueNumber}: Status → ${desiredStatus}`);
-    return true;
+  if (issueState !== "closed") {
+    setIterationFromMilestone(projectId, itemId, issueData.milestone?.title, contextLabel);
   }
-  return false;
+
+  if (labels.includes("status:blocked") && desiredStatus !== "Done") {
+    const appliedBlocked = setStatusWithFallback(projectId, itemId, "Blocked", contextLabel);
+    if (!appliedBlocked) {
+      console.log(`${contextLabel}has status:blocked label — leaving status unchanged`);
+    }
+    return appliedBlocked;
+  }
+
+  return setStatusWithFallback(projectId, itemId, desiredStatus, contextLabel);
 }
 
-// ── Event handlers ──────────────────────────────────────────────────────────
-
-/**
- * Handle issue events (the original logic).
- */
 function handleIssueEvent(projectId) {
   const nodeId = process.env.ISSUE_NODE_ID;
   const labels = JSON.parse(process.env.ISSUE_LABELS || "[]");
@@ -290,6 +488,7 @@ function handleIssueEvent(projectId) {
   const eventAction = process.env.EVENT_ACTION || "";
   const prMerged = process.env.PR_MERGED === "true";
   const issueNumber = process.env.ISSUE_NUMBER || "?";
+  const issueMilestone = process.env.ISSUE_MILESTONE || "";
 
   if (!nodeId) {
     console.log("No ISSUE_NODE_ID — skipping.");
@@ -298,57 +497,41 @@ function handleIssueEvent(projectId) {
 
   console.log(`Processing issue #${issueNumber} (issues/${eventAction})`);
 
-  // 1. Add to project
   const itemId = addItemToProject(projectId, nodeId);
   console.log(`  Added/found project item: ${itemId}`);
 
-  // 2. Sync Priority label → Priority field
   for (const [label, optionName] of Object.entries(PRIORITY_MAP)) {
-    if (labels.includes(label)) {
-      const info = getFieldOptionId(projectId, "Priority", optionName);
-      if (info) {
-        setFieldValue(projectId, itemId, info.fieldId, info.optionId);
-        console.log(`  Priority → ${optionName}`);
-      }
-      break; // only one priority
+    if (!labels.includes(label)) continue;
+
+    const info = getFieldOptionId(projectId, "Priority", optionName);
+    if (info) {
+      setSingleSelectFieldValue(projectId, itemId, info.fieldId, info.optionId);
+      console.log(`  Priority -> ${optionName}`);
     }
+    break;
   }
 
-  // 3. Sync Status
+  if (issueState !== "closed") {
+    setIterationFromMilestone(projectId, itemId, issueMilestone, "  ");
+  }
+
   let desiredStatus = null;
 
-  // Closed/merged → Done
   if (issueState === "closed" || prMerged) {
     desiredStatus = "Done";
-  }
-  // status:blocked overrides non-Done states
-  else if (labels.includes("status:blocked")) {
-    // Don't override — let the blocked label stand (project board may have a "Blocked" column)
-    // For now, keep existing behavior: in-progress label takes precedence in the old code
-    // but blocked should override. We set In progress only if not blocked.
-    desiredStatus = null; // leave as-is; blocked is managed at the project level
-  }
-  // Explicit in-progress label
-  else if (labels.includes("status:in-progress")) {
+  } else if (labels.includes("status:blocked")) {
+    desiredStatus = "Blocked";
+  } else if (labels.includes("status:in-progress")) {
     desiredStatus = "In progress";
-  }
-  // Reopened → Todo
-  else if (eventAction === "reopened") {
+  } else if (eventAction === "reopened") {
     desiredStatus = "Todo";
   }
 
   if (desiredStatus) {
-    const info = getFieldOptionId(projectId, "Status", desiredStatus);
-    if (info) {
-      setFieldValue(projectId, itemId, info.fieldId, info.optionId);
-      console.log(`  Status → ${desiredStatus}`);
-    }
+    setStatusWithFallback(projectId, itemId, desiredStatus, "  ");
   }
 }
 
-/**
- * Handle pull_request events — sync linked issue status based on PR state.
- */
 function handlePullRequestEvent(projectId) {
   const eventAction = process.env.EVENT_ACTION || "";
   const prMerged = process.env.PR_MERGED === "true";
@@ -356,40 +539,42 @@ function handlePullRequestEvent(projectId) {
   const prNumber = process.env.PR_NUMBER || "";
   const prBody = process.env.PR_BODY || "";
   const nodeId = process.env.ISSUE_NODE_ID;
-  const issueNumber = process.env.ISSUE_NUMBER || "";
+  const issueMilestone = process.env.ISSUE_MILESTONE || "";
 
-  console.log(`Processing PR #${prNumber} (pull_request/${eventAction}, merged=${prMerged}, draft=${prDraft})`);
+  console.log(
+    `Processing PR #${prNumber} (pull_request/${eventAction}, merged=${prMerged}, draft=${prDraft})`,
+  );
 
-  // First, add the PR itself to the project (existing behavior)
   if (nodeId) {
     const labels = JSON.parse(process.env.ISSUE_LABELS || "[]");
     const itemId = addItemToProject(projectId, nodeId);
     console.log(`  Added/found PR project item: ${itemId}`);
 
-    // Sync PR priority labels
     for (const [label, optionName] of Object.entries(PRIORITY_MAP)) {
-      if (labels.includes(label)) {
-        const info = getFieldOptionId(projectId, "Priority", optionName);
-        if (info) {
-          setFieldValue(projectId, itemId, info.fieldId, info.optionId);
-          console.log(`  PR Priority → ${optionName}`);
-        }
-        break;
+      if (!labels.includes(label)) continue;
+
+      const info = getFieldOptionId(projectId, "Priority", optionName);
+      if (info) {
+        setSingleSelectFieldValue(projectId, itemId, info.fieldId, info.optionId);
+        console.log(`  PR Priority -> ${optionName}`);
       }
+      break;
     }
+
+    setIterationFromMilestone(projectId, itemId, issueMilestone, "  ");
   }
 
-  // Now resolve linked issues and update their status
   const linkedIssues = resolveLinkedIssues(prNumber, prBody);
 
-  // Also check branch name for issue number
   try {
     const prJson = gh(["pr", "view", String(prNumber), "--json", "headRefName"]);
     const parsed = JSON.parse(prJson);
     const branchIssue = issueNumberFromBranch(parsed.headRefName);
-    if (branchIssue) linkedIssues.add(branchIssue);
+    if (branchIssue) {
+      linkedIssues.add(branchIssue);
+    }
   } catch {
-    // ignore
+    // best effort
   }
 
   if (linkedIssues.size === 0) {
@@ -399,15 +584,11 @@ function handlePullRequestEvent(projectId) {
 
   console.log(`  Linked issues: ${[...linkedIssues].join(", ")}`);
 
-  // Determine desired status for linked issues based on PR action
   let desiredStatus = null;
 
   if (eventAction === "closed" && prMerged) {
-    // PR merged → Done (handled by close-on-merge job too, but we set it here for consistency)
     desiredStatus = "Done";
   } else if (eventAction === "closed" && !prMerged) {
-    // PR closed without merge — check if there are other open PRs for these issues
-    // If not, revert to Todo
     for (const num of linkedIssues) {
       const { hasOpenPR, hasReadyPR } = checkOpenPRsForIssue(num);
       if (hasReadyPR) {
@@ -418,16 +599,14 @@ function handlePullRequestEvent(projectId) {
         applyIssueStatus(projectId, num, "Todo");
       }
     }
-    return; // handled per-issue above
+    return;
   } else if (eventAction === "converted_to_draft") {
-    // Draft PR → In progress
     desiredStatus = "In progress";
   } else if (
     eventAction === "opened" ||
     eventAction === "reopened" ||
     eventAction === "ready_for_review"
   ) {
-    // Ready-for-review PR → In review (only if not draft)
     desiredStatus = prDraft ? "In progress" : "In review";
   }
 
@@ -438,15 +617,11 @@ function handlePullRequestEvent(projectId) {
   }
 }
 
-/**
- * Handle create/delete branch events — sync linked issue status.
- */
 function handleBranchEvent(projectId) {
   const eventName = process.env.EVENT_NAME || "";
   const refType = process.env.BRANCH_REF_TYPE || "";
   const ref = process.env.BRANCH_REF || "";
 
-  // Only handle branch events, not tag events
   if (refType !== "branch") {
     console.log(`Skipping ${eventName} event for ref_type=${refType}`);
     return;
@@ -463,33 +638,29 @@ function handleBranchEvent(projectId) {
   console.log(`  Linked issue: #${issueNum}`);
 
   if (eventName === "create") {
-    // Branch created → check if there's already an open PR (higher precedence)
-    const { hasOpenPR, hasReadyPR } = checkOpenPRsForIssue(issueNum);
+    const { hasReadyPR } = checkOpenPRsForIssue(issueNum);
     if (hasReadyPR) {
       applyIssueStatus(projectId, issueNum, "In review");
     } else {
-      // Branch exists, no ready PR → In progress
       applyIssueStatus(projectId, issueNum, "In progress");
     }
-  } else if (eventName === "delete") {
-    // Branch deleted → check if there are any remaining open PRs
+    return;
+  }
+
+  if (eventName === "delete") {
     const { hasOpenPR, hasReadyPR } = checkOpenPRsForIssue(issueNum);
     if (hasReadyPR) {
       applyIssueStatus(projectId, issueNum, "In review");
     } else if (hasOpenPR) {
       applyIssueStatus(projectId, issueNum, "In progress");
     } else {
-      // No branch, no open PR → Todo (unless issue is closed/done)
       applyIssueStatus(projectId, issueNum, "Todo");
     }
   }
 }
 
-// ── Main ────────────────────────────────────────────────────────────────────
-
 async function main() {
   const eventName = process.env.EVENT_NAME || "";
-
   const projectId = getProjectId();
 
   switch (eventName) {
