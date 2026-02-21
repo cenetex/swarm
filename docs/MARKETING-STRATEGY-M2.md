@@ -426,3 +426,69 @@ Web3 is an optional power-up, never a paywall. All marketing leads with fiat-fir
 | Content production bottleneck | Missed cadence | Batch-produce content. Repurpose tutorials into threads, threads into emails. |
 | Community toxicity in Telegram/Discord | Brand damage | Set clear rules. Appoint moderators. Auto-remove spam. |
 | Competitor launches similar positioning | Diluted differentiation | Double down on chat-first and reliability narratives — hardest to copy. |
+
+---
+
+## 14) Attribution and Decision Operating Spec (M2)
+
+This section operationalizes Section 9 so weekly marketing decisions are based on the same definitions every time.
+
+### UTM and Campaign Naming Contract
+
+All externally shared campaign links must include:
+
+1. `utm_source`
+2. `utm_medium`
+3. `utm_campaign`
+4. `utm_content` (variant identifier)
+
+Allowed values:
+
+| Field          | Allowed values (M2)                                             | Example                             |
+| -------------- | --------------------------------------------------------------- | ----------------------------------- |
+| `utm_source`   | `x`, `telegram`, `discord`, `email`, `partner`, `seo`, `paid-x` | `x`                                 |
+| `utm_medium`   | `organic`, `community`, `lifecycle`, `paid`, `referral`         | `organic`                           |
+| `utm_campaign` | `m2-<pillar>-<week>-<asset>`                                    | `m2-activation-wk01-10min-tutorial` |
+| `utm_content`  | `v<variant>` or `v<variant>-<format>`                           | `v2-video`                          |
+
+Rules:
+
+1. Use lowercase and hyphen-separated tokens only.
+2. Use one canonical URL per asset and vary only UTM fields for experiments.
+3. Do not reuse a `utm_campaign` value for a different asset after publish.
+4. Log every campaign ID in the weekly GTM notes before publish.
+
+### Campaign Scorecard Specification
+
+Weekly reporting must include one row per `utm_campaign`.
+
+| Metric                               | Formula                                                                                                      | Decision use          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------ | --------------------- |
+| Visit-to-signup rate (`F0->F1`)      | unique signups (`gtm.signup_completed`) / unique qualified sessions with matching UTM                        | Top-of-funnel quality |
+| Signup-to-activation rate (`F1->F3`) | unique `avatarId` with `gtm.first_live_response_delivered` / unique `accountId` with `gtm.signup_completed`  | Activation efficiency |
+| Day-7 retention (`F3->F4`)           | unique `avatarId` with `gtm.avatar_day7_active` / unique `avatarId` with `gtm.first_live_response_delivered` | Cohort quality        |
+| Paid conversion (`F4->F5`)           | unique `accountId` with `gtm.paid_plan_activated` / unique `accountId` with `gtm.avatar_day7_active`         | Monetization quality  |
+| Cost per activation (paid only)      | campaign spend / unique `avatarId` reaching `F3`                                                             | Paid efficiency       |
+| Time to first outcome                | median `timeFromAvatarCreatedSec` from `gtm.first_live_response_delivered`                                   | Onboarding friction   |
+
+### Weekly Decision Rules (`Scale` / `Iterate` / `Stop`)
+
+Use these rules only when sample size is meaningful (`>= 30` signups or `>= 500` qualified sessions).
+
+| Decision  | Criteria                                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Scale`   | `F1->F3` >= 42% target and `F3->F4` >= 35% target; paid campaigns also require cost per activation at or below current paid median               |
+| `Iterate` | `F1->F3` is within 10% below target, or sample size is below threshold but directional signals are positive                                      |
+| `Stop`    | `F1->F3` is more than 20% below target for 2 consecutive weekly reads, or paid campaign cost per activation is 50% above paid median for 2 reads |
+
+When a campaign is marked `Stop`, document one clear reason and one replacement hypothesis in the experiment backlog.
+
+### Data-Quality Guardrails
+
+Before each weekly readout, confirm:
+
+1. At least 95% of `gtm.signup_completed` events include non-null UTM fields.
+2. Internal test traffic (`x-internal-test-key`) is excluded from `F3` and downstream counts.
+3. Duplicate events are deduplicated by `eventId`.
+4. Late-arriving events older than 24 hours are flagged in scorecard notes.
+5. Any campaign with missing attribution is labeled `untrusted` and excluded from `Scale` decisions.
