@@ -1,6 +1,8 @@
 # Operational Runbook: Telegram Webhook Failures & DLQ Recovery
 
 > AWS Swarm -- Multi-tenant avatar platform on AWS serverless.
+>
+> Need the fast setup/repair flow first? Start with [PLAYBOOK-TELEGRAM-QUICKSTART.md](./PLAYBOOK-TELEGRAM-QUICKSTART.md).
 
 Replace the following placeholders throughout this document with values for your environment:
 

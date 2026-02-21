@@ -78,6 +78,7 @@ Roadmaps and planning:
 - Milestone summary: [ROADMAP.md](ROADMAP.md)
 - M1 (Paid Telegram MVP): [docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md](docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md)
 - M2 (Multi-platform): [docs/ROADMAP-M2-MULTI-PLATFORM.md](docs/ROADMAP-M2-MULTI-PLATFORM.md)
+- Telegram operator quickstart: [docs/PLAYBOOK-TELEGRAM-QUICKSTART.md](docs/PLAYBOOK-TELEGRAM-QUICKSTART.md)
 - Next-milestone task list: [PLAN.md](PLAN.md)
 - Positioning and messaging pitchbook: [docs/PITCHBOOK.md](docs/PITCHBOOK.md)
 - Automated cost/activity reporting: [docs/OPERATIONS-REPORTS.md](docs/OPERATIONS-REPORTS.md)
