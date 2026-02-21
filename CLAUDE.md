@@ -242,6 +242,33 @@ git worktree remove ../aws-swarm-042
 git branch -d fix/issue-42-dynamo-query
 ```
 
+### Worktree Lifecycle Hooks
+
+When agents work in local worktrees, the GitHub project board has no visibility until a PR is opened. These scripts bridge the gap:
+
+```bash
+# Signal "In progress" when starting work on an issue
+# Pushes branch to origin + adds status:in-progress label
+# This triggers project-sync to move the issue to "In progress"
+scripts/worktree-start.sh <issue-number>
+
+# Finalize completed worktrees: commit, rebase, push, create PRs
+# Processes all worktrees in /private/tmp/aws-swarm-*
+scripts/worktree-finalize.sh
+
+# Finalize specific issues only
+scripts/worktree-finalize.sh --issues 310,297,287
+
+# Preview what would happen
+scripts/worktree-finalize.sh --dry-run
+```
+
+The recommended flow for agent worktrees:
+1. Create worktree: `git worktree add /private/tmp/aws-swarm-NNN -b fix/issue-NNN-description main`
+2. Signal start: `scripts/worktree-start.sh NNN`
+3. Agent works in the worktree
+4. Finalize when done: `scripts/worktree-finalize.sh --issues NNN`
+
 ### Copilot Coding Agent
 
 Some issues can be delegated to GitHub Copilot's coding agent. It autonomously creates a PR from the issue description.
