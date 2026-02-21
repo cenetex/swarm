@@ -30,7 +30,7 @@ export {
   type GalleryItemOutput,
 } from './media/types.js';
 export { SwarmSolanaService, createSolanaService } from './solana/index.js';
-export { DynamoDBStateService, createStateService, CHANNEL_CONFIG } from './state.js';
+export { DynamoDBStateService, createStateService, CHANNEL_CONFIG, getLastHeartbeat, setLastHeartbeat } from './state.js';
 export { AWSSecretsService, createSecretsService } from './secrets.js';
 export { ActivityService, createActivityService, type ActivityEvent } from './activity.js';
 export { DynamoDBUsageMeteringService, createUsageMeteringService } from './usage.js';

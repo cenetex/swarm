@@ -306,7 +306,6 @@ export async function handler(
           discord: Boolean(avatarRecord.platforms?.discord?.enabled),
           nft: true,
           property: (avatarRecord.mcpConfig?.enabledToolsets || []).includes('property'),
-          moltbook: (avatarRecord.mcpConfig?.enabledToolsets || []).includes('moltbook'),
         })
       : undefined;
 

@@ -725,22 +725,8 @@ export const AvatarContextSchema = z.object({
   description: z.string().optional(),
   persona: z.string().optional(),
   // Optional: when present, used to constrain tool availability/prompt generation.
-  enabledCategories: z.array(z.enum([
-    'secrets',
-    'wallets',
-    'profile',
-    'media',
-    'gallery',
-    'voice',
-    'telegram',
-    'twitter',
-    'discord',
-    'memory',
-    'nft',
-    'property',
-    'diagnostics',
-    'moltbook',
-  ])).optional(),
+  // Uses z.string() to allow arbitrary MCP toolset categories beyond core-defined ones.
+  enabledCategories: z.array(z.string()).optional(),
 });
 
 // Chat request body schema
