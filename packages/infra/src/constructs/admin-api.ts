@@ -205,6 +205,13 @@ export interface AdminApiConstructProps {
    * Use when the table is still owned by the legacy monolith stack.
    */
   useExistingResources?: boolean;
+
+  /**
+   * Whether the Discord gateway worker (ECS Fargate) is deployed.
+   * Passed as DISCORD_GATEWAY_ENABLED env var to Lambda so the admin API
+   * can accurately report runtime health for bot/hybrid mode avatars.
+   */
+  enableDiscordGateway?: boolean;
 }
 
 export class AdminApiConstruct extends Construct {
@@ -486,6 +493,8 @@ export class AdminApiConstruct extends Construct {
         TWITTER_OAUTH_CALLBACK_URL: twitterOAuthCallbackUrl,
         // Internal testing (non-production only)
         INTERNAL_TEST_KEY: internalTestKey,
+        // Discord gateway runtime status (so admin API can report accurate health)
+        DISCORD_GATEWAY_ENABLED: props.enableDiscordGateway ? 'true' : 'false',
         ...activeUserLimitEnvVars,
       },
       bundling: {
@@ -937,6 +946,8 @@ export class AdminApiConstruct extends Construct {
         POST_QUEUE_URL: props.postQueue?.queueUrl || '',
         // Internal testing (non-production only)
         INTERNAL_TEST_KEY: internalTestKey,
+        // Discord gateway runtime status (so admin API can report accurate health)
+        DISCORD_GATEWAY_ENABLED: props.enableDiscordGateway ? 'true' : 'false',
         ...activeUserLimitEnvVars,
       },
       bundling: {

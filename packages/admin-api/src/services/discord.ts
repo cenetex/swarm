@@ -14,11 +14,32 @@ import { ECSClient, DescribeServicesCommand } from '@aws-sdk/client-ecs';
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
 /**
+ * Discord runtime health detail — actionable metadata for operators
+ */
+export interface DiscordRuntimeDetail {
+  gatewayEnabled: boolean;
+  reason: string; // e.g. 'gateway_not_deployed', 'gateway_deployed', 'runtime_not_required'
+}
+
+/**
  * Discord connection status
+ *
+ * Split into explicit health dimensions so callers can distinguish
+ * credential validity from gateway runtime availability.
+ *
+ * `connected` remains the composite summary for backward compatibility:
+ *  - webhook mode: true when credentials are valid
+ *  - bot/hybrid mode: true only when credentials are valid AND runtime is healthy
  */
 export interface DiscordConnectionStatus {
   connected: boolean;
   mode: 'webhook' | 'bot' | 'hybrid' | 'none';
+  /** Are the configured credentials (bot token / webhook URL) valid? */
+  credentialsValid: boolean;
+  /** Is the gateway runtime healthy? Only meaningful for bot/hybrid modes. */
+  runtimeHealthy: boolean;
+  /** Actionable detail about the runtime health check */
+  runtimeDetail?: DiscordRuntimeDetail;
   botUsername?: string;
   botId?: string;
   webhookConfigured?: boolean;
@@ -109,9 +130,70 @@ function mapChannelType(type: number): DiscordChannel['type'] {
 }
 
 /**
- * Get Discord connection status for an avatar
+ * Dependencies for the Discord service (for testing / DI)
  */
-export async function getConnectionStatus(avatarId: string): Promise<DiscordConnectionStatus> {
+export interface DiscordServiceDeps {
+  /** Override the gateway-enabled env var for testing. */
+  isGatewayEnabled?: () => boolean;
+}
+
+/**
+ * Check whether the Discord gateway runtime is deployed.
+ *
+ * This reads the DISCORD_GATEWAY_ENABLED environment variable that CDK
+ * sets at deploy time. When the gateway is disabled (the default), any
+ * avatar in bot/hybrid mode cannot actually receive inbound Discord
+ * messages even if its credentials are valid.
+ */
+export function isGatewayRuntimeAvailable(deps?: DiscordServiceDeps): DiscordRuntimeDetail {
+  const check = deps?.isGatewayEnabled ?? (() => process.env.DISCORD_GATEWAY_ENABLED === 'true');
+  const enabled = check();
+
+  if (enabled) {
+    return {
+      gatewayEnabled: true,
+      reason: 'gateway_deployed',
+    };
+  }
+
+  return {
+    gatewayEnabled: false,
+    reason: 'gateway_not_deployed',
+  };
+}
+
+/**
+ * Compute the effective connected status based on mode and health dimensions.
+ *
+ * - webhook: credentials alone are sufficient
+ * - bot/hybrid: credentials AND runtime must both be healthy
+ * - none: never connected
+ */
+function computeEffectiveConnected(
+  mode: DiscordConnectionStatus['mode'],
+  credentialsValid: boolean,
+  runtimeHealthy: boolean,
+): boolean {
+  if (!credentialsValid) return false;
+  if (mode === 'none') return false;
+  if (mode === 'webhook') return true;
+  // bot or hybrid: require runtime
+  return runtimeHealthy;
+}
+
+/**
+ * Get Discord connection status for an avatar
+ *
+ * @param avatarId - Avatar to check
+ * @param discordMode - The avatar's configured Discord mode (from avatar.platforms.discord.mode).
+ *                       When provided, overrides the inferred mode from credentials alone.
+ * @param deps - Optional dependency overrides for testing
+ */
+export async function getConnectionStatus(
+  avatarId: string,
+  discordMode?: 'webhook' | 'bot' | 'hybrid',
+  deps?: DiscordServiceDeps,
+): Promise<DiscordConnectionStatus> {
   const [botToken, webhookUrl] = await Promise.all([
     getBotToken(avatarId),
     getWebhookUrl(avatarId),
@@ -123,12 +205,17 @@ export async function getConnectionStatus(avatarId: string): Promise<DiscordConn
   if (!hasBotToken && !hasWebhook) {
     return {
       connected: false,
+      credentialsValid: false,
+      runtimeHealthy: false,
       mode: 'none',
     };
   }
 
+  // Determine mode: prefer the explicit avatar-level config, fall back to inferred
   let mode: DiscordConnectionStatus['mode'] = 'none';
-  if (hasBotToken && hasWebhook) {
+  if (discordMode) {
+    mode = discordMode;
+  } else if (hasBotToken && hasWebhook) {
     mode = 'hybrid';
   } else if (hasBotToken) {
     mode = 'bot';
@@ -136,8 +223,16 @@ export async function getConnectionStatus(avatarId: string): Promise<DiscordConn
     mode = 'webhook';
   }
 
+  // Check gateway runtime health for bot/hybrid modes
+  const needsRuntime = mode === 'bot' || mode === 'hybrid';
+  const runtimeDetail = needsRuntime ? isGatewayRuntimeAvailable(deps) : undefined;
+  const runtimeHealthy = needsRuntime ? (runtimeDetail?.gatewayEnabled ?? false) : true;
+
   const result: DiscordConnectionStatus = {
-    connected: true,
+    connected: false, // computed below
+    credentialsValid: true,
+    runtimeHealthy,
+    runtimeDetail: needsRuntime ? runtimeDetail : { gatewayEnabled: false, reason: 'runtime_not_required' },
     mode,
     webhookConfigured: hasWebhook,
   };
@@ -154,28 +249,39 @@ export async function getConnectionStatus(avatarId: string): Promise<DiscordConn
         const me = (await meResponse.json()) as { id: string; username: string };
         result.botId = me.id;
         result.botUsername = me.username;
-      }
-
-      // Get guilds
-      const guildsResponse = await fetch(`${DISCORD_API_BASE}/users/@me/guilds`, {
-        headers: { Authorization: `Bot ${botToken}` },
-      });
-
-      if (guildsResponse.ok) {
-        const guilds = (await guildsResponse.json()) as Array<{
-          id: string;
-          name: string;
-          approximate_member_count?: number;
-        }>;
-
-        result.guilds = guilds.map((g) => ({
-          id: g.id,
-          name: g.name,
-          memberCount: g.approximate_member_count,
-        }));
+      } else {
+        // Token exists but is invalid
+        result.credentialsValid = false;
       }
     } catch (error) {
       console.error('Failed to fetch Discord bot info:', error instanceof Error ? error.message : String(error));
+      // Network error — cannot confirm credentials are valid
+      result.credentialsValid = false;
+    }
+
+    // Only attempt guild fetch if credentials were verified
+    if (result.credentialsValid && botToken) {
+      try {
+        const guildsResponse = await fetch(`${DISCORD_API_BASE}/users/@me/guilds`, {
+          headers: { Authorization: `Bot ${botToken}` },
+        });
+
+        if (guildsResponse.ok) {
+          const guilds = (await guildsResponse.json()) as Array<{
+            id: string;
+            name: string;
+            approximate_member_count?: number;
+          }>;
+
+          result.guilds = guilds.map((g) => ({
+            id: g.id,
+            name: g.name,
+            memberCount: g.approximate_member_count,
+          }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch Discord guilds:', error instanceof Error ? error.message : String(error));
+      }
     }
   }
 
@@ -189,6 +295,9 @@ export async function getConnectionStatus(avatarId: string): Promise<DiscordConn
         'but the bot will not receive new messages from Discord channels.';
     }
   }
+
+  // Compute the composite connected flag
+  result.connected = computeEffectiveConnected(mode, result.credentialsValid, result.runtimeHealthy);
 
   return result;
 }

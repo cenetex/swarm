@@ -7,7 +7,7 @@ import {
   type TelegramDiagnosticsIssueCode,
 } from './telegram-admin.js';
 import { getConnectionStatus as getTwitterConnectionStatus } from './twitter-oauth.js';
-import { getConnectionStatus as getDiscordConnectionStatus } from './discord.js';
+import { getConnectionStatus as getDiscordConnectionStatus, type DiscordServiceDeps } from './discord.js';
 
 export const ACTIVATION_READINESS_VERSION = 'activation_readiness_v1' as const;
 
@@ -79,6 +79,7 @@ export interface ActivationReadinessDeps {
   diagnoseTelegram?: typeof diagnoseTelegram;
   getTwitterConnectionStatus?: typeof getTwitterConnectionStatus;
   getDiscordConnectionStatus?: typeof getDiscordConnectionStatus;
+  discordServiceDeps?: DiscordServiceDeps;
 }
 
 const TELEGRAM_BLOCKING_ISSUES: ReadonlySet<TelegramDiagnosticsIssueCode> = new Set([
@@ -935,9 +936,12 @@ async function evaluateDiscordHealthCheck(
   }
 
   const getDiscordConnectionStatusImpl = deps.getDiscordConnectionStatus ?? getDiscordConnectionStatus;
+  const discordMode = avatar.platforms?.discord?.mode;
 
   try {
-    const status = await getDiscordConnectionStatusImpl(avatar.avatarId);
+    const status = await getDiscordConnectionStatusImpl(avatar.avatarId, discordMode, deps.discordServiceDeps);
+
+    // Fully healthy: credentials valid AND runtime healthy (mode-aware)
     if (status.connected) {
       return {
         id: 'integration.discord.connection_healthy',
@@ -951,11 +955,52 @@ async function evaluateDiscordHealthCheck(
         evidence: {
           discordEnabled: true,
           connected: true,
+          credentialsValid: status.credentialsValid,
+          runtimeHealthy: status.runtimeHealthy,
           mode: status.mode,
+          runtimeReason: status.runtimeDetail?.reason ?? null,
         },
       };
     }
 
+    // Credentials valid but runtime unhealthy (bot/hybrid mode false-positive fix)
+    if (status.credentialsValid && !status.runtimeHealthy) {
+      const runtimeReason = status.runtimeDetail?.reason ?? 'unknown';
+      return {
+        id: 'integration.discord.connection_healthy',
+        title: 'Discord integration health',
+        required: true,
+        status: 'fail',
+        reasonCode: 'DISCORD_RUNTIME_UNAVAILABLE',
+        message: `Discord credentials are valid but the gateway runtime is unavailable (${runtimeReason}). Bot/hybrid ingress will not receive messages.`,
+        sourceStep: 'discord',
+        remediation: [
+          contactSupportAction(
+            'discord_gateway_not_deployed',
+            'Deploy Gateway',
+            'The Discord gateway service must be deployed for bot/hybrid mode. Enable enableDiscordGateway in the infrastructure configuration and redeploy.',
+            'activation-discord-gateway-unavailable',
+            'DISCORD_RUNTIME_UNAVAILABLE'
+          ),
+          openUiRouteAction(
+            'open_discord_settings',
+            `/avatars/${avatar.avatarId}/onboarding?step=discord`,
+            'Switch to Webhook Mode',
+            'If gateway deployment is not available, switch to webhook mode which does not require a gateway runtime.'
+          ),
+        ],
+        evidence: {
+          discordEnabled: true,
+          connected: false,
+          credentialsValid: true,
+          runtimeHealthy: false,
+          mode: status.mode,
+          runtimeReason,
+        },
+      };
+    }
+
+    // Credentials invalid (or no credentials)
     return {
       id: 'integration.discord.connection_healthy',
       title: 'Discord integration health',
@@ -982,7 +1027,10 @@ async function evaluateDiscordHealthCheck(
       evidence: {
         discordEnabled: true,
         connected: false,
+        credentialsValid: status.credentialsValid,
+        runtimeHealthy: status.runtimeHealthy,
         mode: status.mode,
+        runtimeReason: status.runtimeDetail?.reason ?? null,
       },
     };
   } catch {

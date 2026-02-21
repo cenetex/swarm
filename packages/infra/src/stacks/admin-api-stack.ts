@@ -322,6 +322,7 @@ export class AdminApiStack extends cdk.Stack {
         internalTestKey,
         alarmTopic,
         useExistingResources: props.useExistingResources,
+        enableDiscordGateway,
       });
 
       this.apiEndpoint = this.adminApi.apiEndpoint;
