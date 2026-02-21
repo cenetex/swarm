@@ -1,9 +1,16 @@
 /**
  * Twitter Connect Prompt - OAuth2 flow for Twitter/X authorization
+ *
+ * NOTE: onSubmit is intentionally NOT called from this component. The OAuth
+ * flow opens in a separate popup window, and the tool call is marked as
+ * completed when the OAuth callback fires (handled by handleTwitterOAuthResult
+ * in App.tsx). The prompt only needs to launch the popup and show a waiting
+ * state; it does not own the success/completion lifecycle.
  */
 import { useState } from 'react';
 import type { ToolPromptProps } from './types';
 import { API_BASE } from './types';
+import { PromptError } from './PromptStatus';
 import { useActiveAvatar } from '../../store';
 
 export function TwitterConnectPrompt({ toolCall, onSubmit: _onSubmit, disabled }: ToolPromptProps) {
@@ -93,16 +100,16 @@ export function TwitterConnectPrompt({ toolCall, onSubmit: _onSubmit, disabled }
       </div>
 
       {error && (
-        <div className="pt-2 text-xs text-red-400">
-          {error}{' '}
+        <div className="space-y-1">
+          <PromptError message={error} />
           {oauthUrl && (
             <a
-              className="underline hover:text-red-300"
+              className="text-xs underline text-red-400 hover:text-red-300 ml-6"
               href={oauthUrl}
               target="_blank"
               rel="noreferrer"
             >
-              Open link
+              Open link manually
             </a>
           )}
         </div>

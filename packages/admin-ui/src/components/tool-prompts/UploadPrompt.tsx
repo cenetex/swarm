@@ -3,6 +3,7 @@
  */
 import { useState, useRef } from 'react';
 import type { ToolPromptProps } from './types';
+import { PromptSuccess, PromptError } from './PromptStatus';
 
 export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
   const [isUploading, setIsUploading] = useState(false);
@@ -93,17 +94,11 @@ export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
 
   if (uploaded) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+      <PromptSuccess message="Image uploaded successfully!">
         {preview && (
           <img src={preview} alt="Uploaded" className="w-12 h-12 rounded object-cover" />
         )}
-        <div className="flex items-center gap-2">
-          <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          <span className="text-green-300">Image uploaded successfully!</span>
-        </div>
-      </div>
+      </PromptSuccess>
     );
   }
 
@@ -141,8 +136,8 @@ export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
         onDragLeave={handleDragLeave}
         className={`
           border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
-          ${dragOver 
-            ? 'border-brand-500 bg-brand-500/10' 
+          ${dragOver
+            ? 'border-brand-500 bg-brand-500/10'
             : 'border-[var(--color-border)] hover:border-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)]/50'
           }
           ${(disabled || isUploading) ? 'opacity-50 cursor-not-allowed' : ''}
@@ -169,14 +164,7 @@ export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
         )}
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 text-red-400 text-sm">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {error}
-        </div>
-      )}
+      {error && <PromptError message={error} />}
     </div>
   );
 }

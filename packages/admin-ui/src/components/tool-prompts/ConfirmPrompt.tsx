@@ -3,12 +3,13 @@
  */
 import { useState } from 'react';
 import type { ToolPromptProps } from './types';
+import { PromptSuccess, PromptError } from './PromptStatus';
 
 export function ConfirmPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [responded, setResponded] = useState<'confirmed' | 'denied' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+
   const { action, description, destructive } = toolCall.arguments as {
     action: string;
     description?: string;
@@ -17,27 +18,27 @@ export function ConfirmPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps)
 
   const handleResponse = async (confirmed: boolean) => {
     if (isSubmitting) return;
-    
+
     setIsSubmitting(true);
     setError(null);
     try {
       await onSubmit(toolCall.id, { confirmed });
       setResponded(confirmed ? 'confirmed' : 'denied');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit response');
+      setError(err instanceof Error ? err.message : 'Something went wrong');
       setIsSubmitting(false);
     }
   };
 
-  if (responded) {
+  if (responded === 'confirmed') {
+    return <PromptSuccess message="Confirmed" />;
+  }
+
+  if (responded === 'denied') {
     return (
-      <div className={`flex items-center gap-2 px-4 py-3 rounded-lg ${
-        responded === 'confirmed' 
-          ? 'bg-green-500/10 border border-green-500/30' 
-          : 'bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]'
-      }`}>
-        <span className={responded === 'confirmed' ? 'text-green-300' : 'text-[var(--color-text-secondary)]'}>
-          {responded === 'confirmed' ? '✓ Confirmed' : '✗ Cancelled'}
+      <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
+        <span className="text-[var(--color-text-secondary)]">
+          ✗ Cancelled
         </span>
       </div>
     );
@@ -45,8 +46,8 @@ export function ConfirmPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps)
 
   return (
     <div className={`border rounded-lg p-4 space-y-3 ${
-      destructive 
-        ? 'bg-red-500/10 border-red-500/30' 
+      destructive
+        ? 'bg-red-500/10 border-red-500/30'
         : 'bg-[var(--color-bg-secondary)] border-[var(--color-border)]'
     }`}>
       <div className="flex items-start gap-3">
@@ -62,7 +63,9 @@ export function ConfirmPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps)
           )}
         </div>
       </div>
-      
+
+      {error && <PromptError message={error} />}
+
       <div className="flex gap-2">
         <button
           onClick={() => handleResponse(false)}
@@ -83,15 +86,6 @@ export function ConfirmPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps)
           {isSubmitting ? 'Processing...' : 'Confirm'}
         </button>
       </div>
-
-      {error && (
-        <div className="flex items-center gap-2 text-red-400 text-sm">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {error}
-        </div>
-      )}
     </div>
   );
 }

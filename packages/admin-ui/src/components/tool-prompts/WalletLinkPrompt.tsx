@@ -8,12 +8,18 @@
  * 4. The user signs the challenge message with the connected wallet
  * 5. The signed message is sent to the backend for verification
  * 6. On success the account is refreshed so the new wallet appears in identities
+ *
+ * NOTE: This component keeps its own multi-step state machine (LinkStatus)
+ * rather than adopting useToolPromptState, because the wallet-linking flow
+ * has intermediate steps (connecting, challenging, signing, verifying) that
+ * don't map to the simple idle/processing/success/error lifecycle.
  */
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import type { ToolPromptProps } from './types';
 import { API_BASE } from './types';
+import { PromptSuccess, PromptError } from './PromptStatus';
 import { signWalletLinkMessage } from '../../auth/wallet-linking';
 import { humanizeWalletSignatureError } from '../../auth/wallet-errors';
 import { useAuthStore } from '../../store/auth';
@@ -219,14 +225,11 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
   // Success state
   if (status === 'success' && linkedAddress) {
     return (
-      <div className="flex items-center gap-2 px-4 py-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-        <svg className="w-5 h-5 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-        </svg>
+      <PromptSuccess message="">
         <span className="text-green-300">
           Wallet linked: <CopyableAddress address={linkedAddress} />
         </span>
-      </div>
+      </PromptSuccess>
     );
   }
 
@@ -275,7 +278,9 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
           )}
 
           {errorMessage && (
-            <p className="text-sm text-red-400 mt-2">{errorMessage}</p>
+            <div className="mt-2">
+              <PromptError message={errorMessage} />
+            </div>
           )}
 
           <p className="text-xs text-[var(--color-text-muted)] mt-2">
