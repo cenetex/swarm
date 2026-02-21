@@ -1,0 +1,154 @@
+name: Cost & Activity Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to report on
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      days:
+        description: Days in report window (1-30)
+        required: true
+        default: '7'
+        type: string
+      include_aws_cost:
+        description: Query AWS Cost Explorer
+        required: true
+        default: true
+        type: boolean
+  schedule:
+    - cron: '20 6 * * *'
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+env:
+  NODE_VERSION: '20'
+  AWS_REGION: us-east-1
+
+jobs:
+  report:
+    name: Generate report
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: cost-activity-report
+
+      - name: Verify AWS account for environment
+        run: |
+          EXPECTED_AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+          ACTUAL_AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "Using AWS account: ${ACTUAL_AWS_ACCOUNT_ID}"
+
+          if [ -z "$EXPECTED_AWS_ACCOUNT_ID" ]; then
+            echo "::error::Missing required environment secret AWS_ACCOUNT_ID"
+            exit 1
+          fi
+
+          if [ "$ACTUAL_AWS_ACCOUNT_ID" != "$EXPECTED_AWS_ACCOUNT_ID" ]; then
+            echo "::error::Wrong AWS account (expected ${EXPECTED_AWS_ACCOUNT_ID}, got ${ACTUAL_AWS_ACCOUNT_ID})"
+            exit 1
+          fi
+
+      - name: Resolve report inputs
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET_ENV="${{ inputs.environment }}"
+            DAYS="${{ inputs.days }}"
+            INCLUDE_AWS_COST="${{ inputs.include_aws_cost }}"
+          else
+            TARGET_ENV="staging"
+            DAYS="7"
+            INCLUDE_AWS_COST="true"
+          fi
+
+          if [ "$TARGET_ENV" = "production" ]; then
+            CDK_ENV="prod"
+          else
+            CDK_ENV="$TARGET_ENV"
+          fi
+
+          STACK_NAME="SwarmStack-${CDK_ENV}"
+
+          ADMIN_TABLE=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Outputs[?contains(OutputKey, 'AdminTableName')].OutputValue | [0]" \
+            --output text)
+
+          if [ -z "$ADMIN_TABLE" ] || [ "$ADMIN_TABLE" = "None" ]; then
+            echo "::error::Could not resolve AdminTableName from stack $STACK_NAME"
+            exit 1
+          fi
+
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "days=$DAYS" >> "$GITHUB_OUTPUT"
+          echo "include_aws_cost=$INCLUDE_AWS_COST" >> "$GITHUB_OUTPUT"
+          echo "admin_table=$ADMIN_TABLE" >> "$GITHUB_OUTPUT"
+
+      - name: Generate report files
+        env:
+          ADMIN_TABLE: ${{ steps.resolve.outputs.admin_table }}
+          REPORT_ENV: ${{ steps.resolve.outputs.target_env }}
+          COST_PER_MESSAGE_USD: ${{ vars.COST_PER_MESSAGE_USD }}
+          COST_PER_MEDIA_CREDIT_USD: ${{ vars.COST_PER_MEDIA_CREDIT_USD }}
+          COST_PER_VOICE_MINUTE_USD: ${{ vars.COST_PER_VOICE_MINUTE_USD }}
+          COST_PER_TOOL_CALL_USD: ${{ vars.COST_PER_TOOL_CALL_USD }}
+          COST_PER_IMAGE_GEN_USD: ${{ vars.COST_PER_IMAGE_GEN_USD }}
+          COST_PER_VIDEO_GEN_USD: ${{ vars.COST_PER_VIDEO_GEN_USD }}
+          COST_PER_STICKER_GEN_USD: ${{ vars.COST_PER_STICKER_GEN_USD }}
+        run: |
+          mkdir -p test-outputs/reports
+          node scripts/generate-cost-activity-report.mjs \
+            --days "${{ steps.resolve.outputs.days }}" \
+            --environment "${{ steps.resolve.outputs.target_env }}" \
+            --include-aws-cost "${{ steps.resolve.outputs.include_aws_cost }}" \
+            --output "test-outputs/reports/cost-activity-${{ steps.resolve.outputs.target_env }}.md" \
+            --json-output "test-outputs/reports/cost-activity-${{ steps.resolve.outputs.target_env }}.json"
+
+      - name: Publish report preview
+        run: |
+          REPORT_FILE="test-outputs/reports/cost-activity-${{ steps.resolve.outputs.target_env }}.md"
+          {
+            echo "## Report Preview"
+            echo ""
+            sed -n '1,120p' "$REPORT_FILE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cost-activity-report-${{ steps.resolve.outputs.target_env }}
+          path: |
+            test-outputs/reports/cost-activity-${{ steps.resolve.outputs.target_env }}.md
+            test-outputs/reports/cost-activity-${{ steps.resolve.outputs.target_env }}.json
+          if-no-files-found: error
+          retention-days: 14
