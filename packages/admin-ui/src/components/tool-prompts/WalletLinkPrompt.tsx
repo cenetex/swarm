@@ -9,16 +9,23 @@
  * 5. The signed message is sent to the backend for verification
  * 6. On success the account is refreshed so the new wallet appears in identities
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import type { ToolPromptProps } from './types';
 import { API_BASE } from './types';
 import { signWalletLinkMessage } from '../../auth/wallet-linking';
+import { humanizeWalletSignatureError } from '../../auth/wallet-errors';
 import { useAuthStore } from '../../store/auth';
 import { CopyableAddress } from '../CopyableAddress';
 
 type LinkStatus = 'idle' | 'connecting' | 'challenging' | 'signing' | 'verifying' | 'success' | 'error';
+
+/** States where a wallet disconnect should abort the flow. */
+const ACTIVE_STATES: LinkStatus[] = ['connecting', 'challenging', 'signing'];
+
+/** Timeout (ms) for wallet connection. */
+const CONNECT_TIMEOUT_MS = 30_000;
 
 export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
   const { publicKey, signMessage, connected, disconnect } = useWallet();
@@ -30,11 +37,17 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [linkedAddress, setLinkedAddress] = useState<string | null>(null);
 
+  // Ref to track challenge expiry timer so we can clear it.
+  const challengeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const args = toolCall.arguments as { reason?: string };
 
-  const linkedWallets = account?.identities
-    ?.filter((i) => i.type === 'wallet')
-    .map((i) => i.providerId) ?? [];
+  const linkedWallets = useMemo(
+    () => account?.identities
+      ?.filter((i) => i.type === 'wallet')
+      .map((i) => i.providerId) ?? [],
+    [account?.identities],
+  );
 
   const handleLink = useCallback(async () => {
     setErrorMessage(null);
@@ -69,10 +82,27 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
         throw new Error(errorData.error || `Challenge request failed (${challengeResponse.status})`);
       }
 
-      const { nonce, message } = await challengeResponse.json() as { nonce: string; message: string };
+      const { nonce, message, expiresAt } = await challengeResponse.json() as {
+        nonce: string;
+        message: string;
+        expiresAt?: string;
+      };
 
       // Step 2: Sign the challenge
       setStatus('signing');
+
+      // Track challenge TTL — if the backend returned an expiresAt timestamp,
+      // start a timer so we surface a clear error instead of a cryptic 400.
+      if (expiresAt) {
+        const ttlMs = new Date(expiresAt).getTime() - Date.now();
+        if (ttlMs > 0) {
+          challengeTimerRef.current = setTimeout(() => {
+            setStatus('error');
+            setErrorMessage('Challenge expired. Please try again.');
+          }, ttlMs);
+        }
+      }
+
       const messageBytes = new TextEncoder().encode(message);
 
       const { signatureBase58 } = await signWalletLinkMessage({
@@ -84,6 +114,12 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
             }
           : undefined,
       });
+
+      // Clear challenge TTL timer — signing succeeded before expiry.
+      if (challengeTimerRef.current) {
+        clearTimeout(challengeTimerRef.current);
+        challengeTimerRef.current = null;
+      }
 
       // Step 3: Verify signature
       setStatus('verifying');
@@ -106,7 +142,10 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
       // Success - refresh account to pick up the new identity
       setStatus('success');
       setLinkedAddress(walletAddress);
-      await refreshAccount();
+      const refreshOk = await refreshAccount();
+      if (!refreshOk) {
+        console.warn('[WalletLinkPrompt] Account refresh failed after successful link — UI may be stale.');
+      }
 
       // Submit tool result so the chat conversation can continue
       onSubmit(toolCall.id, {
@@ -114,18 +153,68 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
         walletAddress,
       });
     } catch (err) {
+      // Clear any pending challenge timer on error.
+      if (challengeTimerRef.current) {
+        clearTimeout(challengeTimerRef.current);
+        challengeTimerRef.current = null;
+      }
+
       setStatus('error');
-      const msg = err instanceof Error ? err.message : 'Wallet linking failed';
-      setErrorMessage(msg);
+      setErrorMessage(humanizeWalletSignatureError(err));
     }
   }, [connected, publicKey, signMessage, openWalletModal, linkedWallets, refreshAccount, onSubmit, toolCall.id]);
 
-  // After wallet modal connects, re-trigger the link flow
-  const handleRetryAfterConnect = useCallback(() => {
-    if (connected && publicKey) {
-      handleLink();
+  // ------------------------------------------------------------------
+  // Ref for handleLink to avoid circular dependency in useEffect deps.
+  // ------------------------------------------------------------------
+  const handleLinkRef = useRef(handleLink);
+  handleLinkRef.current = handleLink;
+
+  // ------------------------------------------------------------------
+  // 1. Timeout for "connecting" state — if the wallet hasn't connected
+  //    after 30 s, reset to idle with an error.
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    if (status !== 'connecting') return;
+
+    const timer = setTimeout(() => {
+      setStatus('idle');
+      setErrorMessage('Wallet connection timed out. Please try again.');
+    }, CONNECT_TIMEOUT_MS);
+
+    return () => clearTimeout(timer);
+  }, [status]);
+
+  // ------------------------------------------------------------------
+  // 2. Auto-continue when wallet connects — eliminates the manual
+  //    "Continue with ..." step.
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    if (status === 'connecting' && connected && publicKey) {
+      handleLinkRef.current();
     }
-  }, [connected, publicKey, handleLink]);
+  }, [status, connected, publicKey]);
+
+  // ------------------------------------------------------------------
+  // 3. Detect wallet disconnect mid-flow — abort active operations.
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    if (!connected && (ACTIVE_STATES as string[]).includes(status)) {
+      setStatus('error');
+      setErrorMessage('Wallet disconnected. Please reconnect and try again.');
+    }
+  }, [connected, status]);
+
+  // ------------------------------------------------------------------
+  // Cleanup challenge timer on unmount.
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    return () => {
+      if (challengeTimerRef.current) {
+        clearTimeout(challengeTimerRef.current);
+      }
+    };
+  }, []);
 
   // Success state
   if (status === 'success' && linkedAddress) {
@@ -196,32 +285,22 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
       </div>
 
       <div className="flex gap-2">
-        {/* If we were in "connecting" status and wallet connected, show continue button */}
-        {status === 'connecting' && connected && publicKey ? (
-          <button
-            onClick={handleRetryAfterConnect}
-            className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-          >
-            Continue with {publicKey.toBase58().slice(0, 4)}...{publicKey.toBase58().slice(-4)}
-          </button>
-        ) : (
-          <button
-            onClick={handleLink}
-            disabled={disabled || isProcessing}
-            className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            {isProcessing && (
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-            )}
-            {statusLabels[status]}
-          </button>
-        )}
+        <button
+          onClick={handleLink}
+          disabled={disabled || isProcessing}
+          className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+        >
+          {(isProcessing || status === 'connecting') && (
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          )}
+          {statusLabels[status]}
+        </button>
 
         {/* Cancel button to dismiss without linking */}
-        {status !== 'success' && !isProcessing && (
+        {status !== 'success' && !isProcessing && status !== 'connecting' && (
           <button
             onClick={() => {
               onSubmit(toolCall.id, { linked: false, cancelled: true });

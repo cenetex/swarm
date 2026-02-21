@@ -87,7 +87,7 @@ interface AuthState {
   resetLocal: () => void;
 
   // Actions – account refresh (e.g. after linking a wallet)
-  refreshAccount: () => Promise<void>;
+  refreshAccount: () => Promise<boolean>;
 
   // Actions – error management
   clearError: () => void;
@@ -192,7 +192,7 @@ export const useAuthStore = create<AuthState>()(
           const response = await fetch(`${API_BASE}/auth/me`, {
             credentials: 'include',
           });
-          if (!response.ok) return;
+          if (!response.ok) return false;
           const data = await response.json();
           if (data.authenticated && data.account) {
             set({
@@ -201,9 +201,12 @@ export const useAuthStore = create<AuthState>()(
               gateWallet: data.gateWallet || null,
               gateStatusByWallet: data.gateStatusByWallet || null,
             });
+            return true;
           }
+          return false;
         } catch (error) {
           console.error('[AuthStore] Refresh account error:', error instanceof Error ? error.message : String(error));
+          return false;
         }
       },
 
