@@ -1,0 +1,182 @@
+# Dependabot configuration for aws-swarm monorepo
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Related: issue #286 — enable baseline repository security controls
+#
+# NOTE: Dependabot alerts and secret scanning are repo-level settings
+# that must be enabled via GitHub UI or API, not via this file.
+# See the checklist on issue #286 for details.
+
+version: 2
+updates:
+  # ── Root (workspace root) ──────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - "type:security"
+      - "priority:medium"
+
+  # ── packages/core ──────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /packages/core
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - "type:security"
+      - "package:core"
+
+  # ── packages/handlers ──────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /packages/handlers
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - "type:security"
+      - "package:handlers"
+
+  # ── packages/admin-api ─────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /packages/admin-api
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - "type:security"
+      - "package:admin"
+
+  # ── packages/admin-ui ──────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /packages/admin-ui
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - "type:security"
+      - "package:admin"
+
+  # ── packages/infra ─────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /packages/infra
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - "type:security"
+      - "package:infra"
+
+  # ── packages/mcp-server ────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /packages/mcp-server
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - "type:security"
+
+  # ── packages/layer ─────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /packages/layer
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - "type:security"
+
+  # ── packages/profile-page ──────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /packages/profile-page
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - "type:security"
+
+  # ── packages/claude-code-worker ────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /packages/claude-code-worker
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - "type:security"
+
+  # ── GitHub Actions ─────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - "type:security"
+      - "type:infra"
