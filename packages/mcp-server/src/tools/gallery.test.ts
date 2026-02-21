@@ -148,6 +148,93 @@ describe('Gallery Tools - send_gallery_image', () => {
     expect(result.error).toContain('deleted');
   });
 
+  it('returns success:false with actionable error when ID is not an image item', async () => {
+    const nonImageServices: GalleryServices = {
+      ...mockGalleryServices,
+      getGalleryItem: async () => ({
+        id: 'vid-1',
+        type: 'video',
+        url: 'https://example.com/video1.mp4',
+        prompt: 'Video clip',
+        createdAt: Date.now(),
+      }),
+    };
+    const tools = createGalleryTools(nonImageServices);
+    const tool = tools.find(t => t.name === 'send_gallery_image');
+
+    const result = await (tool!.execute as any)({ imageId: 'vid-1' }, {
+      avatarId: 'test',
+      platform: 'admin-ui',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(result.error).toContain('not an image');
+    expect(result.error).toContain('type "image"');
+    // Must NOT contain media or data that could be rendered as an image
+    expect(result.media).toBeUndefined();
+    expect(result.data).toBeUndefined();
+  });
+
+  it('builds image-only context for send_gallery_image to avoid non-image IDs', async () => {
+    const mixedItems: GalleryItem[] = [
+      {
+        id: 'vid-1',
+        type: 'video',
+        url: 'https://example.com/video1.mp4',
+        prompt: 'Video clip',
+        createdAt: Date.now(),
+      },
+      {
+        id: 'img-10',
+        type: 'image',
+        url: 'https://example.com/image10.jpg',
+        prompt: 'Sunset photo',
+        createdAt: Date.now() - 1000,
+      },
+      {
+        id: 'stk-1',
+        type: 'sticker',
+        url: 'https://example.com/sticker1.webp',
+        prompt: 'Sticker',
+        createdAt: Date.now() - 2000,
+      },
+      {
+        id: 'img-11',
+        type: 'image',
+        url: 'https://example.com/image11.jpg',
+        prompt: 'Forest photo',
+        createdAt: Date.now() - 3000,
+      },
+    ];
+
+    const mixedServices: GalleryServices = {
+      getGallery: async (_avatarId: string, options) => {
+        if (options.type) {
+          return mixedItems.filter(item => item.type === options.type);
+        }
+        return mixedItems;
+      },
+      getGalleryItem: async (_avatarId: string, itemId: string) => {
+        return mixedItems.find(item => item.id === itemId) || null;
+      },
+      searchGallery: async () => mixedItems,
+    };
+
+    const tools = createGalleryTools(mixedServices);
+    const tool = tools.find(t => t.name === 'send_gallery_image');
+
+    const contextText = await tool!.contextBuilder!({
+      avatarId: 'test',
+      platform: 'admin-ui',
+    });
+
+    expect(contextText).toContain('img-10');
+    expect(contextText).toContain('img-11');
+    expect(contextText).not.toContain('vid-1');
+    expect(contextText).not.toContain('stk-1');
+  });
+
   it('validates required imageId field', () => {
     const tools = createGalleryTools(mockGalleryServices);
     const tool = tools.find(t => t.name === 'send_gallery_image');
@@ -159,6 +246,15 @@ describe('Gallery Tools - send_gallery_image', () => {
 
     expect(valid.success).toBe(true);
     expect(missing.success).toBe(false);
+  });
+
+  it('rejects blank imageId values', () => {
+    const tools = createGalleryTools(mockGalleryServices);
+    const tool = tools.find(t => t.name === 'send_gallery_image');
+
+    const blank = tool!.inputSchema.safeParse({ imageId: '   ' });
+
+    expect(blank.success).toBe(false);
   });
 
   it('has gallery category', () => {

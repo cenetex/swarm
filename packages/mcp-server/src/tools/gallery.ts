@@ -38,11 +38,23 @@ export interface GalleryServices {
  */
 export async function buildGalleryContext(
   services: GalleryServices,
-  avatarId: string
+  avatarId: string,
+  options: {
+    type?: GalleryItem['type'];
+    emptyMessage?: string;
+  } = {}
 ): Promise<string | undefined> {
-  const items = await services.getGallery(avatarId, { limit: 5 });
+  const items = await services.getGallery(avatarId, {
+    type: options.type,
+    limit: 5,
+  });
   if (items.length === 0) {
-    return 'Gallery is empty - generate some images first!';
+    if (options.emptyMessage) {
+      return options.emptyMessage;
+    }
+    return options.type === 'image'
+      ? 'Gallery has no images yet - generate one first.'
+      : 'Gallery is empty - generate some images first!';
   }
 
   const summaries = items.slice(0, 3).map(item => {
@@ -53,7 +65,8 @@ export async function buildGalleryContext(
   });
 
   const remaining = items.length - summaries.length;
-  let context = `Recent: ${summaries.join(', ')}`;
+  const contextPrefix = options.type ? `Recent ${options.type}s` : 'Recent';
+  let context = `${contextPrefix}: ${summaries.join(', ')}`;
   if (remaining > 0) {
     context += ` (+${remaining} more)`;
   }
@@ -136,13 +149,19 @@ export const createGalleryTools = (services: GalleryServices) => [
 
   defineTool({
     name: 'send_gallery_image',
-    description: 'Send an image from my gallery to the chat. Use an ID from my gallery.',
+    description: 'Send an image from my gallery to the chat. Use an image ID from get_my_gallery.',
     category: 'gallery',
     inputSchema: z.object({
-      imageId: z.string().describe('ID of the gallery image to send'),
+      imageId: z.string()
+        .trim()
+        .min(1, 'Image ID is required')
+        .describe('ID of the gallery image to send'),
     }),
     contextBuilder: async (context) => {
-      return buildGalleryContext(services, context.avatarId);
+      return buildGalleryContext(services, context.avatarId, {
+        type: 'image',
+        emptyMessage: 'Gallery has no images yet - run generate_image or get_my_gallery(type: image) first.',
+      });
     },
     execute: async (input, context): Promise<ToolResult> => {
       const item = await services.getGalleryItem(context.avatarId, input.imageId);
@@ -151,6 +170,13 @@ export const createGalleryTools = (services: GalleryServices) => [
         return {
           success: false,
           error: 'FAILED: Image ID not found in gallery. The image may have been deleted or the ID is stale. Run get_my_gallery to fetch current valid image IDs before retrying.',
+        };
+      }
+
+      if (item.type !== 'image') {
+        return {
+          success: false,
+          error: `FAILED: Gallery item "${item.id}" is type "${item.type}", not an image. Use get_my_gallery with type "image" to fetch a valid image ID before retrying.`,
         };
       }
 
