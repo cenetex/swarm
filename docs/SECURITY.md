@@ -99,9 +99,16 @@ audit-level=high
 
 **Known Exceptions:**
 
-| Package | Severity | Issue | Reason | Target Resolution |
-|---------|----------|-------|--------|-------------------|
-| `bigint-buffer` | High | [GHSA-3gc7-fjrx-p6mg](https://github.com/advisories/GHSA-3gc7-fjrx-p6mg) | Package unmaintained (no fix available). Vulnerable `toBigIntLE()` function not used in our codebase - only transitive dependency via `@solana/buffer-layout-utils`. | 2026-04-01 |
+| Package | CVE | Severity | Issue | Reason | Target Resolution |
+|---------|-----|----------|-------|--------|-------------------|
+| `bigint-buffer` | CVE-2025-3194 | High (CVSS 7.5) | [GHSA-3gc7-fjrx-p6mg](https://github.com/advisories/GHSA-3gc7-fjrx-p6mg) | Package unmaintained; no patched version available (`patched_versions: <0.0.0`). Transitive dep via `@solana/spl-token > @solana/buffer-layout-utils > bigint-buffer`. The vulnerable `toBigIntLE()` function is not called directly by our code. Even the latest `@solana/spl-token@0.4.14` still depends on this package. Risk accepted: DoS-only impact (CWE-120), no data exfiltration, and the function is only reachable with attacker-controlled buffer sizes in the Solana token layout path. | Re-evaluate 2026-06-01 or when `@solana/spl-token` removes `bigint-buffer` dependency |
+
+**Resolved CVEs (previously ignored):**
+
+| Package | CVE | Resolution | Date |
+|---------|-----|------------|------|
+| `ajv` (via eslint) | CVE-2025-69873 | Fixed via pnpm override `ajv@^6: 6.14.0`. The vulnerable ajv 6.12.6 was a transitive dependency of eslint (dev-only). ReDoS only exploitable when `$data: true` option is used, which this project does not do, but the override eliminates the vulnerability entirely. | 2026-02-20 |
+| `bn.js` (via @solana/web3.js) | CVE-2026-2739 | Fixed via pnpm override `bn.js: 5.2.3`. Infinite loop when calling `maskn(0)`. | 2026-02-20 |
 
 3. Create a tracking issue in GitHub
 4. Set reminder to re-evaluate monthly
@@ -220,4 +227,4 @@ This security policy is part of the AWS Swarm project and follows the same MIT l
 
 ---
 
-*Last updated: 2026-02-16*
+*Last updated: 2026-02-20*
