@@ -117,19 +117,33 @@ export interface IdempotencyStore<T> {
 function createInMemoryStore<T>(params: {
   now: () => number;
   ttlMs: number;
-}): { get: (key: string) => T | null; set: (key: string, value: T) => void; delete: (key: string) => void; clear: () => void } {
+}): {
+  get: (key: string) => T | null;
+  has: (key: string) => boolean;
+  set: (key: string, value: T) => void;
+  delete: (key: string) => void;
+  clear: () => void;
+} {
   const { now, ttlMs } = params;
   const store = new Map<string, IdempotencyRecord<T>>();
 
+  const getRecord = (key: string): IdempotencyRecord<T> | null => {
+    const record = store.get(key);
+    if (!record) return null;
+    if (record.expiresAt <= now()) {
+      store.delete(key);
+      return null;
+    }
+    return record;
+  };
+
   return {
     get(key: string): T | null {
-      const record = store.get(key);
-      if (!record) return null;
-      if (record.expiresAt <= now()) {
-        store.delete(key);
-        return null;
-      }
-      return record.value;
+      const record = getRecord(key);
+      return record ? record.value : null;
+    },
+    has(key: string): boolean {
+      return getRecord(key) !== null;
     },
     set(key: string, value: T): void {
       store.set(key, { value, expiresAt: now() + ttlMs });
@@ -245,8 +259,7 @@ export function createIdempotencyStore<T>(params?: {
       });
 
       // Check in-memory first (simulate atomic check-and-set)
-      const existing = memoryStore.get(key);
-      if (existing !== null) {
+      if (memoryStore.has(key)) {
         return false; // Already exists in memory
       }
 

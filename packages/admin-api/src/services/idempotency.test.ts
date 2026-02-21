@@ -188,6 +188,39 @@ describe('fallback to in-memory store', () => {
     expect(second).toBe(false);
   });
 
+  it('should treat null sentinel claims as duplicates in memory fallback', async () => {
+    const nowMs = 1000;
+    const { store, mockSend } = createTestStore<string | null>({ now: () => nowMs, ttlMs: 5000 });
+
+    // First claim uses null sentinel (same as chat handler in-flight claim)
+    mockSend.mockRejectedValueOnce(new Error('Service unavailable'));
+    const first = await store.set('mem-null-sentinel-key', null);
+    expect(first).toBe(true);
+
+    // Second claim for same key must still be rejected
+    mockSend.mockRejectedValueOnce(new Error('Service unavailable'));
+    const second = await store.set('mem-null-sentinel-key', null);
+    expect(second).toBe(false);
+  });
+
+  it('should allow re-claiming a null sentinel after fallback TTL expires', async () => {
+    let nowMs = 1000;
+    const { store, mockSend } = createTestStore<string | null>({ now: () => nowMs, ttlMs: 100 });
+
+    // First claim via memory fallback
+    mockSend.mockRejectedValueOnce(new Error('Service unavailable'));
+    const first = await store.set('mem-null-expire-key', null);
+    expect(first).toBe(true);
+
+    // Advance beyond fallback TTL
+    nowMs += 200;
+
+    // Expired sentinel should no longer block a new claim
+    mockSend.mockRejectedValueOnce(new Error('Service unavailable'));
+    const second = await store.set('mem-null-expire-key', null);
+    expect(second).toBe(true);
+  });
+
   it('should return null from memory fallback when key not found anywhere', async () => {
     const { store, mockSend } = createTestStore<string>();
 
