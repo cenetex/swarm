@@ -185,15 +185,37 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose }: PlanU
     setLoading(true);
     setError(null);
     try {
-      const [limitsData, usageData, historyData] = await Promise.all([
+      const [limitsResult, usageResult, historyResult] = await Promise.allSettled([
         getAvatarEffectiveLimits(avatarId),
         getAvatarUsage(avatarId),
         getAvatarUsageHistory(avatarId, 7),
       ]);
-      setEffective(limitsData);
-      setSelectedPlan(limitsData.plan);
-      setUsage(usageData);
-      setHistory(historyData.history);
+
+      // Collect errors from failed requests
+      const errors: string[] = [];
+
+      if (limitsResult.status === 'fulfilled') {
+        setEffective(limitsResult.value);
+        setSelectedPlan(limitsResult.value.plan);
+      } else {
+        errors.push(`Plan limits: ${limitsResult.reason instanceof Error ? limitsResult.reason.message : 'unavailable'}`);
+      }
+
+      if (usageResult.status === 'fulfilled') {
+        setUsage(usageResult.value);
+      } else {
+        errors.push(`Usage data: ${usageResult.reason instanceof Error ? usageResult.reason.message : 'unavailable'}`);
+      }
+
+      if (historyResult.status === 'fulfilled') {
+        setHistory(historyResult.value.history);
+      } else {
+        // History failure is non-critical; skip silently
+      }
+
+      if (errors.length > 0) {
+        setError(errors.join('; '));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load plan & usage data');
     } finally {

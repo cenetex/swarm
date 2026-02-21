@@ -1133,6 +1133,19 @@ export class AdminApiConstruct extends Construct {
       integration: avatarsIntegration,
     });
 
+    // Usage metering routes
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/usage',
+      methods: [apigateway.HttpMethod.GET],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/usage/history',
+      methods: [apigateway.HttpMethod.GET],
+      integration: avatarsIntegration,
+    });
+
     this.api.addRoutes({
       path: '/avatars/{avatarId}/activation-readiness',
       methods: [apigateway.HttpMethod.GET],

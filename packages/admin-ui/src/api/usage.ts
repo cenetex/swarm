@@ -70,8 +70,8 @@ export async function getAvatarUsage(avatarId: string): Promise<UsageResponse> {
   );
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || `HTTP ${response.status}`);
+    const body = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(body.error || body.message || `HTTP ${response.status}`);
   }
 
   return response.json();
@@ -93,8 +93,8 @@ export async function getAvatarUsageHistory(
   );
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || `HTTP ${response.status}`);
+    const body = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(body.error || body.message || `HTTP ${response.status}`);
   }
 
   return response.json();
