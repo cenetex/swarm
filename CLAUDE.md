@@ -180,8 +180,6 @@ Pre-commit and pre-push hooks run automatically — you rarely need to run check
 | **pre-commit** | Lockfile check, `pnpm lint`, issue scan (blocks on unreviewed critical issues) | `SKIP_PRECOMMIT=1` |
 | **pre-push** | `pnpm lint`, `pnpm build`, admin-ui build, Privy smoke test, `bun test` | `SKIP_PREPUSH=1` |
 
-The pre-push hook also syncs `package.json` version to any `v*` tag on HEAD.
-
 ## CI/CD Pipeline
 
 ### Workflows
@@ -311,9 +309,23 @@ To deploy manually via GitHub Actions:
 2. Click "Run workflow"
 3. Select branch and confirm
 
-### Releasing
+### Versioning
 
-Releases use GitHub Releases as the sole version source. There is no `version` field in `package.json`.
+We follow [Semantic Versioning](https://semver.org/) with GitHub Releases as the sole version source. There is no `version` field in `package.json`.
+
+| Bump | When | Examples |
+|------|------|----------|
+| **Patch** (`0.3.1`) | Bug fixes, config changes, removing broken features, dependency updates | Disable broken Lambda, fix CORS, update deps |
+| **Minor** (`0.4.0`) | New features, new platform adapters, significant refactors that change behavior | Add generic heartbeat, add wallet linking, semantic memory |
+| **Major** (`1.0.0`) | Breaking API changes, data model migrations, architectural rewrites | Change DynamoDB schema, remove/rename public API endpoints |
+
+**Rules:**
+- All version tags live on `main` — never tag a feature branch
+- Tags trigger the `deploy.yml` production workflow and `release-notes.yml`
+- Group related PRs into a single release when merged close together
+- Pre-1.0: minor bumps are fine for any non-trivial feature batch; patch for fixes
+
+### Releasing
 
 ```bash
 # Create a patch release (default)

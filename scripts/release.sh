@@ -1,10 +1,12 @@
 #!/bin/bash
 #
-# Release Script
+# Release Script — follows SemVer (see CLAUDE.md § Versioning)
 #
 # Usage:
-#   ./scripts/release.sh [patch|minor|major]
-#   ./scripts/release.sh v0.2.0  # explicit version
+#   ./scripts/release.sh            # patch (bug fixes, config changes)
+#   ./scripts/release.sh minor      # new features, significant refactors
+#   ./scripts/release.sh major      # breaking changes, schema migrations
+#   ./scripts/release.sh v1.0.0     # explicit version
 #
 # Creates a GitHub Release (and tag) on main via the GitHub CLI.
 # The release-notes.yml workflow will fire and overwrite the body
