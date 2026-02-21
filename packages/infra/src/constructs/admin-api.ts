@@ -1474,6 +1474,9 @@ export class AdminApiConstruct extends Construct {
     });
 
     // Prompt Preview handler - shows what would be sent to the LLM
+    // The handler calls createMCPServices() which initializes the full service
+    // container. Services read env vars at module load time, so we must provide
+    // the same core env vars that the chat handler uses.
     const promptPreviewHandler = new nodejs.NodejsFunction(this, 'PromptPreviewHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../../admin-api/src/handlers/prompt-preview.ts'),
@@ -1482,6 +1485,12 @@ export class AdminApiConstruct extends Construct {
       memorySize: 256,
       environment: {
         ADMIN_TABLE: this.table.tableName,
+        STATE_TABLE: stateTable?.tableName || '',
+        SECRET_PREFIX: secretPrefix,
+        MEDIA_BUCKET: mediaBucket?.bucketName || '',
+        CDN_URL: cdnUrl || '',
+        LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
+        REPLICATE_API_KEY_SECRET_ARN: replicateApiKey?.secretArn || '',
         ADMIN_EMAILS: adminEmails,
         NODE_ENV: environment,
         LOG_LEVEL: logLevel,
@@ -1499,6 +1508,28 @@ export class AdminApiConstruct extends Construct {
 
     // Grant permissions to prompt preview handler
     this.table.grantReadData(promptPreviewHandler);
+    if (stateTable) {
+      stateTable.grantReadData(promptPreviewHandler);
+    }
+    llmApiKey.grantRead(promptPreviewHandler);
+    if (replicateApiKey) {
+      replicateApiKey.grantRead(promptPreviewHandler);
+    }
+
+    // Grant read-only access to avatar secrets (needed by service container for
+    // tool shouldShow/contextBuilder checks, e.g. checking if a bot token exists)
+    promptPreviewHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret'],
+      resources: secretArnPatterns,
+    }));
+
+    // ListSecrets needed by service container
+    promptPreviewHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['secretsmanager:ListSecrets'],
+      resources: ['*'],
+    }));
 
     const promptPreviewIntegration = new integrations.HttpLambdaIntegration(
       'PromptPreviewIntegration',
