@@ -263,11 +263,10 @@ scripts/worktree-finalize.sh --issues 310,297,287
 scripts/worktree-finalize.sh --dry-run
 ```
 
-The recommended flow for agent worktrees:
-1. Create worktree: `git worktree add /private/tmp/aws-swarm-NNN -b fix/issue-NNN-description main`
-2. Signal start: `scripts/worktree-start.sh NNN`
-3. Agent works in the worktree
-4. Finalize when done: `scripts/worktree-finalize.sh --issues NNN`
+**IMPORTANT:** When orchestrating parallel agent work in worktrees, you MUST:
+1. After creating each worktree, run `scripts/worktree-start.sh <issue-number>` to push the branch and label the issue. This makes work visible on the project board.
+2. After an agent finishes, run `scripts/worktree-finalize.sh --issues <issue-number>` to commit, push, and create the PR.
+3. If dispatching multiple agents at once, run `worktree-start.sh` for each issue immediately — don't wait until agents finish.
 
 ### Copilot Coding Agent
 
