@@ -4,7 +4,7 @@
   "description": "Lambda layer with native modules (sharp) and fetch shims for Node.js 20+",
   "private": true,
   "dependencies": {
-    "sharp": "^0.33.5"
+    "sharp": "^0.34.5"
   },
   "scripts": {
     "build:layer": "rm -rf nodejs && mkdir -p nodejs && cp package.json nodejs/ && cd nodejs && npm install --omit=dev --platform=linux --arch=x64 && mkdir -p node_modules/node-fetch && cp ../node-fetch-shim/* node_modules/node-fetch/ && mkdir -p node_modules/abort-controller && cp ../abort-controller-shim/* node_modules/abort-controller/"
