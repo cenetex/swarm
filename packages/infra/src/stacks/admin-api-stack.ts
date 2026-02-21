@@ -255,14 +255,22 @@ export class AdminApiStack extends cdk.Stack {
       ? ''
       : process.env.INTERNAL_TEST_KEY || `test-${Date.now()}-${Math.random().toString(36).substring(2)}`;
 
-    // Shared handlers (e.g., moltbook heartbeat) require ADMIN_TABLE at runtime.
+    // Shared handlers (e.g., platform heartbeat) require ADMIN_TABLE at runtime.
     // Provide a stable table reference here so environment wiring does not depend
     // on post-hoc Lambda property overrides.
+    //
+    // When useExistingResources is true, the admin table is imported from the
+    // legacy monolith stack and has NO suffix (e.g., "SwarmAdmin-prod").
+    // When useExistingResources is false, the table is created with the suffix
+    // (e.g., "SwarmAdmin-prod-split").
+    const adminTableName = props.useExistingResources
+      ? `SwarmAdmin-${environment}`
+      : `SwarmAdmin-${environment}${nameSuffix ?? ''}`;
     const sharedAdminTable = adminEmails
       ? dynamodb.Table.fromTableName(
           this,
           'SharedAdminTableRef',
-          `SwarmAdmin-${environment}${nameSuffix ?? ''}`
+          adminTableName
         )
       : undefined;
 

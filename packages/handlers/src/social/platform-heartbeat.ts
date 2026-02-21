@@ -371,10 +371,10 @@ Which items (if any) would you like to engage with?`;
 // Core processing
 // ============================================================================
 
-const STATE_TABLE = process.env.STATE_TABLE;
-const ADMIN_TABLE = process.env.ADMIN_TABLE;
 const SECRET_PREFIX = process.env.SECRET_PREFIX || 'swarm';
 
+let _stateTable: string;
+let _adminTable: string | undefined;
 let secretsService: ReturnType<typeof createSecretsService>;
 let adminDocClient: DynamoDBDocumentClient;
 let stateDocClient: DynamoDBDocumentClient;
@@ -382,7 +382,14 @@ let _initialized = false;
 
 async function initialize(): Promise<void> {
   if (_initialized) return;
-  if (!STATE_TABLE) throw new Error('STATE_TABLE environment variable is required');
+
+  const stateTable = process.env.STATE_TABLE;
+  if (!stateTable) throw new Error('STATE_TABLE environment variable is required');
+  _stateTable = stateTable;
+
+  // ADMIN_TABLE is optional — when missing, the heartbeat returns early with no avatars.
+  _adminTable = process.env.ADMIN_TABLE || undefined;
+
   secretsService = createSecretsService();
   adminDocClient = getDynamoClient();
   stateDocClient = getDynamoClient();
@@ -393,7 +400,7 @@ async function initialize(): Promise<void> {
  * Get all active avatars from ADMIN_TABLE
  */
 async function getActiveAvatars(): Promise<HeartbeatAvatar[]> {
-  if (!ADMIN_TABLE) {
+  if (!_adminTable) {
     logger.error('Platform heartbeat disabled: missing ADMIN_TABLE environment variable', undefined, {
       subsystem: 'platform-heartbeat',
       event: 'missing_admin_table',
@@ -406,7 +413,7 @@ async function getActiveAvatars(): Promise<HeartbeatAvatar[]> {
 
   do {
     const result = await adminDocClient.send(new ScanCommand({
-      TableName: ADMIN_TABLE,
+      TableName: _adminTable,
       FilterExpression: 'begins_with(pk, :prefix) AND sk = :sk',
       ExpressionAttributeValues: {
         ':prefix': 'AVATAR#',
@@ -447,7 +454,7 @@ async function processAvatarPlatform(
   const { avatarId } = avatar;
 
   // Check if enough time has passed since last heartbeat for this platform
-  const lastHeartbeat = await getLastHeartbeat(stateDocClient, STATE_TABLE!, avatarId, adapter.platform);
+  const lastHeartbeat = await getLastHeartbeat(stateDocClient, _stateTable, avatarId, adapter.platform);
 
   if (now - lastHeartbeat < adapter.defaultIntervalMs) {
     const minutesRemaining = Math.round((adapter.defaultIntervalMs - (now - lastHeartbeat)) / 60000);
@@ -465,7 +472,7 @@ async function processAvatarPlatform(
     const activities = await adapter.fetchActivity(avatarId, secrets);
 
     if (activities.length === 0) {
-      await setLastHeartbeat(stateDocClient, STATE_TABLE!, avatarId, adapter.platform, now);
+      await setLastHeartbeat(stateDocClient, _stateTable, avatarId, adapter.platform, now);
       return { checked: true, engaged: false };
     }
 
@@ -495,7 +502,7 @@ async function processAvatarPlatform(
     }
 
     // Update heartbeat timestamp
-    await setLastHeartbeat(stateDocClient, STATE_TABLE!, avatarId, adapter.platform, now);
+    await setLastHeartbeat(stateDocClient, _stateTable, avatarId, adapter.platform, now);
 
     return { checked: true, engaged };
   } catch (error) {
@@ -506,7 +513,7 @@ async function processAvatarPlatform(
     });
 
     // Still update heartbeat to avoid hammering on errors
-    await setLastHeartbeat(stateDocClient, STATE_TABLE!, avatarId, adapter.platform, now);
+    await setLastHeartbeat(stateDocClient, _stateTable, avatarId, adapter.platform, now);
 
     return { checked: false, engaged: false, error: errorMessage };
   }
