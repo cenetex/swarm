@@ -584,7 +584,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
             updateMessage(activeAvatar.id, msg.id, {
               toolCalls: msg.toolCalls?.map(tc =>
                 tc.id === toolCallId
-                  ? { ...tc, status: status as const, result }
+                  ? { ...tc, status, result }
                   : tc
               ),
             });
