@@ -25,9 +25,34 @@
 - [ ] `infra`
 - [ ] Other: ___
 
-## Testing
+## Risk Level
 
-<!-- How has this been tested? -->
+<!-- Select ONE risk level. The release gate CI check requires this. -->
+
+- [ ] Low — Docs, config, tests only; no runtime impact
+- [ ] Medium — Scoped feature or fix; limited blast radius
+- [ ] High — Cross-cutting change, infra modification, or dependency update
+- [ ] Critical — Data migration, auth change, or breaking API change
+
+## Rollback Plan
+
+<!-- How to roll back if this change causes issues in production.
+     The release gate CI check requires this section.
+     Examples:
+       - "Revert this commit"
+       - "Feature-flagged; disable flag X in parameter store"
+       - "Redeploy previous tag vX.Y.Z"
+-->
+
+## Validation / Test Plan
+
+<!-- How has this been validated? What commands should reviewers run?
+     The release gate CI check requires this section.
+     Examples:
+       - "bun test packages/core/"
+       - "Deploy to staging and run ./scripts/test-e2e.sh web <avatar> ci staging"
+       - "Manual: navigate to /settings and verify toggle works"
+-->
 
 - [ ] Unit tests added/updated
 - [ ] Integration tests added/updated
@@ -42,6 +67,21 @@
 - [ ] I have made corresponding changes to the documentation
 - [ ] My changes generate no new warnings
 - [ ] Any dependent changes have been merged and published
+
+## Changelog (release PRs only)
+
+<!-- Required for PRs labeled 'release' or with a version in the title.
+     Omit this section for regular PRs.
+
+### What's New
+- ...
+
+### Bug Fixes
+- ...
+
+### Breaking Changes
+- ...
+-->
 
 ## Screenshots (if applicable)
 
