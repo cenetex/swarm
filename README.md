@@ -23,6 +23,9 @@ AI avatar stack for Telegram-first social bots, with a chat-based admin UI, Sola
 - Handlers: [packages/handlers](packages/handlers) — Lambda functions for inbound webhooks, SQS message processing, and outbound response sending.
 - Infra: [packages/infra](packages/infra) — CDK app/constructs for queues, tables, buckets, and stacks.
 - MCP Server: [packages/mcp-server](packages/mcp-server) — Unified tool registry for MCP-compatible clients and Lambda handlers.
+- Lambda Layer: [packages/layer](packages/layer) — Shared Lambda layer with native modules (sharp) and fetch shims for Node.js 20+.
+- Profile Page: [packages/profile-page](packages/profile-page) — Public avatar profile pages served at rati.chat.
+- Claude Code Worker: [packages/claude-code-worker](packages/claude-code-worker) — Agent worker that processes coding tasks using the Claude Code CLI.
 
 ## Runtime Modes
 - **Avatar webhook path**: Telegram updates hit `/webhook/telegram/{avatarId}` and can be processed with channel-aware gating plus tool execution for low-friction iteration.
@@ -73,14 +76,17 @@ For security best practices, dependency management, and vulnerability handling, 
 
 Roadmaps and planning:
 - Milestone summary: [ROADMAP.md](ROADMAP.md)
-- M1 execution plan: [docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md](docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md)
+- M1 (Paid Telegram MVP): [docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md](docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md)
+- M2 (Multi-platform): [docs/ROADMAP-M2-MULTI-PLATFORM.md](docs/ROADMAP-M2-MULTI-PLATFORM.md)
 - Next-milestone task list: [PLAN.md](PLAN.md)
 - Automated cost/activity reporting: [docs/OPERATIONS-REPORTS.md](docs/OPERATIONS-REPORTS.md)
 
 Local dev expects AWS credentials and the core tables/buckets configured (see CDK stacks in [packages/infra](packages/infra)). Environment variables most handlers rely on: `ADMIN_TABLE`, `STATE_TABLE`, `ACTIVITY_TABLE`, `MESSAGE_QUEUE_URL`, `RESPONSE_QUEUE_URL`, `MEDIA_BUCKET`, `SECRETS_ARN`, and `LLM_API_KEY_SECRET_ARN`.
 
 ## Deployment Notes
-- Bootstrap and deploy CDK stacks from [packages/infra](packages/infra) for shared resources.
+- All deployments happen through GitHub Actions on push to `main`. Do **not** run `cdk deploy` locally. See the [deploy workflow](.github/workflows/deploy.yml) and [CLAUDE.md](CLAUDE.md) for details.
+- Staging auto-deploys on merge to main; production requires manual approval in the Actions UI.
+- CDK stacks are defined in [packages/infra](packages/infra). Run `pnpm cdk diff` locally to preview changes before pushing.
 - Avatar-specific secrets (e.g., `TELEGRAM_BOT_TOKEN`) are stored per avatar in Secrets Manager and synced by the admin API.
 - Webhooks are registered with Telegram using per-avatar secret tokens ([packages/admin-api/src/services/telegram.ts](packages/admin-api/src/services/telegram.ts)).
 
