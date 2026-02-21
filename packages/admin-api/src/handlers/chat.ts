@@ -1327,7 +1327,14 @@ export async function handler(
       // Atomically claim the key before doing work to prevent concurrent execution
       const claimed = await chatIdempotencyStore.set(idempotencyKey, null);
       if (!claimed) {
-        // Another invocation already claimed this key and is processing
+        // The key already exists. Re-check whether a completed response has been
+        // written since our initial get() — this closes a narrow race window where
+        // a prior request finalises between our get() and set() calls.
+        const recheck = await chatIdempotencyStore.get(idempotencyKey) as APIGatewayProxyResultV2 | null;
+        if (recheck) {
+          return recheck;
+        }
+        // Still in-flight (null sentinel) — another invocation is actively processing.
         return {
           statusCode: 409,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

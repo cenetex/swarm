@@ -297,6 +297,91 @@ describe('Chat idempotency - concurrent duplicate suppression', () => {
   });
 });
 
+describe('Chat idempotency - race between get and set (recheck on claim failure)', () => {
+  it('should return the completed response when a prior request finishes between get() and set()', async () => {
+    // This simulates the handler's recheck logic: if set() fails, the handler
+    // calls get() again to see if a completed (non-null) response is now available.
+    const { store, mockSend } = createTestStore();
+    const key = 'race-recheck-key';
+    const completedResponse = makeResponse(200, { response: 'Completed during race' });
+
+    // Request A already claimed the key and is processing.
+    // Request B calls get() — key holds null sentinel, returns null.
+    mockSend.mockResolvedValueOnce({
+      Item: {
+        pk: `IDEMPOTENCY#${key}`,
+        sk: 'IDEMPOTENCY',
+        value: null, // in-flight sentinel
+        ttl: Math.floor(Date.now() / 1000) + 300,
+      },
+    });
+    const firstGet = await store.get(key);
+    expect(firstGet).toBeNull(); // handler treats this as "not found"
+
+    // Request B calls set() — fails because key exists.
+    const ccfError = new ConditionalCheckFailedException({
+      message: 'The conditional request failed',
+      $metadata: {},
+    });
+    mockSend.mockRejectedValueOnce(ccfError);
+    const claimed = await store.set(key, null);
+    expect(claimed).toBe(false);
+
+    // Meanwhile, Request A completed and called update(key, response).
+    // Request B re-checks get() — now the completed response is available.
+    mockSend.mockResolvedValueOnce({
+      Item: {
+        pk: `IDEMPOTENCY#${key}`,
+        sk: 'IDEMPOTENCY',
+        value: completedResponse,
+        ttl: Math.floor(Date.now() / 1000) + 300,
+      },
+    });
+    const recheck = await store.get(key);
+    expect(recheck).toEqual(completedResponse);
+    expect(recheck!.statusCode).toBe(200);
+  });
+
+  it('should return 409 when recheck still shows in-flight sentinel', async () => {
+    // The key is genuinely in-flight — recheck returns null, handler returns 409.
+    const { store, mockSend } = createTestStore();
+    const key = 'still-inflight-key';
+
+    // Request B get() — null sentinel
+    mockSend.mockResolvedValueOnce({
+      Item: {
+        pk: `IDEMPOTENCY#${key}`,
+        sk: 'IDEMPOTENCY',
+        value: null,
+        ttl: Math.floor(Date.now() / 1000) + 300,
+      },
+    });
+    const firstGet = await store.get(key);
+    expect(firstGet).toBeNull();
+
+    // Request B set() — fails
+    const ccfError = new ConditionalCheckFailedException({
+      message: 'The conditional request failed',
+      $metadata: {},
+    });
+    mockSend.mockRejectedValueOnce(ccfError);
+    const claimed = await store.set(key, null);
+    expect(claimed).toBe(false);
+
+    // Request B recheck get() — still null (still in-flight)
+    mockSend.mockResolvedValueOnce({
+      Item: {
+        pk: `IDEMPOTENCY#${key}`,
+        sk: 'IDEMPOTENCY',
+        value: null, // still in-flight
+        ttl: Math.floor(Date.now() / 1000) + 300,
+      },
+    });
+    const recheck = await store.get(key);
+    expect(recheck).toBeNull(); // handler should return 409
+  });
+});
+
 describe('Chat idempotency - full lifecycle with all paths', () => {
   it('should handle the complete claim -> update -> replay cycle for each terminal path', async () => {
     const terminalPaths = [
