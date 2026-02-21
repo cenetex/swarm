@@ -6,8 +6,10 @@
  * - Webhook configuration
  * - Message sending
  * - Channel/guild operations
+ * - Gateway runtime health checks
  */
 import * as secrets from './secrets.js';
+import { ECSClient, DescribeServicesCommand } from '@aws-sdk/client-ecs';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
@@ -25,6 +27,8 @@ export interface DiscordConnectionStatus {
     name: string;
     memberCount?: number;
   }>;
+  /** Warning when gateway is required but unavailable */
+  gatewayWarning?: string;
 }
 
 /**
@@ -172,6 +176,17 @@ export async function getConnectionStatus(avatarId: string): Promise<DiscordConn
       }
     } catch (error) {
       console.error('Failed to fetch Discord bot info:', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  // Check gateway availability for bot/hybrid modes
+  if (modeRequiresGateway(mode)) {
+    const gatewayEnabled = process.env.DISCORD_GATEWAY_ENABLED === 'true';
+    if (!gatewayEnabled) {
+      result.gatewayWarning =
+        `Discord ${mode} mode requires the gateway runtime to receive inbound messages. ` +
+        'The gateway is not deployed in this environment. Outbound operations will work, ' +
+        'but the bot will not receive new messages from Discord channels.';
     }
   }
 
@@ -581,4 +596,156 @@ export async function validateWebhookUrl(url: string): Promise<{
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
+}
+
+// =============================================================================
+// Gateway Runtime Health
+// =============================================================================
+
+/**
+ * Discord gateway runtime status
+ */
+export interface DiscordGatewayStatus {
+  /** Whether the gateway infrastructure is deployed for this environment */
+  deployed: boolean;
+  /** Whether the gateway ECS service has running tasks */
+  running: boolean;
+  /** Number of running tasks (0 if not deployed or unavailable) */
+  runningCount: number;
+  /** Desired task count from the ECS service */
+  desiredCount: number;
+  /** Human-readable status message */
+  message: string;
+}
+
+/**
+ * Check the Discord gateway runtime status.
+ *
+ * Uses two signals:
+ * 1. The DISCORD_GATEWAY_ENABLED env var (set by CDK) to check if gateway
+ *    was deployed as part of the stack.
+ * 2. An optional ECS DescribeServices call to check live running task count.
+ *
+ * For the ECS check, the service ARN must be available via the
+ * DISCORD_GATEWAY_SERVICE_ARN environment variable.
+ */
+export async function getGatewayStatus(): Promise<DiscordGatewayStatus> {
+  const gatewayEnabled = process.env.DISCORD_GATEWAY_ENABLED === 'true';
+
+  if (!gatewayEnabled) {
+    return {
+      deployed: false,
+      running: false,
+      runningCount: 0,
+      desiredCount: 0,
+      message: 'Discord gateway is not deployed in this environment (enableDiscordGateway=false).',
+    };
+  }
+
+  const serviceArn = process.env.DISCORD_GATEWAY_SERVICE_ARN;
+  const clusterArn = process.env.DISCORD_GATEWAY_CLUSTER_ARN;
+
+  if (!serviceArn || !clusterArn) {
+    return {
+      deployed: true,
+      running: false,
+      runningCount: 0,
+      desiredCount: 0,
+      message:
+        'Discord gateway is marked as deployed, but service/cluster ARN ' +
+        'environment variables are not configured. Cannot verify running status.',
+    };
+  }
+
+  try {
+    const ecs = new ECSClient({});
+    const response = await ecs.send(
+      new DescribeServicesCommand({
+        cluster: clusterArn,
+        services: [serviceArn],
+      })
+    );
+
+    const service = response.services?.[0];
+    if (!service) {
+      return {
+        deployed: true,
+        running: false,
+        runningCount: 0,
+        desiredCount: 0,
+        message: 'Discord gateway ECS service not found. It may have been deleted.',
+      };
+    }
+
+    const runningCount = service.runningCount ?? 0;
+    const desiredCount = service.desiredCount ?? 0;
+    const running = runningCount > 0;
+
+    if (running) {
+      return {
+        deployed: true,
+        running: true,
+        runningCount,
+        desiredCount,
+        message: `Discord gateway is running (${runningCount}/${desiredCount} tasks).`,
+      };
+    }
+
+    return {
+      deployed: true,
+      running: false,
+      runningCount: 0,
+      desiredCount,
+      message:
+        `Discord gateway has zero running tasks (desired: ${desiredCount}). ` +
+        'Bot/hybrid mode avatars will not receive inbound Discord messages.',
+    };
+  } catch (error) {
+    return {
+      deployed: true,
+      running: false,
+      runningCount: 0,
+      desiredCount: 0,
+      message: `Failed to query gateway status: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
+  }
+}
+
+/**
+ * Check if a specific Discord mode requires the gateway runtime.
+ */
+export function modeRequiresGateway(mode: 'webhook' | 'bot' | 'hybrid' | 'none'): boolean {
+  return mode === 'bot' || mode === 'hybrid';
+}
+
+/**
+ * Get a human-readable warning for Discord operations that require the gateway.
+ * Returns null if the gateway is available or not needed for the given mode.
+ */
+export async function getGatewayGuardrailWarning(
+  mode: 'webhook' | 'bot' | 'hybrid' | 'none'
+): Promise<string | null> {
+  if (!modeRequiresGateway(mode)) {
+    return null;
+  }
+
+  const status = await getGatewayStatus();
+
+  if (status.deployed && status.running) {
+    return null;
+  }
+
+  if (!status.deployed) {
+    return (
+      `Discord ${mode} mode requires the gateway runtime, but it is not deployed ` +
+      'in this environment. Inbound Discord messages will not be received. ' +
+      'Contact your infrastructure team to enable the Discord gateway ' +
+      '(set enableDiscordGateway=true in CDK context).'
+    );
+  }
+
+  return (
+    `Discord ${mode} mode requires the gateway runtime. The gateway is deployed ` +
+    `but has zero running tasks. ${status.message}`
+  );
 }

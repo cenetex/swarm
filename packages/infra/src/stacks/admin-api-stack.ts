@@ -335,6 +335,42 @@ export class AdminApiStack extends cdk.Stack {
       });
     }
 
+    // ── Discord Gateway Guardrail ─────────────────────────────────────────────
+    // When the gateway is disabled, add a CDK annotation warning operators that
+    // any avatars configured with Discord bot/hybrid mode will be unable to
+    // receive inbound messages. This surfaces as a warning in `cdk diff/synth`
+    // and fails the build if the environment variable DISCORD_GATEWAY_GUARDRAIL_STRICT
+    // is set to "true" (e.g., in CI release gates).
+    if (!enableDiscordGateway) {
+      const strict = process.env.DISCORD_GATEWAY_GUARDRAIL_STRICT === 'true';
+      const message =
+        'Discord gateway is disabled (enableDiscordGateway=false). ' +
+        'Avatars configured with Discord bot or hybrid mode will not receive ' +
+        'inbound Discord messages. Set enableDiscordGateway=true to restore ' +
+        'gateway functionality, or set DISCORD_GATEWAY_GUARDRAIL_STRICT=true ' +
+        'in CI to block deployments with this configuration.';
+
+      if (strict) {
+        cdk.Annotations.of(this).addError(message);
+      } else {
+        cdk.Annotations.of(this).addWarning(message);
+      }
+
+      // Export a flag so downstream consumers (admin API Lambda, alarms) can
+      // query whether the gateway was deployed for this environment.
+      new cdk.CfnOutput(this, 'DiscordGatewayEnabled', {
+        value: 'false',
+        description: 'Whether the Discord gateway worker is deployed',
+        exportName: `swarm-discord-gateway-enabled-${environment}${nameSuffix ?? ''}`,
+      });
+    } else {
+      new cdk.CfnOutput(this, 'DiscordGatewayEnabled', {
+        value: 'true',
+        description: 'Whether the Discord gateway worker is deployed',
+        exportName: `swarm-discord-gateway-enabled-${environment}${nameSuffix ?? ''}`,
+      });
+    }
+
     // Create Claude Code worker if enabled
     if (enableClaudeCode) {
       const claudeCodeCallbackQueue = new sqs.Queue(this, 'ClaudeCodeCallbackQueue', {
@@ -408,6 +444,9 @@ export class AdminApiStack extends cdk.Stack {
           consolidationDlq: this.adminApi.consolidationDlq,
         },
       } : {}),
+      // Wire Discord gateway service for runtime drift alarm
+      discordGatewayService: this.discordGatewayWorker?.service,
+      alarmTopic,
     });
 
     // Export API endpoint

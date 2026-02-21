@@ -1010,6 +1010,108 @@ async function evaluateDiscordHealthCheck(
   }
 }
 
+/**
+ * Evaluate whether avatars configured with Discord bot/hybrid mode have
+ * gateway runtime available. When the gateway is disabled at the infrastructure
+ * level, bot/hybrid mode avatars will not receive inbound Discord messages.
+ *
+ * The check uses the DISCORD_GATEWAY_ENABLED environment variable (set by CDK
+ * via the CfnOutput/Lambda env) to determine gateway availability.
+ * - Webhook-only avatars always pass (no gateway dependency).
+ * - Bot/hybrid avatars warn when gateway is disabled.
+ */
+function evaluateDiscordGatewayReadinessCheck(avatar: AvatarRecord): ReadinessCheckV1 {
+  const discordEnabled = Boolean(avatar.platforms?.discord?.enabled);
+  const discordMode = avatar.platforms?.discord?.mode;
+
+  if (!discordEnabled) {
+    return {
+      id: 'platform.discord.gateway_available',
+      title: 'Discord gateway runtime is available',
+      required: false,
+      status: 'not_applicable',
+      reasonCode: 'DISCORD_NOT_ENABLED',
+      message: 'Discord is not enabled for this avatar.',
+      sourceStep: 'discord',
+      remediation: [],
+      evidence: {
+        discordEnabled: false,
+      },
+    };
+  }
+
+  // Webhook-only mode does not require the gateway
+  if (discordMode === 'webhook') {
+    return {
+      id: 'platform.discord.gateway_available',
+      title: 'Discord gateway runtime is available',
+      required: false,
+      status: 'not_applicable',
+      reasonCode: 'DISCORD_WEBHOOK_ONLY',
+      message: 'Webhook-only Discord mode does not require the gateway runtime.',
+      sourceStep: 'discord',
+      remediation: [],
+      evidence: {
+        discordEnabled: true,
+        discordMode: 'webhook',
+        gatewayRequired: false,
+      },
+    };
+  }
+
+  // Bot and hybrid modes require the gateway runtime
+  const gatewayEnabled = process.env.DISCORD_GATEWAY_ENABLED === 'true';
+
+  if (gatewayEnabled) {
+    return {
+      id: 'platform.discord.gateway_available',
+      title: 'Discord gateway runtime is available',
+      required: true,
+      status: 'pass',
+      reasonCode: 'DISCORD_GATEWAY_AVAILABLE',
+      message: 'Discord gateway runtime is deployed and available for inbound messages.',
+      sourceStep: 'discord',
+      remediation: [],
+      evidence: {
+        discordEnabled: true,
+        discordMode: discordMode ?? 'unknown',
+        gatewayRequired: true,
+        gatewayEnabled: true,
+      },
+    };
+  }
+
+  // Gateway is not deployed — warn for bot/hybrid mode
+  return {
+    id: 'platform.discord.gateway_available',
+    title: 'Discord gateway runtime is available',
+    required: true,
+    status: 'warn',
+    reasonCode: 'DISCORD_GATEWAY_UNAVAILABLE',
+    message:
+      `Discord ${discordMode ?? 'bot'} mode requires the gateway runtime to receive ` +
+      'inbound messages. The gateway is currently disabled in this environment. ' +
+      'Outbound webhook operations will still work, but the bot will not receive ' +
+      'new messages from Discord channels.',
+    sourceStep: 'discord',
+    remediation: [
+      contactSupportAction(
+        'contact_support_discord_gateway',
+        'Contact Support',
+        'Request that the Discord gateway be enabled for this environment (enableDiscordGateway=true in CDK context).',
+        'activation-discord-gateway-unavailable',
+        'DISCORD_GATEWAY_UNAVAILABLE'
+      ),
+    ],
+    evidence: {
+      discordEnabled: true,
+      discordMode: discordMode ?? 'unknown',
+      gatewayRequired: true,
+      gatewayEnabled: false,
+    },
+  };
+}
+
 function evaluateObservabilityCheck(): ReadinessCheckV1 {
   const observabilityAvailable = Boolean(process.env.LOG_GROUP_PREFIX || process.env.ADMIN_LOG_GROUPS);
 
@@ -1081,6 +1183,7 @@ export async function evaluateActivationReadiness(
 
   checks.push(await evaluateTwitterHealthCheck(avatar, deps));
   checks.push(await evaluateDiscordHealthCheck(avatar, deps));
+  checks.push(evaluateDiscordGatewayReadinessCheck(avatar));
   checks.push(await evaluateSecretsCheck(avatar, deps));
   checks.push(evaluateObservabilityCheck());
 

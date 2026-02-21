@@ -5,10 +5,14 @@
  * - Lambda invocations and errors for all critical handlers
  * - SQS queue depths for message, response, media, and post queues
  * - DLQ message counts across SharedHandlers and AdminApi
+ * - Discord gateway runtime drift alarm (when gateway is deployed)
  */
 import * as cdk from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatch_actions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import type * as ecs from 'aws-cdk-lib/aws-ecs';
 import type * as lambda from 'aws-cdk-lib/aws-lambda';
+import type * as sns from 'aws-cdk-lib/aws-sns';
 import type * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
@@ -71,10 +75,24 @@ export interface OpsDashboardProps {
     dreamDlq: sqs.IQueue;
     consolidationDlq: sqs.IQueue;
   };
+
+  /**
+   * Discord gateway ECS service (optional — used for runtime drift alarm).
+   * When provided, the dashboard creates an alarm that fires when the gateway
+   * service has zero running tasks for more than 5 minutes.
+   */
+  discordGatewayService?: ecs.FargateService;
+
+  /**
+   * SNS topic for alarm notifications (optional). When provided, the Discord
+   * gateway drift alarm sends notifications to this topic.
+   */
+  alarmTopic?: sns.ITopic;
 }
 
 export class OpsDashboard extends Construct {
   public readonly dashboard: cloudwatch.Dashboard;
+  public readonly discordGatewayDriftAlarm?: cloudwatch.Alarm;
 
   constructor(scope: Construct, id: string, props: OpsDashboardProps) {
     super(scope, id);
@@ -183,6 +201,86 @@ export class OpsDashboard extends Construct {
             adminFns.dreamWorker.metricErrors({ period, label: 'DreamWorker' }),
             adminFns.openaiCompat.metricErrors({ period, label: 'OpenAICompat' }),
           ],
+        }),
+      );
+    }
+
+    // ========================================================================
+    // Discord Gateway Runtime Drift Alarm
+    // ========================================================================
+    // When the Discord gateway service is deployed, create an alarm that fires
+    // when it has zero running tasks for more than 5 minutes. This detects the
+    // "config drift" scenario where bot/hybrid avatars expect inbound Discord
+    // messages but the gateway container is down.
+    if (props.discordGatewayService) {
+      // Use standard AWS/ECS metrics for running task count. These are
+      // always available and do not require Container Insights to be enabled.
+      const serviceName = props.discordGatewayService.serviceName;
+      const clusterName = props.discordGatewayService.cluster.clusterName;
+
+      const desiredCountMetric = new cloudwatch.Metric({
+        namespace: 'AWS/ECS',
+        metricName: 'DesiredTaskCount',
+        dimensionsMap: {
+          ServiceName: serviceName,
+          ClusterName: clusterName,
+        },
+        period: cdk.Duration.minutes(5),
+        statistic: 'Average',
+      });
+
+      const runningTaskCountMetric = new cloudwatch.Metric({
+        namespace: 'AWS/ECS',
+        metricName: 'RunningTaskCount',
+        dimensionsMap: {
+          ServiceName: serviceName,
+          ClusterName: clusterName,
+        },
+        period: cdk.Duration.minutes(5),
+        statistic: 'Average',
+      });
+
+      // Alarm: running tasks drops to zero while we expect at least one
+      this.discordGatewayDriftAlarm = new cloudwatch.Alarm(this, 'DiscordGatewayDriftAlarm', {
+        alarmName: `swarm-discord-gateway-drift-${environment}${suffix}`,
+        alarmDescription:
+          'Discord gateway service has zero running tasks. ' +
+          'Avatars configured with bot/hybrid mode cannot receive inbound Discord messages. ' +
+          'Investigate ECS task failures or restore the gateway service.',
+        metric: runningTaskCountMetric,
+        threshold: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        evaluationPeriods: 2,
+        datapointsToAlarm: 2,
+        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
+      });
+
+      // Route alarm to SNS topic if provided
+      if (props.alarmTopic) {
+        this.discordGatewayDriftAlarm.addAlarmAction(
+          new cloudwatch_actions.SnsAction(props.alarmTopic)
+        );
+        this.discordGatewayDriftAlarm.addOkAction(
+          new cloudwatch_actions.SnsAction(props.alarmTopic)
+        );
+      }
+
+      // Add gateway health widget to dashboard
+      this.dashboard.addWidgets(
+        new cloudwatch.GraphWidget({
+          title: 'Discord Gateway - Task Count',
+          width: 12,
+          height: 6,
+          left: [
+            desiredCountMetric,
+            runningTaskCountMetric,
+          ],
+        }),
+        new cloudwatch.AlarmWidget({
+          title: 'Discord Gateway - Drift Alarm',
+          width: 12,
+          height: 6,
+          alarm: this.discordGatewayDriftAlarm,
         }),
       );
     }
