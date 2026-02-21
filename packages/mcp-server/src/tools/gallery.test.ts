@@ -87,6 +87,67 @@ describe('Gallery Tools - send_gallery_image', () => {
     expect(tool?.description).toContain('gallery');
   });
 
+  it('returns success with media for valid imageId', async () => {
+    const tools = createGalleryTools(mockGalleryServices);
+    const tool = tools.find(t => t.name === 'send_gallery_image');
+
+    const result = await (tool!.execute as any)({ imageId: 'img-1' }, {
+      avatarId: 'test',
+      platform: 'admin-ui',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.media).toBeDefined();
+    expect(result.media.type).toBe('image');
+    expect(result.media.url).toBe('https://example.com/image1.jpg');
+    expect(result.data).toEqual({ id: 'img-1', url: 'https://example.com/image1.jpg' });
+    expect(result.error).toBeUndefined();
+  });
+
+  it('returns success:false with actionable error for nonexistent imageId', async () => {
+    const tools = createGalleryTools(mockGalleryServices);
+    const tool = tools.find(t => t.name === 'send_gallery_image');
+
+    const result = await (tool!.execute as any)({ imageId: 'nonexistent-id-999' }, {
+      avatarId: 'test',
+      platform: 'admin-ui',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(result.error).toContain('not found');
+    expect(result.error).toContain('get_my_gallery');
+    // Must NOT contain media or data that could be rendered as a broken image
+    expect(result.media).toBeUndefined();
+    expect(result.data).toBeUndefined();
+  });
+
+  it('error message starts with FAILED: to prevent LLM from claiming success', async () => {
+    const tools = createGalleryTools(mockGalleryServices);
+    const tool = tools.find(t => t.name === 'send_gallery_image');
+
+    const result = await (tool!.execute as any)({ imageId: 'stale-id' }, {
+      avatarId: 'test',
+      platform: 'admin-ui',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error!.startsWith('FAILED:')).toBe(true);
+  });
+
+  it('error mentions stale ID possibility and deleted images', async () => {
+    const tools = createGalleryTools(mockGalleryServices);
+    const tool = tools.find(t => t.name === 'send_gallery_image');
+
+    const result = await (tool!.execute as any)({ imageId: 'deleted-image' }, {
+      avatarId: 'test',
+      platform: 'admin-ui',
+    });
+
+    expect(result.error).toContain('stale');
+    expect(result.error).toContain('deleted');
+  });
+
   it('validates required imageId field', () => {
     const tools = createGalleryTools(mockGalleryServices);
     const tool = tools.find(t => t.name === 'send_gallery_image');

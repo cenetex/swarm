@@ -255,6 +255,184 @@ describe('Admin Chat - Tool Call Flow', () => {
   });
 });
 
+describe('Admin Chat - send_gallery_image failure handling', () => {
+  describe('normalizeToolResult for failed gallery send', () => {
+    // Mirrors normalizeToolResult from chat-tool-helpers.ts
+    function normalizeToolResult(result: { success: boolean; error?: string; data?: unknown; media?: { url: string; type: string; caption?: string } }, toolName: string): Record<string, unknown> {
+      const payload: Record<string, unknown> = { success: result.success };
+      if (result.error) {
+        payload.error = result.error;
+      }
+      if (result.data !== undefined) {
+        if (typeof result.data === 'object' && result.data !== null) {
+          Object.assign(payload, result.data as Record<string, unknown>);
+          payload.data = result.data;
+        } else {
+          payload.data = result.data;
+        }
+      }
+      if (result.media?.url && payload.url === undefined) {
+        payload.url = result.media.url;
+        payload.type = payload.type ?? result.media.type;
+      }
+      if (!result.success && !payload.message) {
+        payload.message = `Tool ${toolName} failed${result.error ? `: ${result.error}` : ''}`;
+      }
+      return payload;
+    }
+
+    it('produces a deterministic error payload with no url or media for invalid imageId', () => {
+      const toolResult = {
+        success: false,
+        error: 'FAILED: Image ID not found in gallery. The image may have been deleted or the ID is stale. Run get_my_gallery to fetch current valid image IDs before retrying.',
+      };
+
+      const normalized = normalizeToolResult(toolResult, 'send_gallery_image');
+
+      expect(normalized.success).toBe(false);
+      expect(normalized.error).toContain('FAILED:');
+      expect(normalized.error).toContain('get_my_gallery');
+      expect(normalized.message).toContain('Tool send_gallery_image failed');
+      // Must NOT have url or media that could produce a broken image
+      expect(normalized.url).toBeUndefined();
+      expect(normalized.type).toBeUndefined();
+      expect(normalized.data).toBeUndefined();
+    });
+
+    it('produces success payload with url for valid imageId', () => {
+      const toolResult = {
+        success: true,
+        data: { id: 'img-1', url: 'https://cdn.example.com/img.png' },
+        media: { type: 'image', url: 'https://cdn.example.com/img.png', caption: 'test' },
+      };
+
+      const normalized = normalizeToolResult(toolResult, 'send_gallery_image');
+
+      expect(normalized.success).toBe(true);
+      expect(normalized.url).toBe('https://cdn.example.com/img.png');
+      expect(normalized.error).toBeUndefined();
+      expect(normalized.message).toBeUndefined();
+    });
+  });
+
+  describe('extractMediaFromToolResults for failed gallery send', () => {
+    function extractMediaFromToolResults(toolResults: Array<{ content: string }>): Array<{ type: string; url: string }> {
+      const media: Array<{ type: string; url: string }> = [];
+      for (const result of toolResults) {
+        try {
+          const parsed = JSON.parse(result.content);
+          const mediaUrl = parsed.url || parsed.resultUrl;
+          const isSuccess = parsed.success || (parsed.status === 'completed' && mediaUrl);
+          if (isSuccess && mediaUrl && typeof mediaUrl === 'string') {
+            media.push({ type: parsed.type || 'image', url: mediaUrl });
+          }
+        } catch {
+          // Skip
+        }
+      }
+      return media;
+    }
+
+    it('does NOT extract any media from a failed send_gallery_image result', () => {
+      const failedResult = {
+        content: JSON.stringify({
+          success: false,
+          error: 'FAILED: Image ID not found in gallery. The image may have been deleted or the ID is stale. Run get_my_gallery to fetch current valid image IDs before retrying.',
+          message: 'Tool send_gallery_image failed: FAILED: Image ID not found in gallery.',
+        }),
+      };
+
+      const media = extractMediaFromToolResults([failedResult]);
+
+      expect(media).toHaveLength(0);
+    });
+
+    it('extracts media from a successful send_gallery_image result', () => {
+      const successResult = {
+        content: JSON.stringify({
+          success: true,
+          id: 'img-1',
+          url: 'https://cdn.example.com/img.png',
+          data: { id: 'img-1', url: 'https://cdn.example.com/img.png' },
+          type: 'image',
+        }),
+      };
+
+      const media = extractMediaFromToolResults([successResult]);
+
+      expect(media).toHaveLength(1);
+      expect(media[0].url).toBe('https://cdn.example.com/img.png');
+    });
+  });
+
+  describe('UI categorization of failed gallery send', () => {
+    // Mirrors categorizeResult from ChatMessage.tsx
+    function categorizeResult(parsed: Record<string, unknown>): { type: string; message?: string } {
+      const hasSignalKey = 'success' in parsed || 'error' in parsed || 'status' in parsed || 'url' in parsed || 'message' in parsed;
+
+      if (parsed.message && typeof parsed.message === 'string' && hasSignalKey) {
+        if (parsed.error === true || typeof parsed.error === 'string' || parsed.success === false) {
+          return { type: 'error', message: parsed.message as string };
+        }
+        return { type: 'success', message: parsed.message as string };
+      }
+
+      if (parsed.success === true) {
+        return { type: 'success' };
+      }
+
+      if (parsed.error === true || parsed.success === false) {
+        const msg = typeof parsed.message === 'string' ? parsed.message :
+                    typeof parsed.error === 'string' ? parsed.error : 'An error occurred';
+        return { type: 'error', message: msg };
+      }
+
+      return { type: 'unknown' };
+    }
+
+    it('categorizes failed gallery send as error type', () => {
+      const failedResult = {
+        success: false,
+        error: 'FAILED: Image ID not found in gallery. The image may have been deleted or the ID is stale. Run get_my_gallery to fetch current valid image IDs before retrying.',
+        message: 'Tool send_gallery_image failed: FAILED: Image ID not found in gallery. The image may have been deleted or the ID is stale. Run get_my_gallery to fetch current valid image IDs before retrying.',
+      };
+
+      const categorized = categorizeResult(failedResult);
+
+      expect(categorized.type).toBe('error');
+      expect(categorized.message).toContain('not found');
+      expect(categorized.message).toContain('get_my_gallery');
+    });
+
+    it('does NOT categorize failed gallery send as success or image', () => {
+      const failedResult = {
+        success: false,
+        error: 'FAILED: Image ID not found in gallery.',
+        message: 'Tool send_gallery_image failed.',
+      };
+
+      const categorized = categorizeResult(failedResult);
+
+      expect(categorized.type).not.toBe('success');
+      expect(categorized.type).not.toBe('image');
+      expect(categorized.type).toBe('error');
+    });
+
+    it('categorizes successful gallery send as success type', () => {
+      const successResult = {
+        success: true,
+        url: 'https://cdn.example.com/img.png',
+        data: { id: 'img-1', url: 'https://cdn.example.com/img.png' },
+      };
+
+      const categorized = categorizeResult(successResult);
+
+      // Success with URL is categorized - the actual tool result rendering extracts the image
+      expect(categorized.type).toBe('success');
+    });
+  });
+});
+
 describe('Admin Chat - Feature Toggle Payload', () => {
   it('should build feature toggle payload with correct structure', () => {
     const payload = {

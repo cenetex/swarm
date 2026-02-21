@@ -148,7 +148,10 @@ export const createGalleryTools = (services: GalleryServices) => [
       const item = await services.getGalleryItem(context.avatarId, input.imageId);
 
       if (!item) {
-        return { success: false, error: 'Image not found in gallery' };
+        return {
+          success: false,
+          error: 'FAILED: Image ID not found in gallery. The image may have been deleted or the ID is stale. Run get_my_gallery to fetch current valid image IDs before retrying.',
+        };
       }
 
       return {
