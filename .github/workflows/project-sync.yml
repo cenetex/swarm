@@ -29,9 +29,9 @@ permissions:
   repository-projects: read
 
 env:
-  # "RATi OS Project" owned by atimics, project number 1
+  # "Platform Development" owned by cenetex, project number 1
   PROJECT_NUMBER: 1
-  PROJECT_OWNER: atimics
+  PROJECT_OWNER: cenetex
 
 jobs:
   # ──────────────────────────────────────────────────

@@ -191,7 +191,7 @@ EOF
   EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
   if [ -n "$EXISTING_PR" ]; then
     echo -e "  ${YELLOW}PR #$EXISTING_PR already exists${NC}"
-    PR_URLS+=("https://github.com/atimics/aws-swarm/pull/$EXISTING_PR")
+    PR_URLS+=("https://github.com/cenetex/aws-swarm/pull/$EXISTING_PR")
   else
     echo "  Creating PR..."
     # Build PR body from issue

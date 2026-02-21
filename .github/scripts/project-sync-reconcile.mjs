@@ -10,7 +10,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
-const PROJECT_OWNER = process.env.PROJECT_OWNER || "atimics";
+const PROJECT_OWNER = process.env.PROJECT_OWNER || "cenetex";
 const PROJECT_NUMBER = Number(process.env.PROJECT_NUMBER || "1");
 const DRY_RUN = process.env.DRY_RUN === "true";
 const SUMMARY_FILE = process.env.GITHUB_STEP_SUMMARY || "";

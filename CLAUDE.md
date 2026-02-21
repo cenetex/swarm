@@ -148,7 +148,7 @@ Related to #23"
 ### Setup
 
 ```bash
-git clone https://github.com/atimics/aws-swarm.git
+git clone https://github.com/cenetex/aws-swarm.git
 cd aws-swarm
 pnpm install
 pnpm build

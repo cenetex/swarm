@@ -4,7 +4,7 @@
  * Ensures that the adapter refuses to fall back to a hardcoded production
  * table name when ADMIN_TABLE is not set in the environment.
  *
- * @see https://github.com/atimics/aws-swarm/issues/233
+ * @see https://github.com/cenetex/aws-swarm/issues/233
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getAdminTable, _resetAdminTableCache } from './platform-mcp-adapter.js';

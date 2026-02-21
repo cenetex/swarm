@@ -1,7 +1,7 @@
 {
   "version": "1",
   "defaults": {
-    "repo": "atimics/aws-swarm",
+    "repo": "cenetex/aws-swarm",
     "dryRun": true,
     "status": "open",
     "limit": 100,

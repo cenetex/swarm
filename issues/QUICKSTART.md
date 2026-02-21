@@ -7,7 +7,7 @@ Use this when triaging or executing work. GitHub Issues is the source of truth.
 - Open GitHub issues sorted by priority labels:
 
 ```bash
-gh issue list --repo atimics/aws-swarm --state open --limit 200
+gh issue list --repo cenetex/aws-swarm --state open --limit 200
 ```
 
 - Prefer labels like `priority:high`, `type:*`, and package labels.

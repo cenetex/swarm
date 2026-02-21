@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_OWNER="${GH_REPO_OWNER:-atimics}"
+REPO_OWNER="${GH_REPO_OWNER:-cenetex}"
 REPO_NAME="${GH_REPO_NAME:-aws-swarm}"
 
 if [ $# -lt 1 ]; then

@@ -1,7 +1,7 @@
 # Repository Analysis Summary
 
 **Analysis Date**: 2026-02-15  
-**Repository**: atimics/aws-swarm  
+**Repository**: cenetex/aws-swarm  
 **Current Version**: M1 Complete (v1.0.1)
 
 ## Executive Summary

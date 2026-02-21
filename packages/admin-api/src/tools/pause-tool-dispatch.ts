@@ -10,7 +10,7 @@
  * - A payload builder to enrich the tool arguments for the UI
  * - A response text generator for the chat bubble
  *
- * @see https://github.com/atimics/aws-swarm/issues/65
+ * @see https://github.com/cenetex/aws-swarm/issues/65
  */
 
 /**

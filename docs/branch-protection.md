@@ -1,7 +1,7 @@
 # Branch Protection Policy for `main`
 
 This document records the required branch protection settings for the `main` branch
-of `atimics/aws-swarm`. Settings are configured in the GitHub UI under
+of `cenetex/aws-swarm`. Settings are configured in the GitHub UI under
 **Settings > Branches > Branch protection rules > `main`**.
 
 Reference issue: #289
@@ -41,13 +41,13 @@ automatically request review from the designated owners. Current mappings:
 
 | Path | Owner |
 |------|-------|
-| `*` (default) | @atimics |
-| `packages/core/` | @atimics |
-| `packages/handlers/` | @atimics |
-| `packages/admin-api/` | @atimics |
-| `packages/admin-ui/` | @atimics |
-| `packages/infra/` | @atimics |
-| `.github/` | @atimics |
+| `*` (default) | @cenetex |
+| `packages/core/` | @cenetex |
+| `packages/handlers/` | @cenetex |
+| `packages/admin-api/` | @cenetex |
+| `packages/admin-ui/` | @cenetex |
+| `packages/infra/` | @cenetex |
+| `.github/` | @cenetex |
 
 ## Drift Detection
 

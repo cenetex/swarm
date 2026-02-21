@@ -3,7 +3,7 @@
  *
  * Provides validated accessors for required environment variables.
  * Fail-fast behaviour prevents silent fallbacks to hardcoded production
- * values (see https://github.com/atimics/aws-swarm/issues/233).
+ * values (see https://github.com/cenetex/aws-swarm/issues/233).
  */
 
 const DYNAMODB_TABLE_NAME_ALLOWED_CHARS_REGEX = /^[A-Za-z0-9_.-]+$/;

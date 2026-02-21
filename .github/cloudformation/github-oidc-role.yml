@@ -10,7 +10,7 @@ Parameters:
   GitHubOrg:
     Type: String
     Description: GitHub organization or username
-    Default: atimics
+    Default: cenetex
 
   GitHubRepo:
     Type: String

@@ -55,7 +55,7 @@ aws cloudformation deploy \
   --stack-name github-actions-swarm \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides \
-    GitHubOrg=atimics \
+    GitHubOrg=cenetex \
     GitHubRepo=aws-swarm
 ```
 

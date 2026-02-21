@@ -3,7 +3,7 @@ import { execSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const repo = process.env.ISSUES_REPO || 'atimics/aws-swarm';
+const repo = process.env.ISSUES_REPO || 'cenetex/aws-swarm';
 const outputPath = resolve('issues', 'GITHUB-OPEN-ISSUES.md');
 
 function run(command) {

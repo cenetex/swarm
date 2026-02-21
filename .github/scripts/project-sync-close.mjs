@@ -12,7 +12,7 @@
 
 import { execFileSync } from "node:child_process";
 
-const PROJECT_OWNER = process.env.PROJECT_OWNER || "atimics";
+const PROJECT_OWNER = process.env.PROJECT_OWNER || "cenetex";
 const PROJECT_NUMBER = Number(process.env.PROJECT_NUMBER || "1");
 
 function gh(args) {

@@ -58,7 +58,7 @@ AI avatar stack for Telegram-first social bots, with a chat-based admin UI, Sola
 
 ## Quick Start
 ```bash
-git clone https://github.com/atimics/aws-swarm.git
+git clone https://github.com/cenetex/aws-swarm.git
 cd aws-swarm
 pnpm install
 pnpm build

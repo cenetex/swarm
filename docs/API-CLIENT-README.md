@@ -366,4 +366,4 @@ Contact the Swarm team or use the admin dashboard to generate an API key.
 
 - **Documentation:** https://docs.rati.chat
 - **Discord:** https://discord.gg/swarm
-- **Issues:** https://github.com/atimics/aws-swarm/issues
+- **Issues:** https://github.com/cenetex/aws-swarm/issues

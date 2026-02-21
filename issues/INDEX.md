@@ -4,12 +4,12 @@ GitHub Issues is the source of truth for all issue lifecycle state.
 
 ## Canonical tracker
 
-- Repository issues: https://github.com/atimics/aws-swarm/issues
+- Repository issues: https://github.com/cenetex/aws-swarm/issues
 
 CLI:
 
 ```bash
-gh issue list --repo atimics/aws-swarm --state open --limit 200
+gh issue list --repo cenetex/aws-swarm --state open --limit 200
 ```
 
 ## Local artifacts

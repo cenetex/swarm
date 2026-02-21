@@ -2,14 +2,14 @@
 # Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
 # Default owner for everything in the repo
-* @atimics
+* @cenetex
 
 # Core platform packages
-packages/core/ @atimics
-packages/handlers/ @atimics
-packages/admin-api/ @atimics
-packages/admin-ui/ @atimics
-packages/infra/ @atimics
+packages/core/ @cenetex
+packages/handlers/ @cenetex
+packages/admin-api/ @cenetex
+packages/admin-ui/ @cenetex
+packages/infra/ @cenetex
 
 # CI/CD and governance
-.github/ @atimics
+.github/ @cenetex

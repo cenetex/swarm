@@ -350,7 +350,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const { absolutePath: configPath, config } = loadConfig(args.configPath);
 
-  const repo = process.env.ISSUES_REPO || config.defaults?.repo || 'atimics/aws-swarm';
+  const repo = process.env.ISSUES_REPO || config.defaults?.repo || 'cenetex/aws-swarm';
   const markerPrefix = config.defaults?.markerPrefix || 'internal-issue-sync:id=';
   const status = args.status || process.env.INTERNAL_ISSUE_STATUS || config.defaults?.status || 'open';
   const limit = Number.isFinite(args.limit)

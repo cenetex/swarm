@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Discussion
-    url: https://github.com/ratimics/aws-swarm/discussions
+    url: https://github.com/cenetex/aws-swarm/discussions
     about: For questions and general discussion
   - name: Documentation
-    url: https://github.com/ratimics/aws-swarm/blob/main/PLAN.md
+    url: https://github.com/cenetex/aws-swarm/blob/main/PLAN.md
     about: Check the architecture plan for detailed information

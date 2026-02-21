@@ -4,7 +4,7 @@ Description: Swarm bootstrap - create GitHub OIDC provider and IAM roles for dep
 Parameters:
   GitHubOrg:
     Type: String
-    Default: atimics
+    Default: cenetex
   GitHubRepo:
     Type: String
     Default: aws-swarm
