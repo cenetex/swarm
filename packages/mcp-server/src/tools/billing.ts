@@ -384,6 +384,8 @@ export const createBillingTools = (services: BillingServices) => [
           },
         };
       } catch (err) {
+        // Note: err.message may contain raw AWS ARNs/account IDs.
+        // sanitizeToolError() in chat-tool-helpers.ts strips these before user display.
         return {
           success: false,
           error: `Failed to fetch usage: ${err instanceof Error ? err.message : String(err)}`,

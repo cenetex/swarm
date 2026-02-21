@@ -109,9 +109,21 @@ export function sanitizeToolError(value: unknown): string {
     }
   }
 
+  // Strip AWS ARNs (arn:aws:...) to prevent infrastructure detail leakage.
+  // Handles both standard ARNs (with 12-digit account ID) and S3-style ARNs (empty account/region).
+  let sanitized = raw.replace(/arn:aws:[a-z0-9-]+:[a-z0-9-]*:\d{0,12}:[^\s,)]+/gi, '[internal-resource]');
+
+  // If it's an AWS authorization error, replace entirely with a generic message
+  if (/is not authorized to perform:/i.test(sanitized) || /AccessDeniedException/i.test(sanitized)) {
+    return 'A permissions error occurred. The team has been notified.';
+  }
+
+  // Strip standalone AWS account IDs (12-digit numbers preceded by common AWS context markers)
+  sanitized = sanitized.replace(/(?<=account\s|Account\s|account:|Account:)\s*\d{12}\b/g, ' [account]');
+
   // Avoid dumping long JSON/stack traces into user-visible chat.
-  if (raw.length > 300) return `${raw.slice(0, 300)}…`;
-  return raw;
+  if (sanitized.length > 300) return `${sanitized.slice(0, 300)}…`;
+  return sanitized;
 }
 
 export function stringifyToolResultForModel(result: unknown): string {
