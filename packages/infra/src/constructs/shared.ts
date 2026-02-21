@@ -40,6 +40,13 @@ export interface SharedInfrastructureProps {
   enableCdn?: boolean;
 
   /**
+   * Enable WAF on CloudFront distributions.
+   * Set to false for staging to reduce idle cost.
+   * @default true
+   */
+  enableWaf?: boolean;
+
+  /**
    * Path to Lambda layers
    */
   layerCodePath?: string;
@@ -97,7 +104,7 @@ export class SharedInfrastructure extends Construct {
     super(scope, id);
 
     const {
-      environment, enableCdn = true, layerCodePath, cdnDomain, cdnCertificateArn,
+      environment, enableCdn = true, enableWaf = true, layerCodePath, cdnDomain, cdnCertificateArn,
       nameSuffix, useExistingMediaBucket, alarmNotificationEmail, useExistingResources,
       mediaCdnUrl,
     } = props;
@@ -294,11 +301,13 @@ export class SharedInfrastructure extends Construct {
         comment: `Swarm media CDN (${environment})`,
         ...(logBucket ? { logBucket, logFilePrefix: 'cdn/' } : {}),
         ...domainConfig,
-        webAclId: createManagedWebAcl(this, 'MediaCdnWebAcl', {
-          scope: 'CLOUDFRONT',
-          name: `swarm-media-cdn-${environment}${suffix}-webacl`,
-          metricPrefix: `swarm-media-cdn-${environment}${suffix}`,
-        }).attrArn,
+        ...(enableWaf ? {
+          webAclId: createManagedWebAcl(this, 'MediaCdnWebAcl', {
+            scope: 'CLOUDFRONT',
+            name: `swarm-media-cdn-${environment}${suffix}-webacl`,
+            metricPrefix: `swarm-media-cdn-${environment}${suffix}`,
+          }).attrArn,
+        } : {}),
       });
 
       // Set cdnUrl - use custom domain if configured, otherwise use CloudFront domain

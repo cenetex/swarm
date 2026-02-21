@@ -113,6 +113,10 @@ export class ClaudeCodeWorker extends Construct {
     } = props;
     const suffix = props.nameSuffix ?? '';
     const secretPrefix = props.secretPrefix ?? 'swarm';
+    const isProd = environment === 'prod' || environment === 'production';
+    const logRetention = isProd
+      ? logs.RetentionDays.TWO_WEEKS
+      : logs.RetentionDays.THREE_DAYS;
 
     // FIFO queue for ordered processing per avatar
     this.queue = new sqs.Queue(this, 'ClaudeCodeQueue', {
@@ -144,7 +148,7 @@ export class ClaudeCodeWorker extends Construct {
     // Log group
     const logGroup = new logs.LogGroup(this, 'LogGroup', {
       logGroupName: `/ecs/swarm-claude-code-worker-${environment}${suffix}`,
-      retention: logs.RetentionDays.TWO_WEEKS,
+      retention: logRetention,
       removalPolicy:
         environment === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
     });
@@ -252,7 +256,7 @@ export class ClaudeCodeWorker extends Construct {
     if (props.handlersCodePath) {
       const callbackLogGroup = new logs.LogGroup(this, 'CallbackLogGroup', {
         logGroupName: `/aws/lambda/swarm-claude-code-callback-${environment}${suffix}`,
-        retention: logs.RetentionDays.TWO_WEEKS,
+        retention: logRetention,
         removalPolicy:
           environment === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
       });

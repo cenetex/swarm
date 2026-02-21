@@ -421,6 +421,39 @@ export async function _getSecretValueInternal(
 }
 
 /**
+ * Delete all secrets for an avatar.
+ * Used during avatar deletion to clean up Secrets Manager resources.
+ * Errors are logged but do not throw — caller should not fail if secret cleanup fails.
+ */
+export async function deleteAllAvatarSecrets(
+  avatarId: string,
+  session: UserSession
+): Promise<{ deleted: number; errors: number }> {
+  let deleted = 0;
+  let errors = 0;
+
+  const secrets = await listSecrets(avatarId);
+  for (const secret of secrets) {
+    try {
+      await deleteSecret(avatarId, secret.secretType, secret.name, session, true);
+      deleted++;
+    } catch (err) {
+      errors++;
+      console.warn(
+        `[Secrets] Failed to delete secret ${secret.secretType}/${secret.name} for avatar ${avatarId}:`,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
+
+  if (secrets.length > 0) {
+    console.log(`[Secrets] Avatar ${avatarId}: deleted ${deleted}/${secrets.length} secrets (${errors} errors)`);
+  }
+
+  return { deleted, errors };
+}
+
+/**
  * @deprecated Use _getSecretValueInternal instead - renamed to make internal-only usage clear
  */
 export const getSecretValue = _getSecretValueInternal;

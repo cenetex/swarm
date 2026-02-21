@@ -23,7 +23,7 @@ import {
   type GateStatus,
   type ClaimableNFT,
 } from './nft-gate.js';
-import { storeSecret } from './secrets.js';
+import { storeSecret, deleteAllAvatarSecrets } from './secrets.js';
 import { registerTelegramWebhook, generateWebhookSecret } from './telegram.js';
 import {
   registerHomeChannel,
@@ -450,6 +450,14 @@ export async function deleteAvatar(
   } catch (err) {
     console.warn(`[Avatars] Failed to unregister home channel for ${avatarId}:`, err instanceof Error ? err.message : String(err));
     // Don't fail the delete if home channel unregistration fails
+  }
+
+  // Clean up Secrets Manager secrets to avoid ongoing per-secret charges
+  try {
+    await deleteAllAvatarSecrets(avatarId, session);
+  } catch (err) {
+    console.warn(`[Avatars] Failed to clean up secrets for ${avatarId}:`, err instanceof Error ? err.message : String(err));
+    // Don't fail the delete if secret cleanup fails
   }
 
   await updateAvatar(avatarId, { status: 'deleted' }, session);

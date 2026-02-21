@@ -72,6 +72,10 @@ export class DiscordGatewayWorker extends Construct {
     } = props;
     const suffix = props.nameSuffix ?? '';
     const secretPrefix = props.secretPrefix ?? 'swarm';
+    const isProd = environment === 'prod' || environment === 'production';
+    const logRetention = isProd
+      ? logs.RetentionDays.TWO_WEEKS
+      : logs.RetentionDays.THREE_DAYS;
 
     // Task definition — lightweight: WebSocket connections are I/O-bound, not CPU
     this.taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDef', {
@@ -86,7 +90,7 @@ export class DiscordGatewayWorker extends Construct {
     // Log group — let CloudFormation generate the name to avoid collisions
     // with orphaned log groups from previous failed deployments
     const logGroup = new logs.LogGroup(this, 'LogGroup', {
-      retention: logs.RetentionDays.TWO_WEEKS,
+      retention: logRetention,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 

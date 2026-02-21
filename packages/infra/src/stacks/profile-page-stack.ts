@@ -37,6 +37,13 @@ export interface ProfilePageStackProps extends cdk.StackProps {
   includeWildcardAliases?: boolean;
 
   /**
+   * Enable WAF on the CloudFront distribution.
+   * Set to false for staging to reduce idle cost.
+   * @default true
+   */
+  enableWaf?: boolean;
+
+  /**
    * API URL for the profile page to fetch data from
    */
   apiUrl?: string;
@@ -54,6 +61,7 @@ export class ProfilePageStack extends cdk.Stack {
       profileCertificateArn,
       nameSuffix,
       includeWildcardAliases,
+      enableWaf,
       apiUrl,
     } = props;
 
@@ -64,6 +72,7 @@ export class ProfilePageStack extends cdk.Stack {
       certificateArn: profileCertificateArn,
       nameSuffix,
       includeWildcardAliases,
+      enableWaf,
       apiUrl,
     });
 

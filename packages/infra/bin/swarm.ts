@@ -106,6 +106,7 @@ const profileDomain = getContextValue<string>('profileDomain', envConfig);
 const profileCertificateArn = getContextValue<string>('profileCertificateArn', envConfig);
 const profileApiUrl = getContextValue<string>('profileApiUrl', envConfig);
 const alarmNotificationEmail = getContextValue<string>('alarmNotificationEmail', envConfig) || process.env.ALARM_EMAIL;
+const enableWaf = parseBoolean(getContextValue<unknown>('enableWaf', envConfig)) ?? true;
 const enableClaudeCode = parseBoolean(getContextValue<unknown>('enableClaudeCode', envConfig)) ?? false;
 const claudeCodeUseOpenRouter = parseBoolean(getContextValue<unknown>('claudeCodeUseOpenRouter', envConfig)) ?? false;
 const enableDiscordGateway = parseBoolean(getContextValue<unknown>('enableDiscordGateway', envConfig)) ?? false;
@@ -159,6 +160,7 @@ const sharedInfraStack = new SharedInfraStack(app, `SwarmShared-${environment}${
   environment,
   nameSuffix,
   enableCdn: true,
+  enableWaf,
   galleryDomain,
   galleryCertificateArn,
   mediaCdnUrl,
@@ -207,6 +209,7 @@ const adminUiStack = new AdminUiStack(app, `SwarmUi-${environment}${nameSuffix}`
   adminApiStack,
   adminDomain,
   adminCertificateArn,
+  enableWaf,
   useExistingBuckets,
   skipDomainAliases,
   env: stackEnv,
@@ -223,6 +226,7 @@ if (profileDomain || app.node.tryGetContext('deployProfilePage')) {
     profileDomain,
     profileCertificateArn,
     includeWildcardAliases: environment === 'prod',
+    enableWaf,
     apiUrl: profileApiUrl,
     env: stackEnv,
     description: `Swarm Profile Page (${environment})`,

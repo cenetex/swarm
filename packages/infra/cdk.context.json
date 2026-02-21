@@ -102,6 +102,7 @@
   },
   "environments": {
     "staging": {
+      "enableWaf": false,
       "enableSharedHandlers": true,
       "useExistingResources": true,
       "mediaCdnUrl": "https://dodxbiygmi95j.cloudfront.net",

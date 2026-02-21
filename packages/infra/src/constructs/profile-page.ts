@@ -53,6 +53,13 @@ export interface ProfilePageProps {
   skipDomainAliases?: boolean;
 
   /**
+   * Enable WAF on the CloudFront distribution.
+   * Set to false for staging to reduce idle cost.
+   * @default true
+   */
+  enableWaf?: boolean;
+
+  /**
    * API URL for the profile page to fetch data from (e.g., 'https://api.rati.chat')
    * This is used to configure CORS and pass to the frontend if needed.
    */
@@ -75,6 +82,7 @@ export class ProfilePage extends Construct {
       includeWildcardAliases,
       useExistingBucket,
       skipDomainAliases,
+      enableWaf = true,
     } = props;
 
     const suffix = nameSuffix ?? '';
@@ -153,11 +161,13 @@ export class ProfilePage extends Construct {
     });
 
     // CloudFront distribution
-    const cloudFrontWebAcl = createManagedWebAcl(this, 'CloudFrontWebAcl', {
-      scope: 'CLOUDFRONT',
-      name: `swarm-profile-page-${environment}${suffix}-webacl`,
-      metricPrefix: `swarm-profile-page-${environment}${suffix}`,
-    });
+    const cloudFrontWebAcl = enableWaf
+      ? createManagedWebAcl(this, 'CloudFrontWebAcl', {
+          scope: 'CLOUDFRONT',
+          name: `swarm-profile-page-${environment}${suffix}-webacl`,
+          metricPrefix: `swarm-profile-page-${environment}${suffix}`,
+        })
+      : undefined;
 
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       defaultBehavior: {
@@ -179,7 +189,7 @@ export class ProfilePage extends Construct {
       defaultRootObject: 'index.html',
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       comment: `Profile Page - ${environment}`,
-      webAclId: cloudFrontWebAcl.attrArn,
+      webAclId: cloudFrontWebAcl?.attrArn,
       // Custom error responses for SPA routing fallback
       // If S3 returns 403/404 for a path, serve index.html instead (for client-side routing)
       errorResponses: [

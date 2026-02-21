@@ -56,6 +56,13 @@ export interface AdminUiProps {
    * associated after deployment using `aws cloudfront associate-alias`.
    */
   skipDomainAliases?: boolean;
+
+  /**
+   * Enable WAF on the CloudFront distribution.
+   * Set to false for staging to reduce idle cost.
+   * @default true
+   */
+  enableWaf?: boolean;
 }
 
 export class AdminUi extends Construct {
@@ -66,7 +73,7 @@ export class AdminUi extends Construct {
   constructor(scope: Construct, id: string, props: AdminUiProps) {
     super(scope, id);
 
-    const { environment, domainName, certificateArn, apiDomain, nameSuffix, includeWildcardAliases, useExistingBucket, skipDomainAliases } = props;
+    const { environment, domainName, certificateArn, apiDomain, nameSuffix, includeWildcardAliases, useExistingBucket, skipDomainAliases, enableWaf = true } = props;
     const suffix = nameSuffix ?? '';
     const bucketName = `swarm-admin-ui-${environment}${suffix}-${cdk.Aws.ACCOUNT_ID}`;
 
@@ -171,11 +178,13 @@ export class AdminUi extends Construct {
         })
       : undefined;
 
-    const cloudFrontWebAcl = createManagedWebAcl(this, 'CloudFrontWebAcl', {
-      scope: 'CLOUDFRONT',
-      name: `swarm-admin-ui-${environment}${suffix}-webacl`,
-      metricPrefix: `swarm-admin-ui-${environment}${suffix}`,
-    });
+    const cloudFrontWebAcl = enableWaf
+      ? createManagedWebAcl(this, 'CloudFrontWebAcl', {
+          scope: 'CLOUDFRONT',
+          name: `swarm-admin-ui-${environment}${suffix}-webacl`,
+          metricPrefix: `swarm-admin-ui-${environment}${suffix}`,
+        })
+      : undefined;
 
     // CloudFront distribution
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
@@ -231,7 +240,7 @@ export class AdminUi extends Construct {
       defaultRootObject: 'index.html',
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       comment: `Admin UI - ${environment}`,
-      webAclId: cloudFrontWebAcl.attrArn,
+      webAclId: cloudFrontWebAcl?.attrArn,
       // Custom error responses for SPA routing fallback
       // If S3 returns 403/404 for a path, serve index.html instead (for client-side routing)
       errorResponses: [

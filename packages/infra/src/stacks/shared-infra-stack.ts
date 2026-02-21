@@ -24,6 +24,13 @@ export interface SharedInfraStackProps extends cdk.StackProps {
   enableCdn?: boolean;
 
   /**
+   * Enable WAF on CloudFront distributions.
+   * Set to false for staging to reduce idle cost (~$3.92/week per WAF).
+   * @default true
+   */
+  enableWaf?: boolean;
+
+  /**
    * Custom domain for gallery CDN (e.g., 'gallery.rati.chat')
    */
   galleryDomain?: string;
@@ -81,6 +88,7 @@ export class SharedInfraStack extends cdk.Stack {
     const {
       environment,
       enableCdn = true,
+      enableWaf = true,
       galleryDomain,
       galleryCertificateArn,
       nameSuffix,
@@ -98,6 +106,7 @@ export class SharedInfraStack extends cdk.Stack {
       environment,
       nameSuffix,
       enableCdn,
+      enableWaf,
       cdnDomain: galleryDomain,
       cdnCertificateArn: galleryCertificateArn,
       alarmNotificationEmail,

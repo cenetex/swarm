@@ -42,6 +42,13 @@ export interface AdminUiStackProps extends cdk.StackProps {
    * Whether to skip adding domain aliases to the CloudFront distribution
    */
   skipDomainAliases?: boolean;
+
+  /**
+   * Enable WAF on the CloudFront distribution.
+   * Set to false for staging to reduce idle cost.
+   * @default true
+   */
+  enableWaf?: boolean;
 }
 
 export class AdminUiStack extends cdk.Stack {
@@ -50,7 +57,7 @@ export class AdminUiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: AdminUiStackProps) {
     super(scope, id, props);
 
-    const { environment, adminApiStack, adminDomain, adminCertificateArn, nameSuffix, useExistingBuckets, skipDomainAliases } = props;
+    const { environment, adminApiStack, adminDomain, adminCertificateArn, nameSuffix, useExistingBuckets, skipDomainAliases, enableWaf } = props;
 
     // Get API Gateway hostname from the Admin API stack
     let apiGatewayHost: string | undefined;
@@ -67,6 +74,7 @@ export class AdminUiStack extends cdk.Stack {
       certificateArn: adminCertificateArn,
       apiDomain: apiGatewayHost,
       nameSuffix,
+      enableWaf,
       useExistingBucket: useExistingBuckets,
       skipDomainAliases,
     });

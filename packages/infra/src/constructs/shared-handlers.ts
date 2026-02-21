@@ -287,52 +287,55 @@ export class SharedHandlers extends Construct {
     // Using LogGroupWithRetention to safely adopt existing log groups that were
     // previously created by the logRetention custom resource or Lambda runtime.
     const logRemovalPolicy = isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
+    const logRetention = isProd
+      ? logs.RetentionDays.ONE_MONTH
+      : logs.RetentionDays.THREE_DAYS;
 
     const messageProcessorLogGroup = new LogGroupWithRetention(this, 'MessageProcessorLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-message-processor`,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: logRetention,
       removalPolicy: logRemovalPolicy,
     });
 
     const telegramWebhookLogGroup = new LogGroupWithRetention(this, 'TelegramWebhookLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-telegram-webhook`,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: logRetention,
       removalPolicy: logRemovalPolicy,
     });
 
     const responseSenderLogGroup = new LogGroupWithRetention(this, 'ResponseSenderLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-response-sender`,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: logRetention,
       removalPolicy: logRemovalPolicy,
     });
 
     const mediaProcessorLogGroup = new LogGroupWithRetention(this, 'MediaProcessorLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-media-processor`,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: logRetention,
       removalPolicy: logRemovalPolicy,
     });
 
     const twitterMentionPollerLogGroup = new LogGroupWithRetention(this, 'TwitterMentionPollerLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-twitter-mention-poller`,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: logRetention,
       removalPolicy: logRemovalPolicy,
     });
 
     const autonomousTweetPosterLogGroup = new LogGroupWithRetention(this, 'AutonomousTweetPosterLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-autonomous-tweet-poster`,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: logRetention,
       removalPolicy: logRemovalPolicy,
     });
 
     const platformHeartbeatLogGroup = new LogGroupWithRetention(this, 'PlatformHeartbeatLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-platform-heartbeat`,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: logRetention,
       removalPolicy: logRemovalPolicy,
     });
 
     const tweetSenderLogGroup = new LogGroupWithRetention(this, 'TweetSenderLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-tweet-sender`,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: logRetention,
       removalPolicy: logRemovalPolicy,
     });
 
@@ -544,7 +547,7 @@ export class SharedHandlers extends Construct {
       },
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      logRetention: logRetention,
     });
 
     // Grant DLQ processor permissions to read/delete from DLQ

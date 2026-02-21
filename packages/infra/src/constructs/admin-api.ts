@@ -244,6 +244,9 @@ export class AdminApiConstruct extends Construct {
     const isProd = environment === 'prod' || environment === 'production';
     const isPersistentEnv = isProd || environment === 'staging';
     const logLevel = isProd ? 'warn' : 'info';
+    const logRetention = isProd
+      ? logs.RetentionDays.TWO_WEEKS
+      : logs.RetentionDays.THREE_DAYS;
 
     // In production, cap non-Orb authenticated access to the top N most recent logins.
     // Orb holders bypass this limit (enforced in the admin-api auth layer).
@@ -500,7 +503,7 @@ export class AdminApiConstruct extends Construct {
           ],
         },
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -673,7 +676,7 @@ export class AdminApiConstruct extends Construct {
           ],
         },
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -801,7 +804,7 @@ export class AdminApiConstruct extends Construct {
           minify: true,
           sourceMap: true,
         },
-        logRetention: logs.RetentionDays.TWO_WEEKS,
+        logRetention,
         tracing: lambda.Tracing.ACTIVE,
       });
 
@@ -834,7 +837,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -872,7 +875,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -934,7 +937,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1225,7 +1228,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1260,7 +1263,7 @@ export class AdminApiConstruct extends Construct {
         });
       `),
       handler: 'index.handler',
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1296,7 +1299,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1332,7 +1335,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1387,7 +1390,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1446,7 +1449,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1490,7 +1493,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1535,7 +1538,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1646,7 +1649,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1717,7 +1720,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1763,7 +1766,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1835,7 +1838,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1877,7 +1880,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
@@ -1942,7 +1945,7 @@ export class AdminApiConstruct extends Construct {
         minify: true,
         sourceMap: true,
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRetention,
       tracing: lambda.Tracing.ACTIVE,
     });
 
