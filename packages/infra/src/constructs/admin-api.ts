@@ -2209,6 +2209,52 @@ export class AdminApiConstruct extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
+    // Public profile handler error alarm (public-facing, silent failures affect SEO/users)
+    const publicProfileErrorsAlarm = new cloudwatch.Alarm(this, 'PublicProfileErrorsAlarm', {
+      alarmName: `${alarmPrefix}-public-profile-errors`,
+      metric: publicProfileHandler.metricErrors({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // Leaderboard handler error alarm (public-facing)
+    const leaderboardErrorsAlarm = new cloudwatch.Alarm(this, 'LeaderboardErrorsAlarm', {
+      alarmName: `${alarmPrefix}-leaderboard-errors`,
+      metric: leaderboardHandler.metricErrors({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // Bedrock embedding invocation errors (used by dream worker and consolidation worker)
+    // A custom metric alarm on the Bedrock InvocationErrors dimension catches silent
+    // degradation of the embedding pipeline that Lambda-level error alarms may miss
+    // (e.g., the Lambda succeeds but the Bedrock call inside it returns an error that
+    // is caught and logged rather than thrown).
+    const bedrockEmbeddingErrorsAlarm = new cloudwatch.Alarm(this, 'BedrockEmbeddingErrorsAlarm', {
+      alarmName: `${alarmPrefix}-bedrock-embedding-errors`,
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/Bedrock',
+        metricName: 'InvocationClientErrors',
+        dimensionsMap: {
+          ModelId: 'amazon.titan-embed-text-v2:0',
+        },
+        period: cdk.Duration.minutes(15),
+        statistic: 'Sum',
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
     // Wire all alarms to SNS topic for notifications
     if (snsAction) {
       for (const alarm of [
@@ -2220,6 +2266,9 @@ export class AdminApiConstruct extends Construct {
         responseSenderErrorsAlarm,
         dreamWorkerErrorsAlarm,
         openaiCompatErrorsAlarm,
+        publicProfileErrorsAlarm,
+        leaderboardErrorsAlarm,
+        bedrockEmbeddingErrorsAlarm,
       ]) {
         alarm.addAlarmAction(snsAction);
       }

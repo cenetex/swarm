@@ -439,7 +439,7 @@ export class SharedHandlers extends Construct {
       encryption: sqs.QueueEncryption.SQS_MANAGED,
     });
 
-    new events.Rule(this, 'TwitterMentionPollSchedule', {
+    const twitterMentionPollRule = new events.Rule(this, 'TwitterMentionPollSchedule', {
       schedule: events.Schedule.rate(cdk.Duration.minutes(1)),
       targets: [new targets.LambdaFunction(twitterMentionPoller, {
         deadLetterQueue: this.schedulerDlq,
@@ -465,7 +465,7 @@ export class SharedHandlers extends Construct {
       logGroup: autonomousTweetPosterLogGroup.logGroup,
     });
 
-    new events.Rule(this, 'AutonomousTweetSchedule', {
+    const autonomousTweetRule = new events.Rule(this, 'AutonomousTweetSchedule', {
       schedule: events.Schedule.rate(cdk.Duration.hours(1)),
       targets: [new targets.LambdaFunction(autonomousTweetPoster, {
         deadLetterQueue: this.schedulerDlq,
@@ -491,7 +491,7 @@ export class SharedHandlers extends Construct {
       logGroup: platformHeartbeatLogGroup.logGroup,
     });
 
-    new events.Rule(this, 'PlatformHeartbeatSchedule', {
+    const platformHeartbeatRule = new events.Rule(this, 'PlatformHeartbeatSchedule', {
       schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
       targets: [new targets.LambdaFunction(this.platformHeartbeat, {
         deadLetterQueue: this.schedulerDlq,
@@ -565,7 +565,7 @@ export class SharedHandlers extends Construct {
       },
     }));
 
-    new events.Rule(this, 'DlqProcessorSchedule', {
+    const dlqProcessorRule = new events.Rule(this, 'DlqProcessorSchedule', {
       schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
       targets: [new targets.LambdaFunction(this.dlqProcessor, {
         deadLetterQueue: this.schedulerDlq,
@@ -704,6 +704,52 @@ export class SharedHandlers extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
+    // Scheduler aged-out event alarm
+    // When maxEventAge expires, EventBridge increments FailedInvocations on the rule.
+    // A combined alarm across all four scheduler rules catches silently dropped events
+    // (Twitter poller, autonomous tweets, platform heartbeats, DLQ processor).
+    const schedulerFailedInvocationsAlarm = new cloudwatch.Alarm(this, 'SchedulerFailedInvocationsAlarm', {
+      alarmName: `${alarmPrefix}-scheduler-failed-invocations`,
+      metric: new cloudwatch.MathExpression({
+        expression: 'twitter + tweets + heartbeat + dlqProc',
+        usingMetrics: {
+          twitter: new cloudwatch.Metric({
+            namespace: 'AWS/Events',
+            metricName: 'FailedInvocations',
+            dimensionsMap: { RuleName: twitterMentionPollRule.ruleName },
+            period: cdk.Duration.minutes(15),
+            statistic: 'Sum',
+          }),
+          tweets: new cloudwatch.Metric({
+            namespace: 'AWS/Events',
+            metricName: 'FailedInvocations',
+            dimensionsMap: { RuleName: autonomousTweetRule.ruleName },
+            period: cdk.Duration.minutes(15),
+            statistic: 'Sum',
+          }),
+          heartbeat: new cloudwatch.Metric({
+            namespace: 'AWS/Events',
+            metricName: 'FailedInvocations',
+            dimensionsMap: { RuleName: platformHeartbeatRule.ruleName },
+            period: cdk.Duration.minutes(15),
+            statistic: 'Sum',
+          }),
+          dlqProc: new cloudwatch.Metric({
+            namespace: 'AWS/Events',
+            metricName: 'FailedInvocations',
+            dimensionsMap: { RuleName: dlqProcessorRule.ruleName },
+            period: cdk.Duration.minutes(15),
+            statistic: 'Sum',
+          }),
+        },
+        period: cdk.Duration.minutes(15),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
     // Wire all alarms to SNS topic for notifications
     if (snsAction) {
       for (const alarm of [
@@ -718,6 +764,7 @@ export class SharedHandlers extends Construct {
         mediaProcessorErrorsAlarm,
         tweetSenderErrorsAlarm,
         dlqProcessorErrorsAlarm,
+        schedulerFailedInvocationsAlarm,
       ]) {
         alarm.addAlarmAction(snsAction);
       }
