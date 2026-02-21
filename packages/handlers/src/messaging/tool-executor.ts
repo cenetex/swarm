@@ -78,6 +78,21 @@ export function toolResultsToActions(
         break;
       }
 
+      case 'send_gallery_image': {
+        // Explicit handling: only emit send_media when media.url is present.
+        // Failed results (stale/invalid IDs) are already skipped by the
+        // !result.success guard above, but being explicit here prevents
+        // accidental broken-image actions if the default path changes.
+        if (result.media?.url) {
+          actions.push({
+            type: 'send_media',
+            mediaType: 'image',
+            url: result.media.url,
+          });
+        }
+        break;
+      }
+
       // Handle any tool that returns media (gallery, stickers, etc.)
       default: {
         if (result.media?.url && result.media?.type) {
