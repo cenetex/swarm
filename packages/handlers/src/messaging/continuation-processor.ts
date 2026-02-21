@@ -25,12 +25,12 @@ import {
   isProgressUpdate,
 } from '@swarm/core';
 import { getDynamoClient } from '../services/dynamo-client.js';
+import { getAdminTable } from '../services/env-validation.js';
 
 const dynamoClient = getDynamoClient();
 const secretsClient = new SecretsManagerClient({});
 
-// Environment variables
-const ADMIN_TABLE = process.env.ADMIN_TABLE!;
+// Environment variables — ADMIN_TABLE is validated lazily via getAdminTable()
 const MESSAGE_QUEUE_URL = process.env.MESSAGE_QUEUE_URL;
 
 // For direct responses (progress updates)
@@ -62,7 +62,7 @@ async function getSecret(secretArn: string): Promise<string | null> {
 
 async function getTelegramToken(avatarId: string): Promise<string | null> {
   const result = await dynamoClient.send(new GetCommand({
-    TableName: ADMIN_TABLE,
+    TableName: getAdminTable(),
     Key: { pk: `AVATAR#${avatarId}`, sk: 'SECRET#telegram_bot_token#default' },
   }));
   if (!result.Item?.secretArn) return null;
@@ -147,7 +147,7 @@ async function storeContinuationContext(
 
   // Store as a pending context that will be injected into the next avatar turn
   await dynamoClient.send(new UpdateCommand({
-    TableName: ADMIN_TABLE,
+    TableName: getAdminTable(),
     Key: key,
     UpdateExpression: 'SET #context = list_append(if_not_exists(#context, :empty), :newContext), #updatedAt = :now, #ttl = :ttl',
     ExpressionAttributeNames: {
@@ -184,7 +184,7 @@ export async function getPendingContinuationContext(
 
   try {
     const result = await dynamoClient.send(new GetCommand({
-      TableName: ADMIN_TABLE,
+      TableName: getAdminTable(),
       Key: key,
     }));
 
@@ -195,7 +195,7 @@ export async function getPendingContinuationContext(
 
     // Clear the pending context after retrieving
     await dynamoClient.send(new UpdateCommand({
-      TableName: ADMIN_TABLE,
+      TableName: getAdminTable(),
       Key: key,
       UpdateExpression: 'SET #context = :empty, #updatedAt = :now',
       ExpressionAttributeNames: {

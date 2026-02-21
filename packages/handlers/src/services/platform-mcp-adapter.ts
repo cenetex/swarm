@@ -35,6 +35,10 @@ import {
 } from './entitlement-enforcement.js';
 import type { TokenLaunchConfig, TokenLaunchPreflightResult, TokenLaunchResult, TokenLaunchStatus } from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
+import { getAdminTable, _resetAdminTableCache } from './env-validation.js';
+
+// Re-export for backward compatibility (tests import from this module)
+export { getAdminTable, _resetAdminTableCache };
 
 // ---------------------------------------------------------------------------
 // Dynamic import helper for @swarm/admin-api
@@ -121,48 +125,6 @@ async function getTokenLaunch(): Promise<TokenLaunchModule> {
 }
 
 const dynamoClient = getDynamoClient();
-const DYNAMODB_TABLE_NAME_ALLOWED_CHARS_REGEX = /^[A-Za-z0-9_.-]+$/;
-const DYNAMODB_TABLE_NAME_MIN_LENGTH = 3;
-const DYNAMODB_TABLE_NAME_MAX_LENGTH = 255;
-
-/** Cached validated ADMIN_TABLE value. */
-let _adminTable: string | undefined;
-
-/**
- * Return the ADMIN_TABLE env value, throwing on first access if it is not set.
- * This avoids the previous `|| 'SwarmAdmin-prod'` fallback that could silently
- * route non-production workloads to the production table.
- */
-export function getAdminTable(): string {
-  if (!_adminTable) {
-    const val = process.env.ADMIN_TABLE?.trim();
-    if (!val) {
-      throw new Error(
-        'ADMIN_TABLE environment variable is required but not set. ' +
-        'Refusing to fall back to a hardcoded table name.',
-      );
-    }
-    if (val.length < DYNAMODB_TABLE_NAME_MIN_LENGTH || val.length > DYNAMODB_TABLE_NAME_MAX_LENGTH) {
-      throw new Error(
-        `ADMIN_TABLE environment variable is invalid. ` +
-        `Expected ${DYNAMODB_TABLE_NAME_MIN_LENGTH}-${DYNAMODB_TABLE_NAME_MAX_LENGTH} characters, got ${val.length}.`,
-      );
-    }
-    if (!DYNAMODB_TABLE_NAME_ALLOWED_CHARS_REGEX.test(val)) {
-      throw new Error(
-        'ADMIN_TABLE environment variable is invalid. ' +
-        'Expected only characters matching [A-Za-z0-9_.-].',
-      );
-    }
-    _adminTable = val;
-  }
-  return _adminTable;
-}
-
-/** @internal Reset cached table name — test-only. */
-export function _resetAdminTableCache(): void {
-  _adminTable = undefined;
-}
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 

@@ -6,6 +6,7 @@ import type { Update } from 'grammy/types';
 import { logger, type AvatarConfig, type SwarmEnvelope, type CreateAvatarFromTelegramParams } from '@swarm/core';
 import { createTelegramAdminService, type TelegramAdminService } from './telegram-admin.js';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { getAdminTable } from './env-validation.js';
 
 // Lazy-loaded admin-api operations (avoids static dependency on @swarm/admin-api)
 let _adminOps: {
@@ -29,7 +30,6 @@ async function getAdminOps() {
 }
 
 const secretsClient = new SecretsManagerClient({});
-const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 const SECRET_PREFIX = process.env.SECRET_PREFIX || 'swarm';
 
 // Cache for admin service instances
@@ -90,7 +90,7 @@ async function getAdminService(avatarId: string, _avatarConfig: AvatarConfig): P
   }
 
   const service = createTelegramAdminService({
-    adminTable: ADMIN_TABLE,
+    adminTable: getAdminTable(),
     botToken,
     createAvatar: async (params: CreateAvatarFromTelegramParams) => {
       const ops = await getAdminOps();
