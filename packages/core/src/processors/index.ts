@@ -69,4 +69,5 @@ export {
 export {
   OutboundSender,
   createOutboundSender,
+  type ActionError,
 } from './outbound-sender.js';

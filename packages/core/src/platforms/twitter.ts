@@ -353,7 +353,18 @@ export class TwitterAdapter extends PlatformAdapter {
           errorMessage: error instanceof Error ? error.message : String(error),
         });
       }
-      return false;
+      // Re-throw as PlatformError with retryability metadata so callers
+      // (OutboundSender → response-sender) can make informed retry decisions.
+      throw new PlatformError(
+        error instanceof Error ? error.message : String(error),
+        {
+          code: SwarmErrorCode.PLATFORM_API_ERROR,
+          platform: 'twitter',
+          statusCode: diagnostic.statusCode,
+          retryable: diagnostic.isRetryable,
+          cause: error,
+        },
+      );
     }
   }
 

@@ -10,6 +10,19 @@ import type { PlatformRegistry } from '../platforms/base.js';
 import type { ActivityService } from '../services/activity.js';
 import { logger } from '../utils/logger.js';
 
+/**
+ * Structured error object returned by OutboundSender.send().
+ * Carries metadata about the action that failed, including whether
+ * the error is retryable, so callers (e.g. response-sender) can
+ * make informed retry decisions.
+ */
+export interface ActionError {
+  action: string;
+  message: string;
+  statusCode?: number;
+  isRetryable?: boolean;
+}
+
 export class OutboundSender {
   constructor(
     private readonly platformRegistry: PlatformRegistry,
@@ -19,18 +32,18 @@ export class OutboundSender {
   /**
    * Execute all actions in a response
    */
-  async send(response: SwarmResponse): Promise<{ success: boolean; errors: string[]; sentMessages: string[] }> {
+  async send(response: SwarmResponse): Promise<{ success: boolean; errors: ActionError[]; sentMessages: string[] }> {
     const adapter = this.platformRegistry.get(response.platform);
-    
+
     if (!adapter) {
       return {
         success: false,
-        errors: [`No adapter found for platform: ${response.platform}`],
+        errors: [{ action: 'init', message: `No adapter found for platform: ${response.platform}`, isRetryable: false }],
         sentMessages: [],
       };
     }
 
-    const errors: string[] = [];
+    const errors: ActionError[] = [];
     let hasSuccessfulAction = false;
     const sentMessages: string[] = [];
 
@@ -66,15 +79,24 @@ export class OutboundSender {
             sentMessages.push(action.text);
           }
         } else {
-          errors.push(`Action ${action.type} failed`);
+          errors.push({ action: action.type, message: `Action ${action.type} failed`, isRetryable: true });
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
+
+        // Extract structured metadata from PlatformError or similar typed errors
         const statusCode = error instanceof Error
           ? (error as unknown as Record<string, unknown>).code ??
             (error as unknown as Record<string, unknown>).statusCode
           : undefined;
-        errors.push(`Action ${action.type} error: ${errorMessage}`);
+        const retryable = (error as { retryable?: boolean })?.retryable;
+
+        errors.push({
+          action: action.type,
+          message: `Action ${action.type} error: ${errorMessage}`,
+          statusCode: typeof statusCode === 'number' ? statusCode : undefined,
+          isRetryable: retryable ?? true, // default to retryable for unknown errors
+        });
         logger.error('Action execution failed', error instanceof Error ? error : undefined, {
           subsystem: 'outbound-sender',
           event: 'action_execution_failed',

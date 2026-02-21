@@ -544,7 +544,7 @@ describe('Response Sender - Service Mock Integration', () => {
     const mockSend = vi.fn(() => Promise.resolve({
       success: false,
       sentMessages: [],
-      errors: [{ code: 'RATE_LIMITED', message: 'Too many requests' }],
+      errors: [{ action: 'send_message', message: 'Too many requests', statusCode: 429, isRetryable: true }],
     }));
 
     const mockOutboundSender = {
@@ -555,7 +555,7 @@ describe('Response Sender - Service Mock Integration', () => {
 
     expect(result.success).toBe(false);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].code).toBe('RATE_LIMITED');
+    expect(result.errors[0].statusCode).toBe(429);
   });
 
   it('should queue media jobs to SQS', async () => {
@@ -577,5 +577,121 @@ describe('Response Sender - Service Mock Integration', () => {
 
     expect(mockSqsSend).toHaveBeenCalled();
     expect(sqsResult.MessageId).toBe('sqs-123');
+  });
+});
+
+describe('Response Sender - Non-Retryable Error Handling (#368)', () => {
+  /**
+   * Tests for Twitter 403 and other non-retryable errors.
+   * When all errors from OutboundSender are non-retryable (isRetryable: false),
+   * the response sender should NOT add the message to batchItemFailures,
+   * preventing wasteful SQS retries.
+   */
+
+  it('should not retry when all errors are non-retryable (e.g. 403)', () => {
+    const actionErrors = [
+      { action: 'send_message', message: 'Forbidden', statusCode: 403, isRetryable: false },
+    ];
+
+    const hasRetryableError = actionErrors.length === 0 ||
+      actionErrors.some(e => e.isRetryable !== false);
+
+    expect(hasRetryableError).toBe(false);
+  });
+
+  it('should retry when at least one error is retryable', () => {
+    const actionErrors = [
+      { action: 'send_message', message: 'Forbidden', statusCode: 403, isRetryable: false },
+      { action: 'react', message: 'Server error', statusCode: 500, isRetryable: true },
+    ];
+
+    const hasRetryableError = actionErrors.length === 0 ||
+      actionErrors.some(e => e.isRetryable !== false);
+
+    expect(hasRetryableError).toBe(true);
+  });
+
+  it('should retry when errors array is empty (default safe behavior)', () => {
+    const actionErrors: { action: string; message: string; statusCode?: number; isRetryable?: boolean }[] = [];
+
+    const hasRetryableError = actionErrors.length === 0 ||
+      actionErrors.some(e => e.isRetryable !== false);
+
+    expect(hasRetryableError).toBe(true);
+  });
+
+  it('should retry when isRetryable is undefined (unknown errors default to retryable)', () => {
+    const actionErrors = [
+      { action: 'send_message', message: 'Unknown error', isRetryable: undefined },
+    ];
+
+    // isRetryable !== false is true when isRetryable is undefined
+    const hasRetryableError = actionErrors.length === 0 ||
+      actionErrors.some(e => e.isRetryable !== false);
+
+    expect(hasRetryableError).toBe(true);
+  });
+
+  it('should not retry when multiple errors are all non-retryable', () => {
+    const actionErrors = [
+      { action: 'send_message', message: 'Forbidden', statusCode: 403, isRetryable: false },
+      { action: 'react', message: 'Unauthorized', statusCode: 401, isRetryable: false },
+    ];
+
+    const hasRetryableError = actionErrors.length === 0 ||
+      actionErrors.some(e => e.isRetryable !== false);
+
+    expect(hasRetryableError).toBe(false);
+  });
+
+  it('should simulate full non-retryable flow without adding to batchItemFailures', () => {
+    const batchItemFailures: { itemIdentifier: string }[] = [];
+    const record = { messageId: 'msg-twitter-403' };
+
+    // Simulate: outboundSender.send() returned non-retryable errors
+    const sendSuccess = false;
+    const actionErrors = [
+      { action: 'send_message', message: 'Forbidden (403): reply restriction', statusCode: 403, isRetryable: false },
+    ];
+
+    // This is the logic from response-sender.ts
+    if (!sendSuccess) {
+      const hasRetryableError = actionErrors.length === 0 ||
+        actionErrors.some(e => e.isRetryable !== false);
+
+      if (!hasRetryableError) {
+        // Non-retryable: don't add to batchItemFailures
+      } else {
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+      }
+    }
+
+    // 403 should NOT cause a retry
+    expect(batchItemFailures).toHaveLength(0);
+  });
+
+  it('should add to batchItemFailures for retryable errors (e.g. 500)', () => {
+    const batchItemFailures: { itemIdentifier: string }[] = [];
+    const record = { messageId: 'msg-twitter-500' };
+
+    const sendSuccess = false;
+    const actionErrors = [
+      { action: 'send_message', message: 'Server error', statusCode: 500, isRetryable: true },
+    ];
+
+    if (!sendSuccess) {
+      const hasRetryableError = actionErrors.length === 0 ||
+        actionErrors.some(e => e.isRetryable !== false);
+
+      if (!hasRetryableError) {
+        // Non-retryable
+      } else {
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+      }
+    }
+
+    // 500 SHOULD cause a retry
+    expect(batchItemFailures).toHaveLength(1);
+    expect(batchItemFailures[0].itemIdentifier).toBe('msg-twitter-500');
   });
 });

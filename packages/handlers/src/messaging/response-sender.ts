@@ -17,6 +17,7 @@ import {
   logger,
   extractCorrelationIdFromSqsRecord,
   DEFAULT_AVATAR_CONFIG,
+  type ActionError,
   type AvatarConfig,
   type SwarmResponse,
   type ResponseAction,
@@ -459,7 +460,7 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       let actionsToSend: ResponseAction[] | null = null;
       let queuedMedia = false;
       let sentMessages: string[] = [];
-      let sendErrors: string[] = [];
+      let sendErrors: ActionError[] = [];
       let sendSuccess = false;
 
       if (mediaActions.length > 0) {
@@ -584,17 +585,36 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       }
 
       if (actionsToSend && actionsToSend.length > 0 && !sendSuccess) {
-        batchItemFailures.push({ itemIdentifier: record.messageId });
-        logger.error('Response actions failed to send', undefined, {
-          event: 'send_error',
-          subsystem: 'outbound',
-          messageId: record.messageId,
-          platform: response.platform,
-          avatarId,
-          conversationId: response.conversationId,
-          actionTypes: actionsToSend.map((a: ResponseAction) => a.type),
-          errors: sendErrors,
-        });
+        // Check if ALL errors are non-retryable (e.g. 403 reply restrictions).
+        // If so, don't add to batchItemFailures — retrying won't help.
+        const hasRetryableError = sendErrors.length === 0 ||
+          sendErrors.some(e => e.isRetryable !== false);
+
+        if (!hasRetryableError) {
+          logger.warn('All action errors are non-retryable, skipping SQS retry', {
+            event: 'non_retryable_errors_discarded',
+            subsystem: 'outbound',
+            messageId: record.messageId,
+            platform: response.platform,
+            avatarId,
+            conversationId: response.conversationId,
+            errors: sendErrors,
+          });
+          // Mark as handled so the idempotency guard prevents future processing
+          await markResponseHandled(avatarId, responseKey);
+        } else {
+          batchItemFailures.push({ itemIdentifier: record.messageId });
+          logger.error('Response actions failed to send', undefined, {
+            event: 'send_error',
+            subsystem: 'outbound',
+            messageId: record.messageId,
+            platform: response.platform,
+            avatarId,
+            conversationId: response.conversationId,
+            actionTypes: actionsToSend.map((a: ResponseAction) => a.type),
+            errors: sendErrors,
+          });
+        }
         continue;
       }
 
