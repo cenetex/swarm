@@ -9,6 +9,7 @@ export function SecretPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
   const [value, setValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // Handle both old and new argument structures
   const args = toolCall.arguments as {
@@ -28,11 +29,13 @@ export function SecretPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
     if (!value.trim() || isSubmitting) return;
     
     setIsSubmitting(true);
+    setError(null);
     try {
       await onSubmit(toolCall.id, { secretKey, value: value.trim() });
       setSubmitted(true);
       setValue(''); // Clear sensitive data
-    } catch {
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save secret');
       setIsSubmitting(false);
     }
   };
@@ -89,6 +92,15 @@ export function SecretPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
           {isSubmitting ? 'Saving...' : 'Save'}
         </button>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-2 text-red-400 text-sm">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {error}
+        </div>
+      )}
     </div>
   );
 }

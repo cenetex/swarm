@@ -1119,7 +1119,7 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
                     key={toolCall.id}
                     toolCall={toolCall}
                     onSubmit={onToolSubmit || (() => {})}
-                    disabled={!onToolSubmit || (toolCall.status !== 'pending' && toolCall.name !== 'configure_integration')}
+                    disabled={!onToolSubmit || toolCall.status === 'completed'}
                   />
                 ))}
               </div>

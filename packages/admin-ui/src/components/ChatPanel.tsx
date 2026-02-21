@@ -576,15 +576,15 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
       }
       
       // Update the tool call status in the message
-      const updateToolCallStatus = () => {
+      const updateToolCallStatus = (status: 'completed' | 'failed' = 'completed') => {
         const msgs = useAvatarStore.getState().chats[activeAvatar.id] || [];
         for (const msg of msgs) {
           const toolCall = msg.toolCalls?.find(tc => tc.id === toolCallId);
           if (toolCall) {
             updateMessage(activeAvatar.id, msg.id, {
-              toolCalls: msg.toolCalls?.map(tc => 
-                tc.id === toolCallId 
-                  ? { ...tc, status: 'completed' as const, result }
+              toolCalls: msg.toolCalls?.map(tc =>
+                tc.id === toolCallId
+                  ? { ...tc, status: status as const, result }
                   : tc
               ),
             });
@@ -624,6 +624,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           });
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to save secret';
+          updateToolCallStatus('failed');
           setError(errorMsg);
         }
         return;
@@ -715,6 +716,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to process upload';
+          updateToolCallStatus('failed');
           setError(errorMsg);
         }
         return;
@@ -744,6 +746,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           updateToolCallStatus();
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to update model';
+          updateToolCallStatus('failed');
           setError(errorMsg);
         }
         return;
@@ -783,6 +786,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to toggle feature';
+          updateToolCallStatus('failed');
           setError(errorMsg);
         }
         return;
@@ -814,6 +818,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           });
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to submit tool result';
+          updateToolCallStatus('failed');
           setError(errorMsg);
         }
         return;

@@ -7,6 +7,7 @@ import type { ToolPromptProps } from './types';
 export function ConfirmPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [responded, setResponded] = useState<'confirmed' | 'denied' | null>(null);
+  const [error, setError] = useState<string | null>(null);
   
   const { action, description, destructive } = toolCall.arguments as {
     action: string;
@@ -18,10 +19,12 @@ export function ConfirmPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps)
     if (isSubmitting) return;
     
     setIsSubmitting(true);
+    setError(null);
     try {
       await onSubmit(toolCall.id, { confirmed });
       setResponded(confirmed ? 'confirmed' : 'denied');
-    } catch {
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to submit response');
       setIsSubmitting(false);
     }
   };
@@ -80,6 +83,15 @@ export function ConfirmPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps)
           {isSubmitting ? 'Processing...' : 'Confirm'}
         </button>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-2 text-red-400 text-sm">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {error}
+        </div>
+      )}
     </div>
   );
 }
