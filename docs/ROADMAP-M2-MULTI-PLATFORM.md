@@ -6,7 +6,7 @@
 
 **Prerequisite:** M1 Paid Telegram MVP (see [ROADMAP-M1-PAID-TELEGRAM-MVP.md](ROADMAP-M1-PAID-TELEGRAM-MVP.md))
 
-This document defines the M2 milestone: bringing Discord and Twitter (X) adapters to feature parity with Telegram, unifying the tool registry, surfacing usage metering in the admin UI, adding SQS payload offload for large media, and integrating Stripe for self-serve billing.
+This document defines the M2 milestone: bringing Discord and Twitter (X) adapters to feature parity with Telegram, unifying the tool registry, surfacing usage metering in the admin UI, adding SQS payload offload for large media, integrating Stripe for self-serve billing, and wiring semantic retrieval into the primary memory path.
 
 ---
 
@@ -19,11 +19,13 @@ An operator can:
 4. Subscribe to a paid plan via Stripe Checkout, manage billing via the customer portal, and see overages reflected in invoices.
 5. Send and receive media payloads larger than 256 KB without hitting SQS size limits.
 6. Inspect and replay messages from the dead-letter queue via admin tools.
+7. Retrieve higher-relevance memories via semantic retrieval in the primary query path with benchmark and regression evidence.
 
 Primary references:
 - [BILLING-STRATEGY.md](BILLING-STRATEGY.md) -- Web2 Floor + Web3 Ceiling model, tier definitions
 - [ROADMAP-M1-PAID-TELEGRAM-MVP.md](ROADMAP-M1-PAID-TELEGRAM-MVP.md) -- M1 scope and shipped items
 - [TOOL-COMPOSITION-OBSERVABILITY-RFC.md](TOOL-COMPOSITION-OBSERVABILITY-RFC.md) -- Tool metadata and composition design
+- [PLAYBOOK-M2-MULTI-PLATFORM.md](PLAYBOOK-M2-MULTI-PLATFORM.md) -- execution cadence, readiness gates, and rollout checklist
 
 ---
 
@@ -168,6 +170,14 @@ Primary references:
 | No DLQ inspection tools | No admin tool to list, inspect, or replay messages from the dead-letter queue |
 | No DLQ alarm routing | CloudWatch alarms fire to SNS but no admin chat notification or dashboard integration |
 | Media queue backpressure | No mechanism to slow media generation requests when the media queue depth alarm fires |
+
+### 2.6 Memory Relevance Gaps
+
+| Gap | Description |
+|---|---|
+| Semantic retrieval not in primary path | Embeddings and semantic helpers exist but are not wired into the default memory retrieval flow used by chat handlers |
+| No benchmark harness | No repeatable before/after benchmark to compare relevance and latency when changing retrieval logic |
+| No retrieval regression suite | No dedicated tests for semantic ranking, fallback behavior, and latency guardrails in memory retrieval |
 
 ---
 
@@ -476,6 +486,9 @@ Producer                          SQS                      Consumer
 | M2-017 | `check_usage` admin chat tool | mcp-server | M | -- | Query and format daily/weekly usage summary with limits and remaining |
 | M2-018 | Usage aggregation service | admin-api | M | -- | Scan DynamoDB usage records for date ranges, compute totals and trends |
 | M2-019 | Per-platform usage breakdown | handlers | M | -- | Add platform dimension to usage counter keys in `entitlement-enforcement.ts` |
+| M2-054 | Semantic retrieval integration | admin-api | M | -- | Wire semantic search helpers into the primary memory retrieval path used by chat flows |
+| M2-055 | Retrieval benchmark harness | admin-api, docs | S | M2-054 | Add repeatable benchmark inputs and reporting for relevance and p95 latency before/after changes |
+| M2-056 | Semantic retrieval regression coverage | admin-api | M | M2-054 | Add tests for ranking behavior, fallback correctness, and latency budget assertions |
 
 ### P2: Enhanced platform features (Weeks 5-10)
 
@@ -552,6 +565,10 @@ M2-018 (usage aggregation)
   ├── M2-030 (overage reporting)
   └── M2-052 (dashboard API)
 
+M2-054 (semantic retrieval integration)
+  ├── M2-055 (benchmark harness)
+  └── M2-056 (regression coverage)
+
 M2-040 (DLQ inspect)
   ├── M2-041 (DLQ replay)
   └── M2-042 (DLQ purge)
@@ -569,7 +586,7 @@ M2-040 (DLQ inspect)
 
 **Total estimated effort:**
 - P0 (8 tasks): ~4-5 weeks of work (parallelizable to 2-3 calendar weeks)
-- P1 (10 tasks): ~6-8 weeks of work (parallelizable to 4-5 calendar weeks)
+- P1 (13 tasks): ~8-10 weeks of work (parallelizable to 5-6 calendar weeks)
 - P2 (12 tasks): ~8-10 weeks of work (parallelizable to 5-6 calendar weeks)
 - P3 (14 tasks): ~6-8 weeks of work (parallelizable to 4-5 calendar weeks)
 
@@ -577,6 +594,7 @@ M2-040 (DLQ inspect)
 - 1 engineer on platform adapters (Discord/Twitter parity -- M2-001/002/020-029)
 - 1 engineer on billing infrastructure (Stripe + metering -- M2-010-019/030-031)
 - 1 engineer on plumbing (SQS offload + tool registry unification + DLQ -- M2-003-008/040-047)
+- 1 engineer on memory relevance (semantic integration + benchmark + regression -- M2-054-056)
 
 ---
 
@@ -591,3 +609,5 @@ M2-040 (DLQ inspect)
 4. **SQS offload threshold:** 200 KB is conservative. Should we profile actual payload sizes to set an optimal threshold? Could we avoid offload entirely by stripping base64 media earlier in the pipeline?
 
 5. **Cross-platform tool:** Is a unified `send_to_platform` meta-tool valuable, or do operators prefer platform-specific tools for clarity?
+
+6. **Semantic retrieval quality bar:** What minimum relevance lift and maximum p95 latency increase are acceptable to ship M2-054 into staging?

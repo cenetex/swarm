@@ -58,6 +58,7 @@ flows, and production-grade multi-platform parity (Telegram, X, Discord, Web).
 
 ## References
 - `ROADMAP.md`
+- `docs/PLAYBOOK-M2-MULTI-PLATFORM.md`
 - `docs/BILLING-STRATEGY.md`
 - `docs/AUTHENTICATION-IMPROVEMENTS.md`
 - `issues/README.md`
