@@ -16,6 +16,7 @@
  */
 import WebSocket from 'ws';
 import { sendSqsMessage } from '../services/sqs-send.js';
+import { SQSClient, GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { randomUUID } from 'node:crypto';
 import {
@@ -861,6 +862,71 @@ function reconcileConnections(bindings: Map<string, DiscordAvatarBinding>): void
   }
 }
 
+// ─── Preflight Checks ────────────────────────────────────────────────────────
+
+/**
+ * Verify that the configured SQS queue exists and is reachable.
+ * Fails fast at startup if the queue URL is stale or the queue was deleted,
+ * instead of silently dropping messages at runtime.
+ */
+async function verifyQueueReachable(queueUrl: string): Promise<void> {
+  const sqsClient = new SQSClient({});
+  try {
+    await sqsClient.send(new GetQueueAttributesCommand({
+      QueueUrl: queueUrl,
+      AttributeNames: ['QueueArn'],
+    }));
+    logger.info('SQS queue preflight check passed', {
+      event: 'queue_preflight_ok',
+      subsystem: 'discord',
+      queueUrl,
+    });
+  } catch (err: unknown) {
+    const errorName = err instanceof Error ? err.constructor.name : String(err);
+    const errorMessage = err instanceof Error ? err.message : String(err);
+
+    // Check for NonExistentQueue / QueueDoesNotExist errors
+    const isNonExistent =
+      errorName === 'QueueDoesNotExist' ||
+      errorName === 'NonExistentQueue' ||
+      (errorName === 'AWS.SimpleQueueService.NonExistentQueue') ||
+      errorMessage.includes('NonExistentQueue') ||
+      errorMessage.includes('QueueDoesNotExist');
+
+    if (isNonExistent) {
+      logger.error(
+        `FATAL: SQS queue does not exist: ${queueUrl}. ` +
+        'The MESSAGE_QUEUE_URL environment variable may be stale. ' +
+        'Verify the queue exists or redeploy via CDK to provision the correct queue.',
+        err instanceof Error ? err : undefined,
+        {
+          event: 'queue_preflight_failed',
+          subsystem: 'discord',
+          queueUrl,
+          errorName,
+        }
+      );
+      throw new Error(
+        `SQS queue does not exist: ${queueUrl}. ` +
+        'Cannot start Discord gateway without a valid message queue. ' +
+        'Redeploy the CDK stack to provision the queue, or update MESSAGE_QUEUE_URL.'
+      );
+    }
+
+    // For other errors (permissions, network), log a warning but allow startup
+    // since the queue may exist but be temporarily unreachable
+    logger.warn('SQS queue preflight check could not confirm queue existence — proceeding with caution', {
+      event: 'queue_preflight_warning',
+      subsystem: 'discord',
+      queueUrl,
+      errorName,
+      errorMessage,
+    });
+  } finally {
+    sqsClient.destroy();
+  }
+}
+
 // ─── Main Loop ───────────────────────────────────────────────────────────────
 
 const AVATAR_REFRESH_INTERVAL_MS = 60_000; // Re-scan for avatars every 60s
@@ -910,6 +976,11 @@ async function main(): Promise<void> {
     avatarConfigCacheTtlMs: AVATAR_CONFIG_CACHE_TTL_MS,
     secretCacheTtlMs: SECRET_CACHE_TTL_MS,
   });
+
+  // Preflight: verify the SQS queue exists before accepting messages.
+  // This catches stale MESSAGE_QUEUE_URL values early instead of failing
+  // silently at runtime with NonExistentQueue errors.
+  await verifyQueueReachable(MESSAGE_QUEUE_URL);
 
   // Initial avatar discovery
   await refreshAvatarBindings();
@@ -988,6 +1059,7 @@ export {
   discoverDiscordAvatars,
   GatewayConnection,
   rateLimiter,
+  verifyQueueReachable,
   // Export caching internals for testing
   invalidateAllCaches,
   avatarConfigCache,
