@@ -15,14 +15,14 @@ This playbook turns the M2 roadmap into an execution loop with clear ownership, 
 This playbook covers M2 work across:
 - platform parity (Telegram, Discord, X/Twitter),
 - tool registry/runtime integration,
-- semantic memory retrieval quality,
+- semantic memory retrieval operational hardening (wiring shipped; see [SEMANTIC-MEMORY-DESIGN.md](SEMANTIC-MEMORY-DESIGN.md)),
 - usage metering and billing foundations,
 - SQS offload and DLQ operations.
 
 Expected outcomes:
 1. Platform changes ship in small slices with explicit entry/exit gates.
 2. Operational regressions are caught before broad rollout.
-3. Memory retrieval quality improves without regressing latency budgets.
+3. Semantic retrieval is production-hardened with embedding coverage tracking, a benchmark harness, and regression tests -- without regressing latency budgets.
 4. Each completed M2 task has an evidence pack that can be audited.
 
 ---
@@ -35,7 +35,7 @@ Use four lanes in parallel:
 |---|---|---|---|
 | Platform parity | M2-001, M2-002, M2-020..M2-029, M2-048..M2-050, M2-053 | `core`, `handlers`, `infra` | Discord and X parity gaps closed or explicitly deferred with decision log |
 | Runtime plumbing | M2-003..M2-008, M2-040..M2-047, M2-051 | `handlers`, `core`, `mcp-server`, `admin-api` | Shared registry/runtime wiring is complete and DLQ tooling is operational |
-| Memory relevance | M2-054..M2-056 | `admin-api`, `core`, `docs` | Semantic retrieval path is live with benchmark and regression evidence |
+| Memory relevance | M2-054..M2-056 | `admin-api`, `core`, `infra`, `docs` | Embedding coverage is tracked and automated, benchmark harness validates relevance/latency, and regression suite guards ranking stability |
 | Billing and metering | M2-010..M2-019, M2-030..M2-031, M2-044, M2-052 | `infra`, `handlers`, `admin-api`, `mcp-server` | Usage visibility and entitlement sync are production-ready |
 
 ---
@@ -76,7 +76,7 @@ Every M2 slice must pass all applicable gates before merge.
 | `gate.runtime.ingest` | Adapter/runtime changes | Incoming platform messages are accepted and enqueued | Staging logs showing ingest path events |
 | `gate.runtime.respond` | Adapter/runtime changes | Bot response path succeeds end-to-end | API check + logs with same request flow |
 | `gate.tools.bridge` | MCP/registry changes | Tool is callable from intended context (admin/runtime) without fallback errors | Tool invocation transcript or test |
-| `gate.memory.quality` | Memory retrieval changes | Relevance improves on benchmark set while p95 retrieval latency remains within agreed budget | Benchmark before/after summary + targeted tests |
+| `gate.memory.quality` | Memory retrieval changes | Embedding coverage >= 90% for affected avatars, MRR/nDCG does not regress on benchmark fixture set, and p95 retrieval latency remains within agreed budget | Benchmark before/after summary + coverage metric + targeted regression tests |
 | `gate.usage.integrity` | Metering/billing changes | Usage counters and entitlement checks update consistently | Before/after usage output sample |
 | `gate.ops.rollback` | Infra/runtime changes | Rollback command/procedure documented and tested in staging | Rollback steps + verification result |
 
@@ -137,7 +137,9 @@ This matches the repository requirement for fix PR evidence and keeps M2 closure
 Use this order unless dependencies force changes:
 1. M2-003 + M2-004 (platform-MCP bridge completion),
 2. M2-005..M2-008 (SQS offload baseline),
-3. M2-054..M2-056 (semantic retrieval integration, benchmark, and regression coverage),
+3. M2-054 + M2-055 + M2-056 (semantic retrieval hardening, benchmark harness, and regression coverage -- all three are independent and can run in parallel since wiring is shipped),
 4. M2-017 + M2-018 + M2-019 (usage visibility backbone),
 5. M2-040..M2-043 (DLQ operational tools),
 6. Remaining platform parity gaps by highest user impact.
+
+> **Note on memory lane:** The semantic retrieval path (`searchMemories`, `createMemory` with embedding generation, `backfill_embeddings` tool) is already live. M2-054..056 focus on operational hardening: production coverage metrics, automated backfill, a benchmark harness with MRR/nDCG scoring, and regression tests with latency budget assertions. See the [SEMANTIC-MEMORY-DESIGN.md](SEMANTIC-MEMORY-DESIGN.md) status update for implementation details.
