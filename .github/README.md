@@ -35,6 +35,7 @@ This directory contains GitHub Actions workflows and supporting infrastructure f
 
 **Sync Runtime Issues** (`sync-runtime-issues.yml`) — Hourly:
 - Pulls runtime errors from AWS into GitHub Issues
+- Scheduled runs execute in apply mode (writes issues) with API-only sourcing; manual `workflow_dispatch` supports dry-run for audit/report-only checks (with optional file fallback)
 - Policy config: `.github/policy/internal-issue-sync-policy.json`
 
 ### Reusable (called by deploy.yml, not invoked directly)

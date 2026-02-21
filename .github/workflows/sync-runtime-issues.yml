@@ -37,6 +37,9 @@ jobs:
     name: Sync internal issues
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+    env:
+      INTERNAL_ISSUE_SYNC_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      INTERNAL_ISSUE_FALLBACK_TO_FILES: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -105,13 +108,43 @@ jobs:
           echo "SWARM_ADMIN_API_URL=$API_URL" >> "$GITHUB_ENV"
           echo "SWARM_INTERNAL_TEST_KEY=$INTERNAL_TEST_KEY" >> "$GITHUB_ENV"
 
+      - name: Print sync mode
+        run: |
+          if [ "${INTERNAL_ISSUE_SYNC_DRY_RUN}" = "true" ]; then
+            echo "Runtime issue sync mode: DRY RUN (report only)"
+          else
+            echo "Runtime issue sync mode: APPLY (writes GitHub issues)"
+          fi
+
+          if [ "${INTERNAL_ISSUE_FALLBACK_TO_FILES}" = "true" ]; then
+            echo "Fallback source: ENABLED (local files allowed)"
+          else
+            echo "Fallback source: DISABLED (API only)"
+          fi
+
+      - name: Enforce apply mode for scheduled runs
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "${INTERNAL_ISSUE_SYNC_DRY_RUN}" != "false" ]; then
+            echo "::error::Scheduled runtime sync must run in apply mode."
+            exit 1
+          fi
+
+          if [ "${INTERNAL_ISSUE_FALLBACK_TO_FILES}" != "false" ]; then
+            echo "::error::Scheduled runtime sync must disable file fallback."
+            exit 1
+          fi
+
       - name: Run internal issue sync
         env:
           ISSUES_REPO: ${{ github.repository }}
           INTERNAL_ISSUE_LIMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.limit || '100' }}
-          INTERNAL_ISSUE_SYNC_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'true' }}
         run: |
-          node scripts/sync-internal-issues-to-github.mjs --config .github/policy/internal-issue-sync-policy.json
+          MODE_FLAG="--apply"
+          if [ "${INTERNAL_ISSUE_SYNC_DRY_RUN}" = "true" ]; then
+            MODE_FLAG="--dry-run"
+          fi
+          node scripts/sync-internal-issues-to-github.mjs --config .github/policy/internal-issue-sync-policy.json "$MODE_FLAG"
 
       - name: Upload sync summaries
         if: always()
