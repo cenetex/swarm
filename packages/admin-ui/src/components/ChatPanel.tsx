@@ -9,7 +9,7 @@
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { useAvatarStore, useActiveAvatar, useActiveChat } from '../store';
 import { useAuth } from '../store/auth';
-import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion, updateAvatar as updateAvatarApi, transcribeAudio, type JobStatus } from '../api';
+import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion, updateAvatar as updateAvatarApi, getAvatar, toggleFeature, transcribeAudio, type JobStatus } from '../api';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { AvatarDisplay } from './AvatarSidebar';
@@ -648,7 +648,6 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
 
           if (isCharacterReferenceUpload) {
             // For character reference, save directly via API
-            const { updateAvatar: updateAvatarApi } = await import('../api/avatars');
             await updateAvatarApi(activeAvatar.id, {
               characterReference: {
                 url: resultObj.publicUrl as string,
@@ -665,7 +664,6 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
             });
           } else if (isProfileUpload) {
             // For profile images, save directly via API - don't rely on LLM
-            const { updateAvatar: updateAvatarApi } = await import('../api/avatars');
             await updateAvatarApi(activeAvatar.id, {
               profileImage: {
                 url: resultObj.publicUrl as string,
@@ -725,7 +723,6 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
       // Handle model selection updates
       if (typeof resultObj.selectedModel === 'string') {
         try {
-          const { getAvatar, updateAvatar: updateAvatarApi } = await import('../api/avatars');
           const avatar = await getAvatar(activeAvatar.id);
           const currentConfig = avatar.llmConfig || {
             provider: 'openrouter',
@@ -755,7 +752,6 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
       // Handle feature toggle updates
       if (typeof resultObj.feature === 'string' && typeof resultObj.enabled === 'boolean') {
         try {
-          const { toggleFeature } = await import('../api/avatars');
           await toggleFeature(
             activeAvatar.id,
             resultObj.feature as 'media' | 'voice' | 'twitter' | 'telegram' | 'discord',
