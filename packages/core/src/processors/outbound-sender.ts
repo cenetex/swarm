@@ -8,6 +8,7 @@ import type {
 } from '../types/index.js';
 import type { PlatformRegistry } from '../platforms/base.js';
 import type { ActivityService } from '../services/activity.js';
+import { logger } from '../utils/logger.js';
 
 export class OutboundSender {
   constructor(
@@ -69,8 +70,20 @@ export class OutboundSender {
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
+        const statusCode = error instanceof Error
+          ? (error as unknown as Record<string, unknown>).code ??
+            (error as unknown as Record<string, unknown>).statusCode
+          : undefined;
         errors.push(`Action ${action.type} error: ${errorMessage}`);
-        console.error(`Failed to execute action ${action.type}:`, error instanceof Error ? error.message : String(error));
+        logger.error('Action execution failed', error instanceof Error ? error : undefined, {
+          subsystem: 'outbound-sender',
+          event: 'action_execution_failed',
+          action: action.type,
+          platform: response.platform,
+          avatarId: response.avatarId,
+          conversationId: response.conversationId,
+          ...(typeof statusCode === 'number' ? { statusCode } : {}),
+        });
       }
     }
 

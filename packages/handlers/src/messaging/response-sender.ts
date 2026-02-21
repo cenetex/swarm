@@ -459,6 +459,7 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       let actionsToSend: ResponseAction[] | null = null;
       let queuedMedia = false;
       let sentMessages: string[] = [];
+      let sendErrors: string[] = [];
       let sendSuccess = false;
 
       if (mediaActions.length > 0) {
@@ -508,10 +509,20 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       if (actionsToSend && actionsToSend.length > 0) {
         const result = await outboundRuntime.outboundSender.send({ ...response, actions: actionsToSend });
         sentMessages = result.sentMessages;
+        sendErrors = result.errors;
         sendSuccess = result.success;
 
-        if (result.errors.length > 0) {
-          logger.warn('Some actions failed', { errors: result.errors });
+        if (sendErrors.length > 0) {
+          logger.warn('Some actions failed during outbound send', {
+            event: 'outbound_action_errors',
+            subsystem: 'outbound',
+            platform: response.platform,
+            avatarId,
+            conversationId: response.conversationId,
+            errorCount: sendErrors.length,
+            errors: sendErrors,
+            actionTypes: actionsToSend.map((a: ResponseAction) => a.type),
+          });
         }
       } else {
         sendSuccess = queuedMedia;
@@ -574,11 +585,15 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
 
       if (actionsToSend && actionsToSend.length > 0 && !sendSuccess) {
         batchItemFailures.push({ itemIdentifier: record.messageId });
-        logger.error('Response actions failed to send', {
+        logger.error('Response actions failed to send', undefined, {
           event: 'send_error',
           subsystem: 'outbound',
           messageId: record.messageId,
           platform: response.platform,
+          avatarId,
+          conversationId: response.conversationId,
+          actionTypes: actionsToSend.map((a: ResponseAction) => a.type),
+          errors: sendErrors,
         });
         continue;
       }
