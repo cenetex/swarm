@@ -409,29 +409,28 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           replyToMessageId: item.response.replyToMessageId,
         };
       } else if (!mediaAction && item.action.type === 'generate_image') {
-        // Handle generate_image action from decoupled queue
-        const action = item.action as { prompt: string; aspectRatio?: string; referenceImageUrls?: string[] };
+        // Discriminated union narrows item.action to GenerateImageAction shape
         const validRatios = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9'] as const;
         type AspectRatio = typeof validRatios[number];
-        const aspectRatio: AspectRatio = validRatios.includes(action.aspectRatio as AspectRatio)
-          ? action.aspectRatio as AspectRatio
+        const aspectRatio: AspectRatio = validRatios.includes(item.action.aspectRatio as AspectRatio)
+          ? item.action.aspectRatio as AspectRatio
           : '1:1';
         const mediaConfig = {
           ...avatarConfig.media.image,
           aspectRatio,
         };
-        const media = await mediaService.generateImage(action.prompt, mediaConfig, {
+        const media = await mediaService.generateImage(item.action.prompt, mediaConfig, {
           avatarId: avatarId,
           platform: item.response.platform,
           saveToGallery: true,
           checkCredits: false,
-          referenceImageUrls: action.referenceImageUrls,
+          referenceImageUrls: item.action.referenceImageUrls,
         });
         mediaAction = {
           type: 'send_media',
           mediaType: media.type === 'video' ? 'video' : 'image',
           url: media.url,
-          caption: action.prompt,
+          caption: item.action.prompt,
           replyToMessageId: item.response.replyToMessageId,
         };
       } else if (!mediaAction && item.action.type === 'generate_video') {
