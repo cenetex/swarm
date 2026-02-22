@@ -4,6 +4,7 @@ This document describes the Discord integration architecture, deployment procedu
 
 ## Table of Contents
 
+- [Current Deployment Status](#current-deployment-status)
 - [Architecture](#architecture)
   - [Integration Modes](#integration-modes)
   - [Key Components](#key-components)
@@ -13,8 +14,27 @@ This document describes the Discord integration architecture, deployment procedu
   - [Bot Token Resolution](#bot-token-resolution)
 - [Deployment Guide](#deployment-guide)
 - [Configuration Reference](#configuration-reference)
+- [Verification Commands](#verification-commands)
 - [Troubleshooting](#troubleshooting)
+  - [Troubleshooting Matrix](#troubleshooting-matrix)
+  - [Detailed Troubleshooting](#detailed-troubleshooting)
 - [Security](#security)
+- [Keeping This Document Current](#keeping-this-document-current)
+
+---
+
+## Current Deployment Status
+
+| Environment | `enableDiscordGateway` | Status | Notes |
+|-------------|------------------------|--------|-------|
+| **prod** | `true` | Enabled | Re-enabled via PR #313 with SQS queue preflight check. Previously disabled due to startup crashes caused by a stale `MESSAGE_QUEUE_URL`. |
+| **staging** | not set (defaults to `false`) | Disabled | Not configured in `cdk.context.json`. To enable, add `"enableDiscordGateway": true` to the staging environment config. |
+
+**Source of truth:** `packages/infra/cdk.context.json` under the `environments` key. The flag defaults to `false` in `packages/infra/bin/swarm.ts` (line 112) when not explicitly set.
+
+**CDK guardrail:** When the gateway is disabled, the `AdminApiStack` emits a CDK warning during `cdk synth`/`cdk diff`. Set `DISCORD_GATEWAY_GUARDRAIL_STRICT=true` in CI to promote this to an error and block deployments.
+
+**Runtime guardrail:** The admin API checks the `DISCORD_GATEWAY_ENABLED` environment variable at runtime. When `false`, activation-readiness checks and the Discord service report that bot/hybrid mode is unavailable.
 
 ---
 
@@ -35,9 +55,13 @@ The Discord integration supports three modes of operation:
 | Component | Path | Responsibility |
 |-----------|------|----------------|
 | **DiscordAdapter** | `packages/core/src/platforms/discord.ts` | Message parsing, interaction handling, Ed25519 signature verification, action execution |
-| **GatewayConnection** | `packages/handlers/src/discord-gateway-shared.ts` | Persistent WebSocket to Discord, multi-tenant (groups avatars by bot token), heartbeat management, session resume, exponential backoff reconnect |
-| **Discord Gateway Worker** | `packages/infra/src/constructs/discord-gateway-worker.ts` | ECS Fargate service: 512 CPU / 1024 MiB memory, health check via `pgrep`, circuit breaker with rollback |
-| **Discord Service** | `packages/admin-api/src/services/discord.ts` | REST operations: connection status, send message, list guilds/channels |
+| **Gateway Utils** | `packages/core/src/platforms/discord-gateway-utils.ts` | Intent validation logging, gateway close code handling, reconnect delay computation |
+| **Discord Rate Limiter** | `packages/core/src/platforms/discord-rate-limiter.ts` | Per-channel and global rate limit tracking for Discord REST API calls |
+| **Gateway Worker** | `packages/handlers/src/discord/discord-gateway-shared.ts` | Persistent WebSocket to Discord, multi-tenant (groups avatars by bot token), heartbeat management, session resume, exponential backoff reconnect, SQS queue preflight check |
+| **Gateway Worker Construct** | `packages/infra/src/constructs/discord-gateway-worker.ts` | ECS Fargate service: 512 CPU / 1024 MiB memory, health check via `pgrep`, circuit breaker with rollback |
+| **Dockerfile** | `packages/handlers/Dockerfile.discord-gateway` | Multi-stage build: builds core + mcp-server + handlers, runs `node dist/discord-gateway-shared.js` |
+| **Discord Service** | `packages/admin-api/src/services/discord.ts` | REST operations: connection status, send message, list guilds/channels, gateway-enabled checks |
+| **Ops Dashboard** | `packages/infra/src/constructs/ops-dashboard.ts` | CloudWatch dashboard widget and drift alarm for gateway task count |
 
 ### Message Flow (Bot Mode)
 
@@ -103,9 +127,9 @@ The gateway worker is designed to handle multiple avatars efficiently:
 
 Bot tokens are resolved using a two-step fallback strategy with caching:
 
-1. **JSON secrets blob** (preferred): Reads `swarm/{avatarId}/secrets` from AWS Secrets Manager and extracts the `discord_bot_token` key from the JSON object.
-2. **Individual secret** (fallback): Reads `swarm/{avatarId}/discord_bot_token/default` as a plain string value.
-3. **Cache**: Resolved tokens are cached for **5 minutes** to reduce Secrets Manager API calls.
+1. **JSON secrets blob** (preferred): Reads `{SECRET_PREFIX}/{avatarId}/secrets` from AWS Secrets Manager and extracts the `discord_bot_token` key from the JSON object.
+2. **Individual secret** (fallback): Reads `{SECRET_PREFIX}/{avatarId}/discord_bot_token/default` as a plain string value.
+3. **Cache**: Avatar configs are cached with a **5-minute** TTL; bot tokens are cached with a **15-minute** TTL. Cache stats are logged on every refresh cycle.
 
 ---
 
@@ -188,22 +212,33 @@ Set the following on the avatar's Discord configuration:
 - `discord.applicationId` = your application ID (for slash commands)
 - `discord.publicKey` = your public key (for interaction verification)
 
-#### 7. Deploy with CDK
+#### 7. Enable the Gateway in CDK Context
 
-Ensure the gateway worker is enabled in the stack configuration:
+Ensure the gateway worker is enabled in the environment config within `packages/infra/cdk.context.json`:
 
-```typescript
-// In packages/infra/src/bin/swarm.ts or equivalent
+```json
 {
-  enableDiscordGateway: true
+  "environments": {
+    "prod": {
+      "enableDiscordGateway": true
+    }
+  }
 }
 ```
+
+Or pass it as a CDK context override:
+
+```bash
+npx cdk deploy -c enableDiscordGateway=true
+```
+
+The flag is read in `packages/infra/bin/swarm.ts` and defaults to `false` when not set.
 
 Deploy via the standard CI/CD pipeline by pushing to `main`, or trigger a manual deployment through GitHub Actions.
 
 #### 8. Verify Deployment
 
-Check CloudWatch logs for the gateway worker. A successful connection shows:
+Check CloudWatch logs for the gateway worker. A successful startup shows:
 
 ```
 [INFO] Gateway connected - received READY event
@@ -211,19 +246,31 @@ Check CloudWatch logs for the gateway worker. A successful connection shows:
 [INFO] Discovered N avatar(s) across M bot token(s)
 ```
 
+The worker also performs a **queue preflight check** on startup (`verifyQueueReachable()`), which fails fast with an actionable error if the SQS message queue does not exist or is unreachable.
+
 ### Environment Variables
 
-The gateway worker ECS task requires the following environment variables:
+The gateway worker ECS task requires the following environment variables (all set automatically by the CDK construct):
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `STATE_TABLE` | DynamoDB table for avatar discovery | `swarm-state-staging` |
-| `MESSAGE_QUEUE_URL` | SQS FIFO queue URL for message delivery | `https://sqs.us-east-1.amazonaws.com/123456789012/swarm-messages-staging.fifo` |
-| `ACTIVITY_TABLE` | DynamoDB table for activity logging | `swarm-activity-staging` |
+| `STATE_TABLE` | DynamoDB table for avatar discovery | `swarm-state-prod` |
+| `MESSAGE_QUEUE_URL` | SQS FIFO queue URL for message delivery | `https://sqs.us-east-1.amazonaws.com/123456789012/swarm-prod-messages.fifo` |
+| `ACTIVITY_TABLE` | DynamoDB table for activity logging | `swarm-activity-prod` |
 | `SECRET_PREFIX` | Prefix for Secrets Manager keys | `swarm` (default) |
-| `ENVIRONMENT` | Deployment environment | `staging` or `production` |
+| `ENVIRONMENT` | Deployment environment | `staging` or `prod` |
 
-These are automatically configured by the CDK construct when `enableDiscordGateway` is set to `true`.
+### Resource Naming Conventions
+
+| Resource | Name Pattern | Example (prod) |
+|----------|-------------|----------------|
+| ECS Cluster | `swarm-discord-{env}` | `swarm-discord-prod` |
+| State Table | `swarm-state-{env}` | `swarm-state-prod` |
+| Activity Table | `swarm-activity-{env}` | `swarm-activity-prod` |
+| Message Queue | `swarm-{env}-messages.fifo` | `swarm-prod-messages.fifo` |
+| Response Queue | `swarm-{env}-responses.fifo` | `swarm-prod-responses.fifo` |
+| Log Group | CDK-generated (auto-named) | Check CloudFormation outputs or ECS task definition |
+| CloudWatch Alarm | `swarm-discord-gateway-drift-{env}` | `swarm-discord-gateway-drift-prod` |
 
 ---
 
@@ -310,22 +357,152 @@ interface DiscordConfig {
 
 ---
 
+## Verification Commands
+
+Copy-paste AWS CLI commands for verifying the gateway deployment. Replace `{env}` with `prod` or `staging`.
+
+### ECS Service and Task Status
+
+```bash
+# List ECS services in the Discord cluster
+aws ecs list-services \
+  --cluster swarm-discord-{env} \
+  --query 'serviceArns' --output table
+
+# Describe the gateway service (running count, desired count, events)
+aws ecs describe-services \
+  --cluster swarm-discord-{env} \
+  --services "$(aws ecs list-services --cluster swarm-discord-{env} --query 'serviceArns[0]' --output text)" \
+  --query 'services[0].{status:status,running:runningCount,desired:desiredCount,events:events[:3]}' \
+  --output yaml
+
+# List running tasks
+aws ecs list-tasks \
+  --cluster swarm-discord-{env} \
+  --desired-status RUNNING \
+  --query 'taskArns' --output table
+
+# Describe a specific task (health status, last status, started at)
+aws ecs describe-tasks \
+  --cluster swarm-discord-{env} \
+  --tasks "$(aws ecs list-tasks --cluster swarm-discord-{env} --desired-status RUNNING --query 'taskArns[0]' --output text)" \
+  --query 'tasks[0].{lastStatus:lastStatus,healthStatus:healthStatus,startedAt:startedAt,stoppedReason:stoppedReason}' \
+  --output yaml
+```
+
+### CloudWatch Logs
+
+The log group name is CDK-generated (not a fixed pattern). Find it from the task definition:
+
+```bash
+# Get the log group from the active task definition
+TASK_DEF=$(aws ecs describe-services \
+  --cluster swarm-discord-{env} \
+  --services "$(aws ecs list-services --cluster swarm-discord-{env} --query 'serviceArns[0]' --output text)" \
+  --query 'services[0].taskDefinition' --output text)
+
+LOG_GROUP=$(aws ecs describe-task-definition \
+  --task-definition "$TASK_DEF" \
+  --query 'taskDefinition.containerDefinitions[0].logConfiguration.options."awslogs-group"' \
+  --output text)
+
+echo "Log group: $LOG_GROUP"
+
+# Tail recent logs (last 30 minutes)
+aws logs tail "$LOG_GROUP" --since 30m --follow
+
+# Search for errors in the last hour
+aws logs filter-log-events \
+  --log-group-name "$LOG_GROUP" \
+  --start-time "$(date -d '1 hour ago' +%s000 2>/dev/null || date -v-1H +%s000)" \
+  --filter-pattern "ERROR" \
+  --query 'events[].message' --output text
+```
+
+### SQS Queue Metrics
+
+```bash
+# Check message queue depth and in-flight count
+aws sqs get-queue-attributes \
+  --queue-url "https://sqs.us-east-1.amazonaws.com/$(aws sts get-caller-identity --query Account --output text)/swarm-{env}-messages.fifo" \
+  --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed \
+  --output table
+
+# Check DLQ depth
+aws sqs get-queue-attributes \
+  --queue-url "https://sqs.us-east-1.amazonaws.com/$(aws sts get-caller-identity --query Account --output text)/swarm-{env}-dlq.fifo" \
+  --attribute-names ApproximateNumberOfMessages \
+  --output table
+```
+
+### CloudWatch Alarm Status
+
+```bash
+# Check Discord gateway drift alarm
+aws cloudwatch describe-alarms \
+  --alarm-names "swarm-discord-gateway-drift-{env}" \
+  --query 'MetricAlarms[0].{state:StateValue,reason:StateReason,updated:StateUpdatedTimestamp}' \
+  --output yaml
+```
+
+### CloudFormation Export Check
+
+```bash
+# Verify the gateway-enabled export
+aws cloudformation list-exports \
+  --query "Exports[?Name=='swarm-discord-gateway-enabled-{env}'].Value" \
+  --output text
+```
+
+---
+
 ## Troubleshooting
 
-### Container Crashes at Startup
+### Troubleshooting Matrix
+
+| Symptom | Likely Cause | Diagnosis Command | Resolution |
+|---------|-------------|-------------------|------------|
+| No ECS tasks running | Gateway disabled (`enableDiscordGateway=false`) | `aws cloudformation list-exports --query "Exports[?Name=='swarm-discord-gateway-enabled-{env}'].Value"` | Set `enableDiscordGateway: true` in `cdk.context.json` and redeploy |
+| Task starts then immediately stops | Startup crash (missing env vars, bad queue URL, import errors) | Tail CloudWatch logs (see [Verification Commands](#cloudwatch-logs)) | Check logs for the specific error. Common: stale `MESSAGE_QUEUE_URL` -- redeploy with CDK to get correct URL |
+| Task running but bot offline in Discord | Invalid or expired bot token | Check logs for `4004` close code (Authentication failed) | Rotate token in Secrets Manager; worker picks it up within 15 min (token cache TTL) |
+| Bot online but not responding | MESSAGE_CONTENT intent not enabled | Check logs for empty message content warnings | Enable MESSAGE CONTENT INTENT in Discord Developer Portal |
+| Bot online but not responding (specific channels) | Channel/guild filter mismatch | Check avatar's `allowedChannels`/`allowedGuilds` config | Update avatar config to include the target channel/guild, or clear filters |
+| Messages received but no replies | SQS/Lambda processing failure | Check message queue depth and MessageProcessor Lambda logs | Inspect SQS DLQ for failed messages; check Lambda error logs |
+| Duplicate replies | Gateway reconnect replaying events without resume | Check logs for session resume failures | Verify idempotency key format `discord:{avatarId}:{messageId}`; check dedup window |
+| Circuit breaker tripped | Repeated task failures (3+ consecutive) | `aws ecs describe-services --cluster swarm-discord-{env} ...` | Fix root cause, then force new deployment: `aws ecs update-service --cluster swarm-discord-{env} --service <svc> --force-new-deployment` |
+| Queue preflight failure | SQS queue does not exist or IAM permissions missing | Check logs for `verifyQueueReachable` error | Ensure SharedHandlers stack is deployed; check IAM policy on task role |
+| Disallowed intents (close code 4014) | Bot requesting intents not enabled in Developer Portal | Check logs for `4014` close code | Enable required intents in Discord Developer Portal > Bot > Privileged Gateway Intents |
+
+### Detailed Troubleshooting
+
+#### Container Crashes at Startup
 
 **Symptoms:** ECS task starts and immediately exits. Circuit breaker may trigger after repeated failures.
 
 **Diagnosis:**
-1. Check CloudWatch logs for the gateway worker log group (`/ecs/swarm-discord-gateway-{env}`).
+1. Find the log group (see [CloudWatch Logs](#cloudwatch-logs) commands above).
 2. Look for error messages in the first few log lines.
+3. Check for `verifyQueueReachable` failures, which indicate the SQS queue URL is stale or the queue does not exist.
 
 **Common causes:**
-- Missing environment variables (`STATE_TABLE`, `MESSAGE_QUEUE_URL`, etc.)
+- Missing environment variables (`STATE_TABLE`, `MESSAGE_QUEUE_URL`, etc.) -- redeploy with CDK
+- Stale `MESSAGE_QUEUE_URL` from a previous stack -- redeploy to get the current queue URL from CDK
 - Invalid or expired bot token in Secrets Manager
 - Insufficient IAM permissions for the task role (DynamoDB, SQS, Secrets Manager access)
+- Node.js module resolution errors (check Dockerfile build)
 
-### Bot Not Responding to Messages
+#### Gateway Disabled (Expected Behavior)
+
+**Symptoms:** No ECS tasks running for the Discord cluster. Admin API reports "Discord gateway is not deployed in this environment."
+
+**This is expected when `enableDiscordGateway` is `false` or not set.** The CDK stack emits a `CfnOutput` named `DiscordGatewayEnabled` with value `"false"`.
+
+**To enable:**
+1. Add `"enableDiscordGateway": true` to the target environment in `packages/infra/cdk.context.json`
+2. Commit and push to `main` to trigger CI/CD deployment
+3. Verify with: `aws cloudformation list-exports --query "Exports[?Name=='swarm-discord-gateway-enabled-{env}'].Value"`
+
+#### Bot Not Responding to Messages
 
 **Symptoms:** Bot appears online in Discord but does not respond to messages.
 
@@ -333,10 +510,10 @@ interface DiscordConfig {
 1. Verify **MESSAGE CONTENT INTENT** is enabled in the Discord Developer Portal.
 2. Check `allowedChannels` and `allowedGuilds` filters -- the bot may be filtering out the channel.
 3. Confirm the message evaluator criteria: the bot responds to @mentions, replies to its own messages, and DMs (depending on config).
-4. Check SQS queue metrics for messages being enqueued.
+4. Check SQS queue metrics for messages being enqueued (see [SQS Queue Metrics](#sqs-queue-metrics)).
 5. Check MessageProcessor Lambda logs for processing errors.
 
-### Duplicate Messages
+#### Duplicate Messages
 
 **Symptoms:** Bot sends the same response multiple times.
 
@@ -345,7 +522,7 @@ interface DiscordConfig {
 2. Verify the idempotency key format: `discord:{avatarId}:{messageId}`.
 3. Look for gateway reconnections that may replay events without proper session resume.
 
-### Gateway Disconnects
+#### Gateway Disconnects
 
 **Expected behavior.** The Discord Gateway will periodically disconnect for maintenance or load balancing. The gateway worker handles this automatically:
 
@@ -356,7 +533,7 @@ interface DiscordConfig {
 
 No action is required unless disconnects happen continuously (check for invalid token or revoked intents).
 
-### Permission Errors
+#### Permission Errors
 
 **Symptoms:** Bot receives messages but fails to send replies. Errors like "Missing Access" or "Missing Permissions" in logs.
 
@@ -365,7 +542,7 @@ No action is required unless disconnects happen continuously (check for invalid 
 2. Check channel-level permission overrides that may restrict the bot.
 3. Required permissions: Send Messages, Read Messages / View Channels, Add Reactions, Attach Files.
 
-### Health Check Failures
+#### Health Check Failures
 
 The ECS health check runs:
 
@@ -379,9 +556,14 @@ pgrep -f "node.*discord-gateway"
 
 If health checks fail consistently, the ECS service will replace the task. Check CloudWatch logs to determine why the Node.js process exited.
 
-### Production Status
+#### Credential and Intents Issues
 
-Discord Gateway is currently **disabled in production** (`enableDiscordGateway: false`) due to container startup crashes that require runtime debugging with CloudWatch. The gateway is **active in staging** and can be tested there.
+| Discord Close Code | Meaning | Action |
+|--------------------|---------|--------|
+| 4004 | Authentication failed | Bot token is invalid or expired. Rotate in Secrets Manager. |
+| 4014 | Disallowed intents | Enable required privileged intents in Developer Portal. |
+| 4013 | Invalid intents | The intent bitmask includes values Discord does not recognize. Check `intents` config. |
+| 4011 | Sharding required | Bot is in too many guilds for a single connection. Sharding is not yet supported. |
 
 ---
 
@@ -394,7 +576,7 @@ Discord interaction endpoints (slash commands, button clicks) use Ed25519 signat
 ### Bot Token Management
 
 - Bot tokens are stored in **AWS Secrets Manager**, never in code, configuration files, or environment variables.
-- The gateway worker resolves tokens at runtime from Secrets Manager with a 5-minute cache.
+- The gateway worker resolves tokens at runtime from Secrets Manager with a 15-minute cache (token cache) and 5-minute cache (avatar config cache).
 - Tokens are never logged. Structured logging records only metadata (avatar ID, guild ID, channel ID, message length).
 
 ### Token Rotation
@@ -408,7 +590,7 @@ To rotate a bot token:
      --secret-id "swarm/{avatarId}/secrets" \
      --secret-string '{"discord_bot_token": "NEW_TOKEN_HERE"}'
    ```
-3. The gateway worker will pick up the new token within **5 minutes** (cache TTL).
+3. The gateway worker will pick up the new token within **15 minutes** (token cache TTL).
 4. No restart or redeployment is required.
 
 ### Rate Limiting
@@ -416,10 +598,27 @@ To rotate a bot token:
 Rate limiting is handled at two levels:
 
 - **Discord Gateway protocol:** The gateway enforces rate limits on identify and heartbeat. The `GatewayConnection` respects these limits automatically.
-- **REST API:** Outbound message sending respects Discord's per-channel and global rate limits, with automatic retry-after handling.
+- **REST API:** Outbound message sending respects Discord's per-channel and global rate limits via `DiscordRateLimiter` (`packages/core/src/platforms/discord-rate-limiter.ts`), with automatic retry-after handling.
 
 ### Network Security
 
-- The ECS Fargate task runs in a private subnet with outbound-only internet access (via NAT Gateway).
+- The ECS Fargate task runs in a public subnet with `assignPublicIp: true` for pulling container images and reaching the Discord API.
 - No inbound ports are exposed. The WebSocket connection is outbound-initiated to Discord's gateway endpoint.
 - All communication with Discord uses TLS (WSS for gateway, HTTPS for REST API).
+
+---
+
+## Keeping This Document Current
+
+This document should be updated whenever:
+
+- The `enableDiscordGateway` flag is changed in `cdk.context.json` for any environment
+- The ECS task definition, Dockerfile, or gateway handler entry point changes
+- New troubleshooting patterns are discovered during incident response
+- Queue naming conventions or resource naming patterns change
+
+The CDK constructs and `cdk.context.json` are the authoritative source for deployment configuration. When in doubt, check:
+- `packages/infra/cdk.context.json` -- environment flags
+- `packages/infra/bin/swarm.ts` -- how flags are read and defaulted
+- `packages/infra/src/constructs/discord-gateway-worker.ts` -- ECS task definition
+- `packages/infra/src/stacks/admin-api-stack.ts` -- where the gateway construct is instantiated
