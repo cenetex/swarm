@@ -11,13 +11,11 @@ import type { EntitlementRecord, PlanType } from '../types.js';
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const WEBHOOK_TOLERANCE_SECONDS = 300;
 
-const secretsClient = new SecretsManagerClient({});
+let secretsClient: SecretsManagerClient = new SecretsManagerClient({});
 
-const STRIPE_SECRET_KEY_ARN = process.env.STRIPE_SECRET_KEY_ARN;
 let stripeSecretKey: string | null = process.env.STRIPE_SECRET_KEY || null;
 let stripeSecretKeyFetched = false;
 
-const STRIPE_WEBHOOK_SECRET_ARN = process.env.STRIPE_WEBHOOK_SECRET_ARN;
 let stripeWebhookSecret: string | null = process.env.STRIPE_WEBHOOK_SECRET || null;
 let stripeWebhookSecretFetched = false;
 
@@ -81,11 +79,14 @@ async function getSecretValue(secretArn: string): Promise<string | null> {
   }
 }
 
-async function getStripeSecretKey(): Promise<string> {
+export async function getStripeSecretKey(): Promise<string> {
   if (stripeSecretKey) return stripeSecretKey;
-  if (!stripeSecretKeyFetched && STRIPE_SECRET_KEY_ARN) {
-    stripeSecretKeyFetched = true;
-    stripeSecretKey = await getSecretValue(STRIPE_SECRET_KEY_ARN);
+  const arn = process.env.STRIPE_SECRET_KEY_ARN;
+  if (!stripeSecretKeyFetched && arn) {
+    stripeSecretKey = await getSecretValue(arn);
+    if (stripeSecretKey) {
+      stripeSecretKeyFetched = true;
+    }
   }
   if (!stripeSecretKey) {
     throw new Error('Missing STRIPE_SECRET_KEY or STRIPE_SECRET_KEY_ARN');
@@ -95,9 +96,12 @@ async function getStripeSecretKey(): Promise<string> {
 
 export async function getStripeWebhookSecret(): Promise<string> {
   if (stripeWebhookSecret) return stripeWebhookSecret;
-  if (!stripeWebhookSecretFetched && STRIPE_WEBHOOK_SECRET_ARN) {
-    stripeWebhookSecretFetched = true;
-    stripeWebhookSecret = await getSecretValue(STRIPE_WEBHOOK_SECRET_ARN);
+  const arn = process.env.STRIPE_WEBHOOK_SECRET_ARN;
+  if (!stripeWebhookSecretFetched && arn) {
+    stripeWebhookSecret = await getSecretValue(arn);
+    if (stripeWebhookSecret) {
+      stripeWebhookSecretFetched = true;
+    }
   }
   if (!stripeWebhookSecret) {
     throw new Error('Missing STRIPE_WEBHOOK_SECRET or STRIPE_WEBHOOK_SECRET_ARN');
@@ -304,4 +308,17 @@ export function verifyStripeWebhookSignature(
     .digest('hex');
 
   return parsed.signatures.some((sig) => secureHexEquals(sig, expected));
+}
+
+/**
+ * Reset module-level secret cache and optionally inject a mock SecretsManager client. Test-only.
+ */
+export function _resetForTesting(mockClient?: SecretsManagerClient): void {
+  stripeSecretKey = null;
+  stripeSecretKeyFetched = false;
+  stripeWebhookSecret = null;
+  stripeWebhookSecretFetched = false;
+  if (mockClient) {
+    secretsClient = mockClient;
+  }
 }
