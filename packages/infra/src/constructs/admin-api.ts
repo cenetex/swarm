@@ -613,12 +613,45 @@ export class AdminApiConstruct extends Construct {
       },
     });
 
-    // Apply throttling to the default stage to prevent abuse
+    // Access logging for forensics & compliance
+    const accessLogRetention = isProd
+      ? logs.RetentionDays.ONE_MONTH
+      : isPersistentEnv
+        ? logs.RetentionDays.TWO_WEEKS
+        : logs.RetentionDays.ONE_WEEK;
+
+    const accessLogGroup = new logs.LogGroup(this, 'ApiAccessLogs', {
+      logGroupName: `/aws/apigateway/SwarmAdminApi-${environment}${suffix}-access-logs`,
+      retention: accessLogRetention,
+      removalPolicy: isPersistentEnv
+        ? cdk.RemovalPolicy.RETAIN
+        : cdk.RemovalPolicy.DESTROY,
+    });
+
+    // Apply throttling and access logging to the default stage
     const defaultStage = this.api.defaultStage?.node.defaultChild as cdk.CfnResource | undefined;
     if (defaultStage) {
       defaultStage.addPropertyOverride('DefaultRouteSettings', {
         ThrottlingBurstLimit: 100,
         ThrottlingRateLimit: 50,
+      });
+
+      defaultStage.addPropertyOverride('AccessLogSettings', {
+        DestinationArn: accessLogGroup.logGroupArn,
+        Format: JSON.stringify({
+          requestId: '$context.requestId',
+          ip: '$context.identity.sourceIp',
+          requestTime: '$context.requestTime',
+          httpMethod: '$context.httpMethod',
+          path: '$context.path',
+          routeKey: '$context.routeKey',
+          status: '$context.status',
+          responseLength: '$context.responseLength',
+          protocol: '$context.protocol',
+          integrationError: '$context.integrationErrorMessage',
+          integrationLatency: '$context.integrationLatency',
+          responseLatency: '$context.responseLatency',
+        }),
       });
     }
 
