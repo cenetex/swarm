@@ -146,8 +146,9 @@ export class SharedHandlers extends Construct {
       queueName: `swarm-${environment}${suffix}-messages.fifo`,
       fifo: true,
       contentBasedDeduplication: true,
-      // Must be >= the message-processor Lambda timeout to avoid duplicate deliveries.
-      visibilityTimeout: cdk.Duration.seconds(180),
+      // Must be > the message-processor Lambda timeout to avoid duplicate deliveries.
+      // Lambda timeout is 180s; add 60s buffer to prevent re-delivery on near-timeout runs.
+      visibilityTimeout: cdk.Duration.seconds(240),
       deadLetterQueue: { queue: this.dlq, maxReceiveCount: 3 },
       encryption: sqs.QueueEncryption.SQS_MANAGED,
     });
@@ -166,7 +167,8 @@ export class SharedHandlers extends Construct {
       queueName: `swarm-${environment}${suffix}-media.fifo`,
       fifo: true,
       contentBasedDeduplication: true,
-      visibilityTimeout: cdk.Duration.minutes(5),
+      // Lambda timeout is 300s; add 60s buffer to prevent re-delivery on near-timeout runs.
+      visibilityTimeout: cdk.Duration.seconds(360),
       deadLetterQueue: { queue: this.dlq, maxReceiveCount: 3 },
       encryption: sqs.QueueEncryption.SQS_MANAGED,
     });
@@ -176,7 +178,8 @@ export class SharedHandlers extends Construct {
       queueName: `swarm-${environment}${suffix}-posts.fifo`,
       fifo: true,
       // No content-based deduplication - we need explicit dedup IDs for retries
-      visibilityTimeout: cdk.Duration.seconds(120),
+      // Lambda timeout is 120s; add 60s buffer to prevent re-delivery on near-timeout runs.
+      visibilityTimeout: cdk.Duration.seconds(180),
       deadLetterQueue: { queue: this.dlq, maxReceiveCount: 5 },
       encryption: sqs.QueueEncryption.SQS_MANAGED,
     });
