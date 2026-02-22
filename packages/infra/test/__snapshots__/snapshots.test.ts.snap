@@ -243,9 +243,6 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (dev) 1`] = `
             "KeyType": "RANGE",
           },
         ],
-        "PointInTimeRecoverySpecification": {
-          "PointInTimeRecoveryEnabled": false,
-        },
         "TableName": "swarm-activity-dev",
         "TimeToLiveSpecification": {
           "AttributeName": "ttl",
@@ -664,9 +661,6 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (dev) 1`] = `
             "KeyType": "RANGE",
           },
         ],
-        "PointInTimeRecoverySpecification": {
-          "PointInTimeRecoveryEnabled": false,
-        },
         "TableName": "swarm-state-dev",
         "TimeToLiveSpecification": {
           "AttributeName": "ttl",
