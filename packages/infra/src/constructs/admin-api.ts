@@ -195,6 +195,15 @@ export interface AdminApiConstructProps {
   postQueue?: sqs.IQueue;
 
   /**
+   * Shared handlers queues surfaced in /system/status queue health.
+   */
+  sharedMessageQueue?: sqs.IQueue;
+  sharedResponseQueue?: sqs.IQueue;
+  sharedMediaQueue?: sqs.IQueue;
+  sharedDlq?: sqs.IQueue;
+  sharedSchedulerDlq?: sqs.IQueue;
+
+  /**
    * SNS topic for CloudWatch alarm notifications.
    * When provided, all alarms in this construct will send notifications to this topic.
    */
@@ -382,6 +391,11 @@ export class AdminApiConstruct extends Construct {
         queue: this.dreamDlq,
         maxReceiveCount: 3,
       },
+    });
+
+    this.consolidationDlq = new sqs.Queue(this, 'ConsolidationScheduleDLQ', {
+      retentionPeriod: cdk.Duration.days(14),
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
     });
 
     // Secret for OpenRouter API key
@@ -979,6 +993,20 @@ export class AdminApiConstruct extends Construct {
         REPLICATE_API_KEY_SECRET_ARN: replicateApiKey?.secretArn || '',
         // POST_QUEUE for decoupled Twitter posting
         POST_QUEUE_URL: props.postQueue?.queueUrl || '',
+        // Expanded /system/status queue health telemetry
+        SYSTEM_SHARED_MESSAGE_QUEUE_URL: props.sharedMessageQueue?.queueUrl || '',
+        SYSTEM_SHARED_RESPONSE_QUEUE_URL: props.sharedResponseQueue?.queueUrl || '',
+        SYSTEM_SHARED_MEDIA_QUEUE_URL: props.sharedMediaQueue?.queueUrl || '',
+        SYSTEM_SHARED_POST_QUEUE_URL: props.postQueue?.queueUrl || '',
+        SYSTEM_SHARED_DLQ_URL: props.sharedDlq?.queueUrl || '',
+        SYSTEM_SHARED_SCHEDULER_DLQ_URL: props.sharedSchedulerDlq?.queueUrl || '',
+        SYSTEM_ADMIN_RESPONSE_QUEUE_URL: responseQueue.queueUrl,
+        SYSTEM_ADMIN_CHAT_QUEUE_URL: chatQueue.queueUrl,
+        SYSTEM_ADMIN_DREAM_QUEUE_URL: dreamQueue.queueUrl,
+        SYSTEM_ADMIN_RESPONSE_DLQ_URL: this.responseDlq.queueUrl,
+        SYSTEM_ADMIN_CHAT_DLQ_URL: this.chatDlq.queueUrl,
+        SYSTEM_ADMIN_DREAM_DLQ_URL: this.dreamDlq.queueUrl,
+        SYSTEM_ADMIN_CONSOLIDATION_DLQ_URL: this.consolidationDlq.queueUrl,
         // Internal testing (non-production only)
         INTERNAL_TEST_KEY: internalTestKey,
         // Discord gateway runtime status (so admin API can report accurate health)
@@ -1007,6 +1035,27 @@ export class AdminApiConstruct extends Construct {
     }
     if (props.postQueue) {
       props.postQueue.grantSendMessages(avatarsHandler);
+    }
+
+    const statusQueues: Array<sqs.IQueue | undefined> = [
+      props.sharedMessageQueue,
+      props.sharedResponseQueue,
+      props.sharedMediaQueue,
+      props.postQueue,
+      props.sharedDlq,
+      props.sharedSchedulerDlq,
+      responseQueue,
+      chatQueue,
+      dreamQueue,
+      this.responseDlq,
+      this.chatDlq,
+      this.dreamDlq,
+      this.consolidationDlq,
+    ];
+    for (const queue of statusQueues) {
+      if (queue) {
+        queue.grant(avatarsHandler, 'sqs:GetQueueAttributes');
+      }
     }
 
     // Grant secrets manager permissions to avatars handler
@@ -1879,11 +1928,6 @@ export class AdminApiConstruct extends Construct {
       actions: ['bedrock:InvokeModel'],
       resources: ['arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0'],
     }));
-
-    this.consolidationDlq = new sqs.Queue(this, 'ConsolidationScheduleDLQ', {
-      retentionPeriod: cdk.Duration.days(14),
-      encryption: sqs.QueueEncryption.SQS_MANAGED,
-    });
 
     // Schedule consolidation to run daily at 3 AM UTC
     new events.Rule(this, 'ConsolidationSchedule', {
