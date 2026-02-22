@@ -204,6 +204,7 @@ export type ResponseAction =
   | ReactAction
   | TakeSelfieAction
   | GenerateVideoAction
+  | GenerateImageAction
   | WaitAction
   | IgnoreAction
   | SolanaAction;
@@ -252,6 +253,13 @@ export interface GenerateVideoAction {
   type: 'generate_video';
   prompt: string;
   duration?: number;
+}
+
+export interface GenerateImageAction {
+  type: 'generate_image';
+  prompt: string;
+  aspectRatio?: string;
+  referenceImageUrls?: string[];
 }
 
 export interface WaitAction {

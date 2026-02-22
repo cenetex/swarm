@@ -452,10 +452,10 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
 
       // Check for media generation actions - queue them first
       const mediaActions = response.actions.filter(
-        (a: ResponseAction) => a.type === 'take_selfie' || a.type === 'generate_video'
+        (a: ResponseAction) => a.type === 'take_selfie' || a.type === 'generate_video' || a.type === 'generate_image'
       );
       const nonMediaActions = response.actions.filter(
-        (a: ResponseAction) => a.type !== 'take_selfie' && a.type !== 'generate_video'
+        (a: ResponseAction) => a.type !== 'take_selfie' && a.type !== 'generate_video' && a.type !== 'generate_image'
       );
       let actionsToSend: ResponseAction[] | null = null;
       let queuedMedia = false;
