@@ -61,6 +61,11 @@ jobs:
       - name: Check circular dependencies
         run: pnpm check:circular
 
+      - name: Build (required for cross-package typecheck)
+        env:
+          VITE_API_URL: /api
+        run: pnpm -r build
+
       - name: Typecheck
         run: pnpm -r run --if-present typecheck
 
