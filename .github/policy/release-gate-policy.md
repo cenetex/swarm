@@ -101,12 +101,11 @@ Every admin bypass is visible in:
 
 ## Relationship to Existing CI
 
-The `release-gate.yml` workflow runs **in addition to** the existing `ci.yml` workflow.
-`ci.yml` continues to run on pushes to `main` and tags. The release gate focuses
-exclusively on PR readiness and is the sole required check for branch protection.
-
-Over time, the team may consolidate `ci.yml` PR triggers into the release gate
-to avoid duplicate runs. Until then, both workflows provide independent signals.
+The `release-gate.yml` workflow is the sole required check for branch protection
+on PRs. `ci.yml` runs only on pushes to `main` and tag pushes, providing
+post-merge validation and artifact generation. The release gate covers all PR
+quality checks (security audit, lint, typecheck, build, test) plus additional
+PR-specific gates (PR evidence, release notes).
 
 ## Modifying This Policy
 

@@ -8,8 +8,15 @@ This directory contains GitHub Actions workflows and supporting infrastructure f
 
 ### CI/CD (automatic)
 
-**CI** (`ci.yml`) — Every push/PR to `main`:
+**CI** (`ci.yml`) — Push to `main` and `v*` tags:
 - Dependency security audit, lint, build, test
+- PRs are validated by `release-gate.yml` instead (see below)
+
+**Release Gate** (`release-gate.yml`) — Every PR to `main`:
+- Security audit, lint, typecheck, build (with artifact validation), test
+- PR evidence (risk level, rollback plan, validation plan)
+- Release notes check (for release PRs only)
+- Sole required status check for branch protection (see `.github/policy/release-gate-policy.md`)
 
 **Deploy** (`deploy.yml`) — Push to `main` (staging) or `v*` tags (production):
 - CDK infrastructure deploy, Admin UI to S3/CloudFront
@@ -130,7 +137,7 @@ If unset, workflow defaults to `openai/gpt-4o-mini`.
 2. **Least Privilege**: IAM role is scoped to only resources prefixed with `swarm` or `Swarm`
 3. **Environment Protection**: Production environment can require manual approval
 4. **Concurrency Control**: Deployment workflows prevent concurrent runs
-5. **Dependency Audits**: Automated security audits run on every PR/push (see [SECURITY.md](../docs/SECURITY.md))
+5. **Dependency Audits**: Automated security audits run on PRs (release gate) and pushes to main (CI) (see [SECURITY.md](../docs/SECURITY.md))
 
 ## Troubleshooting
 
