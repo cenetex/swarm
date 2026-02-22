@@ -27,6 +27,9 @@ const CDN_URL = process.env.CDN_URL;
 const RESPONSE_QUEUE_URL = process.env.RESPONSE_QUEUE_URL;
 const REPLICATE_WEBHOOK_SECRET = process.env.REPLICATE_WEBHOOK_SECRET || '';
 
+/** Platforms that use push delivery via the response queue (not polling-based like admin-ui) */
+const PUSH_PLATFORMS = new Set(['telegram', 'discord']);
+
 function verifyWebhookSignature(jobId: string, provided: string | undefined): boolean {
   if (!REPLICATE_WEBHOOK_SECRET || !provided) {
     return false;
@@ -176,7 +179,8 @@ export async function handler(
 
       // Send callback message to response queue if configured
       // Allow sending when we have conversationId (will post to chat) or replyToMessageId (will reply to specific message)
-      if (RESPONSE_QUEUE_URL && (job.conversationId || job.replyToMessageId)) {
+      // Only send to response queue for platforms that need push delivery (not polling-based like admin-ui)
+      if (RESPONSE_QUEUE_URL && PUSH_PLATFORMS.has(job.platform) && (job.conversationId || job.replyToMessageId)) {
         // Send as a continuation message that can trigger the avatar
         const continuationMessage = {
           type: 'media_generated',
@@ -212,7 +216,7 @@ export async function handler(
       });
 
       // Send failure callback as continuation message
-      if (RESPONSE_QUEUE_URL && (job.conversationId || job.replyToMessageId)) {
+      if (RESPONSE_QUEUE_URL && PUSH_PLATFORMS.has(job.platform) && (job.conversationId || job.replyToMessageId)) {
         const continuationMessage = {
           type: 'media_failed',
           avatarId: job.avatarId,

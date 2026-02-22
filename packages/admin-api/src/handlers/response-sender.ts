@@ -445,7 +445,7 @@ async function processMessage(message: ResponseMessage): Promise<void> {
 
   // Only handle Telegram for now
   if (platform !== 'telegram') {
-    logger.warn('Unsupported platform for response sender', { platform });
+    logger.info('Skipping non-push platform in response sender', { platform });
     return;
   }
 
