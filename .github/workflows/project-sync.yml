@@ -2,7 +2,7 @@ name: Project Sync
 
 on:
   issues:
-    types: [opened, edited, labeled, unlabeled, milestoned, demilestoned, closed, reopened]
+    types: [opened, labeled, unlabeled, milestoned, demilestoned, closed, reopened]
   pull_request:
     types: [opened, reopened, ready_for_review, converted_to_draft, closed, labeled, unlabeled]
   schedule:
