@@ -18,7 +18,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
+      - name: Detect dependency review availability
+        id: detect
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          REPO_JSON=$(curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}")
+
+          CODE_SECURITY_STATUS=$(echo "$REPO_JSON" | jq -r '.security_and_analysis.code_security.status // "disabled"')
+          if [ "$CODE_SECURITY_STATUS" = "enabled" ]; then
+            echo "dependency_review_enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Code Security is enabled; running dependency review."
+          else
+            echo "dependency_review_enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Code Security is disabled; dependency review will be skipped."
+          fi
+
       - name: Dependency Review
+        if: steps.detect.outputs.dependency_review_enabled == 'true'
         uses: actions/dependency-review-action@v4
         with:
           # Block PRs that introduce high or critical vulnerabilities
@@ -27,3 +49,14 @@ jobs:
           deny-licenses: GPL-3.0, AGPL-3.0
           # Comment a summary on the PR for visibility
           comment-summary-in-pr: always
+
+      - name: Record skip reason
+        if: steps.detect.outputs.dependency_review_enabled != 'true'
+        run: |
+          echo "Code Security is disabled for ${GITHUB_REPOSITORY}; skipping dependency review."
+          {
+            echo "## Dependency Review Skipped"
+            echo ""
+            echo "Code Security is disabled for this repository."
+            echo "Enable it in repository settings to run dependency review."
+          } >> "$GITHUB_STEP_SUMMARY"
