@@ -25,8 +25,7 @@ packages/handlers/*.zip
 cdk.out/
 .cdk.staging/
 
-# CDK context (contains live account/resource metadata — never commit)
-packages/infra/cdk.context.json
+# CDK context — local overrides only (the main cdk.context.json is committed)
 packages/infra/cdk.context.local.json
 
 

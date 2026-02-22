@@ -147,16 +147,14 @@ jobs:
             RUN_PROD_SMOKE="${INPUT_RUN_PROD_SMOKE:-false}"
           else
             # For push/tag triggers, set safe defaults per environment.
-            # Staging: split stacks own their resources — useExistingResources=false.
-            # Production: shared resources (DynamoDB, S3 media, ECS) were created by
-            # the legacy monolith stack and exist outside CloudFormation — import them.
+            # Both staging and production use useExistingResources=true (set in
+            # cdk.context.json). The -c flag matches the committed context.
+            USE_EXISTING_RESOURCES="true"
             if [ "$ENV" = "production" ]; then
-              USE_EXISTING_RESOURCES="true"
               USE_EXISTING_BUCKETS="true"
               SKIP_DOMAIN_ALIASES="false"
               RUN_PROD_SMOKE="true"
             else
-              USE_EXISTING_RESOURCES="false"
               USE_EXISTING_BUCKETS="false"
               SKIP_DOMAIN_ALIASES="false"
               RUN_PROD_SMOKE="false"
