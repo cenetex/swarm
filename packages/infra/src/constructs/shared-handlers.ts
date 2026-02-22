@@ -213,9 +213,13 @@ export class SharedHandlers extends Construct {
     }));
 
     // KMS: allow decrypting secrets (required for KMS-encrypted secrets)
+    // Scoped to keys in this account/region (not wildcard) to limit blast radius.
+    // The kms:ViaService condition further restricts to Secrets Manager usage only.
     lambdaRole.addToPolicy(new iam.PolicyStatement({
       actions: ['kms:Decrypt'],
-      resources: ['*'],
+      resources: [
+        `arn:aws:kms:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:key/*`,
+      ],
       conditions: {
         StringEquals: {
           'kms:ViaService': `secretsmanager.${cdk.Aws.REGION}.amazonaws.com`,
