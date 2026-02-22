@@ -129,17 +129,15 @@ function normalizeStackHash(value?: string): string | undefined {
 const stackHash = normalizeStackHash(stackHashRaw);
 const nameSuffix = stackHash ? `-${stackHash}` : '';
 
-// Suffix strategy for migration mode (useExistingResources=true):
-// - SharedInfra: no suffix — imports existing resources from legacy monolith
-// - AdminApi/AdminUi: '-split' suffix — avoids collisions with legacy monolith's non-shared resources
-// When no migration (useExistingResources=false or stackHash provided): all use nameSuffix.
-const nonSharedResourceSuffix = (useExistingResources && !nameSuffix) ? '-split' : nameSuffix;
+// All stacks share the same resource-name suffix.
+// The legacy '-split' migration suffix was removed because the split stacks
+// are already deployed without any suffix — changing it would trigger
+// CloudFormation resource replacements and cross-stack export conflicts.
+const nonSharedResourceSuffix = nameSuffix;
 
 const secretPrefix = (secretPrefixRaw && secretPrefixRaw.trim())
   ? secretPrefixRaw.trim()
-  : (useExistingResources && nonSharedResourceSuffix)
-    ? `swarm${nonSharedResourceSuffix}`
-    : (nameSuffix ? `swarm${nameSuffix}` : 'swarm');
+  : (nameSuffix ? `swarm${nameSuffix}` : 'swarm');
 
 // Resolve paths relative to monorepo root
 // From packages/infra/bin/ -> go up 3 levels to reach monorepo root
