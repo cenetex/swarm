@@ -11,6 +11,9 @@ permissions:
 jobs:
   dependency-review:
     name: Dependency Review
+    # Disabled: requires GitHub Advanced Security (GHAS) / Dependency Review to be enabled.
+    # Remove this condition once GHAS is activated on the cenetex/aws-swarm repo.
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

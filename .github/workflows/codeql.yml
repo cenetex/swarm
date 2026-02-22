@@ -21,6 +21,9 @@ permissions:
 jobs:
   analyze:
     name: Analyze
+    # Disabled: requires GitHub Advanced Security (GHAS) to be enabled for this repository.
+    # Remove this condition once GHAS is activated on the cenetex/aws-swarm repo.
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
