@@ -108,6 +108,10 @@ export class WebAdapter extends PlatformAdapter {
         console.log(`Web response for ${conversationId}:`, action.text);
         return true;
 
+      case 'send_media':
+        console.log(`Web media response for ${conversationId}:`, action.mediaType, action.url);
+        return true;
+
       case 'send_voice':
         console.log(`Web voice response for ${conversationId}:`, action.url);
         return true;
@@ -117,10 +121,6 @@ export class WebAdapter extends PlatformAdapter {
         return true;
 
       case 'ignore':
-        return true;
-
-      case 'send_media':
-        console.log(`Web media (${action.mediaType}) for ${conversationId}:`, action.url);
         return true;
 
       default:

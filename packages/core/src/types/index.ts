@@ -196,7 +196,7 @@ export interface SwarmResponse {
   tokensUsed: number;
 }
 
-export type ResponseAction = 
+export type ResponseAction =
   | SendMessageAction
   | SendMediaAction
   | SendVoiceAction

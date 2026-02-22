@@ -443,7 +443,8 @@ async function processMessage(message: ResponseMessage): Promise<void> {
   logger.setContext({ avatarId, platform, conversationId });
   logger.info('Processing response message', { type, success, purpose });
 
-  // Only handle Telegram for now
+  // Web-based platforms (admin-ui, shared-chat) use polling for responses,
+  // so there is nothing to push here. Log at debug level since this is expected.
   if (platform !== 'telegram') {
     logger.info('Skipping non-push platform in response sender', { platform });
     return;

@@ -22,13 +22,42 @@ export async function getSystemReplicateKey(secretsService: SecretsService): Pro
   if (envKey) return envKey;
 
   const arn = process.env.REPLICATE_API_KEY_SECRET_ARN;
-  if (!arn) return undefined;
+  if (arn) {
+    try {
+      const raw = await secretsService.getSecret(arn);
+      const parsed = parseReplicateApiKeyFromJson(raw);
+      const trimmedRaw = raw.trim();
+      const result = parsed || (trimmedRaw ? trimmedRaw : undefined);
+      if (result) return result;
+    } catch {
+      // ARN lookup failed, try fallback by name below
+    }
+  }
 
-  const raw = await secretsService.getSecret(arn);
-  const parsed = parseReplicateApiKeyFromJson(raw);
-  const trimmedRaw = raw.trim();
+  // Fallback: try common secret name patterns.
+  // Handles mismatch between `replicate-api` and `replicate-api-key` naming.
+  const secretPrefix = process.env.SECRET_PREFIX || 'swarm';
+  const environment = process.env.ENVIRONMENT || 'staging';
+  const nameCandidates = [
+    `${secretPrefix}/${environment}/replicate-api-key`,
+    `${secretPrefix}/${environment}/replicate-api`,
+    `${secretPrefix}/global/replicate-api-key`,
+    `${secretPrefix}/global/replicate-api`,
+  ];
 
-  return parsed || (trimmedRaw ? trimmedRaw : undefined);
+  for (const name of nameCandidates) {
+    try {
+      const raw = await secretsService.getSecret(name);
+      const parsed = parseReplicateApiKeyFromJson(raw);
+      const trimmedRaw = raw.trim();
+      const result = parsed || (trimmedRaw ? trimmedRaw : undefined);
+      if (result) return result;
+    } catch {
+      // Try next candidate
+    }
+  }
+
+  return undefined;
 }
 
 export async function ensureReplicateKey(
