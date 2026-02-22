@@ -18,7 +18,7 @@ import {
  * Convert tool results to response actions
  */
 export function toolResultsToActions(
-  toolResults: Array<{ name: string; result: { success: boolean; data?: unknown; media?: { type: string; url: string } } }>
+  toolResults: Array<{ name: string; result: { success: boolean; data?: unknown; media?: { type: string; url: string }; pendingJob?: { jobId: string; type: string; prompt?: string } } }>
 ): ResponseAction[] {
   const actions: ResponseAction[] = [];
 
@@ -40,6 +40,27 @@ export function toolResultsToActions(
             type: 'send_media',
             mediaType: 'image',
             url: result.media.url,
+          });
+        } else if (result.pendingJob) {
+          actions.push({
+            type: 'send_message',
+            text: `🎨 Generating image: "${result.pendingJob.prompt}"... I'll send it when it's ready!`,
+          });
+        }
+        break;
+      }
+
+      case 'generate_video': {
+        if (result.media) {
+          actions.push({
+            type: 'send_media',
+            mediaType: 'video',
+            url: result.media.url,
+          });
+        } else if (result.pendingJob) {
+          actions.push({
+            type: 'send_message',
+            text: `🎬 Generating video: "${result.pendingJob.prompt}"... I'll send it when it's ready!`,
           });
         }
         break;

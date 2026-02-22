@@ -116,4 +116,80 @@ describe('toolResultsToActions', () => {
       expect((actions[0] as { url: string }).url).toBe('https://cdn.example.com/img2.png');
     });
   });
+
+  describe('generate_image async pendingJob', () => {
+    it('produces send_message action for async image generation', () => {
+      const actions = toolResultsToActions([
+        {
+          name: 'generate_image',
+          result: {
+            success: true,
+            data: { jobId: 'job-123', status: 'started' },
+            pendingJob: { jobId: 'job-123', type: 'image', prompt: 'a sunset' },
+          },
+        },
+      ]);
+
+      expect(actions).toHaveLength(1);
+      expect(actions[0].type).toBe('send_message');
+      expect((actions[0] as { text: string }).text).toContain('Generating image');
+      expect((actions[0] as { text: string }).text).toContain('a sunset');
+    });
+
+    it('prefers media over pendingJob for generate_image', () => {
+      const actions = toolResultsToActions([
+        {
+          name: 'generate_image',
+          result: {
+            success: true,
+            data: { id: 'img-1', url: 'https://cdn.example.com/img.png' },
+            media: { type: 'image', url: 'https://cdn.example.com/img.png' },
+            pendingJob: { jobId: 'job-123', type: 'image', prompt: 'a sunset' },
+          },
+        },
+      ]);
+
+      expect(actions).toHaveLength(1);
+      expect(actions[0].type).toBe('send_media');
+      expect((actions[0] as { url: string }).url).toBe('https://cdn.example.com/img.png');
+    });
+  });
+
+  describe('generate_video async pendingJob', () => {
+    it('produces send_message action for async video generation', () => {
+      const actions = toolResultsToActions([
+        {
+          name: 'generate_video',
+          result: {
+            success: true,
+            data: { jobId: 'job-456', status: 'started' },
+            pendingJob: { jobId: 'job-456', type: 'video', prompt: 'dancing cat' },
+          },
+        },
+      ]);
+
+      expect(actions).toHaveLength(1);
+      expect(actions[0].type).toBe('send_message');
+      expect((actions[0] as { text: string }).text).toContain('Generating video');
+      expect((actions[0] as { text: string }).text).toContain('dancing cat');
+    });
+
+    it('prefers media over pendingJob for generate_video', () => {
+      const actions = toolResultsToActions([
+        {
+          name: 'generate_video',
+          result: {
+            success: true,
+            data: { url: 'https://cdn.example.com/vid.mp4' },
+            media: { type: 'video', url: 'https://cdn.example.com/vid.mp4' },
+            pendingJob: { jobId: 'job-456', type: 'video', prompt: 'dancing cat' },
+          },
+        },
+      ]);
+
+      expect(actions).toHaveLength(1);
+      expect(actions[0].type).toBe('send_media');
+      expect((actions[0] as { url: string }).url).toBe('https://cdn.example.com/vid.mp4');
+    });
+  });
 });
