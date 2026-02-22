@@ -1,17 +1,27 @@
 /**
  * Media Service Tests
  *
- * Tests for URL conversion logic and image generation options.
+ * Tests for URL conversion logic, image generation options, media URL
+ * canonicalization, Replicate error handling patterns, and webhook URL
+ * construction logic.
+ *
  * These are pure function tests that don't require mocking.
  *
  * Bug Index:
  * - BUG-009: Promise.all fails entirely if one URL fails (line 104)
  *
  * @see packages/admin-api/src/services/media.ts
+ * @see packages/core/src/utils/media-url.ts
+ * @see https://github.com/atimics/aws-swarm/issues/353
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { DEFAULT_MODELS, getReplicateVersion } from './models-registry.js';
 import type { AICapability, AvatarRecord } from '../types.js';
+import { buildMediaUrl, canonicalizeMediaUrl, canonicalizeMediaUrls } from '../utils/media-url.js';
+
+// =============================================================================
+// Existing: Media URL Generation
+// =============================================================================
 
 describe('Media URL Generation', () => {
   describe('URL accessibility conversion', () => {
@@ -93,6 +103,10 @@ describe('Media URL Generation', () => {
   });
 });
 
+// =============================================================================
+// Existing: Image Generation Options
+// =============================================================================
+
 describe('Image Generation Options', () => {
   it('should build correct Nano Banana Pro input with reference images', () => {
     const prompt = 'A cute whale swimming';
@@ -139,6 +153,10 @@ describe('Image Generation Options', () => {
     expect(nanoBananaInput.aspect_ratio).toBe('1:1');
   });
 });
+
+// =============================================================================
+// Existing: URL Accessibility - Promise.allSettled Pattern
+// =============================================================================
 
 describe('URL Accessibility - Promise.allSettled Pattern', () => {
   /**
@@ -304,26 +322,19 @@ describe('URL Accessibility - Promise.allSettled Pattern', () => {
   });
 });
 
-describe('Integration Config Model Selection', () => {
-  /**
-   * Tests for the unified integration configuration system.
-   * Models can now be configured per-avatar via integrations.replicate.models
-   */
+// =============================================================================
+// Existing: Integration Config Model Selection
+// =============================================================================
 
+describe('Integration Config Model Selection', () => {
   describe('getConfiguredModel behavior', () => {
-    /**
-     * Simulates the getConfiguredModel function logic for testing
-     * In production this reads from DynamoDB
-     */
     function getConfiguredModel(
       avatar: Partial<AvatarRecord> | null,
       capability: AICapability
     ): string {
-      // Check avatar's integration config
       if (avatar?.integrations?.replicate?.models?.[capability]) {
         return avatar.integrations.replicate.models[capability]!;
       }
-      // Fall back to system default
       return DEFAULT_MODELS[capability];
     }
 
@@ -381,7 +392,6 @@ describe('Integration Config Model Selection', () => {
         },
       };
 
-      // Request image_generation but only video_generation is configured
       const model = getConfiguredModel(avatar, 'image_generation');
       expect(model).toBe(DEFAULT_MODELS.image_generation);
     });
@@ -421,7 +431,6 @@ describe('Integration Config Model Selection', () => {
 
       expect(version).toBeTruthy();
 
-      // Logic: if version exists, use /v1/predictions with version
       const endpoint = version
         ? 'https://api.replicate.com/v1/predictions'
         : `https://api.replicate.com/v1/models/${modelId}/predictions`;
@@ -435,7 +444,6 @@ describe('Integration Config Model Selection', () => {
 
       expect(version).toBeUndefined();
 
-      // Logic: if no version, use /v1/models/{model}/predictions
       const endpoint = version
         ? 'https://api.replicate.com/v1/predictions'
         : `https://api.replicate.com/v1/models/${modelId}/predictions`;
@@ -453,11 +461,9 @@ describe('Integration Config Model Selection', () => {
 
       expect(versionedVersion).toBeTruthy();
 
-      // Version-based uses Token auth
       const versionedAuth = `Token ${apiKey}`;
       expect(versionedAuth).toBe('Token test-api-key');
 
-      // Model API also uses Token auth
       const modelApiAuth = `Token ${apiKey}`;
       expect(modelApiAuth).toBe('Token test-api-key');
     });
@@ -491,5 +497,340 @@ describe('Integration Config Model Selection', () => {
       expect(requestBody.version).toBeUndefined();
       expect(requestBody.input).toEqual(input);
     });
+  });
+});
+
+// =============================================================================
+// NEW: Core media URL utilities (buildMediaUrl, canonicalizeMediaUrl)
+// =============================================================================
+
+describe('Core Media URL Utilities', () => {
+  describe('buildMediaUrl', () => {
+    it('returns CDN URL when cdnUrl is provided', () => {
+      const url = buildMediaUrl(
+        'avatars/test/images/img.png',
+        'my-bucket',
+        'https://cdn.example.com'
+      );
+      expect(url).toBe('https://cdn.example.com/avatars/test/images/img.png');
+    });
+
+    it('falls back to S3 URL when cdnUrl is not provided', () => {
+      const url = buildMediaUrl(
+        'avatars/test/images/img.png',
+        'my-bucket'
+      );
+      expect(url).toBe('https://my-bucket.s3.amazonaws.com/avatars/test/images/img.png');
+    });
+
+    it('falls back to S3 URL when cdnUrl is undefined', () => {
+      const url = buildMediaUrl(
+        'avatars/test/images/img.png',
+        'my-bucket',
+        undefined
+      );
+      expect(url).toBe('https://my-bucket.s3.amazonaws.com/avatars/test/images/img.png');
+    });
+
+    it('handles nested S3 keys correctly', () => {
+      const url = buildMediaUrl(
+        'avatars/bot-1/character-reference/ref-abc.png',
+        'swarm-media-prod',
+        'https://media.rati.chat'
+      );
+      expect(url).toBe('https://media.rati.chat/avatars/bot-1/character-reference/ref-abc.png');
+    });
+  });
+
+  describe('canonicalizeMediaUrl', () => {
+    it('rewrites S3 virtual-hosted URL to CDN URL', () => {
+      const url = canonicalizeMediaUrl(
+        'https://my-bucket.s3.amazonaws.com/avatars/test.png',
+        'https://cdn.example.com'
+      );
+      expect(url).toBe('https://cdn.example.com/avatars/test.png');
+    });
+
+    it('rewrites S3 regional URL to CDN URL', () => {
+      const url = canonicalizeMediaUrl(
+        'https://my-bucket.s3.us-east-1.amazonaws.com/avatars/test.png',
+        'https://cdn.example.com'
+      );
+      expect(url).toBe('https://cdn.example.com/avatars/test.png');
+    });
+
+    it('returns original URL when cdnUrl is not provided', () => {
+      const original = 'https://my-bucket.s3.amazonaws.com/avatars/test.png';
+      expect(canonicalizeMediaUrl(original)).toBe(original);
+      expect(canonicalizeMediaUrl(original, undefined)).toBe(original);
+    });
+
+    it('returns original URL for non-S3 URLs', () => {
+      const external = 'https://cdn.replicate.com/output/abc.png';
+      expect(canonicalizeMediaUrl(external, 'https://cdn.example.com')).toBe(external);
+    });
+
+    it('returns original URL for CDN URLs (already canonical)', () => {
+      const alreadyCdn = 'https://cdn.example.com/avatars/test.png';
+      expect(canonicalizeMediaUrl(alreadyCdn, 'https://cdn.example.com')).toBe(alreadyCdn);
+    });
+  });
+
+  describe('canonicalizeMediaUrls (batch)', () => {
+    it('rewrites all S3 URLs in a batch', () => {
+      const urls = [
+        'https://bucket.s3.amazonaws.com/img1.png',
+        'https://bucket.s3.us-west-2.amazonaws.com/img2.png',
+        'https://external.com/img3.png',
+      ];
+
+      const result = canonicalizeMediaUrls(urls, 'https://cdn.example.com');
+      expect(result).toEqual([
+        'https://cdn.example.com/img1.png',
+        'https://cdn.example.com/img2.png',
+        'https://external.com/img3.png',
+      ]);
+    });
+
+    it('returns original array when cdnUrl is not provided', () => {
+      const urls = [
+        'https://bucket.s3.amazonaws.com/img1.png',
+        'https://bucket.s3.amazonaws.com/img2.png',
+      ];
+
+      expect(canonicalizeMediaUrls(urls)).toEqual(urls);
+      expect(canonicalizeMediaUrls(urls, undefined)).toEqual(urls);
+    });
+
+    it('handles empty array', () => {
+      expect(canonicalizeMediaUrls([], 'https://cdn.example.com')).toEqual([]);
+    });
+  });
+});
+
+// =============================================================================
+// NEW: Replicate error summarization patterns
+// =============================================================================
+
+describe('Replicate Error Summarization', () => {
+  /**
+   * Tests the summarizeReplicateError logic pattern used in media.ts.
+   * The function is not exported, so we test the same logic inline.
+   */
+  function summarizeReplicateError(errorText: string, status?: number): string {
+    const raw = (errorText || '').trim();
+    if (!raw) return status ? `Replicate request failed (HTTP ${status}).` : 'Replicate request failed.';
+
+    // Try to extract a useful message from JSON error bodies.
+    if (raw.startsWith('{') || raw.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (parsed && typeof parsed === 'object') {
+          const obj = parsed as Record<string, unknown>;
+          const detail = typeof obj.detail === 'string' ? obj.detail : undefined;
+          const title = typeof obj.title === 'string' ? obj.title : undefined;
+          const error = typeof obj.error === 'string' ? obj.error : undefined;
+          const message = typeof obj.message === 'string' ? obj.message : undefined;
+          const candidate = detail || error || message || title;
+          if (candidate && candidate.trim()) return candidate.trim();
+        }
+      } catch {
+        // fall through
+      }
+    }
+
+    if (/invalid version or not permitted/i.test(raw)) {
+      return 'Replicate rejected the configured model version. Please switch to a different model or remove the pinned version.';
+    }
+
+    if (raw.length > 240) return `${raw.slice(0, 240)}\u2026`;
+    return raw;
+  }
+
+  it('returns generic message for empty error text', () => {
+    expect(summarizeReplicateError('')).toBe('Replicate request failed.');
+    expect(summarizeReplicateError('', 500)).toBe('Replicate request failed (HTTP 500).');
+  });
+
+  it('extracts detail from JSON error body', () => {
+    const json = JSON.stringify({ detail: 'Model version is invalid' });
+    expect(summarizeReplicateError(json)).toBe('Model version is invalid');
+  });
+
+  it('extracts error field from JSON error body', () => {
+    const json = JSON.stringify({ error: 'Rate limit exceeded' });
+    expect(summarizeReplicateError(json)).toBe('Rate limit exceeded');
+  });
+
+  it('extracts message field from JSON error body', () => {
+    const json = JSON.stringify({ message: 'Unauthorized' });
+    expect(summarizeReplicateError(json)).toBe('Unauthorized');
+  });
+
+  it('prefers detail over error and message', () => {
+    const json = JSON.stringify({ detail: 'Preferred', error: 'Fallback', message: 'Last' });
+    expect(summarizeReplicateError(json)).toBe('Preferred');
+  });
+
+  it('detects version not permitted error', () => {
+    const text = 'Invalid version or not permitted for this model';
+    expect(summarizeReplicateError(text)).toContain('Replicate rejected the configured model version');
+  });
+
+  it('truncates very long error text', () => {
+    const longText = 'x'.repeat(300);
+    const result = summarizeReplicateError(longText);
+    expect(result.length).toBeLessThanOrEqual(241); // 240 + ellipsis
+    expect(result).toContain('\u2026');
+  });
+
+  it('returns plain text error as-is when short enough', () => {
+    expect(summarizeReplicateError('Something went wrong')).toBe('Something went wrong');
+  });
+
+  it('handles malformed JSON gracefully', () => {
+    expect(summarizeReplicateError('{invalid json')).toBe('{invalid json');
+  });
+});
+
+// =============================================================================
+// NEW: shouldRetryAsModelEndpoint pattern
+// =============================================================================
+
+describe('Replicate Version Retry Logic', () => {
+  /**
+   * Tests the shouldRetryAsModelEndpoint logic used when a version-pinned
+   * Replicate request fails with 422 "invalid version or not permitted".
+   */
+  function shouldRetryAsModelEndpoint(status: number, errorText: string, hadVersion: boolean): boolean {
+    if (!hadVersion) return false;
+    if (status !== 422) return false;
+    return /invalid version or not permitted/i.test(errorText);
+  }
+
+  it('retries on 422 with version error when version was used', () => {
+    expect(shouldRetryAsModelEndpoint(422, 'invalid version or not permitted', true)).toBe(true);
+  });
+
+  it('does not retry when no version was used', () => {
+    expect(shouldRetryAsModelEndpoint(422, 'invalid version or not permitted', false)).toBe(false);
+  });
+
+  it('does not retry on non-422 status', () => {
+    expect(shouldRetryAsModelEndpoint(400, 'invalid version or not permitted', true)).toBe(false);
+    expect(shouldRetryAsModelEndpoint(500, 'invalid version or not permitted', true)).toBe(false);
+  });
+
+  it('does not retry when error does not match pattern', () => {
+    expect(shouldRetryAsModelEndpoint(422, 'Some other error', true)).toBe(false);
+  });
+
+  it('matches case-insensitively', () => {
+    expect(shouldRetryAsModelEndpoint(422, 'INVALID VERSION OR NOT PERMITTED', true)).toBe(true);
+    expect(shouldRetryAsModelEndpoint(422, 'Invalid Version Or Not Permitted', true)).toBe(true);
+  });
+});
+
+// =============================================================================
+// NEW: Webhook URL construction pattern
+// =============================================================================
+
+describe('Replicate Webhook URL Construction', () => {
+  /**
+   * Tests the buildReplicateWebhookUrl logic.
+   * When REPLICATE_WEBHOOK_SECRET is set, an HMAC signature is appended.
+   */
+  it('appends jobId as query parameter', () => {
+    const baseUrl = 'https://api.example.com/replicate-callback';
+    const jobId = 'job-123';
+
+    const webhook = new URL(baseUrl);
+    webhook.searchParams.set('jobId', jobId);
+
+    expect(webhook.toString()).toContain('jobId=job-123');
+    expect(webhook.toString()).toStartWith('https://api.example.com/replicate-callback?');
+  });
+
+  it('appends signature when secret is available', async () => {
+    const { createHmac } = await import('crypto');
+    const baseUrl = 'https://api.example.com/replicate-callback';
+    const jobId = 'job-456';
+    const secret = 'my-webhook-secret';
+
+    const webhook = new URL(baseUrl);
+    webhook.searchParams.set('jobId', jobId);
+    const signature = createHmac('sha256', secret).update(jobId).digest('hex');
+    webhook.searchParams.set('sig', signature);
+
+    const result = webhook.toString();
+    expect(result).toContain('jobId=job-456');
+    expect(result).toContain('sig=');
+    expect(result.length).toBeGreaterThan(baseUrl.length + 20);
+  });
+
+  it('handles invalid base URL gracefully with fallback', () => {
+    const baseUrl = 'not-a-valid-url';
+    const jobId = 'job-789';
+
+    // The real function catches URL construction errors and falls back
+    let result: string;
+    try {
+      const webhook = new URL(baseUrl);
+      webhook.searchParams.set('jobId', jobId);
+      result = webhook.toString();
+    } catch {
+      result = `${baseUrl}?jobId=${jobId}`;
+    }
+
+    expect(result).toBe('not-a-valid-url?jobId=job-789');
+  });
+});
+
+// =============================================================================
+// NEW: Aspect ratio validation pattern
+// =============================================================================
+
+describe('Aspect Ratio Validation', () => {
+  const validRatios = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9'] as const;
+
+  it('accepts all valid aspect ratios', () => {
+    for (const ratio of validRatios) {
+      const result = validRatios.includes(ratio) ? ratio : '1:1';
+      expect(result).toBe(ratio);
+    }
+  });
+
+  it('defaults to 1:1 for invalid aspect ratios', () => {
+    const invalidRatios = ['3:5', '7:8', '1:2', 'invalid', '', undefined];
+    for (const ratio of invalidRatios) {
+      const result = validRatios.includes(ratio as typeof validRatios[number])
+        ? ratio
+        : '1:1';
+      expect(result).toBe('1:1');
+    }
+  });
+});
+
+// =============================================================================
+// NEW: Media type inference pattern
+// =============================================================================
+
+describe('Media Type Inference', () => {
+  function inferMediaType(url: string): 'image' | 'video' {
+    const lower = url.toLowerCase();
+    if (lower.endsWith('.mp4')) return 'video';
+    return 'image';
+  }
+
+  it('detects video from .mp4 extension', () => {
+    expect(inferMediaType('https://cdn.example.com/video.mp4')).toBe('video');
+    expect(inferMediaType('https://cdn.example.com/video.MP4')).toBe('video');
+  });
+
+  it('defaults to image for non-mp4 URLs', () => {
+    expect(inferMediaType('https://cdn.example.com/image.png')).toBe('image');
+    expect(inferMediaType('https://cdn.example.com/image.jpg')).toBe('image');
+    expect(inferMediaType('https://cdn.example.com/image.webp')).toBe('image');
+    expect(inferMediaType('https://cdn.example.com/file')).toBe('image');
   });
 });

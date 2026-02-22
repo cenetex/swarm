@@ -1,10 +1,33 @@
-import { describe, it, expect } from 'vitest';
+/**
+ * Telegram Webhook Shared Tests
+ *
+ * Tests covering:
+ * - Chat access allowlists (DM, group, home channel)
+ * - Home channel bootstrap from group engagement
+ * - DM redirect messages
+ * - /activate helpers (mergeAllowedChats)
+ * - Webhook security: secret token verification
+ * - Superadmin helpers
+ * - DM allowlist edge cases
+ * - Redirect message construction
+ *
+ * @see packages/handlers/src/telegram/telegram-webhook-shared.ts
+ * @see packages/handlers/src/telegram/webhook-security.ts
+ * @see packages/handlers/src/telegram/webhook-chat-access.ts
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
 process.env.ADMIN_TABLE ||= 'ADMIN_TABLE';
 process.env.STATE_TABLE ||= 'STATE_TABLE';
 process.env.MESSAGE_QUEUE_URL ||= 'https://example.com/queue';
 
 const modPromise = import('./telegram-webhook-shared.js');
+const securityModPromise = import('./webhook-security.js');
+const chatAccessModPromise = import('./webhook-chat-access.js');
+
+// =============================================================================
+// Existing tests: Chat access allowlists
+// =============================================================================
 
 describe('telegram-webhook-shared allowlists', () => {
   it('blocks DMs when allowedDmUserIds is missing/empty', async () => {
@@ -154,6 +177,10 @@ describe('telegram-webhook-shared allowlists', () => {
   });
 });
 
+// =============================================================================
+// Existing tests: Home channel bootstrap
+// =============================================================================
+
 describe('telegram-webhook-shared home channel bootstrap', () => {
   it('bootstraps home channel from first group mention when none exists', async () => {
     const { maybeBootstrapHomeChannelFromGroupEngagement } = (await modPromise);
@@ -282,6 +309,10 @@ describe('telegram-webhook-shared home channel bootstrap', () => {
   });
 });
 
+// =============================================================================
+// Existing tests: DM redirect
+// =============================================================================
+
 describe('telegram-webhook-shared DM redirect', () => {
   it('includes ratichat link and New Bot button', async () => {
     const { buildDmRedirectMessage } = (await modPromise);
@@ -294,6 +325,10 @@ describe('telegram-webhook-shared DM redirect', () => {
     ]);
   });
 });
+
+// =============================================================================
+// Existing tests: /activate helpers
+// =============================================================================
 
 describe('telegram-webhook-shared /activate helpers', () => {
   it('mergeAllowedChats de-dupes IDs and preserves metadata', async () => {
@@ -324,3 +359,389 @@ describe('telegram-webhook-shared /activate helpers', () => {
   });
 });
 
+// =============================================================================
+// NEW: Webhook security - verifySecretToken
+// =============================================================================
+
+describe('webhook-security verifySecretToken', () => {
+  it('returns true when provided token matches expected', async () => {
+    const { verifySecretToken } = await securityModPromise;
+    expect(verifySecretToken('my-secret-token', 'my-secret-token')).toBe(true);
+  });
+
+  it('returns false when provided token does not match expected', async () => {
+    const { verifySecretToken } = await securityModPromise;
+    expect(verifySecretToken('wrong-token', 'my-secret-token')).toBe(false);
+  });
+
+  it('returns false when provided token is undefined', async () => {
+    const { verifySecretToken } = await securityModPromise;
+    expect(verifySecretToken(undefined, 'my-secret-token')).toBe(false);
+  });
+
+  it('returns false when provided token is empty string and expected is not', async () => {
+    const { verifySecretToken } = await securityModPromise;
+    expect(verifySecretToken('', 'my-secret-token')).toBe(false);
+  });
+
+  it('returns true when both are empty strings', async () => {
+    const { verifySecretToken } = await securityModPromise;
+    expect(verifySecretToken('', '')).toBe(true);
+  });
+
+  it('returns false when lengths differ (timing-safe comparison prerequisite)', async () => {
+    const { verifySecretToken } = await securityModPromise;
+    expect(verifySecretToken('short', 'a-much-longer-secret')).toBe(false);
+  });
+
+  it('handles unicode tokens correctly', async () => {
+    const { verifySecretToken } = await securityModPromise;
+    expect(verifySecretToken('token-\u00e9\u00e8', 'token-\u00e9\u00e8')).toBe(true);
+    expect(verifySecretToken('token-\u00e9\u00e8', 'token-ee')).toBe(false);
+  });
+
+  it('is case-sensitive', async () => {
+    const { verifySecretToken } = await securityModPromise;
+    expect(verifySecretToken('MySecret', 'mysecret')).toBe(false);
+    expect(verifySecretToken('MYSECRET', 'mysecret')).toBe(false);
+  });
+});
+
+// =============================================================================
+// NEW: webhook-security invalidateAvatarConfigCache
+// =============================================================================
+
+describe('webhook-security invalidateAvatarConfigCache', () => {
+  it('removes the avatar entry from the config cache', async () => {
+    const { invalidateAvatarConfigCache, avatarConfigCache } = await securityModPromise;
+
+    // Manually populate cache
+    avatarConfigCache.set('test-avatar', {
+      value: { name: 'Test' } as unknown as import('@swarm/core').AvatarConfig,
+      expiresAt: Date.now() + 60_000,
+    });
+
+    expect(avatarConfigCache.has('test-avatar')).toBe(true);
+    invalidateAvatarConfigCache('test-avatar');
+    expect(avatarConfigCache.has('test-avatar')).toBe(false);
+  });
+
+  it('is a no-op when avatarId is not in cache', async () => {
+    const { invalidateAvatarConfigCache, avatarConfigCache } = await securityModPromise;
+    const sizeBefore = avatarConfigCache.size;
+    invalidateAvatarConfigCache('nonexistent-avatar');
+    expect(avatarConfigCache.size).toBe(sizeBefore);
+  });
+});
+
+// =============================================================================
+// NEW: Superadmin helpers
+// =============================================================================
+
+describe('webhook-chat-access superadmin helpers', () => {
+  let originalSuperadminEnv: string | undefined;
+
+  beforeEach(() => {
+    originalSuperadminEnv = process.env.TELEGRAM_SUPERADMIN_USERNAMES;
+  });
+
+  afterEach(() => {
+    if (originalSuperadminEnv !== undefined) {
+      process.env.TELEGRAM_SUPERADMIN_USERNAMES = originalSuperadminEnv;
+    } else {
+      delete process.env.TELEGRAM_SUPERADMIN_USERNAMES;
+    }
+  });
+
+  it('returns default superadmin when env is not set', async () => {
+    delete process.env.TELEGRAM_SUPERADMIN_USERNAMES;
+    const { getSuperadminTelegramUsernames } = await chatAccessModPromise;
+    const result = getSuperadminTelegramUsernames();
+    expect(result).toContain('ratimics');
+  });
+
+  it('parses comma-separated usernames from env', async () => {
+    process.env.TELEGRAM_SUPERADMIN_USERNAMES = 'alice,bob,charlie';
+    const { getSuperadminTelegramUsernames } = await chatAccessModPromise;
+    const result = getSuperadminTelegramUsernames();
+    expect(result).toEqual(['alice', 'bob', 'charlie']);
+  });
+
+  it('strips @ prefix and lowercases usernames', async () => {
+    process.env.TELEGRAM_SUPERADMIN_USERNAMES = '@Alice, @BOB ';
+    const { getSuperadminTelegramUsernames } = await chatAccessModPromise;
+    const result = getSuperadminTelegramUsernames();
+    expect(result).toEqual(['alice', 'bob']);
+  });
+
+  it('returns default when env is empty', async () => {
+    process.env.TELEGRAM_SUPERADMIN_USERNAMES = '';
+    const { getSuperadminTelegramUsernames } = await chatAccessModPromise;
+    const result = getSuperadminTelegramUsernames();
+    expect(result).toContain('ratimics');
+  });
+
+  it('isTelegramSuperadmin returns false for undefined username', async () => {
+    const { isTelegramSuperadmin } = await chatAccessModPromise;
+    expect(isTelegramSuperadmin(undefined)).toBe(false);
+  });
+
+  it('isTelegramSuperadmin returns false for empty string', async () => {
+    const { isTelegramSuperadmin } = await chatAccessModPromise;
+    expect(isTelegramSuperadmin('')).toBe(false);
+  });
+
+  it('isTelegramSuperadmin is case-insensitive', async () => {
+    delete process.env.TELEGRAM_SUPERADMIN_USERNAMES;
+    const { isTelegramSuperadmin } = await chatAccessModPromise;
+    expect(isTelegramSuperadmin('Ratimics')).toBe(true);
+    expect(isTelegramSuperadmin('RATIMICS')).toBe(true);
+    expect(isTelegramSuperadmin('ratimics')).toBe(true);
+  });
+
+  it('isTelegramSuperadmin strips @ prefix', async () => {
+    delete process.env.TELEGRAM_SUPERADMIN_USERNAMES;
+    const { isTelegramSuperadmin } = await chatAccessModPromise;
+    expect(isTelegramSuperadmin('@ratimics')).toBe(true);
+  });
+
+  it('isTelegramSuperadmin returns false for non-admin user', async () => {
+    delete process.env.TELEGRAM_SUPERADMIN_USERNAMES;
+    const { isTelegramSuperadmin } = await chatAccessModPromise;
+    expect(isTelegramSuperadmin('random_user')).toBe(false);
+  });
+});
+
+// =============================================================================
+// NEW: getAllowedDmUserIdsForAdmin edge cases
+// =============================================================================
+
+describe('webhook-chat-access getAllowedDmUserIdsForAdmin', () => {
+  it('returns empty array when telegramCfg is undefined', async () => {
+    const { getAllowedDmUserIdsForAdmin } = await chatAccessModPromise;
+    expect(getAllowedDmUserIdsForAdmin(undefined)).toEqual([]);
+  });
+
+  it('returns empty array when telegramCfg is an empty object', async () => {
+    const { getAllowedDmUserIdsForAdmin } = await chatAccessModPromise;
+    expect(getAllowedDmUserIdsForAdmin({})).toEqual([]);
+  });
+
+  it('returns allowedDmUserIds when present and no allowedDmUsers', async () => {
+    const { getAllowedDmUserIdsForAdmin } = await chatAccessModPromise;
+    expect(getAllowedDmUserIdsForAdmin({ allowedDmUserIds: ['111', '222'] })).toEqual(['111', '222']);
+  });
+
+  it('prefers allowedDmUsers when both formats are present', async () => {
+    const { getAllowedDmUserIdsForAdmin } = await chatAccessModPromise;
+    const result = getAllowedDmUserIdsForAdmin({
+      allowedDmUsers: [{ userId: '333' }],
+      allowedDmUserIds: ['111', '222'],
+    });
+    expect(result).toEqual(['333']);
+  });
+
+  it('coerces numeric userId to string', async () => {
+    const { getAllowedDmUserIdsForAdmin } = await chatAccessModPromise;
+    const result = getAllowedDmUserIdsForAdmin({
+      allowedDmUsers: [{ userId: 42 }],
+    });
+    expect(result).toEqual(['42']);
+  });
+
+  it('returns empty array for allowedDmUsers with empty array (authoritative)', async () => {
+    const { getAllowedDmUserIdsForAdmin } = await chatAccessModPromise;
+    const result = getAllowedDmUserIdsForAdmin({
+      allowedDmUsers: [],
+      allowedDmUserIds: ['111'],
+    });
+    expect(result).toEqual([]);
+  });
+});
+
+// =============================================================================
+// NEW: buildRedirectMessage edge cases
+// =============================================================================
+
+describe('webhook-chat-access buildRedirectMessage', () => {
+  it('uses default home channel URL when no config provided', async () => {
+    const { buildRedirectMessage } = await chatAccessModPromise;
+    const msg = buildRedirectMessage();
+    expect(msg).toContain('https://t.me/ratichat');
+    expect(msg).toContain('$RATiOS');
+  });
+
+  it('uses homeChannelUrl from config', async () => {
+    const { buildRedirectMessage } = await chatAccessModPromise;
+    const msg = buildRedirectMessage({ homeChannelUrl: 'https://t.me/mychannel' });
+    expect(msg).toContain('https://t.me/mychannel');
+  });
+
+  it('constructs URL from homeChannelUsername when homeChannelUrl is absent', async () => {
+    const { buildRedirectMessage } = await chatAccessModPromise;
+    const msg = buildRedirectMessage({ homeChannelUsername: 'mygroup' });
+    expect(msg).toContain('https://t.me/mygroup');
+  });
+
+  it('uses custom coin symbol and address', async () => {
+    const { buildRedirectMessage } = await chatAccessModPromise;
+    const msg = buildRedirectMessage({ coinSymbol: '$TEST', coinAddress: 'abc123' });
+    expect(msg).toContain('$TEST');
+    expect(msg).toContain('abc123');
+  });
+});
+
+// =============================================================================
+// NEW: buildDmRedirectMessage edge cases
+// =============================================================================
+
+describe('webhook-chat-access buildDmRedirectMessage', () => {
+  it('uses default URL when no config provided', async () => {
+    const { buildDmRedirectMessage } = await chatAccessModPromise;
+    const dm = buildDmRedirectMessage();
+    expect(dm.text).toContain('https://t.me/ratichat');
+    expect(dm.replyMarkup.inline_keyboard).toHaveLength(2);
+  });
+
+  it('constructs URL from homeChannelUsername', async () => {
+    const { buildDmRedirectMessage } = await chatAccessModPromise;
+    const dm = buildDmRedirectMessage({ homeChannelUsername: 'customgroup' });
+    expect(dm.text).toContain('https://t.me/customgroup');
+    expect(dm.replyMarkup.inline_keyboard[0][0].url).toBe('https://t.me/customgroup');
+    expect(dm.replyMarkup.inline_keyboard[1][0].url).toBe('https://t.me/customgroup?start=new_bot');
+  });
+
+  it('prefers homeChannelUrl over homeChannelUsername', async () => {
+    const { buildDmRedirectMessage } = await chatAccessModPromise;
+    const dm = buildDmRedirectMessage({
+      homeChannelUrl: 'https://t.me/preferred',
+      homeChannelUsername: 'fallback',
+    });
+    expect(dm.text).toContain('https://t.me/preferred');
+    expect(dm.replyMarkup.inline_keyboard[0][0].url).toBe('https://t.me/preferred');
+  });
+});
+
+// =============================================================================
+// NEW: isTelegramChatAllowed - allowAllDms flag
+// =============================================================================
+
+describe('isTelegramChatAllowed - allowAllDms', () => {
+  it('allows DMs when allowAllDms is true (regardless of allowlist)', async () => {
+    const { isTelegramChatAllowed } = await chatAccessModPromise;
+    const allowed = isTelegramChatAllowed(
+      {
+        conversationId: 'dm-chat',
+        sender: { id: '99999' },
+        metadata: { chatType: 'private' },
+      },
+      { allowAllDms: true, allowedDmUserIds: [] }
+    );
+    expect(allowed).toBe(true);
+  });
+
+  it('blocks DMs when allowAllDms is false and user not in allowlist', async () => {
+    const { isTelegramChatAllowed } = await chatAccessModPromise;
+    const allowed = await Promise.resolve(isTelegramChatAllowed(
+      {
+        conversationId: 'dm-chat',
+        sender: { id: '99999' },
+        metadata: { chatType: 'private' },
+      },
+      { allowAllDms: false, allowedDmUserIds: ['123'] }
+    ));
+    expect(allowed).toBe(false);
+  });
+});
+
+// =============================================================================
+// NEW: isTelegramChatAllowed - homeChannelChecker delegation
+// =============================================================================
+
+describe('isTelegramChatAllowed - homeChannelChecker', () => {
+  it('delegates to homeChannelChecker.isHomeChannel when checker provided and chat not in allowedChatIds', async () => {
+    const { isTelegramChatAllowed } = await chatAccessModPromise;
+    let checkerCalled = false;
+    let passedChatId = '';
+    let passedHomeChannelId = '';
+
+    const allowed = await isTelegramChatAllowed(
+      {
+        conversationId: '-2001',
+        sender: { id: 'u1' },
+        metadata: { chatType: 'supergroup' },
+      },
+      { homeChannelId: '-9999' },
+      {
+        isHomeChannel: async (chatId: string, avatarHomeChannelId?: string) => {
+          checkerCalled = true;
+          passedChatId = chatId;
+          passedHomeChannelId = avatarHomeChannelId || '';
+          return true;
+        },
+      }
+    );
+
+    expect(checkerCalled).toBe(true);
+    expect(passedChatId).toBe('-2001');
+    expect(passedHomeChannelId).toBe('-9999');
+    expect(allowed).toBe(true);
+  });
+
+  it('returns false when homeChannelChecker says no and chat not in allowedChatIds', async () => {
+    const { isTelegramChatAllowed } = await chatAccessModPromise;
+
+    const allowed = await isTelegramChatAllowed(
+      {
+        conversationId: '-2001',
+        sender: { id: 'u1' },
+        metadata: { chatType: 'supergroup' },
+      },
+      { homeChannelId: '-9999' },
+      { isHomeChannel: async () => false }
+    );
+
+    expect(allowed).toBe(false);
+  });
+});
+
+// =============================================================================
+// NEW: mergeAllowedChats additional edge cases
+// =============================================================================
+
+describe('mergeAllowedChats edge cases', () => {
+  it('handles empty existing arrays', async () => {
+    const { mergeAllowedChats } = await chatAccessModPromise;
+    const merged = mergeAllowedChats({
+      existingAllowedChatIds: [],
+      existingAllowedChats: [],
+      add: { chatId: '-1001', title: 'New Channel' },
+    });
+
+    expect(merged.allowedChatIds).toEqual(['-1001']);
+    expect(merged.allowedChats).toEqual([{ chatId: '-1001', title: 'New Channel' }]);
+  });
+
+  it('handles undefined existing arrays', async () => {
+    const { mergeAllowedChats } = await chatAccessModPromise;
+    const merged = mergeAllowedChats({
+      add: { chatId: '-1001' },
+    });
+
+    expect(merged.allowedChatIds).toEqual(['-1001']);
+    expect(merged.allowedChats).toHaveLength(1);
+    expect(merged.allowedChats[0].chatId).toBe('-1001');
+  });
+
+  it('preserves username from existing when new add has no username', async () => {
+    const { mergeAllowedChats } = await chatAccessModPromise;
+    const merged = mergeAllowedChats({
+      existingAllowedChats: [{ chatId: '-1001', username: 'existing_name' }],
+      existingAllowedChatIds: ['-1001'],
+      add: { chatId: '-1001', title: 'Updated Title' },
+    });
+
+    expect(merged.allowedChats[0].username).toBe('existing_name');
+    expect(merged.allowedChats[0].title).toBe('Updated Title');
+  });
+});
