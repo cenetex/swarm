@@ -121,8 +121,8 @@ export class DiscordGatewayWorker extends Construct {
       },
     });
 
-    // IAM — read avatars, write activity, send messages, read secrets
-    stateTable.grantReadData(this.taskDefinition.taskRole);
+    // IAM — read/write state (idempotency + channel history), write activity, send messages, read secrets
+    stateTable.grantReadWriteData(this.taskDefinition.taskRole);
     activityTable.grantReadWriteData(this.taskDefinition.taskRole);
     messageQueue.grantSendMessages(this.taskDefinition.taskRole);
 
