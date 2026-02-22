@@ -9,6 +9,7 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
@@ -125,6 +126,12 @@ export class SharedHandlers extends Construct {
       ? internalTestKey || process.env.INTERNAL_TEST_KEY || `test-${Date.now()}-${Math.random().toString(36).substring(2)}`
       : '';
 
+    // Import Replicate API key secret as a CDK resource (same pattern as admin-api)
+    // This ensures the correct full ARN is used for both env vars and IAM grants.
+    const replicateApiKeySecret = replicateApiKeyArn
+      ? secretsmanager.Secret.fromSecretCompleteArn(this, 'ReplicateApiKey', replicateApiKeyArn)
+      : undefined;
+
     // Path to handlers source files
     const handlersEntry = path.join(__dirname, '../../../handlers/src');
 
@@ -216,11 +223,8 @@ export class SharedHandlers extends Construct {
       },
     }));
 
-    if (replicateApiKeyArn) {
-      lambdaRole.addToPolicy(new iam.PolicyStatement({
-        actions: ['secretsmanager:GetSecretValue'],
-        resources: [replicateApiKeyArn],
-      }));
+    if (replicateApiKeySecret) {
+      replicateApiKeySecret.grantRead(lambdaRole);
     }
 
     // Grant Bedrock access (used by core LLM service if configured)
@@ -266,8 +270,8 @@ export class SharedHandlers extends Construct {
       ...(effectiveInternalTestKey ? { INTERNAL_TEST_KEY: effectiveInternalTestKey } : {}),
     };
 
-    if (replicateApiKeyArn) {
-      commonEnv.REPLICATE_API_KEY_SECRET_ARN = replicateApiKeyArn;
+    if (replicateApiKeySecret) {
+      commonEnv.REPLICATE_API_KEY_SECRET_ARN = replicateApiKeySecret.secretArn;
     }
 
     // Common bundling options: bundle AWS SDK (don't externalize) to avoid layer CJS/ESM conflicts
