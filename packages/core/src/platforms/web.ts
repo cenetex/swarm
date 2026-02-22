@@ -119,6 +119,10 @@ export class WebAdapter extends PlatformAdapter {
       case 'ignore':
         return true;
 
+      case 'send_media':
+        console.log(`Web media (${action.mediaType}) for ${conversationId}:`, action.url);
+        return true;
+
       default:
         return true;
     }
