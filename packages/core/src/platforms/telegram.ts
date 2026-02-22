@@ -597,7 +597,6 @@ export class TelegramAdapter extends PlatformAdapter {
           fetch: globalThis.fetch as any,
           // Base config for all fetch calls - duplex is required for streaming request bodies
           baseFetchConfig: {
-            // @ts-expect-error duplex is a valid fetch option for Node.js 20+ but not in grammy's types
             duplex: 'half',
           },
         },
