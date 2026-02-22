@@ -5,8 +5,6 @@ on:
     types: [opened, edited, labeled, unlabeled, milestoned, demilestoned, closed, reopened]
   pull_request:
     types: [opened, reopened, ready_for_review, converted_to_draft, closed, labeled, unlabeled]
-  create:
-  delete:
   schedule:
     # Nightly reconcile at 03:00 UTC
     - cron: '0 3 * * *'
@@ -19,7 +17,7 @@ on:
         type: boolean
 
 concurrency:
-  group: project-sync-${{ github.event_name }}-${{ github.event.issue.node_id || github.event.pull_request.node_id || github.event.ref || github.sha || github.run_id }}
+  group: project-sync-${{ github.event_name }}-${{ github.event.issue.node_id || github.event.pull_request.node_id || github.sha || github.run_id }}
   cancel-in-progress: true
 
 permissions:
@@ -43,8 +41,6 @@ jobs:
     if: >-
       github.event_name == 'issues'
       || github.event_name == 'pull_request'
-      || github.event_name == 'create'
-      || github.event_name == 'delete'
     runs-on: ubuntu-latest
 
     steps:
@@ -65,8 +61,6 @@ jobs:
           PR_DRAFT: ${{ github.event.pull_request.draft || 'false' }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
           PR_BODY: ${{ github.event.pull_request.body || '' }}
-          BRANCH_REF: ${{ github.event.ref || '' }}
-          BRANCH_REF_TYPE: ${{ github.event.ref_type || '' }}
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
         run: node .github/scripts/project-sync.mjs

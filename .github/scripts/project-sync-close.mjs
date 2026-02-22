@@ -35,12 +35,12 @@ function graphql(query, variables = {}) {
 function getProjectId() {
   const res = graphql(`
     query($owner: String!, $number: Int!) {
-      user(login: $owner) {
+      organization(login: $owner) {
         projectV2(number: $number) { id }
       }
     }
   `, { owner: PROJECT_OWNER, number: PROJECT_NUMBER });
-  return res.data.user.projectV2.id;
+  return res.data.organization.projectV2.id;
 }
 
 function getStatusFieldDone(projectId) {
