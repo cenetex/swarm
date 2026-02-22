@@ -6,7 +6,6 @@ import { getCorsHeaders } from '../http/cors.js';
 import { getAvatar } from '../services/avatars.js';
 import {
   findEntitlementByStripeSubscriptionId,
-  getEntitlement,
   getEntitlementByAccount,
   setEntitlement,
   setEntitlementStatus,
@@ -121,7 +120,10 @@ async function handleCheckout(
     return jsonResponse(access.statusCode, { error: access.error }, corsHeaders);
   }
 
-  const existingEntitlement = await getEntitlement(parsed.data.avatarId);
+  // Use account-scoped lookup to prevent cross-account Stripe customer leakage.
+  // getEntitlement(avatarId) returns ANY entitlement for the avatar regardless of
+  // account, which after reassignment could belong to the previous owner.
+  const existingEntitlement = await getEntitlementByAccount(walletSession.accountId, parsed.data.avatarId);
   const existingCustomerId = existingEntitlement?.stripeCustomerId;
 
   const checkout = await createStripeCheckoutSession({
@@ -159,13 +161,20 @@ async function handlePortal(
     return jsonResponse(400, { error: 'Invalid request', details: parsed.error.issues }, corsHeaders);
   }
 
+  if (!walletSession.accountId) {
+    return jsonResponse(401, { error: 'Session missing account context' }, corsHeaders);
+  }
+
   const effectiveIsAdmin = isAdminWallet(walletSession.walletAddress);
   const access = await assertAvatarAccess(parsed.data.avatarId, walletSession.walletAddress, effectiveIsAdmin);
   if (!access.ok) {
     return jsonResponse(access.statusCode, { error: access.error }, corsHeaders);
   }
 
-  const entitlement = await getEntitlement(parsed.data.avatarId);
+  // Use account-scoped lookup to prevent cross-account Stripe customer leakage.
+  // getEntitlement(avatarId) returns ANY entitlement for the avatar regardless of
+  // account, which after reassignment could belong to the previous owner.
+  const entitlement = await getEntitlementByAccount(walletSession.accountId, parsed.data.avatarId);
   if (!entitlement?.stripeCustomerId) {
     return jsonResponse(400, { error: 'No Stripe customer found for this avatar' }, corsHeaders);
   }

@@ -29,6 +29,7 @@ import {
   registerHomeChannel,
   removeAvatarFromAllHomeChannels,
 } from './home-channel.js';
+import { clearStripeDataForAvatar } from './entitlements.js';
 import { getDynamoClient } from './dynamo-client.js';
 
 const dynamoClient = getDynamoClient();
@@ -563,6 +564,19 @@ export async function reassignAvatar(
     }
     // Increment new creator's count
     await incrementCreatorCount(newCreatorWallet);
+
+    // Clear Stripe customer/subscription data from existing entitlements
+    // to prevent the new owner from inheriting the previous owner's
+    // Stripe billing context.
+    try {
+      await clearStripeDataForAvatar(avatarId, session.email);
+    } catch (err) {
+      console.warn(
+        `[Avatars] Failed to clear Stripe data during reassignment for ${avatarId}:`,
+        err instanceof Error ? err.message : String(err)
+      );
+      // Don't fail the reassignment if Stripe cleanup fails
+    }
   }
 
   // Build the update
