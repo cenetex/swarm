@@ -105,6 +105,18 @@ export function getRetryDelayMs(attemptNumber: number): number {
   return exp + jitter;
 }
 
+/**
+ * Custom error for 402 Payment Required / insufficient credits from OpenRouter.
+ * This is a non-retryable error — retrying won't help until credits are added.
+ */
+export class LlmCreditsExhaustedError extends Error {
+  public readonly statusCode = 402;
+  constructor(message: string) {
+    super(message);
+    this.name = 'LlmCreditsExhaustedError';
+  }
+}
+
 export function isRetryableLlmError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const name = error instanceof Error ? error.name : '';
@@ -470,6 +482,21 @@ export async function callLlmDirectFallback(
 
       if (response.ok) {
         break;
+      }
+
+      // 402 = insufficient credits — non-retryable, log prominently and throw specific error
+      if (response.status === 402) {
+        const errorText = await response.text();
+        logger.error('OpenRouter credits exhausted (402)', undefined, {
+          event: 'llm_credits_exhausted',
+          subsystem: 'llm',
+          statusCode: 402,
+          model,
+          responseBody: errorText.slice(0, 500),
+        });
+        throw new LlmCreditsExhaustedError(
+          `OpenRouter API error: 402 ${errorText}`
+        );
       }
 
       const shouldRetry = response.status === 429 || response.status >= 500;

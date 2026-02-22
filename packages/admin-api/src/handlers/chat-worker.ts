@@ -7,6 +7,9 @@ import { logger } from '@swarm/core';
 import * as chatHistory from '../services/chat-history.js';
 import { getChatJob, updateChatJobStatus } from '../services/chat-jobs.js';
 import { processChat } from './chat.js';
+import { LlmCreditsExhaustedError } from './chat-llm.js';
+import { parseOpenRouterStatusFromError } from './chat-error-mapping.js';
+import { recordError } from '../services/auto-issues.js';
 
 type ChatJobMessage = {
   jobId: string;
@@ -70,6 +73,47 @@ export async function handler(event: SQSEvent): Promise<void> {
       logger.info('Chat job completed', { event: 'chat_job_completed', jobId });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+
+      // Detect 402 (insufficient credits) — either from our custom error class
+      // or from the error message pattern when thrown by the SDK path.
+      const is402 =
+        error instanceof LlmCreditsExhaustedError ||
+        parseOpenRouterStatusFromError(message) === 402;
+
+      if (is402) {
+        // Non-retryable: mark the job as failed with a user-friendly message
+        // and do NOT re-throw (retrying via SQS won't help).
+        logger.error('Chat worker: LLM credits exhausted (402)', error, {
+          event: 'llm_credits_exhausted',
+          subsystem: 'chat',
+          statusCode: 402,
+        });
+
+        recordError({
+          error: message,
+          stack: error instanceof Error ? error.stack : undefined,
+          subsystem: 'llm',
+          category: 'llm_credits_exhausted',
+          context: { statusCode: 402 },
+        }).catch(() => {
+          // Ignore recording failures
+        });
+
+        try {
+          const maybeParsed = JSON.parse(record.body) as Partial<ChatJobMessage>;
+          if (maybeParsed.jobId && typeof maybeParsed.jobId === 'string') {
+            await updateChatJobStatus(maybeParsed.jobId, 'failed', {
+              error: "I'm temporarily unable to respond due to a service configuration issue. The team has been notified.",
+            });
+          }
+        } catch {
+          // ignore
+        }
+
+        // Do NOT re-throw — SQS retries are pointless for a billing/credits issue.
+        continue;
+      }
+
       logger.error('Chat worker error', error, { event: 'chat_job_failed' });
 
       // Best-effort: if we can extract jobId, mark failed
