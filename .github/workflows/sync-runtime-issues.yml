@@ -130,11 +130,11 @@ jobs:
             CDK_ENV="prod"
           fi
 
-          STACK_NAME="SwarmStack-${CDK_ENV}"
+          STACK_NAME="SwarmApi-${CDK_ENV}"
 
           API_URL=$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
-            --query "Stacks[0].Outputs[?ExportName=='swarm-admin-api-url-${CDK_ENV}'].OutputValue | [0]" \
+            --query "Stacks[0].Outputs[?contains(ExportName, 'swarm-admin-api-url-${CDK_ENV}')].OutputValue | [0]" \
             --output text)
 
           if [ -z "$API_URL" ] || [ "$API_URL" = "None" ]; then

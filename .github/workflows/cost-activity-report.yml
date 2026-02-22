@@ -149,7 +149,7 @@ jobs:
             CDK_ENV="$TARGET_ENV"
           fi
 
-          STACK_NAME="SwarmStack-${CDK_ENV}"
+          STACK_NAME="SwarmApi-${CDK_ENV}"
 
           ADMIN_TABLE=$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
