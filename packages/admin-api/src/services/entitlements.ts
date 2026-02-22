@@ -328,6 +328,60 @@ export async function suspendEntitlement(
   }));
 }
 
+/**
+ * Clear Stripe customer/subscription data from all entitlements for an avatar.
+ * Called during avatar reassignment to prevent the new owner from being linked
+ * to the previous owner's Stripe customer/subscription context.
+ *
+ * Returns the number of entitlements that were cleared.
+ */
+export async function clearStripeDataForAvatar(
+  avatarId: string,
+  actorId: string
+): Promise<number> {
+  // Find all entitlements for this avatar via GSI1 (inverted index)
+  const result = await getDynamoClient().send(new QueryCommand({
+    TableName: ADMIN_TABLE,
+    IndexName: 'GSI1',
+    KeyConditionExpression: 'sk = :sk AND begins_with(pk, :pkPrefix)',
+    ExpressionAttributeValues: {
+      ':sk': `AVATAR#${avatarId}`,
+      ':pkPrefix': 'ENTITLEMENT#',
+    },
+  }));
+
+  const entitlements = (result.Items || []) as EntitlementRecord[];
+  let clearedCount = 0;
+
+  for (const entitlement of entitlements) {
+    if (entitlement.stripeCustomerId || entitlement.stripeSubscriptionId) {
+      const now = Date.now();
+      await getDynamoClient().send(new UpdateCommand({
+        TableName: ADMIN_TABLE,
+        Key: {
+          pk: entitlement.pk,
+          sk: entitlement.sk,
+        },
+        UpdateExpression: `
+          REMOVE stripeCustomerId, stripeSubscriptionId
+          SET updatedAt = :now, updatedBy = :actor
+        `,
+        ExpressionAttributeValues: {
+          ':now': now,
+          ':actor': actorId,
+        },
+      }));
+      clearedCount++;
+    }
+  }
+
+  if (clearedCount > 0) {
+    console.log(`[Entitlements] Cleared Stripe data from ${clearedCount} entitlement(s) for avatar=${avatarId}`);
+  }
+
+  return clearedCount;
+}
+
 // ============================================================================
 // Usage Tracking
 // ============================================================================

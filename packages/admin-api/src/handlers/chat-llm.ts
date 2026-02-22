@@ -111,11 +111,24 @@ export function getRetryDelayMs(attemptNumber: number): number {
  */
 export class LlmCreditsExhaustedError extends Error {
   public readonly statusCode = 402;
-  constructor(message: string) {
+  public readonly model?: string;
+  public readonly requestedMaxTokens?: number;
+  public readonly reducedMaxTokens?: number;
+  constructor(message: string, opts?: { model?: string; requestedMaxTokens?: number; reducedMaxTokens?: number }) {
     super(message);
     this.name = 'LlmCreditsExhaustedError';
+    this.model = opts?.model;
+    this.requestedMaxTokens = opts?.requestedMaxTokens;
+    this.reducedMaxTokens = opts?.reducedMaxTokens;
   }
 }
+
+/**
+ * Fraction to reduce max_tokens by on a 402 adaptive retry.
+ * E.g. 0.5 means retry with half the original budget.
+ */
+export const CREDIT_RETRY_TOKEN_FRACTION = 0.5;
+export const CREDIT_RETRY_MIN_TOKENS = 128;
 
 export function isRetryableLlmError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -465,6 +478,7 @@ export async function callLlmDirectFallback(
 
   let response: Response | null = null;
   let lastError: unknown;
+  let creditRetried = false;
 
   for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
     try {
@@ -484,18 +498,73 @@ export async function callLlmDirectFallback(
         break;
       }
 
-      // 402 = insufficient credits — non-retryable, log prominently and throw specific error
+      // 402 = insufficient credits — attempt one adaptive retry with reduced max_tokens
       if (response.status === 402) {
         const errorText = await response.text();
+        const reducedTokens = Math.max(
+          CREDIT_RETRY_MIN_TOKENS,
+          Math.floor(maxTokens * CREDIT_RETRY_TOKEN_FRACTION)
+        );
+        const canRetryWithLess = reducedTokens < maxTokens && !creditRetried;
+
         logger.error('OpenRouter credits exhausted (402)', undefined, {
-          event: 'llm_credits_exhausted',
+          event: 'provider_credit_exhausted',
           subsystem: 'llm',
           statusCode: 402,
           model,
+          requestedMaxTokens: maxTokens,
+          reducedMaxTokens: canRetryWithLess ? reducedTokens : undefined,
+          willRetry: canRetryWithLess,
           responseBody: errorText.slice(0, 500),
         });
+
+        if (canRetryWithLess) {
+          // Retry once with a reduced token budget (separate from normal retry loop)
+          creditRetried = true;
+          logger.info('Retrying with reduced max_tokens after 402', {
+            event: 'provider_credit_retry',
+            subsystem: 'llm',
+            model,
+            originalMaxTokens: maxTokens,
+            reducedMaxTokens: reducedTokens,
+          });
+
+          const retryBody = { ...body, max_tokens: reducedTokens };
+          const retryResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': 'https://swarm.admin',
+              'X-Title': 'Swarm Admin',
+            },
+            body: JSON.stringify(retryBody),
+            signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+          });
+
+          if (retryResponse.ok) {
+            response = retryResponse;
+            break;
+          }
+
+          // Still 402 or other error — fall through to throw
+          const retryErrorText = retryResponse.status === 402
+            ? await retryResponse.text()
+            : errorText;
+          logger.error('Adaptive retry still failed (402)', undefined, {
+            event: 'provider_credit_exhausted',
+            subsystem: 'llm',
+            statusCode: retryResponse.status,
+            model,
+            requestedMaxTokens: maxTokens,
+            reducedMaxTokens: reducedTokens,
+            responseBody: retryErrorText.slice(0, 500),
+          });
+        }
+
         throw new LlmCreditsExhaustedError(
-          `OpenRouter API error: 402 ${errorText}`
+          `OpenRouter API error: 402 ${errorText}`,
+          { model, requestedMaxTokens: maxTokens, reducedMaxTokens: creditRetried ? reducedTokens : undefined }
         );
       }
 

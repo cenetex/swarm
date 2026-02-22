@@ -8,8 +8,6 @@ on:
       - '*.md'
       - 'docs/**'
       - '.github/ISSUE_TEMPLATE/**'
-  pull_request:
-    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

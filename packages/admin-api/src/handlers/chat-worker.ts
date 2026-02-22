@@ -83,18 +83,27 @@ export async function handler(event: SQSEvent): Promise<void> {
       if (is402) {
         // Non-retryable: mark the job as failed with a user-friendly message
         // and do NOT re-throw (retrying via SQS won't help).
+        const creditError = error instanceof LlmCreditsExhaustedError ? error : null;
         logger.error('Chat worker: LLM credits exhausted (402)', error, {
-          event: 'llm_credits_exhausted',
+          event: 'provider_credit_exhausted',
           subsystem: 'chat',
           statusCode: 402,
+          model: creditError?.model,
+          requestedMaxTokens: creditError?.requestedMaxTokens,
+          reducedMaxTokens: creditError?.reducedMaxTokens,
         });
 
         recordError({
           error: message,
           stack: error instanceof Error ? error.stack : undefined,
           subsystem: 'llm',
-          category: 'llm_credits_exhausted',
-          context: { statusCode: 402 },
+          category: 'provider_credit_exhausted',
+          context: {
+            statusCode: 402,
+            model: creditError?.model,
+            requestedMaxTokens: creditError?.requestedMaxTokens,
+            reducedMaxTokens: creditError?.reducedMaxTokens,
+          },
         }).catch(() => {
           // Ignore recording failures
         });
@@ -103,7 +112,8 @@ export async function handler(event: SQSEvent): Promise<void> {
           const maybeParsed = JSON.parse(record.body) as Partial<ChatJobMessage>;
           if (maybeParsed.jobId && typeof maybeParsed.jobId === 'string') {
             await updateChatJobStatus(maybeParsed.jobId, 'failed', {
-              error: "I'm temporarily unable to respond due to a service configuration issue. The team has been notified.",
+              error: "I'm unable to respond right now — the AI provider's credit balance has been exhausted. " +
+                'Please contact your administrator to add credits, or try again later with a shorter message.',
             });
           }
         } catch {

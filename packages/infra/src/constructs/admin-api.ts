@@ -579,6 +579,8 @@ export class AdminApiConstruct extends Construct {
     }));
 
     // KMS permissions for Secrets Manager (AWS-managed key)
+    // Scoped to keys in this account/region (not wildcard) to limit blast radius.
+    const kmsKeyArnPattern = `arn:aws:kms:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:key/*`;
     this.chatHandler.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [
@@ -586,7 +588,7 @@ export class AdminApiConstruct extends Construct {
         'kms:GenerateDataKey',
         'kms:GenerateDataKeyWithoutPlaintext',
       ],
-      resources: ['*'],
+      resources: [kmsKeyArnPattern],
       conditions: {
         StringEquals: {
           'kms:ViaService': `secretsmanager.${cdk.Stack.of(this).region}.amazonaws.com`,
@@ -788,7 +790,7 @@ export class AdminApiConstruct extends Construct {
         'kms:GenerateDataKey',
         'kms:GenerateDataKeyWithoutPlaintext',
       ],
-      resources: ['*'],
+      resources: [kmsKeyArnPattern],
       conditions: {
         StringEquals: {
           'kms:ViaService': `secretsmanager.${cdk.Stack.of(this).region}.amazonaws.com`,
@@ -1051,7 +1053,7 @@ export class AdminApiConstruct extends Construct {
         'kms:GenerateDataKey',
         'kms:GenerateDataKeyWithoutPlaintext',
       ],
-      resources: ['*'],
+      resources: [kmsKeyArnPattern],
       conditions: {
         StringEquals: {
           'kms:ViaService': `secretsmanager.${cdk.Stack.of(this).region}.amazonaws.com`,
@@ -1993,13 +1995,14 @@ export class AdminApiConstruct extends Construct {
 
     // KMS permissions for Secrets Manager (customer-managed keys in some envs)
     // Required when secrets are encrypted with a CMK (e.g. admin secrets key in staging).
+    // Scoped to keys in this account/region to limit blast radius.
     this.responseSenderHandler.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [
         'kms:Decrypt',
         'kms:GenerateDataKey',
       ],
-      resources: ['*'],
+      resources: [kmsKeyArnPattern],
       conditions: {
         StringEquals: {
           'kms:ViaService': `secretsmanager.${cdk.Stack.of(this).region}.amazonaws.com`,
@@ -2088,7 +2091,7 @@ export class AdminApiConstruct extends Construct {
         'kms:GenerateDataKey',
         'kms:GenerateDataKeyWithoutPlaintext',
       ],
-      resources: ['*'],
+      resources: [kmsKeyArnPattern],
       conditions: {
         StringEquals: {
           'kms:ViaService': `secretsmanager.${cdk.Stack.of(this).region}.amazonaws.com`,
