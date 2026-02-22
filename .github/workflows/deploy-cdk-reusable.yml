@@ -12,6 +12,10 @@ on:
       admin_url:
         required: true
         type: string
+      use_existing_resources:
+        required: false
+        type: boolean
+        default: true
       use_existing_buckets:
         required: true
         type: boolean
@@ -215,6 +219,7 @@ jobs:
         id: diff
         working-directory: packages/infra
         env:
+          USE_EXISTING_RESOURCES: ${{ inputs.use_existing_resources && 'true' || 'false' }}
           USE_EXISTING_BUCKETS: ${{ inputs.use_existing_buckets && 'true' || 'false' }}
           SKIP_DOMAIN_ALIASES: ${{ inputs.skip_domain_aliases && 'true' || 'false' }}
           STACK_HASH: ${{ inputs.stack_hash }}
@@ -247,7 +252,7 @@ jobs:
             DIFF_TARGETS="--all"
           fi
 
-          npx cdk diff --fail $DIFF_TARGETS -c environment=${{ inputs.cdk_env }} -c useExistingBuckets=$USE_EXISTING_BUCKETS -c skipDomainAliases=$SKIP_DOMAIN_ALIASES -c stackHash=$STACK_HASH ${EXTRA_CONTEXT_ARGS} 2>&1 | tee diff-output.txt
+          npx cdk diff --fail $DIFF_TARGETS -c environment=${{ inputs.cdk_env }} -c useExistingResources=$USE_EXISTING_RESOURCES -c useExistingBuckets=$USE_EXISTING_BUCKETS -c skipDomainAliases=$SKIP_DOMAIN_ALIASES -c stackHash=$STACK_HASH ${EXTRA_CONTEXT_ARGS} 2>&1 | tee diff-output.txt
           DIFF_EXIT=$?
           set +o pipefail
           set -e
@@ -294,6 +299,7 @@ jobs:
         if: steps.diff.outputs.skip != 'true'
         working-directory: packages/infra
         env:
+          USE_EXISTING_RESOURCES: ${{ inputs.use_existing_resources && 'true' || 'false' }}
           USE_EXISTING_BUCKETS: ${{ inputs.use_existing_buckets && 'true' || 'false' }}
           SKIP_DOMAIN_ALIASES: ${{ inputs.skip_domain_aliases && 'true' || 'false' }}
           STACK_HASH: ${{ inputs.stack_hash }}
@@ -326,11 +332,11 @@ jobs:
           STACK="${{ inputs.stack }}"
 
           if [ -n "$STACK" ]; then
-            npx cdk deploy "$STACK" --require-approval never --concurrency 10 $HOTSWAP -c environment=${{ inputs.cdk_env }} -c useExistingBuckets=$USE_EXISTING_BUCKETS -c skipDomainAliases=$SKIP_DOMAIN_ALIASES -c stackHash=$STACK_HASH ${EXTRA_CONTEXT_ARGS}
+            npx cdk deploy "$STACK" --require-approval never --concurrency 10 $HOTSWAP -c environment=${{ inputs.cdk_env }} -c useExistingResources=$USE_EXISTING_RESOURCES -c useExistingBuckets=$USE_EXISTING_BUCKETS -c skipDomainAliases=$SKIP_DOMAIN_ALIASES -c stackHash=$STACK_HASH ${EXTRA_CONTEXT_ARGS}
             exit 0
           fi
 
-          npx cdk deploy --all --require-approval never --concurrency 10 $HOTSWAP -c environment=${{ inputs.cdk_env }} -c useExistingBuckets=$USE_EXISTING_BUCKETS -c skipDomainAliases=$SKIP_DOMAIN_ALIASES -c stackHash=$STACK_HASH ${EXTRA_CONTEXT_ARGS}
+          npx cdk deploy --all --require-approval never --concurrency 10 $HOTSWAP -c environment=${{ inputs.cdk_env }} -c useExistingResources=$USE_EXISTING_RESOURCES -c useExistingBuckets=$USE_EXISTING_BUCKETS -c skipDomainAliases=$SKIP_DOMAIN_ALIASES -c stackHash=$STACK_HASH ${EXTRA_CONTEXT_ARGS}
 
       - name: Skip Deploy (no changes)
         if: steps.diff.outputs.skip == 'true'

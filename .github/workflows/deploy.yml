@@ -20,6 +20,11 @@ on:
         description: 'Stack to deploy (leave empty for all)'
         required: false
         type: string
+      use_existing_resources:
+        description: 'Import existing shared resources (DynamoDB, S3, ECS) instead of creating new ones'
+        required: false
+        default: true
+        type: boolean
       use_existing_buckets:
         description: 'Import existing S3 buckets instead of creating new ones (for redeploying after stack deletion with RETAIN)'
         required: false
@@ -76,6 +81,7 @@ jobs:
       cdk_env: ${{ steps.env.outputs.cdk_env }}
       api_url: ${{ steps.env.outputs.api_url }}
       admin_url: ${{ steps.env.outputs.admin_url }}
+      use_existing_resources: ${{ steps.env.outputs.use_existing_resources }}
       use_existing_buckets: ${{ steps.env.outputs.use_existing_buckets }}
       skip_domain_aliases: ${{ steps.env.outputs.skip_domain_aliases }}
       stack_hash: ${{ steps.env.outputs.stack_hash }}
@@ -94,6 +100,7 @@ jobs:
       - name: Set environment and resolved options
         id: env
         env:
+          INPUT_USE_EXISTING_RESOURCES: ${{ inputs.use_existing_resources }}
           INPUT_USE_EXISTING_BUCKETS: ${{ inputs.use_existing_buckets }}
           INPUT_SKIP_DOMAIN_ALIASES: ${{ inputs.skip_domain_aliases }}
           INPUT_STACK_HASH: ${{ inputs.stack_hash }}
@@ -130,6 +137,7 @@ jobs:
           ADMIN_URL="https://${ADMIN_HOST}"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            USE_EXISTING_RESOURCES="${INPUT_USE_EXISTING_RESOURCES:-true}"
             USE_EXISTING_BUCKETS="${INPUT_USE_EXISTING_BUCKETS:-false}"
             SKIP_DOMAIN_ALIASES="${INPUT_SKIP_DOMAIN_ALIASES:-false}"
             STACK_HASH="${INPUT_STACK_HASH:-}"
@@ -139,7 +147,9 @@ jobs:
             RUN_PROD_SMOKE="${INPUT_RUN_PROD_SMOKE:-false}"
           else
             # For push/tag triggers, set safe defaults per environment.
-            # Production: retained S3 buckets always exist after first deploy.
+            # Shared resources (DynamoDB, S3 media, ECS) were created by the
+            # legacy monolith stack and exist outside CloudFormation — always import.
+            USE_EXISTING_RESOURCES="true"
             if [ "$ENV" = "production" ]; then
               USE_EXISTING_BUCKETS="true"
               SKIP_DOMAIN_ALIASES="false"
@@ -159,6 +169,7 @@ jobs:
           echo "cdk_env=$CDK_ENV" >> "$GITHUB_OUTPUT"
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "admin_url=$ADMIN_URL" >> "$GITHUB_OUTPUT"
+          echo "use_existing_resources=$USE_EXISTING_RESOURCES" >> "$GITHUB_OUTPUT"
           echo "use_existing_buckets=$USE_EXISTING_BUCKETS" >> "$GITHUB_OUTPUT"
           echo "skip_domain_aliases=$SKIP_DOMAIN_ALIASES" >> "$GITHUB_OUTPUT"
           echo "stack_hash=$STACK_HASH" >> "$GITHUB_OUTPUT"
@@ -176,6 +187,7 @@ jobs:
       environment: ${{ needs.setup.outputs.environment }}
       cdk_env: ${{ needs.setup.outputs.cdk_env }}
       admin_url: ${{ needs.setup.outputs.admin_url }}
+      use_existing_resources: ${{ needs.setup.outputs.use_existing_resources == 'true' }}
       use_existing_buckets: ${{ needs.setup.outputs.use_existing_buckets == 'true' }}
       skip_domain_aliases: ${{ needs.setup.outputs.skip_domain_aliases == 'true' }}
       stack_hash: ${{ needs.setup.outputs.stack_hash }}
