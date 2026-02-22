@@ -1,0 +1,28 @@
+{
+  "$schema": "./security-exceptions.schema.json",
+  "version": "1",
+  "description": "Canonical security exception registry. Every exception MUST have an owner, rationale, mitigation, expiry, and review cadence. CI enforces schema validity and expiry deadlines.",
+  "exceptions": [
+    {
+      "id": "SEC-EX-001",
+      "title": "bigint-buffer DoS via toBigIntLE (CVE-2025-3194)",
+      "cve": "CVE-2025-3194",
+      "ghsa": "GHSA-3gc7-fjrx-p6mg",
+      "severity": "high",
+      "owner": "ratimics",
+      "rationale": "Package unmaintained; no patched version available (patched_versions: <0.0.0). Transitive dep via @solana/spl-token > @solana/buffer-layout-utils > bigint-buffer. The vulnerable toBigIntLE() function is not called directly by our code.",
+      "mitigation": "Risk accepted: DoS-only impact (CWE-120), no data exfiltration, and the function is only reachable with attacker-controlled buffer sizes in the Solana token layout path. Pinned @solana/kit to 5.4.0 to limit exposure surface.",
+      "expiry": "2026-06-01",
+      "reviewCadence": "monthly",
+      "status": "active",
+      "createdAt": "2026-02-20",
+      "updatedAt": "2026-02-21",
+      "references": [
+        "https://github.com/advisories/GHSA-3gc7-fjrx-p6mg",
+        "https://nvd.nist.gov/vuln/detail/CVE-2025-3194"
+      ],
+      "affectedPackages": ["bigint-buffer"],
+      "trackingIssue": null
+    }
+  ]
+}

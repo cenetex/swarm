@@ -35,7 +35,8 @@
     "issues:sync:internal:apply": "node scripts/sync-internal-issues-to-github.mjs --config .github/policy/internal-issue-sync-policy.json --apply",
     "canary:telegram": "bun run scripts/telegram-canary.ts",
     "prepare": "husky",
-    "release": "./scripts/release.sh"
+    "release": "./scripts/release.sh",
+    "validate:security-exceptions": "node scripts/validate-security-exceptions.mjs"
   },
   "keywords": [
     "aws",

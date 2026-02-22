@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Security Exception Registry",
+  "description": "Schema for the security exception registry used by AWS Swarm CI to track and enforce security exception lifetimes.",
+  "type": "object",
+  "required": ["version", "exceptions"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version"
+    },
+    "description": {
+      "type": "string"
+    },
+    "$schema": {
+      "type": "string"
+    },
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/exception"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "exception": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "severity",
+        "owner",
+        "rationale",
+        "mitigation",
+        "expiry",
+        "reviewCadence",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^SEC-EX-\\d{3,}$",
+          "description": "Unique exception identifier (e.g., SEC-EX-001)"
+        },
+        "title": {
+          "type": "string",
+          "description": "Short human-readable title"
+        },
+        "cve": {
+          "type": ["string", "null"],
+          "pattern": "^CVE-\\d{4}-\\d+$",
+          "description": "CVE identifier, if applicable"
+        },
+        "ghsa": {
+          "type": ["string", "null"],
+          "description": "GitHub Security Advisory identifier, if applicable"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "high", "moderate", "low"],
+          "description": "Severity level of the excepted vulnerability"
+        },
+        "owner": {
+          "type": "string",
+          "description": "GitHub username responsible for this exception"
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Why the exception is necessary"
+        },
+        "mitigation": {
+          "type": "string",
+          "description": "What compensating controls are in place"
+        },
+        "expiry": {
+          "type": "string",
+          "format": "date",
+          "description": "ISO 8601 date when this exception must be re-evaluated (YYYY-MM-DD)"
+        },
+        "reviewCadence": {
+          "type": "string",
+          "enum": ["weekly", "biweekly", "monthly", "quarterly"],
+          "description": "How often this exception should be reviewed"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "expired", "resolved", "revoked"],
+          "description": "Current lifecycle status"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date",
+          "description": "Date exception was first registered"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date",
+          "description": "Date exception was last modified"
+        },
+        "references": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Links to advisories, issues, or docs"
+        },
+        "affectedPackages": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "npm packages affected by this exception"
+        },
+        "trackingIssue": {
+          "type": ["string", "integer", "null"],
+          "description": "GitHub issue number or URL tracking resolution"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
