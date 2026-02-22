@@ -1,5 +1,6 @@
 import { isAuthError } from '../auth/errors.js';
 import { isRequestValidationError } from '../middleware/validate.js';
+import { LlmCreditsExhaustedError } from './chat-llm.js';
 
 export function parseOpenRouterStatusFromError(message: string): number | null {
 
@@ -48,19 +49,22 @@ export function mapAdminChatHandlerError(error: unknown): {
 
   const errorMessage = error instanceof Error ? error.message : String(error);
   const upstreamStatus = parseOpenRouterStatusFromError(errorMessage);
+  const isCreditError = error instanceof LlmCreditsExhaustedError;
   const isCircuitOpen = /circuit breaker open/i.test(errorMessage);
   const isTimeout = isTimeoutLikeError(error);
 
   const statusCode = isTimeout
     ? 504
-    : upstreamStatus === 402 || upstreamStatus === 429
-      ? upstreamStatus
-      : isCircuitOpen
-        ? 503
-        : 500;
+    : isCreditError || upstreamStatus === 402
+      ? 402
+      : upstreamStatus === 429
+        ? 429
+        : isCircuitOpen
+          ? 503
+          : 500;
 
   const publicError = statusCode === 402
-    ? 'LLM credits required'
+    ? "Unable to respond — the AI provider's credit balance has been exhausted. Please contact your administrator to add credits."
     : statusCode === 429
       ? 'LLM rate limited'
       : statusCode === 503
