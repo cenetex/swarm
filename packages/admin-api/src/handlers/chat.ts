@@ -38,10 +38,10 @@ const llmCircuitBreaker = createCircuitBreaker();
 import {
   ToolRegistry,
   registerAllTools,
+  isPauseForInputTool,
   type ToolContext,
 } from '@swarm/mcp-server';
 import { createMCPServices } from '../services/mcp-adapter.js';
-import { isPauseForInputTool } from '../tools/index.js';
 import * as avatars from '../services/avatars.js';
 import * as voice from '../services/voice.js';
 import * as memory from '../services/memory.js';

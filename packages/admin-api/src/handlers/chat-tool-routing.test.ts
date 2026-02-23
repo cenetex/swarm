@@ -8,7 +8,7 @@
  * These tests ensure we never regress on tool detection.
  */
 import { describe, it, expect } from 'vitest';
-import { isPauseForInputTool } from '../tools/index.js';
+import { isPauseForInputTool } from '@swarm/mcp-server';
 
 /**
  * Extracted tool routing logic from tools/index.ts for testability
