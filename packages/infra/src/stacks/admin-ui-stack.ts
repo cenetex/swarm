@@ -4,6 +4,7 @@
  * This stack changes when UI assets are updated
  */
 import * as cdk from 'aws-cdk-lib';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { AdminUi } from '../constructs/admin-ui.js';
 import type { AdminApiStack } from './admin-api-stack.js';
@@ -19,7 +20,9 @@ export interface AdminUiStackProps extends cdk.StackProps {
   nameSuffix?: string;
 
   /**
-   * Reference to the Admin API stack (optional - if API is deployed)
+   * Reference to the Admin API stack (optional - if API is deployed).
+   * Used only to establish a CDK dependency ordering; the actual API endpoint
+   * is read from SSM to avoid CloudFormation cross-stack export issues.
    */
   adminApiStack?: AdminApiStack;
 
@@ -59,12 +62,20 @@ export class AdminUiStack extends cdk.Stack {
 
     const { environment, adminApiStack, adminDomain, adminCertificateArn, nameSuffix, useExistingBuckets, skipDomainAliases, enableWaf } = props;
 
-    // Get API Gateway hostname from the Admin API stack
+    // Get API Gateway hostname from SSM parameter written by AdminApiStack.
+    // Using SSM dynamic references instead of direct cross-stack property access
+    // avoids CloudFormation export-in-use errors when the API stack is updated.
+    // See: https://github.com/cenetex/aws-swarm/issues/394
     let apiGatewayHost: string | undefined;
-    if (adminApiStack?.apiEndpoint) {
+    if (adminApiStack?.apiEndpointParamName) {
+      // Read the API endpoint URL from SSM at deploy time
+      const apiEndpointUrl = ssm.StringParameter.valueForStringParameter(
+        this,
+        adminApiStack.apiEndpointParamName
+      );
       // Parse API endpoint: https://xxx.execute-api.region.amazonaws.com
-      // Use Fn.select to parse at deploy time since apiEndpoint may be a token
-      apiGatewayHost = cdk.Fn.select(2, cdk.Fn.split('/', adminApiStack.apiEndpoint));
+      // Use Fn.select to parse at deploy time since the value is a token
+      apiGatewayHost = cdk.Fn.select(2, cdk.Fn.split('/', apiEndpointUrl));
     }
 
     // Create Admin UI with CloudFront
