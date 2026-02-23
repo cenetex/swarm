@@ -12,6 +12,8 @@ import {
   registerAdapter,
   getAdapters,
   _resetAdapters,
+  _setTestState,
+  _getActiveAvatars,
   type HeartbeatPlatformAdapter,
   type ActivityItem,
   type HeartbeatAction,
@@ -237,5 +239,76 @@ describe('HeartbeatPlatformAdapter contract', () => {
     const enabledAdapters = adapters.filter((a) => a.isEnabled(avatarConfig));
     expect(enabledAdapters).toHaveLength(1);
     expect(enabledAdapters[0].platform).toBe('enabled');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getActiveAvatars DynamoDB error handling
+// ---------------------------------------------------------------------------
+
+describe('getActiveAvatars DynamoDB error handling', () => {
+  it('throws on AccessDeniedException so handler can catch it', async () => {
+    const error = new Error('User: arn:aws:iam::123:role/x is not authorized');
+    error.name = 'AccessDeniedException';
+
+    const mockClient = {
+      send: async () => { throw error; },
+    };
+
+    _setTestState({
+      adminDocClient: mockClient as never,
+      adminTable: 'test-table',
+    });
+
+    await expect(_getActiveAvatars()).rejects.toThrow('is not authorized');
+  });
+
+  it('throws on ResourceNotFoundException so handler can catch it', async () => {
+    const error = new Error('Requested resource not found');
+    error.name = 'ResourceNotFoundException';
+
+    const mockClient = {
+      send: async () => { throw error; },
+    };
+
+    _setTestState({
+      adminDocClient: mockClient as never,
+      adminTable: 'test-table',
+    });
+
+    await expect(_getActiveAvatars()).rejects.toThrow('Requested resource not found');
+  });
+
+  it('returns empty array when ADMIN_TABLE is not set', async () => {
+    _setTestState({
+      adminDocClient: { send: async () => ({}) } as never,
+      adminTable: undefined as unknown as string,
+    });
+
+    const avatars = await _getActiveAvatars();
+    expect(avatars).toEqual([]);
+  });
+
+  it('returns avatars on successful scan', async () => {
+    const mockClient = {
+      send: async () => ({
+        Items: [
+          { avatarId: 'a1', name: 'Avatar 1', persona: 'test persona' },
+          { avatarId: 'a2', name: 'Avatar 2' },
+        ],
+        LastEvaluatedKey: undefined,
+      }),
+    };
+
+    _setTestState({
+      adminDocClient: mockClient as never,
+      adminTable: 'test-table',
+    });
+
+    const avatars = await _getActiveAvatars();
+    expect(avatars).toHaveLength(2);
+    expect(avatars[0].avatarId).toBe('a1');
+    expect(avatars[0].name).toBe('Avatar 1');
+    expect(avatars[1].avatarId).toBe('a2');
   });
 });

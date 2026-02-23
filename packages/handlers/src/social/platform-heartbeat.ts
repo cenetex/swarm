@@ -275,6 +275,19 @@ export function _resetAdapters(): void {
   registeredAdapters.push(moltbookAdapter);
 }
 
+/** Inject test DynamoDB client and table name (for testing) */
+export function _setTestState(opts: {
+  adminDocClient: DynamoDBDocumentClient;
+  adminTable?: string;
+}): void {
+  adminDocClient = opts.adminDocClient;
+  _adminTable = opts.adminTable ?? 'test-admin-table';
+  _initialized = true;
+}
+
+/** Exposed for testing — wraps the DynamoDB scan that fetches active avatars */
+export { getActiveAvatars as _getActiveAvatars };
+
 // ============================================================================
 // LLM engagement decision
 // ============================================================================
@@ -540,7 +553,16 @@ export const handler: ScheduledHandler = async (_event, context: Context) => {
   });
 
   // Get all avatars from ADMIN_TABLE
-  const avatars = await getActiveAvatars();
+  let avatars: HeartbeatAvatar[];
+  try {
+    avatars = await getActiveAvatars();
+  } catch (error) {
+    logger.error('Failed to scan avatars from DynamoDB', error, {
+      subsystem: 'platform-heartbeat',
+      event: 'dynamo_scan_error',
+    });
+    return;
+  }
 
   logger.info('Found avatars', {
     count: avatars.length,
