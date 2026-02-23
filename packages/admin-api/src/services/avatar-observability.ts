@@ -21,6 +21,7 @@
  *     gsi1sk: <timestamp>
  */
 import {
+  type DynamoDBDocumentClient,
   PutCommand,
   QueryCommand,
   UpdateCommand,
@@ -41,8 +42,14 @@ const LOG_TTL_SECONDS = 24 * 60 * 60;
 /** Event TTL: 30 days */
 const EVENT_TTL_SECONDS = 30 * 24 * 60 * 60;
 
-/** Max logs to store per write batch */
+/** Max items per DynamoDB BatchWriteCommand (service limit) */
 const MAX_BATCH_SIZE = 25;
+
+/** Max retries for UnprocessedItems */
+const MAX_UNPROCESSED_RETRIES = 3;
+
+/** Base delay (ms) for exponential backoff on UnprocessedItems retries */
+const BACKOFF_BASE_MS = 100;
 
 // ============================================================================
 // Log Types
@@ -186,16 +193,40 @@ export async function recordLog(params: {
   return entry;
 }
 
-/**
- * Record multiple log entries in batch
- */
-export async function recordLogBatch(
-  entries: Array<Omit<Parameters<typeof recordLog>[0], 'timestamp'>>
-): Promise<void> {
-  if (entries.length === 0) return;
+/** Dependency bag for recordLogBatch (enables testing without real DynamoDB) */
+export interface RecordLogBatchDeps {
+  dynamoClient: Pick<DynamoDBDocumentClient, 'send'>;
+  tableName: string;
+  /** Override for testing — replaces setTimeout-based delay */
+  delay?: (ms: number) => Promise<void>;
+}
 
+/**
+ * Default delay function using setTimeout.
+ */
+function defaultDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Record multiple log entries in batch (injectable variant for testing).
+ *
+ * Chunks input into groups of 25 (DynamoDB BatchWriteItem limit) and retries
+ * any UnprocessedItems with bounded exponential backoff.
+ */
+export async function recordLogBatchWith(
+  deps: RecordLogBatchDeps,
+  entries: Array<Omit<Parameters<typeof recordLog>[0], 'timestamp'>>
+): Promise<{ totalEntries: number; writtenCount: number; droppedCount: number }> {
+  if (entries.length === 0) {
+    return { totalEntries: 0, writtenCount: 0, droppedCount: 0 };
+  }
+
+  const delay = deps.delay ?? defaultDelay;
   const now = Date.now();
-  const items = entries.slice(0, MAX_BATCH_SIZE).map((params, idx) => {
+
+  // Build all DynamoDB put-request items up front
+  const allItems = entries.map((params, idx) => {
     const id = `log-${now}-${idx}-${Math.random().toString(36).slice(2, 8)}`;
     return {
       PutRequest: {
@@ -220,11 +251,74 @@ export async function recordLogBatch(
     };
   });
 
-  await dynamoClient.send(new BatchWriteCommand({
-    RequestItems: {
-      [ADMIN_TABLE]: items,
-    },
-  }));
+  // Chunk into groups of MAX_BATCH_SIZE (25)
+  const chunks: Array<typeof allItems> = [];
+  for (let i = 0; i < allItems.length; i += MAX_BATCH_SIZE) {
+    chunks.push(allItems.slice(i, i + MAX_BATCH_SIZE));
+  }
+
+  let totalDropped = 0;
+
+  for (const chunk of chunks) {
+    let pending = chunk;
+    let attempt = 0;
+
+    while (pending.length > 0 && attempt <= MAX_UNPROCESSED_RETRIES) {
+      if (attempt > 0) {
+        const backoffMs = BACKOFF_BASE_MS * Math.pow(2, attempt - 1);
+        await delay(backoffMs);
+      }
+
+      const result = await deps.dynamoClient.send(new BatchWriteCommand({
+        RequestItems: {
+          [deps.tableName]: pending,
+        },
+      }));
+
+      const unprocessed = result?.UnprocessedItems?.[deps.tableName];
+      if (!unprocessed || unprocessed.length === 0) {
+        pending = [];
+        break;
+      }
+
+      pending = unprocessed as typeof chunk;
+      attempt++;
+    }
+
+    if (pending.length > 0) {
+      totalDropped += pending.length;
+      // eslint-disable-next-line no-console -- intentional operational warning for CloudWatch
+      console.warn(
+        `[avatar-observability] recordLogBatch: ${pending.length} items dropped after ${MAX_UNPROCESSED_RETRIES} retries`
+      );
+    }
+  }
+
+  const writtenCount = entries.length - totalDropped;
+  return { totalEntries: entries.length, writtenCount, droppedCount: totalDropped };
+}
+
+/**
+ * Record multiple log entries in batch.
+ *
+ * Processes all input entries (no truncation) by chunking into groups of 25.
+ * Retries UnprocessedItems with exponential backoff. Logs a warning if any
+ * items are dropped after retries are exhausted.
+ */
+export async function recordLogBatch(
+  entries: Array<Omit<Parameters<typeof recordLog>[0], 'timestamp'>>
+): Promise<void> {
+  const result = await recordLogBatchWith(
+    { dynamoClient, tableName: ADMIN_TABLE },
+    entries,
+  );
+
+  if (result.droppedCount > 0) {
+    // eslint-disable-next-line no-console -- intentional operational warning for CloudWatch
+    console.warn(
+      `[avatar-observability] recordLogBatch completed with ${result.droppedCount}/${result.totalEntries} items dropped`
+    );
+  }
 }
 
 // ============================================================================
