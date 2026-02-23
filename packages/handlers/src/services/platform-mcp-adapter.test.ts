@@ -13,9 +13,10 @@
  * @see https://github.com/cenetex/aws-swarm/issues/233
  * @see https://github.com/cenetex/aws-swarm/issues/353
  */
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
 import { getAdminTable, _resetAdminTableCache } from './platform-mcp-adapter.js';
 import { createPlatformMCPServices } from './platform-mcp-adapter.js';
+import { getDynamoClient } from './dynamo-client.js';
 import type { AvatarConfig, StateService } from '@swarm/core';
 
 // =============================================================================
@@ -767,6 +768,150 @@ describe('createPlatformMCPServices', () => {
       expect(typeof services.billing.createPortalSession).toBe('function');
       expect(typeof services.billing.getBillingStatus).toBe('function');
       expect(typeof services.billing.getUsage).toBe('function');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Gallery services — pagination regression (issue #234)
+  // ---------------------------------------------------------------------------
+
+  describe('gallery service - getGalleryItem pagination', () => {
+    it('finds item beyond first 100 records via pagination', async () => {
+      const services = createPlatformMCPServices({
+        avatarId: 'test-avatar',
+        avatarConfig: buildTestAvatarConfig(),
+        stateService: buildTestStateService(),
+        secrets: {},
+      });
+
+      // The module-level dynamoClient is the same singleton returned by getDynamoClient().
+      // We spy on send() to simulate DynamoDB pagination: first page returns 100
+      // non-matching items with LastEvaluatedKey, second page returns the target item.
+      const client = getDynamoClient();
+      const targetItem = {
+        id: 'target-item-id',
+        url: 'https://cdn.example.com/old-image.png',
+        s3Key: 'gallery/old-image.png',
+        type: 'image',
+        prompt: 'an old image',
+        platform: 'telegram',
+        createdAt: 1000000,
+      };
+
+      let callCount = 0;
+      const sendSpy = spyOn(client, 'send').mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          // First page: 100 items, none matching the filter; has more pages
+          return {
+            Items: [],  // FilterExpression removed non-matching items
+            Count: 0,
+            ScannedCount: 100,
+            LastEvaluatedKey: { pk: 'AVATAR#test-avatar', sk: 'GALLERY#099' },
+          };
+        }
+        // Second page: contains the target item
+        return {
+          Items: [targetItem],
+          Count: 1,
+          ScannedCount: 50,
+          // No LastEvaluatedKey — this is the last page
+        };
+      });
+
+      try {
+        const result = await services.gallery.getGalleryItem('test-avatar', 'target-item-id');
+
+        expect(result).not.toBeNull();
+        expect(result!.id).toBe('target-item-id');
+        expect(result!.url).toBe('https://cdn.example.com/old-image.png');
+        expect(result!.type).toBe('image');
+        expect(result!.prompt).toBe('an old image');
+        expect(result!.createdAt).toBe(1000000);
+
+        // Should have made exactly 2 DynamoDB queries (paginated)
+        expect(callCount).toBe(2);
+      } finally {
+        sendSpy.mockRestore();
+      }
+    });
+
+    it('returns null when item does not exist across all pages', async () => {
+      const services = createPlatformMCPServices({
+        avatarId: 'test-avatar',
+        avatarConfig: buildTestAvatarConfig(),
+        stateService: buildTestStateService(),
+        secrets: {},
+      });
+
+      const client = getDynamoClient();
+      let callCount = 0;
+      const sendSpy = spyOn(client, 'send').mockImplementation(async () => {
+        callCount++;
+        if (callCount <= 2) {
+          // Two pages of non-matching items
+          return {
+            Items: [],
+            Count: 0,
+            ScannedCount: 100,
+            LastEvaluatedKey: { pk: 'AVATAR#test-avatar', sk: `GALLERY#page${callCount}` },
+          };
+        }
+        // Final page — still no match, no more pages
+        return {
+          Items: [],
+          Count: 0,
+          ScannedCount: 30,
+        };
+      });
+
+      try {
+        const result = await services.gallery.getGalleryItem('test-avatar', 'nonexistent-id');
+
+        expect(result).toBeNull();
+        // Should have paginated through all 3 pages
+        expect(callCount).toBe(3);
+      } finally {
+        sendSpy.mockRestore();
+      }
+    });
+
+    it('returns item on first page without unnecessary pagination', async () => {
+      const services = createPlatformMCPServices({
+        avatarId: 'test-avatar',
+        avatarConfig: buildTestAvatarConfig(),
+        stateService: buildTestStateService(),
+        secrets: {},
+      });
+
+      const client = getDynamoClient();
+      let callCount = 0;
+      const sendSpy = spyOn(client, 'send').mockImplementation(async () => {
+        callCount++;
+        return {
+          Items: [{
+            id: 'first-page-item',
+            url: 'https://cdn.example.com/image.png',
+            s3Key: 'gallery/image.png',
+            type: 'image',
+            createdAt: 2000000,
+          }],
+          Count: 1,
+          ScannedCount: 50,
+          LastEvaluatedKey: { pk: 'AVATAR#test-avatar', sk: 'GALLERY#050' },
+        };
+      });
+
+      try {
+        const result = await services.gallery.getGalleryItem('test-avatar', 'first-page-item');
+
+        expect(result).not.toBeNull();
+        expect(result!.id).toBe('first-page-item');
+        // Should NOT continue paginating after finding the item
+        expect(callCount).toBe(1);
+      } finally {
+        sendSpy.mockRestore();
+      }
     });
   });
 });

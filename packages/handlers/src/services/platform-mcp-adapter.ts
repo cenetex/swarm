@@ -521,36 +521,50 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
       },
       getGalleryItem: async (_avatarId: string, itemId: string) => {
         try {
-          const result = await dynamoClient.send(new QueryCommand({
-            TableName: getAdminTable(),
-            KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
-            FilterExpression: 'id = :id',
-            ExpressionAttributeValues: {
-              ':pk': `AVATAR#${avatarId}`,
-              ':sk': 'GALLERY#',
-              ':id': itemId,
-            },
-            Limit: 100,
-          }));
-          const item = result.Items?.[0] as {
-            id: string;
-            url: string;
-            s3Key: string;
-            type: string;
-            prompt?: string;
-            platform?: string;
-            createdAt: number;
-          } | undefined;
-          if (!item) return null;
-          return {
-            id: item.id,
-            url: item.url,
-            s3Key: item.s3Key,
-            type: item.type as 'image' | 'video' | 'sticker',
-            prompt: item.prompt,
-            platform: item.platform,
-            createdAt: item.createdAt,
-          };
+          // DynamoDB applies Limit BEFORE FilterExpression, so we must
+          // paginate through all GALLERY# items to find the one we want.
+          let lastEvaluatedKey: Record<string, unknown> | undefined;
+
+          do {
+            const result = await dynamoClient.send(new QueryCommand({
+              TableName: getAdminTable(),
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+              FilterExpression: 'id = :id',
+              ExpressionAttributeValues: {
+                ':pk': `AVATAR#${avatarId}`,
+                ':sk': 'GALLERY#',
+                ':id': itemId,
+              },
+              ExclusiveStartKey: lastEvaluatedKey,
+              Limit: 100,
+            }));
+
+            const item = result.Items?.[0] as {
+              id: string;
+              url: string;
+              s3Key: string;
+              type: string;
+              prompt?: string;
+              platform?: string;
+              createdAt: number;
+            } | undefined;
+
+            if (item) {
+              return {
+                id: item.id,
+                url: item.url,
+                s3Key: item.s3Key,
+                type: item.type as 'image' | 'video' | 'sticker',
+                prompt: item.prompt,
+                platform: item.platform,
+                createdAt: item.createdAt,
+              };
+            }
+
+            lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+          } while (lastEvaluatedKey);
+
+          return null;
         } catch {
           return null;
         }
