@@ -377,8 +377,10 @@ export class AdminApiStack extends cdk.Stack {
       // Keep this stack focused on Admin API construct wiring.
     }
 
-    // Create Discord gateway worker if enabled
+    // Create Discord gateway worker if enabled.
+    // In non-production environments, default to desiredCount=0 to avoid idle ECS cost.
     if (enableDiscordGateway) {
+      const isProd = environment === 'prod' || environment === 'production';
       this.discordGatewayWorker = new DiscordGatewayWorker(this, 'DiscordGatewayWorker', {
         environment,
         nameSuffix,
@@ -387,6 +389,7 @@ export class AdminApiStack extends cdk.Stack {
         activityTable,
         messageQueue: this.sharedHandlers.messageQueue,
         secretPrefix,
+        desiredCount: isProd ? 1 : 0,
       });
     }
 

@@ -640,11 +640,10 @@ export class AdminApiConstruct extends Construct {
     });
 
     // Access logging for forensics & compliance
+    // Staging gets ONE_WEEK (7 days) to reduce CloudWatch idle cost (~$6.81/week).
     const accessLogRetention = isProd
       ? logs.RetentionDays.ONE_MONTH
-      : isPersistentEnv
-        ? logs.RetentionDays.TWO_WEEKS
-        : logs.RetentionDays.ONE_WEEK;
+      : logs.RetentionDays.ONE_WEEK;
 
     const accessLogGroupName = `/aws/apigateway/SwarmAdminApi-${environment}${suffix}-access-logs`;
     const accessLogGroup = props.useExistingResources

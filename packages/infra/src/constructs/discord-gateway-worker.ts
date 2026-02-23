@@ -54,6 +54,13 @@ export interface DiscordGatewayWorkerProps {
    * Secrets Manager prefix (e.g., "swarm" or "swarm-abcdef")
    */
   secretPrefix?: string;
+
+  /**
+   * Desired number of running tasks.
+   * Set to 0 for staging to avoid idle ECS cost when there is no activity.
+   * @default 1
+   */
+  desiredCount?: number;
 }
 
 export class DiscordGatewayWorker extends Construct {
@@ -135,11 +142,12 @@ export class DiscordGatewayWorker extends Construct {
       })
     );
 
-    // Service — always-on, single task (one worker handles all bots)
+    // Service — always-on, single task (one worker handles all bots).
+    // desiredCount defaults to 1 but can be set to 0 for staging to avoid idle cost.
     this.service = new ecs.FargateService(this, 'Service', {
       cluster,
       taskDefinition: this.taskDefinition,
-      desiredCount: 1,
+      desiredCount: props.desiredCount ?? 1,
       minHealthyPercent: 0,
       maxHealthyPercent: 200,
       assignPublicIp: true, // Required for pulling images and reaching Discord API
