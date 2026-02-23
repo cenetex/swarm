@@ -543,6 +543,36 @@ function getFailedJobs(pendingJobs?: ChatMessageType['pendingJobs']) {
   return pendingJobs.filter(job => job.status === 'failed');
 }
 
+/**
+ * Tools that are auto-executed and don't require user interaction.
+ * These are filtered out of the interactive tool prompt list.
+ */
+export const AUTO_EXECUTED_TOOLS = [
+  'generate_image',
+  'generate_video',
+  'generate_sticker',
+  'get_my_gallery',
+  'send_gallery_image',
+  'search_gallery',
+  'send_voice_message',
+  'create_my_voice',
+  'update_my_profile',
+];
+
+/**
+ * Filter tool calls to only those that should render as interactive prompts.
+ * A tool call is interactive if:
+ * 1. It is NOT in the auto-executed tools list, AND
+ * 2. Its status is 'pending' (completed/failed tool calls should not show prompts)
+ */
+export function getInteractiveToolCalls(
+  toolCalls: ChatMessageType['toolCalls'],
+): NonNullable<ChatMessageType['toolCalls']> {
+  return toolCalls?.filter(tc =>
+    !AUTO_EXECUTED_TOOLS.includes(tc.name) && tc.status === 'pending'
+  ) ?? [];
+}
+
 function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const hasPendingTools = message.toolCalls?.some(tc => tc.status === 'pending');
@@ -612,9 +642,8 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
       r.type !== 'twitter_status' && r.type !== 'model_list' && r.type !== 'unknown'
   );
   
-  // Filter out auto-executed tools that don't need user input for interactive display
-  const autoExecutedTools = ['generate_image', 'generate_video', 'generate_sticker', 'get_my_gallery', 'send_voice_message', 'create_my_voice', 'update_my_profile'];
-  const interactiveToolCalls = message.toolCalls?.filter(tc => !autoExecutedTools.includes(tc.name)) ?? [];
+  // Filter out auto-executed and non-pending tools from interactive display
+  const interactiveToolCalls = getInteractiveToolCalls(message.toolCalls);
   
   // Don't render empty bubbles - check if there's any visible content
   const hasVisibleContent = 
