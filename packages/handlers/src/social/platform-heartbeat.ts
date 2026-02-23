@@ -540,7 +540,17 @@ export const handler: ScheduledHandler = async (_event, context: Context) => {
   });
 
   // Get all avatars from ADMIN_TABLE
-  const avatars = await getActiveAvatars();
+  let avatars: HeartbeatAvatar[];
+  try {
+    avatars = await getActiveAvatars();
+  } catch (error) {
+    logger.error('Failed to load avatars from ADMIN_TABLE', error instanceof Error ? error : undefined, {
+      subsystem: 'platform-heartbeat',
+      event: 'avatar_scan_failed',
+      adminTable: process.env.ADMIN_TABLE,
+    });
+    return;
+  }
 
   logger.info('Found avatars', {
     count: avatars.length,
