@@ -177,7 +177,7 @@ Pre-commit and pre-push hooks run automatically — you rarely need to run check
 
 | Hook | What it does | Skip with |
 |------|-------------|-----------|
-| **pre-commit** | Lockfile check, `pnpm lint`, issue scan (blocks on unreviewed critical issues) | `SKIP_PRECOMMIT=1` |
+| **pre-commit** | Lockfile check, `pnpm lint` | `SKIP_PRECOMMIT=1` |
 | **pre-push** | `pnpm lint`, `pnpm build`, admin-ui build, Privy smoke test, `bun test` | `SKIP_PREPUSH=1` |
 
 ## CI/CD Pipeline

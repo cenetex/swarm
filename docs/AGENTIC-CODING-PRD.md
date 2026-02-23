@@ -33,7 +33,7 @@ Current-state note:
 - Local gatekeeping exists via .husky/pre-commit and .husky/pre-push.
 - Operational and debugging scripts already exist (scripts/test-api.sh, scripts/avatar-logs.sh, scripts/avatar-inspect.sh).
 - Browser and UI smoke capabilities exist (scripts/test-browser.mjs, scripts/smoke-admin-ui.mjs).
-- Issue tracking and labeling automation exists (.github/workflows/issue-management.yml and docs/ISSUE_REVIEW_LOG.md flow).
+- Issue tracking and labeling automation exists (.github/workflows/issue-management.yml).
 - GitHub issue creation/assignment automation exists (scripts/gh-create-issue.sh and scripts/gh-assign-copilot.sh).
 - Avatar/automation issue intake already exists via POST /issues (packages/admin-api/src/handlers/issues.ts) backed by deduplicated auto-issues storage (packages/admin-api/src/services/auto-issues.ts).
 
@@ -193,8 +193,8 @@ Formalize the loop:
 Integrate with existing issue mechanisms:
 
 - issues/staging/
-- docs/ISSUE_REVIEW_LOG.md
 - .github/workflows/issue-management.yml
+- GitHub Issues (authoritative source of truth)
 
 Add weekly KPI reporting command:
 
