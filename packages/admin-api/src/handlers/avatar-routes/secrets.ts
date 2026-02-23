@@ -12,12 +12,21 @@ import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { logger } from '@swarm/core';
 import * as avatarService from '../../services/avatars.js';
 import * as secretsService from '../../services/secrets.js';
+import * as auditLogService from '../../services/audit-log.js';
+import type { ActorType } from '../../services/audit-log.js';
 import { parseJsonBody } from '../../http/request-body.js';
 import * as telegramService from '../../services/telegram.js';
 import * as discordService from '../../services/discord.js';
 import { setupTelegramIntegration } from '../../services/telegram-admin.js';
 import { validateReplicateApiKey } from '../../services/replicate.js';
 import { SecretType } from '../../types.js';
+
+/**
+ * Resolve actor type from context: admin or owner.
+ */
+function resolveActorType(effectiveIsAdmin: boolean): ActorType {
+  return effectiveIsAdmin ? 'admin' : 'owner';
+}
 
 export async function handleSecretsRoutes(
   ctx: RouteContext,
@@ -122,6 +131,25 @@ export async function handleSecretsRoutes(
         session,
         `${normalizedKey} for avatar ${avatarId}`,
       );
+    }
+
+    // Audit: record secret set operation (log key name only, never the value)
+    try {
+      const actorId = ctx.walletAddress || session.email || 'unknown';
+      await auditLogService.recordAuditEvent({
+        avatarId,
+        eventType: 'secret_set',
+        actorId,
+        actorType: resolveActorType(ctx.effectiveIsAdmin),
+        details: {
+          secretKey: normalizedKey,
+        },
+      });
+    } catch (err) {
+      logger.warn('Failed to record secret set audit event', {
+        avatarId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     return {
