@@ -152,6 +152,23 @@ const stackEnv = {
 };
 
 // ============================================
+// Deploy Validation
+// ============================================
+
+// Persistent environments (prod, staging) have pre-existing shared resources
+// (DynamoDB tables, S3 buckets, ECS clusters) from the legacy monolith stack.
+// Deploying without useExistingResources=true would attempt to create duplicate
+// resources and fail with "already exists" errors.
+if ((environment === 'prod' || environment === 'staging') && !useExistingResources) {
+  console.warn(
+    `⚠️  WARNING: Deploying to '${environment}' without useExistingResources=true. ` +
+    `This will attempt to create DynamoDB tables, S3 buckets, and ECS clusters that ` +
+    `may already exist from the legacy SwarmStack-${environment}. ` +
+    `Set -c useExistingResources=true or configure it in cdk.context.json.`
+  );
+}
+
+// ============================================
 // Split Stacks for Parallel Deployment
 // ============================================
 
