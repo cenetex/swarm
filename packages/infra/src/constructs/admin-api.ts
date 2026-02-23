@@ -636,13 +636,16 @@ export class AdminApiConstruct extends Construct {
         ? logs.RetentionDays.TWO_WEEKS
         : logs.RetentionDays.ONE_WEEK;
 
-    const accessLogGroup = new logs.LogGroup(this, 'ApiAccessLogs', {
-      logGroupName: `/aws/apigateway/SwarmAdminApi-${environment}${suffix}-access-logs`,
-      retention: accessLogRetention,
-      removalPolicy: isPersistentEnv
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
-    });
+    const accessLogGroupName = `/aws/apigateway/SwarmAdminApi-${environment}${suffix}-access-logs`;
+    const accessLogGroup = props.useExistingResources
+      ? logs.LogGroup.fromLogGroupName(this, 'ApiAccessLogs', accessLogGroupName)
+      : new logs.LogGroup(this, 'ApiAccessLogs', {
+          logGroupName: accessLogGroupName,
+          retention: accessLogRetention,
+          removalPolicy: isPersistentEnv
+            ? cdk.RemovalPolicy.RETAIN
+            : cdk.RemovalPolicy.DESTROY,
+        });
 
     // Apply throttling and access logging to the default stage
     const defaultStage = this.api.defaultStage?.node.defaultChild as cdk.CfnResource | undefined;
