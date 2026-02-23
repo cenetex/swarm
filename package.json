@@ -8,7 +8,8 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "pnpm -r build",
+    "build": "tsc --build && cp packages/handlers/package.json packages/handlers/dist/ && pnpm --filter @swarm/admin-ui build && pnpm --filter @swarm/profile-page build",
+    "build:ts": "tsc --build",
     "build:parallel": "pnpm -r --parallel build",
     "typecheck": "pnpm -r --parallel typecheck",
     "dev": "pnpm -r --parallel dev",

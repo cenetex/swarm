@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/mcp-server" },
+    { "path": "packages/handlers" },
+    { "path": "packages/admin-api" },
+    { "path": "packages/infra" },
+    { "path": "packages/claude-code-worker" }
+  ]
+}

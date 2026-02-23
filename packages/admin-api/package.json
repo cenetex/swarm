@@ -5,9 +5,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --build",
     "typecheck": "tsc --noEmit",
-    "watch": "tsc --watch",
+    "watch": "tsc --build --watch",
     "test": "bun test",
     "lint": "eslint src/",
     "test:tools": "tsx src/test-tool-calling.ts --direct --aws",

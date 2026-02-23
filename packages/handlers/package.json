@@ -5,9 +5,10 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
-    "build": "tsc && cp package.json dist/",
+    "build": "tsc --build && cp package.json dist/",
+    "postbuild:ts": "cp package.json dist/",
     "typecheck": "tsc --noEmit",
-    "watch": "tsc --watch",
+    "watch": "tsc --build --watch",
     "test": "bun test",
     "lint": "eslint src/"
   },
