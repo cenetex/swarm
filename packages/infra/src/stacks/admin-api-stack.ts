@@ -360,6 +360,19 @@ export class AdminApiStack extends cdk.Stack {
         description: 'Admin API endpoint URL for cross-stack consumption',
       });
 
+      // Backward-compat: preserve the CDK auto-generated cross-stack export that
+      // the old AdminUiStack consumed via Fn::ImportValue. The new code reads from
+      // SSM, but already-deployed SwarmUi stacks still hold the import until they
+      // are updated. Removing this export before SwarmUi deploys causes
+      // "Cannot delete export ... as it is in use" failures.
+      // Safe to remove once both stacks have deployed with the SSM-based flow.
+      const legacyExportName = `${this.stackName}:ExportsOutputFnGetAttAdminApi2FF51FB1ApiEndpoint9B063669`;
+      const legacyExport = new cdk.CfnOutput(this, 'LegacyApiEndpointExport', {
+        value: this.adminApi.apiEndpoint,
+        exportName: legacyExportName,
+      });
+      legacyExport.overrideLogicalId('ExportsOutputFnGetAttAdminApi2FF51FB1ApiEndpoint9B063669');
+
       // SharedHandlers receives ADMIN_TABLE directly via `adminTable` above.
       // Keep this stack focused on Admin API construct wiring.
     }
