@@ -24,6 +24,7 @@ import { ensureReplicateKey } from '../utils/system-replicate-key.js';
 import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../services/sqs-send.js';
 import { checkMediaWithEnergyFallback } from '../services/entitlement-enforcement.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
+import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 
 // Schema for media queue items
 const MediaQueueItemSchema = z.object({
@@ -233,9 +234,7 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarMediaRuntime> {
     secrets: ['OPENROUTER_API_KEY', 'REPLICATE_API_KEY'],
   };
 
-  const secrets = await secretsService.getSecretJson<Record<string, string>>(
-    `${SECRET_PREFIX}/${avatarId}/secrets`
-  ) || {};
+  const secrets = await loadAvatarSecrets(secretsService, avatarId, SECRET_PREFIX);
 
   try {
     const ok = await ensureReplicateKey(secrets, secretsService);
