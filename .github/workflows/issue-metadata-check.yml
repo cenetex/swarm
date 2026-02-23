@@ -1,0 +1,178 @@
+name: Issue Metadata Check
+
+on:
+  issues:
+    types: [opened, edited, labeled, unlabeled]
+
+permissions:
+  issues: write
+
+jobs:
+  check-metadata:
+    name: Validate Issue Labels
+    runs-on: ubuntu-latest
+    # Skip pull-request-like issues (they have no labels to govern)
+    if: ${{ !github.event.issue.pull_request }}
+
+    steps:
+      - name: Check issue metadata contract
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+
+          REPO="${{ github.repository }}"
+
+          # ── Fetch current labels ───────────────────────────────────
+          LABELS=$(gh issue view "$ISSUE_NUMBER" \
+            --repo "$REPO" \
+            --json labels \
+            --jq '[.labels[].name]')
+
+          echo "Issue #$ISSUE_NUMBER labels: $LABELS"
+
+          # ── Count labels by prefix ─────────────────────────────────
+          TYPE_LABELS=$(echo "$LABELS" | jq '[.[] | select(startswith("type:"))]')
+          PRIORITY_LABELS=$(echo "$LABELS" | jq '[.[] | select(startswith("priority:"))]')
+          PACKAGE_LABELS=$(echo "$LABELS" | jq '[.[] | select(startswith("package:"))]')
+
+          TYPE_COUNT=$(echo "$TYPE_LABELS" | jq 'length')
+          PRIORITY_COUNT=$(echo "$PRIORITY_LABELS" | jq 'length')
+          PACKAGE_COUNT=$(echo "$PACKAGE_LABELS" | jq 'length')
+
+          echo "Type labels ($TYPE_COUNT): $TYPE_LABELS"
+          echo "Priority labels ($PRIORITY_COUNT): $PRIORITY_LABELS"
+          echo "Package labels ($PACKAGE_COUNT): $PACKAGE_LABELS"
+
+          # ── Exception policy for package:* ─────────────────────────
+          # Issues with these type labels are exempt from package:* requirement:
+          #   type:docs       — governance, documentation, cross-cutting
+          #   type:ci         — CI/CD changes often span packages
+          #   type:security   — security issues may be cross-cutting
+          #
+          # Issues with "metadata-exempt" label are also exempt from all checks.
+
+          METADATA_EXEMPT=$(echo "$LABELS" | jq 'any(. == "metadata-exempt")')
+          if [[ "$METADATA_EXEMPT" == "true" ]]; then
+            echo "Issue #$ISSUE_NUMBER has 'metadata-exempt' label — skipping all checks."
+            exit 0
+          fi
+
+          PACKAGE_EXEMPT_TYPES='["type:docs", "type:ci", "type:security"]'
+          PACKAGE_EXEMPT=$(echo "$TYPE_LABELS" | jq \
+            --argjson exempt "$PACKAGE_EXEMPT_TYPES" \
+            'any(. as $t | $exempt | any(. == $t))')
+
+          # ── Auto-label from issue body Package dropdown ────────────
+          # Issue form dropdowns render as "### Label\n\nValue" in the body.
+          # Extract the Package field value and apply corresponding label.
+          auto_label_package() {
+            local body="$1"
+
+            # Match the Package dropdown: "### Package\n\n<value>"
+            # Using grep + awk to extract the value after "### Package"
+            local pkg_value
+            pkg_value=$(echo "$body" | awk '
+              /^### Package/ { found=1; next }
+              found && /^[[:space:]]*$/ { next }
+              found && /^###/ { found=0; next }
+              found { print; found=0 }
+            ' | tr -d '[:space:]')
+
+            if [[ -z "$pkg_value" ]]; then
+              echo ""
+              return
+            fi
+
+            # Map dropdown values to package:* labels
+            case "$pkg_value" in
+              core|handlers|admin-api|admin-ui|infra|mcp-server|profile-page|claude-code-worker|layer)
+                echo "package:$pkg_value"
+                ;;
+              unknown|none|multiple/other|multiple/all)
+                # These selections don't map to a specific package label
+                echo ""
+                ;;
+              *)
+                echo ""
+                ;;
+            esac
+          }
+
+          # Attempt auto-labeling if no package labels exist
+          if [[ "$PACKAGE_COUNT" -eq 0 && "$PACKAGE_EXEMPT" != "true" ]]; then
+            AUTO_LABEL=$(auto_label_package "$ISSUE_BODY")
+            if [[ -n "$AUTO_LABEL" ]]; then
+              echo "Auto-applying label: $AUTO_LABEL"
+              gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "$AUTO_LABEL"
+              PACKAGE_COUNT=1
+              PACKAGE_LABELS="[\"$AUTO_LABEL\"]"
+              echo "Package label auto-applied from issue form dropdown."
+            fi
+          fi
+
+          # ── Collect violations ─────────────────────────────────────
+          ERRORS=()
+
+          if [[ "$TYPE_COUNT" -eq 0 ]]; then
+            ERRORS+=("**Missing \`type:*\` label.** Every issue must have exactly one type label (e.g., \`type:bug\`, \`type:feature\`, \`type:chore\`).")
+          elif [[ "$TYPE_COUNT" -gt 1 ]]; then
+            ERRORS+=("**Multiple \`type:*\` labels found: $TYPE_LABELS.** Please keep exactly one.")
+          fi
+
+          if [[ "$PRIORITY_COUNT" -eq 0 ]]; then
+            ERRORS+=("**Missing \`priority:*\` label.** Every issue must have exactly one priority label (e.g., \`priority:high\`, \`priority:medium\`, \`priority:low\`).")
+          elif [[ "$PRIORITY_COUNT" -gt 1 ]]; then
+            ERRORS+=("**Multiple \`priority:*\` labels found: $PRIORITY_LABELS.** Please keep exactly one.")
+          fi
+
+          if [[ "$PACKAGE_COUNT" -eq 0 && "$PACKAGE_EXEMPT" != "true" ]]; then
+            ERRORS+=("**Missing \`package:*\` label.** Issues must have at least one package label (e.g., \`package:core\`, \`package:admin-api\`). If this issue is cross-cutting, add \`type:docs\`, \`type:ci\`, or \`type:security\` to exempt it, or add the \`metadata-exempt\` label.")
+          fi
+
+          # ── Report results ─────────────────────────────────────────
+          if [[ ${#ERRORS[@]} -eq 0 ]]; then
+            echo "All metadata checks passed."
+            exit 0
+          fi
+
+          echo "::error::Issue #$ISSUE_NUMBER has metadata violations."
+
+          # Build comment body
+          COMMENT_BODY="## Issue Metadata Check Failed"
+          COMMENT_BODY+=$'\n\nThis issue is missing required labels. Please fix the following:\n'
+          for err in "${ERRORS[@]}"; do
+            COMMENT_BODY+=$'\n'"- $err"
+          done
+          COMMENT_BODY+=$'\n\n---\n'
+          COMMENT_BODY+=$'\n<details>\n<summary>Label requirements</summary>\n'
+          COMMENT_BODY+=$'\n| Category | Requirement | Valid labels |'
+          COMMENT_BODY+=$'\n|----------|-------------|--------------|'
+          COMMENT_BODY+=$'\n| Type | Exactly one | `type:bug`, `type:feature`, `type:chore`, `type:docs`, `type:infra`, `type:security`, `type:tech-debt` |'
+          COMMENT_BODY+=$'\n| Priority | Exactly one | `priority:high`, `priority:medium`, `priority:low` |'
+          COMMENT_BODY+=$'\n| Package | At least one* | `package:core`, `package:handlers`, `package:admin`, `package:infra`, etc. |'
+          COMMENT_BODY+=$'\n\n\\*Package labels are not required for `type:docs`, `type:ci`, or `type:security` issues, or issues with the `metadata-exempt` label.'
+          COMMENT_BODY+=$'\n\n</details>'
+          COMMENT_BODY+=$'\n\n*This check runs automatically when issues are created or labels change.*'
+
+          # Avoid duplicate comments: check if we already posted one
+          EXISTING_COMMENT=$(gh api \
+            "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+            --jq '[.[] | select(.body | startswith("## Issue Metadata Check Failed")) | .id] | last // empty')
+
+          if [[ -n "$EXISTING_COMMENT" ]]; then
+            echo "Updating existing metadata comment ($EXISTING_COMMENT)."
+            gh api \
+              --method PATCH \
+              "repos/$REPO/issues/$ISSUE_NUMBER/comments/$EXISTING_COMMENT" \
+              -f body="$COMMENT_BODY"
+          else
+            echo "Posting new metadata comment."
+            gh issue comment "$ISSUE_NUMBER" \
+              --repo "$REPO" \
+              --body "$COMMENT_BODY"
+          fi
+
+          exit 1
