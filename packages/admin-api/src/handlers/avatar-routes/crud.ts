@@ -10,11 +10,20 @@ import { logger } from '@swarm/core';
 import * as avatarService from '../../services/avatars.js';
 import * as galleryService from '../../services/gallery.js';
 import * as integrationsService from '../../services/integrations.js';
+import * as auditLogService from '../../services/audit-log.js';
+import type { ActorType } from '../../services/audit-log.js';
 import { parseJsonBody } from '../../http/request-body.js';
 import {
   resolveOnboardingRoutingDecision,
   type OnboardingRoutingDecision,
 } from '../../services/onboarding-rollout.js';
+
+/**
+ * Resolve actor type from context: admin or owner.
+ */
+function resolveActorType(effectiveIsAdmin: boolean): ActorType {
+  return effectiveIsAdmin ? 'admin' : 'owner';
+}
 
 // ── Profile-image hydration ────────────────────────────────────────────────
 
@@ -131,6 +140,26 @@ export async function handleCrudRoutes(
       }
 
       logger.info(`[Avatars] Created avatar=${result.avatar!.avatarId} by wallet=${walletAddress.slice(0, 8)}...`);
+
+      // Audit: record avatar creation
+      try {
+        await auditLogService.recordAuditEvent({
+          avatarId: result.avatar!.avatarId,
+          eventType: 'avatar_created',
+          actorId: walletAddress,
+          actorType: resolveActorType(effectiveIsAdmin),
+          details: {
+            name,
+            creationMethod: 'wallet',
+          },
+        });
+      } catch (err) {
+        logger.warn('Failed to record avatar creation audit event', {
+          avatarId: result.avatar!.avatarId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
       return jsonResponse(corsHeaders, 201, {
         ...result.avatar,
         onboarding: onboardingDiagnostics,
@@ -146,6 +175,25 @@ export async function handleCrudRoutes(
     }
 
     const avatar = await avatarService.createAvatar(name, session, description);
+
+    // Audit: record avatar creation (admin email-based)
+    try {
+      await auditLogService.recordAuditEvent({
+        avatarId: avatar.avatarId,
+        eventType: 'avatar_created',
+        actorId: session.email || 'unknown',
+        actorType: 'admin',
+        details: {
+          name,
+          creationMethod: 'email',
+        },
+      });
+    } catch (err) {
+      logger.warn('Failed to record avatar creation audit event', {
+        avatarId: avatar.avatarId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     return jsonResponse(corsHeaders, 201, {
       ...avatar,
@@ -208,6 +256,26 @@ export async function handleCrudRoutes(
         oldCreator: existing.creatorWallet?.slice(0, 8),
         newCreator: body.creatorWallet?.slice(0, 8),
       });
+
+      // Audit: record avatar reassignment
+      try {
+        await auditLogService.recordAuditEvent({
+          avatarId,
+          eventType: 'avatar_reassigned',
+          actorId: walletAddress || session.email || 'unknown',
+          actorType: 'admin',
+          details: {
+            previousOwner: existing.creatorWallet ?? null,
+            newOwner: body.creatorWallet ?? null,
+          },
+        });
+      } catch (auditErr) {
+        logger.warn('Failed to record avatar reassignment audit event', {
+          avatarId,
+          error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        });
+      }
+
       return jsonResponse(corsHeaders, 200, result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to reassign avatar';
@@ -281,6 +349,25 @@ export async function handleCrudRoutes(
 
       const avatar = await avatarService.updateAvatar(avatarId, body, session);
 
+      // Audit: record avatar update
+      try {
+        const actorId = walletAddress || session.email || 'unknown';
+        await auditLogService.recordAuditEvent({
+          avatarId,
+          eventType: 'avatar_updated',
+          actorId,
+          actorType: resolveActorType(effectiveIsAdmin),
+          details: {
+            updatedFields: Object.keys(body),
+          },
+        });
+      } catch (err) {
+        logger.warn('Failed to record avatar update audit event', {
+          avatarId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
       return {
         statusCode: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -301,6 +388,23 @@ export async function handleCrudRoutes(
       }
 
       await avatarService.deleteAvatar(avatarId, session);
+
+      // Audit: record avatar deletion
+      try {
+        const actorId = walletAddress || session.email || 'unknown';
+        await auditLogService.recordAuditEvent({
+          avatarId,
+          eventType: 'avatar_deleted',
+          actorId,
+          actorType: resolveActorType(effectiveIsAdmin),
+          details: {},
+        });
+      } catch (err) {
+        logger.warn('Failed to record avatar deletion audit event', {
+          avatarId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
 
       return {
         statusCode: 204,

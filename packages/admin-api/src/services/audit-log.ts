@@ -29,7 +29,12 @@ const AUDIT_TTL_SECONDS = 90 * 24 * 60 * 60;
 export type AuditEventType =
   | 'activated'
   | 'deactivated'
-  | 'entitlement_changed';
+  | 'entitlement_changed'
+  | 'avatar_created'
+  | 'avatar_updated'
+  | 'avatar_deleted'
+  | 'avatar_reassigned'
+  | 'secret_set';
 
 export type ActorType = 'admin' | 'owner';
 

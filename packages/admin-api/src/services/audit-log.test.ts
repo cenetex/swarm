@@ -128,6 +128,85 @@ describe('recordAuditEventWith', () => {
     expect(ttl).toBeLessThanOrEqual(after + ninetyDays);
   });
 
+  it('records avatar_created events', async () => {
+    const deps = makeMockDeps();
+    const result = await recordAuditEventWith(deps, {
+      avatarId: 'avatar-new',
+      eventType: 'avatar_created',
+      actorId: 'wallet-abc',
+      actorType: 'owner',
+      details: { name: 'My Avatar', creationMethod: 'wallet' },
+    });
+
+    expect(result.eventType).toBe('avatar_created');
+    expect(result.details.name).toBe('My Avatar');
+
+    const item = putItems[0];
+    expect(item.gsi1pk).toBe('AUDIT_TYPE#avatar_created');
+  });
+
+  it('records avatar_updated events', async () => {
+    const deps = makeMockDeps();
+    const result = await recordAuditEventWith(deps, {
+      avatarId: 'avatar-1',
+      eventType: 'avatar_updated',
+      actorId: 'admin@test.com',
+      actorType: 'admin',
+      details: { updatedFields: ['name', 'description'] },
+    });
+
+    expect(result.eventType).toBe('avatar_updated');
+    const item = putItems[0];
+    expect(item.gsi1pk).toBe('AUDIT_TYPE#avatar_updated');
+  });
+
+  it('records avatar_deleted events', async () => {
+    const deps = makeMockDeps();
+    const result = await recordAuditEventWith(deps, {
+      avatarId: 'avatar-del',
+      eventType: 'avatar_deleted',
+      actorId: 'admin@test.com',
+      actorType: 'admin',
+      details: {},
+    });
+
+    expect(result.eventType).toBe('avatar_deleted');
+    const item = putItems[0];
+    expect(item.gsi1pk).toBe('AUDIT_TYPE#avatar_deleted');
+  });
+
+  it('records avatar_reassigned events', async () => {
+    const deps = makeMockDeps();
+    const result = await recordAuditEventWith(deps, {
+      avatarId: 'avatar-1',
+      eventType: 'avatar_reassigned',
+      actorId: 'admin@test.com',
+      actorType: 'admin',
+      details: { previousOwner: 'wallet-old', newOwner: 'wallet-new' },
+    });
+
+    expect(result.eventType).toBe('avatar_reassigned');
+    expect(result.details.previousOwner).toBe('wallet-old');
+    const item = putItems[0];
+    expect(item.gsi1pk).toBe('AUDIT_TYPE#avatar_reassigned');
+  });
+
+  it('records secret_set events', async () => {
+    const deps = makeMockDeps();
+    const result = await recordAuditEventWith(deps, {
+      avatarId: 'avatar-1',
+      eventType: 'secret_set',
+      actorId: 'wallet-abc',
+      actorType: 'owner',
+      details: { secretKey: 'openai_api_key' },
+    });
+
+    expect(result.eventType).toBe('secret_set');
+    expect(result.details.secretKey).toBe('openai_api_key');
+    const item = putItems[0];
+    expect(item.gsi1pk).toBe('AUDIT_TYPE#secret_set');
+  });
+
   it('generates unique IDs for each event', async () => {
     const deps = makeMockDeps();
     const r1 = await recordAuditEventWith(deps, {

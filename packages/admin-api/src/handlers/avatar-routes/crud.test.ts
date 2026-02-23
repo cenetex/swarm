@@ -23,6 +23,7 @@ const deleteAvatarCalls: unknown[][] = [];
 let reassignAvatarResult: unknown = {};
 let integrationStatusesResult: unknown = [];
 let galleryProfileResult: unknown = null;
+let recordAuditEventCalls: unknown[] = [];
 let onboardingRoutingDecision: unknown = {
   onboardingVersion: 'v1',
   reason: 'disabled',
@@ -65,6 +66,13 @@ vi.mock('../../services/onboarding-rollout.js', () => ({
   resolveOnboardingRoutingDecision: async () => onboardingRoutingDecision,
 }));
 
+vi.mock('../../services/audit-log.js', () => ({
+  recordAuditEvent: async (params: unknown) => {
+    recordAuditEventCalls.push(params);
+    return { id: 'audit-mock', ...params as Record<string, unknown>, timestamp: Date.now() };
+  },
+}));
+
 vi.mock('@swarm/core', () => ({
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
 }));
@@ -84,6 +92,7 @@ beforeEach(() => {
   reassignAvatarResult = {};
   integrationStatusesResult = [];
   galleryProfileResult = null;
+  recordAuditEventCalls = [];
   onboardingRoutingDecision = {
     onboardingVersion: 'v1',
     reason: 'disabled',
@@ -375,6 +384,142 @@ describe('GET /avatars/{id}/integrations', () => {
     expect(result!.statusCode).toBe(200);
     const body = parseBody(result!) as { integrations: unknown[] };
     expect(body.integrations).toHaveLength(1);
+  });
+});
+
+// =========================================================================
+// Audit logging on avatar create (wallet)
+// =========================================================================
+describe('audit logging on avatar create (wallet)', () => {
+  it('records avatar_created audit event on wallet creation', async () => {
+    createAvatarWithWalletResult = { success: true, avatar: { avatarId: 'new-1', name: 'My Avatar' } };
+    const ctx = makeCtx({
+      method: 'POST',
+      path: '/avatars',
+      body: JSON.stringify({ name: 'My Avatar' }),
+      walletAddress: 'wallet-1',
+      effectiveIsAdmin: false,
+    });
+    const result = await handleCrudRoutes(ctx);
+    expect(result!.statusCode).toBe(201);
+    expect(recordAuditEventCalls.length).toBe(1);
+    const call = recordAuditEventCalls[0] as Record<string, unknown>;
+    expect(call.avatarId).toBe('new-1');
+    expect(call.eventType).toBe('avatar_created');
+    expect(call.actorId).toBe('wallet-1');
+    expect(call.actorType).toBe('owner');
+    const details = call.details as Record<string, unknown>;
+    expect(details.name).toBe('My Avatar');
+    expect(details.creationMethod).toBe('wallet');
+  });
+
+  it('does not record audit event when wallet creation fails', async () => {
+    createAvatarWithWalletResult = { success: false, error: 'no_gate_slot', gateStatus: {} };
+    const ctx = makeCtx({
+      method: 'POST',
+      path: '/avatars',
+      body: JSON.stringify({ name: 'My Avatar' }),
+      walletAddress: 'wallet-1',
+      effectiveIsAdmin: false,
+    });
+    const result = await handleCrudRoutes(ctx);
+    expect(result!.statusCode).toBe(403);
+    expect(recordAuditEventCalls.length).toBe(0);
+  });
+});
+
+// =========================================================================
+// Audit logging on avatar create (admin email)
+// =========================================================================
+describe('audit logging on avatar create (admin email)', () => {
+  it('records avatar_created audit event on admin creation', async () => {
+    createAvatarResult = { avatarId: 'admin-new-1', name: 'Admin Avatar' };
+    const ctx = makeCtx({
+      method: 'POST',
+      path: '/avatars',
+      body: JSON.stringify({ name: 'Admin Avatar' }),
+      walletAddress: null,
+      effectiveIsAdmin: true,
+    });
+    const result = await handleCrudRoutes(ctx);
+    expect(result!.statusCode).toBe(201);
+    expect(recordAuditEventCalls.length).toBe(1);
+    const call = recordAuditEventCalls[0] as Record<string, unknown>;
+    expect(call.avatarId).toBe('admin-new-1');
+    expect(call.eventType).toBe('avatar_created');
+    expect(call.actorType).toBe('admin');
+    const details = call.details as Record<string, unknown>;
+    expect(details.creationMethod).toBe('email');
+  });
+});
+
+// =========================================================================
+// Audit logging on avatar update
+// =========================================================================
+describe('audit logging on avatar update', () => {
+  it('records avatar_updated audit event', async () => {
+    updateAvatarResult = { ...MOCK_AVATAR, name: 'Updated' };
+    const ctx = makeCtx({
+      method: 'PUT',
+      path: '/avatars/avatar-1',
+      body: JSON.stringify({ name: 'Updated', description: 'New desc' }),
+      effectiveIsAdmin: true,
+    });
+    const result = await handleCrudRoutes(ctx);
+    expect(result!.statusCode).toBe(200);
+    expect(recordAuditEventCalls.length).toBe(1);
+    const call = recordAuditEventCalls[0] as Record<string, unknown>;
+    expect(call.avatarId).toBe('avatar-1');
+    expect(call.eventType).toBe('avatar_updated');
+    expect(call.actorType).toBe('admin');
+    const details = call.details as Record<string, unknown>;
+    expect(details.updatedFields).toEqual(['name', 'description']);
+  });
+});
+
+// =========================================================================
+// Audit logging on avatar delete
+// =========================================================================
+describe('audit logging on avatar delete', () => {
+  it('records avatar_deleted audit event', async () => {
+    const ctx = makeCtx({
+      method: 'DELETE',
+      path: '/avatars/avatar-1',
+      effectiveIsAdmin: true,
+    });
+    const result = await handleCrudRoutes(ctx);
+    expect(result!.statusCode).toBe(204);
+    expect(recordAuditEventCalls.length).toBe(1);
+    const call = recordAuditEventCalls[0] as Record<string, unknown>;
+    expect(call.avatarId).toBe('avatar-1');
+    expect(call.eventType).toBe('avatar_deleted');
+    expect(call.actorType).toBe('admin');
+  });
+});
+
+// =========================================================================
+// Audit logging on avatar reassign
+// =========================================================================
+describe('audit logging on avatar reassign', () => {
+  it('records avatar_reassigned audit event', async () => {
+    getAvatarResult = { ...MOCK_AVATAR, creatorWallet: 'wallet-old' };
+    reassignAvatarResult = { ...MOCK_AVATAR, creatorWallet: 'wallet-new' };
+    const ctx = makeCtx({
+      method: 'PUT',
+      path: '/avatars/avatar-1/reassign',
+      body: JSON.stringify({ creatorWallet: 'wallet-new' }),
+      effectiveIsAdmin: true,
+    });
+    const result = await handleCrudRoutes(ctx);
+    expect(result!.statusCode).toBe(200);
+    expect(recordAuditEventCalls.length).toBe(1);
+    const call = recordAuditEventCalls[0] as Record<string, unknown>;
+    expect(call.avatarId).toBe('avatar-1');
+    expect(call.eventType).toBe('avatar_reassigned');
+    expect(call.actorType).toBe('admin');
+    const details = call.details as Record<string, unknown>;
+    expect(details.previousOwner).toBe('wallet-old');
+    expect(details.newOwner).toBe('wallet-new');
   });
 });
 
