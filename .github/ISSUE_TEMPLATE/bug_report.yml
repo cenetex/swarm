@@ -1,7 +1,7 @@
 name: Bug Report
 description: Report a bug in AWS Swarm
 title: "[Bug]: "
-labels: ["type:bug"]
+labels: ["type:bug", "priority:medium"]
 assignees: []
 
 body:
@@ -21,6 +21,10 @@ body:
         - admin-api
         - admin-ui
         - infra
+        - mcp-server
+        - profile-page
+        - claude-code-worker
+        - layer
         - unknown
     validations:
       required: true

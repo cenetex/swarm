@@ -1,7 +1,7 @@
 name: Task
 description: A development task or chore
 title: "[Task]: "
-labels: ["type:chore"]
+labels: ["type:chore", "priority:medium"]
 assignees: []
 
 body:
@@ -36,6 +36,10 @@ body:
         - admin-api
         - admin-ui
         - infra
+        - mcp-server
+        - profile-page
+        - claude-code-worker
+        - layer
         - multiple/all
         - none
     validations:

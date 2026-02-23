@@ -21,6 +21,10 @@ body:
         - admin-api
         - admin-ui
         - infra
+        - mcp-server
+        - profile-page
+        - claude-code-worker
+        - layer
         - multiple/other
     validations:
       required: true
