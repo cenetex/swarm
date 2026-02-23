@@ -19,3 +19,4 @@ export { PublicChatPage } from './PublicChatPage';
 export { SharedChatPanel } from './SharedChatPanel';
 export { ConsentBanner } from './ConsentBanner';
 export { PrivacyPolicy } from './PrivacyPolicy';
+export { ErrorBoundary } from './ErrorBoundary';
