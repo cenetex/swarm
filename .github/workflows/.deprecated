@@ -10,3 +10,25 @@ deploy-single-agent.yml — Removed because per-agent deployment is handled
   by the main deploy.yml workflow. A separate single-agent workflow
   introduced maintenance burden, divergent deploy logic, and risk of
   configuration drift. See issue #132 for details.
+
+release-gate.yml — Merged into ci.yml. The PR-only CI workflow now
+  serves as the single required status check (lint + build + test gate).
+  Eliminates duplicate jobs that ran identically on both PR and merge.
+
+codeql.yml — Removed. GitHub's built-in Code Security / code scanning
+  covers the same ground without a dedicated workflow file.
+
+dependency-review.yml — Removed. Dependabot alerts provide equivalent
+  coverage for dependency vulnerability scanning.
+
+project-sync.yml — Removed. Excessive event triggers and unused project
+  board created unnecessary Actions minute consumption. Associated scripts
+  (project-sync.mjs, project-sync-close.mjs, project-sync-reconcile.mjs,
+  wip-cap-check.mjs) and policies (wip-cap-policy.json) also removed.
+
+cost-activity-report.yml — Removed. The underlying script
+  (scripts/cost-activity-report.sh) remains available for local use.
+
+sync-runtime-issues.yml — Removed. The cron was already disabled. The
+  underlying script remains available for local use. Associated policy
+  (internal-issue-sync-policy.json) also removed.
