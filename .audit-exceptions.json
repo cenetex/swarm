@@ -1,9 +1,11 @@
 {
+  "$schema": "./.audit-exceptions.schema.json",
   "ignoredAdvisories": [
     "GHSA-3gc7-fjrx-p6mg"
   ],
   "exceptions": [
     {
+      "id": "SE-001",
       "advisory": "GHSA-3gc7-fjrx-p6mg",
       "cve": "CVE-2025-3194",
       "npmAdvisoryId": 1103747,
@@ -13,12 +15,17 @@
       "title": "Buffer Overflow via toBigIntLE() Function",
       "dependencyChain": "@solana/spl-token@0.4.14 > @solana/buffer-layout-utils@0.2.0 > bigint-buffer@1.1.5",
       "affectedPackages": ["@swarm/core", "@swarm/admin-api"],
+      "owner": "infra",
       "reason": "No patched version exists (all versions <= 1.1.5 affected, firstPatchedVersion: null). The vulnerable toBigIntLE()/toBigIntBE() functions are not called directly in our codebase. bigint-buffer is only pulled in as a transitive dependency through the Solana SDK chain. @solana/spl-token@0.4.14 is the latest stable release and still depends on @solana/buffer-layout-utils@^0.2.0 which requires bigint-buffer. The vulnerability requires attacker-controlled input to toBigIntLE() to trigger a buffer overflow crash (DoS, not RCE). Our usage of @solana/spl-token is limited to token account queries and does not process untrusted bigint data through this path.",
+      "mitigation": "Vulnerable code path (toBigIntLE) is never called. Dependency is only pulled in transitively by @solana/buffer-layout-utils which uses toBigIntBE exclusively.",
       "mitigations": [
         "CVE ignored via pnpm.auditConfig.ignoreCves in package.json",
         "Security audit added to CI pipeline to catch new vulnerabilities",
         "No direct usage of bigint-buffer APIs in application code"
       ],
+      "expiry": "2026-05-01",
+      "reviewCadence": "monthly",
+      "status": "active",
       "dateAdded": "2026-02-16",
       "lastReviewed": "2026-02-23",
       "reviewBy": "2026-05-01"

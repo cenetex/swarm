@@ -1,0 +1,98 @@
+name: Security Exception Review
+
+on:
+  schedule:
+    # Every Monday at 09:00 UTC
+    - cron: '0 9 * * 1'
+
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  check-exceptions:
+    name: Validate Security Exceptions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Validate security exceptions
+        id: validate
+        run: |
+          set +e
+          OUTPUT=$(node scripts/validate-security-exceptions.mjs --warn-days 14 --ci 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          # Store output for issue body (escape for GH Actions)
+          {
+            echo "report<<REPORT_EOF"
+            echo "$OUTPUT"
+            echo "REPORT_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Create issue for expired or expiring exceptions
+        if: steps.validate.outputs.exit_code != '0'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            const title = 'Security exception(s) expired or expiring soon';
+            const label = 'type:security';
+
+            // Check for existing open issue with the same title
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+            });
+
+            const duplicate = existing.data.find(i => i.title === title);
+            if (duplicate) {
+              console.log(`Issue #${duplicate.number} already exists — updating comment.`);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: duplicate.number,
+                body: `## Weekly Security Exception Check — ${new Date().toISOString().slice(0, 10)}\n\n\`\`\`\n${process.env.REPORT}\n\`\`\``,
+              });
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              labels: [label, 'priority:high'],
+              body: [
+                '## Security Exception Registry Alert',
+                '',
+                'The weekly security exception validation found issues that need attention.',
+                '',
+                '```',
+                process.env.REPORT,
+                '```',
+                '',
+                '### Action Required',
+                '',
+                '- Review each expired exception in `.audit-exceptions.json`',
+                '- Either **renew** the exception with a new expiry date (and updated rationale), or **resolve** it',
+                '- Run `node scripts/validate-security-exceptions.mjs` locally to verify',
+              ].join('\n'),
+            });
+        env:
+          REPORT: ${{ steps.validate.outputs.report }}

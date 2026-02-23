@@ -39,6 +39,9 @@ jobs:
       - name: Check circular dependencies
         run: pnpm check:circular
 
+      - name: Validate security exceptions
+        run: node scripts/validate-security-exceptions.mjs --ci
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest

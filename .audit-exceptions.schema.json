@@ -1,0 +1,136 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Security Exception Registry",
+  "description": "Machine-readable registry of security audit exceptions with expiry enforcement",
+  "type": "object",
+  "required": ["exceptions"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "ignoredAdvisories": {
+      "type": "array",
+      "description": "Advisory IDs to ignore in pnpm audit (kept for backward compatibility with audit-with-exceptions.sh)",
+      "items": {
+        "type": "string"
+      }
+    },
+    "exceptions": {
+      "type": "array",
+      "description": "Documented security exceptions with required metadata",
+      "items": {
+        "type": "object",
+        "required": ["id", "advisory", "package", "severity", "owner", "rationale", "mitigation", "expiry", "reviewCadence", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^SE-\\d{3,}$",
+            "description": "Unique exception identifier (e.g. SE-001)"
+          },
+          "advisory": {
+            "type": "string",
+            "description": "GHSA or CVE identifier"
+          },
+          "cve": {
+            "type": "string",
+            "description": "CVE identifier (e.g. CVE-2025-3194)"
+          },
+          "npmAdvisoryId": {
+            "type": "integer",
+            "description": "npm advisory ID number"
+          },
+          "package": {
+            "type": "string",
+            "description": "Affected npm package name"
+          },
+          "installedVersion": {
+            "type": "string",
+            "description": "Currently installed version of the affected package"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "moderate", "high", "critical"],
+            "description": "Vulnerability severity level"
+          },
+          "title": {
+            "type": "string",
+            "description": "Short title of the vulnerability"
+          },
+          "dependencyChain": {
+            "type": "string",
+            "description": "Full dependency chain leading to the vulnerable package"
+          },
+          "affectedPackages": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Workspace packages affected by this vulnerability"
+          },
+          "owner": {
+            "type": "string",
+            "description": "Team or person responsible for reviewing this exception"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Detailed reason why this exception is acceptable"
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 10,
+            "description": "Why this exception is acceptable"
+          },
+          "mitigation": {
+            "type": "string",
+            "minLength": 10,
+            "description": "What mitigations are in place"
+          },
+          "expiry": {
+            "type": "string",
+            "format": "date",
+            "description": "ISO date when this exception expires and must be re-evaluated (YYYY-MM-DD)"
+          },
+          "reviewCadence": {
+            "type": "string",
+            "enum": ["weekly", "monthly", "quarterly"],
+            "description": "How often this exception should be reviewed"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "expired", "resolved"],
+            "description": "Current status of the exception"
+          },
+          "mitigations": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of mitigation measures in place"
+          },
+          "dateAdded": {
+            "type": "string",
+            "format": "date",
+            "description": "ISO date when this exception was first added (YYYY-MM-DD)"
+          },
+          "lastReviewed": {
+            "type": "string",
+            "format": "date",
+            "description": "ISO date of the most recent review (YYYY-MM-DD)"
+          },
+          "reviewBy": {
+            "type": "string",
+            "format": "date",
+            "description": "ISO date by which a review must occur (YYYY-MM-DD)"
+          },
+          "resolvedDate": {
+            "type": "string",
+            "format": "date",
+            "description": "ISO date when this exception was resolved (YYYY-MM-DD)"
+          },
+          "resolvedReason": {
+            "type": "string",
+            "description": "Why the exception was resolved (e.g. package updated, dependency removed)"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
