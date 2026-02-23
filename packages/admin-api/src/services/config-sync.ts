@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Avatar Config Sync Service
  * Syncs avatar configurations from Admin API to the main state table

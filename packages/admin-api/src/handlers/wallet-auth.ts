@@ -3,7 +3,7 @@
  * Endpoints for Solana wallet sign-in (SIWS)
  */
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { hasValidInternalTestKey } from '@swarm/core';
+import { hasValidInternalTestKey, logger } from '@swarm/core';
 import { z } from 'zod';
 import {
   createChallenge,
@@ -265,7 +265,7 @@ export async function handleChallenge(
         details: error.details,
       }, cors);
     }
-    console.error('[WalletAuth] Challenge error:', error instanceof Error ? error.message : String(error));
+    logger.error('[WalletAuth] Challenge error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -327,7 +327,7 @@ export async function handleVerify(
     // Bypass NFT gate for internal test key (E2E testing)
     const isTestBypass = hasInternalTestKey(event);
     if (isTestBypass) {
-      console.log('[WalletAuth] Internal test key detected - bypassing NFT gate requirements');
+      logger.info('[WalletAuth] Internal test key detected - bypassing NFT gate requirements');
     }
 
     // Set session cookies (and clear any stale host-only cookie)
@@ -378,7 +378,7 @@ export async function handleVerify(
         details: error.details,
       }, cors);
     }
-    console.error('[WalletAuth] Verify error:', error instanceof Error ? error.message : String(error));
+    logger.error('[WalletAuth] Verify error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -462,7 +462,7 @@ export async function handleMe(
       gateStatusByWallet: gate.gateStatusByWallet,
     }, cors);
   } catch (error) {
-    console.error('[WalletAuth] Me error:', error instanceof Error ? error.message : String(error));
+    logger.error('[WalletAuth] Me error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -523,7 +523,7 @@ export async function handleLinkWalletChallenge(
         details: error.details,
       }, cors);
     }
-    console.error('[WalletAuth] Link wallet challenge error:', error instanceof Error ? error.message : String(error));
+    logger.error('[WalletAuth] Link wallet challenge error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -588,7 +588,7 @@ export async function handleLinkWalletVerify(
         details: error.details,
       }, cors);
     }
-    console.error('[WalletAuth] Link wallet verify error:', error instanceof Error ? error.message : String(error));
+    logger.error('[WalletAuth] Link wallet verify error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -616,7 +616,7 @@ export async function handleLogout(
 
     return jsonResponse(200, { success: true }, cors, getClearSessionCookies());
   } catch (error) {
-    console.error('[WalletAuth] Logout error:', error instanceof Error ? error.message : String(error));
+    logger.error('[WalletAuth] Logout error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -652,7 +652,7 @@ export async function handleGateStatus(
 
     return jsonResponse(200, { gateStatus }, cors);
   } catch (error) {
-    console.error('[WalletAuth] Gate status error:', error instanceof Error ? error.message : String(error));
+    logger.error('[WalletAuth] Gate status error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -687,7 +687,7 @@ export async function handleAscensionStatus(
 
     return jsonResponse(200, status, cors);
   } catch (error) {
-    console.error('[WalletAuth] Ascension status error:', error instanceof Error ? error.message : String(error));
+    logger.error('[WalletAuth] Ascension status error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -729,7 +729,7 @@ export async function handleAscensionPreflight(
 
     return jsonResponse(200, result, cors);
   } catch (error) {
-    console.error('[WalletAuth] Ascension preflight error:', error instanceof Error ? error.message : String(error));
+    logger.error('[WalletAuth] Ascension preflight error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -852,7 +852,7 @@ export async function handleExecuteAscension(
     try {
       await syncRuntimeContractForAvatar(avatarId);
     } catch (syncError) {
-      console.warn('[WalletAuth] Failed to sync runtime limits after ascension:', syncError instanceof Error ? syncError.message : String(syncError));
+      logger.warn('[WalletAuth] Failed to sync runtime limits after ascension', { errorMessage: syncError instanceof Error ? syncError.message : String(syncError) });
     }
 
     return jsonResponse(200, {
@@ -870,7 +870,7 @@ export async function handleExecuteAscension(
         details: error.details,
       }, cors);
     }
-    console.error('[WalletAuth] Execute ascension error:', error instanceof Error ? error.message : String(error));
+    logger.error('[WalletAuth] Execute ascension error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }

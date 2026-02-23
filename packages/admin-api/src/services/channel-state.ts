@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Channel State Service
  * Kyro-style channel-aware messaging with message buffering and state machine

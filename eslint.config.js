@@ -42,7 +42,7 @@ export default tseslint.config(
       }],
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-console': 'off',
-      'no-sensitive-logs/no-sensitive-logs': 'warn',
+      'no-sensitive-logs/no-sensitive-logs': 'error',
       'import/no-cycle': ['error', { maxDepth: 3, ignoreExternal: true }],
     },
   },
@@ -61,6 +61,7 @@ export default tseslint.config(
     files: ['**/*.test.ts', '**/*.spec.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+      'no-console': 'off',
     },
   },
   {

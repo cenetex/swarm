@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Avatar Management Service
  */

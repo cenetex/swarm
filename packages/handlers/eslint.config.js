@@ -9,7 +9,6 @@ export default [
     ignores: [
       '**/*.test.ts',
       '**/*.spec.ts',
-      '**/scripts/**',
     ],
     rules: {
       'no-console': 'error',

@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Media Jobs Service
  * Tracks async media generation jobs (video, long-running operations)

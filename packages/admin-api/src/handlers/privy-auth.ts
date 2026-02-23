@@ -4,6 +4,7 @@
  */
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
+import { logger } from '@swarm/core';
 
 import { getClearSessionCookies, getSessionFromCookie, getSetSessionCookies } from '../auth/session-cookie.js';
 import { getAccountSummary, linkPrivyIdentityToAccount } from '../services/accounts.js';
@@ -131,7 +132,7 @@ export async function handlePrivyVerify(event: APIGatewayProxyEventV2): Promise<
         details: error.details,
       }, cors);
     }
-    console.error('[PrivyAuth] Verify error:', error instanceof Error ? error.message : String(error));
+    logger.error('[PrivyAuth] Verify error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }
@@ -266,7 +267,7 @@ export async function handleLinkPrivyVerify(event: APIGatewayProxyEventV2): Prom
         details: error.details,
       }, cors);
     }
-    console.error('[PrivyAuth] Link verify error:', error instanceof Error ? error.message : String(error));
+    logger.error('[PrivyAuth] Link verify error', error);
     return jsonResponse(500, { error: 'Internal server error' }, cors);
   }
 }

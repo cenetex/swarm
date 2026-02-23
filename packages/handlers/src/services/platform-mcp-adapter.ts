@@ -12,7 +12,7 @@
  * 3. Return immediately with { queued: true, postId }
  * This avoids Lambda timeout issues when image generation + Twitter posting exceed 120s.
  */
-import { buildMediaUrl } from '@swarm/core';
+import { buildMediaUrl, logger } from '@swarm/core';
 import type { AllServices } from '@swarm/mcp-server';
 import type {
   AvatarConfig,
@@ -776,7 +776,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
                 // Enqueue for tweet-sender to process
                 await enqueuePost(postQueueUrl, avatarId, post.postId);
 
-                console.log('[Twitter] Tweet queued for async posting:', {
+                logger.info('[Twitter] Tweet queued for async posting', {
                   postId: post.postId,
                   avatarId,
                   textLength: text.length,
@@ -793,7 +793,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
                 };
               } catch (queueError) {
                 // Fall through to synchronous posting if queue fails
-                console.warn('[Twitter] Decoupled posting failed, falling back to sync:', queueError);
+                logger.warn('[Twitter] Decoupled posting failed, falling back to sync', { errorMessage: queueError instanceof Error ? queueError.message : String(queueError) });
               }
             }
 
@@ -807,8 +807,8 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
             };
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to post tweet';
-            console.error('[TwitterAdapter.postTweet] Failed to post tweet:', {
-              error: errorMessage,
+            logger.error('[TwitterAdapter.postTweet] Failed to post tweet', undefined, {
+              errorDetail: errorMessage,
               textLength: text.length,
               hasMedia: (mediaUrls?.length ?? 0) > 0 || (mediaIds?.length ?? 0) > 0,
             });
@@ -920,7 +920,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
             if (stateService.checkAndSetTweetReply) {
               const isFirstReply = await stateService.checkAndSetTweetReply(avatarId, tweetId);
               if (!isFirstReply) {
-                console.log(`[Twitter] Skipping duplicate reply to tweet ${tweetId} for avatar ${avatarId}`);
+                logger.info(`[Twitter] Skipping duplicate reply to tweet ${tweetId} for avatar ${avatarId}`);
                 return null; // Return null for duplicates (same as error case)
               }
             }
@@ -948,7 +948,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
                 // Enqueue for tweet-sender to process
                 await enqueuePost(postQueueUrl, avatarId, post.postId);
 
-                console.log('[Twitter] Reply queued for async posting:', {
+                logger.info('[Twitter] Reply queued for async posting', {
                   postId: post.postId,
                   avatarId,
                   inReplyToId: tweetId,
@@ -964,7 +964,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
                   url: username ? `https://x.com/${username}` : undefined,
                 };
               } catch (queueError) {
-                console.warn('[Twitter] Decoupled reply failed, falling back to sync:', queueError);
+                logger.warn('[Twitter] Decoupled reply failed, falling back to sync', { errorMessage: queueError instanceof Error ? queueError.message : String(queueError) });
               }
             }
 
@@ -1128,7 +1128,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
                 }));
               }
             } catch (error) {
-              console.error('[Discord] Failed to fetch bot info:', error instanceof Error ? error.message : String(error));
+              logger.error('[Discord] Failed to fetch bot info', error);
             }
           }
 
@@ -1171,14 +1171,14 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
 
             if (!response.ok) {
               const error = await response.text();
-              console.error('[Discord] Send message failed:', String(error));
+              logger.error('[Discord] Send message failed', undefined, { responseError: String(error) });
               return null;
             }
 
             const message = (await response.json()) as { id: string };
             return { messageId: message.id };
           } catch (error) {
-            console.error('[Discord] Send message error:', error instanceof Error ? error.message : String(error));
+            logger.error('[Discord] Send message error', error);
             return null;
           }
         },
@@ -1213,14 +1213,14 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
 
             if (!response.ok) {
               const error = await response.text();
-              console.error('[Discord] Webhook message failed:', String(error));
+              logger.error('[Discord] Webhook message failed', undefined, { responseError: String(error) });
               return null;
             }
 
             const message = (await response.json()) as { id?: string };
             return { messageId: message.id };
           } catch (error) {
-            console.error('[Discord] Webhook message error:', error instanceof Error ? error.message : String(error));
+            logger.error('[Discord] Webhook message error', error);
             return null;
           }
         },
@@ -1249,7 +1249,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
               parentId: channel.parent_id,
             };
           } catch (error) {
-            console.error('[Discord] Get channel error:', error instanceof Error ? error.message : String(error));
+            logger.error('[Discord] Get channel error', error);
             return null;
           }
         },
@@ -1277,7 +1277,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
               parentId: c.parent_id,
             }));
           } catch (error) {
-            console.error('[Discord] List channels error:', error instanceof Error ? error.message : String(error));
+            logger.error('[Discord] List channels error', error);
             return [];
           }
         },
@@ -1304,7 +1304,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
               memberCount: g.approximate_member_count,
             }));
           } catch (error) {
-            console.error('[Discord] List guilds error:', error instanceof Error ? error.message : String(error));
+            logger.error('[Discord] List guilds error', error);
             return [];
           }
         },
@@ -1340,7 +1340,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
               })),
             }));
           } catch (error) {
-            console.error('[Discord] Get messages error:', error instanceof Error ? error.message : String(error));
+            logger.error('[Discord] Get messages error', error);
             return [];
           }
         },
@@ -1359,7 +1359,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
             );
             return response.ok;
           } catch (error) {
-            console.error('[Discord] Add reaction error:', error instanceof Error ? error.message : String(error));
+            logger.error('[Discord] Add reaction error', error);
             return false;
           }
         },
@@ -1378,7 +1378,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
             );
             return response.ok;
           } catch (error) {
-            console.error('[Discord] Remove reaction error:', error instanceof Error ? error.message : String(error));
+            logger.error('[Discord] Remove reaction error', error);
             return false;
           }
         },
@@ -1386,7 +1386,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         setPresence: async (_status: 'online' | 'idle' | 'dnd' | 'invisible', _activity?: string) => {
           // Presence can only be set via the Gateway WebSocket (discord-gateway.ts),
           // not via REST API. Return false from platform handler context.
-          console.warn('[Discord] setPresence is only available via the Gateway WebSocket connection');
+          logger.warn('[Discord] setPresence is only available via the Gateway WebSocket connection');
           return false;
         },
       },

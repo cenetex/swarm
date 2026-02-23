@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * NFT Gating Service
  * Verifies wallet holds required NFTs for access and creation gating

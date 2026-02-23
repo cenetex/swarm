@@ -9,6 +9,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { randomBytes } from 'crypto';
+import { logger } from '@swarm/core';
 import { PrivyClient, type User as PrivyUser } from '@privy-io/node';
 
 import { checkNFTGate, type NFTGateResult } from './nft-gate.js';
@@ -76,7 +77,7 @@ async function getSecretValue(secretArn: string): Promise<string | null> {
     );
     return response.SecretString || null;
   } catch (error) {
-    console.error('[PrivyAuth] Failed to fetch secret from Secrets Manager:', error instanceof Error ? error.message : String(error));
+    logger.error('[PrivyAuth] Failed to fetch secret from Secrets Manager', error);
     return null;
   }
 }
@@ -222,9 +223,7 @@ async function createSession(
     })
   );
 
-  console.log(
-    `[PrivyAuth] Created session for privyUser=${privyUserId}, wallet=${walletAddress.slice(0, 8)}...`
-  );
+  logger.info('[PrivyAuth] Created session', { privyUserId, wallet: walletAddress.slice(0, 8) });
 
   return record;
 }
@@ -301,9 +300,7 @@ async function getOrCreateUser(
     })
   );
 
-  console.log(
-    `[PrivyAuth] Created new user for privyUser=${privyUserId}, wallet=${walletAddress.slice(0, 8)}...`
-  );
+  logger.info('[PrivyAuth] Created new user', { privyUserId, wallet: walletAddress.slice(0, 8) });
 
   return newUser;
 }
@@ -348,9 +345,7 @@ export async function verifyPrivyAuth(
 
     const email = pickEmailFromPrivyUser(user) ?? request.email;
 
-    console.log(
-      `[PrivyAuth] Verifying user=${privyUserId}, email=${email}, wallet=${walletAddress.slice(0, 8)}...`
-    );
+    logger.info('[PrivyAuth] Verifying user', { privyUserId, wallet: walletAddress.slice(0, 8) });
 
     // 3) Check NFT gate.
     const nftGate = await checkNFTGate(walletAddress);
@@ -404,7 +399,7 @@ export async function verifyPrivyAuth(
       outcome: accountResolution.outcome,
     };
   } catch (error) {
-    console.error('[PrivyAuth] Verify error:', error instanceof Error ? error.message : String(error));
+    logger.error('[PrivyAuth] Verify error', error);
     return { success: false, error: 'Authentication failed' };
   }
 }
@@ -422,7 +417,7 @@ export async function verifyPrivyAccessTokenForLink(accessToken: string): Promis
 
     return { ok: true, privyUserId, walletAddress, email };
   } catch (error) {
-    console.error('[PrivyAuth] Link verify error:', error instanceof Error ? error.message : String(error));
+    logger.error('[PrivyAuth] Link verify error', error);
     return { ok: false, error: 'Invalid authentication token' };
   }
 }

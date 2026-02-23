@@ -12,6 +12,7 @@ import {
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { randomBytes } from 'crypto';
+import { logger } from '@swarm/core';
 import { getDynamoClient } from '../dynamo-client.js';
 
 const dynamoClient = getDynamoClient();
@@ -123,9 +124,7 @@ export async function createSession(
     })
   );
 
-  console.log(
-    `[SessionService] Created session for account=${accountId} provider=${authProvider}`
-  );
+  logger.info('[SessionService] Created session', { accountId, authProvider });
 
   return record;
 }
@@ -209,7 +208,7 @@ export async function deleteSession(
     })
   );
 
-  console.log('[SessionService] Session deleted');
+  logger.info('[SessionService] Session deleted');
 }
 
 /**
@@ -227,7 +226,7 @@ export async function getAndTouchSession(
 
   // Touch session in the background (don't wait)
   touchSession(sessionToken, deps).catch((err) => {
-    console.error('[SessionService] Failed to touch session:', err instanceof Error ? err.message : 'Unknown error');
+    logger.error('[SessionService] Failed to touch session', err);
   });
 
   return session;
@@ -263,7 +262,7 @@ export async function validateSession(
 
   // Legacy sessions may not have accountId - treat as invalid for new system
   if (!session.accountId) {
-    console.warn('[SessionService] Session missing accountId, treating as invalid');
+    logger.warn('[SessionService] Session missing accountId, treating as invalid');
     return null;
   }
 

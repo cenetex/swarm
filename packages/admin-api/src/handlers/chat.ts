@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Admin Chatbot Handler
  * Conversational interface for setting up avatars with tool use

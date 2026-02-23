@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { buildMediaUrl, canonicalizeMediaUrl } from '@swarm/core';
+import { buildMediaUrl, canonicalizeMediaUrl, logger } from '@swarm/core';
 
 // Default S3 client - lazy initialized
 let defaultS3Client: S3Client | null = null;
@@ -553,7 +553,7 @@ export function createVoiceServices(config: {
             const converted = await convertAudioToOgg({ avatarId: params.avatarId, sourceUrl: accessibleUrl });
             if (converted) telegramSourceUrl = converted;
           } catch (err) {
-            console.warn('[Voice] Media convert failed, falling back to original audio:', err);
+            logger.warn('[Voice] Media convert failed, falling back to original audio', { errorMessage: err instanceof Error ? err.message : String(err) });
           }
         }
 

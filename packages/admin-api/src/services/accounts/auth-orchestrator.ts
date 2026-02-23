@@ -8,6 +8,7 @@
 import { randomUUID } from 'crypto';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
+import { logger } from '@swarm/core';
 import {
   resolveAccountForIdentity,
   linkIdentity,
@@ -228,20 +229,20 @@ export function verifyWalletSignature(
 
     // Solana public keys are 32 bytes
     if (publicKeyBytes.length !== 32) {
-      console.log(`[AuthOrchestrator] Invalid public key length: ${publicKeyBytes.length}`);
+      logger.warn('[AuthOrchestrator] Invalid public key length', { length: publicKeyBytes.length });
       return false;
     }
 
     // Solana signatures are 64 bytes
     if (signatureBytes.length !== 64) {
-      console.log(`[AuthOrchestrator] Invalid signature length: ${signatureBytes.length}`);
+      logger.warn('[AuthOrchestrator] Invalid signature length', { length: signatureBytes.length });
       return false;
     }
 
     const isValid = nacl.sign.detached.verify(messageBytes, signatureBytes, publicKeyBytes);
     return isValid;
   } catch (error) {
-    console.error('[AuthOrchestrator] Signature verification error:', error instanceof Error ? error.message : String(error));
+    logger.error('[AuthOrchestrator] Signature verification error', error);
     return false;
   }
 }
@@ -297,7 +298,7 @@ export async function authenticateWallet(
   // 2. Verify the signature
   const isValid = verifyWalletSignature(challenge.message, signature, publicKey);
   if (!isValid) {
-    console.log(`[AuthOrchestrator] Invalid signature for wallet=${publicKey.slice(0, 8)}...`);
+    logger.warn('[AuthOrchestrator] Invalid signature', { wallet: publicKey.slice(0, 8) });
     return {
       success: false,
       ...buildFailureResponse('Invalid signature', onboarding, stepContext, 'actor_not_authorized'),
@@ -307,7 +308,7 @@ export async function authenticateWallet(
   // 3. Check NFT gate (non-blocking)
   const nftGate = await checkNFTGate(publicKey);
   if (!nftGate.allowed) {
-    console.log(`[AuthOrchestrator] No Orb NFT for wallet=${publicKey.slice(0, 8)}... (limited access)`);
+    logger.info('[AuthOrchestrator] No Orb NFT (limited access)', { wallet: publicKey.slice(0, 8) });
   }
 
   // 4. Resolve account for this wallet
@@ -340,7 +341,7 @@ export async function authenticateWallet(
   // 7. Get account summary
   const account = await getAccountSummary(accountResult.accountId);
 
-  console.log(`[AuthOrchestrator] Wallet auth successful for wallet=${publicKey.slice(0, 8)}...`);
+  logger.info('[AuthOrchestrator] Wallet auth successful', { wallet: publicKey.slice(0, 8) });
 
   return {
     success: true,
@@ -387,7 +388,7 @@ export async function authenticatePrivy(
   if (walletAddress) {
     nftGate = await checkNFTGate(walletAddress);
     if (!nftGate.allowed) {
-      console.log(`[AuthOrchestrator] No Orb NFT for wallet=${walletAddress.slice(0, 8)}... (limited access)`);
+      logger.info('[AuthOrchestrator] No Orb NFT (limited access)', { wallet: walletAddress.slice(0, 8) });
     }
   }
 
@@ -422,7 +423,7 @@ export async function authenticatePrivy(
   // Get account summary
   const account = await getAccountSummary(accountResult.accountId);
 
-  console.log(`[AuthOrchestrator] Privy auth successful for user=${privyUserId.slice(0, 8)}...`);
+  logger.info('[AuthOrchestrator] Privy auth successful', { privyUser: privyUserId.slice(0, 8) });
 
   return {
     success: true,
@@ -532,7 +533,7 @@ export async function verifyAndLinkWallet(params: LinkWalletParams): Promise<Lin
   // 4. Get updated account summary
   const account = await getAccountSummary(accountId);
 
-  console.log(`[AuthOrchestrator] Wallet linked to account=${accountId}`);
+  logger.info('[AuthOrchestrator] Wallet linked to account', { accountId });
 
   return {
     success: true,

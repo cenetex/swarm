@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Media Generation Service
  * Handles image, video, and sticker generation with multiple providers

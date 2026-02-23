@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- This IS the structured logger; console is the CloudWatch transport */
 /**
  * Structured Logger
  * 

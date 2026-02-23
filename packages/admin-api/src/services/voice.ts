@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Voice Service
  * Handles transcription, voice profile creation, and TTS generation.

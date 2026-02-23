@@ -6,7 +6,7 @@
  * - Bearer session token
  */
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
-import { getHeaderValue, hasValidInternalTestKey } from '@swarm/core';
+import { getHeaderValue, hasValidInternalTestKey, logger } from '@swarm/core';
 import type { UserSession } from '../types.js';
 import { getSessionFromCookie } from './session-cookie.js';
 import { getSessionWithUser } from '../services/wallet-auth.js';
@@ -39,7 +39,7 @@ export async function authenticateRequest(
     environment: process.env.ENVIRONMENT,
     nodeEnv: process.env.NODE_ENV,
   })) {
-    console.log('Auth: Internal test mode enabled');
+    logger.info('Auth: Internal test mode enabled');
     return {
       email: 'internal-test@aws.local',
       userId: 'internal-test-user',

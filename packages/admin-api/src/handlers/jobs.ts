@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Jobs Handler
  * Lightweight endpoint for polling media job status

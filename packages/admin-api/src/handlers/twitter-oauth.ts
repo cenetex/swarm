@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Twitter OAuth Handler
  * Handles the OAuth 1.0a 3-legged flow for connecting X/Twitter accounts

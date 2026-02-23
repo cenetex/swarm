@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- TODO: migrate to structured logger */
 import { createHash } from 'node:crypto';
 import { GetCommand } from '@aws-sdk/lib-dynamodb';
 import { getDynamoClient } from './dynamo-client.js';

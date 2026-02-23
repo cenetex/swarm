@@ -18,6 +18,7 @@ import {
   QueryCommand,
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { logger } from '@swarm/core';
 import type { SecretMetadata, SecretType, UserSession } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
 
@@ -72,7 +73,7 @@ export async function storeSecret(
 
     // If secret is scheduled for deletion, restore it first
     if (existing.DeletedDate) {
-      console.log(`Restoring secret ${secretName} from scheduled deletion`);
+      logger.info(`Restoring secret from scheduled deletion`, { secretName });
       await secretsClient.send(new RestoreSecretCommand({
         SecretId: secretName,
       }));
@@ -415,7 +416,7 @@ export async function _getSecretValueInternal(
   } catch (error) {
     // Don't log the full error object as it may contain sensitive context
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`Error retrieving secret: ${errorMessage}`);
+    logger.error('Error retrieving secret', undefined, { errorDetail: errorMessage });
     return null;
   }
 }
@@ -439,15 +440,17 @@ export async function deleteAllAvatarSecrets(
       deleted++;
     } catch (err) {
       errors++;
-      console.warn(
-        `[Secrets] Failed to delete secret ${secret.secretType}/${secret.name} for avatar ${avatarId}:`,
-        err instanceof Error ? err.message : String(err)
-      );
+      logger.warn(`[Secrets] Failed to delete secret for avatar`, {
+        secretType: secret.secretType,
+        secretName: secret.name,
+        avatarId,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
   if (secrets.length > 0) {
-    console.log(`[Secrets] Avatar ${avatarId}: deleted ${deleted}/${secrets.length} secrets (${errors} errors)`);
+    logger.info(`[Secrets] Avatar secret cleanup complete`, { avatarId, deleted, total: secrets.length, errors });
   }
 
   return { deleted, errors };

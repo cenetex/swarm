@@ -11,6 +11,7 @@ import {
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { randomBytes } from 'crypto';
+import { logger } from '@swarm/core';
 import { checkNFTGate, type NFTGateResult } from './nft-gate.js';
 import { getOrCreateAccountForWallet, recordAccountSession } from './accounts.js';
 import { upsertActiveUserSlotOnLogin } from './active-user-limit.js';
@@ -180,7 +181,7 @@ async function checkRateLimit(
       return { allowed: true, remaining: maxPerWindow - 1, resetAt };
     }
     // On error, allow the request (fail open)
-    console.error('[WalletAuth] Rate limit check failed:', err instanceof Error ? err.message : String(err));
+    logger.error('[WalletAuth] Rate limit check failed', err);
     return { allowed: true, remaining: maxPerWindow, resetAt: now + windowMs };
   }
 }
@@ -206,7 +207,7 @@ export async function createChallenge(
   );
 
   if (!rateCheck.allowed) {
-    console.log(`[WalletAuth] Rate limited challenge for ${rateLimitKey.slice(0, 8)}...`);
+    logger.info('[WalletAuth] Rate limited challenge', { rateLimitKey: rateLimitKey.slice(0, 8) });
     return {
       error: 'Too many requests. Please wait before trying again.',
       retryAfter: Math.ceil((rateCheck.resetAt - Date.now()) / 1000),
@@ -234,7 +235,7 @@ export async function createChallenge(
     Item: record,
   }));
 
-  console.log(`[WalletAuth] Created challenge for wallet=${walletAddress.slice(0, 8)}...`);
+  logger.info('[WalletAuth] Created challenge', { wallet: walletAddress.slice(0, 8) });
 
   return { nonce, message, expiresAt };
 }
@@ -262,13 +263,13 @@ async function consumeChallenge(nonce: string, walletAddress: string): Promise<C
 
     const challenge = result.Attributes as ChallengeRecord | undefined;
     if (!challenge) {
-      console.log(`[WalletAuth] Challenge not found: ${nonce.slice(0, 16)}...`);
+      logger.info('[WalletAuth] Challenge not found', { nonce: nonce.slice(0, 16) });
       return null;
     }
     return challenge;
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'ConditionalCheckFailedException') {
-      console.log(`[WalletAuth] Challenge invalid/expired/mismatched wallet: ${nonce.slice(0, 16)}...`);
+      logger.info('[WalletAuth] Challenge invalid/expired/mismatched wallet', { nonce: nonce.slice(0, 16) });
       return null;
     }
     throw err;
@@ -292,9 +293,8 @@ export function verifySignature(
     const signatureBytes = bs58.decode(signatureBase58);
     const publicKeyBytes = bs58.decode(publicKeyBase58);
 
-    console.log(`[WalletAuth] Verifying signature:`, {
+    logger.debug('[WalletAuth] Verifying signature', {
       messageLength: message.length,
-      messagePreview: message.substring(0, 100),
       signatureLength: signatureBytes.length,
       publicKeyLength: publicKeyBytes.length,
       publicKey: publicKeyBase58.substring(0, 8),
@@ -302,22 +302,22 @@ export function verifySignature(
 
     // Solana public keys are 32 bytes
     if (publicKeyBytes.length !== 32) {
-      console.log(`[WalletAuth] Invalid public key length: ${publicKeyBytes.length}`);
+      logger.warn('[WalletAuth] Invalid public key length', { length: publicKeyBytes.length });
       return false;
     }
 
     // Solana signatures are 64 bytes
     if (signatureBytes.length !== 64) {
-      console.log(`[WalletAuth] Invalid signature length: ${signatureBytes.length}`);
+      logger.warn('[WalletAuth] Invalid signature length', { length: signatureBytes.length });
       return false;
     }
 
     const isValid = nacl.sign.detached.verify(messageBytes, signatureBytes, publicKeyBytes);
-    console.log(`[WalletAuth] Signature verification result: ${isValid}`);
+    logger.debug('[WalletAuth] Signature verification result', { isValid });
 
     return isValid;
   } catch (error) {
-    console.error('[WalletAuth] Signature verification error:', error instanceof Error ? error.message : String(error));
+    logger.error('[WalletAuth] Signature verification error', error);
     return false;
   }
 }
@@ -360,7 +360,7 @@ async function createSession(
     Item: record,
   }));
 
-  console.log(`[WalletAuth] Created session for wallet=${walletAddress.slice(0, 8)}...`);
+  logger.info('[WalletAuth] Created session', { wallet: walletAddress.slice(0, 8) });
 
   return record;
 }
@@ -421,7 +421,7 @@ export async function deleteSession(sessionToken: string): Promise<void> {
     TableName: ADMIN_TABLE,
     Key: { pk: `SESSION#${sessionToken}`, sk: 'DATA' },
   }));
-  console.log('[WalletAuth] Session deleted');
+  logger.info('[WalletAuth] Session deleted');
 }
 
 // ============================================================================
@@ -473,7 +473,7 @@ async function getOrCreateUser(walletAddress: string): Promise<UserRecord> {
     Item: newUser,
   }));
 
-  console.log(`[WalletAuth] Created new user for wallet=${walletAddress.slice(0, 8)}...`);
+  logger.info('[WalletAuth] Created new user', { wallet: walletAddress.slice(0, 8) });
 
   return newUser;
 }
@@ -554,7 +554,7 @@ export async function verifyAndCreateSession(
   // 2. Verify the signature
   const isValid = verifySignature(challenge.message, signatureBase58, publicKeyBase58);
   if (!isValid) {
-    console.log(`[WalletAuth] Invalid signature for wallet=${publicKeyBase58.slice(0, 8)}...`);
+    logger.warn('[WalletAuth] Invalid signature', { wallet: publicKeyBase58.slice(0, 8) });
     return { success: false, error: 'Invalid signature' };
   }
 
@@ -565,7 +565,7 @@ export async function verifyAndCreateSession(
   
   // Log gate status but proceed regardless
   if (!nftGate.allowed) {
-    console.log(`[WalletAuth] No Orb NFT for wallet=${publicKeyBase58.slice(0, 8)}... (limited access)`);
+    logger.info('[WalletAuth] No Orb NFT (limited access)', { wallet: publicKeyBase58.slice(0, 8) });
   }
 
   // 4. Get or create user
@@ -581,7 +581,7 @@ export async function verifyAndCreateSession(
   // 5. Create session
   const session = await createSession(publicKeyBase58, accountId, isOrbHolder, userAgent, ipAddress);
 
-  console.log(`[WalletAuth] Auth successful for wallet=${publicKeyBase58.slice(0, 8)}...`);
+  logger.info('[WalletAuth] Auth successful', { wallet: publicKeyBase58.slice(0, 8) });
 
   return { success: true, session, user, nftGate };
 }
