@@ -19,6 +19,7 @@ import type {
 import { fetchWithRetry } from '../utils/fetch-retry.js';
 import { PlatformError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
+import { logger } from '../utils/logger.js';
 
 // Discord API types (minimal, to avoid dependency on discord.js in core)
 export interface DiscordMessage {
@@ -205,7 +206,7 @@ export class DiscordAdapter extends PlatformAdapter {
 
       return isValid;
     } catch (error) {
-      console.error('Failed to verify Discord signature:', error instanceof Error ? error.message : String(error));
+      logger.error('Failed to verify Discord signature', error, { subsystem: 'platform', platform: 'discord' });
       return false;
     }
   }
@@ -411,12 +412,12 @@ export class DiscordAdapter extends PlatformAdapter {
           break;
 
         default:
-          console.warn(`Unknown Discord action type: ${(action as ResponseAction).type}`);
+          logger.warn('Unknown action type', { subsystem: 'platform', platform: 'discord', actionType: (action as ResponseAction).type });
       }
 
       return true;
     } catch (error) {
-      console.error('Failed to execute Discord action:', error instanceof Error ? error.message : String(error));
+      logger.error('Failed to execute Discord action', error, { subsystem: 'platform', platform: 'discord' });
       return false;
     }
   }
@@ -435,7 +436,7 @@ export class DiscordAdapter extends PlatformAdapter {
         },
       });
     } catch (error) {
-      console.warn('Failed to send Discord typing indicator:', error instanceof Error ? error.message : String(error));
+      logger.warn('Failed to send typing indicator', { subsystem: 'platform', platform: 'discord', error: error instanceof Error ? error.message : String(error) });
     }
   }
 

@@ -9,6 +9,7 @@ import { PlatformAdapter } from './base.js';
 import { fetchWithRetry } from '../utils/fetch-retry.js';
 import { PlatformError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
+import { logger } from '../utils/logger.js';
 import type {
   AvatarConfig,
   SwarmEnvelope,
@@ -109,7 +110,7 @@ export function buildTelegramEnvelope(
 
     // Validate that chat type is one we recognize
     if (!validChatTypes.includes(rawChatType as typeof validChatTypes[number])) {
-      console.warn(`[Telegram] Unknown chat type: ${rawChatType}, treating as group`);
+      logger.warn('Unknown chat type, treating as group', { subsystem: 'platform', platform: 'telegram', chatType: rawChatType });
     }
 
     const chatType = validChatTypes.includes(rawChatType as typeof validChatTypes[number])
@@ -198,7 +199,7 @@ async function compressImageForTelegram(buf: Buffer, originalName: string): Prom
     return { buffer: buf, fileName: originalName };
   }
 
-  console.log(`[Telegram] Image too large (${(buf.length / 1024 / 1024).toFixed(2)}MB), compressing for Telegram...`);
+  logger.info('Image too large, compressing for Telegram', { subsystem: 'platform', platform: 'telegram', originalSizeMB: (buf.length / 1024 / 1024).toFixed(2) });
 
   try {
     const image = await Jimp.read(buf);
@@ -211,14 +212,14 @@ async function compressImageForTelegram(buf: Buffer, originalName: string): Prom
       } else {
         image.resize({ h: maxDim });
       }
-      console.log(`[Telegram] Resized to ${image.width}x${image.height}`);
+      logger.info('Image resized for Telegram', { subsystem: 'platform', platform: 'telegram', width: image.width, height: image.height });
     }
 
     // Try different quality levels until we're under the limit
     for (const quality of [85, 70, 55, 40]) {
       const compressed = await image.getBuffer('image/jpeg', { quality });
       if (compressed.length <= TELEGRAM_PHOTO_SIZE_LIMIT) {
-        console.log(`[Telegram] Compressed to ${(compressed.length / 1024 / 1024).toFixed(2)}MB at quality ${quality}`);
+        logger.info('Image compressed for Telegram', { subsystem: 'platform', platform: 'telegram', compressedSizeMB: (compressed.length / 1024 / 1024).toFixed(2), quality });
         // Change extension to .jpg
         const jpgName = originalName.replace(/\.(png|webp|gif)$/i, '.jpg');
         return { buffer: compressed, fileName: jpgName };
@@ -228,11 +229,11 @@ async function compressImageForTelegram(buf: Buffer, originalName: string): Prom
     // Last resort: resize more aggressively
     image.resize({ w: 1024 });
     const finalBuffer = await image.getBuffer('image/jpeg', { quality: 40 });
-    console.log(`[Telegram] Final compression: ${(finalBuffer.length / 1024 / 1024).toFixed(2)}MB at 1024px`);
+    logger.info('Image final compression for Telegram', { subsystem: 'platform', platform: 'telegram', compressedSizeMB: (finalBuffer.length / 1024 / 1024).toFixed(2), widthPx: 1024 });
     const jpgName = originalName.replace(/\.(png|webp|gif)$/i, '.jpg');
     return { buffer: finalBuffer, fileName: jpgName };
   } catch (err) {
-    console.warn('[Telegram] Failed to compress image, sending original:', err instanceof Error ? err.message : String(err));
+    logger.warn('Failed to compress image, sending original', { subsystem: 'platform', platform: 'telegram', error: err instanceof Error ? err.message : String(err) });
     return { buffer: buf, fileName: originalName };
   }
 }
@@ -669,7 +670,7 @@ export class TelegramAdapter extends PlatformAdapter {
           if (!this.botId) this.botId = me.id;
           if (!this.config.botUsername && me.username) this.config.botUsername = me.username;
         } catch (err) {
-          console.warn('[Telegram] Failed to fetch bot identity (getMe):', err instanceof Error ? err.message : String(err));
+          logger.warn('Failed to fetch bot identity (getMe)', { subsystem: 'platform', platform: 'telegram', error: err instanceof Error ? err.message : String(err) });
         }
       })();
     }
@@ -710,7 +711,7 @@ export class TelegramAdapter extends PlatformAdapter {
                 ...replyParams,
               });
             } catch (err) {
-              console.warn('[Telegram] Failed to upload photo bytes, falling back to URL send:', err instanceof Error ? err.message : String(err));
+              logger.warn('Failed to upload photo bytes, falling back to URL send', { subsystem: 'platform', platform: 'telegram', error: err instanceof Error ? err.message : String(err) });
               await this.bot.api.sendPhoto(chatId, action.url, {
                 caption: action.caption,
                 ...replyParams,
@@ -730,7 +731,7 @@ export class TelegramAdapter extends PlatformAdapter {
                 ...replyParams,
               });
             } catch (err) {
-              console.warn('[Telegram] Failed to upload animation bytes, falling back to URL send:', err instanceof Error ? err.message : String(err));
+              logger.warn('Failed to upload animation bytes, falling back to URL send', { subsystem: 'platform', platform: 'telegram', error: err instanceof Error ? err.message : String(err) });
               await this.bot.api.sendAnimation(chatId, action.url, {
                 caption: action.caption,
                 ...replyParams,
@@ -749,7 +750,7 @@ export class TelegramAdapter extends PlatformAdapter {
               ...replyParams,
             });
           } catch (err) {
-            console.warn('[Telegram] Failed to upload voice bytes, falling back to URL send:', err instanceof Error ? err.message : String(err));
+            logger.warn('Failed to upload voice bytes, falling back to URL send', { subsystem: 'platform', platform: 'telegram', error: err instanceof Error ? err.message : String(err) });
             await this.bot.api.sendVoice(chatId, action.url, {
               caption: action.caption,
               ...replyParams,
@@ -790,12 +791,12 @@ export class TelegramAdapter extends PlatformAdapter {
           break;
 
         default:
-          console.warn(`Unknown action type: ${(action as ResponseAction).type}`);
+          logger.warn('Unknown action type', { subsystem: 'platform', platform: 'telegram', actionType: (action as ResponseAction).type });
       }
       
       return true;
     } catch (error) {
-      console.error('Failed to execute Telegram action:', error instanceof Error ? error.message : String(error));
+      logger.error('Failed to execute Telegram action', error, { subsystem: 'platform', platform: 'telegram' });
       return false;
     }
   }
@@ -806,7 +807,7 @@ export class TelegramAdapter extends PlatformAdapter {
     try {
       await this.bot.api.sendChatAction(parseInt(conversationId), 'typing');
     } catch (error) {
-      console.warn('Failed to send typing indicator:', error instanceof Error ? error.message : String(error));
+      logger.warn('Failed to send typing indicator', { subsystem: 'platform', platform: 'telegram', error: error instanceof Error ? error.message : String(error) });
     }
   }
 
