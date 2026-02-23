@@ -3,6 +3,7 @@
  *
  * ECS Fargate service that processes Claude Code tasks.
  * Uses FIFO SQS queue for ordered processing per avatar.
+ * Auto-scales based on SQS queue depth with step scaling policies.
  */
 import * as cdk from 'aws-cdk-lib';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
@@ -13,6 +14,9 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatch_actions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import type * as sns from 'aws-cdk-lib/aws-sns';
 import { Construct } from 'constructs';
 
 import * as path from 'path';
@@ -89,12 +93,19 @@ export interface ClaudeCodeWorkerProps {
    * Secrets Manager prefix (e.g., "swarm" or "swarm-abcdef")
    */
   secretPrefix?: string;
+
+  /**
+   * SNS topic for alarm notifications. When provided, the queue backup
+   * alarm sends notifications to this topic.
+   */
+  alarmTopic?: sns.ITopic;
 }
 
 export class ClaudeCodeWorker extends Construct {
   public readonly queue: sqs.Queue;
   public readonly service: ecs.FargateService;
   public readonly taskDefinition: ecs.FargateTaskDefinition;
+  public readonly queueBackupAlarm?: cloudwatch.Alarm;
 
   constructor(scope: Construct, id: string, props: ClaudeCodeWorkerProps) {
     super(scope, id);
@@ -231,25 +242,81 @@ export class ClaudeCodeWorker extends Construct {
       },
     });
 
-    // Auto-scaling based on queue depth
-    if (maxCapacity > 0) { // enable scaling even for 0→1 transitions
+    // ── Auto-scaling based on SQS queue depth ────────────────────────────────
+    // Step scaling policy that scales 0→N based on ApproximateNumberOfMessagesVisible:
+    //   0 messages  → 0 tasks  (scale to zero)
+    //   1+ messages → 1 task   (wake up a worker)
+    //   10+ messages → 2 tasks (moderate load)
+    //   50+ messages → max     (high load)
+    //
+    // Separate cooldown periods prevent thrashing:
+    //   Scale-up:   60 seconds  (react quickly to incoming work)
+    //   Scale-down: 300 seconds (wait before removing capacity)
+    if (maxCapacity > 0) {
       const scaling = this.service.autoScaleTaskCount({
         minCapacity: Math.max(minCapacity, 0),
         maxCapacity,
       });
 
-      // Scale based on messages visible in queue (scales to minCapacity when empty)
-      scaling.scaleOnMetric('QueueDepthScaling', {
-        metric: this.queue.metricApproximateNumberOfMessagesVisible(),
+      // Scale-up policy: react quickly to queue depth increases
+      scaling.scaleOnMetric('QueueDepthScaleUp', {
+        metric: this.queue.metricApproximateNumberOfMessagesVisible({
+          period: cdk.Duration.minutes(1),
+          statistic: 'Maximum',
+        }),
         scalingSteps: [
-          { upper: 0, change: -maxCapacity }, // Scale to min when queue is empty
-          { lower: 1, change: +1 }, // Scale up when messages arrive
-          { lower: 5, change: +2 }, // Scale faster with more messages
-          { lower: 10, change: +3 },
+          { upper: 0, change: 0 },            // No change when queue is empty
+          { lower: 1, change: +1 },            // 1+ messages → add 1 task
+          { lower: 10, change: +2 },           // 10+ messages → add 2 tasks
+          { lower: 50, change: +maxCapacity }, // 50+ messages → scale to max
         ],
         adjustmentType: cdk.aws_applicationautoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
-        cooldown: cdk.Duration.minutes(3),
+        cooldown: cdk.Duration.seconds(60),
       });
+
+      // Scale-down policy: wait longer before removing capacity to prevent thrashing
+      scaling.scaleOnMetric('QueueDepthScaleDown', {
+        metric: this.queue.metricApproximateNumberOfMessagesVisible({
+          period: cdk.Duration.minutes(5),
+          statistic: 'Average',
+        }),
+        scalingSteps: [
+          { upper: 0, change: -maxCapacity }, // Queue empty → scale to zero
+          { lower: 1, change: 0 },            // Messages present → hold steady
+        ],
+        adjustmentType: cdk.aws_applicationautoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
+        cooldown: cdk.Duration.seconds(300),
+      });
+    }
+
+    // ── CloudWatch alarm: queue backup detection ────────────────────────────
+    // Fires when the queue has 100+ visible messages for 10 minutes,
+    // indicating the workers cannot keep up with incoming work.
+    this.queueBackupAlarm = new cloudwatch.Alarm(this, 'QueueBackupAlarm', {
+      alarmName: `swarm-claude-code-queue-backup-${environment}${suffix}`,
+      alarmDescription:
+        'Claude Code worker queue has backed up beyond threshold. ' +
+        'Workers may be failing to scale or processing too slowly. ' +
+        'Check ECS task status, scaling activity, and DLQ for failures.',
+      metric: this.queue.metricApproximateNumberOfMessagesVisible({
+        period: cdk.Duration.minutes(5),
+        statistic: 'Average',
+      }),
+      threshold: 100,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      evaluationPeriods: 2,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // Route alarm notifications to SNS topic if provided
+    if (props.alarmTopic) {
+      this.queueBackupAlarm.addAlarmAction(
+        new cloudwatch_actions.SnsAction(props.alarmTopic)
+      );
+      this.queueBackupAlarm.addOkAction(
+        new cloudwatch_actions.SnsAction(props.alarmTopic)
+      );
     }
 
     // Callback Lambda handler (processes results and sends to users)

@@ -452,6 +452,7 @@ export class AdminApiStack extends cdk.Stack {
         handlersCodePath: handlersPath,
         dependencyLayer,
         secretPrefix,
+        alarmTopic,
       });
 
       new cdk.CfnOutput(this, 'ClaudeCodeQueueUrl', {
