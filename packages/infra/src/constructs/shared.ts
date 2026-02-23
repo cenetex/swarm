@@ -117,6 +117,8 @@ export class SharedInfrastructure extends Construct {
       layerVersionName: `swarm-deps-${environment}${suffix}`,
       description: 'Shared dependencies for swarm handlers',
       compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
+      // Keep prior versions available so dependent stacks can roll back safely.
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
       code: layerCodePath
         ? lambda.Code.fromAsset(layerCodePath)
         : lambda.Code.fromAsset(layerPath, {

@@ -260,6 +260,7 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (dev) 1`] = `
       "Type": "AWS::SNS::Topic",
     },
     "SharedDependencyLayer4A51C7E0": {
+      "DeletionPolicy": "Retain",
       "Properties": {
         "CompatibleRuntimes": [
           "nodejs20.x",
@@ -272,6 +273,7 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (dev) 1`] = `
         "LayerName": "swarm-deps-dev",
       },
       "Type": "AWS::Lambda::LayerVersion",
+      "UpdateReplacePolicy": "Retain",
     },
     "SharedDiscordClusterA82641C3": {
       "Properties": {
@@ -1004,6 +1006,7 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (prod) 1`] = `
       "Type": "AWS::S3::BucketPolicy",
     },
     "SharedDependencyLayer4A51C7E0": {
+      "DeletionPolicy": "Retain",
       "Properties": {
         "CompatibleRuntimes": [
           "nodejs20.x",
@@ -1016,6 +1019,7 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (prod) 1`] = `
         "LayerName": "swarm-deps-prod",
       },
       "Type": "AWS::Lambda::LayerVersion",
+      "UpdateReplacePolicy": "Retain",
     },
     "SharedDiscordClusterA82641C3": {
       "Properties": {
@@ -1536,6 +1540,7 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
       "Type": "AWS::SNS::Topic",
     },
     "SharedDependencyLayer4A51C7E0": {
+      "DeletionPolicy": "Retain",
       "Properties": {
         "CompatibleRuntimes": [
           "nodejs20.x",
@@ -1548,6 +1553,7 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
         "LayerName": "swarm-deps-staging",
       },
       "Type": "AWS::Lambda::LayerVersion",
+      "UpdateReplacePolicy": "Retain",
     },
   },
   "Rules": {
@@ -1720,6 +1726,7 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
       "Type": "AWS::SNS::Topic",
     },
     "SharedDependencyLayer4A51C7E0": {
+      "DeletionPolicy": "Retain",
       "Properties": {
         "CompatibleRuntimes": [
           "nodejs20.x",
@@ -1732,6 +1739,7 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
         "LayerName": "swarm-deps-staging",
       },
       "Type": "AWS::Lambda::LayerVersion",
+      "UpdateReplacePolicy": "Retain",
     },
   },
   "Rules": {

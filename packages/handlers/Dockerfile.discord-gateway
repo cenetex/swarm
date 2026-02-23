@@ -47,10 +47,9 @@ WORKDIR /home/swarm/app
 # Copy built outputs
 COPY --from=builder /build/packages/handlers/dist/ ./dist/
 COPY --from=builder /build/packages/handlers/package.json ./package.json
-COPY --from=builder /build/packages/core/dist/ ./node_modules/@swarm/core/dist/
-COPY --from=builder /build/packages/core/package.json ./node_modules/@swarm/core/package.json
-COPY --from=builder /build/packages/mcp-server/dist/ ./node_modules/@swarm/mcp-server/dist/
-COPY --from=builder /build/packages/mcp-server/package.json ./node_modules/@swarm/mcp-server/package.json
+# Copy workspace package manifests for dependency merge
+COPY --from=builder /build/packages/core/package.json /tmp/swarm-core-package.json
+COPY --from=builder /build/packages/mcp-server/package.json /tmp/swarm-mcp-server-package.json
 
 # Merge deps from all workspace packages and strip workspace: protocol references.
 # Core and mcp-server have their own deps (e.g., @anthropic-ai/sdk, jimp) that must
@@ -58,14 +57,20 @@ COPY --from=builder /build/packages/mcp-server/package.json ./node_modules/@swar
 RUN node -e "\
 const fs=require('fs');\
 const h=require('./package.json');\
-const c=require('./node_modules/@swarm/core/package.json');\
-const m=require('./node_modules/@swarm/mcp-server/package.json');\
+const c=require('/tmp/swarm-core-package.json');\
+const m=require('/tmp/swarm-mcp-server-package.json');\
 const deps={...h.dependencies};\
 for(const pkg of [c,m]){for(const[k,v]of Object.entries(pkg.dependencies||{})){if(!deps[k])deps[k]=v}}\
 for(const k of Object.keys(deps)){if(String(deps[k]).startsWith('workspace:'))delete deps[k]}\
 h.dependencies=deps;\
 fs.writeFileSync('package.json',JSON.stringify(h,null,2))"
 RUN npm install --omit=dev
+
+# Copy workspace packages after npm install so npm prune cannot remove them.
+COPY --from=builder /build/packages/core/dist/ ./node_modules/@swarm/core/dist/
+COPY --from=builder /build/packages/core/package.json ./node_modules/@swarm/core/package.json
+COPY --from=builder /build/packages/mcp-server/dist/ ./node_modules/@swarm/mcp-server/dist/
+COPY --from=builder /build/packages/mcp-server/package.json ./node_modules/@swarm/mcp-server/package.json
 
 RUN chown -R swarm:swarm /home/swarm
 USER swarm
