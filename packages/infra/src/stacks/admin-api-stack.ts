@@ -21,6 +21,15 @@ import { DiscordGatewayWorker } from '../constructs/discord-gateway-worker.js';
 import { OpsDashboard } from '../constructs/ops-dashboard.js';
 import type { SharedInfraStack } from './shared-infra-stack.js';
 
+/**
+ * Computes the SSM parameter name for the Admin API endpoint URL.
+ * Shared between AdminApiStack (writer) and AdminUiStack (reader)
+ * to decouple CloudFormation cross-stack exports.
+ */
+export function apiEndpointParamName(environment: string, suffix: string): string {
+  return `/swarm/${environment}${suffix}/api-endpoint-url`;
+}
+
 export interface AdminApiStackProps extends cdk.StackProps {
   /**
    * Environment name (dev, staging, prod)
@@ -163,6 +172,12 @@ export class AdminApiStack extends cdk.Stack {
   public readonly claudeCodeWorker?: ClaudeCodeWorker;
   public readonly discordGatewayWorker?: DiscordGatewayWorker;
   public readonly apiEndpoint?: string;
+  /**
+   * SSM parameter name where the API endpoint URL is stored.
+   * Consumer stacks should read from this SSM parameter instead of
+   * referencing apiEndpoint directly, to avoid CloudFormation export-in-use errors.
+   */
+  public readonly apiEndpointParamName: string;
 
   constructor(scope: Construct, id: string, props: AdminApiStackProps) {
     super(scope, id, props);
@@ -195,6 +210,10 @@ export class AdminApiStack extends cdk.Stack {
       nameSuffix,
       enableDiscordGateway = false,
     } = props;
+
+    // SSM parameter name for the API endpoint URL — used by AdminUiStack
+    // to avoid CloudFormation cross-stack export dependencies.
+    this.apiEndpointParamName = apiEndpointParamName(environment, nameSuffix ?? '');
 
     // Import shared resources from the shared infrastructure stack
     // Note: CDK requires only one of tableArn or tableName, not both
@@ -331,6 +350,15 @@ export class AdminApiStack extends cdk.Stack {
       });
 
       this.apiEndpoint = this.adminApi.apiEndpoint;
+
+      // Store API endpoint in SSM so consumer stacks (AdminUiStack) can read it
+      // without creating a CloudFormation cross-stack export dependency.
+      // This mirrors the pattern used for dependencyLayerArn in SharedInfraStack.
+      new ssm.StringParameter(this, 'ApiEndpointParam', {
+        parameterName: this.apiEndpointParamName,
+        stringValue: this.apiEndpoint,
+        description: 'Admin API endpoint URL for cross-stack consumption',
+      });
 
       // SharedHandlers receives ADMIN_TABLE directly via `adminTable` above.
       // Keep this stack focused on Admin API construct wiring.

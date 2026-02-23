@@ -126,106 +126,57 @@ export class SharedInfrastructure extends Construct {
           }),
     });
 
+    // ───── DynamoDB tables ─────
     if (useExistingResources) {
-      // ───── Import existing resources owned by legacy monolith stack ─────
       this.stateTable = dynamodb.Table.fromTableName(
         this, 'StateTable', `swarm-state-${environment}${suffix}`,
       );
       this.activityTable = dynamodb.Table.fromTableName(
         this, 'ActivityTable', `swarm-activity-${environment}${suffix}`,
       );
-
-      const mediaBucketName = `swarm-media-${environment}${suffix}-${cdk.Aws.ACCOUNT_ID}`;
-      this.mediaBucket = s3.Bucket.fromBucketName(this, 'MediaBucket', mediaBucketName);
-
-      // Alarm topic – create fresh (not in legacy monolith)
-      this.alarmTopic = new sns.Topic(this, 'AlarmTopic', {
-        topicName: `swarm-alarms-${environment}${suffix}`,
-        displayName: `Swarm Alarms (${environment})`,
-      });
-      if (alarmNotificationEmail) {
-        this.alarmTopic.addSubscription(
-          new snsSubscriptions.EmailSubscription(alarmNotificationEmail),
-        );
-      }
-
-      // Discord cluster – import by name
-      const vpc = ec2.Vpc.fromLookup(this, 'DefaultVpc', { isDefault: true });
-      this.discordCluster = ecs.Cluster.fromClusterAttributes(this, 'DiscordCluster', {
-        clusterName: `swarm-discord-${environment}${suffix}`,
-        vpc,
-        securityGroups: [],
+    } else {
+      const stateTable = new dynamodb.Table(this, 'StateTable', {
+        tableName: `swarm-state-${environment}${suffix}`,
+        partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+        sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+        billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+        removalPolicy: isPersistentEnv
+          ? cdk.RemovalPolicy.RETAIN
+          : cdk.RemovalPolicy.DESTROY,
+        deletionProtection: isPersistentEnv,
+        pointInTimeRecoverySpecification: isPersistentEnv
+          ? { pointInTimeRecoveryEnabled: true }
+          : undefined,
+        timeToLiveAttribute: 'ttl',
       });
 
-      // CDN – reference the existing distribution managed by legacy stack.
-      // Prefer cdnDomain (custom domain), then mediaCdnUrl (explicit CloudFront URL).
-      if (enableCdn) {
-        if (cdnDomain) {
-          this.cdnUrl = `https://${cdnDomain}`;
-        } else if (mediaCdnUrl) {
-          // mediaCdnUrl is the explicit CloudFront distribution URL (e.g. https://d1234.cloudfront.net)
-          this.cdnUrl = mediaCdnUrl.startsWith('https://') ? mediaCdnUrl : `https://${mediaCdnUrl}`;
-        }
+      stateTable.addGlobalSecondaryIndex({
+        indexName: 'GSI1',
+        partitionKey: { name: 'gsi1pk', type: dynamodb.AttributeType.STRING },
+        sortKey: { name: 'gsi1sk', type: dynamodb.AttributeType.STRING },
+        projectionType: dynamodb.ProjectionType.ALL,
+      });
+      this.stateTable = stateTable;
 
-        // Synth-time validation: fail early if CDN is enabled but no URL could be resolved
-        if (!this.cdnUrl) {
-          throw new Error(
-            `[SharedInfrastructure] useExistingResources=true with enableCdn=true but no CDN URL could be resolved. ` +
-            `Set either 'galleryDomain' (custom domain) or 'mediaCdnUrl' (CloudFront distribution URL) ` +
-            `in cdk.context.json or via -c context args.`
-          );
-        }
-      }
-      // No CfnOutputs – exports from legacy stack still active
-      return;
+      this.activityTable = new dynamodb.Table(this, 'ActivityTable', {
+        tableName: `swarm-activity-${environment}${suffix}`,
+        partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+        sortKey: { name: 'timestamp', type: dynamodb.AttributeType.NUMBER },
+        billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+        removalPolicy: isPersistentEnv
+          ? cdk.RemovalPolicy.RETAIN
+          : cdk.RemovalPolicy.DESTROY,
+        deletionProtection: isPersistentEnv,
+        pointInTimeRecoverySpecification: isPersistentEnv
+          ? { pointInTimeRecoveryEnabled: true }
+          : undefined,
+        timeToLiveAttribute: 'ttl',
+      });
     }
 
-    // ═════ Create resources from scratch ═════
-
-    // State table (multi-tenant)
-    const stateTable = new dynamodb.Table(this, 'StateTable', {
-      tableName: `swarm-state-${environment}${suffix}`,
-      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      removalPolicy: isPersistentEnv
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
-      deletionProtection: isPersistentEnv,
-      pointInTimeRecoverySpecification: isPersistentEnv
-        ? { pointInTimeRecoveryEnabled: true }
-        : undefined,
-      timeToLiveAttribute: 'ttl',
-    });
-
-    // GSI for listing by type
-    stateTable.addGlobalSecondaryIndex({
-      indexName: 'GSI1',
-      partitionKey: { name: 'gsi1pk', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'gsi1sk', type: dynamodb.AttributeType.STRING },
-      projectionType: dynamodb.ProjectionType.ALL,
-    });
-    this.stateTable = stateTable;
-
-    // Activity table
-    this.activityTable = new dynamodb.Table(this, 'ActivityTable', {
-      tableName: `swarm-activity-${environment}${suffix}`,
-      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.NUMBER },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      removalPolicy: isPersistentEnv
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
-      deletionProtection: isPersistentEnv,
-      pointInTimeRecoverySpecification: isPersistentEnv
-        ? { pointInTimeRecoveryEnabled: true }
-        : undefined,
-      timeToLiveAttribute: 'ttl',
-    });
-
-    // Media bucket - import existing or create new
+    // ───── S3 media bucket ─────
     const mediaBucketName = `swarm-media-${environment}${suffix}-${cdk.Aws.ACCOUNT_ID}`;
-    if (useExistingMediaBucket) {
+    if (useExistingResources || useExistingMediaBucket) {
       this.mediaBucket = s3.Bucket.fromBucketName(this, 'MediaBucket', mediaBucketName);
     } else {
       this.mediaBucket = new s3.Bucket(this, 'MediaBucket', {
@@ -264,82 +215,99 @@ export class SharedInfrastructure extends Construct {
       });
     }
 
-    // CloudFront CDN - REQUIRED for media to be accessible
-    // S3 bucket is private, only CloudFront can access it via OAI
+    // ───── CloudFront CDN ─────
+    // When useExistingResources=true, the CDN distribution and log bucket are
+    // owned by the legacy monolith stack. We only resolve the cdnUrl for use
+    // by downstream consumers; no CloudFormation resources are created.
     if (enableCdn) {
-      // Configure custom domain if provided
-      const domainConfig: {
-        domainNames?: string[];
-        certificate?: acm.ICertificate;
-      } = {};
+      if (useExistingResources) {
+        // Resolve CDN URL from existing distribution — prefer cdnDomain, then mediaCdnUrl.
+        if (cdnDomain) {
+          this.cdnUrl = `https://${cdnDomain}`;
+        } else if (mediaCdnUrl) {
+          this.cdnUrl = mediaCdnUrl.startsWith('https://') ? mediaCdnUrl : `https://${mediaCdnUrl}`;
+        }
 
-      if (cdnDomain && cdnCertificateArn) {
-        domainConfig.domainNames = [cdnDomain];
-        domainConfig.certificate = acm.Certificate.fromCertificateArn(
-          this,
-          'CdnCertificate',
-          cdnCertificateArn
-        );
-      }
+        if (!this.cdnUrl) {
+          throw new Error(
+            `[SharedInfrastructure] useExistingResources=true with enableCdn=true but no CDN URL could be resolved. ` +
+            `Set either 'galleryDomain' (custom domain) or 'mediaCdnUrl' (CloudFront distribution URL) ` +
+            `in cdk.context.json or via -c context args.`
+          );
+        }
+      } else {
+        // Create CDN from scratch
+        const domainConfig: {
+          domainNames?: string[];
+          certificate?: acm.ICertificate;
+        } = {};
 
-      // Access log bucket for CloudFront (persistent environments only)
-      const logBucket = isPersistentEnv
-        ? new s3.Bucket(this, 'CdnLogBucket', {
-            bucketName: `swarm-cdn-logs-${environment}${suffix}-${cdk.Aws.ACCOUNT_ID}`,
-            removalPolicy: cdk.RemovalPolicy.RETAIN,
-            encryption: s3.BucketEncryption.S3_MANAGED,
-            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-            enforceSSL: true,
-            lifecycleRules: [{
-              id: 'expire-old-logs',
-              expiration: cdk.Duration.days(90),
-            }],
-            objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
-          })
-        : undefined;
+        if (cdnDomain && cdnCertificateArn) {
+          domainConfig.domainNames = [cdnDomain];
+          domainConfig.certificate = acm.Certificate.fromCertificateArn(
+            this,
+            'CdnCertificate',
+            cdnCertificateArn
+          );
+        }
 
-      this.distribution = new cloudfront.Distribution(this, 'MediaCdn', {
-        defaultBehavior: {
-          origin: origins.S3BucketOrigin.withOriginAccessControl(this.mediaBucket),
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        },
-        comment: `Swarm media CDN (${environment})`,
-        ...(logBucket ? { logBucket, logFilePrefix: 'cdn/' } : {}),
-        ...domainConfig,
-        ...(enableWaf ? {
-          webAclId: createManagedWebAcl(this, 'MediaCdnWebAcl', {
-            scope: 'CLOUDFRONT',
-            name: `swarm-media-cdn-${environment}${suffix}-webacl`,
-            metricPrefix: `swarm-media-cdn-${environment}${suffix}`,
-          }).attrArn,
-        } : {}),
-      });
+        // Access log bucket for CloudFront (persistent environments only)
+        const logBucket = isPersistentEnv
+          ? new s3.Bucket(this, 'CdnLogBucket', {
+              bucketName: `swarm-cdn-logs-${environment}${suffix}-${cdk.Aws.ACCOUNT_ID}`,
+              removalPolicy: cdk.RemovalPolicy.RETAIN,
+              encryption: s3.BucketEncryption.S3_MANAGED,
+              blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+              enforceSSL: true,
+              lifecycleRules: [{
+                id: 'expire-old-logs',
+                expiration: cdk.Duration.days(90),
+              }],
+              objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
+            })
+          : undefined;
 
-      // Set cdnUrl - use custom domain if configured, otherwise use CloudFront domain
-      this.cdnUrl = cdnDomain
-        ? `https://${cdnDomain}`
-        : `https://${this.distribution.distributionDomainName}`;
-
-      // Output the CDN URL for debugging
-      new cdk.CfnOutput(this, 'MediaCdnUrl', {
-        value: this.cdnUrl,
-        description: 'CloudFront CDN URL for media files',
-        exportName: `swarm-cdn-url-${environment}${suffix}`,
-      });
-
-      if (cdnDomain) {
-        new cdk.CfnOutput(this, 'CdnCnameTarget', {
-          value: this.distribution.distributionDomainName,
-          description: `Create CNAME: ${cdnDomain} -> this value`,
-          exportName: `swarm-cdn-cname-target-${environment}${suffix}`,
+        this.distribution = new cloudfront.Distribution(this, 'MediaCdn', {
+          defaultBehavior: {
+            origin: origins.S3BucketOrigin.withOriginAccessControl(this.mediaBucket),
+            viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          },
+          comment: `Swarm media CDN (${environment})`,
+          ...(logBucket ? { logBucket, logFilePrefix: 'cdn/' } : {}),
+          ...domainConfig,
+          ...(enableWaf ? {
+            webAclId: createManagedWebAcl(this, 'MediaCdnWebAcl', {
+              scope: 'CLOUDFRONT',
+              name: `swarm-media-cdn-${environment}${suffix}-webacl`,
+              metricPrefix: `swarm-media-cdn-${environment}${suffix}`,
+            }).attrArn,
+          } : {}),
         });
+
+        this.cdnUrl = cdnDomain
+          ? `https://${cdnDomain}`
+          : `https://${this.distribution.distributionDomainName}`;
+
+        new cdk.CfnOutput(this, 'MediaCdnUrl', {
+          value: this.cdnUrl,
+          description: 'CloudFront CDN URL for media files',
+          exportName: `swarm-cdn-url-${environment}${suffix}`,
+        });
+
+        if (cdnDomain) {
+          new cdk.CfnOutput(this, 'CdnCnameTarget', {
+            value: this.distribution.distributionDomainName,
+            description: `Create CNAME: ${cdnDomain} -> this value`,
+            exportName: `swarm-cdn-cname-target-${environment}${suffix}`,
+          });
+        }
       }
-    } else {
+    } else if (!useExistingResources) {
       console.warn('WARNING: enableCdn is false! Media files will NOT be accessible.');
     }
 
-    // SNS topic for CloudWatch alarm notifications
+    // ───── SNS alarm topic (always created fresh, not in legacy monolith) ─────
     this.alarmTopic = new sns.Topic(this, 'AlarmTopic', {
       topicName: `swarm-alarms-${environment}${suffix}`,
       displayName: `Swarm Alarms (${environment})`,
@@ -351,33 +319,44 @@ export class SharedInfrastructure extends Construct {
       );
     }
 
+    // ───── ECS cluster ─────
     const vpc = ec2.Vpc.fromLookup(this, 'DefaultVpc', { isDefault: true });
-    this.discordCluster = new ecs.Cluster(this, 'DiscordCluster', {
-      vpc,
-      clusterName: `swarm-discord-${environment}${suffix}`,
-    });
-
-    // Outputs
-    new cdk.CfnOutput(this, 'StateTableName', {
-      value: this.stateTable.tableName,
-      exportName: `swarm-state-table-${environment}${suffix}`,
-    });
-
-    new cdk.CfnOutput(this, 'ActivityTableName', {
-      value: this.activityTable.tableName,
-      exportName: `swarm-activity-table-${environment}${suffix}`,
-    });
-
-    new cdk.CfnOutput(this, 'MediaBucketName', {
-      value: this.mediaBucket.bucketName,
-      exportName: `swarm-media-bucket-${environment}${suffix}`,
-    });
-
-    if (this.distribution) {
-      new cdk.CfnOutput(this, 'CdnDomain', {
-        value: this.distribution.distributionDomainName,
-        exportName: `swarm-cdn-domain-${environment}${suffix}`,
+    if (useExistingResources) {
+      this.discordCluster = ecs.Cluster.fromClusterAttributes(this, 'DiscordCluster', {
+        clusterName: `swarm-discord-${environment}${suffix}`,
+        vpc,
+        securityGroups: [],
       });
+    } else {
+      this.discordCluster = new ecs.Cluster(this, 'DiscordCluster', {
+        vpc,
+        clusterName: `swarm-discord-${environment}${suffix}`,
+      });
+    }
+
+    // ───── Outputs (only when creating resources from scratch) ─────
+    if (!useExistingResources) {
+      new cdk.CfnOutput(this, 'StateTableName', {
+        value: this.stateTable.tableName,
+        exportName: `swarm-state-table-${environment}${suffix}`,
+      });
+
+      new cdk.CfnOutput(this, 'ActivityTableName', {
+        value: this.activityTable.tableName,
+        exportName: `swarm-activity-table-${environment}${suffix}`,
+      });
+
+      new cdk.CfnOutput(this, 'MediaBucketName', {
+        value: this.mediaBucket.bucketName,
+        exportName: `swarm-media-bucket-${environment}${suffix}`,
+      });
+
+      if (this.distribution) {
+        new cdk.CfnOutput(this, 'CdnDomain', {
+          value: this.distribution.distributionDomainName,
+          exportName: `swarm-cdn-domain-${environment}${suffix}`,
+        });
+      }
     }
 
     // Note: AlarmTopicArn export is handled by SharedInfraStack (not here)

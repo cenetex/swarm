@@ -111,8 +111,8 @@ const enableClaudeCode = parseBoolean(getContextValue<unknown>('enableClaudeCode
 const claudeCodeUseOpenRouter = parseBoolean(getContextValue<unknown>('claudeCodeUseOpenRouter', envConfig)) ?? false;
 const enableDiscordGateway = parseBoolean(getContextValue<unknown>('enableDiscordGateway', envConfig)) ?? false;
 const useExistingResources = parseBoolean(getContextValue<unknown>('useExistingResources', envConfig)) ?? false;
-const useExistingBuckets = parseBoolean(app.node.tryGetContext('useExistingBuckets')) ?? false;
-const skipDomainAliases = parseBoolean(app.node.tryGetContext('skipDomainAliases')) ?? false;
+const useExistingBuckets = parseBoolean(getContextValue<unknown>('useExistingBuckets', envConfig)) ?? false;
+const skipDomainAliases = parseBoolean(getContextValue<unknown>('skipDomainAliases', envConfig)) ?? false;
 const anthropicApiKeyArn = getContextValue<string>('anthropicApiKeyArn', envConfig);
 const secretPrefixRaw = getContextValue<string>('secretPrefix', envConfig);
 const stackHashRaw = getContextValue<string>('stackHash', envConfig);
@@ -150,6 +150,23 @@ const stackEnv = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
   region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
 };
+
+// ============================================
+// Deploy Validation
+// ============================================
+
+// Persistent environments (prod, staging) have pre-existing shared resources
+// (DynamoDB tables, S3 buckets, ECS clusters) from the legacy monolith stack.
+// Deploying without useExistingResources=true would attempt to create duplicate
+// resources and fail with "already exists" errors.
+if ((environment === 'prod' || environment === 'staging') && !useExistingResources) {
+  console.warn(
+    `⚠️  WARNING: Deploying to '${environment}' without useExistingResources=true. ` +
+    `This will attempt to create DynamoDB tables, S3 buckets, and ECS clusters that ` +
+    `may already exist from the legacy SwarmStack-${environment}. ` +
+    `Set -c useExistingResources=true or configure it in cdk.context.json.`
+  );
+}
 
 // ============================================
 // Split Stacks for Parallel Deployment

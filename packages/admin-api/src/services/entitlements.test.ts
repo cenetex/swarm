@@ -189,6 +189,75 @@ describe('getEntitlement - GSI1 key schema (issue #168)', () => {
   });
 });
 
+// ============================================================================
+// findEntitlementByStripeSubscriptionId - GSI query (issue #418)
+//
+// Replaced the O(table-size) Scan with a Query on the sparse
+// StripeSubscriptionIndex GSI keyed on stripeSubscriptionId.
+// ============================================================================
+
+describe('findEntitlementByStripeSubscriptionId - GSI query (issue #418)', () => {
+  const src = readFileSync(resolve(__dirname, 'entitlements.ts'), 'utf-8');
+
+  // Extract only the findEntitlementByStripeSubscriptionId function body
+  const fnMatch = src.match(
+    /export async function findEntitlementByStripeSubscriptionId[\s\S]*?^}/m
+  );
+  const fnBody = fnMatch?.[0] ?? '';
+
+  it('should exist', () => {
+    expect(fnMatch).not.toBeNull();
+  });
+
+  it('should use QueryCommand instead of ScanCommand', () => {
+    expect(fnBody).toContain('QueryCommand');
+    expect(fnBody).not.toContain('ScanCommand');
+  });
+
+  it('should query the StripeSubscriptionIndex GSI', () => {
+    expect(fnBody).toContain("IndexName: 'StripeSubscriptionIndex'");
+  });
+
+  it('should use stripeSubscriptionId as key condition', () => {
+    expect(fnBody).toContain(
+      "KeyConditionExpression: 'stripeSubscriptionId = :subscriptionId'"
+    );
+  });
+
+  it('should bind the subscription ID parameter', () => {
+    expect(fnBody).toContain("':subscriptionId': stripeSubscriptionId");
+  });
+
+  it('should limit results to 1', () => {
+    expect(fnBody).toContain('Limit: 1');
+  });
+
+  it('should not import ScanCommand', () => {
+    // Verify ScanCommand is no longer imported since it is no longer used
+    const importBlock = src.match(
+      /import \{[\s\S]*?\} from ['"]@aws-sdk\/lib-dynamodb['"]/
+    );
+    expect(importBlock).not.toBeNull();
+    expect(importBlock![0]).not.toContain('ScanCommand');
+  });
+
+  it('should not perform paginated scanning', () => {
+    // The old implementation used lastEvaluatedKey for pagination
+    expect(fnBody).not.toContain('lastEvaluatedKey');
+    expect(fnBody).not.toContain('LastEvaluatedKey');
+    expect(fnBody).not.toContain('ExclusiveStartKey');
+  });
+
+  it('should return null when no items match', () => {
+    // Verify the null return path exists
+    expect(fnBody).toContain('return null');
+  });
+
+  it('should return the first matching item as EntitlementRecord', () => {
+    expect(fnBody).toContain('result.Items[0] as EntitlementRecord');
+  });
+});
+
 describe('checkLimit - graceful error handling (issue #168)', () => {
   // Verify that checkLimit wraps getEntitlement in a try/catch so that
   // DynamoDB errors degrade gracefully to free-tier defaults.

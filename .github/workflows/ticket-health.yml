@@ -1,0 +1,40 @@
+name: Ticket Health Report
+
+on:
+  schedule:
+    # Every Monday at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+
+  workflow_dispatch: {}
+
+permissions:
+  issues: read
+  contents: read
+
+jobs:
+  report:
+    name: Generate Report
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Generate markdown report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/ticket-health-report.sh
+
+      - name: Generate JSON report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p report-artifacts
+          bash scripts/ticket-health-report.sh --json > report-artifacts/ticket-health.json
+
+      - name: Upload JSON artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ticket-health-report
+          path: report-artifacts/ticket-health.json
+          retention-days: 90

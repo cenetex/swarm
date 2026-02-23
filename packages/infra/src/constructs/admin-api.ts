@@ -324,6 +324,16 @@ export class AdminApiConstruct extends Construct {
         partitionKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
         sortKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       });
+
+      // Sparse GSI for Stripe subscription lookups.
+      // Only entitlement items with stripeSubscriptionId are projected,
+      // replacing the O(table-size) Scan in findEntitlementByStripeSubscriptionId.
+      adminTable.addGlobalSecondaryIndex({
+        indexName: 'StripeSubscriptionIndex',
+        partitionKey: { name: 'stripeSubscriptionId', type: dynamodb.AttributeType.STRING },
+        projectionType: dynamodb.ProjectionType.ALL,
+      });
+
       this.table = adminTable;
     }
 

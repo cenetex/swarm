@@ -353,6 +353,46 @@ describe('CDK Infrastructure - Resource Assertions', () => {
     });
   });
 
+  test('SharedInfraStack with useExistingResources does NOT create shared resources', () => {
+    const app = new cdk.App({ context: DUMMY_VPC_CONTEXT });
+
+    const stack = new SharedInfraStack(app, 'TestSharedNoCreate', {
+      environment: 'prod',
+      enableCdn: true,
+      mediaCdnUrl: 'https://d1234.cloudfront.net',
+      useExistingResources: true,
+      env: TEST_ENV,
+    });
+
+    const template = Template.fromStack(stack);
+
+    // When useExistingResources=true, no DynamoDB tables should be created
+    template.resourceCountIs('AWS::DynamoDB::Table', 0);
+
+    // No S3 buckets (media bucket and CDN log bucket are both imported/skipped)
+    template.resourceCountIs('AWS::S3::Bucket', 0);
+
+    // No ECS cluster (imported by name)
+    template.resourceCountIs('AWS::ECS::Cluster', 0);
+
+    // No CloudFront distribution (CDN URL is resolved from existing)
+    template.resourceCountIs('AWS::CloudFront::Distribution', 0);
+
+    // No WAF WebACL
+    template.resourceCountIs('AWS::WAFv2::WebACL', 0);
+
+    // Should still create SNS topic (alarm topic is always fresh)
+    template.hasResourceProperties('AWS::SNS::Topic', {
+      TopicName: 'swarm-alarms-prod',
+    });
+
+    // Should still create Lambda layer
+    template.resourceCountIs('AWS::Lambda::LayerVersion', 1);
+
+    // cdnUrl should be set from mediaCdnUrl
+    expect(stack.cdnUrl).toBe('https://d1234.cloudfront.net');
+  });
+
   test('AdminUiStack creates CloudFront with WAF', () => {
     const app = new cdk.App({ context: DUMMY_VPC_CONTEXT });
 

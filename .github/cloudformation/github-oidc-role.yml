@@ -41,15 +41,16 @@ Resources:
         - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
 
   # ═══════════════════════════════════════════════════════════════
-  # ROLE 1: Deploy  (deploy.yml, deploy-cdk-reusable, deploy-admin-ui-reusable)
+  # ROLE 1: GitHubActionsRole (deploy.yml, deploy-cdk-reusable, deploy-admin-ui-reusable)
   #
   # Trust: main branch pushes + version tags + environment dispatches
   # This is the only role with write access to infrastructure.
+  # Logical ID kept as GitHubActionsRole to match the deployed stack.
   # ═══════════════════════════════════════════════════════════════
-  DeployRole:
+  GitHubActionsRole:
     Type: AWS::IAM::Role
     Properties:
-      # Keep original name for backward compatibility with existing GitHub secrets
+      # Keep original logical ID + physical name for backward compatibility
       RoleName: !Sub '${GitHubRepo}-github-actions'
       Description: !Sub 'Deploy role for ${GitHubOrg}/${GitHubRepo} — CDK + Admin UI'
       MaxSessionDuration: 3600
@@ -738,14 +739,14 @@ Outputs:
   # Backward-compatible: existing GitHub secret AWS_ROLE_ARN points here
   DeployRoleArn:
     Description: ARN of the Deploy role (set as AWS_ROLE_ARN in GitHub environment secrets)
-    Value: !GetAtt DeployRole.Arn
+    Value: !GetAtt GitHubActionsRole.Arn
     Export:
       Name: !Sub '${AWS::StackName}-DeployRoleArn'
 
   # Alias for backward compatibility
   RoleArn:
     Description: (Deprecated) Alias for DeployRoleArn — use DeployRoleArn instead
-    Value: !GetAtt DeployRole.Arn
+    Value: !GetAtt GitHubActionsRole.Arn
     Export:
       Name: !Sub '${AWS::StackName}-RoleArn'
 
