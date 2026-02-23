@@ -73,6 +73,14 @@ function readBody(event: APIGatewayProxyEventV2): string {
   return body;
 }
 
+function safeParseJson(raw: string): { ok: true; data: unknown } | { ok: false } {
+  try {
+    return { ok: true, data: JSON.parse(raw || '{}') };
+  } catch {
+    return { ok: false };
+  }
+}
+
 function parseSignatureHeader(headers: Record<string, string | undefined>): string | null {
   return headers['stripe-signature'] || headers['Stripe-Signature'] || null;
 }
@@ -109,7 +117,12 @@ async function handleCheckout(
   }
 
   const rawBody = readBody(event);
-  const parsed = CheckoutSchema.safeParse(JSON.parse(rawBody || '{}'));
+  const jsonResult = safeParseJson(rawBody);
+  if (!jsonResult.ok) {
+    return jsonResponse(400, { error: 'Invalid JSON in request body' }, corsHeaders);
+  }
+
+  const parsed = CheckoutSchema.safeParse(jsonResult.data);
   if (!parsed.success) {
     return jsonResponse(400, { error: 'Invalid request', details: parsed.error.issues }, corsHeaders);
   }
@@ -156,7 +169,12 @@ async function handlePortal(
   }
 
   const rawBody = readBody(event);
-  const parsed = PortalSchema.safeParse(JSON.parse(rawBody || '{}'));
+  const jsonResult = safeParseJson(rawBody);
+  if (!jsonResult.ok) {
+    return jsonResponse(400, { error: 'Invalid JSON in request body' }, corsHeaders);
+  }
+
+  const parsed = PortalSchema.safeParse(jsonResult.data);
   if (!parsed.success) {
     return jsonResponse(400, { error: 'Invalid request', details: parsed.error.issues }, corsHeaders);
   }
