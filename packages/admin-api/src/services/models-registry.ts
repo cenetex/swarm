@@ -236,6 +236,14 @@ export function getModelById(id: string): ModelInfo | undefined {
   return AVAILABLE_MODELS.find((m) => m.id === id);
 }
 
+export function getValidModelId(value: unknown): string | undefined {
+  const normalized = normalizeModel(value);
+  if (!normalized) return undefined;
+  if (getModelById(normalized)) return normalized;
+  logger.warn('Unknown LLM model configured, falling back to default', { model: normalized });
+  return undefined;
+}
+
 /**
  * Get all models for a provider
  */
@@ -383,8 +391,8 @@ export function resolveChatModel(params: {
   defaultModel: string;
 }): string {
   return (
-    normalizeModel(params.requestModel) ??
-    normalizeModel(params.avatarModel) ??
+    getValidModelId(params.requestModel) ??
+    getValidModelId(params.avatarModel) ??
     params.defaultModel
   );
 }

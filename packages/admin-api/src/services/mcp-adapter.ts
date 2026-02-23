@@ -18,6 +18,7 @@ import type { UserSession, SecretType } from '../types.js';
 import type { IntegrationType, AICapability } from '../services/integrations.js';
 import type { TokenLaunchConfig } from '../services/token-launch.js';
 import { getDefaultContainer, type ServiceContainer } from '../services/service-container.js';
+import { getValidModelId } from './models-registry.js';
 
 // Timeout for external API calls
 const API_TIMEOUT_MS = 10_000;
@@ -432,9 +433,13 @@ export function createMCPServices(
           maxTokens: DEFAULT_LLM_MAX_TOKENS,
           useGlobalKey: true,
         };
+        const resolvedModel = config.model
+          ? getValidModelId(config.model) ?? currentConfig.model
+          : currentConfig.model;
         const newLlmConfig = {
           ...currentConfig,
           ...config,
+          model: resolvedModel,
         };
         await avatars.updateAvatar(avatarId, { llmConfig: newLlmConfig } as Record<string, unknown>, session);
       },
