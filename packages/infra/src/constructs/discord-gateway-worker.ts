@@ -82,7 +82,7 @@ export class DiscordGatewayWorker extends Construct {
       memoryLimitMiB: 1024,
       cpu: 512,
       runtimePlatform: {
-        cpuArchitecture: ecs.CpuArchitecture.X86_64,
+        cpuArchitecture: ecs.CpuArchitecture.ARM64,
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
       },
     });
