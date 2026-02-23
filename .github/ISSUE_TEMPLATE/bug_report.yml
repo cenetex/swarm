@@ -9,6 +9,7 @@ body:
     attributes:
       value: |
         Thanks for reporting a bug! Please fill out the information below.
+        See [ISSUE-GOVERNANCE.md](../../docs/ISSUE-GOVERNANCE.md) for priority criteria and agent-ready issue guidelines.
 
   - type: dropdown
     id: package
@@ -73,6 +74,53 @@ body:
       required: true
 
   - type: textarea
+    id: scope-boundaries
+    attributes:
+      label: Scope Boundaries
+      description: |
+        What files, services, or subsystems should the fix touch?
+        What must NOT be changed? This prevents agent drift.
+      placeholder: |
+        **In scope:**
+        - packages/core/src/services/memory.ts
+        - packages/handlers/src/message-processor.ts
+
+        **Out of scope:**
+        - Do not modify DynamoDB table schemas
+        - Do not change the public API contract
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Concrete, verifiable criteria for the fix to be considered complete.
+      placeholder: |
+        - [ ] Error no longer occurs when reproducing steps above
+        - [ ] Existing tests pass without modification
+        - [ ] New regression test added for this scenario
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation-commands
+    attributes:
+      label: Validation Commands
+      description: |
+        Commands an agent or reviewer can run to verify the fix.
+        Include test commands, build commands, and any manual checks.
+      placeholder: |
+        ```bash
+        bun test packages/core/src/services/memory.test.ts
+        pnpm build
+        pnpm lint
+        ```
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
     id: logs
     attributes:
       label: Error Logs
@@ -100,3 +148,5 @@ body:
       options:
         - label: I have searched existing issues to ensure this is not a duplicate
           required: true
+        - label: This issue includes acceptance criteria and validation steps
+          required: false

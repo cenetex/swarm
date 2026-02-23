@@ -9,6 +9,7 @@ body:
     attributes:
       value: |
         Thanks for taking the time to suggest a feature!
+        See [ISSUE-GOVERNANCE.md](../../docs/ISSUE-GOVERNANCE.md) for priority criteria and agent-ready issue guidelines.
 
   - type: dropdown
     id: package
@@ -26,6 +27,19 @@ body:
         - claude-code-worker
         - layer
         - multiple/other
+    validations:
+      required: true
+
+  - type: textarea
+    id: business-outcome
+    attributes:
+      label: Business Outcome
+      description: |
+        What measurable business or user outcome does this feature deliver?
+        Tie it to a product goal, user need, or roadmap milestone.
+      placeholder: |
+        Example: "Enables paid users to link Solana wallets, which is required
+        for M1 NFT gating and blocks 3 downstream features."
     validations:
       required: true
 
@@ -57,6 +71,69 @@ body:
       required: false
 
   - type: textarea
+    id: scope-boundaries
+    attributes:
+      label: Scope Boundaries
+      description: |
+        What files, services, or subsystems should this feature touch?
+        What must NOT be changed? This prevents agent drift.
+      placeholder: |
+        **In scope:**
+        - packages/admin-api/src/handlers/chat.ts (add tool definition)
+        - packages/admin-api/src/services/ (new service file)
+        - packages/core/src/types/ (type additions)
+
+        **Out of scope:**
+        - Do not modify existing tool signatures
+        - Do not change the DynamoDB schema
+    validations:
+      required: false
+
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-Goals
+      description: |
+        What is explicitly NOT part of this feature? Listing non-goals
+        prevents scope creep and keeps agent work focused.
+      placeholder: |
+        - This feature does NOT include a standalone settings UI (chat-first design)
+        - This feature does NOT handle migration of existing data
+        - Performance optimization is a follow-up issue
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Concrete, verifiable criteria for the feature to be considered complete.
+      placeholder: |
+        - [ ] New tool appears in admin chat tool list
+        - [ ] Tool returns expected output for valid input
+        - [ ] Error cases return user-friendly messages
+        - [ ] Unit tests cover happy path and error cases
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation-commands
+    attributes:
+      label: Validation Commands
+      description: |
+        Commands an agent or reviewer can run to verify the implementation.
+        Include test commands, build commands, and any manual checks.
+      placeholder: |
+        ```bash
+        bun test packages/admin-api/
+        pnpm build
+        pnpm lint
+        ```
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
     id: alternatives
     attributes:
       label: Alternatives Considered
@@ -72,5 +149,7 @@ body:
       options:
         - label: I have searched existing issues to ensure this is not a duplicate
           required: true
+        - label: This issue includes a business outcome and acceptance criteria
+          required: false
         - label: I am willing to help implement this feature
           required: false

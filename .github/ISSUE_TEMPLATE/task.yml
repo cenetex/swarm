@@ -9,6 +9,7 @@ body:
     attributes:
       value: |
         Use this template for development tasks, refactoring, or chores.
+        See [ISSUE-GOVERNANCE.md](../../docs/ISSUE-GOVERNANCE.md) for priority criteria and agent-ready issue guidelines.
 
   - type: dropdown
     id: type
@@ -55,13 +56,62 @@ body:
       required: true
 
   - type: textarea
+    id: scope-boundaries
+    attributes:
+      label: Scope Boundaries
+      description: |
+        What files, services, or subsystems should this task touch?
+        What must NOT be changed? This prevents agent drift.
+      placeholder: |
+        **In scope:**
+        - packages/core/src/services/llm.ts
+        - packages/core/src/services/llm.test.ts
+
+        **Out of scope:**
+        - Do not refactor unrelated services
+        - Do not change public API signatures
+    validations:
+      required: false
+
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-Goals
+      description: |
+        What is explicitly NOT part of this task? Listing non-goals
+        prevents scope creep and keeps agent work focused.
+      placeholder: |
+        - Do not add new features as part of this refactor
+        - Performance benchmarking is a separate issue
+    validations:
+      required: false
+
+  - type: textarea
     id: acceptance
     attributes:
       label: Acceptance Criteria
-      description: How do we know when this is done?
+      description: Concrete, verifiable criteria. How do we know this is done?
       placeholder: |
         - [ ] Criteria 1
         - [ ] Criteria 2
+        - [ ] All existing tests still pass
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation-commands
+    attributes:
+      label: Validation Commands
+      description: |
+        Commands an agent or reviewer can run to verify completion.
+        Include test commands, build commands, and any manual checks.
+      placeholder: |
+        ```bash
+        bun test packages/core/
+        pnpm build
+        pnpm lint
+        ```
+      render: shell
     validations:
       required: false
 
