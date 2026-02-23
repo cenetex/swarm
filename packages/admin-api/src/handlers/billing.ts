@@ -329,7 +329,19 @@ async function handleWebhook(
 
       const inferredPlan = planFromStripeSubscription(subscription);
       const status = mapStripeSubscriptionStatus(subscription.status);
-      const plan = status === 'cancelled' ? 'free' : (inferredPlan || 'pro');
+      let plan: 'free' | 'pro' | 'enterprise';
+      if (status === 'cancelled') {
+        plan = 'free';
+      } else if (inferredPlan === 'pro' || inferredPlan === 'enterprise') {
+        plan = inferredPlan;
+      } else {
+        const priceId = subscription.items?.data?.[0]?.price?.id ?? 'undefined';
+        console.warn(
+          `[Billing] Unknown Stripe price ID "${priceId}" on subscription ${subscriptionId} ` +
+          `for avatar ${context.avatarId} — skipping plan update to preserve current entitlement`,
+        );
+        break;
+      }
       const trialEndsAt = typeof subscription.trial_end === 'number'
         ? subscription.trial_end * 1000
         : undefined;
