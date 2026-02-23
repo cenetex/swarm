@@ -306,9 +306,6 @@ jobs:
           ADMIN_CERTIFICATE_ARN: ${{ secrets.ADMIN_CERTIFICATE_ARN || '' }}
           MEDIA_CDN_URL: ${{ secrets.MEDIA_CDN_URL || '' }}
         run: |
-          # Clean cdk.out from diff step to prevent recursive asset copy
-          rm -rf cdk.out
-
           ADMIN_DOMAIN=$(echo "${{ inputs.admin_url }}" | sed -E 's|^https?://||' | cut -d/ -f1)
           EXTRA_CONTEXT_ARGS="-c adminDomain=${ADMIN_DOMAIN}"
 
@@ -331,6 +328,7 @@ jobs:
           fi
           STACK="${{ inputs.stack }}"
 
+          # Reuse cdk.out from diff step (same context args) to skip re-synthesis
           if [ -n "$STACK" ]; then
             npx cdk deploy "$STACK" --require-approval never --concurrency 10 $HOTSWAP -c environment=${{ inputs.cdk_env }} -c useExistingResources=$USE_EXISTING_RESOURCES -c useExistingBuckets=$USE_EXISTING_BUCKETS -c skipDomainAliases=$SKIP_DOMAIN_ALIASES -c stackHash=$STACK_HASH ${EXTRA_CONTEXT_ARGS}
             exit 0

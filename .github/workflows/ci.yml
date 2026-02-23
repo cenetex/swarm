@@ -39,8 +39,8 @@ jobs:
       - name: Check circular dependencies
         run: pnpm check:circular
 
-  build:
-    name: Build
+  build-and-test:
+    name: Build & Test
     runs-on: ubuntu-latest
 
     steps:
@@ -92,42 +92,8 @@ jobs:
           fi
           echo "All expected build artifacts present."
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: build-output
-          path: packages/*/dist
-          retention-days: 1
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: build-output
-          path: packages
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Run tests with coverage
         run: |
@@ -143,8 +109,7 @@ jobs:
     if: always()
     needs:
       - lint
-      - build
-      - test
+      - build-and-test
     steps:
       - name: Evaluate gate results
         run: |
@@ -157,8 +122,7 @@ jobs:
 
           for check in \
             "Lint:${{ needs.lint.result }}" \
-            "Build:${{ needs.build.result }}" \
-            "Test:${{ needs.test.result }}"; do
+            "Build & Test:${{ needs.build-and-test.result }}"; do
             name="${check%%:*}"
             result="${check#*:}"
             if [ "$result" = "success" ] || [ "$result" = "skipped" ]; then
