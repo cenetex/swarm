@@ -270,17 +270,31 @@ export async function listSecrets(
   return results;
 }
 
+/** Options for deleteSecret. */
+export interface DeleteSecretOptions {
+  /** If true, immediately deletes without recovery period. Use for re-creatable secrets like OAuth tokens. */
+  forceDelete?: boolean;
+  /** Recovery window in days (7-30). Ignored when forceDelete is true. Defaults to AWS default (30 days). */
+  recoveryWindowDays?: number;
+}
+
 /**
  * Delete a secret
- * @param forceDelete - If true, immediately deletes without recovery period. Use for re-creatable secrets like OAuth tokens.
+ * @param forceDelete - (legacy positional) If true, immediately deletes without recovery period.
+ * @param options - Named options bag (preferred). Overrides positional forceDelete when provided.
  */
 export async function deleteSecret(
   avatarId: string | null,
   secretType: SecretType,
   name: string,
   _session: UserSession,
-  forceDelete: boolean = false
+  forceDeleteOrOptions: boolean | DeleteSecretOptions = false
 ): Promise<void> {
+  const opts: DeleteSecretOptions =
+    typeof forceDeleteOrOptions === 'boolean'
+      ? { forceDelete: forceDeleteOrOptions }
+      : forceDeleteOrOptions;
+
   const pk = avatarId ? `AVATAR#${avatarId}` : 'GLOBAL';
   const sk = `SECRET#${secretType}#${name}`;
 
@@ -297,10 +311,15 @@ export async function deleteSecret(
   const metadata = existing.Item as SecretMetadata;
 
   // Delete from Secrets Manager
-  await secretsClient.send(new DeleteSecretCommand({
+  const deleteParams: { SecretId: string; ForceDeleteWithoutRecovery?: boolean; RecoveryWindowInDays?: number } = {
     SecretId: metadata.secretArn,
-    ForceDeleteWithoutRecovery: forceDelete, // If true, immediately delete without recovery
-  }));
+  };
+  if (opts.forceDelete) {
+    deleteParams.ForceDeleteWithoutRecovery = true;
+  } else if (opts.recoveryWindowDays) {
+    deleteParams.RecoveryWindowInDays = opts.recoveryWindowDays;
+  }
+  await secretsClient.send(new DeleteSecretCommand(deleteParams));
 
   // Delete metadata from DynamoDB
   await dynamoClient.send(new DeleteCommand({
@@ -421,22 +440,45 @@ export async function _getSecretValueInternal(
   }
 }
 
+/** Dependencies that can be injected for testing. */
+export interface SecretCleanupDeps {
+  listSecrets: (avatarId: string) => Promise<SecretMetadata[]>;
+  deleteSecret: (
+    avatarId: string | null,
+    secretType: SecretType,
+    name: string,
+    session: UserSession,
+    options: boolean | DeleteSecretOptions,
+  ) => Promise<void>;
+}
+
+const defaultCleanupDeps: SecretCleanupDeps = { listSecrets, deleteSecret };
+
 /**
  * Delete all secrets for an avatar.
  * Used during avatar deletion to clean up Secrets Manager resources.
+ * Secrets are scheduled for deletion with a 7-day recovery window so they
+ * can be restored if the avatar is un-deleted within that period.
  * Errors are logged but do not throw — caller should not fail if secret cleanup fails.
  */
 export async function deleteAllAvatarSecrets(
   avatarId: string,
-  session: UserSession
+  session: UserSession,
+  deps: SecretCleanupDeps = defaultCleanupDeps
 ): Promise<{ deleted: number; errors: number }> {
   let deleted = 0;
   let errors = 0;
 
-  const secrets = await listSecrets(avatarId);
+  const secrets = await deps.listSecrets(avatarId);
   for (const secret of secrets) {
     try {
-      await deleteSecret(avatarId, secret.secretType, secret.name, session, true);
+      await deps.deleteSecret(
+        avatarId,
+        secret.secretType,
+        secret.name,
+        session,
+        { recoveryWindowDays: 7 },
+      );
       deleted++;
     } catch (err) {
       errors++;
