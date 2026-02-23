@@ -27,7 +27,7 @@
 
 ## Risk Level
 
-<!-- Select ONE risk level. The release gate CI check requires this. -->
+<!-- Select ONE risk level. -->
 
 - [ ] Low — Docs, config, tests only; no runtime impact
 - [ ] Medium — Scoped feature or fix; limited blast radius
@@ -37,7 +37,6 @@
 ## Rollback Plan
 
 <!-- How to roll back if this change causes issues in production.
-     The release gate CI check requires this section.
      Examples:
        - "Revert this commit"
        - "Feature-flagged; disable flag X in parameter store"
@@ -47,7 +46,6 @@
 ## Validation / Test Plan
 
 <!-- How has this been validated? What commands should reviewers run?
-     The release gate CI check requires this section.
      Examples:
        - "bun test packages/core/"
        - "Deploy to staging and run ./scripts/test-e2e.sh web <avatar> ci staging"

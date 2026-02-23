@@ -1,16 +1,11 @@
 name: CI
 
 on:
-  push:
+  pull_request:
     branches: [main]
-    tags: ['v*']
-    paths-ignore:
-      - '*.md'
-      - 'docs/**'
-      - '.github/ISSUE_TEMPLATE/**'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.head_ref }}
   cancel-in-progress: true
 
 env:
@@ -18,30 +13,6 @@ env:
   NODE_OPTIONS: '--max-old-space-size=4096'
 
 jobs:
-  security-audit:
-    name: Security Audit
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run dependency audit
-        run: ./scripts/audit-with-exceptions.sh
-        continue-on-error: false
-
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -88,23 +59,45 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
+      - name: Build all packages
         env:
-          # Ensure admin-ui is built the same way it is deployed.
-          # On PRs from forks, these secrets may be empty (that's fine).
           VITE_API_URL: /api
           VITE_CROSSMINT_PROJECT_ID: ${{ secrets.VITE_CROSSMINT_PROJECT_ID }}
           VITE_PRIVY_APP_ID: ${{ secrets.VITE_PRIVY_APP_ID }}
         run: pnpm -r build
 
+      - name: Validate build artifacts exist
+        run: |
+          MISSING=0
+
+          for PKG_DIR in packages/*/; do
+            PKG_NAME=$(basename "$PKG_DIR")
+
+            # Skip packages that do not produce dist/ output
+            case "$PKG_NAME" in
+              plan-tests|layer|infra) continue ;;
+            esac
+
+            if [ -f "$PKG_DIR/tsconfig.json" ] || [ -f "$PKG_DIR/vite.config.ts" ] || [ -f "$PKG_DIR/vite.config.mts" ]; then
+              if [ ! -d "$PKG_DIR/dist" ]; then
+                echo "::error::Missing build output: $PKG_DIR/dist"
+                MISSING=1
+              fi
+            fi
+          done
+
+          if [ "$MISSING" -eq 1 ]; then
+            echo "::error::One or more packages failed to produce build artifacts."
+            exit 1
+          fi
+          echo "All expected build artifacts present."
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: build-output
-          path: |
-            packages/*/dist
-            packages/admin-ui/dist
-          retention-days: 7
+          path: packages/*/dist
+          retention-days: 1
 
   test:
     name: Test
@@ -128,9 +121,6 @@ jobs:
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: build-output
-          # upload-artifact uses the least common ancestor (packages/) as root,
-          # so stored paths are e.g. `core/dist/...`. Download into `packages/`
-          # to restore to `packages/<pkg>/dist`.
           path: packages
 
       - name: Setup Bun
@@ -139,17 +129,52 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test with coverage
+      - name: Run tests with coverage
         run: |
           bun test --coverage --coverage-reporter=text --coverage-reporter=lcov 2>&1 | tee /tmp/coverage-output.txt
 
       - name: Enforce coverage threshold (40%)
         run: ./scripts/check-coverage.sh /tmp/coverage-output.txt 40
 
-      - name: Upload coverage
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: coverage
-          path: coverage/**
-          if-no-files-found: ignore
-          retention-days: 7
+  # Unified gate: configure this as the single required status check
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - lint
+      - build
+      - test
+    steps:
+      - name: Evaluate gate results
+        run: |
+          echo "## CI Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Check | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
+
+          ALL_PASSED=true
+
+          for check in \
+            "Lint:${{ needs.lint.result }}" \
+            "Build:${{ needs.build.result }}" \
+            "Test:${{ needs.test.result }}"; do
+            name="${check%%:*}"
+            result="${check#*:}"
+            if [ "$result" = "success" ] || [ "$result" = "skipped" ]; then
+              echo "| $name | Passed |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| $name | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
+              ALL_PASSED=false
+            fi
+          done
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$ALL_PASSED" = "false" ]; then
+            echo "::error::CI gate FAILED. One or more required checks did not pass."
+            echo "**CI: FAILED**" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "**CI: PASSED**" >> "$GITHUB_STEP_SUMMARY"

@@ -186,10 +186,11 @@ Pre-commit and pre-push hooks run automatically — you rarely need to run check
 
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
-| `ci.yml` | Push/PR to main | Build, lint, test (bun v1.3.9 in CI) |
-| `deploy.yml` | Push to main, manual | Deploy CDK infra and admin UI |
-| `fast-deploy.yml` | Manual | Fast-path deploy (skip build) |
-| `internal-issues-sync.yml` | Schedule/manual | Sync runtime errors to GitHub issues |
+| `ci.yml` | PR to main | Lint + Build + Test gate (single required check) |
+| `deploy.yml` | Push to main, tags | Deploy orchestrator (CDK + Admin UI) |
+| `deploy-cdk-reusable.yml` | Called by deploy | CDK infra deploy |
+| `deploy-admin-ui-reusable.yml` | Called by deploy | Admin UI deploy |
+| `deploy-lambda-hotpatch.yml` | Manual | Fast Lambda code patch |
 | `release-notes.yml` | Tag push | Generate release notes |
 
 ### Environments
