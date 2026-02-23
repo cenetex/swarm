@@ -13,7 +13,6 @@ import {
   PutCommand,
   UpdateCommand,
   QueryCommand,
-  ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import {
   type PlanType,
@@ -175,30 +174,24 @@ export async function setEntitlement(params: {
 
 /**
  * Find entitlement by Stripe subscription ID.
- * Uses a table scan fallback since Stripe lookups are low-volume webhook events.
+ * Uses the StripeSubscriptionIndex GSI for O(1) lookup instead of a table scan.
  */
 export async function findEntitlementByStripeSubscriptionId(
   stripeSubscriptionId: string
 ): Promise<EntitlementRecord | null> {
-  let lastEvaluatedKey: Record<string, unknown> | undefined;
+  const result = await getDynamoClient().send(new QueryCommand({
+    TableName: ADMIN_TABLE,
+    IndexName: 'StripeSubscriptionIndex',
+    KeyConditionExpression: 'stripeSubscriptionId = :subscriptionId',
+    ExpressionAttributeValues: {
+      ':subscriptionId': stripeSubscriptionId,
+    },
+    Limit: 1,
+  }));
 
-  do {
-    const result = await getDynamoClient().send(new ScanCommand({
-      TableName: ADMIN_TABLE,
-      FilterExpression: 'stripeSubscriptionId = :subscriptionId',
-      ExpressionAttributeValues: {
-        ':subscriptionId': stripeSubscriptionId,
-      },
-      Limit: 100,
-      ExclusiveStartKey: lastEvaluatedKey,
-    }));
-
-    if (result.Items && result.Items.length > 0) {
-      return result.Items[0] as EntitlementRecord;
-    }
-
-    lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-  } while (lastEvaluatedKey);
+  if (result.Items && result.Items.length > 0) {
+    return result.Items[0] as EntitlementRecord;
+  }
 
   return null;
 }
