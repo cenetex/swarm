@@ -21,6 +21,7 @@ import {
   createMediaServiceWithDeps,
   createMediaDependencies,
   createPresenceService,
+  createRuntimeMetricsLogger,
   logger,
   MessageQueueItemSchema,
   extractThinking,
@@ -770,9 +771,13 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
 
   await initialize();
 
+  const metrics = createRuntimeMetricsLogger('MessageProcessor');
+  metrics.incrementCounter('MessagesReceived', event.Records.length);
+
   const batchItemFailures: { itemIdentifier: string }[] = [];
 
   for (const record of event.Records) {
+    const recordStartTime = Date.now();
     try {
       let parsedBody: unknown;
       let rawBody: string = record.body;
@@ -852,6 +857,8 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           limit: usageCheck.limit,
           current: usageCheck.current,
         });
+        metrics.incrementCounter('EntitlementRejections');
+        metrics.setProperty('Outcome', 'rejected');
         // Don't retry - this is a policy rejection, not an error
         continue;
       }
@@ -945,6 +952,11 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
 
       const response = await generateResponse(envelope, toolClient, toolContext, avatarRuntime, updatedState.recentMessages);
 
+      metrics.trackDuration('ProcessingLatency', recordStartTime);
+      metrics.incrementCounter('MessagesProcessed');
+      metrics.incrementCounter('ResponsesEnqueued');
+      metrics.setProperty('Outcome', 'success');
+
       logger.info('Response generated', {
         event: 'response_generated',
         subsystem: 'llm',
@@ -982,6 +994,10 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       }
 
     } catch (error) {
+      metrics.trackDuration('ProcessingLatency', recordStartTime);
+      metrics.incrementCounter('ProcessingErrors');
+      metrics.setProperty('Outcome', 'error');
+
       logger.error('Failed to process message', error, {
         event: 'processing_error',
         subsystem: 'chat',
@@ -1000,6 +1016,8 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       totalCount: event.Records.length,
     });
   }
+
+  metrics.flush();
 
   return { batchItemFailures };
 };

@@ -14,6 +14,7 @@ import {
   createStateService,
   createActivityService,
   createOutboundSender,
+  createRuntimeMetricsLogger,
   logger,
   extractCorrelationIdFromSqsRecord,
   DEFAULT_AVATAR_CONFIG,
@@ -305,9 +306,14 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
   });
 
   await initialize();
+
+  const metrics = createRuntimeMetricsLogger('ResponseSender');
+  metrics.incrementCounter('ResponsesReceived', event.Records.length);
+
   const batchItemFailures: SQSBatchResponse['batchItemFailures'] = [];
 
   for (const record of event.Records) {
+    const recordStartTime = Date.now();
     try {
       const traceId = record.messageAttributes?.traceId?.stringValue;
       const correlationId = extractCorrelationIdFromSqsRecord(record);
@@ -350,6 +356,7 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
           reason: 'already_handled',
           responseKey,
         });
+        metrics.incrementCounter('DuplicatesSkipped');
         continue;
       }
 
@@ -585,6 +592,10 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       }
 
       if (actionsToSend && actionsToSend.length > 0 && !sendSuccess) {
+        metrics.trackDuration('SendLatency', recordStartTime);
+        metrics.incrementCounter('SendErrors');
+        metrics.setProperty('Outcome', 'error');
+
         // Check if ALL errors are non-retryable (e.g. 403 reply restrictions).
         // If so, don't add to batchItemFailures — retrying won't help.
         const hasRetryableError = sendErrors.length === 0 ||
@@ -623,6 +634,11 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
         await cleanupSqsRecord(rawBody);
       }
 
+      metrics.trackDuration('SendLatency', recordStartTime);
+      metrics.incrementCounter('ResponsesSent');
+      metrics.setProperty('Outcome', 'success');
+      metrics.setProperty('Platform', response.platform);
+
       logger.info('Response sent successfully', {
         event: 'response_sent',
         subsystem: 'outbound',
@@ -632,6 +648,10 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       });
 
     } catch (error) {
+      metrics.trackDuration('SendLatency', recordStartTime);
+      metrics.incrementCounter('SendErrors');
+      metrics.setProperty('Outcome', 'error');
+
       logger.error('Failed to send response', error, {
         event: 'handler_error',
         subsystem: 'outbound',
@@ -639,6 +659,8 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       batchItemFailures.push({ itemIdentifier: record.messageId });
     }
   }
+
+  metrics.flush();
 
   return { batchItemFailures };
 };

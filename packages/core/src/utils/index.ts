@@ -48,6 +48,8 @@ export {
 export {
   MetricsLogger,
   createMetricsLogger,
+  createRuntimeMetricsLogger,
+  getEnvironmentDimension,
   emitMetric,
   type MetricUnit,
   type MetricDatum,

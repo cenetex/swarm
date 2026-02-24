@@ -10,6 +10,7 @@ import type {
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 import {
   logger,
+  createRuntimeMetricsLogger,
   // Import shared tool/prompt building from core
   buildDynamicSystemPrompt,
   extractThinking,
@@ -205,6 +206,9 @@ export async function processChat(
     arguments: Record<string, unknown>;
   };
 }> {
+  const chatMetrics = createRuntimeMetricsLogger('AdminChat');
+  const chatStartTime = Date.now();
+
   const avatarId = avatar?.id;
   const mcpServices = avatarId ? createMCPServices(avatarId, session) : null;
   const toolRegistry = avatarId && mcpServices ? new ToolRegistry() : null;
@@ -603,6 +607,13 @@ export async function processChat(
 
       throw err;
     }
+  }
+
+  // Record LLM call latency from the last attempt
+  if (lastLlmMode === 'fallback' && typeof lastFallbackLatency === 'number') {
+    chatMetrics.putMetric('LlmCallLatency', lastFallbackLatency, 'Milliseconds');
+  } else if (lastLlmMode === 'sdk' && lastLlmStart > 0) {
+    chatMetrics.putMetric('LlmCallLatency', Date.now() - lastLlmStart, 'Milliseconds');
   }
 
   logger.info('LLM response', {
@@ -1116,6 +1127,15 @@ export async function processChat(
     }
   }
 
+  // Emit EMF metrics for the chat turn
+  chatMetrics.trackDuration('ChatLatency', chatStartTime);
+  chatMetrics.incrementCounter('ChatRequests');
+  if (toolResults.length > 0) {
+    chatMetrics.incrementCounter('ToolCallsExecuted', toolResults.length);
+  }
+  chatMetrics.setProperty('Outcome', response ? 'success' : 'error');
+  chatMetrics.flush();
+
   logger.info('Final response', {
     mediaCount: allMedia.length,
     pendingJobCount: pendingJobs.length,
@@ -1552,6 +1572,12 @@ export async function handler(
     const mapped = mapAdminChatHandlerError(error);
     const statusCode = mapped.statusCode;
     const errorMessage = mapped.errorMessage;
+
+    // Emit error metric for the failed request
+    const errorMetrics = createRuntimeMetricsLogger('AdminChat');
+    errorMetrics.incrementCounter('ChatErrors');
+    errorMetrics.setProperty('Outcome', 'error');
+    errorMetrics.flush();
 
     logger.error('Handler error', error, {
       event: 'handler_error',

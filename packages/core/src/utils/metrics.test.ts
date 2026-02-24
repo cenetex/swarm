@@ -1,5 +1,5 @@
 import { describe, it, expect, spyOn, beforeEach, afterEach } from 'bun:test';
-import { MetricsLogger, createMetricsLogger, emitMetric } from './metrics.js';
+import { MetricsLogger, createMetricsLogger, createRuntimeMetricsLogger, getEnvironmentDimension, emitMetric } from './metrics.js';
 
 describe('MetricsLogger', () => {
   let consoleSpy: ReturnType<typeof spyOn>;
@@ -181,5 +181,93 @@ describe('emitMetric', () => {
 
     const emitted = JSON.parse(consoleSpy.mock.calls[0][0] as string);
     expect(emitted.AvatarId).toBe('test-123');
+  });
+});
+
+describe('getEnvironmentDimension', () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env.ENVIRONMENT = originalEnv.ENVIRONMENT;
+    process.env.NODE_ENV = originalEnv.NODE_ENV;
+  });
+
+  it('should return ENVIRONMENT when set', () => {
+    process.env.ENVIRONMENT = 'staging';
+    process.env.NODE_ENV = 'production';
+    expect(getEnvironmentDimension()).toBe('staging');
+  });
+
+  it('should fall back to NODE_ENV when ENVIRONMENT is not set', () => {
+    delete process.env.ENVIRONMENT;
+    process.env.NODE_ENV = 'test';
+    expect(getEnvironmentDimension()).toBe('test');
+  });
+
+  it('should return unknown when no env vars are set', () => {
+    delete process.env.ENVIRONMENT;
+    delete process.env.NODE_ENV;
+    expect(getEnvironmentDimension()).toBe('unknown');
+  });
+});
+
+describe('createRuntimeMetricsLogger', () => {
+  let consoleSpy: ReturnType<typeof spyOn>;
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
+    process.env.ENVIRONMENT = 'staging';
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+    process.env.ENVIRONMENT = originalEnv.ENVIRONMENT;
+  });
+
+  it('should include Environment and Subsystem dimensions', () => {
+    const logger = createRuntimeMetricsLogger('MessageProcessor');
+    logger.incrementCounter('MessagesReceived', 5);
+    logger.flush();
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const emitted = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+    expect(emitted.Subsystem).toBe('MessageProcessor');
+    expect(emitted.Environment).toBe('staging');
+    expect(emitted.MessagesReceived).toBe(5);
+    expect(emitted._aws.CloudWatchMetrics[0].Dimensions[0]).toContain('Environment');
+    expect(emitted._aws.CloudWatchMetrics[0].Dimensions[0]).toContain('Subsystem');
+  });
+
+  it('should merge extra dimensions', () => {
+    const logger = createRuntimeMetricsLogger('ResponseSender', { Platform: 'telegram' });
+    logger.incrementCounter('ResponsesSent');
+    logger.flush();
+
+    const emitted = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+    expect(emitted.Subsystem).toBe('ResponseSender');
+    expect(emitted.Environment).toBe('staging');
+    expect(emitted.Platform).toBe('telegram');
+  });
+
+  it('should support the full metrics workflow (counter, duration, property, flush)', () => {
+    const logger = createRuntimeMetricsLogger('AdminChat');
+    const start = Date.now() - 50;
+
+    logger.incrementCounter('ChatRequests');
+    logger.trackDuration('ChatLatency', start);
+    logger.incrementCounter('ToolCallsExecuted', 3);
+    logger.setProperty('Outcome', 'success');
+    logger.flush();
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const emitted = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+
+    expect(emitted.ChatRequests).toBe(1);
+    expect(emitted.ChatLatency).toBeGreaterThanOrEqual(40);
+    expect(emitted.ToolCallsExecuted).toBe(3);
+    expect(emitted.Outcome).toBe('success');
+    expect(emitted.Environment).toBe('staging');
+    expect(emitted._aws.CloudWatchMetrics[0].Namespace).toBe('Swarm');
   });
 });

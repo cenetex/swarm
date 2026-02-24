@@ -11,6 +11,42 @@
  *   m.incrementCounter('MessagesProcessed');
  *   m.flush();
  *
+ * ## Metric Taxonomy
+ *
+ * Standard dimensions applied to all runtime metrics:
+ *   - `Subsystem`   — logical component (e.g. MessageProcessor, ResponseSender, AdminChat)
+ *   - `Environment` — deployment stage (e.g. staging, production)
+ *   - `Outcome`     — result classification (e.g. success, error, skipped)
+ *
+ * ### MessageProcessor (Subsystem = "MessageProcessor")
+ * | Metric                   | Unit         | Description                              |
+ * |--------------------------|--------------|------------------------------------------|
+ * | MessagesReceived         | Count        | SQS records entering the handler         |
+ * | ProcessingLatency        | Milliseconds | Wall time per message (enqueue → done)    |
+ * | MessagesProcessed        | Count        | Successfully processed messages           |
+ * | ProcessingErrors         | Count        | Messages that threw during processing     |
+ * | ResponsesEnqueued        | Count        | Responses sent to the response queue      |
+ * | ToolIterations           | Count        | LLM ↔ tool-call round-trips per message  |
+ * | EntitlementRejections    | Count        | Messages blocked by entitlement limits    |
+ *
+ * ### ResponseSender (Subsystem = "ResponseSender")
+ * | Metric                   | Unit         | Description                              |
+ * |--------------------------|--------------|------------------------------------------|
+ * | ResponsesReceived        | Count        | SQS records entering the handler         |
+ * | SendLatency              | Milliseconds | Wall time per response (dequeue → sent)   |
+ * | ResponsesSent            | Count        | Successfully delivered responses          |
+ * | SendErrors               | Count        | Responses that failed outbound delivery   |
+ * | DuplicatesSkipped        | Count        | Idempotent duplicates dropped             |
+ *
+ * ### AdminChat (Subsystem = "AdminChat")
+ * | Metric                   | Unit         | Description                              |
+ * |--------------------------|--------------|------------------------------------------|
+ * | ChatRequests             | Count        | Inbound POST /chat requests              |
+ * | ChatLatency              | Milliseconds | Wall time from request to response        |
+ * | LlmCallLatency           | Milliseconds | Time spent in LLM provider call           |
+ * | ToolCallsExecuted        | Count        | Total MCP tool calls during a chat turn   |
+ * | ChatErrors               | Count        | Requests that resulted in an error        |
+ *
  * @see https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Embedded_Metric_Format.html
  */
 
@@ -135,6 +171,33 @@ export function createMetricsLogger(
   dimensions?: Record<string, string>,
 ): MetricsLogger {
   return new MetricsLogger(subsystem, { dimensions });
+}
+
+/**
+ * Return the standard Environment dimension value from the runtime environment.
+ * Falls back to 'unknown' when no environment variable is set.
+ */
+export function getEnvironmentDimension(): string {
+  return process.env.ENVIRONMENT || process.env.NODE_ENV || 'unknown';
+}
+
+/**
+ * Create a MetricsLogger pre-configured with the standard runtime dimensions
+ * (Environment + Subsystem). Additional dimensions can be merged in.
+ *
+ * @param subsystem - logical component name (e.g. 'MessageProcessor')
+ * @param extra - additional dimensions to include
+ */
+export function createRuntimeMetricsLogger(
+  subsystem: string,
+  extra?: Record<string, string>,
+): MetricsLogger {
+  return new MetricsLogger(subsystem, {
+    dimensions: {
+      Environment: getEnvironmentDimension(),
+      ...extra,
+    },
+  });
 }
 
 /**
