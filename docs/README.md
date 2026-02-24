@@ -32,6 +32,12 @@ These documents describe the current system and are maintained alongside the cod
 - [branch-protection.md](branch-protection.md) -- Branch protection rules
 - [API-CLIENT-README.md](API-CLIENT-README.md) -- Admin API client usage
 
+### Governance and Strategy
+- [STRATEGY-OPERATIONS.md](STRATEGY-OPERATIONS.md) -- Leadership strategy encoded as executable operating rules
+- [LEADERSHIP-SCORECARD.md](LEADERSHIP-SCORECARD.md) -- Automated weekly leadership operating scorecard
+- [ACCESS-REVIEW.md](ACCESS-REVIEW.md) -- Privileged access review process
+- [DATA-RETENTION-MATRIX.md](DATA-RETENTION-MATRIX.md) -- Data retention and deletion control matrix
+
 ### Roadmap and Strategy
 - [ROADMAP-M1-PAID-TELEGRAM-MVP.md](ROADMAP-M1-PAID-TELEGRAM-MVP.md) -- M1 roadmap: Paid Telegram MVP
 - [ROADMAP-M2-MULTI-PLATFORM.md](ROADMAP-M2-MULTI-PLATFORM.md) -- M2 roadmap: Multi-platform expansion
