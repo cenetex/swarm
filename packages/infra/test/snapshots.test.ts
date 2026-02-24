@@ -410,6 +410,62 @@ describe('CDK Infrastructure - Resource Assertions', () => {
     template.resourceCountIs('AWS::WAFv2::WebACL', 1);
   });
 
+  test('SharedInfraStack creates budget guardrails when monthlyBudgetUsd is set', () => {
+    const app = new cdk.App({ context: DUMMY_VPC_CONTEXT });
+
+    const stack = new SharedInfraStack(app, 'TestSharedBudget', {
+      environment: 'prod',
+      enableCdn: true,
+      monthlyBudgetUsd: 500,
+      env: TEST_ENV,
+    });
+
+    const template = Template.fromStack(stack);
+
+    // Monthly budget
+    template.hasResourceProperties('AWS::Budgets::Budget', {
+      Budget: {
+        BudgetName: 'swarm-monthly-prod',
+        BudgetType: 'COST',
+        TimeUnit: 'MONTHLY',
+        BudgetLimit: {
+          Amount: 500,
+          Unit: 'USD',
+        },
+      },
+    });
+
+    // Cost anomaly monitor
+    template.hasResourceProperties('AWS::CE::AnomalyMonitor', {
+      MonitorName: 'swarm-anomaly-prod',
+      MonitorType: 'DIMENSIONAL',
+      MonitorDimension: 'SERVICE',
+    });
+
+    // Cost anomaly subscription
+    template.hasResourceProperties('AWS::CE::AnomalySubscription', {
+      SubscriptionName: 'swarm-anomaly-alerts-prod',
+      Frequency: 'DAILY',
+    });
+  });
+
+  test('SharedInfraStack omits budget guardrails when monthlyBudgetUsd is not set', () => {
+    const app = new cdk.App({ context: DUMMY_VPC_CONTEXT });
+
+    const stack = new SharedInfraStack(app, 'TestSharedNoBudget', {
+      environment: 'dev',
+      enableCdn: true,
+      env: TEST_ENV,
+    });
+
+    const template = Template.fromStack(stack);
+
+    // No budget resources
+    template.resourceCountIs('AWS::Budgets::Budget', 0);
+    template.resourceCountIs('AWS::CE::AnomalyMonitor', 0);
+    template.resourceCountIs('AWS::CE::AnomalySubscription', 0);
+  });
+
   test('ProfilePageStack creates SPA routing CloudFront function', () => {
     const app = new cdk.App({ context: DUMMY_VPC_CONTEXT });
 

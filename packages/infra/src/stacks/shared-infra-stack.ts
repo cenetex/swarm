@@ -7,6 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { SharedInfrastructure } from '../constructs/shared.js';
+import { BudgetGuardrails } from '../constructs/budget-guardrails.js';
 
 export interface SharedInfraStackProps extends cdk.StackProps {
   /**
@@ -58,6 +59,14 @@ export interface SharedInfraStackProps extends cdk.StackProps {
    * Used as a fallback when useExistingResources=true and galleryDomain is not set.
    */
   mediaCdnUrl?: string;
+
+  /**
+   * Monthly budget limit in USD for cost governance.
+   * When provided, creates an AWS Budget with alert thresholds (50/80/100%)
+   * and a Cost Anomaly Detection monitor, both routed to the alarm SNS topic.
+   * Recommended: staging=$100, prod=$500
+   */
+  monthlyBudgetUsd?: number;
 }
 
 export class SharedInfraStack extends cdk.Stack {
@@ -95,6 +104,7 @@ export class SharedInfraStack extends cdk.Stack {
       alarmNotificationEmail,
       useExistingResources,
       mediaCdnUrl,
+      monthlyBudgetUsd,
     } = props;
     const suffix = nameSuffix ?? '';
 
@@ -127,6 +137,16 @@ export class SharedInfraStack extends cdk.Stack {
     this.alarmTopicArn = this.shared.alarmTopic.topicArn;
     this.discordClusterArn = this.shared.discordCluster.clusterArn;
     this.discordClusterName = this.shared.discordCluster.clusterName;
+
+    // ───── Budget & Cost Anomaly Guardrails ─────
+    if (monthlyBudgetUsd !== undefined && monthlyBudgetUsd > 0) {
+      new BudgetGuardrails(this, 'BudgetGuardrails', {
+        environment,
+        nameSuffix,
+        monthlyBudgetUsd,
+        alarmTopic: this.shared.alarmTopic,
+      });
+    }
 
     // Store dependency layer ARN in SSM to allow updates without breaking cross-stack refs.
     // CloudFormation exports fail to update when imported by another stack, but SSM parameters
