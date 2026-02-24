@@ -190,19 +190,22 @@ See also: [SECURITY.md -- Document Exceptions](./SECURITY.md), [DATA-RETENTION-M
 
 ### Operating Metrics
 
-These metrics are reviewed weekly. Thresholds drive action, not just awareness.
+These metrics are reviewed weekly. Thresholds drive action, not just awareness. The full metric definitions, thresholds, and severity classifications are documented in [LEADERSHIP-SCORECARD.md](./LEADERSHIP-SCORECARD.md). The summary table below lists the key metrics and their breach actions for quick reference.
 
-| Metric | Source | Threshold | Action on Breach |
-|--------|--------|-----------|-----------------|
-| Health grade | Scorecard | RED | Block new feature starts. Focus on reliability/security. |
-| Lambda error rate | CloudWatch via scorecard | >5% | Incident response per [RUNBOOK.md](./RUNBOOK.md). |
-| DLQ depth | CloudWatch via scorecard | >0 | DLQ triage per [RUNBOOK.md](./RUNBOOK.md). |
-| CI failure rate | Scorecard | >20% | Create issue to fix CI. Block new PRs if >50%. |
-| Stale issue percentage | Scorecard | >25% | Apply aging policy per [ISSUE-GOVERNANCE.md](./ISSUE-GOVERNANCE.md). |
-| Unassigned high-priority issues | Scorecard | >0 | Assign immediately during triage. |
-| In-progress issues | Scorecard | >WIP cap (8) | Enforce overflow protocol (section 2). |
-| Security exception count | Exception workflow | >0 approaching expiry | Prioritize remediation. |
-| Cost trend | Daily report | Any triggered signal | Follow [COST-CONTROLS-PLAYBOOK.md](./COST-CONTROLS-PLAYBOOK.md). |
+| Metric | Source | Threshold | Action on Breach | Trigger Rule |
+|--------|--------|-----------|-----------------|--------------|
+| Health grade | Scorecard | RED | Block new feature starts. Focus on reliability/security. | T-C1 |
+| Lambda error rate | CloudWatch via scorecard | >5% | Incident response per [RUNBOOK.md](./RUNBOOK.md). | T-R1 |
+| DLQ depth | CloudWatch via scorecard | >0 | DLQ triage per [RUNBOOK.md](./RUNBOOK.md). | T-R2 |
+| CI failure rate | Scorecard | >20% / >50% | Create issue to fix CI. Block new PRs if >50%. | T-Q1, T-Q2 |
+| DLQ rate (% of messages) | Scorecard (derived) | >1% | Create `priority:high` issue for failure path investigation. | T-Q4 |
+| Stale issue percentage | Scorecard | >25% | Apply aging policy per [ISSUE-GOVERNANCE.md](./ISSUE-GOVERNANCE.md). | T-B3 |
+| Unassigned high-priority issues | Scorecard | >0 | Assign immediately during triage. | T-B1 |
+| In-progress issues | Scorecard | >WIP cap (8) | Enforce overflow protocol (section 2). | T-B2 |
+| Security exception count | Exception workflow | >0 approaching expiry | Prioritize remediation. | -- |
+| Cost trend | Daily report | Any triggered signal | Follow [COST-CONTROLS-PLAYBOOK.md](./COST-CONTROLS-PLAYBOOK.md). | -- |
+
+The "Trigger Rule" column references the reprioritization trigger IDs defined in [LEADERSHIP-SCORECARD.md -- Reprioritization Triggers](./LEADERSHIP-SCORECARD.md#reprioritization-triggers). Each trigger prescribes a mandatory action and urgency level. Overrides require documented rationale per the [override protocol](./LEADERSHIP-SCORECARD.md#override-protocol).
 
 ### Portfolio Allocation Rules
 
