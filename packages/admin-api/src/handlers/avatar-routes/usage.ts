@@ -13,6 +13,7 @@ import { getEffectiveLimitsForAvatar, applyOrbHolderBoost } from '../../services
 import { getToolStatusStructured } from '../../services/credits.js';
 import { getEnergyStatus, getEnergyBankBalance } from '../../services/energy.js';
 import { getUsageHistory } from '../../services/usage-history.js';
+import { getAvatarUsageRollups } from '../../services/token-accounting.js';
 
 export async function handleUsageRoutes(
   ctx: RouteContext,
@@ -99,6 +100,49 @@ export async function handleUsageRoutes(
       avatarId,
       days,
       history,
+    });
+  }
+
+  // ── GET /avatars/{id}/usage/tokens ─────────────────────────────────────
+  const tokensMatch = path.match(/^\/avatars\/([^/]+)\/usage\/tokens$/);
+  if (method === 'GET' && tokensMatch) {
+    const avatarId = tokensMatch[1];
+
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
+
+    const params = ctx.event.queryStringParameters || {};
+    const days = Math.min(Math.max(parseInt(params.days || '7', 10) || 7, 1), 90);
+
+    const rollups = await getAvatarUsageRollups(avatarId, days);
+
+    // Compute totals across the period
+    const totals = rollups.reduce(
+      (acc, r) => ({
+        requestCount: acc.requestCount + r.requestCount,
+        totalPromptTokens: acc.totalPromptTokens + r.totalPromptTokens,
+        totalCompletionTokens: acc.totalCompletionTokens + r.totalCompletionTokens,
+        totalTokens: acc.totalTokens + r.totalTokens,
+        totalCostMicroUsd: acc.totalCostMicroUsd + r.totalCostMicroUsd,
+        providerReportedCount: acc.providerReportedCount + r.providerReportedCount,
+        estimatedCount: acc.estimatedCount + r.estimatedCount,
+      }),
+      {
+        requestCount: 0,
+        totalPromptTokens: 0,
+        totalCompletionTokens: 0,
+        totalTokens: 0,
+        totalCostMicroUsd: 0,
+        providerReportedCount: 0,
+        estimatedCount: 0,
+      },
+    );
+
+    return jsonResponse(corsHeaders, 200, {
+      avatarId,
+      days,
+      totals,
+      daily: rollups,
     });
   }
 

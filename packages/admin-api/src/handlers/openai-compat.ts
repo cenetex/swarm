@@ -36,6 +36,8 @@ import * as voice from '../services/voice.js';
 import * as energy from '../services/energy.js';
 import { getCorsHeaders } from '../http/cors.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
+import { resolveTokenUsage, recordTokenUsage } from '../services/token-accounting.js';
+import type { UsageSource } from '../services/token-accounting.js';
 
 // =============================================================================
 // Configuration
@@ -92,6 +94,8 @@ interface ChatCompletionResponse {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    /** Whether token counts came from the provider or were estimated */
+    usage_source: UsageSource;
   };
 }
 
@@ -783,9 +787,33 @@ async function handleChatCompletions(
     const completionId = `chatcmpl-${requestId}`;
     const created = Math.floor(Date.now() / 1000);
 
-    // Rough token estimation (proper counting would require a tokenizer)
-    const promptTokens = request.messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
-    const completionTokens = Math.ceil(result.response.length / 4);
+    // Resolve token usage: use model-aware estimation (provider-reported usage
+    // will be preferred automatically when processChat returns it in the future).
+    const llmModel = avatarRecord.llmConfig?.model || 'anthropic/claude-3-5-sonnet-latest';
+    const promptText = request.messages.map(m => m.content).join('\n');
+    const tokenUsage = resolveTokenUsage(
+      undefined, // provider usage not yet surfaced from processChat
+      promptText,
+      result.response,
+      llmModel,
+    );
+
+    // Record token accounting (fire-and-forget — must not block the response)
+    const keyHash = hashApiKey(apiKey);
+    recordTokenUsage({
+      requestId,
+      keyHash,
+      avatarId,
+      model: llmModel,
+      usage: tokenUsage,
+    }).catch(err => {
+      logger.warn('Token accounting recording failed', {
+        event: 'token_accounting_error',
+        subsystem: 'openai-compat',
+        requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 
     // Generate audio if requested and avatar has voice configured
     let audioData: { url: string; format: string; duration_ms?: number } | undefined;
@@ -851,9 +879,10 @@ async function handleChatCompletions(
         finish_reason: 'stop',
       }],
       usage: {
-        prompt_tokens: promptTokens,
-        completion_tokens: completionTokens,
-        total_tokens: promptTokens + completionTokens,
+        prompt_tokens: tokenUsage.promptTokens,
+        completion_tokens: tokenUsage.completionTokens,
+        total_tokens: tokenUsage.totalTokens,
+        usage_source: tokenUsage.usageSource,
       },
     };
 
@@ -862,6 +891,8 @@ async function handleChatCompletions(
       subsystem: 'openai-compat',
       avatarId,
       responseLength: result.response.length,
+      totalTokens: tokenUsage.totalTokens,
+      usageSource: tokenUsage.usageSource,
       hasAudio: !!audioData,
       requestId,
     });

@@ -12,6 +12,7 @@ import { logger } from '@swarm/core';
 import * as avatarService from '../../services/avatars.js';
 import { parseJsonBody } from '../../http/request-body.js';
 import { resumeChatAfterToolResult } from '../chat.js';
+import { getKeyUsageRollups } from '../../services/token-accounting.js';
 
 export async function handleApiKeyRoutes(
   ctx: RouteContext,
@@ -91,6 +92,50 @@ export async function handleApiKeyRoutes(
       });
       return jsonResponse(corsHeaders, 500, { error: msg });
     }
+  }
+
+  // ── GET /api-keys/{keyHash}/usage/tokens — Token usage for an API key (admin-only)
+  const keyUsageMatch = path.match(/^\/api-keys\/([^/]+)\/usage\/tokens$/);
+  if (method === 'GET' && keyUsageMatch) {
+    if (!effectiveIsAdmin) {
+      return jsonResponse(corsHeaders, 403, {
+        error: 'Admin access required for API key usage queries',
+      });
+    }
+
+    const keyHash = keyUsageMatch[1];
+    const params = event.queryStringParameters || {};
+    const days = Math.min(Math.max(parseInt(params.days || '7', 10) || 7, 1), 90);
+
+    const rollups = await getKeyUsageRollups(keyHash, days);
+
+    const totals = rollups.reduce(
+      (acc, r) => ({
+        requestCount: acc.requestCount + r.requestCount,
+        totalPromptTokens: acc.totalPromptTokens + r.totalPromptTokens,
+        totalCompletionTokens: acc.totalCompletionTokens + r.totalCompletionTokens,
+        totalTokens: acc.totalTokens + r.totalTokens,
+        totalCostMicroUsd: acc.totalCostMicroUsd + r.totalCostMicroUsd,
+        providerReportedCount: acc.providerReportedCount + r.providerReportedCount,
+        estimatedCount: acc.estimatedCount + r.estimatedCount,
+      }),
+      {
+        requestCount: 0,
+        totalPromptTokens: 0,
+        totalCompletionTokens: 0,
+        totalTokens: 0,
+        totalCostMicroUsd: 0,
+        providerReportedCount: 0,
+        estimatedCount: 0,
+      },
+    );
+
+    return jsonResponse(corsHeaders, 200, {
+      keyHash,
+      days,
+      totals,
+      daily: rollups,
+    });
   }
 
   // ── POST /api-keys — Create wildcard API key (admin-only) ───────────────
