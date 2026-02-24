@@ -11,7 +11,7 @@ import type { UserSession } from '../types.js';
 import { getSessionFromCookie } from './session-cookie.js';
 import { getSessionWithUser } from '../services/wallet-auth.js';
 import { getAccountSummary, getOrCreateAccountForWallet } from '../services/accounts.js';
-import { AuthError } from './errors.js';
+import { AuthError, SwarmErrorCode } from '@swarm/core';
 import { checkActiveUserAccess } from '../services/active-user-limit.js';
 
 function getBearerSessionToken(event: APIGatewayProxyEventV2): string | null {
@@ -66,10 +66,14 @@ export async function authenticateRequest(
   // Enforce active-user slots (when configured)
   const access = await checkActiveUserAccess({ accountId, isAdmin, isOrbHolder: session.isOrbHolder });
   if (!access.allowed) {
-    throw new AuthError('Active user slots full', 403, {
-      limit: access.limit,
-      cutoffLastSeenAt: access.cutoffLastSeenAt,
-      accountId,
+    throw new AuthError('Active user slots full', {
+      code: SwarmErrorCode.AUTH_ACCESS_DENIED,
+      statusCode: 403,
+      details: {
+        limit: access.limit,
+        cutoffLastSeenAt: access.cutoffLastSeenAt,
+        accountId,
+      },
     });
   }
 

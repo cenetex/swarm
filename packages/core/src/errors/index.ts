@@ -15,6 +15,9 @@ export {
   NetworkError,
   isSwarmError,
   isSwarmErrorWithCode,
+  isAuthError,
   toSwarmError,
+  swarmErrorToHttpStatus,
+  swarmErrorToHttpResponse,
   type ErrorContext,
 } from './errors.js';

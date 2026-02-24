@@ -15,7 +15,10 @@ import {
   NetworkError,
   isSwarmError,
   isSwarmErrorWithCode,
+  isAuthError,
   toSwarmError,
+  swarmErrorToHttpStatus,
+  swarmErrorToHttpResponse,
 } from './errors.js';
 import { SwarmErrorCode } from './codes.js';
 
@@ -252,6 +255,74 @@ describe('AuthError', () => {
     expect(err.code).toBe(SwarmErrorCode.AUTH_FORBIDDEN);
     expect(err.context.userId).toBe('u123');
   });
+
+  it('should default statusCode to 401 for AUTH_INVALID_TOKEN', () => {
+    const err = new AuthError('bad token');
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe(SwarmErrorCode.AUTH_INVALID_TOKEN);
+  });
+
+  it('should default statusCode to 403 for AUTH_FORBIDDEN', () => {
+    const err = new AuthError('not allowed', {
+      code: SwarmErrorCode.AUTH_FORBIDDEN,
+    });
+    expect(err.statusCode).toBe(403);
+  });
+
+  it('should accept explicit statusCode in options', () => {
+    const err = new AuthError('custom', { statusCode: 429 });
+    expect(err.statusCode).toBe(429);
+  });
+
+  it('should accept details in options', () => {
+    const err = new AuthError('denied', {
+      code: SwarmErrorCode.AUTH_ACCESS_DENIED,
+      details: { limit: 10 },
+    });
+    expect(err.details).toEqual({ limit: 10 });
+    expect(err.statusCode).toBe(403);
+  });
+
+  it('should support legacy positional constructor form', () => {
+    const err = new AuthError('slots full', 403, { limit: 5 });
+    expect(err.statusCode).toBe(403);
+    expect(err.details).toEqual({ limit: 5 });
+    expect(err.code).toBe(SwarmErrorCode.AUTH_FORBIDDEN);
+    expect(err).toBeInstanceOf(SwarmError);
+  });
+
+  it('should support legacy positional constructor with 401', () => {
+    const err = new AuthError('Unauthorized', 401);
+    expect(err.statusCode).toBe(401);
+    expect(err.code).toBe(SwarmErrorCode.AUTH_INVALID_TOKEN);
+    expect(err.details).toBeUndefined();
+  });
+
+  it('should include statusCode and details in toJSON', () => {
+    const err = new AuthError('denied', 403, { reason: 'slots' });
+    const json = err.toJSON();
+    expect(json.statusCode).toBe(403);
+    expect(json.details).toEqual({ reason: 'slots' });
+  });
+});
+
+// ── isAuthError ───────────────────────────────────────────────────────────
+
+describe('isAuthError', () => {
+  it('should return true for AuthError instances', () => {
+    expect(isAuthError(new AuthError('x'))).toBe(true);
+    expect(isAuthError(new AuthError('y', 403))).toBe(true);
+  });
+
+  it('should return false for other SwarmError subclasses', () => {
+    expect(isAuthError(new SwarmError('x'))).toBe(false);
+    expect(isAuthError(new ConfigError('x'))).toBe(false);
+  });
+
+  it('should return false for non-error values', () => {
+    expect(isAuthError(null)).toBe(false);
+    expect(isAuthError('string')).toBe(false);
+  });
 });
 
 // ── QueueError ─────────────────────────────────────────────────────────────
@@ -411,7 +482,69 @@ describe('SwarmErrorCode', () => {
     expect(SwarmErrorCode.STATE_WRITE_ERROR).toBe('STATE_WRITE_ERROR');
     expect(SwarmErrorCode.MEDIA_LIMIT_REACHED).toBe('MEDIA_LIMIT_REACHED');
     expect(SwarmErrorCode.AUTH_FORBIDDEN).toBe('AUTH_FORBIDDEN');
+    expect(SwarmErrorCode.AUTH_ACCESS_DENIED).toBe('AUTH_ACCESS_DENIED');
     expect(SwarmErrorCode.QUEUE_PARSE_ERROR).toBe('QUEUE_PARSE_ERROR');
     expect(SwarmErrorCode.NETWORK_TIMEOUT).toBe('NETWORK_TIMEOUT');
+  });
+});
+
+// ── swarmErrorToHttpStatus ──────────────────────────────────────────────────
+
+describe('swarmErrorToHttpStatus', () => {
+  it('should use explicit statusCode from AuthError', () => {
+    const err = new AuthError('denied', 403);
+    expect(swarmErrorToHttpStatus(err)).toBe(403);
+  });
+
+  it('should use explicit statusCode from NetworkError', () => {
+    const err = new NetworkError('bad gateway', { statusCode: 502 });
+    expect(swarmErrorToHttpStatus(err)).toBe(502);
+  });
+
+  it('should map AUTH_INVALID_TOKEN to 401', () => {
+    const err = new SwarmError('token expired', { code: SwarmErrorCode.AUTH_INVALID_TOKEN });
+    expect(swarmErrorToHttpStatus(err)).toBe(401);
+  });
+
+  it('should map AUTH_FORBIDDEN to 403', () => {
+    const err = new SwarmError('forbidden', { code: SwarmErrorCode.AUTH_FORBIDDEN });
+    expect(swarmErrorToHttpStatus(err)).toBe(403);
+  });
+
+  it('should map LLM_CIRCUIT_OPEN to 503', () => {
+    const err = new LLMError('circuit open', { code: SwarmErrorCode.LLM_CIRCUIT_OPEN });
+    expect(swarmErrorToHttpStatus(err)).toBe(503);
+  });
+
+  it('should map NETWORK_TIMEOUT to 504', () => {
+    const err = new NetworkError('timeout', { code: SwarmErrorCode.NETWORK_TIMEOUT });
+    expect(swarmErrorToHttpStatus(err)).toBe(504);
+  });
+
+  it('should default to 500 for UNKNOWN', () => {
+    const err = new SwarmError('oops');
+    expect(swarmErrorToHttpStatus(err)).toBe(500);
+  });
+});
+
+// ── swarmErrorToHttpResponse ────────────────────────────────────────────────
+
+describe('swarmErrorToHttpResponse', () => {
+  it('should build response from AuthError', () => {
+    const err = new AuthError('slots full', 403, { limit: 5 });
+    const res = swarmErrorToHttpResponse(err);
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe('slots full');
+    expect(res.body.code).toBe('AUTH_FORBIDDEN');
+    expect(res.body.details).toEqual({ limit: 5 });
+  });
+
+  it('should build response from generic SwarmError (no details)', () => {
+    const err = new SwarmError('fail', { code: SwarmErrorCode.UNKNOWN });
+    const res = swarmErrorToHttpResponse(err);
+    expect(res.statusCode).toBe(500);
+    expect(res.body.error).toBe('fail');
+    expect(res.body.code).toBe('UNKNOWN');
+    expect(res.body.details).toBeUndefined();
   });
 });

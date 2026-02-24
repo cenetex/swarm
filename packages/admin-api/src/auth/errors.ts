@@ -1,15 +1,7 @@
-export class AuthError extends Error {
-  readonly statusCode: number;
-  readonly details?: unknown;
-
-  constructor(message: string, statusCode: number, details?: unknown) {
-    super(message);
-    this.name = 'AuthError';
-    this.statusCode = statusCode;
-    this.details = details;
-  }
-}
-
-export function isAuthError(error: unknown): error is AuthError {
-  return error instanceof AuthError;
-}
+/**
+ * Re-export the unified AuthError and isAuthError from @swarm/core.
+ *
+ * The core AuthError now supports both the structured options form and the
+ * legacy positional form: `new AuthError('msg', 403, details)`.
+ */
+export { AuthError, isAuthError } from '@swarm/core';

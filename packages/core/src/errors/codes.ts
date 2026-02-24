@@ -69,6 +69,8 @@ export enum SwarmErrorCode {
   AUTH_INVALID_TOKEN = 'AUTH_INVALID_TOKEN',
   /** Caller lacks required permissions */
   AUTH_FORBIDDEN = 'AUTH_FORBIDDEN',
+  /** Access denied (e.g. active-user slot limit reached) */
+  AUTH_ACCESS_DENIED = 'AUTH_ACCESS_DENIED',
 
   // ── Queue ────────────────────────────────────────────────────────────
   /** SQS send/receive failure */
