@@ -131,10 +131,14 @@ Gate overrides are tracked as comments on the release PR and referenced in relea
 
 | KPI | Target | Measurement |
 |-----|--------|-------------|
-| Cost per active avatar per day | Track trend (no fixed target pre-scale) | `awsCost.totalUsd / usage.activeAvatarCount` from daily report |
-| Cost per message | Track trend | `awsCost.totalUsd / usage.totals.messagesProcessed` |
-| Infrastructure baseline cost (zero-activity) | Minimize; track monthly | AWS cost on zero-traffic days |
-| Orphaned secret count | 0 | `cleanup-orphaned-secrets.ts` dry run |
+| Staging idle cost | **<= $2.50/day ($75/mo)** | AWS cost on zero-traffic days |
+| Production idle cost | **<= $8.00/day ($240/mo)** | AWS cost on zero-traffic days |
+| Cost per active avatar per day | **<= $1.50** (revisit at >50 avatars) | `awsCost.totalUsd / usage.activeAvatarCount` from daily report |
+| Cost per message | **<= $0.05** | `awsCost.totalUsd / usage.totals.messagesProcessed` |
+| Budget utilization | **<= 80%** before day 25 of the month | AWS Budget alerts |
+| Orphaned secret count | **0** | `cleanup-orphaned-secrets.ts` dry run |
+
+Variance bands (Green / Yellow / Red / Critical) and the corrective-action workflow that links KPI breaches to GitHub issue creation are defined in [COST-CONTROLS-PLAYBOOK.md sections 6-8](./COST-CONTROLS-PLAYBOOK.md#6-cost-kpi-targets).
 
 **Sub-issue**: #267
 
@@ -185,8 +189,10 @@ See also: [SECURITY.md -- Document Exceptions](./SECURITY.md), [DATA-RETENTION-M
 | **Monday 09:00 UTC** | Security exception review generated. | Automated | `.github/workflows/security-exceptions.yml` |
 | **Monday 09:00 UTC** | Ticket health report generated. | Automated | `.github/workflows/ticket-health.yml` |
 | **Monday (triage)** | Triage review. Review scorecard, exception report, and ticket health. Reprioritize backlog. | Leadership | [ISSUE-GOVERNANCE.md](./ISSUE-GOVERNANCE.md), [LEADERSHIP-SCORECARD.md](./LEADERSHIP-SCORECARD.md) |
+| **Monday (triage)** | Weekly cost review. Evaluate KPIs against targets, classify variance bands, create corrective-action issues for Red KPIs. | Leadership | [COST-CONTROLS-PLAYBOOK.md sections 6-8](./COST-CONTROLS-PLAYBOOK.md#7-weekly-cost-review-cadence) |
 | **Daily 06:20 UTC** | Cost + activity report generated. | Automated | [OPERATIONS-REPORTS.md](./OPERATIONS-REPORTS.md) |
 | **Quarterly (Jan, Apr, Jul, Oct)** | Privileged access review. | Automated + reviewer | [ACCESS-REVIEW.md](./ACCESS-REVIEW.md) |
+| **Quarterly** | Cost KPI target review. Adjust targets based on 90-day actuals and scale changes. | Leadership | [COST-CONTROLS-PLAYBOOK.md section 9](./COST-CONTROLS-PLAYBOOK.md#9-quarterly-kpi-target-review) |
 
 ### Operating Metrics
 

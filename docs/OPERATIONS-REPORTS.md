@@ -24,6 +24,13 @@ For cost anomaly triage, containment, and follow-up actions, use:
 
 - `docs/COST-CONTROLS-PLAYBOOK.md`
 
+## Weekly Cost Review
+
+Daily reports feed into the **weekly cost review** performed during Monday triage. The review evaluates KPIs against concrete targets and creates corrective-action issues when thresholds are breached. See:
+
+- KPI targets and variance bands: `docs/COST-CONTROLS-PLAYBOOK.md` sections 6-8
+- Weekly cadence and ownership: `docs/STRATEGY-OPERATIONS.md` section 4 and section 6
+
 ## Automatic Cost-Control Signals
 
 Each generated report now includes a `signals` block (in JSON and markdown summary table) with machine-evaluated statuses for:
