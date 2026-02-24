@@ -108,9 +108,11 @@ Without scope boundaries, agents may:
 
 Triage runs weekly (or more frequently during active sprints). The triage review covers:
 
+0. **Leadership scorecard review** -- Download the latest [Leadership Operating Scorecard](./LEADERSHIP-SCORECARD.md) artifact from GitHub Actions. Review the health grade and any threshold breach recommendations before proceeding with issue-level triage. Act on RED-grade recommendations first.
 1. **New issues** -- Validate priority label, ensure agent-ready fields are present, assign owner or agent.
 2. **In-progress issues** -- Check for blockers, verify branch exists, confirm PR is progressing.
 3. **Stale issues** -- Apply aging policy (see below).
+4. **Scorecard-driven reprioritization** -- For each recommendation in the scorecard, decide whether to adjust issue priorities, reassign work, or create new issues. Record decisions as comments on affected issues.
 
 ### Aging Policy
 

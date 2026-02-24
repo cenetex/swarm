@@ -1,0 +1,75 @@
+name: Leadership Operating Scorecard
+
+on:
+  schedule:
+    # Every Monday at 08:00 AM UTC (before weekly triage)
+    - cron: '0 8 * * 1'
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'AWS environment to query for reliability metrics'
+        required: false
+        default: 'production'
+        type: choice
+        options: [staging, production]
+
+permissions:
+  issues: read
+  contents: read
+  actions: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  scorecard:
+    name: Generate Scorecard
+    runs-on: ubuntu-latest
+
+    environment: ${{ github.event.inputs.environment || 'production' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        continue-on-error: true
+        id: aws-auth
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: leadership-scorecard
+
+      - name: Generate markdown report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: bash scripts/leadership-scorecard.sh
+
+      - name: Generate JSON report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          mkdir -p report-artifacts
+          bash scripts/leadership-scorecard.sh --json > report-artifacts/leadership-scorecard.json
+
+      - name: Generate markdown artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          bash scripts/leadership-scorecard.sh > report-artifacts/leadership-scorecard.md
+
+      - name: Upload scorecard artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: leadership-scorecard
+          path: report-artifacts/
+          retention-days: 90
