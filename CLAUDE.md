@@ -438,6 +438,75 @@ The Telegram webhook handler implements multiple security layers:
 
 Handlers emit structured JSON logs with fields like `level`, `subsystem`, `event`, `avatarId`, and `requestId`. Avoid logging raw message content or secrets; log counts, lengths, and IDs instead.
 
+## Operating Model — Subagent Charter
+
+This section defines the governance rules for all AI subagents (Claude Code, Copilot, or any automated contributor) working in this repository.
+
+### Core Principle: Issue-Driven Execution
+
+Leadership directs work exclusively through GitHub issues. Subagents execute; they do not self-assign, speculate, or improvise work outside the issue tracker.
+
+### Rules
+
+1. **No untracked work.** Every branch, commit, and PR must reference a governing GitHub issue. If no issue exists for the work, do not start it — ask leadership to create one.
+
+2. **Issue is the spec.** The issue title, description, acceptance criteria, and labels are the authoritative scope. Do not expand scope beyond what the issue describes.
+
+3. **Branch naming enforces linkage.** All branches must follow `<type>/issue-<number>-<short-description>` (e.g., `fix/issue-42-dynamo-query`). Branches without an issue number must not be pushed to origin.
+
+4. **Prioritization comes from labels and milestones.** Use `priority:high`, `priority:medium`, `priority:low` labels and milestone assignments to determine execution order. Do not reorder work based on local judgment.
+
+5. **Leadership operates with read-only code access + issue management.** The operating model assumes leadership may never touch the codebase directly. All direction flows through issues; all execution flows through subagents and PRs.
+
+6. **One issue, one PR.** Each issue should produce exactly one PR. If an issue is too large, request that leadership split it into smaller issues rather than bundling unrelated changes.
+
+### Escalation Protocol
+
+When a subagent encounters ambiguity or blockers, follow this protocol:
+
+1. **Ambiguous scope** — Comment on the issue asking for clarification. Do not guess. Tag the issue with `status:blocked` if the ambiguity prevents any progress.
+2. **Blocked by another issue** — Add a comment like `Blocked by #XX` and apply the `status:blocked` label. Do not attempt workarounds that introduce untracked changes.
+3. **Discovered adjacent work** — If implementation reveals a necessary change outside the issue scope, open a new issue describing it and reference it from the current issue. Do not silently expand the PR.
+4. **Contradictory instructions** — If the issue conflicts with `CLAUDE.md`, existing code conventions, or another issue, comment on the issue describing the conflict and wait for resolution.
+
+### Good Issue Directives (Examples)
+
+These examples show the level of specificity that makes subagent execution reliable:
+
+```
+Title: fix(core): add retry logic to LLM adapter
+Labels: type:bug, priority:high, package:core
+Body:
+  - The LLM adapter in packages/core/src/services/llm.ts does not retry on 429/503.
+  - Add exponential backoff with jitter, max 3 retries.
+  - Add tests covering retry and exhaustion cases.
+  Acceptance criteria:
+  - [ ] llm.ts retries transient errors up to 3 times
+  - [ ] New test file llm-retry.test.ts passes
+  - [ ] No changes outside packages/core/
+```
+
+```
+Title: feat(admin-api): add avatar usage stats tool
+Labels: type:feature, priority:medium, package:admin
+Body:
+  - Add a new tool "get_avatar_usage" to the admin chat handler.
+  - It should query the billing table and return message count + token usage for the last 30 days.
+  - Wire it into the existing tool switch statement in chat.ts.
+  Acceptance criteria:
+  - [ ] Tool registered in chat.ts tool definitions
+  - [ ] Implementation queries DynamoDB billing table
+  - [ ] Returns structured JSON with messageCount and tokenUsage
+```
+
+### What This Means in Practice
+
+| Actor | Responsibilities |
+|-------|-----------------|
+| **Leadership** | Create issues, set labels/milestones, review PRs, approve deploys |
+| **Subagent** | Pick up assigned issues, implement within stated scope, open PRs, escalate blockers |
+| **Neither** | Untracked refactors, undocumented architecture changes, self-assigned work |
+
 ## Resources
 
 - [PLAN.md](./PLAN.md) - Detailed architecture and implementation plan
