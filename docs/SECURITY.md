@@ -213,6 +213,12 @@ For security concerns or questions:
 - Private Vulnerability Reporting: Use GitHub's security advisory feature
 - Email: Contact repository owner through GitHub profile
 
+## Privileged Access Review
+
+Privileged identities (GitHub admins, deployment roles, admin wallets/emails, environment secrets) are reviewed quarterly via an automated workflow. The workflow produces evidence artifacts and creates follow-up issues for stale or unknown principals.
+
+See [ACCESS-REVIEW.md](./ACCESS-REVIEW.md) for the full process, break-glass documentation, and recertification timeline.
+
 ## Compliance
 
 This project follows security best practices including:
@@ -220,6 +226,7 @@ This project follows security best practices including:
 - AWS Well-Architected Framework security pillar
 - Principle of least privilege
 - Defense in depth
+- Quarterly privileged-access recertification ([ACCESS-REVIEW.md](./ACCESS-REVIEW.md))
 
 ## License
 

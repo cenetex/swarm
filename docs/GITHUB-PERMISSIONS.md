@@ -190,6 +190,8 @@ Closes #<issue-number>
 
 ## Quarterly Permission Audit Checklist
 
+> **Automated review:** The `access-review.yml` workflow runs quarterly and produces an evidence packet covering most of this checklist. See [ACCESS-REVIEW.md](./ACCESS-REVIEW.md) for the full process.
+
 Run this audit every quarter (Q1: January, Q2: April, Q3: July, Q4: October) to verify the access model has not drifted.
 
 ### 1. User Access Review
