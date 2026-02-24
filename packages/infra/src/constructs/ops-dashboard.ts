@@ -3,8 +3,12 @@
  *
  * Creates a single CloudWatch dashboard providing a unified view of:
  * - Lambda invocations and errors for all critical handlers
+ * - Lambda duration (p50/p95) for latency visibility
+ * - Lambda throttles and concurrent executions
  * - SQS queue depths for message, response, media, and post queues
+ * - SQS age-of-oldest-message for user-facing queues
  * - DLQ message counts across SharedHandlers and AdminApi
+ * - API Gateway latency and error rates (when AdminApi is deployed)
  * - Discord gateway runtime drift alarm (when gateway is deployed)
  */
 import * as cdk from 'aws-cdk-lib';
@@ -77,6 +81,21 @@ export interface OpsDashboardProps {
   };
 
   /**
+   * AdminApi SQS queues (optional — used for queue-age metrics)
+   */
+  adminQueues?: {
+    responseQueue: sqs.IQueue;
+    chatQueue: sqs.IQueue;
+    dreamQueue: sqs.IQueue;
+  };
+
+  /**
+   * AdminApi HTTP API ID (optional — used for API Gateway latency/error widgets).
+   * This is the apiId of the apigatewayv2.HttpApi resource.
+   */
+  adminApiId?: string;
+
+  /**
    * Discord gateway ECS service (optional — used for runtime drift alarm).
    * When provided, the dashboard creates an alarm that fires when the gateway
    * service has zero running tasks for more than 5 minutes.
@@ -140,7 +159,67 @@ export class OpsDashboard extends Construct {
     );
 
     // ========================================================================
-    // Row 2: SQS Queue Depths
+    // Row 2: Shared Handlers — Lambda Duration (p50 / p95)
+    // ========================================================================
+    this.dashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: 'Shared Handlers - Duration p50 (ms)',
+        width: 12,
+        height: 6,
+        left: [
+          sharedFns.messageProcessor.metricDuration({ period, statistic: 'p50', label: 'MessageProcessor' }),
+          sharedFns.responseSender.metricDuration({ period, statistic: 'p50', label: 'ResponseSender' }),
+          sharedFns.mediaProcessor.metricDuration({ period, statistic: 'p50', label: 'MediaProcessor' }),
+          sharedFns.tweetSender.metricDuration({ period, statistic: 'p50', label: 'TweetSender' }),
+          sharedFns.telegramWebhook.metricDuration({ period, statistic: 'p50', label: 'TelegramWebhook' }),
+        ],
+      }),
+      new cloudwatch.GraphWidget({
+        title: 'Shared Handlers - Duration p95 (ms)',
+        width: 12,
+        height: 6,
+        left: [
+          sharedFns.messageProcessor.metricDuration({ period, statistic: 'p95', label: 'MessageProcessor' }),
+          sharedFns.responseSender.metricDuration({ period, statistic: 'p95', label: 'ResponseSender' }),
+          sharedFns.mediaProcessor.metricDuration({ period, statistic: 'p95', label: 'MediaProcessor' }),
+          sharedFns.tweetSender.metricDuration({ period, statistic: 'p95', label: 'TweetSender' }),
+          sharedFns.telegramWebhook.metricDuration({ period, statistic: 'p95', label: 'TelegramWebhook' }),
+        ],
+      }),
+    );
+
+    // ========================================================================
+    // Row 3: Shared Handlers — Throttles & Concurrent Executions
+    // ========================================================================
+    this.dashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: 'Shared Handlers - Throttles',
+        width: 12,
+        height: 6,
+        left: [
+          sharedFns.messageProcessor.metricThrottles({ period, label: 'MessageProcessor' }),
+          sharedFns.responseSender.metricThrottles({ period, label: 'ResponseSender' }),
+          sharedFns.mediaProcessor.metricThrottles({ period, label: 'MediaProcessor' }),
+          sharedFns.tweetSender.metricThrottles({ period, label: 'TweetSender' }),
+          sharedFns.telegramWebhook.metricThrottles({ period, label: 'TelegramWebhook' }),
+        ],
+      }),
+      new cloudwatch.GraphWidget({
+        title: 'Shared Handlers - Concurrent Executions',
+        width: 12,
+        height: 6,
+        left: [
+          sharedFns.messageProcessor.metric('ConcurrentExecutions', { period, statistic: 'Maximum', label: 'MessageProcessor' }),
+          sharedFns.responseSender.metric('ConcurrentExecutions', { period, statistic: 'Maximum', label: 'ResponseSender' }),
+          sharedFns.mediaProcessor.metric('ConcurrentExecutions', { period, statistic: 'Maximum', label: 'MediaProcessor' }),
+          sharedFns.tweetSender.metric('ConcurrentExecutions', { period, statistic: 'Maximum', label: 'TweetSender' }),
+          sharedFns.telegramWebhook.metric('ConcurrentExecutions', { period, statistic: 'Maximum', label: 'TelegramWebhook' }),
+        ],
+      }),
+    );
+
+    // ========================================================================
+    // Row 4: SQS Queue Depths & Age of Oldest Message
     // ========================================================================
     const queues = props.sharedQueues;
 
@@ -157,8 +236,30 @@ export class OpsDashboard extends Construct {
         ],
       }),
       new cloudwatch.GraphWidget({
-        title: 'DLQ Message Counts',
+        title: 'SQS Age of Oldest Message (seconds)',
         width: 12,
+        height: 6,
+        left: [
+          queues.messageQueue.metricApproximateAgeOfOldestMessage({ period, label: 'Messages' }),
+          queues.responseQueue.metricApproximateAgeOfOldestMessage({ period, label: 'Responses' }),
+          queues.mediaQueue.metricApproximateAgeOfOldestMessage({ period, label: 'Media' }),
+          queues.postQueue.metricApproximateAgeOfOldestMessage({ period, label: 'Posts' }),
+          ...(props.adminQueues ? [
+            props.adminQueues.responseQueue.metricApproximateAgeOfOldestMessage({ period, label: 'Admin Responses' }),
+            props.adminQueues.chatQueue.metricApproximateAgeOfOldestMessage({ period, label: 'Admin Chat' }),
+            props.adminQueues.dreamQueue.metricApproximateAgeOfOldestMessage({ period, label: 'Admin Dreams' }),
+          ] : []),
+        ],
+      }),
+    );
+
+    // ========================================================================
+    // Row 5: DLQ Message Counts
+    // ========================================================================
+    this.dashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: 'DLQ Message Counts',
+        width: 24,
         height: 6,
         left: [
           props.sharedDlqs.dlq.metricApproximateNumberOfMessagesVisible({ period, label: 'Shared FIFO DLQ' }),
@@ -174,7 +275,7 @@ export class OpsDashboard extends Construct {
     );
 
     // ========================================================================
-    // Row 3: Admin API — Lambda Invocations & Errors (if present)
+    // Row 6: Admin API — Lambda Invocations & Errors (if present)
     // ========================================================================
     if (props.adminHandlerFunctions) {
       const adminFns = props.adminHandlerFunctions;
@@ -200,6 +301,144 @@ export class OpsDashboard extends Construct {
             adminFns.responseSender.metricErrors({ period, label: 'ResponseSender' }),
             adminFns.dreamWorker.metricErrors({ period, label: 'DreamWorker' }),
             adminFns.openaiCompat.metricErrors({ period, label: 'OpenAICompat' }),
+          ],
+        }),
+      );
+
+      // ======================================================================
+      // Row 7: Admin API — Lambda Duration (p50 / p95)
+      // ======================================================================
+      this.dashboard.addWidgets(
+        new cloudwatch.GraphWidget({
+          title: 'Admin API - Duration p50 (ms)',
+          width: 12,
+          height: 6,
+          left: [
+            adminFns.chatWorker.metricDuration({ period, statistic: 'p50', label: 'ChatWorker' }),
+            adminFns.responseSender.metricDuration({ period, statistic: 'p50', label: 'ResponseSender' }),
+            adminFns.dreamWorker.metricDuration({ period, statistic: 'p50', label: 'DreamWorker' }),
+            adminFns.openaiCompat.metricDuration({ period, statistic: 'p50', label: 'OpenAICompat' }),
+          ],
+        }),
+        new cloudwatch.GraphWidget({
+          title: 'Admin API - Duration p95 (ms)',
+          width: 12,
+          height: 6,
+          left: [
+            adminFns.chatWorker.metricDuration({ period, statistic: 'p95', label: 'ChatWorker' }),
+            adminFns.responseSender.metricDuration({ period, statistic: 'p95', label: 'ResponseSender' }),
+            adminFns.dreamWorker.metricDuration({ period, statistic: 'p95', label: 'DreamWorker' }),
+            adminFns.openaiCompat.metricDuration({ period, statistic: 'p95', label: 'OpenAICompat' }),
+          ],
+        }),
+      );
+
+      // ======================================================================
+      // Row 8: Admin API — Throttles & Concurrent Executions
+      // ======================================================================
+      this.dashboard.addWidgets(
+        new cloudwatch.GraphWidget({
+          title: 'Admin API - Throttles',
+          width: 12,
+          height: 6,
+          left: [
+            adminFns.chatWorker.metricThrottles({ period, label: 'ChatWorker' }),
+            adminFns.responseSender.metricThrottles({ period, label: 'ResponseSender' }),
+            adminFns.dreamWorker.metricThrottles({ period, label: 'DreamWorker' }),
+            adminFns.openaiCompat.metricThrottles({ period, label: 'OpenAICompat' }),
+          ],
+        }),
+        new cloudwatch.GraphWidget({
+          title: 'Admin API - Concurrent Executions',
+          width: 12,
+          height: 6,
+          left: [
+            adminFns.chatWorker.metric('ConcurrentExecutions', { period, statistic: 'Maximum', label: 'ChatWorker' }),
+            adminFns.responseSender.metric('ConcurrentExecutions', { period, statistic: 'Maximum', label: 'ResponseSender' }),
+            adminFns.dreamWorker.metric('ConcurrentExecutions', { period, statistic: 'Maximum', label: 'DreamWorker' }),
+            adminFns.openaiCompat.metric('ConcurrentExecutions', { period, statistic: 'Maximum', label: 'OpenAICompat' }),
+          ],
+        }),
+      );
+    }
+
+    // ========================================================================
+    // Row 9: API Gateway — Latency & Error Rates (if AdminApi is deployed)
+    // ========================================================================
+    if (props.adminApiId) {
+      const apiDimensions = { ApiId: props.adminApiId };
+
+      this.dashboard.addWidgets(
+        new cloudwatch.GraphWidget({
+          title: 'API Gateway - Latency (ms)',
+          width: 12,
+          height: 6,
+          left: [
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: 'Latency',
+              dimensionsMap: apiDimensions,
+              period,
+              statistic: 'p50',
+              label: 'Latency p50',
+            }),
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: 'Latency',
+              dimensionsMap: apiDimensions,
+              period,
+              statistic: 'p95',
+              label: 'Latency p95',
+            }),
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: 'IntegrationLatency',
+              dimensionsMap: apiDimensions,
+              period,
+              statistic: 'p50',
+              label: 'Integration p50',
+            }),
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: 'IntegrationLatency',
+              dimensionsMap: apiDimensions,
+              period,
+              statistic: 'p95',
+              label: 'Integration p95',
+            }),
+          ],
+        }),
+        new cloudwatch.GraphWidget({
+          title: 'API Gateway - 4xx / 5xx Error Rates',
+          width: 12,
+          height: 6,
+          left: [
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: '4xx',
+              dimensionsMap: apiDimensions,
+              period,
+              statistic: 'Sum',
+              label: '4xx Errors',
+            }),
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: '5xx',
+              dimensionsMap: apiDimensions,
+              period,
+              statistic: 'Sum',
+              label: '5xx Errors',
+            }),
+          ],
+          right: [
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: 'Count',
+              dimensionsMap: apiDimensions,
+              period,
+              statistic: 'Sum',
+              label: 'Total Requests',
+            }),
           ],
         }),
       );

@@ -239,6 +239,10 @@ export class AdminApiConstruct extends Construct {
   public readonly chatDlq: sqs.Queue;
   public readonly dreamDlq: sqs.Queue;
   public readonly consolidationDlq: sqs.Queue;
+  // Exposed for ops dashboard queue-age metrics
+  public readonly responseQueue: sqs.Queue;
+  public readonly chatQueue: sqs.Queue;
+  public readonly dreamQueue: sqs.Queue;
 
   constructor(scope: Construct, id: string, props: AdminApiConstructProps) {
     super(scope, id);
@@ -402,6 +406,11 @@ export class AdminApiConstruct extends Construct {
         maxReceiveCount: 3,
       },
     });
+
+    // Expose queues for ops dashboard age-of-oldest-message metrics
+    this.responseQueue = responseQueue;
+    this.chatQueue = chatQueue;
+    this.dreamQueue = dreamQueue;
 
     this.consolidationDlq = new sqs.Queue(this, 'ConsolidationScheduleDLQ', {
       retentionPeriod: cdk.Duration.days(14),
