@@ -2,7 +2,7 @@
  * OutboundSender Tests
  * Tests for structured ActionError handling (#368)
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import { OutboundSender } from './outbound-sender.js';
 import type { ActionError } from './outbound-sender.js';
 import { PlatformRegistry } from '../platforms/base.js';

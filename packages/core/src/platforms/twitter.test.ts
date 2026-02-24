@@ -277,15 +277,12 @@ describe('TwitterAdapter - Action Execution', () => {
     expect(result).toBe(true);
   });
 
-  it('executeAction returns false on API error', async () => {
+  it('executeAction throws PlatformError on API error', async () => {
     mockClient.v2.tweet = mock(() => Promise.reject(new Error('Rate limited')));
 
-    const result = await adapter.executeAction(
-      { type: 'send_message', text: 'test' },
-      'conv-1'
-    );
-
-    expect(result).toBe(false);
+    await expect(
+      adapter.executeAction({ type: 'send_message', text: 'test' }, 'conv-1')
+    ).rejects.toThrow('Rate limited');
   });
 });
 
@@ -665,12 +662,10 @@ describe('TwitterAdapter - Integration Scenarios', () => {
     expect(waitSeconds).toBeGreaterThan(0);
     expect(waitSeconds).toBeLessThanOrEqual(900);
 
-    // Verify graceful handling returns false
-    const result = await adapter.executeAction(
-      { type: 'send_message', text: 'test' },
-      'conv-1'
-    );
-    expect(result).toBe(false);
+    // Verify graceful handling throws PlatformError
+    await expect(
+      adapter.executeAction({ type: 'send_message', text: 'test' }, 'conv-1')
+    ).rejects.toThrow('Too Many Requests');
   });
 
   it('E2E: OAuth token refresh when expired', async () => {
@@ -868,31 +863,25 @@ describe('TwitterAdapter - executeAction diagnostics', () => {
     adapter = new TwitterAdapter(createMockAvatarConfig(), createMockCredentials(), mockClient);
   });
 
-  it('returns false and logs tier diagnostic on 403 error', async () => {
+  it('throws PlatformError with tier diagnostic on 403 error', async () => {
     const err = new Error('Forbidden') as any;
     err.code = 403;
     err.data = { detail: 'Not authorized for this endpoint' };
     mockClient.v2.tweet = mock(() => Promise.reject(err));
 
-    const result = await adapter.executeAction(
-      { type: 'send_message', text: 'test' },
-      'conv-1'
-    );
-
-    expect(result).toBe(false);
+    await expect(
+      adapter.executeAction({ type: 'send_message', text: 'test' }, 'conv-1')
+    ).rejects.toThrow('Forbidden');
   });
 
-  it('returns false on retryable 500 error', async () => {
+  it('throws PlatformError on retryable 500 error', async () => {
     const err = new Error('Internal Server Error') as any;
     err.code = 500;
     mockClient.v2.tweet = mock(() => Promise.reject(err));
 
-    const result = await adapter.executeAction(
-      { type: 'send_message', text: 'test' },
-      'conv-1'
-    );
-
-    expect(result).toBe(false);
+    await expect(
+      adapter.executeAction({ type: 'send_message', text: 'test' }, 'conv-1')
+    ).rejects.toThrow('Internal Server Error');
   });
 });
 

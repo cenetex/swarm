@@ -84,11 +84,13 @@ export class OutboundSender {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
 
-        // Extract structured metadata from PlatformError or similar typed errors
-        const statusCode = error instanceof Error
-          ? (error as unknown as Record<string, unknown>).code ??
-            (error as unknown as Record<string, unknown>).statusCode
+        // Extract structured metadata from PlatformError or similar typed errors.
+        // Prefer the numeric `statusCode` property; `code` may be a string enum (SwarmErrorCode).
+        const rawStatusCode = error instanceof Error
+          ? (error as unknown as Record<string, unknown>).statusCode ??
+            (error as unknown as Record<string, unknown>).code
           : undefined;
+        const statusCode = typeof rawStatusCode === 'number' ? rawStatusCode : undefined;
         const retryable = (error as { retryable?: boolean })?.retryable;
 
         errors.push({

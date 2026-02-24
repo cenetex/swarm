@@ -114,12 +114,24 @@ describe('observability.getSystemStatus', () => {
   });
 
   it('marks queue counts as truncated when backing log counts are truncated', async () => {
+    // Explicitly clear all queue env vars to prevent leakage from parallel test files
+    for (const key of ALL_QUEUE_ENV_KEYS) {
+      delete process.env[key];
+    }
+
     const deps = makeDeps({
       countLogsByLevel: (vi.fn(async (level: string) => (
         level === 'ERROR'
           ? { count: 4, truncated: true }
           : { count: 9, truncated: false }
       )) as unknown as SystemStatusDeps['countLogsByLevel']),
+      // Mock getQueueDepth to always return not_configured — this test
+      // validates truncation semantics, not queue resolution.  Using a
+      // constant avoids race conditions with env-var leakage from parallel
+      // test files that may set SYSTEM_SHARED_*_QUEUE_URL.
+      getQueueDepth: (vi.fn(async () => (
+        { unavailable: true as const, reason: 'not_configured' as const }
+      )) as unknown as SystemStatusDeps['getQueueDepth']),
     });
 
     const result = await getSystemStatus({}, deps);

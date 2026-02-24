@@ -37,8 +37,9 @@ describe('Dockerfile.discord-gateway', () => {
     expect(cmdPath).toBe(expectedPath);
   });
 
-  it('CMD entry point file exists after build', () => {
-    // After `pnpm build`, the compiled JS should exist at the expected location
+  // This test requires `pnpm build` to have been run first.
+  // Skip when dist/ does not exist (e.g. in CI test-before-build or local dev).
+  it.skipIf(!existsSync(resolve(HANDLERS_ROOT, 'dist')))('CMD entry point file exists after build', () => {
     const expectedFile = resolve(HANDLERS_ROOT, 'dist', 'discord', 'discord-gateway-shared.js');
     expect(existsSync(expectedFile)).toBe(true);
   });
