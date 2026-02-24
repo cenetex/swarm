@@ -22,6 +22,7 @@ import * as gallery from './gallery.js';
 import * as credits from './credits.js';
 import { _getSecretValueInternal } from './secrets.js';
 import { getReplicateVersion } from './models-registry.js';
+import { validateReplicateInputWithSchema } from './replicate-schema.js';
 import type { MediaJob, GalleryItem, SecretType, AICapability } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { buildMediaUrl, canonicalizeMediaUrl } from '../utils/media-url.js';
@@ -425,36 +426,40 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     console.log(`[Media] Reference images converted to accessible URLs: ${accessibleReferenceUrls.length}`);
   }
 
-  // Build input based on model type
-  const isNanoBanana = modelId === 'google/nano-banana-pro';
+  // Build generic input — schema validation will strip unsupported params
   const hasReferenceImages = accessibleReferenceUrls.length > 0;
-
-  // Build Nano Banana Pro input
-  const nanoBananaInput: Record<string, unknown> = {
+  const genericInput: Record<string, unknown> = {
     prompt: finalPrompt,
-    resolution,
+    aspect_ratio: hasReferenceImages ? 'match_input_image' : aspectRatio,
     output_format: 'png',
+    num_outputs: 1,
+    resolution,
     safety_filter_level: 'block_only_high',
   };
 
-  // Only add image_input if we have reference images
+  // Add reference images (models that support it accept image_input or image)
   if (hasReferenceImages) {
-    nanoBananaInput.image_input = accessibleReferenceUrls.slice(0, 14);
-    nanoBananaInput.aspect_ratio = 'match_input_image';
-  } else {
-    nanoBananaInput.aspect_ratio = aspectRatio;
+    genericInput.image_input = accessibleReferenceUrls.slice(0, 14);
+    genericInput.image = accessibleReferenceUrls[0];
   }
 
-  // Build Flux input (fallback)
-  const fluxInput: Record<string, unknown> = {
-    prompt: finalPrompt,
-    width: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
-    height: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
-    num_outputs: 1,
-    output_format: 'png',
-  };
-  if (accessibleReferenceUrls[0]) {
-    fluxInput.image = accessibleReferenceUrls[0];
+  // Add width/height for models that use pixel dimensions instead of aspect_ratio
+  const widthMap = { '4K': 2048, '2K': 1024, '1K': 512 } as const;
+  genericInput.width = widthMap[resolution as keyof typeof widthMap] ?? 1024;
+  genericInput.height = widthMap[resolution as keyof typeof widthMap] ?? 1024;
+
+  // Validate input against model's schema — strips unsupported params automatically
+  let validatedInput = genericInput;
+  try {
+    const { cleanedInput, adjustments } = await validateReplicateInputWithSchema(
+      modelId, genericInput, apiKey, dynamoClient, ADMIN_TABLE,
+    );
+    validatedInput = cleanedInput;
+    if (adjustments.length > 0) {
+      console.log(`[Media] Schema validation adjusted input for ${modelId}:`, adjustments);
+    }
+  } catch (err) {
+    console.warn(`[Media] Schema validation failed for ${modelId}, sending generic input:`, err);
   }
 
   console.log(`Generating image with ${modelId}, refs: ${referenceImageUrls.length}, prompt: ${prompt.slice(0, 50)}...`);
@@ -465,7 +470,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     : `https://api.replicate.com/v1/models/${modelId}/predictions`;
 
   const requestBody: Record<string, unknown> = {
-    input: isNanoBanana ? nanoBananaInput : fluxInput,
+    input: validatedInput,
   };
   if (version) {
     requestBody.version = version;
@@ -707,35 +712,38 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     console.log(`[Media] Reference images converted to accessible URLs: ${accessibleReferenceUrls.length}`);
   }
 
-  // Build input based on model type
-  const isNanoBanana = modelId === 'google/nano-banana-pro';
+  // Build generic input — schema validation will strip unsupported params
   const hasReferenceImages = accessibleReferenceUrls.length > 0;
-
-  // Build Nano Banana Pro input
-  const nanoBananaInput: Record<string, unknown> = {
+  const asyncGenericInput: Record<string, unknown> = {
     prompt: finalPrompt,
-    resolution,
+    aspect_ratio: hasReferenceImages ? 'match_input_image' : aspectRatio,
     output_format: 'png',
+    num_outputs: 1,
+    resolution,
     safety_filter_level: 'block_only_high',
   };
 
   if (hasReferenceImages) {
-    nanoBananaInput.image_input = accessibleReferenceUrls.slice(0, 14);
-    nanoBananaInput.aspect_ratio = 'match_input_image';
-  } else {
-    nanoBananaInput.aspect_ratio = aspectRatio;
+    asyncGenericInput.image_input = accessibleReferenceUrls.slice(0, 14);
+    asyncGenericInput.image = accessibleReferenceUrls[0];
   }
 
-  // Build Flux input (fallback)
-  const fluxInput: Record<string, unknown> = {
-    prompt: finalPrompt,
-    width: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
-    height: resolution === '4K' ? 2048 : resolution === '2K' ? 1024 : 512,
-    num_outputs: 1,
-    output_format: 'png',
-  };
-  if (accessibleReferenceUrls[0]) {
-    fluxInput.image = accessibleReferenceUrls[0];
+  const asyncWidthMap = { '4K': 2048, '2K': 1024, '1K': 512 } as const;
+  asyncGenericInput.width = asyncWidthMap[resolution as keyof typeof asyncWidthMap] ?? 1024;
+  asyncGenericInput.height = asyncWidthMap[resolution as keyof typeof asyncWidthMap] ?? 1024;
+
+  // Validate input against model's schema
+  let asyncValidatedInput = asyncGenericInput;
+  try {
+    const { cleanedInput, adjustments } = await validateReplicateInputWithSchema(
+      modelId, asyncGenericInput, apiKey, dynamoClient, ADMIN_TABLE,
+    );
+    asyncValidatedInput = cleanedInput;
+    if (adjustments.length > 0) {
+      console.log(`[Media] Async schema validation adjusted input for ${modelId}:`, adjustments);
+    }
+  } catch (err) {
+    console.warn(`[Media] Async schema validation failed for ${modelId}, sending generic input:`, err);
   }
 
   // Create job record
@@ -763,7 +771,7 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
 
   // Build request body - only include webhook config when URL is configured
   const requestBody: Record<string, unknown> = {
-    input: isNanoBanana ? nanoBananaInput : fluxInput,
+    input: asyncValidatedInput,
   };
   if (version) {
     requestBody.version = version;

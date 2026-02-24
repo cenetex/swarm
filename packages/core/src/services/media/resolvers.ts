@@ -543,6 +543,29 @@ export function createGallerySaver(config: ResolverConfig): MediaServiceDependen
 }
 
 // ============================================================================
+// REPLICATE INPUT VALIDATION
+// ============================================================================
+
+/**
+ * Create a Replicate input validator that validates parameters against model schemas.
+ *
+ * The actual schema fetching/caching/validation logic lives in
+ * admin-api's replicate-schema.ts. This factory creates a thin wrapper
+ * that can be injected via MediaServiceDependencies.
+ *
+ * @param validateFn - The actual validation function (from replicate-schema.ts)
+ */
+export function createReplicateInputValidator(
+  validateFn: (
+    modelId: string,
+    input: Record<string, unknown>,
+    apiKey: string,
+  ) => Promise<{ cleanedInput: Record<string, unknown>; adjustments: string[] }>,
+): NonNullable<MediaServiceDependencies['validateReplicateInput']> {
+  return validateFn;
+}
+
+// ============================================================================
 // FACTORY: Create all dependencies at once
 // ============================================================================
 
@@ -557,5 +580,22 @@ export function createMediaDependencies(config: ResolverConfig): MediaServiceDep
     consumeCredits: createCreditConsumer(config),
     consumeTrialCredit: createTrialCreditConsumer(config),
     saveToGallery: createGallerySaver(config),
+  };
+}
+
+/**
+ * Create all media service dependencies including Replicate input validation
+ */
+export function createMediaDependenciesWithValidation(
+  config: ResolverConfig,
+  validateFn: (
+    modelId: string,
+    input: Record<string, unknown>,
+    apiKey: string,
+  ) => Promise<{ cleanedInput: Record<string, unknown>; adjustments: string[] }>,
+): MediaServiceDependencies {
+  return {
+    ...createMediaDependencies(config),
+    validateReplicateInput: createReplicateInputValidator(validateFn),
   };
 }

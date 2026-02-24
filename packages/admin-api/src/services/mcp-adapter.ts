@@ -20,6 +20,7 @@ import type { IntegrationType, AICapability } from '../services/integrations.js'
 import type { TokenLaunchConfig } from '../services/token-launch.js';
 import { getDefaultContainer, type ServiceContainer } from '../services/service-container.js';
 import { getValidModelId } from './models-registry.js';
+import { searchReplicateModels } from './replicate-schema.js';
 
 // Timeout for external API calls
 const API_TIMEOUT_MS = 10_000;
@@ -1158,6 +1159,58 @@ export function createMCPServices(
           imageGenerations: usage.imageGenerations || 0,
           videoGenerations: usage.videoGenerations || 0,
           stickerGenerations: usage.stickerGenerations || 0,
+        };
+      },
+    },
+
+    // =========================================================================
+    // Media Model Discovery & Configuration (Replicate)
+    // =========================================================================
+    mediaModels: {
+      browseReplicateModels: async (query, capability) => {
+        // Get a Replicate API key to authenticate the search
+        let apiKey: string | undefined;
+        try {
+          apiKey = await media.getProviderApiKey(avatarId, 'replicate') ?? undefined;
+        } catch {
+          // Fall back to env var
+          apiKey = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_API_KEY;
+        }
+        if (!apiKey) {
+          throw new Error('No Replicate API key available for model search. Configure a Replicate key first.');
+        }
+
+        // Append capability hint to search query for better results
+        const searchQuery = capability === 'video'
+          ? `${query} video generation`
+          : `${query} image generation`;
+
+        const { results } = await searchReplicateModels(searchQuery, apiKey);
+
+        return results.map(r => ({
+          id: `${r.owner}/${r.name}`,
+          name: r.name,
+          description: r.description || '',
+          runCount: r.run_count || 0,
+          coverImageUrl: r.cover_image_url,
+        }));
+      },
+
+      setMediaModel: async (targetAvatarId, capability, modelId) => {
+        await integrations.setModelPreference(
+          targetAvatarId,
+          'replicate',
+          capability,
+          modelId,
+          session,
+        );
+      },
+
+      getMediaModel: async (targetAvatarId, capability) => {
+        const model = await integrations.getConfiguredModel(targetAvatarId, capability, 'replicate');
+        return {
+          model: model || 'black-forest-labs/flux-schnell',
+          provider: 'replicate',
         };
       },
     },

@@ -10,12 +10,14 @@ export {
 } from './media/index.js';
 export {
   createMediaDependencies,
+  createMediaDependenciesWithValidation,
   createModelResolver,
   createApiKeyResolver,
   createTrialCreditConsumer,
   createCreditChecker,
   createCreditConsumer,
   createGallerySaver,
+  createReplicateInputValidator,
   type ResolverConfig,
 } from './media/resolvers.js';
 export {

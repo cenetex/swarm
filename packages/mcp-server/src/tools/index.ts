@@ -7,6 +7,7 @@ export { createMediaTools, type MediaServices, type CreditServices as MediaCredi
 export { createGalleryTools, type GalleryServices, type GalleryItem } from './gallery.js';
 export { createWalletTools, type WalletServices, type WalletInfo } from './wallet.js';
 export { createModelTools, type ModelServices, type ModelInfo } from './models.js';
+export { createMediaModelTools, type MediaModelServices, type ReplicateModelSearchResult } from './media-models.js';
 export { createProfileTools, type ProfileServices } from './profile.js';
 export { createSecretTools, type SecretServices, type SecretType, type SecretInfo } from './secrets.js';
 export {
@@ -122,6 +123,7 @@ import { createMediaTools, type CreditServices as MediaCreditServices } from './
 import { createGalleryTools } from './gallery.js';
 import { createWalletTools } from './wallet.js';
 import { createModelTools } from './models.js';
+import { createMediaModelTools } from './media-models.js';
 import { createProfileTools } from './profile.js';
 import { createSecretTools } from './secrets.js';
 import { createAdminTools } from './admin.js';
@@ -183,6 +185,8 @@ export interface AllServices {
   tokenLaunch?: import('./token-launch.js').TokenLaunchServices;
   // Billing / Stripe subscriptions
   billing?: import('./billing.js').BillingServices;
+  // Media model discovery & configuration (Replicate)
+  mediaModels?: import('./media-models.js').MediaModelServices;
 }
 
 /**
@@ -246,5 +250,8 @@ export function registerAllTools(
   }
   if (services.billing) {
     registry.registerAll(createBillingTools(services.billing));
+  }
+  if (services.mediaModels) {
+    registry.registerAll(createMediaModelTools(services.mediaModels));
   }
 }

@@ -271,6 +271,20 @@ export class SwarmMediaService implements MediaService {
       console.log(`[MediaService] Using ${referenceImageUrls.length} reference image(s) for generation`);
     }
 
+    // Validate input against model schema if dependency available
+    let validatedInput = input;
+    if (this.deps?.validateReplicateInput) {
+      try {
+        const { cleanedInput, adjustments } = await this.deps.validateReplicateInput(model, input, apiKey);
+        validatedInput = cleanedInput;
+        if (adjustments.length > 0) {
+          console.log(`[MediaService] Schema validation adjusted input for ${model}:`, adjustments);
+        }
+      } catch (err) {
+        console.warn('[MediaService] Schema validation failed, sending input as-is:', err);
+      }
+    }
+
     let createResponse = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -278,13 +292,13 @@ export class SwarmMediaService implements MediaService {
         'Authorization': `Bearer ${apiKey}`,
         'Prefer': 'wait',
       },
-      body: JSON.stringify({ input }),
+      body: JSON.stringify({ input: validatedInput }),
     });
 
     // If the model rejects the aspect_ratio (422), retry with 1:1 as a safe fallback
-    if (createResponse.status === 422 && input.aspect_ratio !== '1:1') {
-      console.warn(`[MediaService] Replicate rejected aspect_ratio "${input.aspect_ratio}", retrying with 1:1`);
-      input.aspect_ratio = '1:1';
+    if (createResponse.status === 422 && validatedInput.aspect_ratio !== '1:1') {
+      console.warn(`[MediaService] Replicate rejected aspect_ratio "${validatedInput.aspect_ratio}", retrying with 1:1`);
+      validatedInput.aspect_ratio = '1:1';
       createResponse = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -292,7 +306,7 @@ export class SwarmMediaService implements MediaService {
           'Authorization': `Bearer ${apiKey}`,
           'Prefer': 'wait',
         },
-        body: JSON.stringify({ input }),
+        body: JSON.stringify({ input: validatedInput }),
       });
     }
 

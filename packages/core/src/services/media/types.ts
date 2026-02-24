@@ -120,6 +120,17 @@ export interface MediaServiceDependencies {
    * If not provided, no gallery integration
    */
   saveToGallery?: (avatarId: string, item: GalleryItemInput) => Promise<GalleryItemOutput>;
+
+  /**
+   * Validate and clean Replicate input parameters against the model's schema.
+   * Strips unsupported params, corrects invalid enum values.
+   * If not provided, input is sent as-is (backward compat).
+   */
+  validateReplicateInput?: (
+    modelId: string,
+    input: Record<string, unknown>,
+    apiKey: string,
+  ) => Promise<{ cleanedInput: Record<string, unknown>; adjustments: string[] }>;
 }
 
 /**
