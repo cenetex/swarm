@@ -29,6 +29,10 @@ project-sync.yml — Removed. Excessive event triggers and unused project
 cost-activity-report.yml — Removed. The underlying script
   (scripts/cost-activity-report.sh) remains available for local use.
 
-sync-runtime-issues.yml — Removed. The cron was already disabled. The
-  underlying script remains available for local use. Associated policy
-  (internal-issue-sync-policy.json) also removed.
+sync-runtime-issues.yml — Removed. Replaced by event-driven DynamoDB
+  Streams architecture (issue #434). The github-issue-sync Lambda now
+  creates GitHub issues within seconds of error detection, eliminating
+  ~720 wasted Actions minutes/month. The underlying script
+  (sync-internal-issues-to-github.mjs) remains available for manual
+  backfill. Associated policy (internal-issue-sync-policy.json) also
+  removed.

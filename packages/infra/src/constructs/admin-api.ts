@@ -221,6 +221,19 @@ export interface AdminApiConstructProps {
    * can accurately report runtime health for bot/hybrid mode avatars.
    */
   enableDiscordGateway?: boolean;
+
+  /**
+   * Secrets Manager ARN for a GitHub Personal Access Token (PAT).
+   * When provided, enables the DynamoDB Streams-based issue sync Lambda
+   * that automatically creates GitHub issues from new ISSUE# records.
+   */
+  githubTokenSecretArn?: string;
+
+  /**
+   * GitHub repository (owner/name) for issue sync (e.g., "cenetex/aws-swarm").
+   * @default "cenetex/aws-swarm"
+   */
+  githubRepo?: string;
 }
 
 export class AdminApiConstruct extends Construct {
@@ -317,6 +330,10 @@ export class AdminApiConstruct extends Construct {
           pointInTimeRecoveryEnabled: isPersistentEnv,
         },
         timeToLiveAttribute: 'ttl',
+        // Enable DynamoDB Streams for event-driven GitHub issue sync.
+        // NEW_IMAGE provides the full item after insert, which is all we need
+        // to create the GitHub issue without a separate GetItem call.
+        stream: dynamodb.StreamViewType.NEW_IMAGE,
       });
 
       // GSI1 for inverted lookups (sk → pk)
@@ -2610,6 +2627,95 @@ export class AdminApiConstruct extends Construct {
         dreamQueueAgeAlarm,
       ]) {
         alarm.addAlarmAction(snsAction);
+      }
+    }
+
+    // ========================================================================
+    // GitHub Issue Sync (DynamoDB Streams → GitHub REST API)
+    // ========================================================================
+    // Replaces the polling-based sync-runtime-issues.yml cron workflow.
+    // When a new ISSUE#<id>/META record is inserted into the admin table,
+    // this Lambda creates a corresponding GitHub issue within seconds.
+    if (props.githubTokenSecretArn) {
+      const githubTokenSecret = secretsmanager.Secret.fromSecretCompleteArn(
+        this, 'GitHubTokenSecret', props.githubTokenSecretArn,
+      );
+
+      const handlersEntry = path.join(__dirname, '../../../handlers/src');
+
+      const githubIssueSyncLogGroup = new logs.LogGroup(this, 'GitHubIssueSyncLogGroup', {
+        logGroupName: `/aws/lambda/swarm-${environment}${suffix}-github-issue-sync`,
+        retention: logRetention,
+        removalPolicy: isPersistentEnv ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+      });
+
+      const githubIssueSyncFn = new nodejs.NodejsFunction(this, 'GitHubIssueSync', {
+        functionName: `swarm-${environment}${suffix}-github-issue-sync`,
+        runtime: lambda.Runtime.NODEJS_20_X,
+        entry: path.join(handlersEntry, 'issue-sync/github-issue-sync.ts'),
+        handler: 'handler',
+        layers: dependencyLayer ? [dependencyLayer] : undefined,
+        timeout: cdk.Duration.seconds(60),
+        memorySize: 256,
+        environment: {
+          ADMIN_TABLE: this.table.tableName,
+          GITHUB_TOKEN_SECRET_ARN: props.githubTokenSecretArn,
+          GITHUB_REPO: props.githubRepo || 'cenetex/aws-swarm',
+          ENVIRONMENT: environment,
+          LOG_LEVEL: logLevel,
+          NODE_OPTIONS: '--enable-source-maps',
+        },
+        bundling: {
+          externalModules: ['@aws-sdk/*'],
+          minify: true,
+          sourceMap: true,
+        },
+        tracing: lambda.Tracing.ACTIVE,
+        logGroup: githubIssueSyncLogGroup,
+      });
+
+      // Grant permissions
+      this.table.grantReadWriteData(githubIssueSyncFn);
+      githubTokenSecret.grantRead(githubIssueSyncFn);
+
+      // Wire DynamoDB Streams event source with filter for ISSUE#/META inserts.
+      // The filter uses DynamoDB JSON format for stream record matching.
+      githubIssueSyncFn.addEventSource(
+        new lambdaEventSources.DynamoEventSource(this.table, {
+          startingPosition: lambda.StartingPosition.TRIM_HORIZON,
+          batchSize: 10,
+          maxBatchingWindow: cdk.Duration.seconds(30),
+          retryAttempts: 3,
+          bisectBatchOnError: true,
+          reportBatchItemFailures: true,
+          filters: [
+            lambda.FilterCriteria.filter({
+              eventName: lambda.FilterRule.isEqual('INSERT'),
+              dynamodb: {
+                NewImage: {
+                  pk: { S: lambda.FilterRule.beginsWith('ISSUE#') },
+                  sk: { S: lambda.FilterRule.isEqual('META') },
+                },
+              },
+            }),
+          ],
+        }),
+      );
+
+      // CloudWatch alarm for sync errors
+      const githubIssueSyncErrorsAlarm = new cloudwatch.Alarm(this, 'GitHubIssueSyncErrorsAlarm', {
+        alarmName: `swarm-${environment}-admin-github-issue-sync-errors`,
+        metric: githubIssueSyncFn.metricErrors({
+          period: cdk.Duration.minutes(5),
+        }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        datapointsToAlarm: 1,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+
+      if (snsAction) {
+        githubIssueSyncErrorsAlarm.addAlarmAction(snsAction);
       }
     }
 

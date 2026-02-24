@@ -164,6 +164,18 @@ export interface AdminApiStackProps extends cdk.StackProps {
    * When true, import existing resources (AdminTable) instead of creating them.
    */
   useExistingResources?: boolean;
+
+  /**
+   * Secrets Manager ARN for a GitHub PAT used by the DynamoDB Streams issue sync Lambda.
+   * When provided, enables event-driven GitHub issue creation from auto-issue records.
+   */
+  githubTokenSecretArn?: string;
+
+  /**
+   * GitHub repository (owner/name) for issue sync.
+   * @default "cenetex/aws-swarm"
+   */
+  githubRepo?: string;
 }
 
 export class AdminApiStack extends cdk.Stack {
@@ -347,6 +359,8 @@ export class AdminApiStack extends cdk.Stack {
         alarmTopic,
         useExistingResources: props.useExistingResources,
         enableDiscordGateway,
+        githubTokenSecretArn: props.githubTokenSecretArn,
+        githubRepo: props.githubRepo,
       });
 
       this.apiEndpoint = this.adminApi.apiEndpoint;

@@ -10,6 +10,7 @@ export { handler as autonomousTweetPoster } from './twitter/autonomous-tweet-pos
 export { handler as continuationProcessor } from './messaging/continuation-processor.js';
 export { getPendingContinuationContext } from './messaging/continuation-processor.js';
 export { handler as dlqProcessor } from './dlq-processor.js';
+export { handler as githubIssueSync } from './issue-sync/github-issue-sync.js';
 
 // Discord gateway worker (ECS Fargate entry point)
 export { main as discordGatewayMain } from './discord/discord-gateway-shared.js';
