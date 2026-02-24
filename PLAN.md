@@ -108,6 +108,27 @@ Active issues: [#246](https://github.com/cenetex/aws-swarm/issues/246), [#247](h
 
 This workstream hardens the execution model itself: issue-indexed planning, subagent governance, and leadership operating cadence.
 
+## Risk-first sequencing and WIP cap
+
+This plan follows the risk-first sequencing principle: reliability and security work is scheduled before feature expansion.
+
+### Sequencing within M2
+
+Workstreams are prioritized in this order when resources are constrained:
+
+1. **Operational hardening** (#266, #267, #269) -- P1/P2 work that protects platform reliability.
+2. **Execution model and governance** (#246-#249, #263-#265, #268) -- P2/P3 work that improves delivery predictability.
+3. **Platform parity and feature delivery** (narrative goals) -- P3 work pulled only when P0-P2 queue is clear.
+4. **Admin UX, identity, memory** (narrative goals) -- P4 quality improvements scheduled when capacity allows.
+
+A RED health grade on the [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) blocks starting new feature or governance work until the grade returns to YELLOW or GREEN.
+
+### Active WIP cap
+
+A maximum of **8** issues may carry `status:in-progress` at any time across all M2 workstreams. When the cap is reached, items must be completed or returned to backlog before new work begins. See [docs/STRATEGY-OPERATIONS.md -- Constrained Active Queue](docs/STRATEGY-OPERATIONS.md#2-constrained-active-queue-wip-cap) for the full protocol.
+
+When pulling issues from the execution queue into active work, apply the promotion and demotion criteria in [docs/ISSUE-GOVERNANCE.md -- Priority Promotion and Demotion Criteria](docs/ISSUE-GOVERNANCE.md#priority-promotion-and-demotion-criteria).
+
 ## Triage and prioritization cadence
 
 This plan is reviewed and updated as part of the triage cadence defined in [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md):

@@ -99,6 +99,28 @@ Strategic PRDs:
 - [docs/PRD-M3-PERSISTENT-SWARM-PLATFORM.md](docs/PRD-M3-PERSISTENT-SWARM-PLATFORM.md)
 - [docs/PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md](docs/PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md)
 
+## Risk-first sequencing
+
+Reliability and security work is scheduled before feature expansion by default. This principle governs how items move between milestones and how competing priorities are resolved within a milestone.
+
+### Sequencing order
+
+When the backlog has competing priorities, apply this order:
+
+1. **P0 -- Incidents**: Production outages, confirmed security vulnerabilities.
+2. **P1 -- Reliability**: DLQ growth, error rate breaches, alarm fatigue.
+3. **P2 -- Security hardening**: Access review findings, exception expiries, audit gaps.
+4. **P3 -- Feature delivery**: Roadmap features for the current milestone.
+5. **P4 -- Tech debt / quality**: Refactoring, test coverage, documentation.
+
+A RED health grade on the [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) blocks promoting any P3/P4 items from Next to Now until the grade returns to YELLOW or GREEN. Active CloudWatch alarms trigger immediate incident response per the [RUNBOOK.md](docs/RUNBOOK.md).
+
+For the full rule set (R1-R4) and enforcement mechanisms, see [docs/STRATEGY-OPERATIONS.md -- Risk-First Sequencing](docs/STRATEGY-OPERATIONS.md#1-risk-first-sequencing).
+
+### Active WIP cap
+
+A maximum of **8** issues may carry the `status:in-progress` label at any time. When the cap is reached, existing items must be completed, unblocked, or returned to the backlog before new items are pulled into Now. See [docs/STRATEGY-OPERATIONS.md -- Constrained Active Queue](docs/STRATEGY-OPERATIONS.md#2-constrained-active-queue-wip-cap) for the full overflow protocol and per-contributor limits.
+
 ## Triage and review cadence
 
 Issue reprioritization follows the cadence defined in [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md):
@@ -111,10 +133,12 @@ Issue reprioritization follows the cadence defined in [docs/ISSUE-GOVERNANCE.md]
 
 ### Promotion and demotion rules
 
-- An issue moves from **Next to Now** when: it has an assigned owner, acceptance criteria are defined, and a triage review approves the promotion.
+- An issue moves from **Next to Now** when: it has an assigned owner, acceptance criteria are defined, a triage review approves the promotion, AND the active WIP cap (8 in-progress items) is not exceeded.
 - An issue moves from **Later to Next** when: it is decomposed into actionable scope with acceptance criteria and the biweekly review approves it.
 - A **narrative goal** becomes executable when: it is decomposed into one or more issues with acceptance criteria, package labels, and priority labels.
 - An issue is **demoted or closed** per the aging policy in [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md).
+- **Risk-first gate**: P3 (feature) and P4 (tech debt) issues cannot be promoted to Now while any P0 or P1 issue is unresolved. See [docs/STRATEGY-OPERATIONS.md -- Risk-First Sequencing](docs/STRATEGY-OPERATIONS.md#1-risk-first-sequencing).
+- **Queue overflow demotion**: When the in-progress count exceeds the WIP cap, the lowest-priority in-progress items are returned to backlog. See [docs/ISSUE-GOVERNANCE.md -- Priority Promotion and Demotion Criteria](docs/ISSUE-GOVERNANCE.md#priority-promotion-and-demotion-criteria) for objective criteria.
 
 ## Legacy
 

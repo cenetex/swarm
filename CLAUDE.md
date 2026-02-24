@@ -507,6 +507,46 @@ Body:
 | **Subagent** | Pick up assigned issues, implement within stated scope, open PRs, escalate blockers |
 | **Neither** | Untracked refactors, undocumented architecture changes, self-assigned work |
 
+## Prioritization and WIP Governance
+
+This section defines the rules that govern which work is started and in what order. These rules apply to all contributors (human and agent).
+
+### Risk-First Sequencing
+
+Reliability and security work precedes feature expansion by default. When choosing what to work on next, apply this priority order:
+
+| Priority | Category | Examples |
+|----------|----------|----------|
+| **P0** | Incidents | Production outages, confirmed security vulnerabilities |
+| **P1** | Reliability | DLQ growth, error rate breaches, alarm fatigue |
+| **P2** | Security hardening | Access review findings, exception expiries, audit gaps |
+| **P3** | Feature delivery | Roadmap features for the current milestone |
+| **P4** | Tech debt / quality | Refactoring, test coverage, documentation |
+
+Subagents must not start P3 or P4 work while any P0 or P1 issue is open and unassigned. If a subagent discovers a P0/P1 condition during feature work, it must open an issue and flag it in the current PR before continuing.
+
+### Active WIP Cap
+
+| Limit | Cap | Scope |
+|-------|-----|-------|
+| Total `status:in-progress` issues | **8** | Project-wide |
+| Open PRs per contributor | **3** | Per human or agent |
+| Parallel agent worktrees | **5** | Per orchestrator session |
+| Simultaneous `priority:high` issues | **5** | Project-wide |
+
+When the WIP cap is reached, no new items may be pulled into progress until existing items are completed, unblocked, or returned to backlog. Agents encountering a full queue must finish or close their current work before picking up new issues.
+
+### Escalation When Queue Exceeds Cap
+
+If the in-progress count exceeds the WIP cap during triage:
+
+1. Review all in-progress items for blockers. Items blocked >7 days are returned to backlog with `status:blocked`.
+2. Items without a linked branch or PR within 3 days of receiving `status:in-progress` are returned to backlog.
+3. If the queue is still over cap, demote the lowest-priority in-progress items back to backlog.
+4. Only after freeing a slot can a new item be pulled into progress.
+
+For the full governance rules including promotion/demotion criteria, see [docs/STRATEGY-OPERATIONS.md](docs/STRATEGY-OPERATIONS.md) and [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md).
+
 ## Resources
 
 - [PLAN.md](./PLAN.md) - Detailed architecture and implementation plan

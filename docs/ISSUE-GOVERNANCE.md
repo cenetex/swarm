@@ -34,6 +34,40 @@ Severity describes impact magnitude. Priority describes scheduling urgency. They
 
 Both the `severity` field (on bug reports) and the `priority` label should be set independently based on their own criteria.
 
+## Priority Promotion and Demotion Criteria
+
+Objective criteria for moving issues between priority tiers (P0-P4). These map to the risk-first sequencing order defined in [STRATEGY-OPERATIONS.md -- Risk-First Sequencing](./STRATEGY-OPERATIONS.md#1-risk-first-sequencing).
+
+### Promotion criteria (escalating priority)
+
+| From | To | Trigger | Example |
+|------|----|---------|---------|
+| Any | **P0** (Incident) | Production outage confirmed OR active security exploit OR data loss in progress. | Lambda 500 rate >50% for 5 minutes; credential exposure. |
+| P2/P3/P4 | **P1** (Reliability) | Error rate breaches scorecard threshold (>5%) OR DLQ depth >0 OR alarm fires. | CloudWatch alarm triggers; DLQ messages accumulating. |
+| P3/P4 | **P2** (Security) | Security exception approaching expiry (<14 days) OR audit finding requires remediation. | Expired exception auto-creates blocking issue. |
+| P4 | **P3** (Feature) | Milestone deadline is at risk AND the item is on the critical path for the current milestone. | M2 parity feature needed for design-partner commitment. |
+
+### Demotion criteria (reducing priority)
+
+| From | To | Trigger | Example |
+|------|----|---------|---------|
+| **P0** | P1 or P2 | Incident mitigated (workaround in place, user impact resolved). Root cause fix is tracked but not urgent. | Hotfix deployed; follow-up hardening issue created at P1. |
+| **P1** | P2 or P3 | Error rate returns below threshold for 48 hours. Alarm resolves. No user reports for 7 days. | Flaky Lambda stabilizes after config fix. |
+| `priority:high` | `priority:medium` | Issue no longer meets any of the 4 `priority:high` criteria (see Priority Criteria above). Reassessed during weekly triage. | Feature launch delayed; "48h launch deadline" criterion no longer applies. |
+| `priority:medium` | `priority:low` | No activity for 28 days (aging policy). OR milestone deprioritizes the workstream. | Stale medium-priority issue with no owner. |
+
+### Queue overflow demotion
+
+When the active WIP cap (8 `status:in-progress` items) is exceeded, the following demotion rules apply during triage:
+
+1. **Identify excess.** Count all `status:in-progress` issues. If count > 8, the overflow = count - 8.
+2. **Sort by priority then age.** Rank in-progress items by priority tier (P4 lowest) then by most recent activity (least recent first).
+3. **Demote from the bottom.** Return the lowest-ranked items to backlog by removing `status:in-progress`. Add a comment: "Returned to backlog -- WIP cap exceeded. Will be re-queued at next triage."
+4. **Never demote P0.** P0 items are never returned to backlog through this process. If all in-progress items are P0, escalate to leadership for additional capacity or scope reduction.
+5. **Blocked items demote first.** Any `status:blocked` item without progress in 7 days is returned to backlog before non-blocked items are considered.
+
+This protocol is consistent with the overflow rules in [STRATEGY-OPERATIONS.md -- Constrained Active Queue](./STRATEGY-OPERATIONS.md#2-constrained-active-queue-wip-cap).
+
 ## Agent-Ready Issue Requirements
 
 Issues assigned to coding agents (Copilot, Claude Code workers, or worktree subagents) need more structure than issues for human developers. An "agent-ready" issue includes enough context for autonomous execution without back-and-forth clarification.
@@ -113,6 +147,7 @@ Triage runs weekly (or more frequently during active sprints). The triage review
 2. **In-progress issues** -- Check for blockers, verify branch exists, confirm PR is progressing.
 3. **Stale issues** -- Apply aging policy (see below).
 4. **Scorecard-driven reprioritization** -- For each recommendation in the scorecard, decide whether to adjust issue priorities, reassign work, or create new issues. Record decisions as comments on affected issues.
+5. **WIP cap check** -- Count `status:in-progress` issues. If count exceeds 8, apply the [queue overflow demotion](#queue-overflow-demotion) rules. Apply [promotion/demotion criteria](#priority-promotion-and-demotion-criteria) to any issues whose conditions have changed since last triage.
 
 ### Aging Policy
 
