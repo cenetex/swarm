@@ -142,6 +142,30 @@ aws logs filter-log-events \
 
 Use this section as the default workflow for AI coding/debug agents.
 
+**Cardinal rule:** Subagents only pick work that is represented by a GitHub issue. If no issue exists for the task, create one or request that one be created before starting work.
+
+### 0) Issue Intake & Scope Check (before writing any code)
+
+Before touching code, verify the assigned issue meets the minimum quality bar below. If it does not, comment on the issue requesting clarification and stop until the gaps are filled.
+
+1. Read the full issue (title, body, labels, linked parent/child issues).
+2. Walk through the **Minimum Issue Quality Checklist** (next section). Every box must be checkable.
+3. Confirm scope boundaries — which packages, files, and behaviors are in scope. Anything outside that boundary requires a separate issue.
+4. Identify constraints explicitly stated in the issue (backward compatibility, performance budgets, security requirements, no-deploy rules).
+5. If the issue is ambiguous or missing acceptance criteria, add a comment listing the gaps and assign the `status:blocked` label. Do **not** begin broad implementation on an under-specified issue.
+
+### Minimum Issue Quality Checklist
+
+An issue is ready for agent work when all of the following are present:
+
+- [ ] **Objective** — A clear, one-sentence statement of what must change and why.
+- [ ] **Scope** — Explicit list of packages, files, or subsystems affected (or "all" with justification).
+- [ ] **Constraints** — Any limits on approach: backward compatibility, performance, security, deployment rules.
+- [ ] **Acceptance criteria** — Observable, testable conditions that define "done" (commands to run, expected output, UI behavior).
+- [ ] **Priority** — A `priority:*` label (`high`, `medium`, or `low`).
+
+If any item is missing, the agent must request clarification on the issue before starting implementation. Partial issues lead to scope creep and rework.
+
 ### 1) Fast Triage Checklist (first 5-10 minutes)
 1. Confirm package and runtime assumptions:
   - `node -v` (Node 20.x recommended; matches CI and Lambda runtime)
@@ -236,9 +260,32 @@ Single file patterns:
 - Never log or commit secrets; use Secrets Manager paths and write-only flows.
 - Preserve chat-first UX: new user workflows must stay inside conversational/inline prompt patterns.
 
-### 7) Evidence to Capture in Fix PRs
-When finishing a bugfix, include:
-- Repro steps (command + input)
-- Root cause file(s)/function(s)
-- Validation commands and result summary
-- Any runbook/doc updates done
+### 7) Definition of Done (all agent work)
+
+An issue is complete only when every applicable item below is satisfied. Do not close the issue or open a PR until you can check every box.
+
+#### Required for all work
+
+- [ ] **Acceptance criteria met** — Every condition listed in the issue is demonstrably satisfied.
+- [ ] **Tests pass** — `bun test` (or targeted package tests) passes with no new failures.
+- [ ] **Lint and typecheck clean** — `pnpm lint` and `pnpm typecheck` introduce no new warnings or errors.
+- [ ] **Scope respected** — Changes are confined to the packages/files identified in the issue. Out-of-scope changes go in a separate issue.
+- [ ] **No secrets committed** — Verified with `git diff --cached` before committing.
+- [ ] **Conventional commit** — Commit message follows `type(scope): description` format and references the issue (`Closes #NNN` or `Related to #NNN`).
+
+#### Required for bug fixes
+
+- [ ] **Repro steps documented** — Command + input that reproduces the bug before the fix.
+- [ ] **Root cause identified** — File(s) and function(s) where the defect lived, with a brief explanation.
+- [ ] **Validation commands** — Exact commands a reviewer can run to confirm the fix, with expected output.
+- [ ] **Residual risk noted** — Any edge cases, related issues, or follow-up work that remains. State "None identified" if clean.
+
+#### Required for features
+
+- [ ] **New tests added** — Unit or integration tests covering the new behavior.
+- [ ] **Documentation updated** — Relevant docs, runbooks, or inline comments updated if the feature changes user-visible behavior or operational procedures.
+
+#### Recommended (when applicable)
+
+- [ ] Runbook or operational doc updated (`docs/RUNBOOK.md`, `docs/*.md`).
+- [ ] PR description includes before/after evidence (logs, screenshots, test output).
