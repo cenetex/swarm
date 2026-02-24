@@ -173,7 +173,11 @@ function setCachedOutboundRuntime(avatarId: string, runtime: AvatarOutboundRunti
 
 function getResponseKey(response: SwarmResponse, recordMessageId: string): string {
   const anchor = response.replyToMessageId ?? response.generatedAt ?? recordMessageId;
-  return `${response.conversationId}#${anchor}`;
+  // Distinguish media callbacks from text responses so they don't dedup each other.
+  // The media-processor sends a separate SQS message with send_media actions after
+  // image generation completes — this must not be blocked by the earlier text response.
+  const hasMedia = response.actions.some(a => a.type === 'send_media');
+  return `${response.conversationId}#${anchor}${hasMedia ? '#media' : ''}`;
 }
 
 async function wasResponseHandled(avatarId: string, responseKey: string): Promise<boolean> {
