@@ -22,6 +22,7 @@ import {
 } from './accounts/onboarding-auth-resolver.js';
 import { upsertActiveUserSlotOnLogin } from './active-user-limit.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { emitAuthEvent } from './funnel-emitter.js';
 
 const dynamoClient = getDynamoClient();
 
@@ -390,6 +391,13 @@ export async function verifyPrivyAuth(
 
     // 6) Create session.
     const session = await createSession(walletAddress, privyUserId, accountResolution.accountId, isOrbHolder, userAgent, ipAddress);
+
+    // GTM funnel: F1 — authenticated account
+    emitAuthEvent(accountResolution.accountId, {
+      authProvider: 'privy',
+      privyUserId,
+      isOrbHolder,
+    });
 
     return {
       success: true,

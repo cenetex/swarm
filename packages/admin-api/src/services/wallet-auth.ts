@@ -16,6 +16,7 @@ import { checkNFTGate, type NFTGateResult } from './nft-gate.js';
 import { getOrCreateAccountForWallet, recordAccountSession } from './accounts.js';
 import { upsertActiveUserSlotOnLogin } from './active-user-limit.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { emitAuthEvent } from './funnel-emitter.js';
 
 const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
@@ -582,6 +583,13 @@ export async function verifyAndCreateSession(
   const session = await createSession(publicKeyBase58, accountId, isOrbHolder, userAgent, ipAddress);
 
   logger.info('[WalletAuth] Auth successful', { wallet: publicKeyBase58.slice(0, 8) });
+
+  // GTM funnel: F1 — authenticated account
+  emitAuthEvent(accountId, {
+    authProvider: 'wallet',
+    walletAddress: publicKeyBase58,
+    isOrbHolder,
+  });
 
   return { success: true, session, user, nftGate };
 }

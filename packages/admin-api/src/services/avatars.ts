@@ -32,6 +32,7 @@ import {
 } from './home-channel.js';
 import { clearStripeDataForAvatar } from './entitlements.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { emitAvatarCreated, emitAvatarCreationFailed } from './funnel-emitter.js';
 
 const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
@@ -129,6 +130,8 @@ export async function createAvatarWithWalletLegacy(
     console.log(
       `[Avatars] No gate slot for wallet=${creatorWallet.slice(0, 8)}... (held=${gateStatus.nftsHeld}, created=${gateStatus.avatarsCreated})`
     );
+    // GTM funnel: F2 failure — no gate slot
+    emitAvatarCreationFailed(creatorWallet, 'no_gate_slot', { nftsHeld: gateStatus.nftsHeld, avatarsCreated: gateStatus.avatarsCreated });
     return { success: false, error: 'no_gate_slot', gateStatus };
   }
 
@@ -190,6 +193,9 @@ export async function createAvatarWithWalletLegacy(
   await syncAvatarConfig(avatar);
 
   console.log(`[Avatars] Created avatar=${avatarId} by wallet=${creatorWallet.slice(0, 8)}...`);
+
+  // GTM funnel: F2 — avatar created
+  emitAvatarCreated(creatorWallet, avatarId, { creationMethod: 'wallet', slotType });
 
   return {
     success: true,
@@ -754,6 +760,9 @@ export async function createAvatarFromNFT(
 
   console.log(`[Avatars] Created NFT avatar=${avatarId} from mint=${nft.mint.slice(0, 8)}... by wallet=${creatorWallet.slice(0, 8)}...`);
 
+  // GTM funnel: F2 — avatar created from NFT
+  emitAvatarCreated(creatorWallet, avatarId, { creationMethod: 'nft', slotType, nftCollection: nft.collection });
+
   return {
     success: true,
     avatar,
@@ -1002,6 +1011,9 @@ export async function createAvatarFromTelegram(
   await syncAvatarConfig(avatar);
 
   console.log(`[Avatars] Created Telegram avatar=${avatarId} by telegram:${telegramUserId}`);
+
+  // GTM funnel: F2 — avatar created from Telegram
+  emitAvatarCreated(`telegram:${telegramUserId}`, avatarId, { creationMethod: 'telegram', botUsername });
 
   return {
     success: true,

@@ -56,6 +56,11 @@ export { buildDynamicSystemPrompt, type ToolCategory, type ProcessorAvatarConfig
 // Usage history service
 export * from './usage-history.js';
 
+// GTM funnel events and reporting
+export * from './funnel-events.js';
+export * from './funnel-emitter.js';
+export * from './funnel-report.js';
+
 // Service container (lightweight DI)
 export {
   createServiceContainer,
