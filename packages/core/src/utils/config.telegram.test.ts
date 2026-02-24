@@ -16,7 +16,7 @@ describe('config loader (telegram allowlists)', () => {
         },
       },
       llm: { provider: 'openrouter', model: 'anthropic/claude-sonnet-4', temperature: 0.8, max_tokens: 128 },
-      media: { image: { provider: 'openrouter', model: 'openai/dall-e-3' } },
+      media: { image: { provider: 'replicate', model: 'black-forest-labs/flux-schnell' } },
       scheduling: {},
       behavior: {},
     });
@@ -41,7 +41,7 @@ describe('config loader (telegram allowlists)', () => {
         },
       },
       llm: { provider: 'openrouter', model: 'anthropic/claude-sonnet-4', temperature: 0.8, maxTokens: 128 },
-      media: { image: { provider: 'openrouter', model: 'openai/dall-e-3' } },
+      media: { image: { provider: 'replicate', model: 'black-forest-labs/flux-schnell' } },
       scheduling: {},
       behavior: {},
     });

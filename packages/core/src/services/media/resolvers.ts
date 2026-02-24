@@ -69,15 +69,26 @@ export function createModelResolver(config: ResolverConfig): MediaServiceDepende
           : capability === 'video_generation'
             ? item?.config?.media?.video?.model
             : undefined;
+      const syncedConfigProvider =
+        capability === 'image_generation'
+          ? item?.config?.media?.image?.provider
+          : capability === 'video_generation'
+            ? item?.config?.media?.video?.provider
+            : undefined;
 
       const configuredModel = item?.integrations?.replicate?.models?.[capability]
         || syncedConfigModel;
 
       if (configuredModel) {
-        console.log(`[MediaResolver] Using configured ${capability} model for ${avatarId}: ${configuredModel}`);
+        // Use the stored provider if valid, otherwise default to replicate
+        const validProviders = ['replicate', 'openai', 'openrouter', 'anthropic'] as const;
+        const resolvedProvider = validProviders.includes(syncedConfigProvider as typeof validProviders[number])
+          ? (syncedConfigProvider as typeof validProviders[number])
+          : 'replicate';
+        console.log(`[MediaResolver] Using configured ${capability} model for ${avatarId}: ${configuredModel} (${resolvedProvider})`);
         return {
           model: configuredModel,
-          provider: 'replicate',
+          provider: resolvedProvider,
         };
       }
     } catch (err) {

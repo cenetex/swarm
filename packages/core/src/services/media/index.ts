@@ -271,7 +271,7 @@ export class SwarmMediaService implements MediaService {
       console.log(`[MediaService] Using ${referenceImageUrls.length} reference image(s) for generation`);
     }
 
-    const createResponse = await fetch(endpoint, {
+    let createResponse = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -280,6 +280,21 @@ export class SwarmMediaService implements MediaService {
       },
       body: JSON.stringify({ input }),
     });
+
+    // If the model rejects the aspect_ratio (422), retry with 1:1 as a safe fallback
+    if (createResponse.status === 422 && input.aspect_ratio !== '1:1') {
+      console.warn(`[MediaService] Replicate rejected aspect_ratio "${input.aspect_ratio}", retrying with 1:1`);
+      input.aspect_ratio = '1:1';
+      createResponse = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'Prefer': 'wait',
+        },
+        body: JSON.stringify({ input }),
+      });
+    }
 
     if (!createResponse.ok) {
       const errorText = await createResponse.text();

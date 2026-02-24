@@ -160,14 +160,14 @@ const LLMConfigFileSchema = z.object({
 
 const MediaConfigFileSchema = z.object({
   image: z.object({
-    provider: z.enum(['openrouter', 'replicate', 'dalle']).default('openrouter'),
-    model: z.string().default('openai/dall-e-3'),
-  }).default({ provider: 'openrouter', model: 'openai/dall-e-3' }),
+    provider: z.enum(['openrouter', 'replicate', 'dalle']).default('replicate'),
+    model: z.string().default('black-forest-labs/flux-schnell'),
+  }).default({ provider: 'replicate', model: 'black-forest-labs/flux-schnell' }),
   video: z.object({
     provider: z.literal('replicate').default('replicate'),
     model: z.string().default('minimax/video-01'),
   }).optional(),
-}).default({ image: { provider: 'openrouter', model: 'openai/dall-e-3' } });
+}).default({ image: { provider: 'replicate', model: 'black-forest-labs/flux-schnell' } });
 
 const ScheduledTweetFileSchema = z.object({
   cron: z.string(),
@@ -352,8 +352,8 @@ export function loadAvatarConfigFromEnv(avatarId: string): AvatarConfig {
     },
     media: {
       image: {
-        provider: (process.env.IMAGE_PROVIDER as 'openrouter' | 'replicate' | 'dalle') || 'openrouter',
-        model: process.env.IMAGE_MODEL || 'openai/dall-e-3',
+        provider: (process.env.IMAGE_PROVIDER as 'openrouter' | 'replicate' | 'dalle') || 'replicate',
+        model: process.env.IMAGE_MODEL || 'black-forest-labs/flux-schnell',
       },
     },
     scheduling: {},
