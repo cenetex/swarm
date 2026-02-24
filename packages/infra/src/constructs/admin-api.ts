@@ -2388,6 +2388,191 @@ export class AdminApiConstruct extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
+    // -----------------------------------------------------------------------
+    // Lambda throttle alarms
+    // Any throttle indicates concurrency exhaustion — alert immediately.
+    // The chat worker is particularly important as it powers the admin UI.
+    // -----------------------------------------------------------------------
+    const chatWorkerThrottlesAlarm = new cloudwatch.Alarm(this, 'ChatWorkerThrottlesAlarm', {
+      alarmName: `${alarmPrefix}-chat-worker-throttles`,
+      alarmDescription: 'Chat worker Lambda is being throttled — admin UI users will experience failures.',
+      metric: this.chatWorkerHandler.metricThrottles({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const responseSenderThrottlesAlarm = new cloudwatch.Alarm(this, 'ResponseSenderThrottlesAlarm', {
+      alarmName: `${alarmPrefix}-response-sender-throttles`,
+      alarmDescription: 'Admin response sender Lambda is being throttled.',
+      metric: this.responseSenderHandler.metricThrottles({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const dreamWorkerThrottlesAlarm = new cloudwatch.Alarm(this, 'DreamWorkerThrottlesAlarm', {
+      alarmName: `${alarmPrefix}-dream-worker-throttles`,
+      alarmDescription: 'Dream worker Lambda is being throttled.',
+      metric: this.dreamWorker.metricThrottles({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const openaiCompatThrottlesAlarm = new cloudwatch.Alarm(this, 'OpenAICompatThrottlesAlarm', {
+      alarmName: `${alarmPrefix}-openai-compat-throttles`,
+      alarmDescription: 'OpenAI-compatible endpoint Lambda is being throttled.',
+      metric: this.openaiCompatHandler.metricThrottles({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // -----------------------------------------------------------------------
+    // Lambda p95 duration alarms
+    // Thresholds are environment-aware:
+    //   - Production: 60s for chat worker (timeout 600s via SQS visibility),
+    //     30s for response sender, 60s for dream worker
+    //   - Staging: 2x production thresholds to reduce noise
+    // Admin Lambdas get higher thresholds than shared handlers because they
+    // call LLMs with tool-use loops that are inherently slower.
+    // -----------------------------------------------------------------------
+    const adminDurationThresholds = isProd
+      ? { chatWorker: 60_000, responseSender: 30_000, dreamWorker: 60_000, openaiCompat: 60_000 }
+      : { chatWorker: 120_000, responseSender: 60_000, dreamWorker: 120_000, openaiCompat: 120_000 };
+
+    const chatWorkerDurationAlarm = new cloudwatch.Alarm(this, 'ChatWorkerDurationAlarm', {
+      alarmName: `${alarmPrefix}-chat-worker-duration-p95`,
+      alarmDescription:
+        `Chat worker p95 latency > ${adminDurationThresholds.chatWorker / 1000}s. ` +
+        'Investigate LLM tool-call depth or DynamoDB latency.',
+      metric: this.chatWorkerHandler.metricDuration({
+        period: cdk.Duration.minutes(5),
+        statistic: 'p95',
+      }),
+      threshold: adminDurationThresholds.chatWorker,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const adminResponseSenderDurationAlarm = new cloudwatch.Alarm(this, 'AdminResponseSenderDurationAlarm', {
+      alarmName: `${alarmPrefix}-response-sender-duration-p95`,
+      alarmDescription:
+        `Admin response sender p95 latency > ${adminDurationThresholds.responseSender / 1000}s. ` +
+        'Check downstream API latency.',
+      metric: this.responseSenderHandler.metricDuration({
+        period: cdk.Duration.minutes(5),
+        statistic: 'p95',
+      }),
+      threshold: adminDurationThresholds.responseSender,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const dreamWorkerDurationAlarm = new cloudwatch.Alarm(this, 'DreamWorkerDurationAlarm', {
+      alarmName: `${alarmPrefix}-dream-worker-duration-p95`,
+      alarmDescription:
+        `Dream worker p95 latency > ${adminDurationThresholds.dreamWorker / 1000}s. ` +
+        'Investigate LLM or embedding pipeline latency.',
+      metric: this.dreamWorker.metricDuration({
+        period: cdk.Duration.minutes(5),
+        statistic: 'p95',
+      }),
+      threshold: adminDurationThresholds.dreamWorker,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const openaiCompatDurationAlarm = new cloudwatch.Alarm(this, 'OpenAICompatDurationAlarm', {
+      alarmName: `${alarmPrefix}-openai-compat-duration-p95`,
+      alarmDescription:
+        `OpenAI-compat endpoint p95 latency > ${adminDurationThresholds.openaiCompat / 1000}s. ` +
+        'Check LLM provider response times.',
+      metric: this.openaiCompatHandler.metricDuration({
+        period: cdk.Duration.minutes(5),
+        statistic: 'p95',
+      }),
+      threshold: adminDurationThresholds.openaiCompat,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // -----------------------------------------------------------------------
+    // SQS age-of-oldest-message alarms
+    // Tracks how long the oldest message has been waiting in the queue.
+    // A growing age indicates consumers are falling behind or stalled.
+    // Thresholds:
+    //   - Production: 300s (5 min) — tight; stale messages degrade admin UX
+    //   - Staging: 600s (10 min) — relaxed to reduce noise
+    // Chat queue gets a higher threshold because chat worker invocations
+    // can be long-running (LLM tool-use loops).
+    // -----------------------------------------------------------------------
+    const adminQueueAgeThreshold = isProd ? 300 : 600;
+    const adminChatQueueAgeThreshold = isProd ? 600 : 1200;
+
+    const chatQueueAgeAlarm = new cloudwatch.Alarm(this, 'ChatQueueAgeAlarm', {
+      alarmName: `${alarmPrefix}-chat-queue-age`,
+      alarmDescription:
+        `Oldest message in chat queue > ${adminChatQueueAgeThreshold}s. ` +
+        'Chat worker may be stalled or concurrency exhausted.',
+      metric: chatQueue.metricApproximateAgeOfOldestMessage({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: adminChatQueueAgeThreshold,
+      evaluationPeriods: 2,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const adminResponseQueueAgeAlarm = new cloudwatch.Alarm(this, 'ResponseQueueAgeAlarm', {
+      alarmName: `${alarmPrefix}-response-queue-age`,
+      alarmDescription:
+        `Oldest message in response queue > ${adminQueueAgeThreshold}s. ` +
+        'Response sender may be stalled.',
+      metric: responseQueue.metricApproximateAgeOfOldestMessage({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: adminQueueAgeThreshold,
+      evaluationPeriods: 2,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const dreamQueueAgeAlarm = new cloudwatch.Alarm(this, 'DreamQueueAgeAlarm', {
+      alarmName: `${alarmPrefix}-dream-queue-age`,
+      alarmDescription:
+        `Oldest message in dream queue > ${adminQueueAgeThreshold}s. ` +
+        'Dream worker may be stalled.',
+      metric: dreamQueue.metricApproximateAgeOfOldestMessage({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: adminQueueAgeThreshold,
+      evaluationPeriods: 2,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
     // Wire all alarms to SNS topic for notifications
     if (snsAction) {
       for (const alarm of [
@@ -2403,6 +2588,17 @@ export class AdminApiConstruct extends Construct {
         leaderboardErrorsAlarm,
         bedrockEmbeddingErrorsAlarm,
         entitlementFallbackAlarm,
+        chatWorkerThrottlesAlarm,
+        responseSenderThrottlesAlarm,
+        dreamWorkerThrottlesAlarm,
+        openaiCompatThrottlesAlarm,
+        chatWorkerDurationAlarm,
+        adminResponseSenderDurationAlarm,
+        dreamWorkerDurationAlarm,
+        openaiCompatDurationAlarm,
+        chatQueueAgeAlarm,
+        adminResponseQueueAgeAlarm,
+        dreamQueueAgeAlarm,
       ]) {
         alarm.addAlarmAction(snsAction);
       }

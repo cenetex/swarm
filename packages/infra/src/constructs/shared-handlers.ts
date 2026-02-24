@@ -715,6 +715,203 @@ export class SharedHandlers extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
+    // -----------------------------------------------------------------------
+    // Lambda throttle alarms
+    // Any throttle indicates concurrency exhaustion — alert immediately.
+    // Shared handlers have reservedConcurrentExecutions caps, so throttles
+    // mean the cap is too low or a traffic spike exceeded it.
+    // -----------------------------------------------------------------------
+    const messageProcessorThrottlesAlarm = new cloudwatch.Alarm(this, 'MessageProcessorThrottlesAlarm', {
+      alarmName: `${alarmPrefix}-message-processor-throttles`,
+      alarmDescription: 'Message processor Lambda is being throttled — reserved concurrency may be exhausted.',
+      metric: this.messageProcessor.metricThrottles({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const responseSenderThrottlesAlarm = new cloudwatch.Alarm(this, 'ResponseSenderThrottlesAlarm', {
+      alarmName: `${alarmPrefix}-response-sender-throttles`,
+      alarmDescription: 'Response sender Lambda is being throttled — reserved concurrency may be exhausted.',
+      metric: this.responseSender.metricThrottles({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const mediaProcessorThrottlesAlarm = new cloudwatch.Alarm(this, 'MediaProcessorThrottlesAlarm', {
+      alarmName: `${alarmPrefix}-media-processor-throttles`,
+      alarmDescription: 'Media processor Lambda is being throttled — reserved concurrency may be exhausted.',
+      metric: this.mediaProcessor.metricThrottles({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const tweetSenderThrottlesAlarm = new cloudwatch.Alarm(this, 'TweetSenderThrottlesAlarm', {
+      alarmName: `${alarmPrefix}-tweet-sender-throttles`,
+      alarmDescription: 'Tweet sender Lambda is being throttled — reserved concurrency may be exhausted.',
+      metric: this.tweetSender.metricThrottles({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // -----------------------------------------------------------------------
+    // Lambda p95 duration alarms
+    // Thresholds are environment-aware:
+    //   - Production: 30s for message processor (timeout 180s → 17% headroom),
+    //     15s for response sender (timeout 60s → 25% headroom)
+    //   - Staging: 2x production thresholds to reduce noise during development
+    // p95 is used instead of p99 to catch sustained latency increases while
+    // tolerating occasional slow outliers from cold starts.
+    // -----------------------------------------------------------------------
+    const durationThresholds = isProd
+      ? { messageProcessor: 30_000, responseSender: 15_000, mediaProcessor: 120_000, tweetSender: 30_000 }
+      : { messageProcessor: 60_000, responseSender: 30_000, mediaProcessor: 240_000, tweetSender: 60_000 };
+
+    const messageProcessorDurationAlarm = new cloudwatch.Alarm(this, 'MessageProcessorDurationAlarm', {
+      alarmName: `${alarmPrefix}-message-processor-duration-p95`,
+      alarmDescription:
+        `Message processor p95 latency > ${durationThresholds.messageProcessor / 1000}s ` +
+        `(timeout 180s). Investigate LLM call latency or cold-start frequency.`,
+      metric: this.messageProcessor.metricDuration({
+        period: cdk.Duration.minutes(5),
+        statistic: 'p95',
+      }),
+      threshold: durationThresholds.messageProcessor,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const responseSenderDurationAlarm = new cloudwatch.Alarm(this, 'ResponseSenderDurationAlarm', {
+      alarmName: `${alarmPrefix}-response-sender-duration-p95`,
+      alarmDescription:
+        `Response sender p95 latency > ${durationThresholds.responseSender / 1000}s ` +
+        `(timeout 60s). Check platform API latency (Telegram, Twitter).`,
+      metric: this.responseSender.metricDuration({
+        period: cdk.Duration.minutes(5),
+        statistic: 'p95',
+      }),
+      threshold: durationThresholds.responseSender,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const mediaProcessorDurationAlarm = new cloudwatch.Alarm(this, 'MediaProcessorDurationAlarm', {
+      alarmName: `${alarmPrefix}-media-processor-duration-p95`,
+      alarmDescription:
+        `Media processor p95 latency > ${durationThresholds.mediaProcessor / 1000}s ` +
+        `(timeout 300s). Investigate Replicate API or image processing bottlenecks.`,
+      metric: this.mediaProcessor.metricDuration({
+        period: cdk.Duration.minutes(5),
+        statistic: 'p95',
+      }),
+      threshold: durationThresholds.mediaProcessor,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const tweetSenderDurationAlarm = new cloudwatch.Alarm(this, 'TweetSenderDurationAlarm', {
+      alarmName: `${alarmPrefix}-tweet-sender-duration-p95`,
+      alarmDescription:
+        `Tweet sender p95 latency > ${durationThresholds.tweetSender / 1000}s ` +
+        `(timeout 120s). Check Twitter API rate limits or backoff behavior.`,
+      metric: this.tweetSender.metricDuration({
+        period: cdk.Duration.minutes(5),
+        statistic: 'p95',
+      }),
+      threshold: durationThresholds.tweetSender,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // -----------------------------------------------------------------------
+    // SQS age-of-oldest-message alarms
+    // Tracks how long the oldest message has been waiting in the queue.
+    // A growing age indicates consumers are falling behind or stalled.
+    // Thresholds:
+    //   - Production: 300s (5 min) — tight; stale messages degrade user experience
+    //   - Staging: 600s (10 min) — relaxed to reduce noise
+    // -----------------------------------------------------------------------
+    const queueAgeThreshold = isProd ? 300 : 600;
+
+    const messageQueueAgeAlarm = new cloudwatch.Alarm(this, 'MessageQueueAgeAlarm', {
+      alarmName: `${alarmPrefix}-messages-queue-age`,
+      alarmDescription:
+        `Oldest message in message queue > ${queueAgeThreshold}s. ` +
+        'Consumer may be stalled or concurrency exhausted.',
+      metric: this.messageQueue.metricApproximateAgeOfOldestMessage({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: queueAgeThreshold,
+      evaluationPeriods: 2,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const responseQueueAgeAlarm = new cloudwatch.Alarm(this, 'ResponseQueueAgeAlarm', {
+      alarmName: `${alarmPrefix}-responses-queue-age`,
+      alarmDescription:
+        `Oldest message in response queue > ${queueAgeThreshold}s. ` +
+        'Consumer may be stalled or concurrency exhausted.',
+      metric: this.responseQueue.metricApproximateAgeOfOldestMessage({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: queueAgeThreshold,
+      evaluationPeriods: 2,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const mediaQueueAgeAlarm = new cloudwatch.Alarm(this, 'MediaQueueAgeAlarm', {
+      alarmName: `${alarmPrefix}-media-queue-age`,
+      alarmDescription:
+        `Oldest message in media queue > ${queueAgeThreshold}s. ` +
+        'Consumer may be stalled or concurrency exhausted.',
+      metric: this.mediaQueue.metricApproximateAgeOfOldestMessage({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: queueAgeThreshold,
+      evaluationPeriods: 2,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const postQueueAgeAlarm = new cloudwatch.Alarm(this, 'PostQueueAgeAlarm', {
+      alarmName: `${alarmPrefix}-posts-queue-age`,
+      alarmDescription:
+        `Oldest message in post queue > ${queueAgeThreshold}s. ` +
+        'Consumer may be stalled or concurrency exhausted.',
+      metric: this.postQueue.metricApproximateAgeOfOldestMessage({
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: queueAgeThreshold,
+      evaluationPeriods: 2,
+      datapointsToAlarm: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
     // Scheduler aged-out event alarm
     // When maxEventAge expires, EventBridge increments FailedInvocations on the rule.
     // A combined alarm across all four scheduler rules catches silently dropped events
@@ -775,6 +972,18 @@ export class SharedHandlers extends Construct {
         mediaProcessorErrorsAlarm,
         tweetSenderErrorsAlarm,
         dlqProcessorErrorsAlarm,
+        messageProcessorThrottlesAlarm,
+        responseSenderThrottlesAlarm,
+        mediaProcessorThrottlesAlarm,
+        tweetSenderThrottlesAlarm,
+        messageProcessorDurationAlarm,
+        responseSenderDurationAlarm,
+        mediaProcessorDurationAlarm,
+        tweetSenderDurationAlarm,
+        messageQueueAgeAlarm,
+        responseQueueAgeAlarm,
+        mediaQueueAgeAlarm,
+        postQueueAgeAlarm,
         schedulerFailedInvocationsAlarm,
       ]) {
         alarm.addAlarmAction(snsAction);
