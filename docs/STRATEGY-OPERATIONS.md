@@ -3,7 +3,7 @@
 > **Owner**: Leadership
 > **Last reviewed**: 2026-02-23
 > **Status**: Active
-> **Related**: [ISSUE-GOVERNANCE.md](./ISSUE-GOVERNANCE.md) | [LEADERSHIP-SCORECARD.md](./LEADERSHIP-SCORECARD.md) | [SECURITY.md](./SECURITY.md) | [COST-CONTROLS-PLAYBOOK.md](./COST-CONTROLS-PLAYBOOK.md)
+> **Related**: [RELEASE-GATES.md](./RELEASE-GATES.md) | [ISSUE-GOVERNANCE.md](./ISSUE-GOVERNANCE.md) | [LEADERSHIP-SCORECARD.md](./LEADERSHIP-SCORECARD.md) | [SECURITY.md](./SECURITY.md) | [COST-CONTROLS-PLAYBOOK.md](./COST-CONTROLS-PLAYBOOK.md)
 
 This document encodes leadership strategy into executable rules that govern prioritization, release gating, cost governance, security exceptions, and weekly operating cadence. It is the canonical source for how strategic principles translate into day-to-day execution constraints.
 
@@ -76,29 +76,34 @@ When the WIP cap is reached:
 
 **Principle**: Every release to production passes a defined quality gate. No gate, no ship.
 
-### Gate Checklist
+> **Full specification**: [RELEASE-GATES.md](./RELEASE-GATES.md) is the canonical reference for gate definitions, rollback readiness, change-risk annotation, and PR evidence requirements. The summary below is provided for quick reference; defer to RELEASE-GATES.md for enforcement details and edge cases.
 
-A release tag (`v*`) may only be created on `main` when ALL of these conditions are met:
+### Gate Summary
 
-| Gate | Criterion | Verified By |
-|------|-----------|-------------|
-| G1. CI green | `ci.yml` workflow passes (lint + build + test). | GitHub branch protection. |
-| G2. No critical/high audit findings | `pnpm audit --audit-level=high` passes. | CI pipeline. |
-| G3. Scorecard health >= YELLOW | Latest leadership scorecard is not RED. | Manual check before tagging. |
-| G4. No expired security exceptions | `security-exceptions.yml` workflow has no EXPIRED entries. | Weekly automated check ([security exception registry](../.github/workflows/security-exceptions.yml)). |
-| G5. Staging verification | Critical flows verified on staging (see [PRODUCTION-DEPLOYMENT-CHECKLIST.md](./PRODUCTION-DEPLOYMENT-CHECKLIST.md) section 5). | Manual smoke test. |
-| G6. No unresolved P0/P1 incidents | All active incidents are resolved or have documented workarounds. | Triage review. |
-| G7. Changelog reviewed | Release notes accurately reflect included changes. | `release-notes.yml` or manual review. |
+| Category | Gates | Enforcement |
+|----------|-------|-------------|
+| CI automated (PR merge) | Lint, Build, Test, Security audit (G1-G4) | `ci.yml` + branch protection |
+| Branch protection (PR merge) | PR required, review required, conversations resolved, branch up-to-date (G5-G8) | GitHub branch protection settings |
+| Manual pre-release (production tag) | Scorecard health, security exceptions, staging verification, no P0/P1 incidents, changelog (G9-G13) | Human verification before tagging |
+
+### Rollback Readiness
+
+Every production release must be rollback-ready within 30 minutes. PRs labeled `risk:high` or `risk:critical` must include an explicit rollback plan. DynamoDB schema changes must be backward-compatible for at least one release cycle. See [RELEASE-GATES.md -- Section 2](./RELEASE-GATES.md#2-rollback-readiness) for the full rollback mechanism inventory and backward-compatibility rules.
+
+### Change-Risk Annotation
+
+PRs are labeled `risk:low`, `risk:medium`, `risk:high`, or `risk:critical` based on blast radius. Higher risk levels require additional evidence (rollback plan, CDK diff, staging verification, leadership approval). See [RELEASE-GATES.md -- Section 3](./RELEASE-GATES.md#3-change-risk-annotation) for criteria and requirements per level.
 
 ### Gate Override
 
-A gate may be overridden only when:
+A gate may be overridden only when all of these conditions are met:
 
-1. The override is documented in the release issue/PR with the specific gate being skipped and the justification.
-2. A second team member (or leadership) approves the override.
+1. The override is documented in the release issue/PR with the specific gate ID being overridden and the justification.
+2. A second team member (or leadership) explicitly approves the override.
 3. A follow-up issue is created to remediate the skipped gate within 7 days.
+4. The override is noted in the release notes.
 
-Gate overrides are tracked as comments on the release PR and referenced in release notes.
+Gate overrides for CI automated gates (G1-G4) require disabling branch protection and are strongly discouraged.
 
 **Sub-issue**: #266
 
@@ -245,6 +250,7 @@ These rules apply to all coding agents (Copilot, Claude Code workers, worktree s
 
 | Topic | Location |
 |-------|----------|
+| Release gates, rollback readiness, change-risk annotation | [RELEASE-GATES.md](./RELEASE-GATES.md) |
 | Issue triage and priority criteria | [ISSUE-GOVERNANCE.md](./ISSUE-GOVERNANCE.md) |
 | Leadership scorecard metrics and thresholds | [LEADERSHIP-SCORECARD.md](./LEADERSHIP-SCORECARD.md) |
 | Incident response and DLQ recovery | [RUNBOOK.md](./RUNBOOK.md) |
