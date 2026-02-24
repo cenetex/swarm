@@ -1,0 +1,85 @@
+name: GTM KPI Report
+
+on:
+  schedule:
+    # Every Monday at 9:30 AM UTC (after ticket-health at 9:00)
+    - cron: '30 9 * * 1'
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to query'
+        required: true
+        default: 'staging'
+        type: choice
+        options: [staging, production]
+      days:
+        description: 'Report window in days'
+        required: false
+        default: '7'
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  NODE_VERSION: '20'
+
+jobs:
+  report:
+    name: Generate GTM KPI Report
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gtm-kpi-report
+
+      - name: Resolve admin table name
+        id: config
+        run: |
+          ENV="${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}"
+          CDK_ENV="${ENV/production/prod}"
+          ADMIN_TABLE="SwarmAdmin-${CDK_ENV}"
+          DAYS="${{ github.event_name == 'workflow_dispatch' && inputs.days || '7' }}"
+
+          echo "admin_table=$ADMIN_TABLE" >> "$GITHUB_OUTPUT"
+          echo "environment=$ENV" >> "$GITHUB_OUTPUT"
+          echo "days=$DAYS" >> "$GITHUB_OUTPUT"
+          echo "Querying table: $ADMIN_TABLE (env: $ENV, window: ${DAYS}d)"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install AWS SDK dependencies
+        run: npm install --no-save @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
+
+      - name: Generate GTM KPI report
+        env:
+          ADMIN_TABLE: ${{ steps.config.outputs.admin_table }}
+          REPORT_ENV: ${{ steps.config.outputs.environment }}
+          REPORT_DAYS: ${{ steps.config.outputs.days }}
+        run: |
+          node scripts/generate-gtm-kpi-report.mjs \
+            --days "$REPORT_DAYS" \
+            --environment "$REPORT_ENV" \
+            --output report-artifacts/gtm-kpi-report.md \
+            --json-output report-artifacts/gtm-kpi-report.json
+
+      - name: Upload report artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: gtm-kpi-report
+          path: report-artifacts/
+          retention-days: 90
