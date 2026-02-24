@@ -26,10 +26,16 @@ These documents describe the current system and are maintained alongside the cod
 - [SECURE-LOGGING.md](SECURE-LOGGING.md) -- Structured logging guidelines
 - [SECURITY.md](SECURITY.md) -- Security architecture and threat model
 
+### Governance
+- [OPERATING-MODEL.md](OPERATING-MODEL.md) -- Issue-only operating model for leadership-directed execution
+- [ISSUE-GOVERNANCE.md](ISSUE-GOVERNANCE.md) -- GitHub issue triage and governance
+- [GITHUB-PERMISSIONS.md](GITHUB-PERMISSIONS.md) -- Role-based access model and permission matrix
+- [LEADERSHIP-SCORECARD.md](LEADERSHIP-SCORECARD.md) -- Automated weekly scorecard and reprioritization
+- [ACCESS-REVIEW.md](ACCESS-REVIEW.md) -- Quarterly privileged access review process
+- [branch-protection.md](branch-protection.md) -- Branch protection rules
+
 ### Development
 - [CIRCULAR-DEPENDENCIES.md](CIRCULAR-DEPENDENCIES.md) -- Circular dependency detection and management
-- [ISSUE-GOVERNANCE.md](ISSUE-GOVERNANCE.md) -- GitHub issue triage and governance
-- [branch-protection.md](branch-protection.md) -- Branch protection rules
 - [API-CLIENT-README.md](API-CLIENT-README.md) -- Admin API client usage
 
 ### Roadmap and Strategy
