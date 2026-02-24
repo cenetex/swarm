@@ -125,6 +125,7 @@
       "enableSharedHandlers": true,
       "enableDiscordGateway": false,
       "useExistingBuckets": true,
+      "mediaCdnUrl": "https://d3uksraz0ki2cr.cloudfront.net",
       "adminDomain": "swarm.rati.chat",
       "adminCertificateArn": "arn:aws:acm:us-east-1:332730082708:certificate/8b24f275-ffcd-42bb-b570-15b0d2576e65",
       "adminEmails": "hello@ratimics.com",
