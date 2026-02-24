@@ -144,16 +144,33 @@ Gate overrides are tracked as comments on the release PR and referenced in relea
 
 **Principle**: Security exceptions are temporary, tracked, and expire. No permanent waivers.
 
+> **Canonical reference**: The full governance policy -- including the required schema fields, maximum expiry durations, escalation timelines, and closure criteria -- lives in [SECURITY.md -- Security Exception Governance](./SECURITY.md#security-exception-governance). This section provides the operational rules and integration points with the weekly cadence.
+
 ### Rules
 
-| Rule | Description |
-|------|-------------|
-| S1. Every exception has an expiry date. | Enforced by the exception registry schema (`.audit-exceptions.schema.json`). |
-| S2. Exceptions are reviewed weekly. | `security-exceptions.yml` runs every Monday at 09:00 UTC. |
-| S3. Expired exceptions create blocking issues. | Automated: the workflow creates `type:security` issues for expired entries. |
-| S4. Exceptions approaching expiry (within 14 days) trigger warnings. | `--warn-days 14` flag in the validation script. |
-| S5. New exceptions require a justification, an owner, and a remediation plan. | Documented in the exception entry per the schema. |
-| S6. Exception count is tracked as a scorecard metric. | Cross-referenced in weekly triage. |
+| Rule | Description | Enforcement |
+|------|-------------|-------------|
+| S1. Every exception has an owner and an expiry date. | Enforced by the exception registry schema ([`.audit-exceptions.schema.json`](../.audit-exceptions.schema.json)). `owner` and `expiry` are required fields. | Schema validation + CI |
+| S2. Exceptions are reviewed weekly. | [`security-exceptions.yml`](../.github/workflows/security-exceptions.yml) runs every Monday at 09:00 UTC. | Automated workflow |
+| S3. Expired exceptions create blocking issues. | The workflow creates `type:security` + `priority:high` issues for expired entries. | Automated workflow |
+| S4. Exceptions approaching expiry (within 14 days) trigger warnings. | `--warn-days 14` flag in the validation script. | Automated workflow |
+| S5. New exceptions require a justification, an owner, and a remediation plan. | `rationale` (min 10 chars), `owner`, and `mitigation` (min 10 chars) are required schema fields. | Schema validation |
+| S6. Exception count is tracked as a scorecard metric. | Cross-referenced in weekly triage (section 6). | Manual review |
+| S7. Maximum expiry durations are severity-dependent. | Critical: 30 days, High: 90 days, Moderate: 180 days, Low: 365 days. | Documented in [SECURITY.md](./SECURITY.md#maximum-expiry-durations). |
+| S8. Stale exceptions escalate and eventually block releases. | Day 7: owner ping. Day 14: leadership escalation. Day 21: release gate block. | [SECURITY.md escalation procedures](./SECURITY.md#escalation-procedures-for-stale-exceptions). |
+
+### Exception Registry
+
+All exceptions are tracked in the machine-readable registry at [`.audit-exceptions.json`](../.audit-exceptions.json). Each entry requires (at minimum):
+
+- **`id`** -- Unique identifier (`SE-001`, `SE-002`, ...)
+- **`owner`** -- Team or person responsible for review and remediation
+- **`expiry`** -- ISO date (YYYY-MM-DD) when the exception must be re-evaluated
+- **`rationale`** -- Why the risk is acceptable
+- **`mitigation`** -- What compensating controls are in place
+- **`reviewCadence`** -- `weekly`, `monthly`, or `quarterly`
+
+See [SECURITY.md -- Required Fields](./SECURITY.md#required-fields) for the complete field reference.
 
 ### Exception Lifecycle
 
@@ -161,13 +178,21 @@ Gate overrides are tracked as comments on the release PR and referenced in relea
 Request --> Review --> Approve (with expiry) --> Registry --> Weekly check --> Renew or Remediate
 ```
 
-1. **Request**: Open a `type:security` issue with the exception details, justification, and proposed expiry.
-2. **Review**: Security-aware reviewer validates the risk assessment.
-3. **Approve**: Exception is added to the registry with an expiry date.
-4. **Monitor**: Weekly workflow validates all exceptions.
-5. **Expire**: On expiry, a blocking issue is auto-created. The exception must be remediated or renewed with a new justification.
+1. **Request**: Open a `type:security` issue with vulnerability details, risk assessment, mitigations, proposed expiry, and remediation plan.
+2. **Review**: Security-aware reviewer validates the risk assessment and proposed expiry.
+3. **Approve**: Exception is added to the registry with an expiry date. PR requires standard review.
+4. **Monitor**: Weekly workflow validates all exceptions. Owner reviews per the defined `reviewCadence`.
+5. **Expire/Resolve**: On expiry, a blocking issue is auto-created. The exception must be renewed (with fresh justification) or resolved (with closure criteria met).
 
-See also: [SECURITY.md -- Document Exceptions](./SECURITY.md), [DATA-RETENTION-MATRIX.md -- Retention Exception Requests](./DATA-RETENTION-MATRIX.md).
+### Closure Criteria
+
+An exception may be marked `resolved` only when the vulnerability is no longer present: upstream fix applied, dependency removed, alternative adopted, or architecture change eliminates the code path. See [SECURITY.md -- Closure Criteria](./SECURITY.md#closure-criteria) for details.
+
+### Integration with Release Gates
+
+Expired security exceptions block production releases. This is enforced via Release Gate G4 (section 3 above): "No expired security exceptions." The weekly workflow output is the verification source.
+
+See also: [SECURITY.md -- Security Exception Governance](./SECURITY.md#security-exception-governance), [DATA-RETENTION-MATRIX.md -- Retention Exception Requests](./DATA-RETENTION-MATRIX.md).
 
 **Sub-issue**: #268
 

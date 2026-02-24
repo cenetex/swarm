@@ -88,20 +88,13 @@ pnpm update --latest
 
 #### 4. Document Exceptions (Last Resort)
 
-If a vulnerability cannot be fixed immediately (e.g., waiting for upstream fix):
-
-1. Create an exception file `.npmrc`:
-```
-audit-level=high
-```
-
-2. Document in this file:
+If a vulnerability cannot be fixed immediately (e.g., waiting for upstream fix), a formal security exception must be filed. See [Security Exception Governance](#security-exception-governance) below for the full policy.
 
 **Known Exceptions:**
 
 | Package | CVE | Severity | Issue | Reason | Target Resolution |
 |---------|-----|----------|-------|--------|-------------------|
-| `bigint-buffer` | CVE-2025-3194 | High (CVSS 7.5) | [GHSA-3gc7-fjrx-p6mg](https://github.com/advisories/GHSA-3gc7-fjrx-p6mg) | Package unmaintained; no patched version available (`patched_versions: <0.0.0`). Transitive dep via `@solana/spl-token > @solana/buffer-layout-utils > bigint-buffer`. The vulnerable `toBigIntLE()` function is not called directly by our code. Even the latest `@solana/spl-token@0.4.14` still depends on this package. Risk accepted: DoS-only impact (CWE-120), no data exfiltration, and the function is only reachable with attacker-controlled buffer sizes in the Solana token layout path. | Re-evaluate 2026-06-01 or when `@solana/spl-token` removes `bigint-buffer` dependency |
+| `bigint-buffer` | CVE-2025-3194 | High (CVSS 7.5) | [GHSA-3gc7-fjrx-p6mg](https://github.com/advisories/GHSA-3gc7-fjrx-p6mg) | Package unmaintained; no patched version available (`patched_versions: <0.0.0`). Transitive dep via `@solana/spl-token > @solana/buffer-layout-utils > bigint-buffer`. The vulnerable `toBigIntLE()` function is not called directly by our code. Even the latest `@solana/spl-token@0.4.14` still depends on this package. Risk accepted: DoS-only impact (CWE-120), no data exfiltration, and the function is only reachable with attacker-controlled buffer sizes in the Solana token layout path. | Re-evaluate 2026-05-01 or when `@solana/spl-token` removes `bigint-buffer` dependency |
 
 **Resolved CVEs (previously ignored):**
 
@@ -110,8 +103,161 @@ audit-level=high
 | `ajv` (via eslint) | CVE-2025-69873 | Fixed via pnpm override `ajv@^6: 6.14.0`. The vulnerable ajv 6.12.6 was a transitive dependency of eslint (dev-only). ReDoS only exploitable when `$data: true` option is used, which this project does not do, but the override eliminates the vulnerability entirely. | 2026-02-20 |
 | `bn.js` (via @solana/web3.js) | CVE-2026-2739 | Fixed via pnpm override `bn.js: 5.2.3`. Infinite loop when calling `maskn(0)`. | 2026-02-20 |
 
-3. Create a tracking issue in GitHub
-4. Set reminder to re-evaluate monthly
+---
+
+## Security Exception Governance
+
+Security exceptions are temporary risk acceptances for known vulnerabilities that cannot be immediately remediated. Every exception is tracked in a machine-readable registry, has an owner, carries an expiry date, and is subject to automated and manual review.
+
+**No permanent waivers.** Every exception must expire and be re-evaluated.
+
+### Where Exceptions Are Tracked
+
+| Artifact | Location | Purpose |
+|----------|----------|---------|
+| Exception registry | [`.audit-exceptions.json`](../.audit-exceptions.json) | Machine-readable source of truth for all active, expired, and resolved exceptions |
+| Registry schema | [`.audit-exceptions.schema.json`](../.audit-exceptions.schema.json) | JSON Schema defining required fields and validation rules |
+| Validation script | [`scripts/validate-security-exceptions.mjs`](../scripts/validate-security-exceptions.mjs) | Validates registry entries, checks expiry, outputs CI annotations |
+| Automated workflow | [`.github/workflows/security-exceptions.yml`](../.github/workflows/security-exceptions.yml) | Weekly Monday 09:00 UTC automated validation; creates issues for expired/expiring entries |
+| Governance rules | [STRATEGY-OPERATIONS.md -- Section 5](./STRATEGY-OPERATIONS.md) | High-level rules (S1-S6) and lifecycle overview |
+
+### Required Fields
+
+Every exception entry in `.audit-exceptions.json` must include these fields (enforced by the schema and validation script):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` (pattern: `SE-NNN`) | Unique identifier for the exception |
+| `advisory` | `string` | GHSA or CVE identifier |
+| `package` | `string` | Affected npm package name |
+| `severity` | `enum` | `low`, `moderate`, `high`, or `critical` |
+| `owner` | `string` | Team or person responsible for reviewing and remediating this exception |
+| `rationale` | `string` (min 10 chars) | Why this exception is acceptable (risk assessment) |
+| `mitigation` | `string` (min 10 chars) | What compensating controls are in place |
+| `expiry` | `date` (YYYY-MM-DD) | When this exception expires and must be re-evaluated |
+| `reviewCadence` | `enum` | `weekly`, `monthly`, or `quarterly` |
+| `status` | `enum` | `active`, `expired`, or `resolved` |
+
+Optional but recommended fields: `cve`, `npmAdvisoryId`, `title`, `installedVersion`, `dependencyChain`, `affectedPackages`, `mitigations` (array), `dateAdded`, `lastReviewed`, `reviewBy`, `reason` (detailed), `resolvedDate`, `resolvedReason`.
+
+### Review Cadence
+
+| Frequency | Activity | Mechanism |
+|-----------|----------|-----------|
+| **Weekly (Monday 09:00 UTC)** | Automated validation of all registry entries. Expired or expiring-within-14-days entries trigger a `type:security` + `priority:high` GitHub issue. | [`.github/workflows/security-exceptions.yml`](../.github/workflows/security-exceptions.yml) |
+| **Weekly (Monday triage)** | Leadership reviews any open security exception issues during triage. Exception count is a scorecard metric. | [STRATEGY-OPERATIONS.md -- Section 6](./STRATEGY-OPERATIONS.md) |
+| **Per-exception cadence** | Each exception defines its own `reviewCadence` (weekly, monthly, or quarterly). The `lastReviewed` and `reviewBy` fields track compliance. | Registry entry fields |
+| **On every PR** | `pnpm audit --audit-level=high` runs in CI. New high/critical findings that are not covered by an active exception block the merge. | CI pipeline (`ci.yml`) |
+
+### Exception Lifecycle
+
+```
+1. REQUEST     2. REVIEW      3. APPROVE     4. MONITOR     5. EXPIRE/RESOLVE
+   |              |              |              |              |
+   Open issue     Reviewer       Add to         Weekly         Renew with new
+   with details   validates      registry       workflow       justification
+   + proposed     risk           with expiry    validates      OR resolve
+   expiry                                       entries        (remove/fix)
+```
+
+#### 1. Request
+
+Open a GitHub issue with label `type:security` containing:
+
+- **Vulnerability details**: CVE/GHSA ID, affected package, severity, dependency chain
+- **Risk assessment**: What is the actual exposure? Is the vulnerable code path reachable?
+- **Mitigations**: What compensating controls reduce the risk?
+- **Proposed expiry**: Maximum 90 days for high/critical, 180 days for moderate/low
+- **Remediation plan**: What would resolve this permanently? (upstream fix, package replacement, etc.)
+
+#### 2. Review
+
+A security-aware reviewer (or leadership during triage) validates:
+
+- The risk assessment is accurate and complete
+- Mitigations are sufficient for the accepted risk level
+- The proposed expiry is appropriate for the severity
+- A remediation plan exists (even if it depends on an upstream fix)
+
+#### 3. Approve and Register
+
+The exception is added to `.audit-exceptions.json` following the schema. The PR adding the exception requires normal review. The `ignoredAdvisories` array is updated if the exception should suppress `pnpm audit` failures.
+
+#### 4. Monitor
+
+- The weekly automated workflow checks all entries
+- Entries expiring within 14 days generate warnings
+- The exception owner is responsible for periodic manual review per the defined `reviewCadence`
+- After each review, update `lastReviewed` and `reviewBy` in the registry
+
+#### 5. Expire or Resolve
+
+When an exception expires:
+
+- The automated workflow creates a `type:security` + `priority:high` GitHub issue
+- The exception **must** be either:
+  - **Renewed**: Update `expiry` with a new date and provide fresh justification (the old rationale is not sufficient -- explain what changed or why more time is needed)
+  - **Resolved**: Set `status: "resolved"`, add `resolvedDate` and `resolvedReason`, remove the advisory from `ignoredAdvisories`
+- Expired exceptions that are not addressed within 7 days are escalated (see below)
+
+### Maximum Expiry Durations
+
+| Severity | Maximum Expiry | Renewal Limit |
+|----------|---------------|---------------|
+| **Critical** | 30 days | 2 renewals, then escalate to leadership for override |
+| **High** | 90 days | 3 renewals, then escalate |
+| **Moderate** | 180 days | No hard limit, but must show progress each renewal |
+| **Low** | 365 days | No hard limit |
+
+### Escalation Procedures for Stale Exceptions
+
+An exception becomes "stale" when it expires and is not acted upon within the defined window.
+
+| Trigger | Timeline | Action |
+|---------|----------|--------|
+| Exception expires | Day 0 | Automated workflow creates `type:security` + `priority:high` issue |
+| No action on expired exception | Day 7 | Owner is pinged on the issue. Exception is flagged in the next Monday triage review. |
+| Still no action | Day 14 | Leadership escalation: the exception is added to the Monday triage agenda as a blocking item. No new feature work may start until addressed. |
+| Still no action | Day 21 | The exception blocks the next production release (Release Gate G4 in [STRATEGY-OPERATIONS.md](./STRATEGY-OPERATIONS.md)). |
+| Renewal limit exceeded | On renewal attempt | Escalate to leadership. Requires leadership sign-off with documented justification for continued acceptance. |
+
+### Closure Criteria
+
+An exception may be marked `resolved` when ANY of these conditions is met:
+
+1. **Upstream fix available**: The vulnerable package has a patched version, and the project has upgraded to it.
+2. **Dependency removed**: The affected package is no longer in the dependency tree.
+3. **Alternative adopted**: The vulnerable dependency has been replaced with a secure alternative.
+4. **Risk eliminated**: Architecture changes have made the vulnerable code path unreachable (must be verified, not assumed).
+
+When closing an exception:
+
+```json
+{
+  "status": "resolved",
+  "resolvedDate": "2026-MM-DD",
+  "resolvedReason": "Upgraded @solana/spl-token to v0.5.0 which removes bigint-buffer dependency"
+}
+```
+
+Remove the advisory from the `ignoredAdvisories` array and verify `pnpm audit` passes cleanly.
+
+### Local Validation
+
+Run the validation script locally before submitting PRs that modify the registry:
+
+```bash
+# Validate all entries, warn on expiring-within-30-days
+node scripts/validate-security-exceptions.mjs
+
+# Use a shorter warning window (14 days, matches CI)
+node scripts/validate-security-exceptions.mjs --warn-days 14
+
+# CI mode (emits GitHub Actions annotations)
+node scripts/validate-security-exceptions.mjs --warn-days 14 --ci
+```
+
+Exit code 0 means all entries are valid. Exit code 1 means expired entries or schema errors exist.
 
 ### Dependency Update Strategy
 
@@ -234,4 +380,4 @@ This security policy is part of the AWS Swarm project and follows the same MIT l
 
 ---
 
-*Last updated: 2026-02-20*
+*Last updated: 2026-02-23*
