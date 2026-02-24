@@ -301,17 +301,18 @@ scripts/gh-assign-copilot.sh 80
 
 ### Creating a New Avatar
 
-```bash
-# Via Admin UI
+Avatars are created and configured entirely through the chat-first admin interface. There is no local file template.
+
+```
+# Via Admin UI (recommended)
 1. Go to swarm.rati.chat
 2. Chat: "Create a new avatar called myagent"
-3. Configure platforms and set secrets
-4. Deploy via GitHub Actions
+3. Follow the inline prompts to configure platforms and set secrets
+4. The avatar is stored in DynamoDB and deployed automatically
 
-# Via CLI
-cp -r avatars/.template avatars/myagent
-# Edit avatars/myagent/config.yaml
-# Edit avatars/myagent/persona.md
+# Via Admin API
+POST /api/avatars with a JSON body containing the avatar configuration.
+The admin API stores the config in DynamoDB and provisions secrets.
 ```
 
 ### Deploying
