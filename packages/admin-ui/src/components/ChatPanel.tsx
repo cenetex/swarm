@@ -15,6 +15,8 @@ import { ChatInput } from './ChatInput';
 import { AvatarDisplay } from './AvatarSidebar';
 import { PromptPreviewPanel } from './PromptPreviewPanel';
 import { PlanUsagePanel } from './PlanUsagePanel';
+import { ActivationChecklist } from './ActivationChecklist';
+import { getErrorRecovery } from '../utils/error-recovery';
 
 // Track active polling jobs to avoid duplicate polling
 const activePollers = new Map<string, { controller: AbortController; avatarId: string }>();
@@ -515,9 +517,20 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
 
         const errorMsg = formatUserFacingError(error);
         setError(errorMsg);
+
+        // Build rich error message with recovery guidance
+        const recovery = getErrorRecovery(errorMsg);
+        let errorContent: string;
+        if (recovery) {
+          const actionList = recovery.actions.map(a => `- ${a}`).join('\n');
+          errorContent = `**${recovery.title}**\n\n${recovery.explanation}\n\n**What to do:**\n${actionList}`;
+        } else {
+          errorContent = `**Error:** ${errorMsg}\n\nPlease try again or check the avatar configuration.`;
+        }
+
         addMessage(targetAvatar.id, {
           role: 'assistant',
-          content: `❌ **Error:** ${errorMsg}\n\nPlease try again or check the avatar configuration.`,
+          content: errorContent,
         });
       } finally {
         setLoading(false);
@@ -984,10 +997,17 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 lg:px-6 py-4">
         <div className="max-w-3xl mx-auto space-y-4 w-full">
+          {/* Activation checklist for admin users with newly created avatars */}
+          {accessMode === 'admin' && activeAvatar && (
+            <ActivationChecklist
+              avatar={activeAvatar}
+              onSuggest={handleSendMessage}
+            />
+          )}
           {messages.map((message) => (
-            <ChatMessageComponent 
-              key={message.id} 
-              message={message} 
+            <ChatMessageComponent
+              key={message.id}
+              message={message}
               onToolSubmit={handleToolSubmit}
             />
           ))}

@@ -100,7 +100,7 @@ export const useAvatarStore = create<AvatarState>()(
               [avatar.id]: [{
                 id: 'welcome',
                 role: 'assistant',
-                content: `Hi! I'm **${avatarName}**. I'm a new avatar ready to be configured!\n\nAsk me to change my name, set my personality, generate a profile picture, or connect integrations like Telegram and Twitter.`,
+                content: `Hi! I'm **${avatarName}**. I'm a new avatar ready to be configured!\n\nHere's how to get me up and running:\n1. **Set my personality** -- tell me who I should be\n2. **Generate a profile picture** -- ask me to create one\n3. **Connect a platform** -- Telegram, Twitter, or Discord\n\nJust chat naturally and I'll walk you through each step.`,
                 timestamp: Date.now(),
               }],
             },
