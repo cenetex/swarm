@@ -9,6 +9,21 @@ if [ "${SKIP_PRECOMMIT:-}" = "1" ] || [ "${SKIP_PRECOMMIT:-}" = "true" ]; then
 	exit 0
 fi
 
+# ── Branch guard: no commits on main or unnamed branches ────
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$BRANCH" = "main" ]; then
+	echo "ERROR: Do not commit directly to main. Create a branch first:"
+	echo "       git checkout -b <type>/issue-<number>-<description>"
+	exit 1
+fi
+if [ "$BRANCH" != "HEAD" ]; then
+	if ! echo "$BRANCH" | grep -qE '^(feat|fix|docs|refactor|style|perf|test|build|ci|chore)/issue-[0-9]+-'; then
+		echo "ERROR: Branch '$BRANCH' must match: <type>/issue-<number>-<description>"
+		echo "       Example: fix/issue-42-dynamo-query"
+		exit 1
+	fi
+fi
+
 # Verify lockfile is in sync with all package.json files
 echo "pre-commit: lockfile check"
 pnpm install --frozen-lockfile --ignore-scripts > /dev/null 2>&1 || {

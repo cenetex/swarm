@@ -6,6 +6,11 @@ run-name: >-
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'issues/**'
     tags: ['v*']
 
   workflow_dispatch:

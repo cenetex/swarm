@@ -7,6 +7,16 @@ if [ "${SKIP_PREPUSH:-}" = "1" ] || [ "${SKIP_PREPUSH:-}" = "true" ]; then
   echo "pre-push: SKIP_PREPUSH set; skipping checks"
   exit 0
 fi
+# ── Branch naming check ─────────────────────────────────────
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$BRANCH" != "main" ] && [ "$BRANCH" != "HEAD" ]; then
+  if ! echo "$BRANCH" | grep -qE '^(feat|fix|docs|refactor|style|perf|test|build|ci|chore)/issue-[0-9]+-'; then
+    echo "ERROR: Branch '$BRANCH' must match: <type>/issue-<number>-<description>"
+    echo "       Example: fix/issue-42-dynamo-query"
+    echo "       Types: feat, fix, docs, refactor, style, perf, test, build, ci, chore"
+    exit 1
+  fi
+fi
 # ── Standard checks ─────────────────────────────────────────
 echo "pre-push: pnpm lint"
 pnpm lint

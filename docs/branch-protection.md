@@ -6,33 +6,35 @@ of `cenetex/aws-swarm`. Settings are configured in the GitHub UI under
 
 Reference issue: #289
 
-## Required Settings Checklist
+## Current Settings (active)
 
 ### Pull Request Reviews
 - [x] **Require a pull request before merging**
-  - [x] Require approvals: **minimum 1**
-  - [x] Require review from Code Owners
-  - [x] Dismiss stale pull request approvals when new commits are pushed
-
-### Conversation Resolution
-- [x] **Require conversation resolution before merging**
+  - Approvals: **0** (solo dev — no reviewers available yet)
 
 ### Status Checks
 - [x] **Require status checks to pass before merging**
   - [x] Require branches to be up to date before merging
-  - Required checks:
-    - `build` (CI workflow)
-    - `lint` (CI workflow)
-    - `test` (CI workflow)
+  - Required checks: `CI`
 
-### Commit Signatures
-- [ ] **Require signed commits** -- evaluate feasibility; document exception if not enabled
-
-### Additional Recommendations
-- [x] Do not allow bypassing the above settings (applies to admins too)
-- [x] Restrict who can push to matching branches (limit to maintainers)
+### Push Restrictions
 - [x] Block force pushes
 - [x] Block branch deletion
+
+### Local Enforcement (git hooks)
+- [x] **pre-commit**: blocks commits on `main` and validates branch name matches `<type>/issue-<number>-*`
+- [x] **pre-push**: validates branch name + runs lint/build/test
+
+## Deferred Settings (enable when team grows)
+
+These settings are documented for when additional developers join:
+
+- [ ] Require approvals: **minimum 1**
+- [ ] Require review from Code Owners
+- [ ] Dismiss stale pull request approvals when new commits are pushed
+- [ ] Require conversation resolution before merging
+- [ ] Do not allow bypassing the above settings (applies to admins too)
+- [ ] Require signed commits
 
 ## CODEOWNERS
 

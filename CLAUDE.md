@@ -1,555 +1,118 @@
 # Claude Code Development Guide
 
-This document describes the development workflow, commit conventions, and GitHub issue management for the AWS Swarm project.
+Multi-tenant social media avatar platform on AWS serverless. Chat-first — all user actions happen inside the chat experience (no settings pages, no modals). See `docs/design-philosophy.md`.
 
-## Project Overview
+**Packages:** `core/` (types, adapters, services), `handlers/` (Lambda webhooks), `admin-api/` (conversational admin backend), `admin-ui/` (React chat frontend), `infra/` (CDK), `mcp-server/`, `layer/`, `profile-page/`, `claude-code-worker/`, `plan-tests/` (run with `RUN_PLAN_TESTS=1`).
 
-AWS Swarm is a multi-tenant social media avatar platform that runs on AWS serverless infrastructure. Key components:
+---
 
-- **Core** (`packages/core/`) - Shared types, adapters, processors, services
-- **Handlers** (`packages/handlers/`) - Lambda handlers for webhooks and processing
-- **Admin API** (`packages/admin-api/`) - Conversational admin interface backend
-- **Admin UI** (`packages/admin-ui/`) - React chat frontend
-- **Infra** (`packages/infra/`) - CDK infrastructure as code
-- **MCP Server** (`packages/mcp-server/`) - Model Context Protocol tool server
-- **Layer** (`packages/layer/`) - Lambda layer with shared dependencies
-- **Profile Page** (`packages/profile-page/`) - Public avatar profile pages
-- **Claude Code Worker** (`packages/claude-code-worker/`) - Claude Code agent worker
-- **Plan Tests** (`packages/plan-tests/`) - Integration tests for the plan system (run with `RUN_PLAN_TESTS=1`)
+## Agent Execution Checklist
 
-## Design Philosophy
+Every piece of work MUST be tied to a GitHub issue. No exceptions.
 
-This product is **chat-first**. All user actions must be initiated and completed inside the chat experience.
+### Starting an issue
 
-- Use inline chat prompts and buttons for actions (inhabitation, settings, confirmations, etc.).
-- Do **not** add standalone settings pages, modals, or separate configuration flows.
-- If a workflow needs input, render it as an inline chat tool prompt or button-driven action.
+1. **Verify the issue is ready** — has acceptance criteria, scope boundaries, and `package:*` label.
+2. **Check WIP caps** — max 8 `status:in-progress` project-wide, max 3 open PRs per contributor, max 5 parallel worktrees.
+3. **Create branch** — `<type>/issue-<number>-<short-description>` (e.g., `fix/issue-42-dynamo-query`). The pre-push hook enforces this pattern.
+4. **For parallel work, use worktrees:**
+   ```bash
+   git worktree add ../aws-swarm-042 -b fix/issue-42-dynamo-query main
+   (cd ../aws-swarm-042 && pnpm install)
+   scripts/worktree-start.sh 42   # REQUIRED — pushes branch, labels issue in-progress
+   ```
+5. **Implement within stated scope.** Do not expand beyond what the issue describes.
+6. **Commit** with conventional format: `type(scope): description` referencing the issue (`Closes #42`).
 
-See `docs/design-philosophy.md` for the canonical UI rules.
+### Finishing an issue
 
-## Commit Convention
+7. **Push and create PR** — one issue, one PR. Title matches commit convention.
+8. **For worktrees:** `scripts/worktree-finalize.sh --issues 42` (commits, rebases, pushes, creates PR).
+9. **Squash merge** to main. Clean up branch after merge.
 
-We follow [Conventional Commits](https://www.conventionalcommits.org/) with scope for the package being modified.
+### When blocked
 
-### Format
+- **Ambiguous scope** — comment on issue, add `status:blocked`. Do not guess.
+- **Blocked by another issue** — comment `Blocked by #XX`, add `status:blocked`.
+- **Discovered adjacent work** — open a new issue. Do not silently expand the PR.
+- **Contradictory instructions** — comment on issue, wait for resolution.
 
-```
-<type>(<scope>): <description>
+---
 
-[optional body]
-
-[optional footer(s)]
-```
-
-### Types
-
-| Type | Description |
-|------|-------------|
-| `feat` | New feature |
-| `fix` | Bug fix |
-| `docs` | Documentation only |
-| `style` | Code style (formatting, semicolons, etc.) |
-| `refactor` | Code change that neither fixes a bug nor adds a feature |
-| `perf` | Performance improvement |
-| `test` | Adding or updating tests |
-| `build` | Build system or external dependencies |
-| `ci` | CI/CD configuration |
-| `chore` | Other changes that don't modify src or test files |
-
-### Scopes
-
-| Scope | Package |
-|-------|---------|
-| `core` | `packages/core/` |
-| `handlers` | `packages/handlers/` |
-| `admin-api` | `packages/admin-api/` |
-| `admin-ui` | `packages/admin-ui/` |
-| `infra` | `packages/infra/` |
-| `mcp-server` | `packages/mcp-server/` |
-| `profile-page` | `packages/profile-page/` |
-| `plan` | `PLAN.md` |
-| `ci` | `.github/` |
-| `docs` | Documentation files |
-
-### Examples
+## Development Commands
 
 ```bash
-# New feature
-feat(admin-api): add wallet balance checking tool
-
-# Bug fix with issue reference
-fix(core): correct DynamoDB query for listAgents
-
-Closes #42
-
-# Documentation update
-docs(plan): add domain setup instructions for swarm.rati.chat
-
-# Multiple scopes
-feat(admin-api,infra): add audit logging service
-```
-
-## GitHub Issue Management
-
-### Issue Labels
-
-| Label | Color | Description |
-|-------|-------|-------------|
-| `type:feature` | `#1D76DB` | New feature request |
-| `type:bug` | `#D73A4A` | Bug report |
-| `type:docs` | `#0075CA` | Documentation |
-| `type:infra` | `#7057FF` | Infrastructure changes |
-| `type:security` | `#B60205` | Security related |
-| `type:tech-debt` | `#FFA500` | Technical debt cleanup |
-| `priority:high` | `#D93F0B` | High priority |
-| `priority:medium` | `#FBCA04` | Medium priority |
-| `priority:low` | `#0E8A16` | Low priority |
-| `status:in-progress` | `#EDEDED` | Currently being worked on |
-| `status:blocked` | `#000000` | Blocked by something |
-| `package:core` | `#C5DEF5` | Affects core package |
-| `package:handlers` | `#C5DEF5` | Affects handlers package |
-| `package:admin` | `#C5DEF5` | Affects admin packages |
-| `package:infra` | `#C5DEF5` | Affects infrastructure |
-
-### Issue Templates
-
-Use the issue templates in `.github/ISSUE_TEMPLATE/` for consistent issue creation.
-
-### Linking Commits to Issues
-
-Always reference issues in commits:
-
-```bash
-# Close an issue
-git commit -m "feat(core): implement retry logic for LLM service
-
-Implements exponential backoff with jitter for API calls.
-
-Closes #15"
-
-# Reference without closing
-git commit -m "refactor(handlers): improve error handling
-
-Related to #23"
-```
-
-### PR Workflow
-
-1. Create issue describing the work (or assign to Copilot)
-2. Create branch from `main`: `git checkout -b feat/issue-42-wallet-balance`
-3. Make changes with conventional commits
-4. Push and create PR referencing the issue (`Closes #42`)
-5. PR title should match commit convention
-6. Squash merge to main
-7. Clean up: `git branch -d feat/issue-42-wallet-balance && git push origin --delete feat/issue-42-wallet-balance`
-
-## Development Workflow
-
-### Setup
-
-```bash
-git clone https://github.com/cenetex/aws-swarm.git
-cd aws-swarm
-pnpm install
-pnpm build
-```
-
-### Local Development
-
-```bash
-# Run tests (bun is the test runner, not vitest)
-bun test                              # all tests
+bun test                              # all tests (bun, not vitest)
 bun test packages/core/               # single package
 bun test path/to/file.test.ts         # single file
-
-# Build / lint / typecheck
 pnpm build                            # all packages
 pnpm lint                             # all packages
 pnpm typecheck                        # all packages
-
-# Plan tests (gated behind env var)
-RUN_PLAN_TESTS=1 bun test packages/plan-tests
 ```
 
-### Git Hooks (Husky)
+| Hook | Runs | Skip with |
+|------|------|-----------|
+| **pre-commit** | lockfile check, `pnpm lint` | `SKIP_PRECOMMIT=1` |
+| **pre-push** | branch name validation, `pnpm lint`, `pnpm build`, admin-ui build, smoke test, `bun test` | `SKIP_PREPUSH=1` |
 
-Pre-commit and pre-push hooks run automatically — you rarely need to run checks manually.
+All deploys go through GitHub Actions (push to main → staging auto-deploy; tags → production with approval). Never run `cdk deploy` locally.
 
-| Hook | What it does | Skip with |
-|------|-------------|-----------|
-| **pre-commit** | Lockfile check, `pnpm lint` | `SKIP_PRECOMMIT=1` |
-| **pre-push** | `pnpm lint`, `pnpm build`, admin-ui build, Privy smoke test, `bun test` | `SKIP_PREPUSH=1` |
+---
 
-## CI/CD Pipeline
+## Commit Convention
 
-### Workflows
+Format: `type(scope): description` — see [Conventional Commits](https://www.conventionalcommits.org/).
 
-| Workflow | Trigger | Description |
-|----------|---------|-------------|
-| `ci.yml` | PR to main | Lint + Build + Test gate (single required check) |
-| `deploy.yml` | Push to main, tags | Deploy orchestrator (CDK + Admin UI) |
-| `deploy-cdk-reusable.yml` | Called by deploy | CDK infra deploy |
-| `deploy-admin-ui-reusable.yml` | Called by deploy | Admin UI deploy |
-| `deploy-lambda-hotpatch.yml` | Manual | Fast Lambda code patch |
-| `release-notes.yml` | Tag push | Generate release notes |
+**Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`
 
-### Environments
+**Scopes:** `core`, `handlers`, `admin-api`, `admin-ui`, `infra`, `mcp-server`, `profile-page`, `plan`, `ci`, `docs`
 
-- **staging** - Auto-deploys on merge to main
-- **production** - Requires manual approval
+Always reference the governing issue: `Closes #42` or `Related to #42`.
 
-### Secrets Required
+---
 
-```yaml
-AWS_ROLE_ARN: arn:aws:iam::ACCOUNT:role/aws-swarm-github-actions
-AWS_ACCOUNT_ID: "123456789012"  # set per GitHub environment (staging vs production)
-ADMIN_API_URL: https://xxx.execute-api.region.amazonaws.com
-ADMIN_UI_BUCKET: swarm-admin-ui-bucket
-CLOUDFRONT_DISTRIBUTION_ID: EXXXXXXXXXX
-```
+## Branching & PRs
 
-## Branching Strategy
+- `main` is protected. All changes via PR + CI pass + squash merge.
+- Branch pattern: `<type>/issue-<number>-<short-description>` — **enforced by pre-push hook**.
+- One issue = one PR. If too large, ask leadership to split the issue.
+- Copilot agent: `scripts/gh-assign-copilot.sh <issue-number>` or `scripts/gh-create-issue.sh --copilot`.
 
-```
-main (protected)
-  │
-  ├── feat/issue-42-wallet-balance
-  ├── fix/issue-43-dynamo-query
-  ├── docs/update-plan
-  └── chore/dependency-updates
-```
+---
 
-- `main` is protected, requires PR and CI pass
-- Feature branches follow pattern: `<type>/issue-<number>-<short-description>`
-- Keep branches short-lived (< 1 week)
-- Squash merge to main
+## Governance
 
-### Parallel Development with Worktrees
+### Priority order (higher = do first)
 
-For working on multiple independent issues simultaneously, use git worktrees:
+| Priority | Category |
+|----------|----------|
+| **P0** | Incidents — production outages, confirmed security vulns |
+| **P1** | Reliability — DLQ growth, error rate breaches |
+| **P2** | Security hardening |
+| **P3** | Feature delivery (current milestone) |
+| **P4** | Tech debt / quality |
 
-```bash
-# Create worktrees for parallel work (one per issue)
-git worktree add ../aws-swarm-042 -b fix/issue-42-dynamo-query main
-git worktree add ../aws-swarm-043 -b fix/issue-43-adapter-bug main
+Do not start P3/P4 work while P0/P1 issues are open.
 
-# Install deps in each worktree
-(cd ../aws-swarm-042 && pnpm install)
-(cd ../aws-swarm-043 && pnpm install)
-
-# Work independently in each, then push and create PRs
-# Clean up after merge
-git worktree remove ../aws-swarm-042
-git branch -d fix/issue-42-dynamo-query
-```
+### WIP caps
 
-### Worktree Lifecycle Hooks
+| Limit | Cap |
+|-------|-----|
+| `status:in-progress` issues | **8** project-wide |
+| Open PRs per contributor | **3** |
+| Parallel agent worktrees | **5** |
+| Simultaneous `priority:high` | **5** |
 
-When agents work in local worktrees, the GitHub project board has no visibility until a PR is opened. These scripts bridge the gap:
+### Key rules
 
-```bash
-# Signal "In progress" when starting work on an issue
-# Pushes branch to origin + adds status:in-progress label
-# This triggers project-sync to move the issue to "In progress"
-scripts/worktree-start.sh <issue-number>
-
-# Finalize completed worktrees: commit, rebase, push, create PRs
-# Processes all worktrees in /private/tmp/aws-swarm-*
-scripts/worktree-finalize.sh
+- **No untracked work.** Every branch/commit/PR references a GitHub issue.
+- **Issue is the spec.** Do not expand scope beyond what the issue describes.
+- **Branches without an issue number must not be pushed to origin.**
 
-# Finalize specific issues only
-scripts/worktree-finalize.sh --issues 310,297,287
+Full governance details: [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md), [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md), [docs/STRATEGY-OPERATIONS.md](docs/STRATEGY-OPERATIONS.md), [docs/SECURITY.md](docs/SECURITY.md).
 
-# Preview what would happen
-scripts/worktree-finalize.sh --dry-run
-```
+---
 
-**IMPORTANT:** When orchestrating parallel agent work in worktrees, you MUST:
-1. After creating each worktree, run `scripts/worktree-start.sh <issue-number>` to push the branch and label the issue. This makes work visible on the project board.
-2. After an agent finishes, run `scripts/worktree-finalize.sh --issues <issue-number>` to commit, push, and create the PR.
-3. If dispatching multiple agents at once, run `worktree-start.sh` for each issue immediately — don't wait until agents finish.
+## Versioning & Releases
 
-### Copilot Coding Agent
-
-Some issues can be delegated to GitHub Copilot's coding agent. It autonomously creates a PR from the issue description.
-
-```bash
-# Create issue and assign to Copilot in one step
-scripts/gh-create-issue.sh \
-  --title "fix(core): convert vitest tests to bun:test" \
-  --body "Details..." \
-  --labels "type:bug,priority:high,package:core" \
-  --copilot
-
-# Or assign Copilot to an existing issue
-scripts/gh-assign-copilot.sh 80
-```
-
-> The REST API cannot assign bot actors. These scripts use GraphQL internally.
-
-## Code Review Checklist
-
-- [ ] Code follows project style
-- [ ] Tests added/updated (when applicable)
-- [ ] Documentation updated
-- [ ] No secrets in code
-- [ ] Error handling is appropriate
-- [ ] Commit messages follow convention
-- [ ] Issue is referenced
-
-## Common Tasks
-
-### Creating a New Avatar
-
-Avatars are created and configured entirely through the chat-first admin interface. There is no local file template.
-
-```
-# Via Admin UI (recommended)
-1. Go to swarm.rati.chat
-2. Chat: "Create a new avatar called myagent"
-3. Follow the inline prompts to configure platforms and set secrets
-4. The avatar is stored in DynamoDB and deployed automatically
-
-# Via Admin API
-POST /api/avatars with a JSON body containing the avatar configuration.
-The admin API stores the config in DynamoDB and provisions secrets.
-```
-
-### Deploying
-
-**All deployments happen through GitHub Actions by pushing to main.** Do NOT run `cdk deploy` locally.
-
-```bash
-# Commit and push to trigger deployment
-git add .
-git commit -m "feat(infra): your change description"
-git push origin main
-
-# GitHub Actions will:
-# 1. Build all packages
-# 2. Deploy infra to staging automatically
-# 3. Deploy admin UI to staging automatically
-# 4. Production requires manual approval
-```
-
-To deploy manually via GitHub Actions:
-1. Go to Actions > Deploy Staging (or Deploy Production)
-2. Click "Run workflow"
-3. Select branch and confirm
-
-### Versioning
-
-We follow [Semantic Versioning](https://semver.org/) with GitHub Releases as the sole version source. There is no `version` field in `package.json`.
-
-| Bump | When | Examples |
-|------|------|----------|
-| **Patch** (`0.3.1`) | Bug fixes, config changes, removing broken features, dependency updates | Disable broken Lambda, fix CORS, update deps |
-| **Minor** (`0.4.0`) | New features, new platform adapters, significant refactors that change behavior | Add generic heartbeat, add wallet linking, semantic memory |
-| **Major** (`1.0.0`) | Breaking API changes, data model migrations, architectural rewrites | Change DynamoDB schema, remove/rename public API endpoints |
-
-**Rules:**
-- All version tags live on `main` — never tag a feature branch
-- Tags trigger the `deploy.yml` production workflow and `release-notes.yml`
-- Group related PRs into a single release when merged close together
-- Pre-1.0: minor bumps are fine for any non-trivial feature batch; patch for fixes
-
-### Releasing
-
-```bash
-# Create a patch release (default)
-./scripts/release.sh
-
-# Create a minor or major release
-./scripts/release.sh minor
-./scripts/release.sh major
-
-# Explicit version
-./scripts/release.sh v1.0.0
-```
-
-This creates a GitHub Release and tag on `main` via the `gh` CLI. The `release-notes.yml` workflow then overwrites the release body with AI-polished notes.
-
-### Adding a New Tool to Admin Avatar
-
-1. Add tool definition in `packages/admin-api/src/handlers/chat.ts`
-2. Implement tool execution in the switch statement
-3. Add any new services in `packages/admin-api/src/services/`
-4. Update types in `packages/admin-api/src/types.ts`
-5. Test locally, then deploy
-
-## Troubleshooting
-
-### Build Failures
-
-```bash
-# Clean and rebuild
-pnpm -r clean
-rm -rf node_modules
-pnpm install
-pnpm -r build
-```
-
-### CDK Issues
-
-```bash
-# Bootstrap CDK (first time)
-cd packages/infra
-npx cdk bootstrap
-
-# Diff to see changes
-npx cdk diff
-
-# Synth to validate
-npx cdk synth
-```
-
-### Lambda Issues
-
-```bash
-# View logs
-aws logs tail /aws/lambda/function-name --follow
-
-# Test locally with SAM
-sam local invoke -e event.json
-```
-
-## Security Guidelines
-
-1. **Never commit secrets** - Use Secrets Manager
-2. **Write-only secrets** - Admin can SET but not READ secret values
-3. **KMS encryption** - All secrets encrypted with CMK
-4. **Cloudflare Access** - Zero-trust authentication for admin
-5. **Least privilege IAM** - Lambda roles have minimal permissions
-6. **Audit logging** - All admin actions are logged
-
-### Telegram Webhook Security
-
-The Telegram webhook handler implements multiple security layers:
-
-1. **Secret Token Verification** - Each avatar has a unique `telegram_webhook_secret` stored in Secrets Manager. Telegram sends this in the `X-Telegram-Bot-Api-Secret-Token` header, which we verify using timing-safe comparison.
-
-2. **IP Verification** - Requests are checked against Telegram's official IP ranges (149.154.160.0/20, 91.108.4.0/22). This is a secondary check and can be disabled for proxied setups.
-
-3. **No Information Disclosure** - All error cases return 200 OK to prevent enumeration of valid avatar IDs.
-
-4. **Sanitized Logging** - Message content is never logged; only metadata (chat ID, message ID, text length) is recorded.
-
-### Structured Logging
-
-Handlers emit structured JSON logs with fields like `level`, `subsystem`, `event`, `avatarId`, and `requestId`. Avoid logging raw message content or secrets; log counts, lengths, and IDs instead.
-
-## Operating Model — Subagent Charter
-
-This section defines the governance rules for all AI subagents (Claude Code, Copilot, or any automated contributor) working in this repository.
-
-### Core Principle: Issue-Driven Execution
-
-Leadership directs work exclusively through GitHub issues. Subagents execute; they do not self-assign, speculate, or improvise work outside the issue tracker.
-
-### Rules
-
-1. **No untracked work.** Every branch, commit, and PR must reference a governing GitHub issue. If no issue exists for the work, do not start it — ask leadership to create one.
-
-2. **Issue is the spec.** The issue title, description, acceptance criteria, and labels are the authoritative scope. Do not expand scope beyond what the issue describes.
-
-3. **Branch naming enforces linkage.** All branches must follow `<type>/issue-<number>-<short-description>` (e.g., `fix/issue-42-dynamo-query`). Branches without an issue number must not be pushed to origin.
-
-4. **Prioritization comes from labels and milestones.** Use `priority:high`, `priority:medium`, `priority:low` labels and milestone assignments to determine execution order. Do not reorder work based on local judgment.
-
-5. **Leadership operates with read-only code access + issue management.** The operating model assumes leadership may never touch the codebase directly. All direction flows through issues; all execution flows through subagents and PRs.
-
-6. **One issue, one PR.** Each issue should produce exactly one PR. If an issue is too large, request that leadership split it into smaller issues rather than bundling unrelated changes.
-
-### Escalation Protocol
-
-When a subagent encounters ambiguity or blockers, follow this protocol:
-
-1. **Ambiguous scope** — Comment on the issue asking for clarification. Do not guess. Tag the issue with `status:blocked` if the ambiguity prevents any progress.
-2. **Blocked by another issue** — Add a comment like `Blocked by #XX` and apply the `status:blocked` label. Do not attempt workarounds that introduce untracked changes.
-3. **Discovered adjacent work** — If implementation reveals a necessary change outside the issue scope, open a new issue describing it and reference it from the current issue. Do not silently expand the PR.
-4. **Contradictory instructions** — If the issue conflicts with `CLAUDE.md`, existing code conventions, or another issue, comment on the issue describing the conflict and wait for resolution.
-
-### Good Issue Directives (Examples)
-
-These examples show the level of specificity that makes subagent execution reliable:
-
-```
-Title: fix(core): add retry logic to LLM adapter
-Labels: type:bug, priority:high, package:core
-Body:
-  - The LLM adapter in packages/core/src/services/llm.ts does not retry on 429/503.
-  - Add exponential backoff with jitter, max 3 retries.
-  - Add tests covering retry and exhaustion cases.
-  Acceptance criteria:
-  - [ ] llm.ts retries transient errors up to 3 times
-  - [ ] New test file llm-retry.test.ts passes
-  - [ ] No changes outside packages/core/
-```
-
-```
-Title: feat(admin-api): add avatar usage stats tool
-Labels: type:feature, priority:medium, package:admin
-Body:
-  - Add a new tool "get_avatar_usage" to the admin chat handler.
-  - It should query the billing table and return message count + token usage for the last 30 days.
-  - Wire it into the existing tool switch statement in chat.ts.
-  Acceptance criteria:
-  - [ ] Tool registered in chat.ts tool definitions
-  - [ ] Implementation queries DynamoDB billing table
-  - [ ] Returns structured JSON with messageCount and tokenUsage
-```
-
-### What This Means in Practice
-
-| Actor | Responsibilities |
-|-------|-----------------|
-| **Leadership** | Create issues, set labels/milestones, review PRs, approve deploys |
-| **Subagent** | Pick up assigned issues, implement within stated scope, open PRs, escalate blockers |
-| **Neither** | Untracked refactors, undocumented architecture changes, self-assigned work |
-
-## Prioritization and WIP Governance
-
-This section defines the rules that govern which work is started and in what order. These rules apply to all contributors (human and agent).
-
-### Risk-First Sequencing
-
-Reliability and security work precedes feature expansion by default. When choosing what to work on next, apply this priority order:
-
-| Priority | Category | Examples |
-|----------|----------|----------|
-| **P0** | Incidents | Production outages, confirmed security vulnerabilities |
-| **P1** | Reliability | DLQ growth, error rate breaches, alarm fatigue |
-| **P2** | Security hardening | Access review findings, exception expiries, audit gaps |
-| **P3** | Feature delivery | Roadmap features for the current milestone |
-| **P4** | Tech debt / quality | Refactoring, test coverage, documentation |
-
-Subagents must not start P3 or P4 work while any P0 or P1 issue is open and unassigned. If a subagent discovers a P0/P1 condition during feature work, it must open an issue and flag it in the current PR before continuing.
-
-### Active WIP Cap
-
-| Limit | Cap | Scope |
-|-------|-----|-------|
-| Total `status:in-progress` issues | **8** | Project-wide |
-| Open PRs per contributor | **3** | Per human or agent |
-| Parallel agent worktrees | **5** | Per orchestrator session |
-| Simultaneous `priority:high` issues | **5** | Project-wide |
-
-When the WIP cap is reached, no new items may be pulled into progress until existing items are completed, unblocked, or returned to backlog. Agents encountering a full queue must finish or close their current work before picking up new issues.
-
-### Escalation When Queue Exceeds Cap
-
-If the in-progress count exceeds the WIP cap during triage:
-
-1. Review all in-progress items for blockers. Items blocked >7 days are returned to backlog with `status:blocked`.
-2. Items without a linked branch or PR within 3 days of receiving `status:in-progress` are returned to backlog.
-3. If the queue is still over cap, demote the lowest-priority in-progress items back to backlog.
-4. Only after freeing a slot can a new item be pulled into progress.
-
-For the full governance rules including promotion/demotion criteria, see [docs/STRATEGY-OPERATIONS.md](docs/STRATEGY-OPERATIONS.md) and [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md).
-
-## Resources
-
-- [PLAN.md](./PLAN.md) - Detailed architecture and implementation plan
-- [.github/README.md](./.github/README.md) - CI/CD setup instructions
-- [Conventional Commits](https://www.conventionalcommits.org/)
-- [AWS CDK Docs](https://docs.aws.amazon.com/cdk/v2/guide/)
+SemVer via GitHub Releases (no `version` in package.json). Release with `./scripts/release.sh [patch|minor|major]`. Tags trigger production deploy.
