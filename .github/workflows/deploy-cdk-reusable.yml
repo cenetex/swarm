@@ -80,6 +80,21 @@ jobs:
         with:
           path: packages/layer/nodejs
           key: layer-${{ hashFiles('packages/layer/package.json', 'packages/layer/node-fetch-shim/**', 'packages/layer/abort-controller-shim/**') }}
+          restore-keys: |
+            layer-
+
+      - name: Restore CI build artifacts
+        id: build-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            packages/core/dist
+            packages/handlers/dist
+            packages/admin-api/dist
+            packages/mcp-server/dist
+            packages/profile-page/dist
+            packages/claude-code-worker/dist
+          key: build-dist-${{ github.sha }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -89,7 +104,14 @@ jobs:
           if [ "${{ steps.layer-cache.outputs.cache-hit }}" != "true" ]; then
             cd packages/layer && pnpm run build:layer && cd ../..
           fi
-          pnpm -r --filter '!admin-ui' build
+          if [ "${{ steps.build-cache.outputs.cache-hit }}" = "true" ]; then
+            echo "Reusing build artifacts from CI cache — skipping pnpm build (~45-90s savings)"
+            # Still need to build infra package (not cached) for CDK synthesis
+            pnpm --filter @swarm/infra build
+          else
+            echo "No CI build cache found — running full build"
+            pnpm -r --filter '!admin-ui' build
+          fi
 
       - name: Validate AWS environment secrets
         run: |
@@ -157,10 +179,6 @@ jobs:
 
           echo "⚠️  CDK bootstrap missing in ${ACCOUNT_ID}/${AWS_REGION}; bootstrapping now"
           npx cdk bootstrap "aws://${ACCOUNT_ID}/${AWS_REGION}" --require-approval never
-
-      - name: Clean stale CDK output
-        working-directory: packages/infra
-        run: rm -rf cdk.out
 
       - name: Delete broken stacks
         env:
@@ -298,43 +316,20 @@ jobs:
       - name: CDK Deploy
         if: steps.diff.outputs.skip != 'true'
         working-directory: packages/infra
-        env:
-          USE_EXISTING_RESOURCES: ${{ inputs.use_existing_resources && 'true' || 'false' }}
-          USE_EXISTING_BUCKETS: ${{ inputs.use_existing_buckets && 'true' || 'false' }}
-          SKIP_DOMAIN_ALIASES: ${{ inputs.skip_domain_aliases && 'true' || 'false' }}
-          STACK_HASH: ${{ inputs.stack_hash }}
-          ADMIN_CERTIFICATE_ARN: ${{ secrets.ADMIN_CERTIFICATE_ARN || '' }}
-          MEDIA_CDN_URL: ${{ secrets.MEDIA_CDN_URL || '' }}
         run: |
-          ADMIN_DOMAIN=$(echo "${{ inputs.admin_url }}" | sed -E 's|^https?://||' | cut -d/ -f1)
-          EXTRA_CONTEXT_ARGS="-c adminDomain=${ADMIN_DOMAIN}"
-
-          if [ "${{ inputs.environment }}" = "production" ] && [ -z "$ADMIN_CERTIFICATE_ARN" ]; then
-            echo "::error::Missing required environment secret ADMIN_CERTIFICATE_ARN for production"
-            exit 1
-          fi
-
-          if [ -n "$ADMIN_CERTIFICATE_ARN" ]; then
-            EXTRA_CONTEXT_ARGS="${EXTRA_CONTEXT_ARGS} -c adminCertificateArn=${ADMIN_CERTIFICATE_ARN}"
-          fi
-
-          if [ -n "$MEDIA_CDN_URL" ]; then
-            EXTRA_CONTEXT_ARGS="${EXTRA_CONTEXT_ARGS} -c mediaCdnUrl=${MEDIA_CDN_URL}"
-          fi
-
           HOTSWAP=""
           if [ "${{ inputs.use_hotswap && 'true' || 'false' }}" = "true" ]; then
             HOTSWAP="--hotswap-fallback"
           fi
           STACK="${{ inputs.stack }}"
 
-          # Reuse cdk.out from diff step (same context args) to skip re-synthesis
+          # Reuse cdk.out from diff step to skip redundant re-synthesis (~30-60s savings)
           if [ -n "$STACK" ]; then
-            npx cdk deploy "$STACK" --require-approval never --concurrency 10 $HOTSWAP -c environment=${{ inputs.cdk_env }} -c useExistingResources=$USE_EXISTING_RESOURCES -c useExistingBuckets=$USE_EXISTING_BUCKETS -c skipDomainAliases=$SKIP_DOMAIN_ALIASES -c stackHash=$STACK_HASH ${EXTRA_CONTEXT_ARGS}
+            npx cdk deploy "$STACK" --app cdk.out --require-approval never --concurrency 10 $HOTSWAP
             exit 0
           fi
 
-          npx cdk deploy --all --require-approval never --concurrency 10 $HOTSWAP -c environment=${{ inputs.cdk_env }} -c useExistingResources=$USE_EXISTING_RESOURCES -c useExistingBuckets=$USE_EXISTING_BUCKETS -c skipDomainAliases=$SKIP_DOMAIN_ALIASES -c stackHash=$STACK_HASH ${EXTRA_CONTEXT_ARGS}
+          npx cdk deploy --all --app cdk.out --require-approval never --concurrency 10 $HOTSWAP
 
       - name: Skip Deploy (no changes)
         if: steps.diff.outputs.skip == 'true'
