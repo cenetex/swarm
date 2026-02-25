@@ -1,6 +1,17 @@
-# AWS Swarm
+# Swarm
 
-AI avatar stack for Telegram-first social bots, with a chat-based admin UI, Solana wallet authentication, NFT gating, channel-aware webhook handler, reusable media/gallery services, and an SQS-driven processing pipeline.
+Run persistent AI avatars across Telegram, Discord, and the web -- with the guardrails, memory, and operational controls a real operator needs. Set up through chat. Deploy in minutes. Scale without scaling your ops team.
+
+## Why Swarm
+
+- **Your avatar, live in minutes.** Create an AI avatar with a custom persona, connect it to Telegram, and get your first live response -- all through a guided chat interface, no config files or CLI required.
+- **Persistent personality and memory.** Avatars remember conversations across sessions and platforms. Configurable memory retention with TTL, delete, and export controls.
+- **Safe autonomy with clear limits.** Daily usage limits for messages, media, voice, and tool calls prevent runaway costs. Entitlement tiers (Free / Pro / Enterprise) enforce boundaries automatically.
+- **Reliable by design.** Queue-based processing ensures messages are never silently dropped. Correlation IDs, structured logging, and CloudWatch dashboards give you operational visibility from day one.
+- **Multi-platform from a single config.** Deploy the same avatar to Telegram, Discord, X, and web with platform-specific adapters that handle the differences.
+- **Chat-first operations.** Create avatars, configure personas, set secrets, deploy to platforms, and monitor usage -- all through natural language conversation in the admin interface.
+
+For the full positioning and messaging framework, see [docs/ICP-MESSAGING-MATRIX.md](docs/ICP-MESSAGING-MATRIX.md).
 
 ## Start Here by Goal
 - **Ship or debug runtime behavior**: [AGENTS.md](AGENTS.md) for triage/test workflow, then [docs/RUNBOOK.md](docs/RUNBOOK.md) and [docs/MONITORING-OPERATOR-GUIDE.md](docs/MONITORING-OPERATOR-GUIDE.md) for incidents.
@@ -8,12 +19,12 @@ AI avatar stack for Telegram-first social bots, with a chat-based admin UI, Sola
 - **Pick roadmap work**: [ROADMAP.md](ROADMAP.md), [PLAN.md](PLAN.md), [docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md](docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md), [docs/ROADMAP-M2-MULTI-PLATFORM.md](docs/ROADMAP-M2-MULTI-PLATFORM.md).
 - **Operate safely in production**: [docs/SECURITY.md](docs/SECURITY.md), [docs/PRODUCTION-DEPLOYMENT-CHECKLIST.md](docs/PRODUCTION-DEPLOYMENT-CHECKLIST.md), and [docs/OPERATIONS-REPORTS.md](docs/OPERATIONS-REPORTS.md).
 
-## Highlights
-- **Solana Wallet Authentication**: Sign in with Phantom wallet (QR code on mobile, browser extension on desktop). NFT gating controls avatar creation and inhabitation.
+## Technical Highlights
+- **Solana Wallet Authentication**: Sign in with Phantom wallet (QR code on mobile, browser extension on desktop). NFT gating optionally controls avatar creation and inhabitation.
 - Chat-driven admin console (React) for creating and configuring avatars, syncing chat history across devices, and driving setup actions through LLM tool calls.
 - Telegram webhook handler with channel-aware buffering, conversation history, deduplication, and tool use (image/video generation, voice messages, gallery replay, Solana wallets).
 - Shared services for gallery, media jobs, wallet balances, voice transcription/TTS, and credit limits to keep tools safe and predictable.
-- Pluggable platform adapters (Telegram/Twitter/Web) and an SQS pipeline (ingest → message-processor → response-sender) so avatars scale horizontally.
+- Pluggable platform adapters (Telegram/Twitter/Web) and an SQS pipeline (ingest -> message-processor -> response-sender) so avatars scale horizontally.
 - Infrastructure packaged for AWS (DynamoDB, SQS, Secrets Manager, S3/CDN) with CDK constructs in the repo.
 
 ## Component Map
@@ -80,7 +91,8 @@ Roadmaps and planning:
 - M2 (Multi-platform): [docs/ROADMAP-M2-MULTI-PLATFORM.md](docs/ROADMAP-M2-MULTI-PLATFORM.md)
 - Telegram operator quickstart: [docs/PLAYBOOK-TELEGRAM-QUICKSTART.md](docs/PLAYBOOK-TELEGRAM-QUICKSTART.md)
 - Next-milestone task list: [PLAN.md](PLAN.md)
-- Positioning and messaging pitchbook: [docs/PITCHBOOK.md](docs/PITCHBOOK.md)
+- ICP positioning and messaging: [docs/ICP-MESSAGING-MATRIX.md](docs/ICP-MESSAGING-MATRIX.md)
+- GTM strategy: [docs/GTM-STRATEGY-M2.md](docs/GTM-STRATEGY-M2.md)
 - Automated cost/activity reporting: [docs/OPERATIONS-REPORTS.md](docs/OPERATIONS-REPORTS.md)
 
 Local dev expects AWS credentials and the core tables/buckets configured (see CDK stacks in [packages/infra](packages/infra)). Environment variables most handlers rely on: `ADMIN_TABLE`, `STATE_TABLE`, `ACTIVITY_TABLE`, `MESSAGE_QUEUE_URL`, `RESPONSE_QUEUE_URL`, `MEDIA_BUCKET`, `SECRETS_ARN`, and `LLM_API_KEY_SECRET_ARN`.

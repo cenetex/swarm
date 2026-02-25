@@ -20,8 +20,7 @@ This strategy complements:
 - `PLAN.md`
 - `docs/BILLING-STRATEGY.md`
 - `docs/PRIVY-STRIPE-MIGRATION.md`
-- `docs/MARKETING-STRATEGY-M2.md`
-- `docs/PITCHBOOK.md`
+- `docs/ICP-MESSAGING-MATRIX.md` -- canonical messaging matrix with proof claims and activation paths
 
 ## 2) Strategic Context
 
@@ -146,61 +145,32 @@ Partner/community channels:
 1. Telegram/Discord operator communities.
 2. Web3-native communities where identity and ownership narratives resonate.
 
-## 8) Messaging Matrix (v1)
+## 8) Messaging Matrix
+
+> **Canonical source:** [ICP-MESSAGING-MATRIX.md](ICP-MESSAGING-MATRIX.md)
+>
+> The full messaging matrix with problem/promise/proof/CTA by ICP, traceable proof claims, activation paths, and a messaging consistency checklist lives in the dedicated document above. This section retains a summary for quick reference.
 
 ### Creator-Operator
 
-Problem:
-
-- Bot setups are brittle and hard to sustain.
-
-Promise:
-
-- Launch a persistent avatar with predictable behavior and clear limits.
-
-Proof:
-
-- Runtime guardrails, entitlement enforcement, channel-aware processing, operational diagnostics.
-
-Primary CTA:
-
-- Launch first avatar and reach first live response.
+- **Problem:** Bot setups are brittle and hard to sustain.
+- **Promise:** Launch a persistent avatar with a real personality, working memory, and clear operational limits -- in under 10 minutes, through a chat interface.
+- **Proof:** Guided chat setup (median F2->F3 target: 10 min), persistent memory with configurable retention, daily usage limits, queue-based message delivery.
+- **CTA:** Create your first avatar and get your first live Telegram response.
 
 ### Small Team / Agency
 
-Problem:
-
-- Scaling from one bot to many creates reliability and governance drift.
-
-Promise:
-
-- Operate multiple avatars with clear control and visibility.
-
-Proof:
-
-- Shared runtime patterns, account model, observability and issue workflows.
-
-Primary CTA:
-
-- Move from single-avatar to multi-avatar managed operations.
+- **Problem:** Scaling from one bot to many creates reliability and governance drift.
+- **Promise:** Operate a fleet of avatars with shared infrastructure, per-avatar cost controls, and centralized visibility -- all managed through conversation.
+- **Proof:** Multi-tenant isolation, per-avatar cost tracking, CloudWatch dashboards with correlation IDs, Pro tier with higher limits.
+- **CTA:** Deploy your second avatar and see fleet-level operations in action.
 
 ### Enterprise Design Partner
 
-Problem:
-
-- Autonomous systems are risky without governance and audit.
-
-Promise:
-
-- Controlled automation with explicit policy and operational visibility.
-
-Proof:
-
-- Auditability direction, policy-first architecture, roadmap to org governance.
-
-Primary CTA:
-
-- Join design partner program for governance-focused workloads.
+- **Problem:** Autonomous systems are risky without governance and audit.
+- **Promise:** Controlled AI avatar automation with immutable audit trails, policy-first architecture, and a clear path to organizational governance.
+- **Proof:** Immutable admin audit trail, tool gating, KMS-encrypted secrets, webhook security layers, zero-trust admin access.
+- **CTA:** Apply to the design partner program for governance-focused AI avatar workloads.
 
 ## 9) Funnel and KPI Framework
 

@@ -84,7 +84,7 @@ Query: `milestone:"Roadmap: Later" is:open` (4 open as of 2026-02-23)
 
 - [#208](https://github.com/cenetex/aws-swarm/issues/208) -- Break up admin-api monolith (60K LOC, 50% of codebase).
 - [#270](https://github.com/cenetex/aws-swarm/issues/270) -- M2 GTM execution epic.
-- [#271](https://github.com/cenetex/aws-swarm/issues/271) -- Operationalize ICP positioning and messaging matrix.
+- [#271](https://github.com/cenetex/aws-swarm/issues/271) -- Operationalize ICP positioning and messaging matrix. See [docs/ICP-MESSAGING-MATRIX.md](docs/ICP-MESSAGING-MATRIX.md).
 - [#274](https://github.com/cenetex/aws-swarm/issues/274) -- Publish ICP launch playbooks and demo checklists.
 - [#276](https://github.com/cenetex/aws-swarm/issues/276) -- Define M2 design-partner program and qualification rubric.
 
@@ -98,6 +98,10 @@ Query: `milestone:"Roadmap: Later" is:open` (4 open as of 2026-02-23)
 Strategic PRDs:
 - [docs/PRD-M3-PERSISTENT-SWARM-PLATFORM.md](docs/PRD-M3-PERSISTENT-SWARM-PLATFORM.md)
 - [docs/PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md](docs/PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md)
+
+GTM and positioning:
+- [docs/GTM-STRATEGY-M2.md](docs/GTM-STRATEGY-M2.md) -- ICP prioritization, funnel KPIs, channel strategy
+- [docs/ICP-MESSAGING-MATRIX.md](docs/ICP-MESSAGING-MATRIX.md) -- canonical messaging matrix with proof claims and activation paths
 
 ## Risk-first sequencing
 
