@@ -168,14 +168,15 @@ jobs:
               USE_EXISTING_BUCKETS="true"
               SKIP_DOMAIN_ALIASES="false"
               RUN_PROD_SMOKE="true"
+              USE_HOTSWAP="false"
             else
               USE_EXISTING_BUCKETS="false"
               SKIP_DOMAIN_ALIASES="false"
               RUN_PROD_SMOKE="false"
+              USE_HOTSWAP="true"
             fi
             STACK_HASH=""
             STACK=""
-            USE_HOTSWAP="false"
             RUN_BROWSER_TESTS="false"
           fi
 
