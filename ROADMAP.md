@@ -121,6 +121,21 @@ For the full rule set (R1-R4) and enforcement mechanisms, see [docs/STRATEGY-OPE
 
 A maximum of **8** issues may carry the `status:in-progress` label at any time. When the cap is reached, existing items must be completed, unblocked, or returned to the backlog before new items are pulled into Now. See [docs/STRATEGY-OPERATIONS.md -- Constrained Active Queue](docs/STRATEGY-OPERATIONS.md#2-constrained-active-queue-wip-cap) for the full overflow protocol and per-contributor limits.
 
+## Portfolio allocation policy
+
+Engineering effort is allocated across four buckets. Allocation targets, rebalancing rules, and the quarterly review cadence are defined in [docs/STRATEGY-OPERATIONS.md -- Portfolio Allocation Rules](docs/STRATEGY-OPERATIONS.md#portfolio-allocation-rules). The summary below is provided for quick reference; defer to STRATEGY-OPERATIONS.md for enforcement details.
+
+| Bucket | Target | Issue label mapping |
+|--------|--------|---------------------|
+| Reliability + Security | >= 30% | `type:bug` + `priority:high`, `type:security`, `type:infra` (when reliability-focused) |
+| Feature Delivery | 40-50% | `type:feature` |
+| Tech Debt + Quality | 10-20% | `type:tech-debt`, `type:docs`, `type:refactor` |
+| Operational Tooling | 5-10% | `type:infra` (when tooling-focused), `ci` scope commits |
+
+During incidents (scorecard health grade RED), feature delivery capacity is reallocated to reliability until the grade returns to YELLOW or GREEN. See [docs/STRATEGY-OPERATIONS.md -- Incident Rebalancing](docs/STRATEGY-OPERATIONS.md#incident-rebalancing) for the full rebalancing protocol.
+
+Allocation assumptions are reviewed quarterly alongside the [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) threshold tuning (Jan, Apr, Jul, Oct). See [docs/ISSUE-GOVERNANCE.md -- Portfolio Allocation Label Mapping](docs/ISSUE-GOVERNANCE.md#portfolio-allocation-label-mapping) for how issue labels map to allocation buckets during measurement.
+
 ## Triage and review cadence
 
 Issue reprioritization follows the cadence defined in [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md):
