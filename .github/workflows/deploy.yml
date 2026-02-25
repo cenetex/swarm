@@ -145,6 +145,15 @@ jobs:
             USE_HOTSWAP="${INPUT_USE_HOTSWAP:-false}"
             RUN_BROWSER_TESTS="${INPUT_RUN_BROWSER_TESTS:-false}"
             RUN_PROD_SMOKE="${INPUT_RUN_PROD_SMOKE:-false}"
+
+            # Production S3 buckets have DeletionPolicy: Retain, so they
+            # persist across stack deletions.  Auto-enable useExistingBuckets
+            # for production dispatches to prevent "bucket already exists"
+            # failures.  Operators can still override via the checkbox.
+            if [ "$ENV" = "production" ] && [ "$USE_EXISTING_BUCKETS" = "false" ]; then
+              USE_EXISTING_BUCKETS="true"
+              echo "::notice::Auto-enabled useExistingBuckets for production (S3 buckets have RETAIN policy)"
+            fi
           else
             # For push/tag triggers, set safe defaults per environment.
             # Both staging and production use useExistingResources=true (set in
