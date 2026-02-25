@@ -416,6 +416,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         envelope.metadata.responseReason = evaluation.reason;
         envelope.metadata.priority = evaluation.priority;
 
+        // Send typing indicator immediately so the user sees instant feedback
+        try {
+          await telegramAdapter.sendTypingIndicator(envelope.conversationId);
+        } catch { /* non-critical */ }
+
         // Queue for processing
         await stateService.addMessageToChannel(
           avatarId,
@@ -651,6 +656,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       normalizedChatType,
       envelope.metadata.chatTitle
     );
+
+    // Send typing indicator immediately so group members see instant feedback
+    try {
+      await telegramAdapter.sendTypingIndicator(envelope.conversationId);
+    } catch { /* non-critical */ }
 
     await sendSqsMessage({
       QueueUrl: MESSAGE_QUEUE_URL,
