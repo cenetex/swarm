@@ -61,6 +61,29 @@ const MAX_TOOL_ITERATIONS = 5;
 const REPLY_CONTEXT_MAX_LENGTH = 200;
 
 /**
+ * Lightweight Telegram typing indicator via raw HTTP (no Grammy dependency).
+ * Returns a callback that can be called repeatedly to refresh the indicator
+ * (Telegram typing expires after ~5 seconds).
+ */
+function createTelegramTypingSender(
+  secrets: Record<string, string>,
+  chatId: string,
+): (() => Promise<void>) | undefined {
+  const botToken = secrets.TELEGRAM_BOT_TOKEN || secrets.telegram_bot_token;
+  if (!botToken) return undefined;
+
+  return async () => {
+    try {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendChatAction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
+      });
+    } catch { /* non-critical */ }
+  };
+}
+
+/**
  * Build a reply-to annotation for a message that references another message via replyToMessageId.
  *
  * If the referenced message is already visible in the LLM context window, returns undefined
@@ -430,7 +453,8 @@ async function generateResponse(
   toolClient: ReturnType<typeof createToolClient>,
   toolContext: ToolContext,
   avatarRuntime: AvatarRuntime,
-  channelHistory?: ContextMessage[]
+  channelHistory?: ContextMessage[],
+  refreshTyping?: () => Promise<void>,
 ): Promise<SwarmResponse> {
   await maybeTranscribeAudio(envelope, toolClient, toolContext, avatarRuntime.avatarConfig);
   const brainService = createRuntimeBrainService(stateService, avatarRuntime.avatarConfig.brain);
@@ -620,6 +644,9 @@ async function generateResponse(
 
   while (iterations < MAX_TOOL_ITERATIONS) {
     iterations++;
+
+    // Refresh typing indicator before each LLM round-trip (expires after ~5s)
+    if (refreshTyping) await refreshTyping();
 
     const llmResponse = await callLLM(messages, enabledTools, avatarRuntime.avatarConfig.llm, avatarRuntime.secrets);
     totalTokens += 100; // Approximate, would need actual count from API
@@ -950,7 +977,15 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
         replyToMessageId: envelope.messageId,
       };
 
-      const response = await generateResponse(envelope, toolClient, toolContext, avatarRuntime, updatedState.recentMessages);
+      // Send typing indicator before LLM call so the user sees feedback
+      // during the slowest phase of processing.  The callback is also passed
+      // to generateResponse() to refresh between tool iterations.
+      const refreshTyping = envelope.platform === 'telegram'
+        ? createTelegramTypingSender(avatarRuntime.secrets, envelope.conversationId)
+        : undefined;
+      if (refreshTyping) await refreshTyping();
+
+      const response = await generateResponse(envelope, toolClient, toolContext, avatarRuntime, updatedState.recentMessages, refreshTyping);
 
       metrics.trackDuration('ProcessingLatency', recordStartTime);
       metrics.incrementCounter('MessagesProcessed');
