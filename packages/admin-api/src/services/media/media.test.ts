@@ -15,9 +15,9 @@
  * @see https://github.com/atimics/aws-swarm/issues/353
  */
 import { describe, it, expect } from 'bun:test';
-import { DEFAULT_MODELS, getReplicateVersion } from './models-registry.js';
-import type { AICapability, AvatarRecord } from '../types.js';
-import { buildMediaUrl, canonicalizeMediaUrl, canonicalizeMediaUrls } from '../utils/media-url.js';
+import { DEFAULT_MODELS, getReplicateVersion } from '../models-registry.js';
+import type { AICapability, AvatarRecord } from '../../types.js';
+import { buildMediaUrl, canonicalizeMediaUrl, canonicalizeMediaUrls } from '../../utils/media-url.js';
 
 // =============================================================================
 // Existing: Media URL Generation

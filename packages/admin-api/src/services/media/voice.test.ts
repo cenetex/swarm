@@ -6,8 +6,8 @@
  * @see packages/admin-api/src/services/voice.ts
  */
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_MODELS } from './models-registry.js';
-import type { AICapability, AvatarRecord } from '../types.js';
+import { DEFAULT_MODELS } from '../models-registry.js';
+import type { AICapability, AvatarRecord } from '../../types.js';
 
 describe('Voice Integration Config Model Selection', () => {
   /**
