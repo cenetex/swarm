@@ -83,19 +83,6 @@ jobs:
           restore-keys: |
             layer-
 
-      - name: Restore CI build artifacts
-        id: build-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: |
-            packages/core/dist
-            packages/handlers/dist
-            packages/admin-api/dist
-            packages/mcp-server/dist
-            packages/profile-page/dist
-            packages/claude-code-worker/dist
-          key: build-dist-${{ github.sha }}
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -104,14 +91,7 @@ jobs:
           if [ "${{ steps.layer-cache.outputs.cache-hit }}" != "true" ]; then
             cd packages/layer && pnpm run build:layer && cd ../..
           fi
-          if [ "${{ steps.build-cache.outputs.cache-hit }}" = "true" ]; then
-            echo "Reusing build artifacts from CI cache — skipping pnpm build (~45-90s savings)"
-            # Still need to build infra package (not cached) for CDK synthesis
-            pnpm --filter @swarm/infra build
-          else
-            echo "No CI build cache found — running full build"
-            pnpm -r --filter '!admin-ui' build
-          fi
+          pnpm -r --filter '!admin-ui' build
 
       - name: Validate AWS environment secrets
         run: |

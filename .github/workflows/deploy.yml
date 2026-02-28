@@ -10,7 +10,18 @@ on:
       - 'docs/**'
       - '*.md'
       - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/ticket-health.yml'
+      - '.github/workflows/security-exceptions.yml'
+      - '.github/workflows/gtm-kpi-report.yml'
+      - '.github/workflows/leadership-scorecard.yml'
+      - '.github/workflows/access-review.yml'
       - 'issues/**'
+      - 'scripts/ticket-health-report.sh'
+      - 'scripts/leadership-scorecard.sh'
+      - 'scripts/access-review.sh'
+      - 'scripts/generate-gtm-kpi-report.mjs'
+      - 'LICENSE'
+      - '.editorconfig'
     tags: ['v*']
 
   workflow_dispatch:
