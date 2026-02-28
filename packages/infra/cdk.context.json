@@ -123,7 +123,7 @@
       "useExistingResources": true,
       "secretPrefix": "swarm",
       "enableSharedHandlers": true,
-      "enableDiscordGateway": false,
+      "enableDiscordGateway": true,
       "useExistingBuckets": true,
       "mediaCdnUrl": "https://d3uksraz0ki2cr.cloudfront.net",
       "adminDomain": "swarm.rati.chat",
