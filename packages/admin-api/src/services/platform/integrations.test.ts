@@ -11,7 +11,7 @@ import {
   CONFIGURABLE_INTEGRATIONS,
   getAvailableModelsForIntegration,
 } from './integrations.js';
-import type { IntegrationType, AICapability } from '../types.js';
+import type { IntegrationType, AICapability } from '../../types.js';
 
 describe('Integration Metadata', () => {
   describe('INTEGRATION_METADATA structure', () => {

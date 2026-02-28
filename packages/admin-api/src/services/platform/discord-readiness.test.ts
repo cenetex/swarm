@@ -10,8 +10,8 @@ import {
   evaluateActivationReadiness,
   type ActivationReadinessContext,
   type ActivationReadinessDeps,
-} from './activation-readiness.js';
-import type { AvatarRecord } from '../types.js';
+} from '../activation-readiness.js';
+import type { AvatarRecord } from '../../types.js';
 import type { DiscordConnectionStatus } from './discord.js';
 
 // ---------------------------------------------------------------------------

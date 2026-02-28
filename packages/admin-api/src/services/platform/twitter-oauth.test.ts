@@ -15,7 +15,7 @@ import {
   _resetCacheForTesting,
   type TwitterOAuthServiceDeps,
 } from './twitter-oauth.js';
-import type { UserSession } from '../types.js';
+import type { UserSession } from '../../types.js';
 
 // Mock TwitterApi class
 class MockTwitterApi {
