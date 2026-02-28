@@ -7,6 +7,7 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -105,7 +106,10 @@ export class DiscordGatewayWorker extends Construct {
     this.taskDefinition.addContainer('DiscordGateway', {
       image: ecs.ContainerImage.fromAsset(
         path.resolve(__dirname, '../../../..'),
-        { file: 'packages/handlers/Dockerfile.discord-gateway' }
+        {
+          file: 'packages/handlers/Dockerfile.discord-gateway',
+          platform: ecr_assets.Platform.LINUX_ARM64,
+        }
       ),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'discord-gw',
