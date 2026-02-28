@@ -8,10 +8,10 @@ import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import * as avatarService from '../../services/avatars.js';
-import * as entitlementsService from '../../services/entitlements.js';
-import { getEffectiveLimitsForAvatar, applyOrbHolderBoost } from '../../services/runtime-limits.js';
-import { getToolStatusStructured } from '../../services/credits.js';
-import { getEnergyStatus, getEnergyBankBalance } from '../../services/energy.js';
+import * as entitlementsService from '../../services/billing/entitlements.js';
+import { getEffectiveLimitsForAvatar, applyOrbHolderBoost } from '../../services/billing/runtime-limits.js';
+import { getToolStatusStructured } from '../../services/billing/credits.js';
+import { getEnergyStatus, getEnergyBankBalance } from '../../services/billing/energy.js';
 import { getUsageHistory } from '../../services/usage-history.js';
 import { getAvatarUsageRollups } from '../../services/token-accounting.js';
 

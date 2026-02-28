@@ -12,7 +12,7 @@ import {
   deleteSession,
 } from '../services/wallet-auth.js';
 import { getAccountSummary, getOrCreateAccountForWallet } from '../services/accounts.js';
-import { createLinkWalletChallenge, verifyLinkWallet } from '../services/wallet-link.js';
+import { createLinkWalletChallenge, verifyLinkWallet } from '../services/web3/wallet-link.js';
 import { getAccountGateStatus } from '../services/account-gate.js';
 import {
   getClearSessionCookies,
@@ -22,20 +22,20 @@ import {
 import { getCorsHeaders } from '../http/cors.js';
 import { parseJsonBody } from '../http/request-body.js';
 import { isRequestValidationError } from '../middleware/validate.js';
-import { getGateStatus } from '../services/nft-gate.js';
-import { recordBurn } from '../services/burn-stats.js';
-import { getBurnStats } from '../services/burn-stats.js';
-import { getEnergyStatus, getEnergyBankBalance } from '../services/energy.js';
-import { getEntitlement } from '../services/entitlements.js';
+import { getGateStatus } from '../services/web3/nft-gate.js';
+import { recordBurn } from '../services/web3/burn-stats.js';
+import { getBurnStats } from '../services/web3/burn-stats.js';
+import { getEnergyStatus, getEnergyBankBalance } from '../services/billing/energy.js';
+import { getEntitlement } from '../services/billing/entitlements.js';
 import {
   getEffectiveLimitsForAvatar,
   applyOrbHolderBoost,
   toRuntimeLimits,
   syncRuntimeLimitsToState,
   type RuntimeAugmentations,
-} from '../services/runtime-limits.js';
+} from '../services/billing/runtime-limits.js';
 import { getAvatar } from '../services/avatars.js';
-import { checkNFTGate } from '../services/nft-gate.js';
+import { checkNFTGate } from '../services/web3/nft-gate.js';
 import { handlePrivyAuth } from './privy-auth.js';
 import {
   preflightAscend,

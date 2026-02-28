@@ -6,7 +6,7 @@
  * Used for dynamic energy refill rate calculation
  */
 import { Connection, PublicKey } from '@solana/web3.js';
-import type { AvatarRecord } from '../types.js';
+import type { AvatarRecord } from '../../types.js';
 
 // Cache token balances for 5 minutes to avoid excessive RPC calls
 const BALANCE_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -27,8 +27,8 @@ let defaultDeps: WalletBalanceDeps | null = null;
 
 async function getDefaultDeps(): Promise<WalletBalanceDeps> {
   if (!defaultDeps) {
-    const { getAvatar } = await import('./avatars.js');
-    const { getAccountIdForIdentity, getAccountIdentities } = await import('./accounts/index.js');
+    const { getAvatar } = await import('../avatars.js');
+    const { getAccountIdForIdentity, getAccountIdentities } = await import('../accounts/index.js');
     
     defaultDeps = {
       getAvatar,

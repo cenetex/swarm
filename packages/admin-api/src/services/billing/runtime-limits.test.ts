@@ -6,7 +6,7 @@ import {
   ORB_HOLDER_BOOST,
   type EffectiveLimitsResult,
 } from './runtime-limits.js';
-import { PLAN_DEFAULTS } from '../types.js';
+import { PLAN_DEFAULTS } from '../../types.js';
 
 describe('runtime-limits.getEffectiveLimitsForAvatar', () => {
   it('treats trial entitlement as entitled', () => {

@@ -19,7 +19,7 @@ import {
 } from '@swarm/core/services';
 import * as mediaJobs from './media-jobs.js';
 import * as gallery from './gallery.js';
-import * as credits from './credits.js';
+import * as credits from './billing/credits.js';
 import { _getSecretValueInternal } from './secrets.js';
 import { getReplicateVersion } from './models-registry.js';
 import { validateReplicateInputWithSchema } from './replicate-schema.js';

@@ -15,8 +15,8 @@
  */
 import { Connection, type VersionedTransactionResponse } from '@solana/web3.js';
 import { UpdateCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
-import type { AvatarRecord } from '../types.js';
-import { getDynamoClient } from './dynamo-client.js';
+import type { AvatarRecord } from '../../types.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;

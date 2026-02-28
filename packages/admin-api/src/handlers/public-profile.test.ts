@@ -5,20 +5,20 @@ vi.mock('../services/avatars.js', () => ({
   getAvatar: vi.fn(),
 }));
 
-vi.mock('../services/burn-stats.js', () => ({
+vi.mock('../services/web3/burn-stats.js', () => ({
   getBurnStatsWithProgress: vi.fn(),
   getBurnHistory: vi.fn(),
   getAvatarRank: vi.fn(),
 }));
 
-vi.mock('../services/energy.js', () => ({
+vi.mock('../services/billing/energy.js', () => ({
   getEnergyStatus: vi.fn(),
 }));
 
 import { handler } from './public-profile.js';
 import * as avatars from '../services/avatars.js';
-import * as burnStats from '../services/burn-stats.js';
-import * as energy from '../services/energy.js';
+import * as burnStats from '../services/web3/burn-stats.js';
+import * as energy from '../services/billing/energy.js';
 
 // Get references to the mocked functions (cast instead of vi.mocked for bun compat)
 const getAvatarMock = avatars.getAvatar as unknown as ReturnType<typeof vi.fn>;

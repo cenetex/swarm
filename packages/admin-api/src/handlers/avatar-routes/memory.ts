@@ -11,7 +11,7 @@ import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { logger } from '@swarm/core';
 import * as avatarService from '../../services/avatars.js';
 import * as memoryService from '../../services/memory.js';
-import { isMemoryEnabled } from '../../services/entitlements.js';
+import { isMemoryEnabled } from '../../services/billing/entitlements.js';
 
 export async function handleMemoryRoutes(
   ctx: RouteContext,

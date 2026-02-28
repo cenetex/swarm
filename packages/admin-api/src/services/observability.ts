@@ -8,7 +8,7 @@ import * as avatarLogs from './avatar-observability.js';
 import * as autoIssues from './auto-issues.js';
 import * as avatarEvents from './avatar-observability.js';
 import * as mediaJobs from './media-jobs.js';
-import * as credits from './credits.js';
+import * as credits from './billing/credits.js';
 
 const sqsClient = new SQSClient({});
 

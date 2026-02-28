@@ -12,7 +12,7 @@ import { randomBytes } from 'crypto';
 import { logger } from '@swarm/core';
 import { PrivyClient, type User as PrivyUser } from '@privy-io/node';
 
-import { checkNFTGate, type NFTGateResult } from './nft-gate.js';
+import { checkNFTGate, type NFTGateResult } from './web3/nft-gate.js';
 import type { UserRecord, SessionRecord } from './wallet-auth.js';
 import { recordAccountSession } from './accounts.js';
 import {
@@ -20,7 +20,7 @@ import {
   type OnboardingAuthFailureResult,
   type OnboardingAuthOutcome,
 } from './accounts/onboarding-auth-resolver.js';
-import { upsertActiveUserSlotOnLogin } from './active-user-limit.js';
+import { upsertActiveUserSlotOnLogin } from './billing/active-user-limit.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { emitAuthEvent } from './funnel-emitter.js';
 

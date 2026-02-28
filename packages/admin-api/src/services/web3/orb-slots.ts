@@ -3,8 +3,8 @@ import {
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { getGateStatus } from './nft-gate.js';
-import type { AvatarRecord } from '../types.js';
-import { getDynamoClient } from './dynamo-client.js';
+import type { AvatarRecord } from '../../types.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 

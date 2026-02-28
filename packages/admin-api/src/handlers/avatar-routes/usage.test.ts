@@ -20,16 +20,16 @@ vi.mock('../../services/avatars.js', () => ({
   getAvatar: async () => getAvatarResult,
 }));
 
-vi.mock('../../services/entitlements.js', () => ({
+vi.mock('../../services/billing/entitlements.js', () => ({
   getUsage: async () => getUsageResult,
   getEntitlement: async () => getEntitlementResult,
 }));
 
-vi.mock('../../services/credits.js', () => ({
+vi.mock('../../services/billing/credits.js', () => ({
   getToolStatusStructured: async () => toolCreditsResult,
 }));
 
-vi.mock('../../services/energy.js', () => ({
+vi.mock('../../services/billing/energy.js', () => ({
   getEnergyStatus: async () => energyStatusResult,
   getEnergyBankBalance: async () => energyBankResult,
 }));

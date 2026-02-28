@@ -6,18 +6,18 @@
  * individually mocking burn-stats, energy, entitlements, and runtime-limits.
  */
 import { logger } from '@swarm/core';
-import * as burnStatsService from '../../services/burn-stats.js';
-import * as energyService from '../../services/energy.js';
-import * as entitlementsService from '../../services/entitlements.js';
+import * as burnStatsService from '../../services/web3/burn-stats.js';
+import * as energyService from '../../services/billing/energy.js';
+import * as entitlementsService from '../../services/billing/entitlements.js';
 import * as avatarsService from '../../services/avatars.js';
-import { checkNFTGate } from '../../services/nft-gate.js';
+import { checkNFTGate } from '../../services/web3/nft-gate.js';
 import {
   getEffectiveLimitsForAvatar,
   applyOrbHolderBoost,
   toRuntimeLimits,
   syncRuntimeLimitsToState,
   type RuntimeAugmentations,
-} from '../../services/runtime-limits.js';
+} from '../../services/billing/runtime-limits.js';
 
 export type { RuntimeAugmentations };
 

@@ -39,7 +39,7 @@ import { createMCPServices } from '../services/mcp-adapter.js';
 import * as avatars from '../services/avatars.js';
 import { resolveChatModel } from '../services/models-registry.js';
 import { mapAdminChatHandlerError } from './chat-error-mapping.js';
-import { getGateStatus } from '../services/nft-gate.js';
+import { getGateStatus } from '../services/web3/nft-gate.js';
 
 import {
   LLM_MODEL,

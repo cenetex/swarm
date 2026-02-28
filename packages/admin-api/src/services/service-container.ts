@@ -13,17 +13,17 @@
 // ── Service module imports ─────────────────────────────────────────────────
 import * as avatarService from './avatars.js';
 import * as secretsService from './secrets.js';
-import * as walletsService from './wallets.js';
+import * as walletsService from './web3/wallets.js';
 import * as telegramService from './telegram.js';
 import * as discordService from './discord.js';
 import * as mediaService from './media.js';
 import * as galleryService from './gallery.js';
-import * as creditsService from './credits.js';
+import * as creditsService from './billing/credits.js';
 import * as mediaJobsService from './media-jobs.js';
 import * as voiceService from './voice.js';
 import * as avatarOwnershipService from './avatar-ownership.js';
-import * as nftGateService from './nft-gate.js';
-import * as lineageNftService from './lineage-nft.js';
+import * as nftGateService from './web3/nft-gate.js';
+import * as lineageNftService from './web3/lineage-nft.js';
 import * as propertyResearchService from './property-research.js';
 import * as stickersService from './stickers.js';
 import * as avatarObservabilityService from './avatar-observability.js';
@@ -34,8 +34,8 @@ import * as observabilityService from './observability.js';
 import * as chatVotingService from './chat-voting.js';
 import * as chatHistoryService from './chat-history.js';
 import * as integrationsService from './integrations.js';
-import * as tokenLaunchService from './token-launch.js';
-import * as entitlementsService from './entitlements.js';
+import * as tokenLaunchService from './web3/token-launch.js';
+import * as entitlementsService from './billing/entitlements.js';
 import { diagnoseTelegram, setupTelegramIntegration } from './telegram-admin.js';
 import { createWebSearch } from './web-search.js';
 import { createMcpAdminServices } from './mcp-config.js';
@@ -46,7 +46,7 @@ import { createTwitterServices } from './mcp-twitter-adapter.js';
 import {
   createStripeCheckoutSession,
   createStripeCustomerPortalSession,
-} from './stripe-billing.js';
+} from './billing/stripe-billing.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 

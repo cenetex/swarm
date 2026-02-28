@@ -17,7 +17,7 @@ import {
 } from '@swarm/core';
 import type { UserSession, SecretType } from '../../types.js';
 import type { IntegrationType, AICapability } from './integrations.js';
-import type { TokenLaunchConfig } from '../token-launch.js';
+import type { TokenLaunchConfig } from '../web3/token-launch.js';
 import { getDefaultContainer, type ServiceContainer } from '../service-container.js';
 import { getValidModelId } from '../models-registry.js';
 import { searchReplicateModels } from '../replicate-schema.js';

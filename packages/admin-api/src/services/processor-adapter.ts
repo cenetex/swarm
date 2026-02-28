@@ -140,7 +140,7 @@ async function loadAvatarConfig(avatarId: string): Promise<ProcessorAvatarConfig
   });
 
   // Get wallets for context
-  const { listWallets } = await import('./wallets.js');
+  const { listWallets } = await import('./web3/wallets.js');
   let wallets: ProcessorAvatarConfig['wallets'] = [];
   try {
     const walletList = await listWallets(avatarId);

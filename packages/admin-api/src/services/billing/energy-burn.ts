@@ -11,9 +11,9 @@ import {
 import { createBurnInstruction } from '@solana/spl-token';
 import bs58 from 'bs58';
 
-import { _getSecretValueInternal } from './secrets.js';
+import { _getSecretValueInternal } from '../secrets.js';
 import { addEnergyBankCredits } from './energy.js';
-import { getDynamoClient } from './dynamo-client.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 

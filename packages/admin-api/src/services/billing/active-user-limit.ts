@@ -4,7 +4,7 @@ import {
   PutCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { getDynamoClient } from './dynamo-client.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 const dynamoClient = getDynamoClient();
 

@@ -15,9 +15,9 @@ import { syncRuntimeContractForAvatar } from './runtime-sync.js';
 import { parseJsonBody } from '../../http/request-body.js';
 import { logger } from '@swarm/core';
 import * as avatarService from '../../services/avatars.js';
-import * as orbSlotsService from '../../services/orb-slots.js';
-import * as entitlementsService from '../../services/entitlements.js';
-import { getEffectiveLimitsForAvatar } from '../../services/runtime-limits.js';
+import * as orbSlotsService from '../../services/web3/orb-slots.js';
+import * as entitlementsService from '../../services/billing/entitlements.js';
+import { getEffectiveLimitsForAvatar } from '../../services/billing/runtime-limits.js';
 import {
   ACTIVATION_READINESS_VERSION,
   evaluateActivationReadiness,

@@ -4,13 +4,13 @@ import {
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { randomBytes } from 'crypto';
-import { verifySignature } from './wallet-auth.js';
+import { verifySignature } from '../wallet-auth.js';
 import {
   ensureIdentityLinkedToAccount,
   getAccountIdForIdentity,
   type IdentityType,
-} from './accounts.js';
-import { getDynamoClient } from './dynamo-client.js';
+} from '../accounts.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 const dynamoClient = getDynamoClient();
 

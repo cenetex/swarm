@@ -23,14 +23,14 @@ import {
   isCollectionWhitelisted,
   type GateStatus,
   type ClaimableNFT,
-} from './nft-gate.js';
+} from './web3/nft-gate.js';
 import { storeSecret, deleteAllAvatarSecrets } from './secrets.js';
 import { registerTelegramWebhook, generateWebhookSecret } from './telegram.js';
 import {
   registerHomeChannel,
   removeAvatarFromAllHomeChannels,
 } from './home-channel.js';
-import { clearStripeDataForAvatar } from './entitlements.js';
+import { clearStripeDataForAvatar } from './billing/entitlements.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { emitAvatarCreated, emitAvatarCreationFailed } from './funnel-emitter.js';
 

@@ -23,7 +23,7 @@ vi.mock('../../services/avatars.js', () => ({
   getAvatar: async () => getAvatarResult,
 }));
 
-vi.mock('../../services/energy.js', () => ({
+vi.mock('../../services/billing/energy.js', () => ({
   getEnergyStatus: async () => energyStatus,
   getEnergyBankBalance: async () => bankBalance,
   getEnergyHistory: async () => energyHistory,
@@ -32,7 +32,7 @@ vi.mock('../../services/energy.js', () => ({
   ENERGY_COSTS: { message: 1, image: 5 },
 }));
 
-vi.mock('../../services/energy-burn.js', () => ({
+vi.mock('../../services/billing/energy-burn.js', () => ({
   burnDepositedTokensForEnergy: async () => burnResult,
 }));
 

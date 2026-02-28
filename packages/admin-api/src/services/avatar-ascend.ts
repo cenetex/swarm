@@ -31,13 +31,13 @@ import {
   getTierForBurnAmount,
 } from '@swarm/core';
 import type { AvatarRecord, PlanType } from '../types.js';
-import { getBurnStats } from './burn-stats.js';
-import { getEntitlement, setEntitlement } from './entitlements.js';
+import { getBurnStats } from './web3/burn-stats.js';
+import { getEntitlement, setEntitlement } from './billing/entitlements.js';
 import {
   getEffectiveLimitsForAvatar,
   toRuntimeLimits,
   syncRuntimeLimitsToState,
-} from './runtime-limits.js';
+} from './billing/runtime-limits.js';
 import { getDynamoClient } from './dynamo-client.js';
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';

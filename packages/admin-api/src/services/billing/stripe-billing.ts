@@ -7,7 +7,7 @@
  */
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { createHmac, timingSafeEqual } from 'crypto';
-import type { EntitlementRecord, PlanType } from '../types.js';
+import type { EntitlementRecord, PlanType } from '../../types.js';
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const WEBHOOK_TOLERANCE_SECONDS = 300;

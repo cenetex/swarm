@@ -13,8 +13,8 @@ import {
   getBurnStatsWithProgress,
   getBurnHistory,
   getAvatarRank,
-} from '../services/burn-stats.js';
-import { getEnergyStatus } from '../services/energy.js';
+} from '../services/web3/burn-stats.js';
+import { getEnergyStatus } from '../services/billing/energy.js';
 
 // =============================================================================
 // Types
@@ -259,7 +259,7 @@ export const leaderboardHandler: APIGatewayProxyHandler = async (event) => {
   }
 
   try {
-    const { getBurnLeaderboard } = await import('../services/burn-stats.js');
+    const { getBurnLeaderboard } = await import('../services/web3/burn-stats.js');
     const limit = parseInt(event.queryStringParameters?.limit || '100', 10);
     const leaderboard = await getBurnLeaderboard(Math.min(limit, 100));
 

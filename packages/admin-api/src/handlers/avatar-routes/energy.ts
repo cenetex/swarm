@@ -14,8 +14,8 @@ import { syncRuntimeContractForAvatar } from './runtime-sync.js';
 import { parseJsonBody } from '../../http/request-body.js';
 import { logger } from '@swarm/core';
 import * as avatarService from '../../services/avatars.js';
-import * as energyService from '../../services/energy.js';
-import * as energyBurnService from '../../services/energy-burn.js';
+import * as energyService from '../../services/billing/energy.js';
+import * as energyBurnService from '../../services/billing/energy-burn.js';
 
 export async function handleEnergyRoutes(
   ctx: RouteContext,

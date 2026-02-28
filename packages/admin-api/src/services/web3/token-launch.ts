@@ -27,12 +27,12 @@ import {
   type VanityMintMode,
 } from './vanity-mint.js';
 
-import { _getSecretValueInternal, secretExists } from './secrets.js';
-import { getAvatar } from './avatars.js';
+import { _getSecretValueInternal, secretExists } from '../secrets.js';
+import { getAvatar } from '../avatars.js';
 import { canLaunchToken } from './burn-stats.js';
 import { BURN_TIERS } from '@swarm/core';
-import type { AvatarRecord } from '../types.js';
-import { getDynamoClient } from './dynamo-client.js';
+import type { AvatarRecord } from '../../types.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 // ---------------------------------------------------------------------------
 // Tier Helper

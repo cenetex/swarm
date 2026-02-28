@@ -15,8 +15,8 @@ import {
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { BURN_TIERS, ASCENSION_ENERGY_BOOST } from '@swarm/core';
-import type { CreditBucket, AvatarRecord } from '../types.js';
-import { getDynamoClient } from './dynamo-client.js';
+import type { CreditBucket, AvatarRecord } from '../../types.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 // Default DynamoDB clients
 const dynamoClient = getDynamoClient();
@@ -126,9 +126,9 @@ let defaultDeps: EnergyServiceDeps | null = null;
 async function getDefaultDeps(): Promise<EnergyServiceDeps> {
   if (!defaultDeps) {
     // Lazy import to avoid circular dependencies
-    const { getAvatar } = await import('./avatars.js');
-    const { getOwnerTokenBalance } = await import('./wallet-balance.js');
-    const { getBurnStats } = await import('./burn-stats.js');
+    const { getAvatar } = await import('../avatars.js');
+    const { getOwnerTokenBalance } = await import('../web3/wallet-balance.js');
+    const { getBurnStats } = await import('../web3/burn-stats.js');
     const { randomUUID } = await import('crypto');
 
     defaultDeps = {

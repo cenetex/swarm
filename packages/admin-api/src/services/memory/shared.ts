@@ -76,7 +76,7 @@ export function computeMemoryTtl(retentionDays?: number): number | undefined {
 export async function getRetentionDaysForAvatar(avatarId: string): Promise<number> {
   if (_retentionDaysOverride) return _retentionDaysOverride(avatarId);
   try {
-    const { getMemoryConfig } = await import('../entitlements.js');
+    const { getMemoryConfig } = await import('../billing/entitlements.js');
     const config = await getMemoryConfig(avatarId);
     // retentionDays: 0 = no retention (free tier, memory disabled)
     // In free tier memoryEnabled is false, so memories shouldn't be written at all.

@@ -6,7 +6,7 @@ import {
   PLAN_DEFAULTS,
   type PlanType,
   type PlanLimits,
-} from '../types.js';
+} from '../../types.js';
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';

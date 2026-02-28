@@ -12,9 +12,9 @@ import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { randomBytes } from 'crypto';
 import { logger } from '@swarm/core';
-import { checkNFTGate, type NFTGateResult } from './nft-gate.js';
+import { checkNFTGate, type NFTGateResult } from './web3/nft-gate.js';
 import { getOrCreateAccountForWallet, recordAccountSession } from './accounts.js';
-import { upsertActiveUserSlotOnLogin } from './active-user-limit.js';
+import { upsertActiveUserSlotOnLogin } from './billing/active-user-limit.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { emitAuthEvent } from './funnel-emitter.js';
 

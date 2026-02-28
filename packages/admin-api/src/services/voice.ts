@@ -15,7 +15,7 @@ import type { AudioAsset, VoiceProfile, AICapability } from '../types.js';
 import { _getSecretValueInternal } from './secrets.js';
 import { syncAvatarConfig } from './config-sync.js';
 import { getAvatar } from './avatars.js';
-import * as credits from './credits.js';
+import * as credits from './billing/credits.js';
 import { DEFAULT_MODELS } from './models-registry.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { buildMediaUrl, canonicalizeMediaUrl } from '../utils/media-url.js';

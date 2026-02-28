@@ -21,7 +21,7 @@ vi.mock('../../services/avatars.js', () => ({
   getAvatar: async () => getAvatarResult,
 }));
 
-vi.mock('../../services/entitlements.js', () => ({
+vi.mock('../../services/billing/entitlements.js', () => ({
   isMemoryEnabled: async () => isMemoryEnabledResult,
 }));
 

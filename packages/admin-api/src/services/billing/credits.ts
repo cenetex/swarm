@@ -15,8 +15,8 @@ import {
   PutCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
-import type { CreditBucket } from '../types.js';
-import { getDynamoClient } from './dynamo-client.js';
+import type { CreditBucket } from '../../types.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 // Re-export energy functions from the new energy service
 export {

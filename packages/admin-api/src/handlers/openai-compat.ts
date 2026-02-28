@@ -33,7 +33,7 @@ import { processChat } from './chat.js';
 import type { UserSession } from '../types.js';
 import * as avatars from '../services/avatars.js';
 import * as voice from '../services/voice.js';
-import * as energy from '../services/energy.js';
+import * as energy from '../services/billing/energy.js';
 import { getCorsHeaders } from '../http/cors.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
 import { resolveTokenUsage, recordTokenUsage } from '../services/token-accounting.js';

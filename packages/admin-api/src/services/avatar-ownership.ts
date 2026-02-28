@@ -21,8 +21,8 @@ import {
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { AvatarRecord } from '../types.js';
-import { getGateStatus, type GateStatus } from './nft-gate.js';
-import { verifyGateBurn } from './lineage-nft.js';
+import { getGateStatus, type GateStatus } from './web3/nft-gate.js';
+import { verifyGateBurn } from './web3/lineage-nft.js';
 import { canInhabitAscendedAvatar } from './avatar-ascend.js';
 import { getDynamoClient } from './dynamo-client.js';
 

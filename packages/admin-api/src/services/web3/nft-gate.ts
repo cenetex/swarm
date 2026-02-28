@@ -12,7 +12,7 @@ import {
   SecretsManagerClient,
   GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager';
-import { getDynamoClient } from './dynamo-client.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 // Required collection for access (Orb/Gate NFTs)
 const GATE_COLLECTION = '8GCAyy5L2o2ZPdQKo3EtYAYNKYT8Y6sqGHweintLTSJ';

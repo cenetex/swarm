@@ -25,7 +25,7 @@ import {
   consumeChallenge,
 } from './challenge-service.js';
 import { recordAccountSession, getAccountSummary, type AccountSummary } from '../accounts.js';
-import { checkNFTGate, type NFTGateResult } from '../nft-gate.js';
+import { checkNFTGate, type NFTGateResult } from '../web3/nft-gate.js';
 import {
   buildOnboardingErrorEnvelope,
   type OnboardingErrorEnvelope,

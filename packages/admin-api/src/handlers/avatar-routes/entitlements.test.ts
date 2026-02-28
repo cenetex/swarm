@@ -42,12 +42,12 @@ vi.mock('../../services/avatars.js', () => ({
   deactivateAvatar: async () => deactivateResult,
 }));
 
-vi.mock('../../services/orb-slots.js', () => ({
+vi.mock('../../services/web3/orb-slots.js', () => ({
   slotOrbToAvatar: async () => slotOrbResult,
   unslotOrbFromAvatar: async () => unslotOrbResult,
 }));
 
-vi.mock('../../services/entitlements.js', () => ({
+vi.mock('../../services/billing/entitlements.js', () => ({
   getEntitlement: async () => getEntitlementResult,
   setEntitlement: async () => setEntitlementResult,
 }));

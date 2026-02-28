@@ -14,5 +14,5 @@ export * from '../wallet-auth.js';
 export * from '../privy-auth.js';
 export * from '../account-gate.js';
 export * from '../accounts.js';
-export * from '../wallet-link.js';
-export * from '../nft-gate.js';
+export * from '../web3/wallet-link.js';
+export * from '../web3/nft-gate.js';

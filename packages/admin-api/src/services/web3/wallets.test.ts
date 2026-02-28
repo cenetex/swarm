@@ -11,7 +11,7 @@ import {
   listWallets,
   type WalletServiceDeps,
 } from './wallets.js';
-import type { UserSession } from '../types.js';
+import type { UserSession } from '../../types.js';
 
 // Helper to create mock deps
 function createMockDeps(): WalletServiceDeps {

@@ -17,7 +17,7 @@ import {
   getProgressToNextTier,
   type BurnTier,
 } from '@swarm/core';
-import { getDynamoClient } from './dynamo-client.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 

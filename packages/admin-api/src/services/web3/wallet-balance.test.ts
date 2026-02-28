@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getOwnerWallets, type WalletBalanceDeps } from './wallet-balance.js';
-import type { AvatarRecord } from '../types.js';
+import type { AvatarRecord } from '../../types.js';
 
 function createAvatar(creatorWallet?: string): AvatarRecord {
   return {

@@ -10,9 +10,9 @@ import {
   QueryCommand,
   GetCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { storeSecret as storeSecretDefault, _getSecretValueInternal as _getSecretValueInternalDefault } from './secrets.js';
-import type { WalletInfo, UserSession } from '../types.js';
-import { getDynamoClient } from './dynamo-client.js';
+import { storeSecret as storeSecretDefault, _getSecretValueInternal as _getSecretValueInternalDefault } from '../secrets.js';
+import type { WalletInfo, UserSession } from '../../types.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 /**
  * Dependencies interface for wallet service (for testing)

@@ -22,8 +22,8 @@ import {
   type UsageRecord,
   type MemoryConfig,
   PLAN_DEFAULTS,
-} from '../types.js';
-import { getDynamoClient } from './dynamo-client.js';
+} from '../../types.js';
+import { getDynamoClient } from '../dynamo-client.js';
 import { emitMetric } from '@swarm/core';
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;

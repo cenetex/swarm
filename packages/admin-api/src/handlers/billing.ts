@@ -11,7 +11,7 @@ import {
   setEntitlement,
   setEntitlementStatus,
   suspendEntitlement,
-} from '../services/entitlements.js';
+} from '../services/billing/entitlements.js';
 import { getSessionWithUser } from '../services/wallet-auth.js';
 import {
   createStripeCheckoutSession,
@@ -26,7 +26,7 @@ import {
   type StripeSubscription,
   type StripeWebhookEvent,
   verifyStripeWebhookSignature,
-} from '../services/stripe-billing.js';
+} from '../services/billing/stripe-billing.js';
 import { isAdminWallet } from './avatar-routes/shared.js';
 import { syncRuntimeContractForAvatar } from './avatar-routes/runtime-sync.js';
 

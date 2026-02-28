@@ -12,7 +12,7 @@ import { getSessionFromCookie } from './session-cookie.js';
 import { getSessionWithUser } from '../services/wallet-auth.js';
 import { getAccountSummary, getOrCreateAccountForWallet } from '../services/accounts.js';
 import { AuthError, SwarmErrorCode } from '@swarm/core';
-import { checkActiveUserAccess } from '../services/active-user-limit.js';
+import { checkActiveUserAccess } from '../services/billing/active-user-limit.js';
 
 function getBearerSessionToken(event: APIGatewayProxyEventV2): string | null {
   const authorization = getHeaderValue(event.headers, 'authorization');

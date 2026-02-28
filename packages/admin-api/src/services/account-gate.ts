@@ -1,5 +1,5 @@
 import { getAccountSummary } from './accounts.js';
-import { getGateStatus, type GateStatus } from './nft-gate.js';
+import { getGateStatus, type GateStatus } from './web3/nft-gate.js';
 
 export interface AccountGateStatusResult {
   gateWallet: string | null;

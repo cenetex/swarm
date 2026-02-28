@@ -10,8 +10,8 @@ import {
   type PlanLimits,
   type PlanType,
   PLAN_DEFAULTS,
-} from '../types.js';
-import { getDynamoClient } from './dynamo-client.js';
+} from '../../types.js';
+import { getDynamoClient } from '../dynamo-client.js';
 
 const dynamoClient = getDynamoClient();
 
