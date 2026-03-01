@@ -59,6 +59,58 @@ jobs:
       - name: Validate security exceptions
         run: node scripts/validate-security-exceptions.mjs --ci
 
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (required for tests)
+        run: pnpm build
+
+      - name: Test
+        run: bun test
+
   smoke:
     name: Smoke Test (Admin UI)
     runs-on: ubuntu-latest
@@ -103,6 +155,8 @@ jobs:
     if: always()
     needs:
       - lint
+      - build
+      - test
       - smoke
     steps:
       - name: Evaluate gate results
@@ -114,21 +168,22 @@ jobs:
 
           FAILED=0
 
-          LINT_RESULT="${{ needs.lint.result }}"
-          if [ "$LINT_RESULT" = "success" ] || [ "$LINT_RESULT" = "skipped" ]; then
-            echo "| Lint | Passed |" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "| Lint | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
-            FAILED=1
-          fi
+          for CHECK in lint build test smoke; do
+            RESULT=""
+            case "$CHECK" in
+              lint)  RESULT="${{ needs.lint.result }}" ;;
+              build) RESULT="${{ needs.build.result }}" ;;
+              test)  RESULT="${{ needs.test.result }}" ;;
+              smoke) RESULT="${{ needs.smoke.result }}" ;;
+            esac
 
-          SMOKE_RESULT="${{ needs.smoke.result }}"
-          if [ "$SMOKE_RESULT" = "success" ] || [ "$SMOKE_RESULT" = "skipped" ]; then
-            echo "| Smoke Test | Passed |" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "| Smoke Test | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
-            FAILED=1
-          fi
+            if [ "$RESULT" = "success" ] || [ "$RESULT" = "skipped" ]; then
+              echo "| $CHECK | Passed |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| $CHECK | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
+              FAILED=1
+            fi
+          done
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
