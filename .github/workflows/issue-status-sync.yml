@@ -1,0 +1,65 @@
+name: Issue Status Sync
+
+# Only runs on production releases (tag push) — extremely low cost.
+# Finds all issues closed since the last release tag and updates their labels.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  sync-closed-issues:
+    name: Update closed issue labels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Find previous release tag
+        id: prev
+        run: |
+          CURRENT="${GITHUB_REF#refs/tags/}"
+          PREV=$(git tag --sort=-version:refname | grep '^v' | grep -A1 "^${CURRENT}$" | tail -1)
+          if [ "$PREV" = "$CURRENT" ] || [ -z "$PREV" ]; then
+            # First release or no previous tag — use last 50 commits
+            PREV=$(git rev-list --max-count=50 HEAD | tail -1)
+          fi
+          echo "prev=$PREV" >> "$GITHUB_OUTPUT"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Previous ref: $PREV"
+
+      - name: Extract closed issue numbers from commits
+        id: issues
+        run: |
+          # Find all "Closes #N" / "Fixes #N" / "Resolves #N" in commits since last tag
+          ISSUES=$(git log "${{ steps.prev.outputs.prev }}".."${{ steps.prev.outputs.current }}" \
+            --format="%B" | \
+            grep -ioE '(closes?|fixes?|resolves?)\s+#[0-9]+' | \
+            grep -oE '#[0-9]+' | \
+            sort -u | \
+            tr '\n' ' ')
+          echo "issues=$ISSUES"
+          echo "issues=$ISSUES" >> "$GITHUB_OUTPUT"
+
+      - name: Update issue labels
+        if: steps.issues.outputs.issues != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for issue in ${{ steps.issues.outputs.issues }}; do
+            NUM="${issue#\#}"
+            echo "Updating issue #$NUM"
+
+            # Remove in-progress/blocked, add done
+            gh issue edit "$NUM" \
+              --remove-label "status:in-progress" \
+              --add-label "status:done" 2>/dev/null || true
+
+            gh issue edit "$NUM" \
+              --remove-label "status:blocked" 2>/dev/null || true
+          done
