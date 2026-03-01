@@ -833,6 +833,38 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
         return;
       }
 
+      // Handle configure_integration results — persist config to backend
+      if (resultObj.configured === true && typeof resultObj.integration === 'string') {
+        updateToolCallStatus();
+        try {
+          const resumed = await submitToolResult(activeAvatar.id, toolCallId, resultObj);
+
+          if (resumed.avatarUpdates?.profileImageUrl) {
+            updateAvatar(activeAvatar.id, { avatar: resumed.avatarUpdates.profileImageUrl });
+          }
+          if (resumed.avatarUpdates?.name) {
+            updateAvatar(activeAvatar.id, { name: resumed.avatarUpdates.name });
+          }
+
+          addMessage(activeAvatar.id, {
+            role: 'assistant',
+            content: resumed.response,
+            toolCalls: resumed.pendingToolCall ? [{
+              id: resumed.pendingToolCall.id,
+              name: resumed.pendingToolCall.name,
+              arguments: resumed.pendingToolCall.arguments,
+              status: 'pending',
+            }] : undefined,
+            media: resumed.media,
+          });
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Failed to save integration config';
+          updateToolCallStatus('failed');
+          setError(errorMsg);
+        }
+        return;
+      }
+
       // Generic tool result - just update status
       updateToolCallStatus();
     },
