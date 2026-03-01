@@ -7,7 +7,7 @@
 import type { UserSession } from '../../types.js';
 import type { updateAvatar } from '../avatars.js';
 import type { storeSecret } from '../secrets.js';
-import type { validateBotToken } from './discord.js';
+import type { validateBotToken, DiscordBotWarning } from './discord.js';
 
 // =============================================================================
 // Setup
@@ -17,6 +17,8 @@ export interface DiscordSetupResult {
   success: boolean;
   error?: string;
   botInfo?: { id: string; username: string };
+  /** Actionable warnings about intents / permissions (present even when success=true) */
+  warnings?: DiscordBotWarning[];
 }
 
 export interface DiscordSetupDeps {
@@ -35,7 +37,7 @@ export async function setupDiscordIntegration(params: {
 
   const validation = await deps.validateBotToken(token);
   if (!validation.valid) {
-    return { success: false, error: validation.error || 'Invalid Discord bot token' };
+    return { success: false, error: validation.error || 'Invalid Discord bot token', warnings: [] };
   }
 
   await Promise.all([
@@ -68,5 +70,6 @@ export async function setupDiscordIntegration(params: {
   return {
     success: true,
     botInfo: validation.botInfo,
+    warnings: validation.warnings,
   };
 }

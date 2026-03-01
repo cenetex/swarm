@@ -639,32 +639,47 @@ export async function removeReaction(
   }
 }
 
+// Re-export types and pure validation functions from the dependency-free module
+export {
+  DiscordApplicationFlag,
+  checkPrivilegedIntents,
+  checkGuildPermissions,
+  checkBotIntentsAndPermissions,
+  type DiscordBotWarning,
+  type DiscordBotValidationResult,
+} from './discord-bot-validation.js';
+
+import { checkBotIntentsAndPermissions as _checkBotIntentsAndPermissions } from './discord-bot-validation.js';
+import type { DiscordBotValidationResult } from './discord-bot-validation.js';
+
 /**
  * Validate a Discord bot token
  */
-export async function validateBotToken(token: string): Promise<{
-  valid: boolean;
-  error?: string;
-  botInfo?: { id: string; username: string };
-}> {
+export async function validateBotToken(token: string): Promise<DiscordBotValidationResult> {
   try {
     const response = await fetch(`${DISCORD_API_BASE}/users/@me`, {
       headers: { Authorization: `Bot ${token}` },
     });
 
     if (!response.ok) {
-      return { valid: false, error: 'Invalid bot token' };
+      return { valid: false, error: 'Invalid bot token', warnings: [] };
     }
 
     const me = (await response.json()) as { id: string; username: string };
+
+    // After basic token validation, check privileged intents via /applications/@me
+    const warnings = await _checkBotIntentsAndPermissions(token, DISCORD_API_BASE);
+
     return {
       valid: true,
       botInfo: { id: me.id, username: me.username },
+      warnings,
     };
   } catch (error) {
     return {
       valid: false,
       error: error instanceof Error ? error.message : 'Unknown error',
+      warnings: [],
     };
   }
 }

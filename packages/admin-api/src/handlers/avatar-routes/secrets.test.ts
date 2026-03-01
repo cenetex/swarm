@@ -38,7 +38,7 @@ vi.mock('../../services/telegram.js', () => ({
 }));
 
 vi.mock('../../services/discord.js', () => ({
-  validateBotToken: async () => ({ valid: true }),
+  validateBotToken: async () => ({ valid: true, warnings: [] }),
   validateWebhookUrl: async () => ({ valid: true }),
 }));
 

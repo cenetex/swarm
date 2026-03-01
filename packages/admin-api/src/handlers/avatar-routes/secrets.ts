@@ -135,6 +135,45 @@ export async function handleSecretsRoutes(
           error: setupResult.error || 'Failed to configure Discord',
         });
       }
+
+      // Log intent/permission warnings if any
+      if (setupResult.warnings && setupResult.warnings.length > 0) {
+        logger.warn('Discord token saved with configuration warnings', {
+          event: 'discord_token_setup_warnings',
+          warningCount: setupResult.warnings.length,
+          warnings: setupResult.warnings.map(w => ({ code: w.code, severity: w.severity })),
+        });
+      }
+
+      // Audit event recorded below — include warnings in the response
+      try {
+        const actorId = ctx.walletAddress || session.email || 'unknown';
+        await auditLogService.recordAuditEvent({
+          avatarId,
+          eventType: 'secret_set',
+          actorId,
+          actorType: resolveActorType(ctx.effectiveIsAdmin),
+          details: {
+            secretKey: normalizedKey,
+          },
+        });
+      } catch (err) {
+        logger.warn('Failed to record secret set audit event', {
+          avatarId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      return {
+        statusCode: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          success: true,
+          message: `${normalizedKey} stored securely`,
+          botInfo: setupResult.botInfo,
+          warnings: setupResult.warnings || [],
+        }),
+      };
     } else {
       if (normalizedKey === 'replicate_api_key') {
         logger.setContext({ subsystem: 'media', avatarId });
@@ -236,7 +275,12 @@ export async function handleSecretsRoutes(
       }
       case 'discord_bot_token': {
         const validation = await discordService.validateBotToken(body.value);
-        return jsonResponse(corsHeaders, 200, validation);
+        return jsonResponse(corsHeaders, 200, {
+          valid: validation.valid,
+          error: validation.error,
+          botInfo: validation.botInfo,
+          warnings: validation.warnings,
+        });
       }
       case 'discord_webhook_url': {
         const validation = await discordService.validateWebhookUrl(body.value);
