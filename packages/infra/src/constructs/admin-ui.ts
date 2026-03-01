@@ -241,22 +241,9 @@ export class AdminUi extends Construct {
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       comment: `Admin UI - ${environment}`,
       webAclId: cloudFrontWebAcl?.attrArn,
-      // Custom error responses for SPA routing fallback
-      // If S3 returns 403/404 for a path, serve index.html instead (for client-side routing)
-      errorResponses: [
-        {
-          httpStatus: 403,
-          responseHttpStatus: 200,
-          responsePagePath: '/index.html',
-          ttl: cdk.Duration.seconds(0),
-        },
-        {
-          httpStatus: 404,
-          responseHttpStatus: 200,
-          responsePagePath: '/index.html',
-          ttl: cdk.Duration.seconds(0),
-        },
-      ],
+      // SPA routing is handled by spaRewriteFunction (viewer-request).
+      // Do NOT add errorResponses here — they intercept API Gateway 403/404
+      // errors and serve index.html HTML, breaking JSON API calls.
     });
 
     // Set domain URL

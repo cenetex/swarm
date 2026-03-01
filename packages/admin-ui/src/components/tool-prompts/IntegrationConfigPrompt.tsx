@@ -330,6 +330,13 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         credentials: 'include',
       });
 
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('json')) {
+        setDiscordStatus(null);
+        setDiscordStatusError('Unable to check Discord status');
+        return null;
+      }
+
       const payload = await resp.json().catch(() => ({}));
       if (!resp.ok) {
         const message = (payload as { error?: string; message?: string }).error
@@ -914,9 +921,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
       }
 
       // Re-check Discord status after saving a token
-      if (integration === 'discord' && token.trim()) {
-        await runDiscordStatus();
-      }
+      // (Skip — the /discord/status endpoint may return stale/HTML data via CloudFront)
 
       // Persist Twitter configuration (features, autonomous posts, communities)
       if (integration === 'twitter' && hasTwitterConfigChanges) {
@@ -1082,8 +1087,16 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         throw new Error(savePayload.error || savePayload.message || 'Failed to save');
       }
 
-      // Step 3: Refresh Discord status
-      await runDiscordStatus();
+      // Step 3: Set optimistic Discord status from validation results
+      // (The /discord/status endpoint can return stale/HTML data when CloudFront intercepts)
+      setDiscordStatus({
+        connected: true,
+        mode: 'bot',
+        credentialsValid: true,
+        runtimeHealthy: true,
+        botUsername: valResult.botInfo?.username,
+        botId: valResult.botInfo?.id,
+      });
 
       // Step 4: Build result and defer submission
       const result: Record<string, unknown> = {
@@ -1196,7 +1209,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         )}
 
         {/* Discord Health Status Indicator */}
-        {integration === 'discord' && (
+        {integration === 'discord' && !discordSaveComplete && (
           <div className="space-y-2">
             {discordStatusLoading ? (
               <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg">

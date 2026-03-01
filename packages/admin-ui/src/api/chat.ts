@@ -189,6 +189,11 @@ export async function submitToolResult(
     throw new Error(error.error || `HTTP ${response.status}`);
   }
 
+  const ct = response.headers.get('content-type') || '';
+  if (!ct.includes('json')) {
+    throw new Error('Unexpected server response. Please refresh and try again.');
+  }
+
   return response.json();
 }
 
