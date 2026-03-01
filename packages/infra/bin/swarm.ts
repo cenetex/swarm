@@ -105,7 +105,7 @@ const mediaCdnUrl = getContextValue<string>('mediaCdnUrl', envConfig);
 const profileDomain = getContextValue<string>('profileDomain', envConfig);
 const profileCertificateArn = getContextValue<string>('profileCertificateArn', envConfig);
 const profileApiUrl = getContextValue<string>('profileApiUrl', envConfig);
-const alarmNotificationEmail = getContextValue<string>('alarmNotificationEmail', envConfig) || process.env.ALARM_EMAIL;
+const alarmNotificationEmail = getContextValue<string>('alarmNotificationEmail', envConfig) || process.env.ALARM_EMAIL || adminEmails;
 const monthlyBudgetUsd = getContextValue<number>('monthlyBudgetUsd', envConfig);
 // WAF adds ~$3.92/week per Web ACL. Disable for staging via cdk.context.json to reduce idle cost.
 const enableWaf = parseBoolean(getContextValue<unknown>('enableWaf', envConfig)) ?? true;

@@ -314,9 +314,13 @@ export class SharedInfrastructure extends Construct {
     });
 
     if (alarmNotificationEmail) {
-      this.alarmTopic.addSubscription(
-        new snsSubscriptions.EmailSubscription(alarmNotificationEmail)
-      );
+      // Support comma-separated email lists (e.g., from adminEmails fallback)
+      const emails = alarmNotificationEmail.split(',').map((e) => e.trim()).filter(Boolean);
+      for (const email of emails) {
+        this.alarmTopic.addSubscription(
+          new snsSubscriptions.EmailSubscription(email)
+        );
+      }
     }
 
     // ───── ECS cluster ─────
