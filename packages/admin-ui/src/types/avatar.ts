@@ -57,7 +57,7 @@ export interface AvatarConfig {
 }
 
 export interface Avatar extends AvatarConfig {
-  status: 'shell' | 'configured' | 'active' | 'error';
+  status: 'shell' | 'configured' | 'active' | 'error' | 'draft' | 'paused';
   lastActivity?: number;
 }
 

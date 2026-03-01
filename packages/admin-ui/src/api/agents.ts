@@ -33,7 +33,7 @@ export interface AvatarResponse {
   name: string;
   description?: string;
   persona?: string;
-  status: 'shell' | 'configured' | 'active' | 'error';
+  status: 'shell' | 'configured' | 'active' | 'error' | 'draft' | 'paused';
   createdAt: number;
   updatedAt: number;
   createdBy: string;

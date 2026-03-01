@@ -9,7 +9,7 @@
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { useAvatarStore, useActiveAvatar, useActiveChat } from '../store';
 import { useAuth } from '../store/auth';
-import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion, updateAvatar as updateAvatarApi, getAvatar, toggleFeature, transcribeAudio, type JobStatus } from '../api';
+import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion, updateAvatar as updateAvatarApi, getAvatar, toggleFeature, transcribeAudio, activateAvatar as apiActivateAvatar, deactivateAvatar as apiDeactivateAvatar, type JobStatus } from '../api';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { AvatarDisplay } from './AvatarSidebar';
@@ -38,6 +38,9 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
   const [planUsagePanelOpen, setPlanUsagePanelOpen] = useState(false);
   const [isCreatingAvatar, setIsCreatingAvatar] = useState(false);
   const [showHint, setShowHint] = useState(true);
+  const [activationLoading, setActivationLoading] = useState(false);
+  const [activationError, setActivationError] = useState<string | null>(null);
+  const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
 
   const formatUserFacingError = useCallback((raw: unknown): string => {
     const rawMessage = raw instanceof Error ? raw.message : typeof raw === 'string' ? raw : 'Failed to send message';
@@ -167,6 +170,57 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
     
     return 'chat'; // Can chat but no admin tools
   }, [isAuthenticated, user, activeAvatar, hasOrb, account?.role]);
+
+  // Activation toggle handler
+  const handleActivationToggle = useCallback(async () => {
+    if (!activeAvatar || activationLoading) return;
+
+    const isCurrentlyActive = activeAvatar.status === 'active';
+
+    // If deactivating, require confirmation first
+    if (isCurrentlyActive && !showDeactivateConfirm) {
+      setShowDeactivateConfirm(true);
+      return;
+    }
+
+    setActivationLoading(true);
+    setActivationError(null);
+    setShowDeactivateConfirm(false);
+
+    try {
+      if (isCurrentlyActive) {
+        await apiDeactivateAvatar(activeAvatar.id);
+        updateAvatar(activeAvatar.id, { status: 'paused' });
+      } else {
+        await apiActivateAvatar(activeAvatar.id);
+        updateAvatar(activeAvatar.id, { status: 'active' });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update avatar status';
+      setActivationError(message);
+      // Auto-clear error after 5 seconds
+      setTimeout(() => setActivationError(null), 5000);
+    } finally {
+      setActivationLoading(false);
+    }
+  }, [activeAvatar, activationLoading, showDeactivateConfirm, updateAvatar]);
+
+  // Cancel deactivation confirmation
+  const handleCancelDeactivate = useCallback(() => {
+    setShowDeactivateConfirm(false);
+  }, []);
+
+  // Determine if platforms are configured but avatar is not active (warning state)
+  const hasConfiguredPlatformsButInactive = useMemo(() => {
+    if (!activeAvatar) return false;
+    if (activeAvatar.status === 'active') return false;
+    const p = activeAvatar.platforms;
+    return Boolean(
+      p?.telegram?.enabled ||
+      p?.twitter?.enabled ||
+      p?.discord?.enabled
+    );
+  }, [activeAvatar]);
 
   // Auto-scroll to bottom — depend on length, not reference, to avoid
   // scroll-jacking when polling updates mutate the messages array.
@@ -958,7 +1012,30 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
             )}
             <AvatarDisplay avatar={activeAvatar} size="md" />
             <div className="min-w-0">
-              <h1 className="text-base lg:text-lg font-semibold text-[var(--color-text)] truncate">{activeAvatar.name}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base lg:text-lg font-semibold text-[var(--color-text)] truncate">{activeAvatar.name}</h1>
+                {/* Activation status badge — always visible */}
+                {accessMode === 'admin' && (
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider flex-shrink-0 ${
+                      activeAvatar.status === 'active'
+                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                        : activeAvatar.status === 'paused'
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      activeAvatar.status === 'active'
+                        ? 'bg-green-400'
+                        : activeAvatar.status === 'paused'
+                        ? 'bg-amber-400'
+                        : 'bg-gray-400'
+                    }`} />
+                    {activeAvatar.status === 'active' ? 'Live' : activeAvatar.status === 'paused' ? 'Paused' : 'Draft'}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-[var(--color-text-tertiary)] truncate hidden sm:block">
                 {accessMode === 'admin' && (
                   <span className="text-brand-400">Admin access</span>
@@ -978,6 +1055,54 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           <div className="flex items-center gap-2">
             {accessMode === 'admin' && (
               <>
+                {/* Activation toggle button */}
+                {activeAvatar.status === 'active' ? (
+                  <button
+                    onClick={handleActivationToggle}
+                    disabled={activationLoading}
+                    className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+                      activationLoading
+                        ? 'opacity-50 cursor-not-allowed text-[var(--color-text-tertiary)]'
+                        : 'text-amber-400 hover:bg-amber-900/20 hover:text-amber-300'
+                    }`}
+                    title="Pause avatar — platform integrations will stop responding"
+                  >
+                    {activationLoading ? (
+                      <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                        <path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75A.75.75 0 007.25 3h-1.5zM12.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-1.5z" />
+                      </svg>
+                    )}
+                    <span className="hidden sm:inline">Pause</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleActivationToggle}
+                    disabled={activationLoading}
+                    className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+                      activationLoading
+                        ? 'opacity-50 cursor-not-allowed text-[var(--color-text-tertiary)]'
+                        : 'text-green-400 bg-green-500/10 hover:bg-green-500/20 hover:text-green-300 border border-green-500/30'
+                    }`}
+                    title="Activate avatar — platform integrations will start responding"
+                  >
+                    {activationLoading ? (
+                      <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                      </svg>
+                    )}
+                    <span className="hidden sm:inline">Activate</span>
+                  </button>
+                )}
                 <button
                   onClick={() => setPlanUsagePanelOpen(!planUsagePanelOpen)}
                   className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${planUsagePanelOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
@@ -1011,6 +1136,66 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           </div>
         </header>
       ) : null}
+
+      {/* Deactivation confirmation banner */}
+      {showDeactivateConfirm && activeAvatar && (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-3 lg:px-6 py-3">
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-amber-300">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0">
+                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+              <span>Pausing will stop all platform integrations (Discord, Telegram, Twitter) from responding.</span>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={handleCancelDeactivate}
+                className="px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleActivationToggle}
+                disabled={activationLoading}
+                className="px-3 py-1.5 text-xs text-amber-100 bg-amber-600 hover:bg-amber-500 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {activationLoading ? 'Pausing...' : 'Confirm Pause'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Activation error banner */}
+      {activationError && (
+        <div className="border-b border-red-500/30 bg-red-500/10 px-3 lg:px-6 py-2">
+          <div className="max-w-3xl mx-auto flex items-center gap-2 text-sm text-red-400">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 flex-shrink-0">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+            </svg>
+            <span>{activationError}</span>
+            <button onClick={() => setActivationError(null)} className="ml-auto p-1 hover:bg-red-500/20 rounded">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Warning: platforms configured but avatar not active */}
+      {hasConfiguredPlatformsButInactive && accessMode === 'admin' && !showDeactivateConfirm && (
+        <div className="border-b border-amber-500/20 bg-amber-500/5 px-3 lg:px-6 py-2">
+          <div className="max-w-3xl mx-auto flex items-center gap-2 text-xs text-amber-400">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 flex-shrink-0">
+              <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+            </svg>
+            <span>
+              Platform integrations are configured but this avatar is not active. Click <strong>Activate</strong> above to go live.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Inline Plan & Usage Panel (chat-first) */}
       {planUsagePanelOpen && activeAvatar && (

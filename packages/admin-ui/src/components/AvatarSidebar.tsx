@@ -34,9 +34,15 @@ function getAvatarStatusColor(avatar: Avatar): { color: string; title: string } 
     };
   }
 
-  // Inactive/paused states (gray)
+  // Inactive/paused/draft states (gray)
   if (avatar.healthStatus === 'inactive' || avatar.status === 'shell') {
     return { color: 'bg-gray-500', title: 'Inactive' };
+  }
+  if (avatar.status === 'draft') {
+    return { color: 'bg-gray-400', title: 'Draft — not yet activated' };
+  }
+  if (avatar.status === 'paused') {
+    return { color: 'bg-amber-500', title: 'Paused — integrations stopped' };
   }
 
   // Active - show tier
@@ -120,6 +126,8 @@ function getStatusDescription(avatar: Avatar): string {
 
   // Fall back to legacy status
   if (avatar.status === 'shell') return 'Unconfigured';
+  if (avatar.status === 'draft') return 'Draft';
+  if (avatar.status === 'paused') return 'Paused';
   if (avatar.status === 'configured') return `${avatar.secrets?.filter(s => s.isSet).length || 0} secrets`;
   if (avatar.status === 'active') return 'Active';
   if (avatar.status === 'error') return 'Error';

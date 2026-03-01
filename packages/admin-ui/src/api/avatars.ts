@@ -37,7 +37,7 @@ export interface AvatarResponse {
   name: string;
   description?: string;
   persona?: string;
-  status: 'shell' | 'configured' | 'active' | 'error';
+  status: 'shell' | 'configured' | 'active' | 'error' | 'draft' | 'paused';
   createdAt: number;
   updatedAt: number;
   createdBy: string;
@@ -201,6 +201,44 @@ export async function deleteAvatar(avatarId: string): Promise<void> {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
     throw new Error(error.error || `HTTP ${response.status}`);
   }
+}
+
+/**
+ * Activate an avatar (draft/paused -> active)
+ * Calls POST /avatars/{id}/activate
+ */
+export async function activateAvatar(avatarId: string): Promise<{ success: boolean; status: string }> {
+  const response = await fetch(`${API_BASE}/avatars/${encodeURIComponent(avatarId)}/activate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error?.message || error.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Deactivate an avatar (active -> paused)
+ * Calls POST /avatars/{id}/deactivate
+ */
+export async function deactivateAvatar(avatarId: string): Promise<{ success: boolean; status: string }> {
+  const response = await fetch(`${API_BASE}/avatars/${encodeURIComponent(avatarId)}/deactivate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
 }
 
 /**
