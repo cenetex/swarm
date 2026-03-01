@@ -55,7 +55,7 @@ pnpm typecheck                        # all packages
 | **pre-commit** | lockfile check, `pnpm lint` | `SKIP_PRECOMMIT=1` |
 | **pre-push** | branch name validation, `pnpm lint`, `pnpm build`, admin-ui build, smoke test, `bun test` | `SKIP_PREPUSH=1` |
 
-All deploys go through GitHub Actions (push to main → staging auto-deploy; tags → production with approval). Never run `cdk deploy` locally.
+All deploys go through GitHub Actions (push to main → staging auto-deploy; tags → production deploy). Never run `cdk deploy` locally.
 
 ---
 
