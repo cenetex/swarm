@@ -194,7 +194,7 @@ describe('MessageEvaluator', () => {
       expect(result.reason).toBe('Recent activity + conversational message');
     });
 
-    it('should ignore group messages if not mentioned and no recent activity', async () => {
+    it('should queue group messages for state machine evaluation when not mentioned', async () => {
       const envelope = {
         avatarId: 'test-avatar',
         conversationId: 'group-1',
@@ -207,8 +207,9 @@ describe('MessageEvaluator', () => {
       } as any;
 
       const result = await evaluator.evaluate(envelope);
-      expect(result.shouldRespond).toBe(false);
-      expect(result.reason).toBe('Group chat, not mentioned');
+      expect(result.shouldRespond).toBe(true);
+      expect(result.priority).toBe('low');
+      expect(result.reason).toBe('Group chat, queued for state machine evaluation');
     });
   });
 

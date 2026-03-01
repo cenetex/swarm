@@ -113,7 +113,7 @@ describe('Channel State Service', () => {
     });
 
     it('should trigger response when message threshold reached', () => {
-      const MESSAGE_THRESHOLD = 5;
+      const MESSAGE_THRESHOLD = 3;
       const state: ChannelStateRecord = {
         pk: 'CHANNEL#avatar#123',
         sk: 'STATE',
@@ -122,14 +122,14 @@ describe('Channel State Service', () => {
         chatType: 'supergroup',
         state: 'IDLE',
         stateChangedAt: Date.now(),
-        messageBuffer: Array.from({ length: 5 }, (_, i) => ({
+        messageBuffer: Array.from({ length: 3 }, (_, i) => ({
           messageId: i,
           userId: 456,
           userName: 'User',
           text: `Message ${i}`,
-          timestamp: Date.now() - (5 - i) * 1000,
+          timestamp: Date.now() - (3 - i) * 1000,
         })),
-        bufferSize: 5,
+        bufferSize: 3,
         lastActivityAt: Date.now(),
         ttl: Math.floor(Date.now() / 1000) + 3600,
         updatedAt: Date.now(),

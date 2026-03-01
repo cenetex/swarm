@@ -164,10 +164,12 @@ export class MessageEvaluator {
       }
     }
 
-    // Default: don't respond in groups unless mentioned
+    // Default: queue group messages at low priority so the channel
+    // state machine can accumulate them and decide when to respond
+    // (message threshold / conversation gap triggers).
     return {
-      shouldRespond: false,
-      reason: 'Group chat, not mentioned',
+      shouldRespond: true,
+      reason: 'Group chat, queued for state machine evaluation',
       priority: 'low',
     };
   }

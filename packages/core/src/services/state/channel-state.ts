@@ -23,8 +23,8 @@ export const CHANNEL_CONFIG = {
 
   // Response triggers
   DIRECT_ENGAGEMENT_DELAY_MS: 0,      // Immediate for mentions/replies
-  MESSAGE_THRESHOLD: 5,                // Respond after N messages accumulated
-  CONVERSATION_GAP_MS: 30000,          // 30 seconds of silence triggers response
+  MESSAGE_THRESHOLD: 3,                // Respond after N messages accumulated
+  CONVERSATION_GAP_MS: 20000,          // 20 seconds of silence triggers response
 
   // Engaged user tracking
   ENGAGEMENT_WINDOW_MS: 5 * 60 * 1000, // 5 minutes - how long to keep responding to a user after direct engagement
