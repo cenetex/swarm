@@ -18,6 +18,7 @@ import { parseJsonBody } from '../../http/request-body.js';
 import * as telegramService from '../../services/telegram.js';
 import * as discordService from '../../services/discord.js';
 import { setupTelegramIntegration } from '../../services/telegram-admin.js';
+import { setupDiscordIntegration } from '../../services/discord-admin.js';
 import { validateReplicateApiKey } from '../../services/replicate.js';
 import { SecretType } from '../../types.js';
 
@@ -108,6 +109,32 @@ export async function handleSecretsRoutes(
             reRegistered: setupResult.status.reRegistered,
           }
         : null;
+    } else if (normalizedKey === 'discord_bot_token') {
+      logger.setContext({ subsystem: 'discord', avatarId });
+      logger.info('Discord token setup requested via API', {
+        event: 'discord_token_setup_via_api',
+      });
+
+      const setupResult = await setupDiscordIntegration({
+        avatarId,
+        token: value,
+        session,
+        deps: {
+          validateBotToken: discordService.validateBotToken,
+          updateAvatar: avatarService.updateAvatar,
+          storeSecret: secretsService.storeSecret,
+        },
+      });
+
+      if (!setupResult.success) {
+        logger.warn('Discord token setup failed', {
+          event: 'discord_token_setup_failed',
+          error: setupResult.error,
+        });
+        return jsonResponse(corsHeaders, 400, {
+          error: setupResult.error || 'Failed to configure Discord',
+        });
+      }
     } else {
       if (normalizedKey === 'replicate_api_key') {
         logger.setContext({ subsystem: 'media', avatarId });
