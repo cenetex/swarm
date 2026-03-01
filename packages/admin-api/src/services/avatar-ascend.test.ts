@@ -107,28 +107,43 @@ vi.mock('@aws-sdk/lib-dynamodb', () => {
   };
 });
 
-// IMPORTANT: bun:test mock.module is process-global. This mock must include every
-// export that any other test file in the suite might import from @swarm/core,
-// because it persists across all files. At minimum: logger, constants, and the
-// functions that avatar-ascend.ts itself uses.
-const noopLog = () => {};
-vi.mock('@swarm/core', () => ({
+// IMPORTANT: bun:test mock.module is process-global and persistent. This @swarm/core
+// mock MUST provide every export that any other test file might import, or those
+// tests will break. We use a Proxy as the base so unknown properties return safe
+// defaults instead of undefined.
+const noopFn = () => {};
+const noopLogger = { debug: noopFn, info: noopFn, warn: noopFn, error: noopFn, child: () => noopLogger };
+const coreOverrides: Record<string, unknown> = {
   RATI_MINT: 'mock-rati-mint',
   GATE_COLLECTION: 'mock-gate-collection',
-  ASCENSION_ENERGY_BOOST: {
-    maxEnergyMultiplier: 1.5,
-    regenRateMultiplier: 1.5,
-  },
-  getAscensionCost: () => ({
-    currentTier: { tier: 0, name: 'Spark' },
-    ratiBurnRequired: 100,
-  }),
+  ASCENSION_ENERGY_BOOST: { maxEnergyMultiplier: 1.5, regenRateMultiplier: 1.5 },
+  getAscensionCost: () => ({ currentTier: { tier: 0, name: 'Spark' }, ratiBurnRequired: 100 }),
   getTierForBurnAmount: () => ({ tier: 0, name: 'Spark' }),
   getNextTier: () => ({ tier: 1, name: 'Ember', requiredBurn: 1000 }),
-  // Noop logger to prevent "logger.X is undefined" errors in other test files
-  logger: {
-    debug: noopLog, info: noopLog, warn: noopLog, error: noopLog,
-    child: () => ({ debug: noopLog, info: noopLog, warn: noopLog, error: noopLog }),
+  logger: noopLogger,
+  buildMediaUrl: noopFn,
+  canonicalizeMediaUrl: noopFn,
+  validateEnv: noopFn,
+  HandlerEnvSchema: {},
+  DEFAULT_AVATAR_CONFIG: {},
+  DEFAULT_LLM_MODEL: 'openrouter/auto',
+  extractCorrelationIdFromSqsRecord: () => undefined,
+  createContentStoreService: noopFn,
+  enqueuePost: noopFn,
+  isPostQueueConfigured: () => false,
+  getPostQueueUrl: () => '',
+  enqueueMediaJob: noopFn,
+  isMediaQueueConfigured: () => false,
+  getMediaQueueUrl: () => '',
+  // Platform adapters
+  TwitterAdapter: class { constructor() {} },
+  DiscordAdapter: class { constructor() {} },
+};
+vi.mock('@swarm/core', () => new Proxy(coreOverrides, {
+  get(target, prop) {
+    if (prop in target) return target[prop as string];
+    // Return a no-op function for unknown exports to prevent "X is undefined" errors
+    return noopFn;
   },
 }));
 
