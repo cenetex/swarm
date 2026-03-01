@@ -124,6 +124,8 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
   const [discordStatus, setDiscordStatus] = useState<DiscordStatus | null>(null);
   const [discordStatusError, setDiscordStatusError] = useState<string | null>(null);
   const [discordStatusLoading, setDiscordStatusLoading] = useState(false);
+  const [discordSaveComplete, setDiscordSaveComplete] = useState(false);
+  const pendingResultRef = useRef<Record<string, unknown> | null>(null);
 
   // Twitter-specific state
   const [twitterFeatures, setTwitterFeatures] = useState<string[]>(['mention_replies']);
@@ -173,6 +175,8 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     setDiscordStatus(null);
     setDiscordStatusError(null);
     setDiscordStatusLoading(false);
+    setDiscordSaveComplete(false);
+    pendingResultRef.current = null;
     // Reset Telegram policy state
     setAllowedDmUsers([]);
     setAllowedChats([]);
@@ -1014,13 +1018,83 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         if (telegramDiagnosisFromSave) result.telegramDiagnosis = telegramDiagnosisFromSave;
       }
 
-      // Submit the tool result
-      await onSubmit(toolCall.id, result);
-      setSavedAt(Date.now());
+      // For Discord, defer onSubmit so the user can see status before panel closes
+      if (integration === 'discord') {
+        pendingResultRef.current = result;
+        setDiscordSaveComplete(true);
+        setSavedAt(Date.now());
+      } else {
+        await onSubmit(toolCall.id, result);
+        setSavedAt(Date.now());
+      }
       if (token.trim()) {
         setHasAvatarKey(true);
       }
       setToken(''); // Clear sensitive data
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDiscordDone = async () => {
+    if (!pendingResultRef.current) return;
+    await onSubmit(toolCall.id, pendingResultRef.current);
+    pendingResultRef.current = null;
+  };
+
+  const handleSaveAndTest = async () => {
+    if (isSubmitting || isTesting || !activeAgent?.id || !token.trim()) return;
+    setIsSubmitting(true);
+    setSaveError(null);
+    setStatus('idle');
+    setTestResult(null);
+
+    try {
+      // Step 1: Validate the token
+      const valResponse = await fetch(`${API_BASE}/avatars/${activeAgent.id}/validate-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ type: config.secretType, value: token.trim() }),
+      });
+      const valResult = await valResponse.json().catch(() => ({}));
+
+      if (!valResponse.ok || !valResult.valid) {
+        setStatus('error');
+        setTestResult({ error: valResult.error || 'Invalid token' });
+        return; // Don't save invalid tokens
+      }
+
+      setStatus('success');
+      setTestResult({ botUsername: valResult.botInfo?.username });
+
+      // Step 2: Save the token
+      const saveResponse = await fetch(`${API_BASE}/avatars/${activeAgent.id}/secrets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ key: config.secretType, value: token.trim() }),
+      });
+      const savePayload = await saveResponse.json().catch(() => ({}));
+      if (!saveResponse.ok) {
+        throw new Error(savePayload.error || savePayload.message || 'Failed to save');
+      }
+
+      // Step 3: Refresh Discord status
+      await runDiscordStatus();
+
+      // Step 4: Build result and defer submission
+      const result: Record<string, unknown> = {
+        configured: true,
+        integration: 'discord',
+      };
+      pendingResultRef.current = result;
+      setDiscordSaveComplete(true);
+      setSavedAt(Date.now());
+      setHasAvatarKey(true);
+      setToken('');
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
@@ -2039,23 +2113,57 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
               </div>
             )}
 
-            {/* Actions */}
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={handleTest}
-                disabled={!token.trim() || disabled || isTesting}
-                className="flex-1 px-4 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors"
-              >
-                {isTesting ? 'Testing...' : 'Test Connection'}
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={!token.trim() || disabled || isSubmitting}
-                className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-              >
-                {isSubmitting ? 'Saving...' : 'Save & Enable'}
-              </button>
-            </div>
+            {/* Actions — Discord: single Save & Test / Done flow */}
+            {integration === 'discord' && !discordSaveComplete && (
+              <div className="pt-2">
+                <button
+                  onClick={handleSaveAndTest}
+                  disabled={!token.trim() || disabled || isSubmitting || isTesting}
+                  className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                >
+                  {isSubmitting ? 'Saving...' : isTesting ? 'Validating...' : 'Save & Test'}
+                </button>
+              </div>
+            )}
+
+            {integration === 'discord' && discordSaveComplete && (
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg">
+                  <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-sm text-green-300">
+                    Saved!{testResult?.botUsername ? ` Connected as @${testResult.botUsername}` : ''}
+                  </span>
+                </div>
+                <button
+                  onClick={handleDiscordDone}
+                  className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
+                >
+                  Done
+                </button>
+              </div>
+            )}
+
+            {/* Actions — Non-Discord: keep existing two-button layout */}
+            {integration !== 'discord' && (
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleTest}
+                  disabled={!token.trim() || disabled || isTesting}
+                  className="flex-1 px-4 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors"
+                >
+                  {isTesting ? 'Testing...' : 'Test Connection'}
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={!token.trim() || disabled || isSubmitting}
+                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                >
+                  {isSubmitting ? 'Saving...' : 'Save & Enable'}
+                </button>
+              </div>
+            )}
 
             {saveError && (
               <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
