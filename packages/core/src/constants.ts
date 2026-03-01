@@ -52,7 +52,7 @@ export const DEFAULT_AVATAR_CONFIG: import('./types/index.js').AvatarConfig = {
     responseDelayMs: [1000, 3000],
     typingIndicator: true,
     ignoreBots: true,
-    cooldownMinutes: 5,
+    cooldownMinutes: 2,
     maxContextMessages: 20,
   },
   tools: [
