@@ -13,7 +13,7 @@ let mockSetEntitlementCalls: Array<Record<string, unknown>> = [];
 let mockSyncCalls: Array<Record<string, unknown>> = [];
 
 // ── Mock modules ───────────────────────────────────────────────────────────
-vi.mock('./entitlements.js', () => ({
+vi.mock('./billing/entitlements.js', () => ({
   getEntitlement: async () => mockGetEntitlementResult,
   setEntitlement: async (params: Record<string, unknown>) => {
     mockSetEntitlementCalls.push(params);
@@ -37,7 +37,7 @@ vi.mock('./entitlements.js', () => ({
   },
 }));
 
-vi.mock('./runtime-limits.js', () => ({
+vi.mock('./billing/runtime-limits.js', () => ({
   getEffectiveLimitsForAvatar: (_avatarId: string, entitlement: EntitlementRecord | null) => {
     const entitlementStatus = entitlement?.status;
     if (!entitlement || (entitlementStatus !== 'active' && entitlementStatus !== 'trial')) {
@@ -72,7 +72,7 @@ vi.mock('./runtime-limits.js', () => ({
 }));
 
 // Mock burn-stats (needed by avatar-ascend module-level imports)
-vi.mock('./burn-stats.js', () => ({
+vi.mock('./web3/burn-stats.js', () => ({
   getBurnStats: async () => ({ totalBurned: 0, tier: 0, tierName: 'Spark' }),
 }));
 
@@ -119,6 +119,7 @@ vi.mock('@swarm/core', () => ({
     ratiBurnRequired: 100,
   }),
   getTierForBurnAmount: () => ({ tier: 0, name: 'Spark' }),
+  getNextTier: () => ({ tier: 1, name: 'Ember', requiredBurn: 1000 }),
 }));
 
 // ── Import AFTER mocks ─────────────────────────────────────────────────────
