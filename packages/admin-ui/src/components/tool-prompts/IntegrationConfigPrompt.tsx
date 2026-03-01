@@ -40,6 +40,22 @@ type TelegramDiagnosis = {
   issues: Array<{ code: string; message: string }>;
 };
 
+type DiscordStatus = {
+  connected: boolean;
+  mode: 'webhook' | 'bot' | 'hybrid' | 'none';
+  credentialsValid: boolean;
+  runtimeHealthy: boolean;
+  botUsername?: string;
+  botId?: string;
+  webhookConfigured?: boolean;
+  guilds?: Array<{
+    id: string;
+    name: string;
+    memberCount?: number;
+  }>;
+  gatewayWarning?: string;
+};
+
 // Types for username-based allowlists
 type TelegramUserRef = {
   userId: string;
@@ -104,6 +120,11 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     chatType: 'private' | 'group' | 'supergroup' | 'channel';
   }>>([]);
 
+  // Discord-specific state
+  const [discordStatus, setDiscordStatus] = useState<DiscordStatus | null>(null);
+  const [discordStatusError, setDiscordStatusError] = useState<string | null>(null);
+  const [discordStatusLoading, setDiscordStatusLoading] = useState(false);
+
   // Twitter-specific state
   const [twitterFeatures, setTwitterFeatures] = useState<string[]>(['mention_replies']);
   const [twitterAutonomousEnabled, setTwitterAutonomousEnabled] = useState(false);
@@ -148,6 +169,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     setTelegramRepairLoading(false);
     setTelegramRepairError(null);
     setKnownTelegramUsers([]);
+    // Reset Discord state
+    setDiscordStatus(null);
+    setDiscordStatusError(null);
+    setDiscordStatusLoading(false);
     // Reset Telegram policy state
     setAllowedDmUsers([]);
     setAllowedChats([]);
@@ -286,6 +311,48 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
 
     void diagnoseAndRepair();
     void fetchKnownUsers();
+    // Intentionally omit functions from deps to avoid re-running on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toolCall.id, integration, activeAgent?.id]);
+
+  // When opening the Discord integration panel, fetch connection status.
+  const runDiscordStatus = async (): Promise<DiscordStatus | null> => {
+    if (!activeAgent?.id) return null;
+    setDiscordStatusLoading(true);
+    setDiscordStatusError(null);
+    try {
+      const resp = await fetch(`${API_BASE}/avatars/${activeAgent.id}/discord/status`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const message = (payload as { error?: string; message?: string }).error
+          || (payload as { error?: string; message?: string }).message
+          || `Failed to check Discord status (HTTP ${resp.status})`;
+        setDiscordStatus(null);
+        setDiscordStatusError(message);
+        return null;
+      }
+
+      const status = payload as DiscordStatus;
+      setDiscordStatus(status);
+      return status;
+    } catch {
+      setDiscordStatus(null);
+      setDiscordStatusError('Failed to check Discord status');
+      return null;
+    } finally {
+      setDiscordStatusLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (integration !== 'discord') return;
+    if (!activeAgent?.id) return;
+
+    void runDiscordStatus();
     // Intentionally omit functions from deps to avoid re-running on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolCall.id, integration, activeAgent?.id]);
@@ -842,6 +909,11 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         telegramDiagnosisFromSave = await runTelegramDiagnostics();
       }
 
+      // Re-check Discord status after saving a token
+      if (integration === 'discord' && token.trim()) {
+        await runDiscordStatus();
+      }
+
       // Persist Twitter configuration (features, autonomous posts, communities)
       if (integration === 'twitter' && hasTwitterConfigChanges) {
         const twitterConfig: {
@@ -1048,6 +1120,69 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
             )}
           </div>
         )}
+
+        {/* Discord Health Status Indicator */}
+        {integration === 'discord' && (
+          <div className="space-y-2">
+            {discordStatusLoading ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg">
+                <div className="w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm text-[var(--color-text-secondary)]">Checking connection...</span>
+              </div>
+            ) : discordStatusError ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
+                <span className="text-lg">{'\u{1F534}'}</span>
+                <span className="text-sm text-red-300">Not configured</span>
+              </div>
+            ) : discordStatus ? (
+              <div
+                className={
+                  discordStatus.connected
+                    ? 'flex items-center justify-between gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg'
+                    : discordStatus.mode !== 'none'
+                      ? 'flex items-center justify-between gap-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg'
+                      : 'flex items-center justify-between gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg'
+                }
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">
+                    {discordStatus.connected
+                      ? '\u{1F7E2}'
+                      : discordStatus.mode !== 'none'
+                        ? '\u{1F7E1}'
+                        : '\u{1F534}'}
+                  </span>
+                  <div className="flex flex-col">
+                    <span
+                      className={
+                        discordStatus.connected
+                          ? 'text-sm text-green-300'
+                          : discordStatus.mode !== 'none'
+                            ? 'text-sm text-yellow-300'
+                            : 'text-sm text-red-300'
+                      }
+                    >
+                      {discordStatus.connected
+                        ? `Connected${discordStatus.botUsername ? ` as ${discordStatus.botUsername}` : ''}`
+                        : discordStatus.mode !== 'none'
+                          ? `Discord Configured (${discordStatus.mode} mode)${!discordStatus.credentialsValid ? ' — invalid credentials' : !discordStatus.runtimeHealthy ? ' — gateway offline' : ''}`
+                          : 'Not connected'}
+                    </span>
+                    {discordStatus.connected && discordStatus.guilds && discordStatus.guilds.length > 0 && (
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        {discordStatus.guilds.length} server{discordStatus.guilds.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {discordStatus.gatewayWarning && (
+                  <span className="text-xs text-yellow-400">{discordStatus.gatewayWarning}</span>
+                )}
+              </div>
+            ) : null}
+          </div>
+        )}
+
         {config.usesOAuth ? (
           // OAuth-based integration (Twitter) with advanced config
           <div className="space-y-4">

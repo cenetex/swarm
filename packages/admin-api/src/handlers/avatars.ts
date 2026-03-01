@@ -27,6 +27,7 @@ import { handleSystemRoutes } from './avatar-routes/system.js';
 import { handleCrudRoutes } from './avatar-routes/crud.js';
 import { handleEntitlementRoutes } from './avatar-routes/entitlements.js';
 import { handleTelegramRoutes } from './avatar-routes/telegram.js';
+import { handleDiscordRoutes } from './avatar-routes/discord.js';
 import { handleSecretsRoutes } from './avatar-routes/secrets.js';
 import { handleEnergyRoutes } from './avatar-routes/energy.js';
 import { handleObservabilityRoutes } from './avatar-routes/observability.js';
@@ -51,6 +52,7 @@ const routeHandlers: RouteHandler[] = [
   handleCrudRoutes,
   handleEntitlementRoutes,
   handleTelegramRoutes,
+  handleDiscordRoutes,
   handleOnboardingAvatarRoutes,
   handleSecretsRoutes,
   handleEnergyRoutes,

@@ -5,6 +5,7 @@ export { handleSystemRoutes } from './system.js';
 export { handleCrudRoutes } from './crud.js';
 export { handleEntitlementRoutes } from './entitlements.js';
 export { handleTelegramRoutes } from './telegram.js';
+export { handleDiscordRoutes } from './discord.js';
 export { handleSecretsRoutes } from './secrets.js';
 export { handleEnergyRoutes } from './energy.js';
 export { handleObservabilityRoutes } from './observability.js';
