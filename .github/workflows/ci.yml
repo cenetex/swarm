@@ -59,19 +59,64 @@ jobs:
       - name: Validate security exceptions
         run: node scripts/validate-security-exceptions.mjs --ci
 
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: bun test
+
   # Unified gate: configure this as the single required status check.
-  #
-  # Cost reduction: build-and-test and security audit removed from PR CI.
-  # Safety net remains via:
-  #   - Local pre-push hooks: lint + build + bun test (full suite)
-  #   - Deploy pipeline: full build on every push to main
-  #   - Weekly security-exceptions workflow: pnpm audit + exception review
   ci:
     name: CI
     runs-on: ubuntu-latest
     if: always()
     needs:
       - lint
+      - build
+      - test
     steps:
       - name: Evaluate gate results
         run: |
@@ -80,15 +125,30 @@ jobs:
           echo "| Check | Status |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
 
-          RESULT="${{ needs.lint.result }}"
-          if [ "$RESULT" = "success" ] || [ "$RESULT" = "skipped" ]; then
-            echo "| Lint | Passed |" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "**CI: PASSED**" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "| Lint | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::CI gate FAILED. Lint did not pass."
+          FAILED=0
+
+          for JOB in lint build test; do
+            RESULT=""
+            case "$JOB" in
+              lint)  RESULT="${{ needs.lint.result }}" ;;
+              build) RESULT="${{ needs.build.result }}" ;;
+              test)  RESULT="${{ needs.test.result }}" ;;
+            esac
+
+            if [ "$RESULT" = "success" ] || [ "$RESULT" = "skipped" ]; then
+              echo "| ${JOB^} | Passed |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| ${JOB^} | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
+              FAILED=1
+            fi
+          done
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo "::error::CI gate FAILED. One or more checks did not pass."
             echo "**CI: FAILED**" >> "$GITHUB_STEP_SUMMARY"
             exit 1
+          else
+            echo "**CI: PASSED**" >> "$GITHUB_STEP_SUMMARY"
           fi
