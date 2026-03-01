@@ -10,7 +10,7 @@
 // PLATFORM TYPES
 // =============================================================================
 
-export type Platform = 'telegram' | 'discord' | 'twitter' | 'web' | 'shared-chat';
+export type Platform = 'telegram' | 'discord' | 'twitter' | 'web' | 'shared-chat' | 'raticross';
 
 // =============================================================================
 // AGENT CONFIGURATION
@@ -53,11 +53,18 @@ export interface AvatarConfig {
   secrets: string[];
 }
 
+export interface RaticrossConfig {
+  enabled: boolean;
+  relayUrl: string;
+  agentId?: string;
+}
+
 export interface PlatformConfigs {
   telegram?: TelegramConfig;
   discord?: DiscordConfig;
   twitter?: TwitterConfig;
   web?: WebConfig;
+  raticross?: RaticrossConfig;
 }
 
 /**
@@ -161,6 +168,8 @@ export interface DiscordConfig {
   webhookToken?: string;
 
   // For bot mode (full functionality)
+  botUsername?: string;
+  botId?: string;
   applicationId?: string;
   publicKey?: string;
 

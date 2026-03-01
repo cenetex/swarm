@@ -183,6 +183,11 @@ export interface AdminApiConstructProps {
   telegramWebhookFunction: lambda.IFunction;
 
   /**
+   * Raticross relay Lambda from @swarm/handlers SharedHandlers construct.
+   */
+  raticrossRelayFunction?: lambda.IFunction;
+
+  /**
    * Internal test key for bypassing auth in E2E tests.
    * Should be shared across all constructs in the stack.
    */
@@ -1994,6 +1999,20 @@ export class AdminApiConstruct extends Construct {
       methods: [apigateway.HttpMethod.POST],
       integration: telegramIntegration,
     });
+
+    // Raticross relay route: /relay/inbound
+    if (props.raticrossRelayFunction) {
+      const raticrossIntegration = new integrations.HttpLambdaIntegration(
+        'RaticrossRelayIntegration',
+        props.raticrossRelayFunction,
+      );
+
+      this.api.addRoutes({
+        path: '/relay/inbound',
+        methods: [apigateway.HttpMethod.POST],
+        integration: raticrossIntegration,
+      });
+    }
 
     // Replicate webhook handler - for async video generation callbacks
     const replicateWebhookHandler = new nodejs.NodejsFunction(this, 'ReplicateWebhookHandler', {

@@ -90,6 +90,7 @@ export class SharedHandlers extends Construct {
   public readonly mediaQueue: sqs.Queue;
   public readonly postQueue: sqs.Queue;
   public readonly telegramWebhook: lambda.Function;
+  public readonly raticrossRelay: nodejs.NodejsFunction;
   public readonly messageProcessor: nodejs.NodejsFunction;
   public readonly responseSender: nodejs.NodejsFunction;
   public readonly mediaProcessor: nodejs.NodejsFunction;
@@ -380,6 +381,28 @@ export class SharedHandlers extends Construct {
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
       logGroup: telegramWebhookLogGroup.logGroup,
+    });
+
+    // Raticross relay handler - receives inbound messages from peer systems
+    const raticrossRelayLogGroup = new LogGroupWithRetention(this, 'RaticrossRelayLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-raticross-relay`,
+      retention: logRetention,
+      removalPolicy: logRemovalPolicy,
+    });
+
+    this.raticrossRelay = new nodejs.NodejsFunction(this, 'RaticrossRelay', {
+      functionName: `swarm-${environment}${suffix}-raticross-relay`,
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(handlersEntry, 'relay/raticross-inbound.ts'),
+      handler: 'handler',
+      layers: dependencyLayer ? [dependencyLayer] : undefined,
+      role: lambdaRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
+      environment: commonEnv,
+      bundling: bundlingOptions,
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: raticrossRelayLogGroup.logGroup,
     });
 
     this.messageProcessor.addEventSource(new lambdaEventSources.SqsEventSource(this.messageQueue, {

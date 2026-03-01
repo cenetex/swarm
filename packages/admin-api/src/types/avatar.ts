@@ -102,6 +102,8 @@ export interface AvatarRecord {
       enabled: boolean;
       guildId?: string;
       mode?: 'webhook' | 'bot' | 'hybrid';
+      botUsername?: string;
+      botId?: string;
       useGateway?: boolean;
       intents?: number;
       respondToMentions?: boolean;

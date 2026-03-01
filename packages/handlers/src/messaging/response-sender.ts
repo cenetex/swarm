@@ -27,6 +27,7 @@ import { isAllowedDmUserById } from '../telegram/telegram-webhook-shared.js';
 import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../services/sqs-send.js';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
+import { RaticrossAdapter } from './adapters/raticross-adapter.js';
 
 const dynamo = getDynamoClient();
 
@@ -278,6 +279,16 @@ async function getOutboundRuntime(avatarId: string): Promise<AvatarOutboundRunti
       applicationId: avatarConfig.platforms.discord.applicationId,
       publicKey: avatarConfig.platforms.discord.publicKey,
     }));
+  }
+
+  if (avatarConfig.platforms.raticross?.enabled && avatarConfig.platforms.raticross.relayUrl) {
+    platformRegistry.register(new RaticrossAdapter(
+      avatarConfig,
+      avatarConfig.platforms.raticross.relayUrl,
+      secrets.RATICROSS_RELAY_KEY,
+      'kyro',
+      avatarConfig.platforms.raticross.agentId,
+    ));
   }
 
   const outboundSender = createOutboundSender(platformRegistry, activityService);

@@ -349,6 +349,7 @@ export class AdminApiStack extends cdk.Stack {
         cdnUrl: sharedInfraStack.cdnUrl,
         dependencyLayer,
         telegramWebhookFunction: this.sharedHandlers.telegramWebhook,
+        raticrossRelayFunction: this.sharedHandlers.raticrossRelay,
         postQueue: this.sharedHandlers?.postQueue,
         sharedMessageQueue: this.sharedHandlers?.messageQueue,
         sharedResponseQueue: this.sharedHandlers?.responseQueue,
