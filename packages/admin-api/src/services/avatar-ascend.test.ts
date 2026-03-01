@@ -107,6 +107,11 @@ vi.mock('@aws-sdk/lib-dynamodb', () => {
   };
 });
 
+// IMPORTANT: bun:test mock.module is process-global. This mock must include every
+// export that any other test file in the suite might import from @swarm/core,
+// because it persists across all files. At minimum: logger, constants, and the
+// functions that avatar-ascend.ts itself uses.
+const noopLog = () => {};
 vi.mock('@swarm/core', () => ({
   RATI_MINT: 'mock-rati-mint',
   GATE_COLLECTION: 'mock-gate-collection',
@@ -120,6 +125,11 @@ vi.mock('@swarm/core', () => ({
   }),
   getTierForBurnAmount: () => ({ tier: 0, name: 'Spark' }),
   getNextTier: () => ({ tier: 1, name: 'Ember', requiredBurn: 1000 }),
+  // Noop logger to prevent "logger.X is undefined" errors in other test files
+  logger: {
+    debug: noopLog, info: noopLog, warn: noopLog, error: noopLog,
+    child: () => ({ debug: noopLog, info: noopLog, warn: noopLog, error: noopLog }),
+  },
 }));
 
 // ── Import AFTER mocks ─────────────────────────────────────────────────────
