@@ -59,19 +59,51 @@ jobs:
       - name: Validate security exceptions
         run: node scripts/validate-security-exceptions.mjs --ci
 
+  smoke:
+    name: Smoke Test (Admin UI)
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (TypeScript + Admin UI)
+        env:
+          VITE_API_URL: /api
+          VITE_PRIVY_APP_ID: ${{ secrets.VITE_PRIVY_APP_ID }}
+        run: pnpm build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Run Admin UI smoke test
+        run: node scripts/smoke-admin-ui.mjs
+
   # Unified gate: configure this as the single required status check.
   #
-  # Cost reduction: build-and-test and security audit removed from PR CI.
-  # Safety net remains via:
-  #   - Local pre-push hooks: lint + build + bun test (full suite)
-  #   - Deploy pipeline: full build on every push to main
-  #   - Weekly security-exceptions workflow: pnpm audit + exception review
+  # Safety net: lint catches code quality issues, smoke test catches UI
+  # regressions that would otherwise only be caught by pre-push hooks
+  # (which can be bypassed with SKIP_PREPUSH=1).
   ci:
     name: CI
     runs-on: ubuntu-latest
     if: always()
     needs:
       - lint
+      - smoke
     steps:
       - name: Evaluate gate results
         run: |
@@ -80,15 +112,30 @@ jobs:
           echo "| Check | Status |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
 
-          RESULT="${{ needs.lint.result }}"
-          if [ "$RESULT" = "success" ] || [ "$RESULT" = "skipped" ]; then
+          FAILED=0
+
+          LINT_RESULT="${{ needs.lint.result }}"
+          if [ "$LINT_RESULT" = "success" ] || [ "$LINT_RESULT" = "skipped" ]; then
             echo "| Lint | Passed |" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "**CI: PASSED**" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "| Lint | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::CI gate FAILED. Lint did not pass."
+            FAILED=1
+          fi
+
+          SMOKE_RESULT="${{ needs.smoke.result }}"
+          if [ "$SMOKE_RESULT" = "success" ] || [ "$SMOKE_RESULT" = "skipped" ]; then
+            echo "| Smoke Test | Passed |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Smoke Test | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
+            FAILED=1
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$FAILED" = "1" ]; then
+            echo "::error::CI gate FAILED. One or more checks did not pass."
             echo "**CI: FAILED**" >> "$GITHUB_STEP_SUMMARY"
             exit 1
+          else
+            echo "**CI: PASSED**" >> "$GITHUB_STEP_SUMMARY"
           fi
