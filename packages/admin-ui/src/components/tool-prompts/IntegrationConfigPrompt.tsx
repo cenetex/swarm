@@ -65,6 +65,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
 
 export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
   const activeAgent = useActiveAvatar();
+  const isCompleted = toolCall.status === 'completed';
   const [token, setToken] = useState('');
   // New format: store full refs with display info
   const [allowedDmUsers, setAllowedDmUsers] = useState<TelegramUserRef[]>([]);
@@ -355,12 +356,13 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     void loadTwitterConfig();
   }, [toolCall.id, integration, activeAgent?.id, twitterConfigLoaded]);
 
-  // Auto-hide the "Saved" banner after a short delay.
+  // Auto-hide the "Saved" banner after a short delay, but keep it visible
+  // when the tool call is completed so the user sees a persistent success state.
   useEffect(() => {
-    if (!savedAt) return;
+    if (!savedAt || isCompleted) return;
     const timeout = window.setTimeout(() => setSavedAt(null), 5000);
     return () => window.clearTimeout(timeout);
-  }, [savedAt]);
+  }, [savedAt, isCompleted]);
 
   type IntegrationConfigType = {
     name: string;
@@ -981,7 +983,15 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
 
       {/* Content */}
       <div className="p-4 space-y-4">
-        {savedAt && (
+        {isCompleted && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg">
+            <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="text-sm text-green-300">Connected - configuration saved successfully.</span>
+          </div>
+        )}
+        {savedAt && !isCompleted && (
           <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg">
             <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

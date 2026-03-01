@@ -560,16 +560,27 @@ export const AUTO_EXECUTED_TOOLS = [
 ];
 
 /**
+ * Tool calls that should remain visible after completion so the user can see
+ * the saved/connected state instead of the form disappearing.
+ */
+const PERSIST_AFTER_COMPLETE_TOOLS = [
+  'configure_integration',
+];
+
+/**
  * Filter tool calls to only those that should render as interactive prompts.
  * A tool call is interactive if:
  * 1. It is NOT in the auto-executed tools list, AND
- * 2. Its status is 'pending' (completed/failed tool calls should not show prompts)
+ * 2. Its status is 'pending', OR it is a tool that should persist after completion
+ *    (e.g. configure_integration shows a read-only success state when completed)
  */
 export function getInteractiveToolCalls(
   toolCalls: ChatMessageType['toolCalls'],
 ): NonNullable<ChatMessageType['toolCalls']> {
   return toolCalls?.filter(tc =>
-    !AUTO_EXECUTED_TOOLS.includes(tc.name) && tc.status === 'pending'
+    !AUTO_EXECUTED_TOOLS.includes(tc.name) &&
+    (tc.status === 'pending' ||
+      (tc.status === 'completed' && PERSIST_AFTER_COMPLETE_TOOLS.includes(tc.name)))
   ) ?? [];
 }
 

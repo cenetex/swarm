@@ -47,7 +47,7 @@ describe('getInteractiveToolCalls', () => {
     expect(AUTO_EXECUTED_TOOLS).toContain('search_gallery');
   });
 
-  it('filters out completed tool calls regardless of tool name', () => {
+  it('filters out completed tool calls for non-persisted tools', () => {
     const toolCalls: ToolCall[] = [
       {
         id: 'tc-3',
@@ -74,6 +74,55 @@ describe('getInteractiveToolCalls', () => {
 
     const result = getInteractiveToolCalls(toolCalls);
     expect(result).toHaveLength(0);
+  });
+
+  it('keeps completed configure_integration tool calls visible', () => {
+    const toolCalls: ToolCall[] = [
+      {
+        id: 'tc-ci-1',
+        name: 'configure_integration',
+        arguments: { integration: 'telegram' },
+        status: 'completed',
+        result: { configured: true, integration: 'telegram' },
+      },
+    ];
+
+    const result = getInteractiveToolCalls(toolCalls);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('tc-ci-1');
+    expect(result[0].status).toBe('completed');
+  });
+
+  it('includes both pending and completed configure_integration tool calls', () => {
+    const toolCalls: ToolCall[] = [
+      {
+        id: 'tc-ci-2',
+        name: 'configure_integration',
+        arguments: { integration: 'discord' },
+        status: 'pending',
+      },
+      {
+        id: 'tc-ci-3',
+        name: 'configure_integration',
+        arguments: { integration: 'telegram' },
+        status: 'completed',
+        result: { configured: true },
+      },
+      {
+        id: 'tc-other',
+        name: 'request_secret',
+        arguments: { key: 'API_KEY' },
+        status: 'completed',
+        result: { success: true },
+      },
+    ];
+
+    const result = getInteractiveToolCalls(toolCalls);
+    // pending configure_integration + completed configure_integration = 2
+    // completed request_secret should be filtered out
+    expect(result).toHaveLength(2);
+    expect(result[0].id).toBe('tc-ci-2');
+    expect(result[1].id).toBe('tc-ci-3');
   });
 
   it('filters out failed tool calls', () => {
