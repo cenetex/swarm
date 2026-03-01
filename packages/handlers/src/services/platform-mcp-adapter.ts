@@ -628,10 +628,6 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
           }));
       },
 
-      createWallet: async () => {
-        throw new Error('Wallet creation not allowed from platform handlers');
-      },
-
       getBalance: async (_publicKey: string, _avatarId: string, chain = 'solana') => ({
         balance: 0,
         chain,

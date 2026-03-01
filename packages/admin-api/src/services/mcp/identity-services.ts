@@ -227,34 +227,6 @@ export function createIdentityServices(
         );
       },
 
-      createWallet: async (avatarId, name, chain = 'solana') => {
-        const result = chain === 'ethereum'
-          ? await wallets.generateEthereumWallet(avatarId, name, session)
-          : await wallets.generateSolanaWallet(avatarId, name, session);
-        return {
-          publicKey: result.publicKey,
-          address: result.address,
-          walletType: result.walletType
-        };
-      },
-
-      createVanityWallet: async (avatarId, name, pattern, matchStart) => {
-        const result = await wallets.generateAndSaveVanityWallet(
-          avatarId,
-          name,
-          pattern,
-          matchStart,
-          session
-        );
-        return {
-          publicKey: result.publicKey,
-          address: result.address,
-          walletType: result.walletType,
-          attempts: result.attempts,
-          elapsedMs: result.elapsedMs,
-        };
-      },
-
       getBalance: async (publicKey, avatarId, chain = 'solana') => {
         const balance = chain === 'ethereum'
           ? await wallets.getEthereumBalance(publicKey, avatarId)

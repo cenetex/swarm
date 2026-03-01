@@ -2,6 +2,7 @@
  * Wallet Tools Tests
  *
  * Tests for Solana wallet management tools.
+ * Note: Wallet creation tool tests removed — custodial generation deprecated (#608).
  */
 import { describe, it, expect } from 'vitest';
 import { createWalletTools, type WalletServices } from './wallet.js';
@@ -24,11 +25,6 @@ const mockWalletServices: WalletServices = {
       },
     ];
   },
-
-  createWallet: async (_avatarId: string, name: string, chain?: string) => ({
-    publicKey: 'NEW' + Math.random().toString(36).substring(7),
-    walletType: chain || 'solana',
-  }),
 
   getBalance: async (publicKey: string, _avatarId: string, chain?: string) => {
     const balances: Record<string, number> = {
@@ -96,97 +92,6 @@ describe('Wallet Tools - get_my_wallets', () => {
   });
 });
 
-describe('Wallet Tools - create_solana_wallet', () => {
-  it('creates a new wallet with given name', async () => {
-    const tools = createWalletTools(mockWalletServices);
-    const tool = tools.find(t => t.name === 'create_solana_wallet');
-    expect(tool).toBeDefined();
-
-    const result = await (tool!.execute as any)(
-      { name: 'New Wallet' },
-      { avatarId: 'test', platform: 'admin-ui' }
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.data.message).toContain('New Wallet');
-    expect(result.data.publicKey).toBeDefined();
-  });
-
-  it('validates wallet name is required', () => {
-    const tools = createWalletTools(mockWalletServices);
-    const tool = tools.find(t => t.name === 'create_solana_wallet');
-
-    const validation = tool!.inputSchema.safeParse({});
-    expect(validation.success).toBe(false);
-  });
-
-  it('validates wallet name is non-empty string', () => {
-    const tools = createWalletTools(mockWalletServices);
-    const tool = tools.find(t => t.name === 'create_solana_wallet');
-
-    const validName = tool!.inputSchema.safeParse({ name: 'My Wallet' });
-    const emptyName = tool!.inputSchema.safeParse({ name: '' });
-
-    expect(validName.success).toBe(true);
-    expect(emptyName.success).toBe(false);
-  });
-
-  it('is only available on admin-ui and api platforms', () => {
-    const tools = createWalletTools(mockWalletServices);
-    const tool = tools.find(t => t.name === 'create_solana_wallet');
-
-    expect(tool?.platforms).toEqual(['admin-ui', 'api']);
-  });
-
-  it('returns UI type marker for wallet creation', async () => {
-    const tools = createWalletTools(mockWalletServices);
-    const tool = tools.find(t => t.name === 'create_solana_wallet');
-
-    const result = await (tool!.execute as any)(
-      { name: 'Test Wallet' },
-      { avatarId: 'test', platform: 'admin-ui' }
-    );
-
-    expect(result.data._uiType).toBe('wallet_created');
-  });
-});
-
-describe('Wallet Tools - create_vanity_solana_wallet', () => {
-  it('exists as a tool', () => {
-    const tools = createWalletTools(mockWalletServices);
-    const tool = tools.find(t => t.name === 'create_vanity_solana_wallet');
-    expect(tool).toBeDefined();
-  });
-
-  it('validates required fields', () => {
-    const tools = createWalletTools(mockWalletServices);
-    const tool = tools.find(t => t.name === 'create_vanity_solana_wallet');
-
-    const valid = tool!.inputSchema.safeParse({
-      name: 'Vanity',
-      pattern: 'RATZ',
-    });
-    const missing = tool!.inputSchema.safeParse({
-      name: 'Vanity',
-    });
-
-    expect(valid.success).toBe(true);
-    expect(missing.success).toBe(false);
-  });
-
-  it('has matchStart parameter with default value', () => {
-    const tools = createWalletTools(mockWalletServices);
-    const tool = tools.find(t => t.name === 'create_vanity_solana_wallet');
-
-    const parsed = tool!.inputSchema.parse({
-      name: 'Vanity',
-      pattern: 'RATZ',
-    });
-
-    expect(parsed).toHaveProperty('matchStart');
-  });
-});
-
 describe('Wallet Tools - get_wallet_balance', () => {
   it('exists as a tool', () => {
     const tools = createWalletTools(mockWalletServices);
@@ -221,7 +126,7 @@ describe('Wallet Tools - get_wallet_balance', () => {
 
     expect(withChain.success).toBe(true);
     expect(withoutChain.success).toBe(true);
-    
+
     // Check default is applied
     const parsed = tool!.inputSchema.parse({ address: 'test' });
     expect(parsed.chain).toBe('solana');

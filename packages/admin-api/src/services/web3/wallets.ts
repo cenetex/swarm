@@ -1,17 +1,21 @@
 /**
- * Wallet Generation Service
- * Generates and securely stores crypto wallet keys
+ * Wallet Service
+ *
+ * DEPRECATION NOTICE: Custodial wallet generation (generateSolanaWallet,
+ * generateEthereumWallet, generateVanityWallet) was removed in #608 to
+ * eliminate custody liability. Users should connect their own wallets
+ * via Sign-In With Solana (SIWS) instead. See #604 for background.
+ *
+ * Remaining functionality: list wallets, get wallet, check balances.
  */
-import { Keypair, Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import bs58 from 'bs58';
-import { Wallet, JsonRpcProvider, formatEther } from 'ethers';
+import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { JsonRpcProvider, formatEther } from 'ethers';
 import {
-  PutCommand,
   QueryCommand,
   GetCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { storeSecret as storeSecretDefault, _getSecretValueInternal as _getSecretValueInternalDefault } from '../secrets.js';
-import type { WalletInfo, UserSession } from '../../types.js';
+import { _getSecretValueInternal as _getSecretValueInternalDefault } from '../secrets.js';
+import type { WalletInfo } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
 
 /**
@@ -23,12 +27,6 @@ export interface WalletServiceDeps {
     send: (command: any) => Promise<any>;
   };
   solana: {
-    Keypair: {
-      generate: () => {
-        publicKey: { toBase58: () => string };
-        secretKey: Uint8Array;
-      };
-    };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     Connection: any;
     PublicKey: new (value: string | Buffer | Uint8Array) => {
@@ -37,23 +35,13 @@ export interface WalletServiceDeps {
     LAMPORTS_PER_SOL: number;
   };
   ethereum: {
-    Wallet: {
-      createRandom: () => {
-        address: string;
-        privateKey: string;
-      };
-    };
     JsonRpcProvider: new (url: string) => {
       getBalance: (address: string) => Promise<bigint>;
     };
     formatEther: (value: bigint) => string;
   };
   secrets: {
-    storeSecret: typeof storeSecretDefault;
     _getSecretValueInternal: typeof _getSecretValueInternalDefault;
-  };
-  bs58: {
-    encode: (source: Uint8Array) => string;
   };
   tableName: string;
   solanaRpcUrl: string;
@@ -74,21 +62,17 @@ const DEFAULT_ETHEREUM_RPC = process.env.ETHEREUM_RPC_URL || 'https://cloudflare
 const defaultDeps: WalletServiceDeps = {
   dynamoClient: defaultDynamoClient,
   solana: {
-    Keypair,
     Connection,
     PublicKey,
     LAMPORTS_PER_SOL,
   },
   ethereum: {
-    Wallet,
     JsonRpcProvider,
     formatEther,
   },
   secrets: {
-    storeSecret: storeSecretDefault,
     _getSecretValueInternal: _getSecretValueInternalDefault,
   },
-  bs58,
   tableName: ADMIN_TABLE,
   solanaRpcUrl: DEFAULT_SOLANA_RPC,
   ethereumRpcUrl: DEFAULT_ETHEREUM_RPC,
@@ -125,129 +109,6 @@ async function getSolanaRpcUrl(avatarId?: string, deps: WalletServiceDeps = defa
     }
   }
   return deps.solanaRpcUrl;
-}
-
-/**
- * Generate a new Solana wallet
- * - Generates keypair securely
- * - Stores private key in Secrets Manager
- * - Stores public info in DynamoDB
- */
-export async function generateSolanaWallet(
-  avatarId: string,
-  name: string,
-  session: UserSession,
-  deps: WalletServiceDeps = defaultDeps
-): Promise<WalletInfo> {
-  // Generate new keypair
-  const keypair = deps.solana.Keypair.generate();
-
-  // Convert secret key to base58 for storage
-  const secretKeyBase58 = deps.bs58.encode(keypair.secretKey);
-  const publicKey = keypair.publicKey.toBase58();
-
-  // Store the secret key securely
-  await deps.secrets.storeSecret(
-    avatarId,
-    'solana_wallet_key',
-    name,
-    secretKeyBase58,
-    session,
-    `Solana wallet "${name}" for avatar ${avatarId}`
-  );
-
-  // Create wallet info record
-  const walletId = `${avatarId}-solana-${name}`;
-  const now = Date.now();
-
-  const walletInfo: WalletInfo & { pk: string; sk: string } = {
-    pk: `AVATAR#${avatarId}`,
-    sk: `WALLET#solana#${name}`,
-    id: walletId,
-    avatarId,
-    walletType: 'solana',
-    publicKey,
-    address: publicKey, // Solana uses public key as address
-    name,
-    createdAt: now,
-    createdBy: session.email,
-  };
-
-  // Store wallet info in DynamoDB
-  await deps.dynamoClient.send(new PutCommand({
-    TableName: deps.tableName,
-    Item: walletInfo,
-  }));
-
-  return {
-    id: walletInfo.id,
-    avatarId: walletInfo.avatarId,
-    walletType: walletInfo.walletType,
-    publicKey: walletInfo.publicKey,
-    address: walletInfo.address,
-    name: walletInfo.name,
-    createdAt: walletInfo.createdAt,
-    createdBy: walletInfo.createdBy,
-  };
-}
-
-/**
- * Generate a new Ethereum wallet
- */
-export async function generateEthereumWallet(
-  avatarId: string,
-  name: string,
-  session: UserSession,
-  deps: WalletServiceDeps = defaultDeps
-): Promise<WalletInfo> {
-  // Generate random wallet
-  const wallet = deps.ethereum.Wallet.createRandom();
-  const address = wallet.address;
-  const privateKey = wallet.privateKey;
-
-  // Store the private key securely
-  await deps.secrets.storeSecret(
-    avatarId,
-    'ethereum_wallet_key',
-    name,
-    privateKey,
-    session,
-    `Ethereum wallet "${name}" for avatar ${avatarId}`
-  );
-
-  // Create wallet info record
-  const walletId = `${avatarId}-ethereum-${name}`;
-  const now = Date.now();
-
-  const walletInfo: WalletInfo & { pk: string; sk: string } = {
-    pk: `AVATAR#${avatarId}`,
-    sk: `WALLET#ethereum#${name}`,
-    id: walletId,
-    avatarId,
-    walletType: 'ethereum',
-    publicKey: address,
-    address,
-    name,
-    createdAt: now,
-    createdBy: session.email,
-  };
-
-  // Store wallet info in DynamoDB
-  await deps.dynamoClient.send(new PutCommand({
-    TableName: deps.tableName,
-    Item: walletInfo,
-  }));
-
-  return {
-    id: walletInfo.id,
-    avatarId: walletInfo.avatarId,
-    walletType: walletInfo.walletType,
-    publicKey: walletInfo.publicKey,
-    address: walletInfo.address,
-    name: walletInfo.name,
-    createdAt: walletInfo.createdAt,
-    createdBy: walletInfo.createdBy,
-  };
 }
 
 /**
@@ -372,139 +233,5 @@ export async function getEthereumBalance(address: string, _avatarId?: string, de
     ethBalance: balanceEth,
     ethBalanceWei: balanceWei.toString(),
     tokens: [], // ERC20 token support can be added later
-  };
-}
-
-/**
- * Vanity wallet generation result
- */
-export interface VanityWalletResult {
-  publicKey: string;
-  secretKey: string;
-  attempts: number;
-  elapsedMs: number;
-  pattern: string;
-  matchStart: boolean;
-}
-
-/**
- * Generate a vanity Solana wallet with a specific pattern
- * This is CPU-intensive and may take time depending on pattern complexity
- * 
- * @param pattern - The pattern to search for (e.g., "RATi")
- * @param matchStart - If true, pattern must be at start of address
- * @param maxAttempts - Maximum attempts before giving up (default 10M)
- * @returns VanityWalletResult or null if max attempts exceeded
- */
-export async function generateVanityWallet(
-  pattern: string,
-  matchStart: boolean = false,
-  maxAttempts: number = 10_000_000,
-  deps: WalletServiceDeps = defaultDeps
-): Promise<VanityWalletResult | null> {
-  const startTime = Date.now();
-  let attempts = 0;
-  
-  // Validate pattern (Base58 only)
-  const BASE58_CHARS = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-  for (const char of pattern) {
-    if (!BASE58_CHARS.includes(char)) {
-      throw new Error(`Invalid character '${char}' in pattern. Base58 excludes: 0, O, I, l`);
-    }
-  }
-  
-  while (attempts < maxAttempts) {
-    attempts++;
-    
-    const keypair = deps.solana.Keypair.generate();
-    const publicKey = keypair.publicKey.toBase58();
-    
-    const matches = matchStart 
-      ? publicKey.startsWith(pattern)
-      : publicKey.includes(pattern);
-    
-    if (matches) {
-      return {
-        publicKey,
-        secretKey: deps.bs58.encode(keypair.secretKey),
-        attempts,
-        elapsedMs: Date.now() - startTime,
-        pattern,
-        matchStart,
-      };
-    }
-    
-    // Yield occasionally to prevent blocking
-    if (attempts % 10000 === 0) {
-      await new Promise(resolve => setImmediate(resolve));
-    }
-  }
-  
-  return null;
-}
-
-/**
- * Generate and save a vanity Solana wallet
- */
-export async function generateAndSaveVanityWallet(
-  avatarId: string,
-  name: string,
-  pattern: string,
-  matchStart: boolean,
-  session: UserSession,
-  maxAttempts: number = 10_000_000,
-  deps: WalletServiceDeps = defaultDeps
-): Promise<WalletInfo & { attempts: number; elapsedMs: number }> {
-  // Generate vanity wallet
-  const result = await generateVanityWallet(pattern, matchStart, maxAttempts, deps);
-  
-  if (!result) {
-    throw new Error(`Could not find vanity wallet with pattern "${pattern}" in ${maxAttempts.toLocaleString()} attempts`);
-  }
-  
-  // Store the secret key securely
-  await deps.secrets.storeSecret(
-    avatarId,
-    'solana_wallet_key',
-    name,
-    result.secretKey,
-    session,
-    `Vanity Solana wallet "${name}" (pattern: ${pattern}) for avatar ${avatarId}`
-  );
-
-  // Create wallet info record
-  const walletId = `${avatarId}-solana-${name}`;
-  const now = Date.now();
-
-  const walletInfo: WalletInfo & { pk: string; sk: string } = {
-    pk: `AVATAR#${avatarId}`,
-    sk: `WALLET#solana#${name}`,
-    id: walletId,
-    avatarId,
-    walletType: 'solana',
-    publicKey: result.publicKey,
-    address: result.publicKey,
-    name,
-    createdAt: now,
-    createdBy: session.email,
-  };
-
-  // Store wallet info in DynamoDB
-  await deps.dynamoClient.send(new PutCommand({
-    TableName: deps.tableName,
-    Item: walletInfo,
-  }));
-
-  return {
-    id: walletInfo.id,
-    avatarId: walletInfo.avatarId,
-    walletType: walletInfo.walletType,
-    publicKey: walletInfo.publicKey,
-    address: walletInfo.address,
-    name: walletInfo.name,
-    createdAt: walletInfo.createdAt,
-    createdBy: walletInfo.createdBy,
-    attempts: result.attempts,
-    elapsedMs: result.elapsedMs,
   };
 }

@@ -353,18 +353,7 @@ describe('createPlatformMCPServices', () => {
       expect(wallets[1].solBalance).toBeUndefined();
     });
 
-    it('createWallet throws from platform handlers', async () => {
-      const services = createPlatformMCPServices({
-        avatarId: 'test-avatar',
-        avatarConfig: buildTestAvatarConfig(),
-        stateService: buildTestStateService(),
-        secrets: {},
-      });
-
-      expect(services.wallets.createWallet()).rejects.toThrow(
-        'Wallet creation not allowed from platform handlers',
-      );
-    });
+    // createWallet test removed — custodial wallet generation deprecated (#608)
 
     it('getBalance returns zero balance for any chain', async () => {
       const services = createPlatformMCPServices({

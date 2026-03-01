@@ -20,31 +20,9 @@ export interface WalletInfo {
   balance?: number | null;
 }
 
-export interface VanityWalletResult {
-  publicKey: string;
-  attempts: number;
-  elapsedMs: number;
-  pattern: string;
-  matchStart: boolean;
-}
-
 export interface WalletServices {
   listWallets: (avatarId: string) => Promise<WalletInfo[]>;
-  
-  createWallet: (avatarId: string, name: string, chain?: string) => Promise<{
-    publicKey: string;
-    address?: string;
-    walletType: string;
-  }>;
-  
-  createVanityWallet?: (avatarId: string, name: string, pattern: string, matchStart: boolean) => Promise<{
-    publicKey: string;
-    address?: string;
-    walletType: string;
-    attempts: number;
-    elapsedMs: number;
-  }>;
-  
+
   getBalance: (publicKey: string, avatarId: string, chain?: string) => Promise<{
     balance: number;
     chain: string;
@@ -116,62 +94,6 @@ export const createWalletTools = (services: WalletServices) => [
       return {
         success: true,
         data: enriched,
-      };
-    },
-  }),
-
-  // ── Wallet generation tools DEPRECATED (see #604) ──────────────────────
-  // Custodial wallet generation has been disabled to eliminate custody
-  // liability. Users should connect their own wallets instead.
-  // These tools return a clear deprecation message rather than silently
-  // failing, so avatars/users understand why generation no longer works.
-
-  defineTool({
-    name: 'create_solana_wallet',
-    description: 'Deprecated — custodial wallet generation has been disabled. Connect your own wallet instead.',
-    category: 'wallet',
-    platforms: ['admin-ui', 'api'],
-    inputSchema: z.object({
-      name: z.string().min(1).describe('A friendly name for this wallet'),
-    }),
-    execute: async (): Promise<ToolResult> => {
-      return {
-        success: false,
-        error: 'Custodial wallet generation has been deprecated (see issue #604). Connect your own Solana wallet instead using Sign-In With Solana.',
-      };
-    },
-  }),
-
-  defineTool({
-    name: 'create_vanity_solana_wallet',
-    description: 'Deprecated — custodial wallet generation has been disabled. Connect your own wallet instead.',
-    category: 'wallet',
-    platforms: ['admin-ui', 'api'],
-    inputSchema: z.object({
-      name: z.string().min(1).describe('A friendly name for this wallet'),
-      pattern: z.string().min(1).max(6).describe('Pattern to include in address'),
-      matchStart: z.boolean().default(false).describe('If true, pattern must be at the START of the address'),
-    }),
-    execute: async (): Promise<ToolResult> => {
-      return {
-        success: false,
-        error: 'Custodial wallet generation has been deprecated (see issue #604). Connect your own Solana wallet instead using Sign-In With Solana.',
-      };
-    },
-  }),
-
-  defineTool({
-    name: 'create_ethereum_wallet',
-    description: 'Deprecated — custodial wallet generation has been disabled. Connect your own wallet instead.',
-    category: 'wallet',
-    platforms: ['admin-ui', 'api'],
-    inputSchema: z.object({
-      name: z.string().min(1).describe('A friendly name for this wallet'),
-    }),
-    execute: async (): Promise<ToolResult> => {
-      return {
-        success: false,
-        error: 'Custodial wallet generation has been deprecated (see issue #604). Connect your own Ethereum wallet instead.',
       };
     },
   }),
