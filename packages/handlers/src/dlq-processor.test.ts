@@ -11,6 +11,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   categorizeMessage,
+  containsPermanentErrorSignal,
+  calculateRedriveDelay,
   extractMessageContext,
   inferSourceQueue,
   type FailureCategory,
@@ -79,6 +81,65 @@ describe('categorizeMessage', () => {
     const body = JSON.stringify({
       avatarId: 'test-avatar',
       someOtherField: 'data',
+    });
+    expect(categorizeMessage(body)).toBe('transient');
+  });
+
+  it('returns permanent for message with "avatar not found" error', () => {
+    const body = JSON.stringify({
+      avatarId: 'test-avatar',
+      error: 'Avatar not found',
+    });
+    expect(categorizeMessage(body)).toBe('permanent');
+  });
+
+  it('returns permanent for message with nested error.message containing permanent pattern', () => {
+    const body = JSON.stringify({
+      avatarId: 'test-avatar',
+      error: { message: 'Invalid API key provided', code: '401' },
+    });
+    expect(categorizeMessage(body)).toBe('permanent');
+  });
+
+  it('returns permanent for message with failureReason containing permanent pattern', () => {
+    const body = JSON.stringify({
+      avatarId: 'test-avatar',
+      failureReason: 'Bot was blocked by the user',
+    });
+    expect(categorizeMessage(body)).toBe('permanent');
+  });
+
+  it('returns permanent for message with errorMessage containing permanent pattern', () => {
+    const body = JSON.stringify({
+      avatarId: 'test-avatar',
+      errorMessage: 'Account suspended for policy violation',
+    });
+    expect(categorizeMessage(body)).toBe('permanent');
+  });
+
+  it('returns permanent for envelope-level error with permanent pattern', () => {
+    const body = JSON.stringify({
+      envelope: {
+        avatarId: 'test-avatar',
+        platform: 'telegram',
+        error: 'Chat not found',
+      },
+    });
+    expect(categorizeMessage(body)).toBe('permanent');
+  });
+
+  it('returns transient for error that does not match permanent patterns', () => {
+    const body = JSON.stringify({
+      avatarId: 'test-avatar',
+      error: 'Connection timed out after 30000ms',
+    });
+    expect(categorizeMessage(body)).toBe('transient');
+  });
+
+  it('returns transient for message with no error fields', () => {
+    const body = JSON.stringify({
+      avatarId: 'test-avatar',
+      actions: [{ type: 'send_message', text: 'hello' }],
     });
     expect(categorizeMessage(body)).toBe('transient');
   });
@@ -209,6 +270,99 @@ describe('inferSourceQueue', () => {
     });
     const result = inferSourceQueue(body);
     expect(result === undefined || typeof result === 'string').toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// containsPermanentErrorSignal
+// ---------------------------------------------------------------------------
+
+describe('containsPermanentErrorSignal', () => {
+  it('returns false for object with no error fields', () => {
+    expect(containsPermanentErrorSignal({ avatarId: 'a', platform: 'telegram' })).toBe(false);
+  });
+
+  it('returns true for top-level error string matching pattern', () => {
+    expect(containsPermanentErrorSignal({ avatarId: 'a', error: 'Avatar deleted' })).toBe(true);
+  });
+
+  it('returns true for nested error.message matching pattern', () => {
+    expect(
+      containsPermanentErrorSignal({
+        avatarId: 'a',
+        error: { message: 'Forbidden: insufficient permissions' },
+      })
+    ).toBe(true);
+  });
+
+  it('returns true for errorMessage field matching pattern', () => {
+    expect(
+      containsPermanentErrorSignal({ avatarId: 'a', errorMessage: 'Access denied to resource' })
+    ).toBe(true);
+  });
+
+  it('returns true for failureReason field matching pattern', () => {
+    expect(
+      containsPermanentErrorSignal({ avatarId: 'a', failureReason: 'User is deactivated' })
+    ).toBe(true);
+  });
+
+  it('returns true for envelope-level error matching pattern', () => {
+    expect(
+      containsPermanentErrorSignal({
+        envelope: { error: 'Config validation failed for avatar' },
+      })
+    ).toBe(true);
+  });
+
+  it('returns false for transient error strings', () => {
+    expect(containsPermanentErrorSignal({ error: 'Connection timed out' })).toBe(false);
+    expect(containsPermanentErrorSignal({ error: 'ECONNRESET' })).toBe(false);
+    expect(containsPermanentErrorSignal({ error: 'Service temporarily unavailable' })).toBe(false);
+  });
+
+  it('is case-insensitive', () => {
+    expect(containsPermanentErrorSignal({ error: 'AVATAR NOT FOUND' })).toBe(true);
+    expect(containsPermanentErrorSignal({ error: 'Invalid Api Key' })).toBe(true);
+  });
+
+  it('handles non-string error field gracefully', () => {
+    expect(containsPermanentErrorSignal({ error: 42 })).toBe(false);
+    expect(containsPermanentErrorSignal({ error: null })).toBe(false);
+    expect(containsPermanentErrorSignal({ error: true })).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// calculateRedriveDelay
+// ---------------------------------------------------------------------------
+
+describe('calculateRedriveDelay', () => {
+  it('returns base delay for first receive (count=1)', () => {
+    expect(calculateRedriveDelay(1)).toBe(30);
+  });
+
+  it('returns 2x base delay for second receive (count=2)', () => {
+    expect(calculateRedriveDelay(2)).toBe(60);
+  });
+
+  it('returns 4x base delay for third receive (count=3)', () => {
+    expect(calculateRedriveDelay(3)).toBe(120);
+  });
+
+  it('returns 8x base delay for fourth receive (count=4)', () => {
+    expect(calculateRedriveDelay(4)).toBe(240);
+  });
+
+  it('caps at 900 seconds (SQS maximum DelaySeconds)', () => {
+    expect(calculateRedriveDelay(6)).toBe(900);
+    expect(calculateRedriveDelay(10)).toBe(900);
+    expect(calculateRedriveDelay(100)).toBe(900);
+  });
+
+  it('handles zero and negative counts gracefully', () => {
+    expect(calculateRedriveDelay(0)).toBe(30);
+    expect(calculateRedriveDelay(-1)).toBe(30);
   });
 });
 

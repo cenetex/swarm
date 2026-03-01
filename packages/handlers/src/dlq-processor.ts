@@ -77,6 +77,40 @@ const MAX_MESSAGES_PER_RUN = 10;
 const ARCHIVE_TTL_DAYS = 30;
 const MAX_REDRIVE_RECEIVE_COUNT = 6;
 
+/**
+ * Base delay in seconds for redriven messages. Uses exponential backoff based
+ * on the message's ApproximateReceiveCount. SQS DelaySeconds caps at 900 (15 min).
+ */
+const REDRIVE_BASE_DELAY_SECONDS = 30;
+const REDRIVE_MAX_DELAY_SECONDS = 900;
+
+/**
+ * Maximum age (in ms) for a DLQ message to be eligible for redrive.
+ * Messages older than 24 hours are treated as stale and archived instead.
+ */
+const REDRIVE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Error message substrings that indicate permanent (non-retryable) failures.
+ * These are deterministic errors that will never succeed on retry.
+ */
+const PERMANENT_ERROR_PATTERNS: string[] = [
+  'avatar not found',
+  'avatar deleted',
+  'invalid configuration',
+  'config validation failed',
+  'schema validation',
+  'unauthorized',
+  'forbidden',
+  'access denied',
+  'invalid api key',
+  'account suspended',
+  'account deactivated',
+  'bot was blocked',
+  'chat not found',
+  'user is deactivated',
+];
+
 // ---------------------------------------------------------------------------
 // Clients (lazy-init on cold start)
 // ---------------------------------------------------------------------------
@@ -134,6 +168,12 @@ function isRedriveEnabled(): boolean {
 
 /**
  * Attempt to categorize a DLQ message by inspecting its body and attributes.
+ *
+ * Categorization priority:
+ *   1. Unparseable JSON -> parse_error
+ *   2. Unknown schema   -> schema_error
+ *   3. Known permanent error patterns in embedded error fields -> permanent
+ *   4. Structurally valid with no permanent signal -> transient
  */
 export function categorizeMessage(body: string | undefined): FailureCategory {
   if (!body) return 'parse_error';
@@ -161,10 +201,59 @@ export function categorizeMessage(body: string | undefined): FailureCategory {
     return 'schema_error';
   }
 
-  // 3. Heuristic for transient vs permanent based on message contents
-  //    Messages that were structurally valid but failed processing
-  //    are likely transient (e.g., timeout, rate limit, dependency issue).
+  // 3. Check for permanent error signals embedded in the message.
+  //    Some processors annotate failed messages with error details before
+  //    they land in the DLQ.
+  if (containsPermanentErrorSignal(obj)) {
+    return 'permanent';
+  }
+
+  // 4. Structurally valid messages without permanent error signals are
+  //    assumed to have failed due to transient issues (timeout, rate
+  //    limit, dependency outage, etc.).
   return 'transient';
+}
+
+/**
+ * Scan known error fields in the message body for permanent failure patterns.
+ *
+ * Exported for testing.
+ */
+export function containsPermanentErrorSignal(obj: Record<string, unknown>): boolean {
+  // Collect candidate strings from common error fields
+  const candidates: string[] = [];
+
+  const addIfString = (val: unknown) => {
+    if (typeof val === 'string') candidates.push(val.toLowerCase());
+  };
+
+  addIfString(obj.error);
+  addIfString(obj.errorMessage);
+  addIfString(obj.failureReason);
+
+  // Check nested error objects
+  if (typeof obj.error === 'object' && obj.error !== null) {
+    const errObj = obj.error as Record<string, unknown>;
+    addIfString(errObj.message);
+    addIfString(errObj.code);
+  }
+
+  // Check envelope-level error
+  if (typeof obj.envelope === 'object' && obj.envelope !== null) {
+    const envelope = obj.envelope as Record<string, unknown>;
+    addIfString(envelope.error);
+    addIfString(envelope.errorMessage);
+  }
+
+  for (const candidate of candidates) {
+    for (const pattern of PERMANENT_ERROR_PATTERNS) {
+      if (candidate.includes(pattern)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -287,21 +376,36 @@ async function archiveMessage(analysis: DlqMessageAnalysis, rawBody: string): Pr
 // Redrive
 // ---------------------------------------------------------------------------
 
+/**
+ * Calculate exponential backoff delay (in seconds) for a redrive attempt.
+ *
+ * Formula: min(base * 2^(receiveCount - 1), max)
+ *
+ * Exported for testing.
+ */
+export function calculateRedriveDelay(approximateReceiveCount: number): number {
+  const exponent = Math.max(0, approximateReceiveCount - 1);
+  const delay = REDRIVE_BASE_DELAY_SECONDS * Math.pow(2, exponent);
+  return Math.min(delay, REDRIVE_MAX_DELAY_SECONDS);
+}
+
 async function redriveMessage(
   body: string,
   sourceQueueUrl: string,
+  delaySeconds: number,
   messageGroupId?: string
 ): Promise<void> {
   await sqsClient.send(
     new SendMessageCommand({
       QueueUrl: sourceQueueUrl,
       MessageBody: body,
+      // FIFO queues do not support per-message DelaySeconds; standard queues do.
       ...(sourceQueueUrl.endsWith('.fifo')
         ? {
             MessageGroupId: messageGroupId || 'dlq-redrive',
             MessageDeduplicationId: `redrive_${Date.now()}_${Math.random().toString(36).slice(2)}`,
           }
-        : {}),
+        : { DelaySeconds: delaySeconds }),
     })
   );
 }
@@ -318,7 +422,7 @@ async function publishMetrics(result: DlqProcessorResult, categoryCounts: Record
     MetricName: string;
     Value: number;
     Timestamp: Date;
-    Unit: 'Count';
+    Unit: 'Count' | 'Percent';
     Dimensions?: Array<{ Name: string; Value: string }>;
   }> = [
     {
@@ -351,7 +455,28 @@ async function publishMetrics(result: DlqProcessorResult, categoryCounts: Record
       Timestamp: timestamp,
       Unit: 'Count',
     },
+    // Acceptance criteria: permanent failure count metric
+    {
+      MetricName: 'DlqPermanentFailures',
+      Value: categoryCounts.permanent,
+      Timestamp: timestamp,
+      Unit: 'Count',
+    },
   ];
+
+  // Acceptance criteria: redrive success rate metric
+  // Rate = redriven / (redriven + transient-not-redriven) expressed as a
+  // percentage.  When there are no transient messages the rate is 100%.
+  const transientTotal = categoryCounts.transient;
+  const redriveSuccessRate = transientTotal > 0
+    ? Math.round((result.redriven / transientTotal) * 100)
+    : 100;
+  metricData.push({
+    MetricName: 'DlqRedriveSuccessRate',
+    Value: redriveSuccessRate,
+    Timestamp: timestamp,
+    Unit: 'Percent',
+  });
 
   // Add per-category metrics
   for (const [category, count] of Object.entries(categoryCounts)) {
@@ -486,7 +611,7 @@ export async function handler(
 
       // Analyze the message
       const category = categorizeMessage(body);
-      const context = extractMessageContext(body);
+      const msgContext = extractMessageContext(body);
       const sourceQueue = inferSourceQueue(body);
 
       categoryCounts[category]++;
@@ -495,9 +620,9 @@ export async function handler(
         messageId,
         category,
         sourceQueue,
-        avatarId: context.avatarId,
-        platform: context.platform,
-        conversationId: context.conversationId,
+        avatarId: msgContext.avatarId,
+        platform: msgContext.platform,
+        conversationId: msgContext.conversationId,
         errorSummary: `${category}: message failed after ${approximateReceiveCount} attempts`,
         receivedAt: Date.now(),
         bodyPreview: (body || '').slice(0, 500),
@@ -510,8 +635,8 @@ export async function handler(
         messageId,
         category,
         sourceQueue: sourceQueue ? 'identified' : 'unknown',
-        avatarId: context.avatarId,
-        platform: context.platform,
+        avatarId: msgContext.avatarId,
+        platform: msgContext.platform,
         approximateReceiveCount,
         ageMs: sentTimestamp ? Date.now() - sentTimestamp : undefined,
       });
@@ -531,14 +656,37 @@ export async function handler(
       // Decide whether to redrive or delete
       let shouldRedrive = false;
       let shouldDelete = false;
+      let redriveDelaySeconds = 0;
 
       if (category === 'parse_error' || category === 'schema_error') {
         // Poison pills: delete after archiving (no point retrying)
         shouldDelete = true;
+      } else if (category === 'permanent') {
+        // Permanent failures: deterministic errors that won't resolve on retry
+        shouldDelete = true;
+        logger.info('Permanent failure archived', {
+          event: 'dlq_permanent_failure',
+          messageId,
+          avatarId: msgContext.avatarId,
+        });
       } else if (category === 'transient' && isRedriveEnabled() && sourceQueue) {
         // Transient failures with known source: redrive if under threshold
-        if (approximateReceiveCount < MAX_REDRIVE_RECEIVE_COUNT) {
+        // and message is not too old (stale messages are unlikely to succeed).
+        const isStale = sentTimestamp
+          ? Date.now() - sentTimestamp > REDRIVE_MAX_AGE_MS
+          : false;
+
+        if (isStale) {
+          shouldDelete = true;
+          logger.warn('Transient message too old for redrive', {
+            event: 'dlq_redrive_stale',
+            messageId,
+            ageMs: sentTimestamp ? Date.now() - sentTimestamp : undefined,
+            maxAgeMs: REDRIVE_MAX_AGE_MS,
+          });
+        } else if (approximateReceiveCount < MAX_REDRIVE_RECEIVE_COUNT) {
           shouldRedrive = true;
+          redriveDelaySeconds = calculateRedriveDelay(approximateReceiveCount);
         } else {
           // Too many retries, just archive and delete
           shouldDelete = true;
@@ -550,16 +698,16 @@ export async function handler(
           });
         }
       } else {
-        // Unknown or permanent: archive and delete
+        // Unknown or transient without redrive enabled: archive and delete
         shouldDelete = true;
       }
 
       if (shouldRedrive && sourceQueue && receiptHandle) {
         try {
-          const messageGroupId = context.avatarId
-            ? `${context.avatarId}#${context.conversationId || 'unknown'}`
+          const messageGroupId = msgContext.avatarId
+            ? `${msgContext.avatarId}#${msgContext.conversationId || 'unknown'}`
             : undefined;
-          await redriveMessage(body || '', sourceQueue, messageGroupId);
+          await redriveMessage(body || '', sourceQueue, redriveDelaySeconds, messageGroupId);
           result.redriven++;
 
           // Delete from DLQ after successful redrive
@@ -575,7 +723,9 @@ export async function handler(
             event: 'dlq_message_redriven',
             messageId,
             category,
-            avatarId: context.avatarId,
+            avatarId: msgContext.avatarId,
+            delaySeconds: redriveDelaySeconds,
+            approximateReceiveCount,
           });
         } catch (redriveErr) {
           logger.error('Failed to redrive DLQ message', redriveErr instanceof Error ? redriveErr : undefined, {

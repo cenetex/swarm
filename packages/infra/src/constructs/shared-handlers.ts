@@ -577,7 +577,7 @@ export class SharedHandlers extends Construct {
       environment: {
         ...commonEnv,
         DLQ_URL: this.dlq.queueUrl,
-        DLQ_REDRIVE_ENABLED: 'false', // Conservative default: archive only
+        DLQ_REDRIVE_ENABLED: 'true', // Auto-redrive transient failures (see #643)
       },
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
