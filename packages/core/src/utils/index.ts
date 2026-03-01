@@ -77,3 +77,10 @@ export {
   type TweetPosterEnv,
   type AdminApiEnv,
 } from './env.js';
+
+// Telegram HTML formatting
+export {
+  escapeHtml,
+  markdownToTelegramHtml,
+  stripMarkdown,
+} from './telegram-html.js';

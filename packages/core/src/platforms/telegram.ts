@@ -10,6 +10,7 @@ import { fetchWithRetry } from '../utils/fetch-retry.js';
 import { PlatformError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
 import { logger } from '../utils/logger.js';
+import { markdownToTelegramHtml, stripMarkdown } from '../utils/telegram-html.js';
 import type {
   AvatarConfig,
   SwarmEnvelope,
@@ -699,27 +700,32 @@ export class TelegramAdapter extends PlatformAdapter {
           await this.sendMessage(conversationId, action.text, action.media, replyToMessageId);
           break;
 
-        case 'send_media':
+        case 'send_media': {
           // Send a media file (image, video, animation)
+          const htmlCaption = action.caption ? markdownToTelegramHtml(action.caption) : undefined;
+          const captionParams = htmlCaption
+            ? { caption: htmlCaption, parse_mode: 'HTML' as const }
+            : {};
+
           if (action.mediaType === 'image') {
             // Telegram can be flaky fetching signed/redirecting URLs.
             // Prefer uploading bytes so images reliably post when the model intends them.
             try {
               const inputFile = await fetchToInputFile(action.url, 'image.png');
               await this.bot.api.sendPhoto(chatId, inputFile, {
-                caption: action.caption,
+                ...captionParams,
                 ...replyParams,
               });
             } catch (err) {
               logger.warn('Failed to upload photo bytes, falling back to URL send', { subsystem: 'platform', platform: 'telegram', error: err instanceof Error ? err.message : String(err) });
               await this.bot.api.sendPhoto(chatId, action.url, {
-                caption: action.caption,
+                ...captionParams,
                 ...replyParams,
               });
             }
           } else if (action.mediaType === 'video') {
             await this.bot.api.sendVideo(chatId, action.url, {
-              caption: action.caption,
+              ...captionParams,
               ...replyParams,
             });
           } else if (action.mediaType === 'animation') {
@@ -727,36 +733,43 @@ export class TelegramAdapter extends PlatformAdapter {
             try {
               const inputFile = await fetchToInputFile(action.url, 'animation.gif');
               await this.bot.api.sendAnimation(chatId, inputFile, {
-                caption: action.caption,
+                ...captionParams,
                 ...replyParams,
               });
             } catch (err) {
               logger.warn('Failed to upload animation bytes, falling back to URL send', { subsystem: 'platform', platform: 'telegram', error: err instanceof Error ? err.message : String(err) });
               await this.bot.api.sendAnimation(chatId, action.url, {
-                caption: action.caption,
+                ...captionParams,
                 ...replyParams,
               });
             }
           }
           break;
+        }
 
-        case 'send_voice':
+        case 'send_voice': {
           // Telegram can be flaky fetching signed/redirecting URLs.
           // Prefer uploading bytes so it works consistently in groups and DMs.
+          const htmlVoiceCaption = action.caption ? markdownToTelegramHtml(action.caption) : undefined;
+          const voiceCaptionParams = htmlVoiceCaption
+            ? { caption: htmlVoiceCaption, parse_mode: 'HTML' as const }
+            : {};
+
           try {
             const inputFile = await fetchToInputFile(action.url, 'voice.ogg');
             await this.bot.api.sendVoice(chatId, inputFile, {
-              caption: action.caption,
+              ...voiceCaptionParams,
               ...replyParams,
             });
           } catch (err) {
             logger.warn('Failed to upload voice bytes, falling back to URL send', { subsystem: 'platform', platform: 'telegram', error: err instanceof Error ? err.message : String(err) });
             await this.bot.api.sendVoice(chatId, action.url, {
-              caption: action.caption,
+              ...voiceCaptionParams,
               ...replyParams,
             });
           }
           break;
+        }
 
         case 'send_sticker':
           // Send sticker by emoji or ID
@@ -812,6 +825,41 @@ export class TelegramAdapter extends PlatformAdapter {
   }
 
   /**
+   * Send a text message with HTML parse_mode, falling back to plain text
+   * if the Telegram API rejects the formatted message (400 error).
+   */
+  private async sendTextWithFallback(
+    chatIdNum: number,
+    text: string,
+    extra?: Record<string, unknown>
+  ): Promise<void> {
+    if (!this.bot) return;
+
+    const htmlText = markdownToTelegramHtml(text);
+    try {
+      await this.bot.api.sendMessage(chatIdNum, htmlText, {
+        parse_mode: 'HTML',
+        ...extra,
+      });
+    } catch (error) {
+      // If Telegram rejects the HTML (400 Bad Request), retry as plain text
+      const status = (error as { status?: number }).status
+        ?? (error as { error_code?: number }).error_code;
+      if (status === 400) {
+        logger.warn('Telegram rejected HTML formatting, falling back to plain text', {
+          subsystem: 'platform',
+          platform: 'telegram',
+          error: error instanceof Error ? error.message : String(error),
+        });
+        const plainText = stripMarkdown(text);
+        await this.bot.api.sendMessage(chatIdNum, plainText, extra);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  /**
    * Send a message with optional media
    */
   private async sendMessage(
@@ -823,32 +871,35 @@ export class TelegramAdapter extends PlatformAdapter {
     if (!this.bot) return;
 
     const chatIdNum = parseInt(chatId);
-    const replyParams = replyToMessageId 
+    const replyParams = replyToMessageId
       ? { reply_to_message_id: parseInt(replyToMessageId) }
       : undefined;
 
     if (media && media.length > 0) {
       const firstMedia = media[0];
-      
+      const htmlCaption = text ? markdownToTelegramHtml(text) : undefined;
+
       if (firstMedia.type === 'image') {
         await this.bot.api.sendPhoto(chatIdNum, firstMedia.url, {
-          caption: text,
+          caption: htmlCaption,
+          parse_mode: htmlCaption ? 'HTML' : undefined,
           ...replyParams,
         });
       } else if (firstMedia.type === 'video') {
         await this.bot.api.sendVideo(chatIdNum, firstMedia.url, {
-          caption: text,
+          caption: htmlCaption,
+          parse_mode: htmlCaption ? 'HTML' : undefined,
           ...replyParams,
         });
       } else if (firstMedia.type === 'sticker') {
         // Send sticker first, then text separately
         await this.bot.api.sendSticker(chatIdNum, firstMedia.url, replyParams);
         if (text) {
-          await this.bot.api.sendMessage(chatIdNum, text);
+          await this.sendTextWithFallback(chatIdNum, text);
         }
       }
     } else {
-      await this.bot.api.sendMessage(chatIdNum, text, replyParams);
+      await this.sendTextWithFallback(chatIdNum, text, replyParams);
     }
   }
 
