@@ -120,101 +120,58 @@ export const createWalletTools = (services: WalletServices) => [
     },
   }),
 
+  // ── Wallet generation tools DEPRECATED (see #604) ──────────────────────
+  // Custodial wallet generation has been disabled to eliminate custody
+  // liability. Users should connect their own wallets instead.
+  // These tools return a clear deprecation message rather than silently
+  // failing, so avatars/users understand why generation no longer works.
+
   defineTool({
     name: 'create_solana_wallet',
-    description: 'Create a new Solana wallet. The private key is stored securely.',
+    description: 'Deprecated — custodial wallet generation has been disabled. Connect your own wallet instead.',
     category: 'wallet',
     platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       name: z.string().min(1).describe('A friendly name for this wallet'),
     }),
-    execute: async (input, context): Promise<ToolResult> => {
-      const result = await services.createWallet(context.avatarId, input.name, 'solana');
-
+    execute: async (): Promise<ToolResult> => {
       return {
-        success: true,
-        data: {
-          message: `Solana wallet "${input.name}" created!`,
-          publicKey: result.publicKey,
-          address: result.address,
-          _uiType: 'wallet_created',
-        },
+        success: false,
+        error: 'Custodial wallet generation has been deprecated (see issue #604). Connect your own Solana wallet instead using Sign-In With Solana.',
       };
     },
   }),
 
   defineTool({
     name: 'create_vanity_solana_wallet',
-    description: `Create a Solana wallet with a custom vanity address pattern.
-The wallet address will contain your chosen pattern (e.g., "RATi", "MOON", etc.).
-This takes longer than regular wallet creation - from seconds to minutes depending on pattern length.
-Pattern must use Base58 characters only (no 0, O, I, or l).
-Short patterns (2-3 chars) are fast. 4+ chars take progressively longer.`,
+    description: 'Deprecated — custodial wallet generation has been disabled. Connect your own wallet instead.',
     category: 'wallet',
     platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       name: z.string().min(1).describe('A friendly name for this wallet'),
-      pattern: z.string().min(1).max(6).describe('Pattern to include in address (e.g., "RATi", "MOON"). Max 6 chars.'),
-      matchStart: z.boolean().default(false).describe('If true, pattern must be at the START of the address (much harder)'),
+      pattern: z.string().min(1).max(6).describe('Pattern to include in address'),
+      matchStart: z.boolean().default(false).describe('If true, pattern must be at the START of the address'),
     }),
-    execute: async (input, context): Promise<ToolResult> => {
-      if (!services.createVanityWallet) {
-        return {
-          success: false,
-          error: 'Vanity wallet generation not available on this server',
-        };
-      }
-      
-      try {
-        const result = await services.createVanityWallet(
-          context.avatarId, 
-          input.name, 
-          input.pattern,
-          input.matchStart
-        );
-
-        const elapsedSec = (result.elapsedMs / 1000).toFixed(1);
-        
-        return {
-          success: true,
-          data: {
-            message: `Vanity wallet "${input.name}" created with pattern "${input.pattern}"!`,
-            publicKey: result.publicKey,
-            address: result.address,
-            pattern: input.pattern,
-            matchStart: input.matchStart,
-            attempts: result.attempts,
-            generationTime: `${elapsedSec}s`,
-            _uiType: 'vanity_wallet_created',
-          },
-        };
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Vanity wallet generation failed',
-        };
-      }
+    execute: async (): Promise<ToolResult> => {
+      return {
+        success: false,
+        error: 'Custodial wallet generation has been deprecated (see issue #604). Connect your own Solana wallet instead using Sign-In With Solana.',
+      };
     },
   }),
 
   defineTool({
     name: 'create_ethereum_wallet',
-    description: 'Create a new Ethereum wallet. The private key is stored securely.',
+    description: 'Deprecated — custodial wallet generation has been disabled. Connect your own wallet instead.',
     category: 'wallet',
     platforms: ['admin-ui', 'api'],
     inputSchema: z.object({
       name: z.string().min(1).describe('A friendly name for this wallet'),
     }),
-    execute: async (input, context): Promise<ToolResult> => {
-      const result = await services.createWallet(context.avatarId, input.name, 'ethereum');
-
+    execute: async (): Promise<ToolResult> => {
       return {
-        success: true,
-        data: {
-          message: `Ethereum wallet "${input.name}" created!`,
-          address: result.address,
-          publicKey: result.publicKey,
-        },
+        success: false,
+        error: 'Custodial wallet generation has been deprecated (see issue #604). Connect your own Ethereum wallet instead.',
       };
     },
   }),
