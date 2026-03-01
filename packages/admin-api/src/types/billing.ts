@@ -109,8 +109,8 @@ export interface EntitlementRecord {
   suspendedAt?: number;
   suspendedReason?: string;
 
-  // How this entitlement was granted (manual admin, stripe, ascension, etc.)
-  entitlementSource?: 'manual' | 'stripe' | 'ascension';
+  // How this entitlement was granted (manual admin, stripe, ascension, design-partner, etc.)
+  entitlementSource?: 'manual' | 'stripe' | 'ascension' | 'design-partner';
 
   // Audit
   createdAt: number;

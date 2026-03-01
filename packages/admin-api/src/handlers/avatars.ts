@@ -36,6 +36,7 @@ import { handleApiKeyRoutes } from './avatar-routes/api-keys.js';
 import { handleMemoryRoutes } from './avatar-routes/memory.js';
 import { handleUsageRoutes } from './avatar-routes/usage.js';
 import { handleOnboardingAvatarRoutes } from './avatar-routes/onboarding.js';
+import { handleDesignPartnerRoutes } from './avatar-routes/design-partner.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ const routeHandlers: RouteHandler[] = [
   handleSystemRoutes,
   handleCrudRoutes,
   handleEntitlementRoutes,
+  handleDesignPartnerRoutes,
   handleTelegramRoutes,
   handleDiscordRoutes,
   handleOnboardingAvatarRoutes,

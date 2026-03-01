@@ -10,6 +10,7 @@ export * from './energy-burn.js';
 export * from './stripe-billing.js';
 export * from './runtime-limits.js';
 export * from './active-user-limit.js';
+export * from './design-partner.js';
 
 // Energy service types that don't conflict with credits.js wrappers
 export type {
