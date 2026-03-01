@@ -292,7 +292,13 @@ async function handleWebhook(
 
   const stripeEvent = JSON.parse(rawBody) as StripeWebhookEvent;
 
+  console.log(`[Billing] Stripe webhook received: type=${stripeEvent.type} id=${stripeEvent.id}`);
+
   switch (stripeEvent.type) {
+    case 'ping': {
+      console.log('[Billing] Stripe ping event — webhook endpoint healthy');
+      return jsonResponse(200, { received: true, type: 'ping' }, corsHeaders);
+    }
     case 'checkout.session.completed': {
       const session = stripeEvent.data.object as StripeCheckoutSession;
       const subscriptionId = extractStripeObjectId(session.subscription);
@@ -336,6 +342,7 @@ async function handleWebhook(
       break;
     }
 
+    case 'customer.subscription.created':
     case 'customer.subscription.updated': {
       const subscription = stripeEvent.data.object as StripeSubscription;
       const subscriptionId = subscription.id;
@@ -431,7 +438,7 @@ async function handleWebhook(
     }
 
     default:
-      // Ignore unsupported Stripe events.
+      console.log(`[Billing] Ignoring unhandled Stripe event type: ${stripeEvent.type}`);
       break;
   }
 

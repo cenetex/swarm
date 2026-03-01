@@ -76,7 +76,7 @@ describe('billing handler - account-scoped entitlement lookups (issue #416)', ()
       // The billing handler should only import account-scoped functions
       // (and subscription-based lookups for webhooks).
       // getEntitlement (avatar-only) should not be imported.
-      const importBlock = billingSource.match(/import \{[\s\S]*?\} from ['"]\.\.\/services\/entitlements\.js['"]/);
+      const importBlock = billingSource.match(/import \{[\s\S]*?\} from ['"]\.\.\/services\/billing\/entitlements\.js['"]/);
       expect(importBlock).not.toBeNull();
       const importText = importBlock![0];
       expect(importText).not.toContain('getEntitlement,');
@@ -135,7 +135,7 @@ describe('reassignAvatar - Stripe data clearing (issue #416)', () => {
 
 describe('clearStripeDataForAvatar function (issue #416)', () => {
   const entitlementsSource = readFileSync(
-    resolve(__dirname, '..', 'services', 'entitlements.ts'),
+    resolve(__dirname, '..', 'services', 'billing', 'entitlements.ts'),
     'utf-8',
   );
 

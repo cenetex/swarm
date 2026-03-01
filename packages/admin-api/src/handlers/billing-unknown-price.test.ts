@@ -120,7 +120,7 @@ describe('checkout.session.completed — does not default unknown prices (issue 
 describe('planFromStripeSubscription — returns null for unknown price IDs', () => {
   // Verify the service layer correctly returns null for unknown prices.
   const stripeServiceSource = readFileSync(
-    resolve(__dirname, '..', 'services', 'stripe-billing.ts'),
+    resolve(__dirname, '..', 'services', 'billing', 'stripe-billing.ts'),
     'utf-8',
   );
 
