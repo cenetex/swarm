@@ -3,6 +3,7 @@ import { memo, useMemo, useState, type ReactNode } from 'react';
 import { extractThinkingTags } from '../utils/thinkingTags';
 import type { ChatMessage as ChatMessageType, MessageSender } from '../types';
 import { ToolPrompt } from './ToolPrompts';
+import { PromptSuccess, PromptError } from './tool-prompts/PromptStatus';
 import { ImageModal } from './ImageModal';
 
 /**
@@ -560,17 +561,54 @@ export const AUTO_EXECUTED_TOOLS = [
 ];
 
 /**
- * Filter tool calls to only those that should render as interactive prompts.
- * A tool call is interactive if:
- * 1. It is NOT in the auto-executed tools list, AND
- * 2. Its status is 'pending' (completed/failed tool calls should not show prompts)
+ * Filter tool calls to those that should be visible in the chat.
+ * A tool call is visible if it is NOT in the auto-executed tools list.
+ * Pending calls render as interactive prompts; completed/failed render as status badges.
  */
-export function getInteractiveToolCalls(
+export function getVisibleToolCalls(
   toolCalls: ChatMessageType['toolCalls'],
 ): NonNullable<ChatMessageType['toolCalls']> {
   return toolCalls?.filter(tc =>
-    !AUTO_EXECUTED_TOOLS.includes(tc.name) && tc.status === 'pending'
+    !AUTO_EXECUTED_TOOLS.includes(tc.name)
   ) ?? [];
+}
+
+/** @deprecated Use getVisibleToolCalls instead */
+export const getInteractiveToolCalls = getVisibleToolCalls;
+
+/**
+ * Generate a user-friendly completion message for a resolved tool call.
+ */
+function getCompletedMessage(toolCall: NonNullable<ChatMessageType['toolCalls']>[number]): string {
+  const result = toolCall.result as Record<string, unknown> | undefined;
+  const args = toolCall.arguments as Record<string, unknown>;
+  switch (toolCall.name) {
+    case 'configure_integration': {
+      const integration = result?.integration || args?.integration;
+      return integration ? `${String(integration)} configured` : 'Integration configured';
+    }
+    case 'confirm_action':
+      return result?.confirmed ? 'Confirmed' : 'Cancelled';
+    case 'request_secret':
+    case 'prompt_secret':
+      return 'Secret saved';
+    case 'request_wallet_link':
+      return 'Wallet linked';
+    case 'request_twitter_connection':
+    case 'twitter_request_integration':
+      return 'Twitter connected';
+    case 'request_feature_toggle':
+      return 'Features updated';
+    case 'request_property_research':
+      return 'Property authorized';
+    default:
+      // Type-based routing fallbacks
+      if (args?.type === 'model_selector') return 'Model selected';
+      if (args?.type === 'feature_toggle') return 'Features updated';
+      if (args?.type === 'upload_url') return 'Upload complete';
+      if (args?.type === 'twitter_connect') return 'Twitter connected';
+      return 'Completed';
+  }
 }
 
 function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
@@ -642,8 +680,8 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
       r.type !== 'twitter_status' && r.type !== 'model_list' && r.type !== 'unknown'
   );
   
-  // Filter out auto-executed and non-pending tools from interactive display
-  const interactiveToolCalls = getInteractiveToolCalls(message.toolCalls);
+  // Filter out auto-executed tools from display
+  const visibleToolCalls = getVisibleToolCalls(message.toolCalls);
   
   // Don't render empty bubbles - check if there's any visible content
   const hasVisibleContent = 
@@ -658,7 +696,7 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
     unknownResults.length > 0 ||
     images.length > 0 ||
     audios.length > 0 ||
-    interactiveToolCalls.length > 0 ||
+    visibleToolCalls.length > 0 ||
     activeJobs.length > 0 ||
     failedJobs.length > 0;
   
@@ -1140,17 +1178,28 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
               />
             )}
             
-            {/* Render tool prompts inline - only for tools that need user input */}
-            {interactiveToolCalls.length > 0 && (
+            {/* Render tool prompts inline — pending as interactive forms, completed/failed as badges */}
+            {visibleToolCalls.length > 0 && (
               <div className={`space-y-3 ${message.content || images.length > 0 ? 'mt-3' : ''}`}>
-                {interactiveToolCalls.map((toolCall) => (
-                  <ToolPrompt
-                    key={toolCall.id}
-                    toolCall={toolCall}
-                    onSubmit={onToolSubmit || (() => {})}
-                    disabled={!onToolSubmit || toolCall.status === 'completed'}
-                  />
-                ))}
+                {visibleToolCalls.map((toolCall) => {
+                  if (toolCall.status === 'completed') {
+                    return <PromptSuccess key={toolCall.id} message={getCompletedMessage(toolCall)} />;
+                  }
+                  if (toolCall.status === 'failed') {
+                    const errMsg = typeof (toolCall.result as Record<string, unknown>)?.error === 'string'
+                      ? (toolCall.result as Record<string, unknown>).error as string
+                      : 'Action failed';
+                    return <PromptError key={toolCall.id} message={errMsg} />;
+                  }
+                  return (
+                    <ToolPrompt
+                      key={toolCall.id}
+                      toolCall={toolCall}
+                      onSubmit={onToolSubmit || (() => {})}
+                      disabled={!onToolSubmit}
+                    />
+                  );
+                })}
               </div>
             )}
 

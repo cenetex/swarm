@@ -1,20 +1,23 @@
 /**
- * Tests for ChatMessage interactive tool call filtering logic.
+ * Tests for ChatMessage tool call visibility filtering logic.
  *
  * Validates that:
- * - send_gallery_image and search_gallery are auto-executed (non-interactive)
- * - Completed/failed tool calls never appear as interactive prompts
- * - Only pending, non-auto-executed tools show interactive prompts
+ * - send_gallery_image and search_gallery are auto-executed (never visible)
+ * - Pending, completed, and failed non-auto-executed tool calls ARE visible
+ * - Auto-executed tools are excluded regardless of status
  *
  * Covers regression for issue #229: completed send_gallery_image rendering
  * as "Unknown tool" prompt in admin UI.
+ *
+ * Updated for issue #566: completed/failed tool calls now render as status
+ * badges instead of disappearing.
  */
 import { describe, it, expect } from 'vitest';
-import { getInteractiveToolCalls, AUTO_EXECUTED_TOOLS } from './ChatMessage';
+import { getVisibleToolCalls, getInteractiveToolCalls, AUTO_EXECUTED_TOOLS } from './ChatMessage';
 import type { ToolCall } from '../types';
 
-describe('getInteractiveToolCalls', () => {
-  it('excludes send_gallery_image from interactive prompts', () => {
+describe('getVisibleToolCalls', () => {
+  it('excludes send_gallery_image from visible prompts', () => {
     const toolCalls: ToolCall[] = [
       {
         id: 'tc-1',
@@ -24,11 +27,11 @@ describe('getInteractiveToolCalls', () => {
       },
     ];
 
-    const result = getInteractiveToolCalls(toolCalls);
+    const result = getVisibleToolCalls(toolCalls);
     expect(result).toHaveLength(0);
   });
 
-  it('excludes search_gallery from interactive prompts', () => {
+  it('excludes search_gallery from visible prompts', () => {
     const toolCalls: ToolCall[] = [
       {
         id: 'tc-2',
@@ -38,7 +41,7 @@ describe('getInteractiveToolCalls', () => {
       },
     ];
 
-    const result = getInteractiveToolCalls(toolCalls);
+    const result = getVisibleToolCalls(toolCalls);
     expect(result).toHaveLength(0);
   });
 
@@ -47,7 +50,7 @@ describe('getInteractiveToolCalls', () => {
     expect(AUTO_EXECUTED_TOOLS).toContain('search_gallery');
   });
 
-  it('filters out completed tool calls regardless of tool name', () => {
+  it('keeps completed tool calls visible for status badge rendering', () => {
     const toolCalls: ToolCall[] = [
       {
         id: 'tc-3',
@@ -63,20 +66,15 @@ describe('getInteractiveToolCalls', () => {
         status: 'completed',
         result: { confirmed: true },
       },
-      {
-        id: 'tc-5',
-        name: 'some_unknown_tool',
-        arguments: { foo: 'bar' },
-        status: 'completed',
-        result: { success: true },
-      },
     ];
 
-    const result = getInteractiveToolCalls(toolCalls);
-    expect(result).toHaveLength(0);
+    const result = getVisibleToolCalls(toolCalls);
+    expect(result).toHaveLength(2);
+    expect(result[0].status).toBe('completed');
+    expect(result[1].status).toBe('completed');
   });
 
-  it('filters out failed tool calls', () => {
+  it('keeps failed tool calls visible for error badge rendering', () => {
     const toolCalls: ToolCall[] = [
       {
         id: 'tc-6',
@@ -86,7 +84,30 @@ describe('getInteractiveToolCalls', () => {
       },
     ];
 
-    const result = getInteractiveToolCalls(toolCalls);
+    const result = getVisibleToolCalls(toolCalls);
+    expect(result).toHaveLength(1);
+    expect(result[0].status).toBe('failed');
+  });
+
+  it('still excludes auto-executed tools even when completed', () => {
+    const toolCalls: ToolCall[] = [
+      {
+        id: 'tc-5',
+        name: 'send_gallery_image',
+        arguments: { imageId: 'x' },
+        status: 'completed',
+        result: { success: true },
+      },
+      {
+        id: 'tc-5b',
+        name: 'generate_image',
+        arguments: { prompt: 'cat' },
+        status: 'completed',
+        result: { success: true },
+      },
+    ];
+
+    const result = getVisibleToolCalls(toolCalls);
     expect(result).toHaveLength(0);
   });
 
@@ -106,13 +127,13 @@ describe('getInteractiveToolCalls', () => {
       },
     ];
 
-    const result = getInteractiveToolCalls(toolCalls);
+    const result = getVisibleToolCalls(toolCalls);
     expect(result).toHaveLength(2);
     expect(result[0].name).toBe('request_secret');
     expect(result[1].name).toBe('confirm_action');
   });
 
-  it('handles mixed pending and completed tool calls correctly', () => {
+  it('handles mixed statuses — excludes only auto-executed tools', () => {
     const toolCalls: ToolCall[] = [
       {
         id: 'tc-9',
@@ -135,18 +156,19 @@ describe('getInteractiveToolCalls', () => {
       },
     ];
 
-    const result = getInteractiveToolCalls(toolCalls);
-    // Only request_secret (pending + not auto-executed) should be included
-    expect(result).toHaveLength(1);
+    const result = getVisibleToolCalls(toolCalls);
+    // request_secret (pending) + confirm_action (completed) — both non-auto-executed
+    expect(result).toHaveLength(2);
     expect(result[0].id).toBe('tc-9');
+    expect(result[1].id).toBe('tc-10');
   });
 
   it('returns empty array for undefined toolCalls', () => {
-    expect(getInteractiveToolCalls(undefined)).toEqual([]);
+    expect(getVisibleToolCalls(undefined)).toEqual([]);
   });
 
   it('returns empty array for empty toolCalls array', () => {
-    expect(getInteractiveToolCalls([])).toEqual([]);
+    expect(getVisibleToolCalls([])).toEqual([]);
   });
 
   it('ensures all known auto-executed tools are in the list', () => {
@@ -164,5 +186,11 @@ describe('getInteractiveToolCalls', () => {
     for (const tool of expected) {
       expect(AUTO_EXECUTED_TOOLS).toContain(tool);
     }
+  });
+});
+
+describe('getInteractiveToolCalls (deprecated alias)', () => {
+  it('is an alias for getVisibleToolCalls', () => {
+    expect(getInteractiveToolCalls).toBe(getVisibleToolCalls);
   });
 });
