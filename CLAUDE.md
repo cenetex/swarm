@@ -57,6 +57,15 @@ pnpm typecheck                        # all packages
 
 All deploys go through GitHub Actions (push to main → staging auto-deploy; tags → production deploy). Never run `cdk deploy` locally.
 
+## AWS Profiles
+
+| Profile | Account | Use |
+|---------|---------|-----|
+| `default` / `staging` | `022118847419` | Staging account (default) |
+| `prod` | `332730082708` | Production account |
+
+Use `--profile prod` for production AWS CLI commands (ECS logs, CloudFormation, etc.).
+
 ---
 
 ## Commit Convention
