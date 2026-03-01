@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { getSessionFromCookie, getClearSessionCookies } from '../auth/session-cookie.js';
 import { getCorsHeaders } from '../http/cors.js';
 import { getAvatar } from '../services/avatars.js';
+import { recordAuditEvent } from '../services/audit-log.js';
 import {
   findEntitlementByStripeSubscriptionId,
   getEntitlementByAccount,
@@ -255,6 +256,9 @@ async function upsertStripeEntitlement(params: {
   trialEndsAt?: number;
 }): Promise<void> {
   const existing = await getEntitlementByAccount(params.accountId, params.avatarId);
+  const previousPlan = existing?.plan ?? 'free';
+  const previousStatus = existing?.status ?? 'active';
+
   await setEntitlement({
     accountId: params.accountId,
     avatarId: params.avatarId,
@@ -268,6 +272,31 @@ async function upsertStripeEntitlement(params: {
     entitlementSource: 'stripe',
   });
   await syncRuntimeContractForAvatar(params.avatarId);
+
+  // Audit: record entitlement change from Stripe webhook
+  try {
+    await recordAuditEvent({
+      avatarId: params.avatarId,
+      eventType: 'entitlement_changed',
+      actorId: 'stripe-webhook',
+      actorType: 'admin',
+      details: {
+        source: 'stripe',
+        previousPlan,
+        newPlan: params.plan,
+        previousStatus,
+        newStatus: params.status,
+        stripeSubscriptionId: params.stripeSubscriptionId ?? null,
+        stripeCustomerId: params.stripeCustomerId ?? null,
+        accountId: params.accountId,
+      },
+    });
+  } catch {
+    console.warn('[Billing] Failed to record audit event for entitlement change', {
+      avatarId: params.avatarId,
+      plan: params.plan,
+    });
+  }
 }
 
 async function handleWebhook(
@@ -418,6 +447,27 @@ async function handleWebhook(
         'stripe-webhook',
       );
       await syncRuntimeContractForAvatar(entitlement.avatarId);
+
+      try {
+        await recordAuditEvent({
+          avatarId: entitlement.avatarId,
+          eventType: 'entitlement_changed',
+          actorId: 'stripe-webhook',
+          actorType: 'admin',
+          details: {
+            source: 'stripe',
+            reason: 'invoice.payment_failed',
+            previousStatus: entitlement.status,
+            newStatus: 'suspended',
+            stripeSubscriptionId: subscriptionId,
+            accountId: entitlement.accountId,
+          },
+        });
+      } catch {
+        console.warn('[Billing] Failed to record audit event for payment failure', {
+          avatarId: entitlement.avatarId,
+        });
+      }
       break;
     }
 
@@ -434,6 +484,27 @@ async function handleWebhook(
         'stripe-webhook',
       );
       await syncRuntimeContractForAvatar(entitlement.avatarId);
+
+      try {
+        await recordAuditEvent({
+          avatarId: entitlement.avatarId,
+          eventType: 'entitlement_changed',
+          actorId: 'stripe-webhook',
+          actorType: 'admin',
+          details: {
+            source: 'stripe',
+            reason: 'invoice.paid',
+            previousStatus: entitlement.status,
+            newStatus: 'active',
+            stripeSubscriptionId: subscriptionId,
+            accountId: entitlement.accountId,
+          },
+        });
+      } catch {
+        console.warn('[Billing] Failed to record audit event for invoice payment', {
+          avatarId: entitlement.avatarId,
+        });
+      }
       break;
     }
 
