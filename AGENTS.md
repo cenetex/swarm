@@ -217,7 +217,7 @@ If any item is missing, the agent must request clarification on the issue before
 - `packages/admin-api/src/auth/`
 - `packages/admin-api/src/handlers/wallet-auth.ts`
 - `packages/admin-api/src/handlers/privy-auth.ts`
-- `docs/AUTHENTICATION-IMPROVEMENTS.md`
+- `packages/admin-api/src/auth/`
 
 ### 3) Targeted Test Commands (prefer smallest scope first)
 

@@ -1,4 +1,0 @@
-# worker|ticket|worktree|prompt_file|enabled
-worker-015|SWARM-015|/Users/ratimics/develop/aws-swarm-swarm-015|/Users/ratimics/develop/aws-swarm/docs/engineering-report-2026-02-05/dispatch-prompts/execution-wave2/worker-015.prompt.txt|1
-worker-016|SWARM-016|/Users/ratimics/develop/aws-swarm-swarm-016|/Users/ratimics/develop/aws-swarm/docs/engineering-report-2026-02-05/dispatch-prompts/execution-wave2/worker-016.prompt.txt|1
-worker-020|SWARM-020|/Users/ratimics/develop/aws-swarm-swarm-020|/Users/ratimics/develop/aws-swarm/docs/engineering-report-2026-02-05/dispatch-prompts/execution-wave2/worker-020.prompt.txt|1

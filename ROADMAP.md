@@ -2,9 +2,9 @@
 
 This roadmap focuses on product and platform milestones. It is a **directional overlay** on top of the GitHub issue queue, which is the canonical execution backlog.
 
-**Last reviewed:** 2026-02-23
+**Last reviewed:** 2026-03-01
 
-> **Issue-indexed execution model.** Every actionable item in this document links to one or more GitHub issues or milestone queries. Items without issue references are narrative goals -- they describe strategic direction but are not scheduled for execution until decomposed into issues. See [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md) for triage cadence, priority criteria, and aging policy.
+> **Issue-indexed execution model.** Every actionable item in this document links to one or more GitHub issues or milestone queries. Items without issue references are narrative goals -- they describe strategic direction but are not scheduled for execution until decomposed into issues.
 
 ## How to read this document
 
