@@ -11,7 +11,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@privy-io/react-auth": "^3.14.1",
+    "@privy-io/react-auth": "^3.16.0",
     "@solana-program/memo": "^0.11.0",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-phantom": "^0.9.28",
@@ -32,9 +32,9 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.1.4",
-    "autoprefixer": "^10.4.24",
+    "autoprefixer": "^10.4.27",
     "jsdom": "^28.1.0",
-    "postcss": "^8.4.38",
+    "postcss": "^8.5.8",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.4.5",
     "vite": "^7.3.1",
