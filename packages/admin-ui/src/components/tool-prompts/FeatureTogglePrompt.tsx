@@ -87,7 +87,7 @@ export function FeatureTogglePrompt({ toolCall, onSubmit, disabled }: ToolPrompt
           }`}
         >
           <span
-            className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform shadow-sm ${
+            className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform shadow-xs ${
               currentEnabled ? 'left-8' : 'left-1'
             }`}
           />

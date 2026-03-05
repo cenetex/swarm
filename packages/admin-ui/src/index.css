@@ -1,6 +1,56 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  /* Brand palette */
+  --color-brand-50: #f5f3f7;
+  --color-brand-100: #ebe7ef;
+  --color-brand-200: #d4cce0;
+  --color-brand-300: #b8a9c9;
+  --color-brand-400: #9680ad;
+  --color-brand-500: #7a6395;
+  --color-brand-600: #5d4e7a;
+  --color-brand-700: #4d4066;
+  --color-brand-800: #423855;
+  --color-brand-900: #3a3249;
+  --color-brand-950: #241e2e;
+
+  /* Dark mode surfaces */
+  --color-surface-dark: #1a1625;
+  --color-surface-dark-secondary: #241e2e;
+  --color-surface-dark-tertiary: #2d2640;
+  --color-surface-dark-elevated: #322a45;
+
+  /* Light mode surfaces */
+  --color-surface-light: #ffffff;
+  --color-surface-light-secondary: #f8f7fa;
+  --color-surface-light-tertiary: #f0eef4;
+  --color-surface-light-elevated: #ffffff;
+
+  /* Dark mode content */
+  --color-content-dark: #f5f3f7;
+  --color-content-dark-secondary: #d4cce0;
+  --color-content-dark-tertiary: #9680ad;
+  --color-content-dark-muted: #7a6395;
+
+  /* Light mode content */
+  --color-content-light: #1a1625;
+  --color-content-light-secondary: #5d4e7a;
+  --color-content-light-tertiary: #9680ad;
+  --color-content-light-muted: #b8a9c9;
+
+  /* Dark mode borders */
+  --color-border-dark: #3a3249;
+  --color-border-dark-secondary: #4d4066;
+
+  /* Light mode borders */
+  --color-border-light: #ebe7ef;
+  --color-border-light-secondary: #d4cce0;
+
+  /* Custom animation */
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@variant dark (&:where(.dark, .dark *));
 
 /* ============================================
    Theme Variables
