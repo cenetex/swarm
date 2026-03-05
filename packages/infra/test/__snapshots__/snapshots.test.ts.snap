@@ -2082,20 +2082,6 @@ exports[`CDK Infrastructure Snapshots AdminUiStack snapshot (dev, no custom doma
       "Properties": {
         "DistributionConfig": {
           "Comment": "Admin UI - dev",
-          "CustomErrorResponses": [
-            {
-              "ErrorCachingMinTTL": 0,
-              "ErrorCode": 403,
-              "ResponseCode": 200,
-              "ResponsePagePath": "/index.html",
-            },
-            {
-              "ErrorCachingMinTTL": 0,
-              "ErrorCode": 404,
-              "ResponseCode": 200,
-              "ResponsePagePath": "/index.html",
-            },
-          ],
           "DefaultCacheBehavior": {
             "AllowedMethods": [
               "GET",
@@ -2570,20 +2556,6 @@ exports[`CDK Infrastructure Snapshots AdminUiStack snapshot (staging, with domai
             "staging-swarm.rati.chat",
           ],
           "Comment": "Admin UI - staging",
-          "CustomErrorResponses": [
-            {
-              "ErrorCachingMinTTL": 0,
-              "ErrorCode": 403,
-              "ResponseCode": 200,
-              "ResponsePagePath": "/index.html",
-            },
-            {
-              "ErrorCachingMinTTL": 0,
-              "ErrorCode": 404,
-              "ResponseCode": 200,
-              "ResponsePagePath": "/index.html",
-            },
-          ],
           "DefaultCacheBehavior": {
             "AllowedMethods": [
               "GET",
@@ -2894,20 +2866,6 @@ exports[`CDK Infrastructure Snapshots AdminUiStack snapshot (skipDomainAliases +
       "Properties": {
         "DistributionConfig": {
           "Comment": "Admin UI - staging",
-          "CustomErrorResponses": [
-            {
-              "ErrorCachingMinTTL": 0,
-              "ErrorCode": 403,
-              "ResponseCode": 200,
-              "ResponsePagePath": "/index.html",
-            },
-            {
-              "ErrorCachingMinTTL": 0,
-              "ErrorCode": 404,
-              "ResponseCode": 200,
-              "ResponsePagePath": "/index.html",
-            },
-          ],
           "DefaultCacheBehavior": {
             "AllowedMethods": [
               "GET",

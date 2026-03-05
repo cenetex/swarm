@@ -108,6 +108,13 @@ jobs:
       - name: Build (required for tests)
         run: pnpm build
 
+      - name: Remove CDK build artifacts before testing
+        # cdk.out contains bundled Lambda copies of source files (including
+        # test files) without node_modules. Bun's test discovery uses partial
+        # path matching and picks up these copies, causing spurious failures.
+        # CDK snapshot tests synthesize stacks internally and do not need cdk.out.
+        run: rm -rf packages/infra/cdk.out
+
       - name: Test
         run: bun test
 
