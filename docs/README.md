@@ -1,87 +1,38 @@
 # Documentation Index
 
-This directory contains design documents, RFCs, operational guides, and historical reports for the AWS Swarm platform.
+## Architecture and Design
 
-## Active Reference
+- [BILLING-STRATEGY.md](BILLING-STRATEGY.md) — Web2 Floor + Web3 Ceiling billing model
+- [design-philosophy.md](design-philosophy.md) — Chat-first UI rules and design principles
+- [DISCORD-GATEWAY.md](DISCORD-GATEWAY.md) — Discord Gateway architecture and ECS deployment
+- [OPENAI-COMPATIBLE-API.md](OPENAI-COMPATIBLE-API.md) — OpenAI-compatible API surface
 
-These documents describe the current system and are maintained alongside the code.
+## Operations
 
-### Architecture and Design
-- [BILLING-STRATEGY.md](BILLING-STRATEGY.md) -- Web2 Floor + Web3 Ceiling billing model
-- [design-philosophy.md](design-philosophy.md) -- Chat-first UI rules and design principles
-- [DISCORD-GATEWAY.md](DISCORD-GATEWAY.md) -- Discord Gateway architecture and ECS deployment
-- [SEMANTIC-MEMORY-DESIGN.md](SEMANTIC-MEMORY-DESIGN.md) -- Canonical memory system design
-- [UNIFIED-AGENT-BRAIN-RFC.md](UNIFIED-AGENT-BRAIN-RFC.md) -- Agent brain architecture RFC
-- [DYNAMIC-CONTEXT-RFC.md](DYNAMIC-CONTEXT-RFC.md) -- Dynamic context injection RFC
-- [TOOL-COMPOSITION-OBSERVABILITY-RFC.md](TOOL-COMPOSITION-OBSERVABILITY-RFC.md) -- Tool composition and observability RFC
-- [TWITTER-THREAD-UPDATES-RFC.md](TWITTER-THREAD-UPDATES-RFC.md) -- Twitter thread handling RFC
-- [OPENAI-COMPATIBLE-API.md](OPENAI-COMPATIBLE-API.md) -- OpenAI-compatible API surface
+- [RUNBOOK.md](RUNBOOK.md) — Incident response and maintenance
+- [MONITORING-OPERATOR-GUIDE.md](MONITORING-OPERATOR-GUIDE.md) — CloudWatch dashboards and alarm triage
+- [COST-CONTROLS-PLAYBOOK.md](COST-CONTROLS-PLAYBOOK.md) — Cost anomaly triage and containment
+- [PRODUCTION-DEPLOYMENT-CHECKLIST.md](PRODUCTION-DEPLOYMENT-CHECKLIST.md) — Pre-deployment checklist
+- [RELEASE-GATES.md](RELEASE-GATES.md) — Release gate criteria and rollback readiness
+- [SECURITY.md](SECURITY.md) — Security architecture and threat model
+- [DATA-RETENTION-MATRIX.md](DATA-RETENTION-MATRIX.md) — Data retention and deletion policy
 
-### Operations
-- [RUNBOOK.md](RUNBOOK.md) -- Operational runbook for incident response and maintenance
-- [MONITORING-OPERATOR-GUIDE.md](MONITORING-OPERATOR-GUIDE.md) -- CloudWatch dashboards and alarm triage
-- [COST-CONTROLS-PLAYBOOK.md](COST-CONTROLS-PLAYBOOK.md) -- Cost anomaly triage and containment
-- [OPERATIONS-REPORTS.md](OPERATIONS-REPORTS.md) -- Automated cost and activity reporting
-- [PRODUCTION-DEPLOYMENT-CHECKLIST.md](PRODUCTION-DEPLOYMENT-CHECKLIST.md) -- Pre-deployment checklist
-- [SECURE-LOGGING.md](SECURE-LOGGING.md) -- Structured logging guidelines
-- [SECURITY.md](SECURITY.md) -- Security architecture and threat model
+## Development
 
-### Governance
-- [OPERATING-MODEL.md](OPERATING-MODEL.md) -- Issue-only operating model for leadership-directed execution
-- [ISSUE-GOVERNANCE.md](ISSUE-GOVERNANCE.md) -- GitHub issue triage and governance
-- [GITHUB-PERMISSIONS.md](GITHUB-PERMISSIONS.md) -- Role-based access model and permission matrix
-- [LEADERSHIP-SCORECARD.md](LEADERSHIP-SCORECARD.md) -- Automated weekly scorecard and reprioritization
-- [ACCESS-REVIEW.md](ACCESS-REVIEW.md) -- Quarterly privileged access review process
-- [branch-protection.md](branch-protection.md) -- Branch protection rules
+- [API-CLIENT-README.md](API-CLIENT-README.md) — Admin API client usage
+- [PRIVY-STRIPE-MIGRATION.md](PRIVY-STRIPE-MIGRATION.md) — Privy + Stripe integration decision record
+- [PRIVY-WALLET-LINKING-EVALUATION.md](PRIVY-WALLET-LINKING-EVALUATION.md) — Wallet linking decision record
 
-### Development
-- [CIRCULAR-DEPENDENCIES.md](CIRCULAR-DEPENDENCIES.md) -- Circular dependency detection and management
-- [API-CLIENT-README.md](API-CLIENT-README.md) -- Admin API client usage
+## Product and GTM
 
-### Governance and Strategy
-- [STRATEGY-OPERATIONS.md](STRATEGY-OPERATIONS.md) -- Leadership strategy encoded as executable operating rules
-- [LEADERSHIP-SCORECARD.md](LEADERSHIP-SCORECARD.md) -- Automated weekly leadership operating scorecard
-- [ACCESS-REVIEW.md](ACCESS-REVIEW.md) -- Privileged access review process
-- [DATA-RETENTION-MATRIX.md](DATA-RETENTION-MATRIX.md) -- Data retention and deletion control matrix
+- [ICP.md](ICP.md) — Ideal customer profile, buying signals, design partner criteria, and messaging guidelines
+- [LAUNCH-PLAYBOOKS.md](LAUNCH-PLAYBOOKS.md) — Launch playbooks by ICP
+- [PLAYBOOK-TELEGRAM-QUICKSTART.md](PLAYBOOK-TELEGRAM-QUICKSTART.md) — Telegram quickstart and repair playbook
 
-### Roadmap and Strategy
-- [ROADMAP-M1-PAID-TELEGRAM-MVP.md](ROADMAP-M1-PAID-TELEGRAM-MVP.md) -- M1 roadmap: Paid Telegram MVP
-- [ROADMAP-M2-MULTI-PLATFORM.md](ROADMAP-M2-MULTI-PLATFORM.md) -- M2 roadmap: Multi-platform expansion
-- [PRD-M3-PERSISTENT-SWARM-PLATFORM.md](PRD-M3-PERSISTENT-SWARM-PLATFORM.md) -- M3 PRD: Persistent swarm platform
-- [PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md](PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md) -- M4 PRD: Ecosystem autonomous operations
-- [GTM-STRATEGY-M2.md](GTM-STRATEGY-M2.md) -- Go-to-market strategy for M2
-- [PLAYBOOK-M2-MULTI-PLATFORM.md](PLAYBOOK-M2-MULTI-PLATFORM.md) -- M2 multi-platform playbook
-- [PLAYBOOK-TELEGRAM-QUICKSTART.md](PLAYBOOK-TELEGRAM-QUICKSTART.md) -- Telegram quickstart playbook
+## Legal
 
-### Specifications
-- [RATI_AVATAR_NFT_SPEC.md](RATI_AVATAR_NFT_SPEC.md) -- Avatar NFT specification
-- [MOLTBOOK-INTEGRATION-PLAN.md](MOLTBOOK-INTEGRATION-PLAN.md) -- MoltBook integration plan
-- [PRIVY-STRIPE-MIGRATION.md](PRIVY-STRIPE-MIGRATION.md) -- Privy + Stripe migration notes
-- [PRIVY-WALLET-LINKING-EVALUATION.md](PRIVY-WALLET-LINKING-EVALUATION.md) -- Privy wallet linking evaluation
-- [AGENTIC-CODING-PRD.md](AGENTIC-CODING-PRD.md) -- Agentic coding PRD (Claude Code Worker)
+- [TERMS-OF-USE.md](TERMS-OF-USE.md) — Platform terms of use
 
-### Release Notes
-- [release-notes/](release-notes/) -- Per-version release notes
+## Release Notes
 
-## Archive
-
-Historical documents that are no longer actively maintained. Kept for reference.
-
-- [archive/](archive/) -- Archived engineering reports and point-in-time analyses
-- [legacy/](legacy/) -- Legacy proposals, reports, and research from January 2026
-
-### Archived Documents
-- `archive/engineering-report-platform-status-2026-01-18.md` -- Platform status consolidated report
-- `archive/engineering-report-2026-02-05/` -- February 5 engineering report and sub-agent dispatch records
-- `archive/engineering-report-2026-02-15/` -- February 15 engineering report
-- `archive/TYPE_ASSERTION_AUDIT.md` -- Type assertion audit (completed)
-- `archive/AUTHENTICATION-IMPROVEMENTS.md` -- Authentication improvement proposals (shipped)
-- `archive/ENERGY-SYSTEM-ENGINEERING-PLAN.md` -- Energy system engineering plan (shipped)
-- `archive/GAPS-AND-MONETIZATION.md` -- Gaps analysis and monetization review
-- `archive/MARKETING-STRATEGY-M2.md` -- M2 marketing strategy document
-- `archive/PITCHBOOK.md` -- Investor pitch materials
-- `archive/MEMORY.md` -- Historical memory system design notes
-- `legacy/2026-01/` -- January 2026 proposals, reports, and research
-
-## Other Files
-- [recursive-swarm.pdf](recursive-swarm.pdf) -- Recursive swarm research paper
+- [release-notes/](release-notes/) — Per-version release notes
