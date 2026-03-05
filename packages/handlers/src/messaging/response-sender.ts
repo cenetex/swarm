@@ -271,14 +271,29 @@ async function getOutboundRuntime(avatarId: string): Promise<AvatarOutboundRunti
   }
 
   if (avatarConfig.platforms.discord?.enabled) {
-    platformRegistry.register(new DiscordAdapter(avatarConfig, {
-      botToken: secrets.DISCORD_BOT_TOKEN || secrets.discord_bot_token,
-      webhookUrl: avatarConfig.platforms.discord.webhookUrl,
-      webhookId: avatarConfig.platforms.discord.webhookId,
-      webhookToken: avatarConfig.platforms.discord.webhookToken,
-      applicationId: avatarConfig.platforms.discord.applicationId,
-      publicKey: avatarConfig.platforms.discord.publicKey,
-    }));
+    const discordMode = avatarConfig.platforms.discord.mode;
+    if (discordMode === 'global') {
+      // Global mode: use global bot token + webhook manager for avatar identity
+      const globalToken = secrets.DISCORD_BOT_TOKEN || secrets.discord_bot_token;
+      if (globalToken) {
+        const { DiscordWebhookManager } = await import('@swarm/core');
+        const wm = new DiscordWebhookManager(globalToken);
+        platformRegistry.register(new DiscordAdapter(avatarConfig, {
+          globalBotToken: globalToken,
+          webhookManager: wm,
+        }));
+      }
+    } else {
+      // Existing path: per-avatar bot token
+      platformRegistry.register(new DiscordAdapter(avatarConfig, {
+        botToken: secrets.DISCORD_BOT_TOKEN || secrets.discord_bot_token,
+        webhookUrl: avatarConfig.platforms.discord.webhookUrl,
+        webhookId: avatarConfig.platforms.discord.webhookId,
+        webhookToken: avatarConfig.platforms.discord.webhookToken,
+        applicationId: avatarConfig.platforms.discord.applicationId,
+        publicKey: avatarConfig.platforms.discord.publicKey,
+      }));
+    }
   }
 
   if (avatarConfig.platforms.raticross?.enabled && avatarConfig.platforms.raticross.relayUrl) {

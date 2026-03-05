@@ -32,6 +32,14 @@ export {
   TWITTER_TARGET_IMAGE_BYTES,
 } from './twitter-media.js';
 
+// Discord webhook manager (global mode)
+export {
+  DiscordWebhookManager,
+  type WebhookInfo,
+  type WebhookSendOptions,
+  type WebhookCacheStats,
+} from './discord-webhook-manager.js';
+
 // Discord rate limiter
 export {
   DiscordRateLimiter,

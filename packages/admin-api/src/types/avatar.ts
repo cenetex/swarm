@@ -101,7 +101,7 @@ export interface AvatarRecord {
     discord?: {
       enabled: boolean;
       guildId?: string;
-      mode?: 'webhook' | 'bot' | 'hybrid';
+      mode?: 'webhook' | 'bot' | 'hybrid' | 'global';
       botUsername?: string;
       botId?: string;
       useGateway?: boolean;

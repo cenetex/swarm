@@ -159,8 +159,9 @@ export interface DiscordConfig {
    * - 'webhook': Outbound only via Discord webhook (for avatar appearance)
    * - 'bot': Full bot functionality with gateway connection
    * - 'hybrid': Webhook for posting + bot for reading/responding
+   * - 'global': Shares a single global bot token; posts via per-channel webhooks with avatar identity
    */
-  mode: 'webhook' | 'bot' | 'hybrid';
+  mode: 'webhook' | 'bot' | 'hybrid' | 'global';
 
   // For webhook mode (outbound posting with custom avatar)
   webhookUrl?: string;

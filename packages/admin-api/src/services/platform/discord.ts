@@ -34,7 +34,7 @@ export interface DiscordRuntimeDetail {
  */
 export interface DiscordConnectionStatus {
   connected: boolean;
-  mode: 'webhook' | 'bot' | 'hybrid' | 'none';
+  mode: 'webhook' | 'bot' | 'hybrid' | 'global' | 'none';
   /** Are the configured credentials (bot token / webhook URL) valid? */
   credentialsValid: boolean;
   /** Is the gateway runtime healthy? Only meaningful for bot/hybrid modes. */
@@ -178,7 +178,7 @@ function computeEffectiveConnected(
   if (!credentialsValid) return false;
   if (mode === 'none') return false;
   if (mode === 'webhook') return true;
-  // bot or hybrid: require runtime
+  // bot, hybrid, or global: require runtime (global uses gateway for inbound)
   return runtimeHealthy;
 }
 
@@ -192,7 +192,7 @@ function computeEffectiveConnected(
  */
 export async function getConnectionStatus(
   avatarId: string,
-  discordMode?: 'webhook' | 'bot' | 'hybrid',
+  discordMode?: 'webhook' | 'bot' | 'hybrid' | 'global',
   deps?: DiscordServiceDeps,
 ): Promise<DiscordConnectionStatus> {
   const [botToken, webhookUrl] = await Promise.all([
@@ -839,8 +839,8 @@ export async function getGatewayStatus(): Promise<DiscordGatewayStatus> {
 /**
  * Check if a specific Discord mode requires the gateway runtime.
  */
-export function modeRequiresGateway(mode: 'webhook' | 'bot' | 'hybrid' | 'none'): boolean {
-  return mode === 'bot' || mode === 'hybrid';
+export function modeRequiresGateway(mode: 'webhook' | 'bot' | 'hybrid' | 'global' | 'none'): boolean {
+  return mode === 'bot' || mode === 'hybrid' || mode === 'global';
 }
 
 /**
@@ -848,7 +848,7 @@ export function modeRequiresGateway(mode: 'webhook' | 'bot' | 'hybrid' | 'none')
  * Returns null if the gateway is available or not needed for the given mode.
  */
 export async function getGatewayGuardrailWarning(
-  mode: 'webhook' | 'bot' | 'hybrid' | 'none'
+  mode: 'webhook' | 'bot' | 'hybrid' | 'global' | 'none'
 ): Promise<string | null> {
   if (!modeRequiresGateway(mode)) {
     return null;

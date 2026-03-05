@@ -13,7 +13,7 @@ import { defineTool, type ToolResult } from '../registry.js';
  */
 export interface DiscordConnectionStatus {
   connected: boolean;
-  mode: 'webhook' | 'bot' | 'hybrid' | 'none';
+  mode: 'webhook' | 'bot' | 'hybrid' | 'global' | 'none';
   botUsername?: string;
   botId?: string;
   webhookConfigured?: boolean;
@@ -143,6 +143,36 @@ export interface DiscordServices {
    * List all channels the bot can see (across all guilds) for cross-platform awareness
    */
   listAllChannels?: () => Promise<DiscordChannel[]>;
+
+  // ── Global bot management ───────────────────────────────────────────
+
+  /**
+   * Set up the global Discord bot token (validates via /users/@me, stores at global secret path)
+   */
+  setupGlobalBot?: (token: string) => Promise<{
+    success: boolean;
+    botId?: string;
+    botUsername?: string;
+    error?: string;
+  }>;
+
+  /**
+   * Set an avatar to global Discord mode
+   */
+  setAvatarGlobalMode?: (
+    avatarId: string,
+    config: { allowedChannels?: string[]; allowedGuilds?: string[] }
+  ) => Promise<{ success: boolean; error?: string }>;
+
+  /**
+   * Get global bot status — is it configured, how many avatars use it
+   */
+  getGlobalBotStatus?: () => Promise<{
+    configured: boolean;
+    botId?: string;
+    botUsername?: string;
+    globalAvatarCount: number;
+  }>;
 }
 
 /**
@@ -724,6 +754,112 @@ export function createDiscordTools(services: DiscordServices) {
               guildId: c.guildId,
               guildName: c.guildName,
             })),
+          },
+        };
+      },
+    }),
+
+    // =========================================================================
+    // Global Bot Management (Two-Tier Architecture)
+    // =========================================================================
+
+    defineTool({
+      name: 'discord_setup_global_bot',
+      description: 'Set up the shared global Discord bot token. Validates the token and stores it at the global secret path. All avatars in "global" mode will share this bot.',
+      category: 'config',
+      toolset: 'discord',
+      inputSchema: z.object({
+        token: z.string().describe('The Discord bot token to use as the global shared bot'),
+      }),
+      execute: async (input, _context): Promise<ToolResult> => {
+        if (!services.setupGlobalBot) {
+          return { success: false, error: 'Global bot setup is not available.' };
+        }
+
+        const result = await services.setupGlobalBot(input.token);
+        if (!result.success) {
+          return { success: false, error: result.error || 'Failed to set up global bot.' };
+        }
+
+        return {
+          success: true,
+          data: {
+            botId: result.botId,
+            botUsername: result.botUsername,
+            message: `Global Discord bot configured as ${result.botUsername} (${result.botId}). Avatars can now use mode: "global" to share this bot.`,
+          },
+        };
+      },
+    }),
+
+    defineTool({
+      name: 'discord_set_avatar_global_mode',
+      description: 'Configure an avatar to use the shared global Discord bot. The avatar will post via webhooks with its own name and profile image.',
+      category: 'config',
+      toolset: 'discord',
+      inputSchema: z.object({
+        avatarId: z.string().describe('The avatar ID to configure'),
+        allowedChannels: z.array(z.string()).optional().describe('Channel IDs the avatar responds in (empty = all channels in allowed guilds)'),
+        allowedGuilds: z.array(z.string()).optional().describe('Guild IDs the avatar operates in (empty = all guilds)'),
+      }),
+      execute: async (input, _context): Promise<ToolResult> => {
+        if (!services.setAvatarGlobalMode) {
+          return { success: false, error: 'Global mode configuration is not available.' };
+        }
+
+        const result = await services.setAvatarGlobalMode(input.avatarId, {
+          allowedChannels: input.allowedChannels,
+          allowedGuilds: input.allowedGuilds,
+        });
+
+        if (!result.success) {
+          return { success: false, error: result.error || 'Failed to set avatar to global mode.' };
+        }
+
+        return {
+          success: true,
+          data: {
+            avatarId: input.avatarId,
+            mode: 'global',
+            allowedChannels: input.allowedChannels,
+            allowedGuilds: input.allowedGuilds,
+            message: `Avatar ${input.avatarId} is now in global Discord mode. It will use the shared bot and post via webhooks.`,
+          },
+        };
+      },
+    }),
+
+    defineTool({
+      name: 'discord_global_bot_status',
+      description: 'Check if the global Discord bot is configured and how many avatars use it.',
+      category: 'readonly',
+      toolset: 'discord',
+      inputSchema: z.object({}),
+      execute: async (_input, _context): Promise<ToolResult> => {
+        if (!services.getGlobalBotStatus) {
+          return { success: false, error: 'Global bot status is not available.' };
+        }
+
+        const status = await services.getGlobalBotStatus();
+
+        if (!status.configured) {
+          return {
+            success: true,
+            data: {
+              configured: false,
+              message: 'No global Discord bot is configured. Use discord_setup_global_bot to set one up.',
+            },
+          };
+        }
+
+        return {
+          success: true,
+          data: {
+            configured: true,
+            botId: status.botId,
+            botUsername: status.botUsername,
+            globalAvatarCount: status.globalAvatarCount,
+            message: `Global bot: ${status.botUsername} (${status.botId}) — ${status.globalAvatarCount} avatar(s) using global mode.`,
           },
         };
       },

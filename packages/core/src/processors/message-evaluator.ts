@@ -181,6 +181,24 @@ export class MessageEvaluator {
     const config = this.avatarConfig.platforms.discord;
     const chatType = envelope.metadata.chatType;
 
+    // Global mode: selective response based on mention/name/channel
+    if (config?.mode === 'global') {
+      // Always respond if @mentioned
+      if (envelope.metadata.isMention) {
+        return { shouldRespond: true, reason: 'Mentioned in global mode', priority: 'high' };
+      }
+      // Respond if avatar's name appears in the message text
+      const text = envelope.content.text?.toLowerCase() || '';
+      if (text.includes(this.avatarConfig.name.toLowerCase())) {
+        return { shouldRespond: true, reason: 'Named in global mode', priority: 'normal' };
+      }
+      // If in an explicitly allowed channel, respond to all messages
+      if (config.allowedChannels?.includes(envelope.conversationId)) {
+        return { shouldRespond: true, reason: 'Allowed channel in global mode', priority: 'normal' };
+      }
+      return { shouldRespond: false, reason: 'Not addressed in global mode', priority: 'low' };
+    }
+
     if (chatType === 'private') {
       if (config?.respondInDMs === false) {
         return {
