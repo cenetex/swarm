@@ -78,6 +78,7 @@ interface DiscordAvatarBinding {
   config: AvatarConfig;
   botToken: string;
   botUserId?: string;
+  isGlobalMode?: boolean;
 }
 
 // ─── Caching Layer ───────────────────────────────────────────────────────────────
@@ -143,6 +144,7 @@ function invalidateAllCaches(): void {
   avatarListCacheExpiresAt = 0;
   cachedAvatarIds = [];
   botTokenCache.clear();
+  globalBotTokenCache = null;
   logger.info('All caches invalidated', {
     event: 'cache_invalidated',
     subsystem: 'discord',
@@ -156,6 +158,35 @@ const avatarBindings = new Map<string, DiscordAvatarBinding>();
 
 /** Cache of bot tokens, keyed by avatarId */
 const botTokenCache = new Map<string, { value: string; expiresAt: number }>();
+
+/** Cached global bot token (shared across all global-mode avatars) */
+let globalBotTokenCache: { value: string; expiresAt: number } | null = null;
+
+/**
+ * Fetch the global Discord bot token from Secrets Manager.
+ * Tries both underscore and hyphen naming conventions.
+ */
+async function getGlobalBotToken(): Promise<string | null> {
+  if (globalBotTokenCache && globalBotTokenCache.expiresAt > Date.now()) {
+    cacheStats.secretHits++;
+    return globalBotTokenCache.value;
+  }
+  cacheStats.secretMisses++;
+
+  for (const name of [
+    `${SECRET_PREFIX}/global/discord_bot_token/global-bot`,
+    `${SECRET_PREFIX}/global/discord-bot-token/global-bot`,
+  ]) {
+    try {
+      const r = await secretsClient.send(new GetSecretValueCommand({ SecretId: name }));
+      if (r.SecretString) {
+        globalBotTokenCache = { value: r.SecretString, expiresAt: Date.now() + SECRET_CACHE_TTL_MS };
+        return r.SecretString;
+      }
+    } catch { /* try next naming convention */ }
+  }
+  return null;
+}
 
 async function getBotToken(avatarId: string): Promise<string | null> {
   const now = Date.now();
@@ -259,6 +290,7 @@ async function discoverDiscordAvatars(): Promise<Map<string, DiscordAvatarBindin
   const bindings = new Map<string, DiscordAvatarBinding>();
 
   try {
+    const globalToken = await getGlobalBotToken();
     const avatarIds = await getAvatarIds();
 
     for (const avatarId of avatarIds) {
@@ -273,17 +305,33 @@ async function discoverDiscordAvatars(): Promise<Map<string, DiscordAvatarBindin
         continue;
       }
 
-      const botToken = await getBotToken(avatarId);
-      if (!botToken) {
-        logger.warn('Discord-enabled avatar has no bot token', { avatarId });
-        continue;
-      }
+      const discordMode = config.platforms.discord?.mode;
 
-      bindings.set(avatarId, {
-        avatarId,
-        config,
-        botToken,
-      });
+      if (discordMode === 'global') {
+        // Global mode: all avatars share the single global bot token
+        if (!globalToken) {
+          logger.warn('Avatar configured for global Discord but no global token found', { avatarId });
+          continue;
+        }
+        bindings.set(avatarId, {
+          avatarId,
+          config,
+          botToken: globalToken,
+          isGlobalMode: true,
+        });
+      } else {
+        // Existing: per-avatar bot token
+        const botToken = await getBotToken(avatarId);
+        if (!botToken) {
+          logger.warn('Discord-enabled avatar has no bot token', { avatarId });
+          continue;
+        }
+        bindings.set(avatarId, {
+          avatarId,
+          config,
+          botToken,
+        });
+      }
     }
   } catch (err) {
     logger.error('Failed to discover Discord avatars', err, {
@@ -674,6 +722,24 @@ class GatewayConnection {
 
       // Route to all avatar bindings that should handle this message
       for (const binding of this.avatarBindings.values()) {
+        // Pre-filter for global-mode avatars to avoid N evaluator calls per message
+        if (binding.isGlobalMode) {
+          // Skip bot's own messages (prevents loops)
+          if (message.author.id === this.botUserId) continue;
+          // Skip webhook messages (our own webhook posts appear as webhooks)
+          if (message.webhook_id) continue;
+
+          const dc = binding.config.platforms?.discord;
+          // Guild filter
+          if (dc?.allowedGuilds?.length && message.guild_id) {
+            if (!dc.allowedGuilds.includes(message.guild_id)) continue;
+          }
+          // Channel filter
+          if (dc?.allowedChannels?.length) {
+            if (!dc.allowedChannels.includes(message.channel_id)) continue;
+          }
+        }
+
         try {
           await handleDiscordMessage(message, binding);
         } catch (err) {
@@ -1060,6 +1126,7 @@ export {
   GatewayConnection,
   rateLimiter,
   verifyQueueReachable,
+  getGlobalBotToken,
   // Export caching internals for testing
   invalidateAllCaches,
   avatarConfigCache,

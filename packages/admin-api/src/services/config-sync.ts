@@ -74,7 +74,7 @@ interface AvatarConfig {
     };
     discord?: {
       enabled: boolean;
-      mode: 'webhook' | 'bot' | 'hybrid';
+      mode: 'webhook' | 'bot' | 'hybrid' | 'global';
       applicationId?: string;
       publicKey?: string;
       useGateway?: boolean;
@@ -317,19 +317,24 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
     const allowedGuilds = discordConfig.allowedGuilds
       ?? (discordConfig.guildId ? [discordConfig.guildId] : undefined);
 
+    const discordMode = discordConfig.mode ?? 'bot';
     config.platforms.discord = {
       enabled: true,
-      mode: discordConfig.mode ?? 'bot',
+      mode: discordMode,
       applicationId: discordConfig.applicationId,
       publicKey: discordConfig.publicKey,
       useGateway: discordConfig.useGateway ?? true,
       intents: discordConfig.intents,
       respondToMentions: discordConfig.respondToMentions ?? true,
-      respondInDMs: discordConfig.respondInDMs ?? true,
+      // Global mode is guild-only — DMs don't work with webhook identity
+      respondInDMs: discordMode === 'global' ? false : (discordConfig.respondInDMs ?? true),
       allowedChannels: discordConfig.allowedChannels,
       allowedGuilds,
     };
-    config.secrets.push('DISCORD_BOT_TOKEN');
+    // Global mode uses the shared global bot token, not a per-avatar secret
+    if (discordMode !== 'global') {
+      config.secrets.push('DISCORD_BOT_TOKEN');
+    }
   }
 
   // Convert Web config

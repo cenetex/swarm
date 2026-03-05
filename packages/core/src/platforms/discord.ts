@@ -20,6 +20,7 @@ import { fetchWithRetry } from '../utils/fetch-retry.js';
 import { PlatformError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
 import { logger } from '../utils/logger.js';
+import type { DiscordWebhookManager } from './discord-webhook-manager.js';
 
 // Discord API types (minimal, to avoid dependency on discord.js in core)
 export interface DiscordMessage {
@@ -61,6 +62,7 @@ export interface DiscordMessage {
     emoji: { id?: string; name: string };
   }>;
   referenced_message?: DiscordMessage;
+  webhook_id?: string;
   type: number;
 }
 
@@ -103,6 +105,10 @@ export interface DiscordCredentials {
   botToken?: string;
   applicationId?: string;
   publicKey?: string;
+  /** Global bot token (used when mode === 'global') */
+  globalBotToken?: string;
+  /** Webhook manager for global mode — sends via per-channel webhooks */
+  webhookManager?: DiscordWebhookManager;
 }
 
 export interface DiscordWebhookPayload {
@@ -154,6 +160,8 @@ export class DiscordAdapter extends PlatformAdapter {
           (this.credentials.webhookUrl || (this.credentials.webhookId && this.credentials.webhookToken)) &&
           this.credentials.botToken
         );
+      case 'global':
+        return !!(this.credentials.globalBotToken && this.credentials.webhookManager);
       default:
         return false;
     }
@@ -426,13 +434,15 @@ export class DiscordAdapter extends PlatformAdapter {
    * Send typing indicator to a channel
    */
   async sendTypingIndicator(conversationId: string): Promise<void> {
-    if (!this.credentials.botToken) return;
+    const token = this.credentials.botToken || this.credentials.globalBotToken;
+    if (!token) return;
 
     try {
+      const typingToken = this.credentials.botToken || this.credentials.globalBotToken;
       await fetch(`https://discord.com/api/v10/channels/${conversationId}/typing`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bot ${this.credentials.botToken}`,
+          'Authorization': `Bot ${typingToken}`,
         },
       });
     } catch (error) {
@@ -449,6 +459,12 @@ export class DiscordAdapter extends PlatformAdapter {
     media?: Array<{ type: string; url: string }>,
     replyToMessageId?: string
   ): Promise<void> {
+    // Global mode: send via per-channel webhook with avatar identity
+    if (this.config.mode === 'global' && this.credentials.webhookManager) {
+      await this.sendViaGlobalWebhook(channelId, text, media);
+      return;
+    }
+
     // Prefer webhook for sending (custom avatar)
     if (this.config.mode === 'webhook' || this.config.mode === 'hybrid') {
       await this.sendViaWebhook(text, media);
@@ -459,6 +475,35 @@ export class DiscordAdapter extends PlatformAdapter {
     if (this.credentials.botToken) {
       await this.sendViaBot(channelId, text, media, replyToMessageId);
     }
+  }
+
+  /**
+   * Send message via global webhook manager with avatar's name and profile image
+   */
+  private async sendViaGlobalWebhook(
+    channelId: string,
+    content: string,
+    media?: Array<{ type: string; url: string }>
+  ): Promise<void> {
+    if (!this.credentials.webhookManager) {
+      throw new PlatformError('No webhook manager configured for global mode', {
+        code: SwarmErrorCode.PLATFORM_NOT_INITIALIZED,
+        platform: 'discord',
+      });
+    }
+
+    const embeds = media?.length
+      ? media
+          .filter(m => m.type === 'image')
+          .map(m => ({ image: { url: m.url } }))
+      : undefined;
+
+    await this.credentials.webhookManager.send(channelId, {
+      content,
+      username: this.avatarConfig.name,
+      avatar_url: this.avatarConfig.profileImage?.url,
+      embeds,
+    });
   }
 
   /**

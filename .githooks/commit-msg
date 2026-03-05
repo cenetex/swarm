@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+GOV_HOME="/Users/ratimics/develop/cenetex"
+export GOV_HOME
+export GOV_TARGET_REPO="$(git rev-parse --show-toplevel)"
+exec "$GOV_HOME/scripts/commit_gate_external.sh" "$1"
