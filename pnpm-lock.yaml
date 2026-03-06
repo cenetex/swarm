@@ -215,8 +215,8 @@ importers:
   packages/admin-ui:
     dependencies:
       '@privy-io/react-auth':
-        specifier: ^3.14.1
-        version: 3.14.1(4971c20cb1c26d04951003a3eda3b4f1)
+        specifier: ^3.16.0
+        version: 3.16.0(4971c20cb1c26d04951003a3eda3b4f1)
       '@solana-program/memo':
         specifier: ^0.11.0
         version: 0.11.0(@solana/kit@5.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@5.0.10))
@@ -273,14 +273,14 @@ importers:
         specifier: ^5.1.4
         version: 5.1.4(vite@7.3.1(@types/node@25.3.0)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
       autoprefixer:
-        specifier: ^10.4.24
-        version: 10.4.24(postcss@8.5.6)
+        specifier: ^10.4.27
+        version: 10.4.27(postcss@8.5.8)
       jsdom:
         specifier: ^28.1.0
         version: 28.1.0(@noble/hashes@1.8.0)
       postcss:
-        specifier: ^8.4.38
-        version: 8.5.6
+        specifier: ^8.5.8
+        version: 8.5.8
       tailwindcss:
         specifier: ^4.2.1
         version: 4.2.1
@@ -1882,16 +1882,16 @@ packages:
   '@privy-io/are-addresses-equal@0.0.1':
     resolution: {integrity: sha512-iygs3VfFtB0RvX0HRGzJB//sm8V1j+qMvCxntIpTHEJRcUewbTAlYgTiOa2xx/dcV+Y6OML0C8STKpMqKG122w==}
 
-  '@privy-io/chains@0.1.1':
-    resolution: {integrity: sha512-B+/N75T8+uX/4NG7xKXv/QEWZfeI3daaNgmkUF+SYBxN/uf4CEDSElMKKVnOzzLR38AdkWSkBzQMbZMN48euhA==}
+  '@privy-io/chains@0.1.2':
+    resolution: {integrity: sha512-h5+1j6t5BEl2t2nZUuY+iOfLox1w+DhdFTld+m09mOQCkFvJRP6Zd/2hgqY7BY95waymREzz5sx1jy9QWb5/nA==}
 
   '@privy-io/ethereum@0.0.8':
     resolution: {integrity: sha512-8Mgy5TdvDxb6IqHejnkGfZ6GTXicWTjtbaI4WNF9qlnwggRa+JnLr4jFaL6QTcZllt+Cr/0gnHDf3bRVtgoiaw==}
     peerDependencies:
       viem: ^2.46.1
 
-  '@privy-io/js-sdk-core@0.60.2':
-    resolution: {integrity: sha512-T+CqIVdtYggXICCEmMQlKG0D88aixbrRZifLVFfAQedj18NbcMN8vIyrd5zyLUDlAbeGl9U8NToGfTlZpI1oeQ==}
+  '@privy-io/js-sdk-core@0.60.4':
+    resolution: {integrity: sha512-LsQfZtC3EEH/8p5PSaOUpHzkwagArkZ8/xDw0jD38/il8rCofgvd8an8xyLi3EGBqYtz7PdvnacB5nYujfmwjQ==}
     peerDependencies:
       permissionless: ^0.2.47
       viem: ^2.46.1
@@ -1924,8 +1924,8 @@ packages:
   '@privy-io/popup@0.0.2':
     resolution: {integrity: sha512-kkxzZ5TFseqnZRDVhBR1Si9mTHc1jW+hLSbYviauK80enJOGsOGmxeeC/U0t0kLZGLpn0Jj5v5lNS2bmQ4as/Q==}
 
-  '@privy-io/react-auth@3.14.1':
-    resolution: {integrity: sha512-1lBzoG8kXgsEhUedhsLnV7iZajMQ6R4R3nw7rEgBGFaXx+37tVQlvBV6mV368T1SqRDSAeFpyp1Ujh7Obx/GQg==}
+  '@privy-io/react-auth@3.16.0':
+    resolution: {integrity: sha512-vCuSJObelPY2Tdya4VipLFLZ86ErCkLNYvdbgt7uJ3x2SoaemzjQHHqIXpCg7a6x5YUZFvNfkQczrNg62UQEXQ==}
     peerDependencies:
       '@abstract-foundation/agw-client': ^1.0.0
       '@solana-program/memo': '>=0.8.0'
@@ -4446,8 +4446,8 @@ packages:
     resolution: {integrity: sha512-kNOjDqAh7px0XWNI+4QbzoiR/nTkHAWNud2uvnJquD1/x5a7EQZMJT0AczqK0Qn67oY/TTQ1LbUKajZpp3I9tQ==}
     engines: {node: '>=8.0.0'}
 
-  autoprefixer@10.4.24:
-    resolution: {integrity: sha512-uHZg7N9ULTVbutaIsDRoUkoS8/h3bdsmVJYZ5l3wv8Cp/6UIIoRDm90hZ+BwxUj/hGBEzLxdHNSKuFpn8WOyZw==}
+  autoprefixer@10.4.27:
+    resolution: {integrity: sha512-NP9APE+tO+LuJGn7/9+cohklunJsXWiaWEfV3si4Gi/XHDwVNgkwr1J3RQYFIvPy76GmJ9/bW8vyoU1LcxwKHA==}
     engines: {node: ^10 || ^12 || >=14}
     hasBin: true
     peerDependencies:
@@ -4664,8 +4664,8 @@ packages:
   camelize@1.0.1:
     resolution: {integrity: sha512-dU+Tx2fsypxTgtLoE36npi3UqcjSSMNYfkqgmoEhtZrraP5VWq0K7FkWVTYa8eMPtnU/G2txVsfdCJTn9uzpuQ==}
 
-  caniuse-lite@1.0.30001770:
-    resolution: {integrity: sha512-x/2CLQ1jHENRbHg5PSId2sXq1CIO1CISvwWAj027ltMVG2UNgW+w9oH2+HzgEIRFembL8bUlXtfbBHR1fCg2xw==}
+  caniuse-lite@1.0.30001777:
+    resolution: {integrity: sha512-tmN+fJxroPndC74efCdp12j+0rk0RHwV5Jwa1zWaFVyw2ZxAuPeG8ZgWC3Wz7uSjT3qMRQ5XHZ4COgQmsCMJAQ==}
 
   canonicalize@2.1.0:
     resolution: {integrity: sha512-F705O3xrsUtgt98j7leetNhTWPe+5S72rlL5O4jA1pKqBVQ/dT1O1D6PFxmSXvc0SUOinWS57DKx0I3CHrXJHQ==}
@@ -7197,8 +7197,8 @@ packages:
     resolution: {integrity: sha512-OCVPnIObs4N29kxTjzLfUryOkvZEq+pf8jTF0lg8E7uETuWHA+v7j3c/xJmiqpX450191LlmZfUKkXxkTry7nA==}
     engines: {node: ^10 || ^12 || >=14}
 
-  postcss@8.5.6:
-    resolution: {integrity: sha512-3Ybi1tAuwAP9s0r1UQ2J4n5Y0G05bJkpUIO0/bI9MhwmD70S5aTWbXGBwxHrelT+XM1k6dM0pk+SwNkpTRN7Pg==}
+  postcss@8.5.8:
+    resolution: {integrity: sha512-OW/rX8O/jXnm82Ey1k44pObPtdblfiuWnrd8X7GJ7emImCOstunGbXUpp7HdBrFQX6rJzn3sPT397Wp5aCwCHg==}
     engines: {node: ^10 || ^12 || >=14}
 
   preact@10.24.2:
@@ -11053,7 +11053,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
       '@types/debug': 4.1.12
-      debug: 4.3.4
+      debug: 4.4.3
       pony-cause: 2.1.11
       semver: 7.7.4
       uuid: 9.0.1
@@ -11067,7 +11067,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
       '@types/debug': 4.1.12
-      debug: 4.3.4
+      debug: 4.4.3
       pony-cause: 2.1.11
       semver: 7.7.4
       uuid: 9.0.1
@@ -11187,17 +11187,17 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@privy-io/chains@0.1.1': {}
+  '@privy-io/chains@0.1.2': {}
 
   '@privy-io/ethereum@0.0.8(viem@2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76))':
     dependencies:
       viem: 2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
 
-  '@privy-io/js-sdk-core@0.60.2(viem@2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76))':
+  '@privy-io/js-sdk-core@0.60.4(viem@2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76))':
     dependencies:
       '@privy-io/api-base': 1.8.2
       '@privy-io/api-types': 0.5.0
-      '@privy-io/chains': 0.1.1
+      '@privy-io/chains': 0.1.2
       '@privy-io/ethereum': 0.0.8(viem@2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76))
       '@privy-io/routes': 0.0.7
       canonicalize: 2.1.0
@@ -11228,7 +11228,7 @@ snapshots:
 
   '@privy-io/popup@0.0.2': {}
 
-  '@privy-io/react-auth@3.14.1(4971c20cb1c26d04951003a3eda3b4f1)':
+  '@privy-io/react-auth@3.16.0(4971c20cb1c26d04951003a3eda3b4f1)':
     dependencies:
       '@base-org/account': 1.1.1(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(typescript@5.9.3)(use-sync-external-store@1.4.0(react@19.2.4))(utf-8-validate@5.0.10)(zod@3.25.76)
       '@coinbase/wallet-sdk': 4.3.2
@@ -11240,9 +11240,9 @@ snapshots:
       '@privy-io/api-base': 1.8.2
       '@privy-io/api-types': 0.5.0
       '@privy-io/are-addresses-equal': 0.0.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
-      '@privy-io/chains': 0.1.1
+      '@privy-io/chains': 0.1.2
       '@privy-io/ethereum': 0.0.8(viem@2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76))
-      '@privy-io/js-sdk-core': 0.60.2(viem@2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76))
+      '@privy-io/js-sdk-core': 0.60.4(viem@2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76))
       '@privy-io/popup': 0.0.2
       '@privy-io/routes': 0.0.7
       '@privy-io/urls': 0.0.3
@@ -12325,7 +12325,7 @@ snapshots:
 
   '@scure/bip32@1.7.0':
     dependencies:
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
 
@@ -13972,7 +13972,7 @@ snapshots:
       '@alloc/quick-lru': 5.2.0
       '@tailwindcss/node': 4.2.1
       '@tailwindcss/oxide': 4.2.1
-      postcss: 8.5.6
+      postcss: 8.5.8
       tailwindcss: 4.2.1
 
   '@tanstack/query-core@5.90.18': {}
@@ -14411,7 +14411,7 @@ snapshots:
       '@vue/shared': 3.5.28
       estree-walker: 2.0.2
       magic-string: 0.30.21
-      postcss: 8.5.6
+      postcss: 8.5.8
       source-map-js: 1.2.1
 
   '@vue/compiler-ssr@3.5.28':
@@ -15695,13 +15695,13 @@ snapshots:
 
   atomic-sleep@1.0.0: {}
 
-  autoprefixer@10.4.24(postcss@8.5.6):
+  autoprefixer@10.4.27(postcss@8.5.8):
     dependencies:
       browserslist: 4.28.1
-      caniuse-lite: 1.0.30001770
+      caniuse-lite: 1.0.30001777
       fraction.js: 5.3.4
       picocolors: 1.1.1
-      postcss: 8.5.6
+      postcss: 8.5.8
       postcss-value-parser: 4.2.0
 
   available-typed-arrays@1.0.7:
@@ -15868,7 +15868,7 @@ snapshots:
   browserslist@4.28.1:
     dependencies:
       baseline-browser-mapping: 2.10.0
-      caniuse-lite: 1.0.30001770
+      caniuse-lite: 1.0.30001777
       electron-to-chromium: 1.5.302
       node-releases: 2.0.27
       update-browserslist-db: 1.2.3(browserslist@4.28.1)
@@ -15945,7 +15945,7 @@ snapshots:
 
   camelize@1.0.1: {}
 
-  caniuse-lite@1.0.30001770: {}
+  caniuse-lite@1.0.30001777: {}
 
   canonicalize@2.1.0: {}
 
@@ -16323,11 +16323,11 @@ snapshots:
     dependencies:
       node-source-walk: 7.0.1
 
-  detective-postcss@7.0.1(postcss@8.5.6):
+  detective-postcss@7.0.1(postcss@8.5.8):
     dependencies:
       is-url: 1.2.4
-      postcss: 8.5.6
-      postcss-values-parser: 6.0.2(postcss@8.5.6)
+      postcss: 8.5.8
+      postcss-values-parser: 6.0.2(postcss@8.5.8)
 
   detective-sass@6.0.1:
     dependencies:
@@ -16879,7 +16879,7 @@ snapshots:
 
   extension-port-stream@3.0.0:
     dependencies:
-      readable-stream: 3.6.2
+      readable-stream: 4.7.0
       webextension-polyfill: 0.10.0
 
   eyes@0.1.8: {}
@@ -18703,11 +18703,11 @@ snapshots:
   ox@0.6.7(typescript@5.9.3)(zod@3.25.76):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
-      '@noble/curves': 1.8.1
-      '@noble/hashes': 1.7.1
-      '@scure/bip32': 1.6.2
-      '@scure/bip39': 1.5.4
-      abitype: 1.0.8(typescript@5.9.3)(zod@3.25.76)
+      '@noble/curves': 1.9.7
+      '@noble/hashes': 1.8.0
+      '@scure/bip32': 1.7.0
+      '@scure/bip39': 1.6.0
+      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 5.9.3
@@ -18736,7 +18736,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.0.8(typescript@5.9.3)(zod@3.25.76)
+      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 5.9.3
@@ -18972,11 +18972,11 @@ snapshots:
 
   postcss-value-parser@4.2.0: {}
 
-  postcss-values-parser@6.0.2(postcss@8.5.6):
+  postcss-values-parser@6.0.2(postcss@8.5.8):
     dependencies:
       color-name: 1.1.4
       is-url-superb: 4.0.0
-      postcss: 8.5.6
+      postcss: 8.5.8
       quote-unquote: 1.0.0
 
   postcss@8.4.49:
@@ -18985,7 +18985,7 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  postcss@8.5.6:
+  postcss@8.5.8:
     dependencies:
       nanoid: 3.3.8
       picocolors: 1.1.1
@@ -19002,7 +19002,7 @@ snapshots:
       detective-amd: 6.0.1
       detective-cjs: 6.0.1
       detective-es6: 5.0.1
-      detective-postcss: 7.0.1(postcss@8.5.6)
+      detective-postcss: 7.0.1(postcss@8.5.8)
       detective-sass: 6.0.1
       detective-scss: 5.0.1
       detective-stylus: 5.0.1
@@ -19010,7 +19010,7 @@ snapshots:
       detective-vue2: 2.2.0(typescript@5.9.3)
       module-definition: 6.0.1
       node-source-walk: 7.0.1
-      postcss: 8.5.6
+      postcss: 8.5.8
       typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color
@@ -20389,7 +20389,7 @@ snapshots:
       esbuild: 0.27.3
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
-      postcss: 8.5.6
+      postcss: 8.5.8
       rollup: 4.55.1
       tinyglobby: 0.2.15
     optionalDependencies:
@@ -20406,7 +20406,7 @@ snapshots:
       esbuild: 0.27.3
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
-      postcss: 8.5.6
+      postcss: 8.5.8
       rollup: 4.59.0
       tinyglobby: 0.2.15
     optionalDependencies:
