@@ -4,7 +4,7 @@
  * Routes:
  *   POST /avatars/{id}/secrets
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Mock state ─────────────────────────────────────────────────────────────
 let getAvatarResult: unknown = null;
@@ -31,23 +31,9 @@ vi.mock('../../services/audit-log.js', () => ({
   },
 }));
 
-vi.mock('../../services/telegram.js', () => ({
-  validateTelegramToken: async () => ({ valid: true }),
-  registerTelegramWebhook: async () => ({ success: true }),
-  generateWebhookSecret: () => 'mock-webhook-secret',
-}));
-
 vi.mock('../../services/discord.js', () => ({
   validateBotToken: async () => ({ valid: true, warnings: [] }),
   validateWebhookUrl: async () => ({ valid: true }),
-}));
-
-vi.mock('../../services/telegram-admin.js', () => ({
-  setupTelegramIntegration: async () => setupTelegramResult,
-}));
-
-vi.mock('../../services/replicate.js', () => ({
-  validateReplicateApiKey: async () => ({ valid: true }),
 }));
 
 vi.mock('@swarm/core', () => ({
@@ -57,12 +43,26 @@ vi.mock('@swarm/core', () => ({
 // ── Import AFTER mocks ────────────────────────────────────────────────────
 import { handleSecretsRoutes } from './secrets.js';
 import { makeCtx, MOCK_AVATAR } from './test-helpers.js';
+import * as telegramService from '../../services/telegram.js';
+import * as telegramAdminService from '../../services/telegram-admin.js';
+import * as replicateService from '../../services/replicate.js';
 
 beforeEach(() => {
   getAvatarResult = null;
   storeSecretCalls = [];
   recordAuditEventCalls = [];
   setupTelegramResult = { success: true, status: null };
+  vi.spyOn(telegramService, 'validateTelegramToken').mockResolvedValue({ valid: true } as never);
+  vi.spyOn(telegramService, 'registerTelegramWebhook').mockResolvedValue({ success: true } as never);
+  vi.spyOn(telegramService, 'generateWebhookSecret').mockReturnValue('mock-webhook-secret');
+  vi.spyOn(telegramAdminService, 'setupTelegramIntegration').mockImplementation(
+    async () => setupTelegramResult as never
+  );
+  vi.spyOn(replicateService, 'validateReplicateApiKey').mockResolvedValue({ valid: true } as never);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // =========================================================================

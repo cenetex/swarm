@@ -5,7 +5,7 @@
  *   GET /system/status
  *   GET /integrations/models
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Mock tracking ──────────────────────────────────────────────────────────
 let mockSystemStatus: unknown = { healthy: true };
@@ -15,10 +15,6 @@ vi.mock('../../services/observability.js', () => ({
   getSystemStatus: async () => mockSystemStatus,
 }));
 
-vi.mock('../../services/integrations.js', () => ({
-  getAvailableModelsForIntegration: () => mockModelsResult,
-}));
-
 vi.mock('@swarm/core', () => ({
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
 }));
@@ -26,10 +22,18 @@ vi.mock('@swarm/core', () => ({
 // ── Import handler AFTER mocks ─────────────────────────────────────────────
 import { handleSystemRoutes } from './system.js';
 import { makeCtx, parseBody } from './test-helpers.js';
+import * as integrationsModule from '../../services/integrations.js';
 
 beforeEach(() => {
   mockSystemStatus = { healthy: true };
   mockModelsResult = {};
+  vi.spyOn(integrationsModule, 'getAvailableModelsForIntegration').mockImplementation(
+    () => mockModelsResult as never
+  );
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe('GET /system/status', () => {

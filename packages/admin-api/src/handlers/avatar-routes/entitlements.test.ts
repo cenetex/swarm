@@ -9,7 +9,7 @@
  *   POST         /avatars/{id}/deactivate
  *   GET          /avatars/{id}/audit-log
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Mock state ─────────────────────────────────────────────────────────────
 let getAvatarResult: unknown = null;
@@ -56,15 +56,6 @@ vi.mock('../../services/billing/entitlements.js', () => ({
 // runtime-limits.test.ts when tests run in parallel. The real implementation
 // works fine for these tests.
 
-vi.mock('../../services/activation-readiness.js', () => ({
-  ACTIVATION_READINESS_VERSION: 'activation_readiness_v1',
-  evaluateActivationReadiness: async () => activationReadinessResult,
-  toLegacyActivationIssues: () => {
-    const result = activationReadinessResult as { gateStatus?: string };
-    return result.gateStatus === 'fail' ? ['blocked'] : [];
-  },
-}));
-
 vi.mock('../../services/audit-log.js', () => ({
   recordAuditEvent: async (params: unknown) => {
     recordAuditEventCalls.push(params);
@@ -85,6 +76,7 @@ vi.mock('@swarm/core', () => ({
 // ── Import AFTER mocks ────────────────────────────────────────────────────
 import { handleEntitlementRoutes } from './entitlements.js';
 import { makeCtx, parseBody, MOCK_AVATAR } from './test-helpers.js';
+import * as activationReadinessModule from '../../services/activation-readiness.js';
 
 beforeEach(() => {
   getAvatarResult = null;
@@ -110,6 +102,17 @@ beforeEach(() => {
     },
     checks: [],
   };
+  vi.spyOn(activationReadinessModule, 'evaluateActivationReadiness').mockImplementation(
+    async () => activationReadinessResult as never
+  );
+  vi.spyOn(activationReadinessModule, 'toLegacyActivationIssues').mockImplementation(() => {
+    const result = activationReadinessResult as { gateStatus?: string };
+    return result.gateStatus === 'fail' ? ['blocked'] : [];
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // =========================================================================
