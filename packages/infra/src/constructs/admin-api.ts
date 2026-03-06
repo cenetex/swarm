@@ -1297,6 +1297,18 @@ export class AdminApiConstruct extends Construct {
       integration: avatarsIntegration,
     });
 
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/activate',
+      methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/deactivate',
+      methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
     // Energy routes
     this.api.addRoutes({
       path: '/avatars/{avatarId}/energy',
