@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { formatBrainMemoryContext, truncateForPrompt, formatRelativeTime } from './context-builder.js';
-import type { BrainMemoryFact } from '@swarm/core';
+import { describe, it, expect, vi } from 'vitest';
+import { formatBrainMemoryContext, truncateForPrompt, formatRelativeTime, buildRecentBotActivityDigest } from './context-builder.js';
+import type { BrainMemoryFact, PresenceService, ChannelInfo } from '@swarm/core';
 
 describe('formatBrainMemoryContext', () => {
   it('returns empty string for empty facts array', () => {
@@ -121,5 +121,111 @@ describe('formatRelativeTime', () => {
 
   it('handles future timestamps gracefully', () => {
     expect(formatRelativeTime(now + 60_000, now)).toBe('just now');
+  });
+});
+
+// ── buildRecentBotActivityDigest ──────────────────────────────────────────────
+
+describe('buildRecentBotActivityDigest', () => {
+  function makePresenceService(channels: ChannelInfo[]): PresenceService {
+    return {
+      getAllChannels: vi.fn().mockResolvedValue(channels),
+      getConnectedPlatforms: vi.fn().mockResolvedValue([]),
+      getChannelsForPlatform: vi.fn().mockResolvedValue([]),
+      getChannelWithSummary: vi.fn().mockResolvedValue(null),
+      buildPresenceContext: vi.fn().mockResolvedValue(''),
+      checkGlobalRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 20, windowStart: 0, windowEnd: 0, totalPosts: 0, maxPosts: 20 }),
+      recordPost: vi.fn().mockResolvedValue(undefined),
+      registerChannel: vi.fn().mockResolvedValue(undefined),
+      updateChannelSummary: vi.fn().mockResolvedValue(undefined),
+    } as unknown as PresenceService;
+  }
+
+  function makeStateService(messagesByChannel: Record<string, Array<{ content: string; isBot: boolean; sender: string; username?: string; timestamp: number }>>) {
+    return {
+      getChannelState: vi.fn().mockImplementation((_avatarId: string, channelId: string) => {
+        const msgs = messagesByChannel[channelId];
+        if (!msgs) return Promise.resolve(null);
+        return Promise.resolve({ recentMessages: msgs });
+      }),
+    };
+  }
+
+  it('returns null when no channels exist', async () => {
+    const result = await buildRecentBotActivityDigest({
+      avatarId: 'av1',
+      presenceService: makePresenceService([]),
+      stateService: makeStateService({}) as any,
+    });
+    expect(result).toBeNull();
+  });
+
+  it('returns null when all messages are older than 6h', async () => {
+    const staleTs = Date.now() - 7 * 60 * 60_000;
+    const result = await buildRecentBotActivityDigest({
+      avatarId: 'av1',
+      presenceService: makePresenceService([{ channelId: 'ch1', platform: 'telegram', lastActivityAt: staleTs }]),
+      stateService: makeStateService({ ch1: [{ content: 'old message', isBot: false, sender: 'alice', timestamp: staleTs }] }) as any,
+    });
+    expect(result).toBeNull();
+  });
+
+  it('includes user messages, not only bot messages', async () => {
+    const recentTs = Date.now() - 10 * 60_000;
+    const result = await buildRecentBotActivityDigest({
+      avatarId: 'av1',
+      presenceService: makePresenceService([{ channelId: 'ch1', platform: 'discord', lastActivityAt: recentTs }]),
+      stateService: makeStateService({
+        ch1: [{ content: 'hello from user', isBot: false, sender: 'alice', username: 'alice', timestamp: recentTs }],
+      }) as any,
+    });
+    expect(result).not.toBeNull();
+    expect(result).toContain('discord/');
+    expect(result).toContain('alice');
+    expect(result).toContain('hello from user');
+  });
+
+  it('skips the current channel/platform', async () => {
+    const recentTs = Date.now() - 5 * 60_000;
+    const result = await buildRecentBotActivityDigest({
+      avatarId: 'av1',
+      currentChannelId: 'ch1',
+      currentPlatform: 'telegram',
+      presenceService: makePresenceService([{ channelId: 'ch1', platform: 'telegram', lastActivityAt: recentTs }]),
+      stateService: makeStateService({ ch1: [{ content: 'current chat message', isBot: false, sender: 'bob', timestamp: recentTs }] }) as any,
+    });
+    expect(result).toBeNull();
+  });
+
+  it('uses 6h cutoff, including messages up to 6h old', async () => {
+    const fiveHoursAgo = Date.now() - 5 * 60 * 60_000;
+    const result = await buildRecentBotActivityDigest({
+      avatarId: 'av1',
+      presenceService: makePresenceService([{ channelId: 'ch2', platform: 'telegram', lastActivityAt: fiveHoursAgo }]),
+      stateService: makeStateService({ ch2: [{ content: 'five hours old message', isBot: true, sender: 'bot', timestamp: fiveHoursAgo }] }) as any,
+    });
+    expect(result).not.toBeNull();
+    expect(result).toContain('five hours old message');
+  });
+
+  it('limits output to 4 channels', async () => {
+    const recentTs = Date.now() - 1 * 60_000;
+    const channels: ChannelInfo[] = Array.from({ length: 6 }, (_, i) => ({
+      channelId: `ch${i}`,
+      platform: 'telegram' as const,
+      lastActivityAt: recentTs - i * 1000,
+    }));
+    const messages: Record<string, Array<{ content: string; isBot: boolean; sender: string; timestamp: number }>> = {};
+    for (let i = 0; i < 6; i++) {
+      messages[`ch${i}`] = [{ content: `msg from ch${i}`, isBot: false, sender: 'user', timestamp: recentTs - i * 1000 }];
+    }
+    const result = await buildRecentBotActivityDigest({
+      avatarId: 'av1',
+      presenceService: makePresenceService(channels),
+      stateService: makeStateService(messages) as any,
+    });
+    expect(result).not.toBeNull();
+    const lines = result!.split('\n').filter((l) => l.startsWith('-'));
+    expect(lines.length).toBeLessThanOrEqual(4);
   });
 });

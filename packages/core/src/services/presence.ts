@@ -101,7 +101,7 @@ export const PRESENCE_CONFIG = {
 
   // Channel discovery
   MAX_CHANNELS_PER_PLATFORM: 50,
-  CHANNEL_STATE_TTL_SECONDS: 3600, // 1 hour
+  CHANNEL_STATE_TTL_SECONDS: 86400, // 24 hours
 };
 
 // =============================================================================

@@ -64,23 +64,25 @@ export async function buildRecentBotActivityDigest(params: {
 
     const state = await params.stateService.getChannelState(params.avatarId, ch.channelId);
     const recent = state?.recentMessages || [];
-    const lastBot = [...recent].reverse().find((m) => m.isBot && Boolean(m.content));
-    if (!lastBot) continue;
+    if (recent.length === 0) continue;
 
-    // Only include reasonably recent bot outputs to avoid stale noise.
-    if (now - lastBot.timestamp > 2 * 60 * 60_000) continue;
+    // Find the most recent message (bot or user) within 6h to capture conversation context.
+    const lastMsg = [...recent].reverse().find((m) => Boolean(m.content));
+    if (!lastMsg) continue;
+    if (now - lastMsg.timestamp > 6 * 60 * 60_000) continue;
 
     const channelLabel = ch.title || ch.channelId;
+    const speaker = lastMsg.isBot ? 'bot' : (lastMsg.username || lastMsg.sender || 'user');
     lines.push(
-      `- ${ch.platform}/${channelLabel} (${formatRelativeTime(lastBot.timestamp, now)}): ${truncateForPrompt(lastBot.content.replace(/\s+/g, ' ').trim(), 140)}`
+      `- ${ch.platform}/${channelLabel} (${formatRelativeTime(lastMsg.timestamp, now)}, ${speaker}): ${truncateForPrompt(lastMsg.content.replace(/\s+/g, ' ').trim(), 140)}`
     );
     if (lines.length >= 4) break;
   }
 
   if (lines.length === 0) return null;
   return [
-    '## Recent Bot Activity (cross-platform)',
-    'This is the bot\'s own recent outbound content across channels/platforms (no user messages).',
+    '## Recent Cross-Platform Activity',
+    'Most recent message per channel across other platforms (could be from user or bot).',
     ...lines,
   ].join('\n');
 }
@@ -162,6 +164,47 @@ export async function buildCrossPlatformCustomContext(params: {
     if (homeSummary) parts.push(homeSummary);
   } catch (err) {
     logger.warn('Failed to build home channel context', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Generate summaries for the top 3 recently-active non-current, non-home channels
+  // so the presence context has actual content, not just "Last active Xm ago".
+  try {
+    const homeChannelId = params.avatarConfig.platforms?.telegram?.homeChannelId;
+    const allChannels = await params.presenceService.getAllChannels(params.avatarId);
+    const summaryService = createChannelSummaryService(params.avatarSecrets);
+
+    const candidates = allChannels
+      .filter((ch) => {
+        if (ch.channelId === params.envelope.conversationId && ch.platform === params.envelope.platform) return false;
+        if (homeChannelId && ch.channelId === homeChannelId && ch.platform === 'telegram') return false;
+        return (ch.lastActivityAt || 0) > Date.now() - 24 * 60 * 60_000;
+      })
+      .sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0))
+      .slice(0, 3);
+
+    await Promise.all(
+      candidates.map(async (ch) => {
+        try {
+          await summaryService.getOrGenerateSummary(
+            params.avatarId,
+            ch.channelId,
+            ch.platform,
+            params.presenceService,
+            params.stateService.getChannelState.bind(params.stateService)
+          );
+        } catch (err) {
+          logger.warn('Failed to generate summary for channel', {
+            channelId: ch.channelId,
+            platform: ch.platform,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })
+    );
+  } catch (err) {
+    logger.warn('Failed to generate cross-platform channel summaries', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
