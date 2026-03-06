@@ -9,24 +9,22 @@ FROM node:20-slim AS builder
 
 WORKDIR /build
 
-# Copy workspace config
+# Copy workspace manifests FIRST (before source) so pnpm install is cached
+# unless package.json or pnpm-lock.yaml changes.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
-
-# Copy core package
 COPY packages/core/package.json packages/core/tsconfig.json packages/core/
-COPY packages/core/src/ packages/core/src/
-
-# Copy mcp-server package (handlers dependency)
 COPY packages/mcp-server/package.json packages/mcp-server/tsconfig.json packages/mcp-server/
-COPY packages/mcp-server/src/ packages/mcp-server/src/
-
-# Copy handlers package
 COPY packages/handlers/package.json packages/handlers/tsconfig.json packages/handlers/
-COPY packages/handlers/src/ packages/handlers/src/
 
-# Install pnpm and build
+# Install dependencies (cached layer — only re-runs when manifests change)
 RUN corepack enable && corepack prepare pnpm@latest --activate
 RUN pnpm install --frozen-lockfile --filter @swarm/core --filter @swarm/mcp-server --filter @swarm/handlers
+
+# Copy source AFTER install so source-only changes don't bust the install cache
+COPY packages/core/src/ packages/core/src/
+COPY packages/mcp-server/src/ packages/mcp-server/src/
+COPY packages/handlers/src/ packages/handlers/src/
+
 RUN pnpm --filter @swarm/core build
 RUN pnpm --filter @swarm/mcp-server build
 RUN pnpm --filter @swarm/handlers build

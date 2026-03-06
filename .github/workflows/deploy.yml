@@ -179,7 +179,7 @@ jobs:
               USE_EXISTING_BUCKETS="true"
               SKIP_DOMAIN_ALIASES="false"
               RUN_PROD_SMOKE="true"
-              USE_HOTSWAP="false"
+              USE_HOTSWAP="true"
             else
               USE_EXISTING_BUCKETS="false"
               SKIP_DOMAIN_ALIASES="false"

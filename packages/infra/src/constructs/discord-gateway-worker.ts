@@ -109,6 +109,10 @@ export class DiscordGatewayWorker extends Construct {
         {
           file: 'packages/handlers/Dockerfile.discord-gateway',
           platform: ecr_assets.Platform.LINUX_ARM64,
+          // Cache layers in GitHub Actions cache to avoid full rebuild/push on every deploy.
+          // Requires buildx driver: docker-container (set in deploy-cdk-reusable.yml).
+          cacheFrom: [{ type: 'gha', params: { scope: 'discord-gateway-arm64' } }],
+          cacheTo: { type: 'gha', params: { scope: 'discord-gateway-arm64', mode: 'max' } },
         }
       ),
       logging: ecs.LogDrivers.awsLogs({
