@@ -59,6 +59,14 @@ async function runSmoke() {
         return true;
       }
 
+      // API backend is not running during local/CI preview — proxy returns 500.
+      if (
+        /Failed to load resource: the server responded with a status of 500/i.test(message) &&
+        /\/api\//i.test(locationUrl)
+      ) {
+        return true;
+      }
+
       // Privy telemetry and iframe restrictions are expected in local preview.
       if (
         /Failed to load resource: the server responded with a status of 403/i.test(message) &&
