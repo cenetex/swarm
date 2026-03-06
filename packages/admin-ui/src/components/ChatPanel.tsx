@@ -691,6 +691,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           });
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to save secret';
+          result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
         }
@@ -781,6 +782,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to process upload';
+          result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
         }
@@ -810,6 +812,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           updateToolCallStatus();
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to update model';
+          result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
         }
@@ -849,6 +852,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to toggle feature';
+          result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
         }
@@ -881,6 +885,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           });
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to submit tool result';
+          result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
         }
@@ -913,6 +918,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           });
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to save integration config';
+          result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
         }

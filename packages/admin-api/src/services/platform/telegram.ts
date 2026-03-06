@@ -131,10 +131,11 @@ export async function registerTelegramWebhook(
 
   if (!result.ok) {
     console.error('Failed to register webhook:', result);
-    return {
-      success: false,
-      message: result.description || 'Failed to register webhook',
-    };
+    const raw = result.description ?? '';
+    const message = (raw === 'Not Found' || raw === 'Unauthorized')
+      ? 'Invalid bot token — could not register webhook'
+      : raw || 'Failed to register webhook';
+    return { success: false, message };
   }
 
   console.log(`Registered Telegram webhook for avatar ${avatarId}: ${webhookUrl}`);
@@ -263,7 +264,11 @@ export async function validateTelegramToken(
     };
 
     if (!result.ok || !result.result) {
-      return { valid: false, error: result.description || 'Invalid token' };
+      const raw = result.description ?? '';
+      const error = (raw === 'Not Found' || raw === 'Unauthorized')
+        ? 'Invalid bot token. Please check the token from @BotFather and try again.'
+        : raw || 'Invalid bot token';
+      return { valid: false, error };
     }
 
     return {
@@ -275,7 +280,8 @@ export async function validateTelegramToken(
       }
     };
   } catch (err) {
-    return { valid: false, error: String(err) };
+    const msg = err instanceof Error ? err.message : String(err);
+    return { valid: false, error: `Could not reach Telegram API: ${msg}` };
   }
 }
 
