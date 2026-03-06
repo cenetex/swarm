@@ -126,10 +126,12 @@ export const useAvatarStore = create<AvatarState>()(
                   ...a,
                   ...updates,
                   updatedAt: Date.now(),
-                  // Auto-update status based on secrets
-                  status: updates.secrets?.some(s => s.isSet) || a.secrets?.some(s => s.isSet)
-                    ? 'configured'
-                    : a.status === 'shell' ? 'shell' : a.status,
+                  // Prefer explicit status from caller; fall back to auto-detection from secrets
+                  status: updates.status !== undefined
+                    ? updates.status
+                    : (updates.secrets?.some(s => s.isSet) || a.secrets?.some(s => s.isSet)
+                        ? 'configured'
+                        : a.status === 'shell' ? 'shell' : a.status),
                 }
               : a
           ),
