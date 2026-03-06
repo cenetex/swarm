@@ -235,13 +235,18 @@ ${msg.data.purpose === 'profile' ? '\n⚠️ This was for your profile picture u
 
 You can now use this media URL in your response or next action.`;
 
-    case 'media_failed':
+    case 'media_failed': {
+      const isPromptRejection = msg.data.error.includes('E006') || /prompt was rejected/i.test(msg.data.error);
+      const guidance = isPromptRejection
+        ? `The image model's content filter flagged this prompt. Tell the user their prompt was rejected by the content filter and ask them to rephrase it with different wording. Do NOT repeat the raw error code or prediction ID.`
+        : `You should inform the user about this failure and optionally offer to retry.`;
       return `[ASYNC RESULT @ ${timestamp}]
 Your ${msg.data.mediaType} generation failed.
 - Error: ${msg.data.error}
 - Original prompt: "${msg.data.prompt}"
 
-You should inform the user about this failure and optionally offer to retry.`;
+${guidance}`;
+    }
 
     case 'media_progress':
       return `[ASYNC STATUS @ ${timestamp}]
