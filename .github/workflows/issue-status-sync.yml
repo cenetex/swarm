@@ -36,11 +36,11 @@ jobs:
       - name: Extract closed issue numbers from commits
         id: issues
         run: |
-          # Find all "Closes #N" / "Fixes #N" / "Resolves #N" in commits since last tag
+          # Emit bare issue numbers so bash does not treat "#123" loop items as comments.
           ISSUES=$(git log "${{ steps.prev.outputs.prev }}".."${{ steps.prev.outputs.current }}" \
             --format="%B" | \
             grep -ioE '(closes?|fixes?|resolves?)\s+#[0-9]+' | \
-            grep -oE '#[0-9]+' | \
+            grep -oE '[0-9]+' | \
             sort -u | \
             tr '\n' ' ')
           echo "issues=$ISSUES"
@@ -52,14 +52,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           for issue in ${{ steps.issues.outputs.issues }}; do
-            NUM="${issue#\#}"
-            echo "Updating issue #$NUM"
+            echo "Updating issue #$issue"
 
             # Remove in-progress/blocked, add done
-            gh issue edit "$NUM" \
+            gh issue edit "$issue" \
               --remove-label "status:in-progress" \
               --add-label "status:done" 2>/dev/null || true
 
-            gh issue edit "$NUM" \
+            gh issue edit "$issue" \
               --remove-label "status:blocked" 2>/dev/null || true
           done
