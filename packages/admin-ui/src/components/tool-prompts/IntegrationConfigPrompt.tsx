@@ -3,7 +3,7 @@
  * Shows a complete configuration panel for platform integrations (Telegram, Twitter, Discord)
  * Includes: enable/disable, credential input, test, status
  */
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useActiveAvatar } from '../../store';
 import { API_BASE, type ToolPromptProps } from './types';
 
@@ -111,30 +111,8 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
   const [modelSearchResults, setModelSearchResults] = useState<Record<string, ModelOption[]>>({});
   const [modelSearchLoading, setModelSearchLoading] = useState<Record<string, boolean>>({});
   const searchTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const [comboboxOpen, setComboboxOpen] = useState<Record<string, boolean>>({});
-  const [comboboxInputValues, setComboboxInputValues] = useState<Record<string, string>>({});
-  const [comboboxHighlight, setComboboxHighlight] = useState<Record<string, number>>({});
-  const comboboxRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
-  // Close combobox on outside click
-  const handleComboboxOutsideClick = useCallback((e: MouseEvent) => {
-    setComboboxOpen(prev => {
-      const next = { ...prev };
-      let changed = false;
-      for (const cap of Object.keys(next)) {
-        if (next[cap] && comboboxRefs.current[cap] && !comboboxRefs.current[cap]!.contains(e.target as Node)) {
-          next[cap] = false;
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, []);
-
-  useEffect(() => {
-    document.addEventListener('mousedown', handleComboboxOutsideClick);
-    return () => document.removeEventListener('mousedown', handleComboboxOutsideClick);
-  }, [handleComboboxOutsideClick]);
+  // Keyboard highlight index for model picker per capability
+  const [pickerHighlight, setPickerHighlight] = useState<Record<string, number>>({});
 
   const [telegramDiagnosis, setTelegramDiagnosis] = useState<TelegramDiagnosis | null>(null);
   const [telegramDiagnosisError, setTelegramDiagnosisError] = useState<string | null>(null);
@@ -1767,7 +1745,6 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                   const catalogModels = (availableModelsByCapability?.[capability] || []) as ModelOption[];
                   if (catalogModels.length === 0) return null;
                   const searchResults = (modelSearchResults[capability] || []) as ModelOption[];
-                  const searchQuery = modelSearchQueries[capability] || '';
                   const isSearching = modelSearchLoading[capability] || false;
 
                   // Merge: catalog models + search results (deduplicated)
@@ -1788,16 +1765,13 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                       <label className="block text-xs font-medium text-[var(--color-text-secondary)]">
                         {CAPABILITY_LABELS[capability] || capability}
                       </label>
-                      {/* Combobox: combined search input + dropdown */}
+                      {/* Scrollable grouped model picker */}
                       {(() => {
-                        const isOpen = comboboxOpen[capability] || false;
-                        const inputValue = comboboxInputValues[capability] ?? '';
-                        const highlightIdx = comboboxHighlight[capability] ?? -1;
-                        const selectedModel = allModels.find(m => m.id === currentSelection);
-                        const displayValue = isOpen ? inputValue : (selectedModel?.name || currentSelection?.split('/').pop() || '');
+                        const searchQuery_ = modelSearchQueries[capability] || '';
+                        const highlightIdx = pickerHighlight[capability] ?? -1;
 
-                        // Filter catalog models locally by input text
-                        const filterText = inputValue.toLowerCase();
+                        // Filter catalog models locally by search text
+                        const filterText = searchQuery_.toLowerCase();
                         const filteredCatalog = filterText
                           ? catalogModels.filter(m =>
                               m.id.toLowerCase().includes(filterText) ||
@@ -1805,154 +1779,167 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                               m.description.toLowerCase().includes(filterText))
                           : catalogModels;
 
-                        // Build flat option list for keyboard navigation
+                        // Build flat option list for keyboard navigation: search results first, then catalog
                         const flatOptions: ModelOption[] = [];
                         if (extraSearchResults.length > 0) flatOptions.push(...extraSearchResults);
                         flatOptions.push(...filteredCatalog);
 
-                        const listboxId = `combobox-listbox-${capability}`;
+                        const selectModel = (model: ModelOption) => {
+                          setSavedAt(null);
+                          setSaveError(null);
+                          setSelectedModels(prev => ({ ...prev, [capability]: model.id }));
+                        };
 
                         return (
-                          <div
-                            ref={(el) => { comboboxRefs.current[capability] = el; }}
-                            className="relative"
-                            role="combobox"
-                            aria-expanded={isOpen}
-                            aria-haspopup="listbox"
-                            aria-owns={listboxId}
-                          >
+                          <div className="space-y-2">
+                            {/* Search input */}
                             <div className="relative">
+                              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-tertiary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                              </svg>
                               <input
                                 type="text"
-                                value={displayValue}
-                                onFocus={() => {
-                                  setComboboxOpen(prev => ({ ...prev, [capability]: true }));
-                                  setComboboxInputValues(prev => ({ ...prev, [capability]: '' }));
-                                  setComboboxHighlight(prev => ({ ...prev, [capability]: -1 }));
-                                }}
+                                value={searchQuery_}
                                 onChange={(e) => {
                                   const val = e.target.value;
-                                  setComboboxInputValues(prev => ({ ...prev, [capability]: val }));
-                                  setComboboxHighlight(prev => ({ ...prev, [capability]: -1 }));
+                                  setModelSearchQueries(prev => ({ ...prev, [capability]: val }));
+                                  setPickerHighlight(prev => ({ ...prev, [capability]: -1 }));
                                   if (integration === 'replicate') {
                                     handleModelSearch(capability, val);
                                   }
                                 }}
                                 onKeyDown={(e) => {
-                                  if (!isOpen) {
-                                    if (e.key === 'ArrowDown' || e.key === 'Enter') {
-                                      setComboboxOpen(prev => ({ ...prev, [capability]: true }));
-                                      setComboboxInputValues(prev => ({ ...prev, [capability]: '' }));
-                                      e.preventDefault();
-                                    }
-                                    return;
-                                  }
                                   if (e.key === 'ArrowDown') {
                                     e.preventDefault();
-                                    setComboboxHighlight(prev => ({ ...prev, [capability]: Math.min((prev[capability] ?? -1) + 1, flatOptions.length - 1) }));
+                                    setPickerHighlight(prev => ({ ...prev, [capability]: Math.min((prev[capability] ?? -1) + 1, flatOptions.length - 1) }));
                                   } else if (e.key === 'ArrowUp') {
                                     e.preventDefault();
-                                    setComboboxHighlight(prev => ({ ...prev, [capability]: Math.max((prev[capability] ?? 0) - 1, 0) }));
+                                    setPickerHighlight(prev => ({ ...prev, [capability]: Math.max((prev[capability] ?? 0) - 1, 0) }));
                                   } else if (e.key === 'Enter') {
                                     e.preventDefault();
-                                    const idx = highlightIdx >= 0 && highlightIdx < flatOptions.length ? highlightIdx : 0;
-                                    const model = flatOptions[idx];
-                                    if (model) {
-                                      setSavedAt(null);
-                                      setSaveError(null);
-                                      setSelectedModels(prev => ({ ...prev, [capability]: model.id }));
-                                      setComboboxOpen(prev => ({ ...prev, [capability]: false }));
+                                    const idx = highlightIdx >= 0 && highlightIdx < flatOptions.length ? highlightIdx : -1;
+                                    if (idx >= 0) {
+                                      const model = flatOptions[idx];
+                                      if (model) selectModel(model);
                                     }
                                   } else if (e.key === 'Escape') {
-                                    setComboboxOpen(prev => ({ ...prev, [capability]: false }));
+                                    (e.target as HTMLInputElement).blur();
                                   }
                                 }}
-                                placeholder={integration === 'replicate' ? 'Search or select a model...' : 'Select a model...'}
+                                placeholder={integration === 'replicate' ? 'Search models (e.g., flux, sdxl)...' : 'Filter models...'}
                                 disabled={disabled}
-                                aria-autocomplete="list"
-                                aria-controls={listboxId}
-                                aria-activedescendant={highlightIdx >= 0 ? `combobox-opt-${capability}-${highlightIdx}` : undefined}
-                                className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                className="w-full pl-10 pr-8 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
                               />
                               {isSearching && (
-                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">
                                   ...
                                 </span>
                               )}
                             </div>
-                            {isOpen && flatOptions.length > 0 && (
-                              <ul
-                                id={listboxId}
-                                role="listbox"
-                                className="absolute z-50 mt-1 w-full max-h-60 overflow-auto bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg shadow-lg"
-                              >
-                                {extraSearchResults.length > 0 && (
-                                  <>
-                                    <li className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] select-none" aria-hidden="true">
-                                      Search Results
-                                    </li>
-                                    {extraSearchResults.map((model) => {
-                                      const idx = flatOptions.indexOf(model);
-                                      return (
-                                        <li
-                                          key={model.id}
-                                          id={`combobox-opt-${capability}-${idx}`}
-                                          role="option"
-                                          aria-selected={model.id === currentSelection}
-                                          onMouseDown={(e) => {
-                                            e.preventDefault();
-                                            setSavedAt(null);
-                                            setSaveError(null);
-                                            setSelectedModels(prev => ({ ...prev, [capability]: model.id }));
-                                            setComboboxOpen(prev => ({ ...prev, [capability]: false }));
-                                          }}
-                                          onMouseEnter={() => setComboboxHighlight(prev => ({ ...prev, [capability]: idx }))}
-                                          className={`px-3 py-1.5 text-xs cursor-pointer ${idx === highlightIdx ? 'bg-brand-500/20 text-[var(--color-text)]' : 'text-[var(--color-text)] hover:bg-[var(--color-bg-elevated)]'} ${model.id === currentSelection ? 'font-semibold' : ''}`}
-                                        >
-                                          <span className="block truncate">{model.name}</span>
-                                          <span className="block truncate text-[10px] text-[var(--color-text-muted)]">{model.description}</span>
-                                        </li>
-                                      );
-                                    })}
-                                  </>
-                                )}
-                                <li className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] select-none" aria-hidden="true">
-                                  {extraSearchResults.length > 0 ? 'Popular' : 'Models'}
-                                </li>
-                                {filteredCatalog.map((model) => {
-                                  const idx = flatOptions.indexOf(model);
-                                  return (
-                                    <li
-                                      key={model.id}
-                                      id={`combobox-opt-${capability}-${idx}`}
-                                      role="option"
-                                      aria-selected={model.id === currentSelection}
-                                      onMouseDown={(e) => {
-                                        e.preventDefault();
-                                        setSavedAt(null);
-                                        setSaveError(null);
-                                        setSelectedModels(prev => ({ ...prev, [capability]: model.id }));
-                                        setComboboxOpen(prev => ({ ...prev, [capability]: false }));
-                                      }}
-                                      onMouseEnter={() => setComboboxHighlight(prev => ({ ...prev, [capability]: idx }))}
-                                      className={`px-3 py-1.5 text-xs cursor-pointer ${idx === highlightIdx ? 'bg-brand-500/20 text-[var(--color-text)]' : 'text-[var(--color-text)] hover:bg-[var(--color-bg-elevated)]'} ${model.id === currentSelection ? 'font-semibold' : ''}`}
-                                    >
-                                      <span className="block truncate">{model.name}{model.isDefault ? ' (Default)' : ''}</span>
-                                      <span className="block truncate text-[10px] text-[var(--color-text-muted)]">{model.description}</span>
-                                    </li>
-                                  );
-                                })}
-                                {filteredCatalog.length === 0 && extraSearchResults.length === 0 && (
-                                  <li className="px-3 py-2 text-xs text-[var(--color-text-muted)]">No models found</li>
-                                )}
-                              </ul>
-                            )}
+
+                            {/* Model count summary */}
+                            <div className="text-xs text-[var(--color-text-muted)]">
+                              {flatOptions.length} model{flatOptions.length !== 1 ? 's' : ''} available
+                              {searchQuery_.length >= 2 && extraSearchResults.length > 0 && ` (${extraSearchResults.length} from search)`}
+                            </div>
+
+                            {/* Scrollable model list */}
+                            <div
+                              className="max-h-60 overflow-y-auto space-y-1 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)]"
+                              role="listbox"
+                              aria-label={`Models for ${CAPABILITY_LABELS[capability] || capability}`}
+                            >
+                              {/* Search Results section */}
+                              {extraSearchResults.length > 0 && (
+                                <div>
+                                  <div className="sticky top-0 z-10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-bg-tertiary)] border-b border-[var(--color-border)] select-none">
+                                    Search Results
+                                  </div>
+                                  {extraSearchResults.map((model) => {
+                                    const idx = flatOptions.indexOf(model);
+                                    return (
+                                      <button
+                                        key={model.id}
+                                        role="option"
+                                        aria-selected={model.id === currentSelection}
+                                        onClick={() => selectModel(model)}
+                                        onMouseEnter={() => setPickerHighlight(prev => ({ ...prev, [capability]: idx }))}
+                                        disabled={disabled}
+                                        className={`w-full text-left px-3 py-2 transition-colors text-sm ${
+                                          model.id === currentSelection
+                                            ? 'bg-brand-600 text-white'
+                                            : idx === highlightIdx
+                                              ? 'bg-brand-500/20 text-[var(--color-text)]'
+                                              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                                        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="font-medium truncate">{model.name}</span>
+                                        </div>
+                                        <div className="text-xs opacity-60 truncate">{model.id}</div>
+                                        {model.description && (
+                                          <div className="text-xs opacity-50 truncate mt-0.5">{model.description.slice(0, 80)}{model.description.length > 80 ? '...' : ''}</div>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* Common Models section */}
+                              {filteredCatalog.length > 0 && (
+                                <div>
+                                  <div className="sticky top-0 z-10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-bg-tertiary)] border-b border-[var(--color-border)] select-none">
+                                    {extraSearchResults.length > 0 ? 'Common Models' : 'Models'}
+                                  </div>
+                                  {filteredCatalog.map((model) => {
+                                    const idx = flatOptions.indexOf(model);
+                                    return (
+                                      <button
+                                        key={model.id}
+                                        role="option"
+                                        aria-selected={model.id === currentSelection}
+                                        onClick={() => selectModel(model)}
+                                        onMouseEnter={() => setPickerHighlight(prev => ({ ...prev, [capability]: idx }))}
+                                        disabled={disabled}
+                                        className={`w-full text-left px-3 py-2 transition-colors text-sm ${
+                                          model.id === currentSelection
+                                            ? 'bg-brand-600 text-white'
+                                            : idx === highlightIdx
+                                              ? 'bg-brand-500/20 text-[var(--color-text)]'
+                                              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                                        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="font-medium truncate">{model.name}</span>
+                                          {model.isDefault && (
+                                            <span className="flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-400">
+                                              Default
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-xs opacity-60 truncate">{model.id}</div>
+                                        {model.description && (
+                                          <div className="text-xs opacity-50 truncate mt-0.5">{model.description.slice(0, 80)}{model.description.length > 80 ? '...' : ''}</div>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* Empty state */}
+                              {filteredCatalog.length === 0 && extraSearchResults.length === 0 && (
+                                <div className="text-center text-[var(--color-text-tertiary)] py-4 text-xs">
+                                  {searchQuery_.length >= 2
+                                    ? `No models found for "${searchQuery_}"`
+                                    : 'No models available'}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         );
                       })()}
-                      {searchQuery.length >= 2 && searchResults.length === 0 && !isSearching && (
-                        <p className="text-xs text-[var(--color-text-muted)]">No models found for &quot;{searchQuery}&quot;</p>
-                      )}
                     </div>
                   );
                 })}
