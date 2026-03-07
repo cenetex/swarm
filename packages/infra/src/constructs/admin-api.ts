@@ -1236,6 +1236,12 @@ export class AdminApiConstruct extends Construct {
     });
 
     this.api.addRoutes({
+      path: '/integrations/models/search',
+      methods: [apigateway.HttpMethod.GET],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
       path: '/system/status',
       methods: [apigateway.HttpMethod.GET],
       integration: avatarsIntegration,

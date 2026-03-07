@@ -105,6 +105,12 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
   const [availableModelsByCapability, setAvailableModelsByCapability] = useState<Record<string, ModelOption[]> | null>(null);
   const [modelsLoadError, setModelsLoadError] = useState<string | null>(null);
   const didInitFromStatus = useRef<string | null>(null);
+
+  // Model search state
+  const [modelSearchQueries, setModelSearchQueries] = useState<Record<string, string>>({});
+  const [modelSearchResults, setModelSearchResults] = useState<Record<string, ModelOption[]>>({});
+  const [modelSearchLoading, setModelSearchLoading] = useState<Record<string, boolean>>({});
+  const searchTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [telegramDiagnosis, setTelegramDiagnosis] = useState<TelegramDiagnosis | null>(null);
   const [telegramDiagnosisError, setTelegramDiagnosisError] = useState<string | null>(null);
   const [telegramDiagnosisLoading, setTelegramDiagnosisLoading] = useState(false);
@@ -187,6 +193,12 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     setIsResolvingGroup(false);
     initialPolicyRef.current = null;
     didInitFromStatus.current = null;
+    // Reset model search state
+    setModelSearchQueries({});
+    setModelSearchResults({});
+    setModelSearchLoading({});
+    for (const timer of Object.values(searchTimers.current)) clearTimeout(timer);
+    searchTimers.current = {};
     // Reset Twitter state
     setTwitterFeatures(['mention_replies']);
     setTwitterAutonomousEnabled(false);
@@ -201,6 +213,60 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     setTwitterConfigLoaded(false);
     initialTwitterConfigRef.current = null;
   }, [toolCall.id]);
+
+  // Debounced model search for Replicate
+  const handleModelSearch = (capability: string, query: string) => {
+    setModelSearchQueries(prev => ({ ...prev, [capability]: query }));
+
+    // Clear previous timer
+    if (searchTimers.current[capability]) {
+      clearTimeout(searchTimers.current[capability]);
+    }
+
+    // Clear results if query is too short
+    if (query.trim().length < 2) {
+      setModelSearchResults(prev => {
+        const next = { ...prev };
+        delete next[capability];
+        return next;
+      });
+      return;
+    }
+
+    // Debounce: 400ms
+    searchTimers.current[capability] = setTimeout(async () => {
+      setModelSearchLoading(prev => ({ ...prev, [capability]: true }));
+      try {
+        const params = new URLSearchParams({
+          q: query.trim(),
+          integration: integration || 'replicate',
+          capability,
+        });
+        const response = await fetch(
+          `${API_BASE}/integrations/models/search?${params.toString()}`,
+          { method: 'GET', credentials: 'include' },
+        );
+        if (response.ok) {
+          const payload = (await response.json()) as {
+            results?: Array<{ id: string; name: string; description: string; isDefault?: boolean }>;
+          };
+          setModelSearchResults(prev => ({
+            ...prev,
+            [capability]: (payload.results || []).map(r => ({
+              id: r.id,
+              name: r.name,
+              description: r.description,
+              isDefault: r.isDefault,
+            })),
+          }));
+        }
+      } catch {
+        // Silently fail — hardcoded models remain available
+      } finally {
+        setModelSearchLoading(prev => ({ ...prev, [capability]: false }));
+      }
+    }, 400);
+  };
 
   const runTelegramDiagnostics = async (): Promise<TelegramDiagnosis | null> => {
     if (!activeAgent?.id) return null;
@@ -1673,16 +1739,49 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                   </div>
                 )}
                 {config.capabilities.map((capability) => {
-                  const models = (availableModelsByCapability?.[capability] || []) as ModelOption[];
-                  if (models.length === 0) return null;
-                  const defaultModel = models.find(m => m.isDefault)?.id || models[0]?.id;
+                  const catalogModels = (availableModelsByCapability?.[capability] || []) as ModelOption[];
+                  if (catalogModels.length === 0) return null;
+                  const searchResults = (modelSearchResults[capability] || []) as ModelOption[];
+                  const searchQuery = modelSearchQueries[capability] || '';
+                  const isSearching = modelSearchLoading[capability] || false;
+
+                  // Merge: catalog models + search results (deduplicated)
+                  const catalogIds = new Set(catalogModels.map(m => m.id));
+                  const extraSearchResults = searchResults.filter(m => !catalogIds.has(m.id));
+                  const allModels = [...catalogModels, ...extraSearchResults];
+
+                  const defaultModel = catalogModels.find(m => m.isDefault)?.id || catalogModels[0]?.id;
+                  // If a search result was selected that's not in catalog, ensure it stays in the list
+                  const currentSelection = selectedModels[capability] || defaultModel;
+                  const selectionInList = allModels.some(m => m.id === currentSelection);
+                  if (!selectionInList && currentSelection) {
+                    allModels.push({ id: currentSelection, name: currentSelection.split('/').pop() || currentSelection, description: 'Custom model' });
+                  }
+
                   return (
                     <div key={capability} className="space-y-1">
                       <label className="block text-xs font-medium text-[var(--color-text-secondary)]">
                         {CAPABILITY_LABELS[capability] || capability}
                       </label>
+                      {integration === 'replicate' && (
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => handleModelSearch(capability, e.target.value)}
+                            placeholder="Search Replicate models..."
+                            disabled={disabled}
+                            className="w-full px-3 py-1.5 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-xs text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500"
+                          />
+                          {isSearching && (
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">
+                              ...
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <select
-                        value={selectedModels[capability] || defaultModel}
+                        value={currentSelection}
                         onChange={(e) => {
                           setSavedAt(null);
                           setSaveError(null);
@@ -1691,12 +1790,26 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                         disabled={disabled}
                         className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-brand-500"
                       >
-                        {models.map((model) => (
-                          <option key={model.id} value={model.id}>
-                            {model.name} {model.isDefault ? '(Default)' : ''} - {model.description}
-                          </option>
-                        ))}
+                        {extraSearchResults.length > 0 && (
+                          <optgroup label="Search Results">
+                            {extraSearchResults.map((model) => (
+                              <option key={model.id} value={model.id}>
+                                {model.name} - {model.description}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <optgroup label={extraSearchResults.length > 0 ? 'Default Models' : ''}>
+                          {catalogModels.map((model) => (
+                            <option key={model.id} value={model.id}>
+                              {model.name} {model.isDefault ? '(Default)' : ''} - {model.description}
+                            </option>
+                          ))}
+                        </optgroup>
                       </select>
+                      {searchQuery.length >= 2 && searchResults.length === 0 && !isSearching && (
+                        <p className="text-xs text-[var(--color-text-muted)]">No models found for &quot;{searchQuery}&quot;</p>
+                      )}
                     </div>
                   );
                 })}
