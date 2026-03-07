@@ -164,6 +164,21 @@ const botTokenCache = new Map<string, { value: string; expiresAt: number }>();
 let globalBotTokenCache: { value: string; expiresAt: number } | null = null;
 
 /**
+ * Parse a Discord bot token from a secret string that may be JSON-wrapped.
+ * Supports `{"DISCORD_BOT_TOKEN":"..."}`, `{"discord_bot_token":"..."}`,
+ * `{"token":"..."}`, or a plain token string.
+ */
+function parseDiscordTokenSecret(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return parsed.DISCORD_BOT_TOKEN || parsed.discord_bot_token || parsed.token || raw;
+  } catch {
+    // Not JSON — use raw string as token
+    return raw;
+  }
+}
+
+/**
  * Fetch the global Discord bot token from Secrets Manager.
  * Tries both underscore and hyphen naming conventions.
  */
@@ -181,11 +196,19 @@ async function getGlobalBotToken(): Promise<string | null> {
     try {
       const r = await secretsClient.send(new GetSecretValueCommand({ SecretId: name }));
       if (r.SecretString) {
-        globalBotTokenCache = { value: r.SecretString, expiresAt: Date.now() + SECRET_CACHE_TTL_MS };
-        return r.SecretString;
+        const token = parseDiscordTokenSecret(r.SecretString);
+        globalBotTokenCache = { value: token, expiresAt: Date.now() + SECRET_CACHE_TTL_MS };
+        return token;
       }
-    } catch { /* try next naming convention */ }
+    } catch (err) {
+      logger.debug('Global Discord token not found at path', {
+        secretId: name,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
+
+  logger.warn('No global Discord bot token found in Secrets Manager');
   return null;
 }
 
@@ -1198,4 +1221,5 @@ export {
   SECRET_CACHE_TTL_MS,
   getAvatarIds,
   getAvatarConfigCached,
+  parseDiscordTokenSecret,
 };

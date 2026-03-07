@@ -102,6 +102,39 @@ describe('Discord Gateway Caching', () => {
     });
   });
 
+  describe('parseDiscordTokenSecret', () => {
+    it('extracts token from JSON with DISCORD_BOT_TOKEN key', async () => {
+      const { parseDiscordTokenSecret } = await modPromise;
+      expect(parseDiscordTokenSecret('{"DISCORD_BOT_TOKEN":"abc123"}')).toBe('abc123');
+    });
+
+    it('extracts token from JSON with lowercase discord_bot_token key', async () => {
+      const { parseDiscordTokenSecret } = await modPromise;
+      expect(parseDiscordTokenSecret('{"discord_bot_token":"abc123"}')).toBe('abc123');
+    });
+
+    it('extracts token from JSON with token key', async () => {
+      const { parseDiscordTokenSecret } = await modPromise;
+      expect(parseDiscordTokenSecret('{"token":"abc123"}')).toBe('abc123');
+    });
+
+    it('returns raw string when not JSON (backward compat)', async () => {
+      const { parseDiscordTokenSecret } = await modPromise;
+      expect(parseDiscordTokenSecret('plain-token-string')).toBe('plain-token-string');
+    });
+
+    it('prefers DISCORD_BOT_TOKEN over other keys', async () => {
+      const { parseDiscordTokenSecret } = await modPromise;
+      expect(parseDiscordTokenSecret('{"DISCORD_BOT_TOKEN":"upper","token":"fallback"}')).toBe('upper');
+    });
+
+    it('falls back to raw string for JSON without recognized keys', async () => {
+      const { parseDiscordTokenSecret } = await modPromise;
+      const raw = '{"unrelated":"value"}';
+      expect(parseDiscordTokenSecret(raw)).toBe(raw);
+    });
+  });
+
   describe('avatarConfigCache', () => {
     it('stores and retrieves cached configs', async () => {
       const { avatarConfigCache, AVATAR_CONFIG_CACHE_TTL_MS } = await modPromise;
