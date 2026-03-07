@@ -1011,7 +1011,7 @@ type OpenAIMessage = z.infer<typeof OpenAIMessageSchema>;
 /**
  * Convert an OpenAI-format message to the internal AdminChatMessage format.
  */
-function convertOpenAIMessage(msg: OpenAIMessage): { role: string; content: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>; tool_call_id?: string } {
+function convertOpenAIMessage(msg: OpenAIMessage): { role: 'user' | 'assistant' | 'system' | 'tool'; content: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>; tool_call_id?: string } {
   if (msg.role === 'tool') {
     return {
       role: 'tool',
