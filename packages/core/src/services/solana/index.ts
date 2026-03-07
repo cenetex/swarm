@@ -62,12 +62,28 @@ export class SwarmSolanaService implements SolanaService {
         const account = await getAccount(this.connection, tokenAccount);
         // Convert to human-readable based on decimals (assuming 9 for most tokens)
         return Number(account.amount) / 1e9;
-      } catch {
+      } catch (innerError) {
+        const innerMsg = innerError instanceof Error ? innerError.message : String(innerError);
+        if (innerMsg.includes('could not find mint')) {
+          console.warn(JSON.stringify({
+            event: 'wallet_balance_mint_not_found',
+            mint: tokenMint,
+            wallet: walletAddress,
+          }));
+        }
         // Token account doesn't exist
         return 0;
       }
     } catch (error) {
-      console.error('Failed to get balance:', error instanceof Error ? error.message : String(error));
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('could not find mint') && tokenMint) {
+        console.warn(JSON.stringify({
+          event: 'wallet_balance_mint_not_found',
+          mint: tokenMint,
+          wallet: walletAddress,
+        }));
+      }
+      console.error('Failed to get balance:', msg);
       return 0;
     }
   }

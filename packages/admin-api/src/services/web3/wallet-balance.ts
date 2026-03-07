@@ -140,13 +140,23 @@ export async function getTokenBalance(
     
     return totalBalance;
   } catch (error) {
-    console.error(`[WalletBalance] Error getting token balance for ${walletAddress}:`, error instanceof Error ? error.message : String(error));
-    
+    const msg = error instanceof Error ? error.message : String(error);
+
+    if (msg.includes('could not find mint')) {
+      console.warn(JSON.stringify({
+        event: 'wallet_balance_mint_not_found',
+        mint: tokenMint,
+        wallet: walletAddress,
+      }));
+    }
+
+    console.error(`[WalletBalance] Error getting token balance for ${walletAddress}:`, msg);
+
     // Return cached value if available, even if stale
     if (cached) {
       return cached.balance;
     }
-    
+
     return 0;
   }
 }
