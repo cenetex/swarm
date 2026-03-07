@@ -420,22 +420,39 @@ export async function setModelPreference(
   modelId: string,
   session: UserSession
 ): Promise<void> {
+  const avatar = await getAvatar(avatarId);
+  const existingConfig = avatar?.integrations?.[integration] as AIProviderConfig | undefined;
+  const nextConfig = mergeModelPreferenceConfig(existingConfig, capability, modelId);
+
+  const update = new UpdateExpressionBuilder()
+    .set(`integrations.${integration}`, nextConfig)
+    .set('updatedAt', Date.now())
+    .set('updatedBy', session.email)
+    .build();
+
   await dynamoClient.send(
     new UpdateCommand({
       TableName: ADMIN_TABLE,
       Key: { pk: `AVATAR#${avatarId}`, sk: 'CONFIG' },
-      UpdateExpression: 'SET integrations.#integration.models.#capability = :model, updatedAt = :now, updatedBy = :by',
-      ExpressionAttributeNames: {
-        '#integration': integration,
-        '#capability': capability,
-      },
-      ExpressionAttributeValues: {
-        ':model': modelId,
-        ':now': Date.now(),
-        ':by': session.email,
-      },
+      ...update,
     })
   );
+}
+
+export function mergeModelPreferenceConfig(
+  existingConfig: AIProviderConfig | undefined,
+  capability: AICapability,
+  modelId: string
+): AIProviderConfig {
+  return {
+    enabled: existingConfig?.enabled ?? false,
+    useGlobalKey: existingConfig?.useGlobalKey ?? false,
+    ...existingConfig,
+    models: {
+      ...existingConfig?.models,
+      [capability]: modelId,
+    },
+  };
 }
 
 // =============================================================================

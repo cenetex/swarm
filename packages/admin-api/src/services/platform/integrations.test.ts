@@ -10,6 +10,7 @@ import {
   INTEGRATION_METADATA,
   CONFIGURABLE_INTEGRATIONS,
   getAvailableModelsForIntegration,
+  mergeModelPreferenceConfig,
 } from './integrations.js';
 import type { IntegrationType, AICapability } from '../../types.js';
 
@@ -375,6 +376,45 @@ describe('Model Selection Logic', () => {
 
     const model = getConfiguredModel(avatar, 'image_generation', 'default/image');
     expect(model).toBe('default/image');
+  });
+});
+
+describe('Model Preference Merge', () => {
+  it('creates a config when none exists yet', () => {
+    expect(
+      mergeModelPreferenceConfig(undefined, 'image_generation', 'owner/model')
+    ).toEqual({
+      enabled: false,
+      useGlobalKey: false,
+      models: {
+        image_generation: 'owner/model',
+      },
+    });
+  });
+
+  it('preserves existing settings and merges models', () => {
+    expect(
+      mergeModelPreferenceConfig(
+        {
+          enabled: true,
+          useGlobalKey: true,
+          webhookUrl: 'https://example.com/hook',
+          models: {
+            video_generation: 'video/model',
+          },
+        },
+        'image_generation',
+        'image/model'
+      )
+    ).toEqual({
+      enabled: true,
+      useGlobalKey: true,
+      webhookUrl: 'https://example.com/hook',
+      models: {
+        video_generation: 'video/model',
+        image_generation: 'image/model',
+      },
+    });
   });
 });
 
