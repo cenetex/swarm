@@ -131,3 +131,8 @@ export {
   exportDocument,
   _setDynamoClient as _setLongFormDynamoClient,
 } from './long-form.js';
+export {
+  IdentityLinkServiceImpl,
+  createIdentityLinkService,
+  _setIdentityLinkDynamoClient,
+} from './identity-link.js';

@@ -996,3 +996,15 @@ export * from './long-form.js';
 // =============================================================================
 
 export * from './admin-bridge.js';
+
+// =============================================================================
+// IDENTITY LINK TYPES
+// =============================================================================
+
+export type {
+  IdentityLinkStatus,
+  IdentityLink,
+  IdentityLinkAuditAction,
+  IdentityLinkAuditEvent,
+  IdentityLinkService,
+} from './identity-link.js';
