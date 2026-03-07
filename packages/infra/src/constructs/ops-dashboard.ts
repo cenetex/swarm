@@ -3,12 +3,13 @@
  *
  * Creates a single CloudWatch dashboard providing a unified view of:
  * - Lambda invocations and errors for all critical handlers
- * - Lambda duration (p50/p95) for latency visibility
+ * - Lambda duration (p50/p95/p99) for latency visibility
  * - Lambda throttles and concurrent executions
  * - SQS queue depths for message, response, media, and post queues
  * - SQS age-of-oldest-message for user-facing queues
  * - DLQ message counts across SharedHandlers and AdminApi
  * - API Gateway latency and error rates (when AdminApi is deployed)
+ * - Memory consolidation worker invocations, errors, and duration
  * - Discord gateway runtime drift alarm (when gateway is deployed)
  */
 import * as cdk from 'aws-cdk-lib';
@@ -79,6 +80,11 @@ export interface OpsDashboardProps {
     dreamDlq: sqs.IQueue;
     consolidationDlq: sqs.IQueue;
   };
+
+  /**
+   * Memory consolidation worker Lambda (optional — used for consolidation metrics)
+   */
+  consolidationWorker?: lambda.IFunction;
 
   /**
    * AdminApi SQS queues (optional — used for queue-age metrics)
@@ -189,7 +195,25 @@ export class OpsDashboard extends Construct {
     );
 
     // ========================================================================
-    // Row 3: Shared Handlers — Throttles & Concurrent Executions
+    // Row 3: Shared Handlers — Duration p99
+    // ========================================================================
+    this.dashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: 'Shared Handlers - Duration p99 (ms)',
+        width: 24,
+        height: 6,
+        left: [
+          sharedFns.messageProcessor.metricDuration({ period, statistic: 'p99', label: 'MessageProcessor' }),
+          sharedFns.responseSender.metricDuration({ period, statistic: 'p99', label: 'ResponseSender' }),
+          sharedFns.mediaProcessor.metricDuration({ period, statistic: 'p99', label: 'MediaProcessor' }),
+          sharedFns.tweetSender.metricDuration({ period, statistic: 'p99', label: 'TweetSender' }),
+          sharedFns.telegramWebhook.metricDuration({ period, statistic: 'p99', label: 'TelegramWebhook' }),
+        ],
+      }),
+    );
+
+    // ========================================================================
+    // Row 4: Shared Handlers — Throttles & Concurrent Executions
     // ========================================================================
     this.dashboard.addWidgets(
       new cloudwatch.GraphWidget({
@@ -334,7 +358,24 @@ export class OpsDashboard extends Construct {
       );
 
       // ======================================================================
-      // Row 8: Admin API — Throttles & Concurrent Executions
+      // Admin API — Duration p99
+      // ======================================================================
+      this.dashboard.addWidgets(
+        new cloudwatch.GraphWidget({
+          title: 'Admin API - Duration p99 (ms)',
+          width: 24,
+          height: 6,
+          left: [
+            adminFns.chatWorker.metricDuration({ period, statistic: 'p99', label: 'ChatWorker' }),
+            adminFns.responseSender.metricDuration({ period, statistic: 'p99', label: 'ResponseSender' }),
+            adminFns.dreamWorker.metricDuration({ period, statistic: 'p99', label: 'DreamWorker' }),
+            adminFns.openaiCompat.metricDuration({ period, statistic: 'p99', label: 'OpenAICompat' }),
+          ],
+        }),
+      );
+
+      // ======================================================================
+      // Admin API — Throttles & Concurrent Executions
       // ======================================================================
       this.dashboard.addWidgets(
         new cloudwatch.GraphWidget({
@@ -439,6 +480,37 @@ export class OpsDashboard extends Construct {
               statistic: 'Sum',
               label: 'Total Requests',
             }),
+          ],
+        }),
+      );
+    }
+
+    // ========================================================================
+    // Memory Consolidation Worker (if present)
+    // ========================================================================
+    if (props.consolidationWorker) {
+      const consolidationFn = props.consolidationWorker;
+
+      this.dashboard.addWidgets(
+        new cloudwatch.GraphWidget({
+          title: 'Memory Consolidation - Invocations & Errors',
+          width: 12,
+          height: 6,
+          left: [
+            consolidationFn.metricInvocations({ period, label: 'Invocations' }),
+          ],
+          right: [
+            consolidationFn.metricErrors({ period, label: 'Errors' }),
+          ],
+        }),
+        new cloudwatch.GraphWidget({
+          title: 'Memory Consolidation - Duration (ms)',
+          width: 12,
+          height: 6,
+          left: [
+            consolidationFn.metricDuration({ period, statistic: 'p50', label: 'p50' }),
+            consolidationFn.metricDuration({ period, statistic: 'p95', label: 'p95' }),
+            consolidationFn.metricDuration({ period, statistic: 'p99', label: 'p99' }),
           ],
         }),
       );

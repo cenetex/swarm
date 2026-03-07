@@ -523,6 +523,7 @@ export class AdminApiStack extends cdk.Stack {
           dreamQueue: this.adminApi.dreamQueue,
         },
         adminApiId: this.adminApi.api.apiId,
+        consolidationWorker: this.adminApi.consolidationWorker,
       } : {}),
       // Wire Discord gateway service for runtime drift alarm
       discordGatewayService: this.discordGatewayWorker?.service,

@@ -257,6 +257,7 @@ export class AdminApiConstruct extends Construct {
   public readonly chatDlq: sqs.Queue;
   public readonly dreamDlq: sqs.Queue;
   public readonly consolidationDlq: sqs.Queue;
+  public readonly consolidationWorker: lambda.Function;
   // Exposed for ops dashboard queue-age metrics
   public readonly responseQueue: sqs.Queue;
   public readonly chatQueue: sqs.Queue;
@@ -1964,7 +1965,7 @@ export class AdminApiConstruct extends Construct {
     }));
 
     // Memory Consolidation Worker: scheduled daily to decay/promote/evolve memories
-    const consolidationWorker = new nodejs.NodejsFunction(this, 'ConsolidationWorkerHandler', {
+    this.consolidationWorker = new nodejs.NodejsFunction(this, 'ConsolidationWorkerHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
       entry: path.join(__dirname, '../../../admin-api/src/handlers/consolidation-worker.ts'),
       handler: 'handler',
@@ -1991,14 +1992,14 @@ export class AdminApiConstruct extends Construct {
       tracing: lambda.Tracing.ACTIVE,
     });
 
-    this.table.grantReadWriteData(consolidationWorker);
+    this.table.grantReadWriteData(this.consolidationWorker);
     if (stateTable) {
-      stateTable.grantReadData(consolidationWorker);
+      stateTable.grantReadData(this.consolidationWorker);
     }
-    llmApiKey.grantRead(consolidationWorker);
+    llmApiKey.grantRead(this.consolidationWorker);
 
     // Grant Bedrock access for embeddings (used in identity evolution memory search)
-    consolidationWorker.addToRolePolicy(new iam.PolicyStatement({
+    this.consolidationWorker.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: ['bedrock:InvokeModel'],
       resources: ['arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0'],
@@ -2012,7 +2013,7 @@ export class AdminApiConstruct extends Construct {
         day: '*',
         month: '*',
       }),
-      targets: [new targets.LambdaFunction(consolidationWorker, {
+      targets: [new targets.LambdaFunction(this.consolidationWorker, {
         deadLetterQueue: this.consolidationDlq,
         retryAttempts: 2,
         maxEventAge: cdk.Duration.hours(2),
