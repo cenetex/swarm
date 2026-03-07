@@ -164,8 +164,10 @@ export async function handler(
       ? mcpEnabledToolsets
       : categoryToolsets;
 
-    // Build tool registry
-    const mcpServices = createMCPServices(avatarId, session);
+    // Build tool registry (read-only: preview never executes tools, so skip
+    // write-capable service bindings to avoid DynamoDB UpdateItem failures
+    // under the preview Lambda's read-only IAM policy)
+    const mcpServices = createMCPServices(avatarId, session, undefined, { readOnly: true });
     const toolRegistry = new ToolRegistry();
     registerAllTools(toolRegistry, mcpServices);
 

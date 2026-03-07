@@ -22,6 +22,9 @@ vi.mock('../services/mcp-adapter.js', () => ({
   createMCPServices: vi.fn(() => ({})),
 }));
 
+import { createMCPServices } from '../services/mcp-adapter.js';
+const createMCPServicesMock = createMCPServices as unknown as ReturnType<typeof vi.fn>;
+
 vi.mock('@swarm/mcp-server', () => ({
   ToolRegistry: vi.fn(() => ({
     getForPlatform: vi.fn(() => []),
@@ -90,6 +93,34 @@ function expectNoWildcardCredentialCombo(headers: Record<string, string | number
     expect(headers['Access-Control-Allow-Credentials']).not.toBe('true');
   }
 }
+
+describe('prompt-preview handler read-only services', () => {
+  beforeEach(() => {
+    getAvatarMock.mockReset();
+    createMCPServicesMock.mockReset();
+    createMCPServicesMock.mockReturnValue({});
+    authenticateRequestMock.mockReset();
+    authenticateRequestMock.mockResolvedValue({ email: 'test@test.com', isAdmin: true });
+  });
+
+  it('passes readOnly: true to createMCPServices', async () => {
+    getAvatarMock.mockResolvedValue({
+      avatarId: 'test-avatar',
+      name: 'Test Avatar',
+      description: 'A test avatar',
+      persona: 'You are test.',
+      platforms: {},
+    });
+
+    await handler(createEvent());
+
+    expect(createMCPServicesMock).toHaveBeenCalledTimes(1);
+    const callArgs = createMCPServicesMock.mock.calls[0];
+    // args: (avatarId, session, svc=undefined, options={ readOnly: true })
+    expect(callArgs[0]).toBe('test-avatar');
+    expect(callArgs[3]).toEqual({ readOnly: true });
+  });
+});
 
 describe('prompt-preview handler CORS consistency', () => {
   beforeEach(() => {

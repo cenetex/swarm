@@ -18,18 +18,29 @@ import { createAgentServices } from '../mcp/agent-services.js';
 import { createNFTServices } from '../mcp/nft-services.js';
 import { createPropertyServices } from '../mcp/property-services.js';
 
+export interface MCPServicesOptions {
+  /** When true, skip services that perform write operations (for preview/read-only contexts) */
+  readOnly?: boolean;
+}
+
 /**
  * Create MCP-compatible services for a specific avatar.
  *
  * @param _avatarId  The avatar to bind services to
  * @param session    The authenticated user session
  * @param svc        Optional service container override (for testing)
+ * @param options    Optional configuration (e.g. readOnly mode for preview)
  */
 export function createMCPServices(
   _avatarId: string,
   session: UserSession,
   svc: ServiceContainer = getDefaultContainer(),
+  options: MCPServicesOptions = {},
 ): AllServices {
+  if (options.readOnly) {
+    return createReadOnlyMCPServices(_avatarId, session, svc);
+  }
+
   return {
     ...createMediaServices(_avatarId, session, svc),
     ...createPlatformServices(_avatarId, session, svc),
@@ -38,6 +49,127 @@ export function createMCPServices(
     nft: createNFTServices(svc),
     property: createPropertyServices(_avatarId, session, svc),
   };
+}
+
+/**
+ * Create a read-only subset of MCP services for preview contexts.
+ *
+ * Returns only the service bindings needed for tool metadata resolution
+ * (shouldShow / contextBuilder). Write-capable methods are replaced with
+ * safe no-ops so that DynamoDB UpdateItem / PutItem calls are never issued.
+ */
+function createReadOnlyMCPServices(
+  _avatarId: string,
+  session: UserSession,
+  svc: ServiceContainer,
+): AllServices {
+  const full: AllServices = {
+    ...createMediaServices(_avatarId, session, svc),
+    ...createPlatformServices(_avatarId, session, svc),
+    ...createIdentityServices(_avatarId, session, svc),
+    ...createAgentServices(_avatarId, session, svc),
+    nft: createNFTServices(svc),
+    property: createPropertyServices(_avatarId, session, svc),
+  };
+
+  // Wrap profile write methods with no-ops
+  if (full.profile) {
+    full.profile = {
+      ...full.profile,
+      updateProfile: async () => {},
+      setProfileImage: async () => ({ url: '' }),
+      saveProfileImage: async () => {},
+      setCharacterReference: async () => ({ url: '' }),
+      saveCharacterReference: async () => {},
+    };
+  }
+
+  // Wrap secret write methods with no-ops
+  if (full.secrets) {
+    full.secrets = {
+      ...full.secrets,
+      storeSecret: async () => {},
+    };
+  }
+
+  // Wrap model write methods with no-ops
+  if (full.models) {
+    full.models = {
+      ...full.models,
+      updateConfig: async () => {},
+    };
+  }
+
+  // Wrap avatar write methods with no-ops
+  if (full.avatar) {
+    full.avatar = {
+      ...full.avatar,
+      setStatus: async () => ({ success: true, name: '' }),
+    };
+  }
+
+  // Wrap memory write methods with no-ops
+  if (full.memory) {
+    full.memory = {
+      ...full.memory,
+      remember: async () => ({ saved: false }),
+      backfillEmbeddings: async () => ({ processed: 0, total: 0 }),
+      consolidate: async () => ({ consolidated: 0 }),
+    };
+  }
+
+  // Wrap diagnostics write methods with no-ops
+  if (full.diagnostics) {
+    full.diagnostics = {
+      ...full.diagnostics,
+      recordIssue: async () => ({ issueId: '' }),
+      recordFeedback: async () => ({ feedbackId: '' }),
+    };
+  }
+
+  // Wrap MCP admin write methods with no-ops
+  if (full.mcpAdmin) {
+    full.mcpAdmin = {
+      ...full.mcpAdmin,
+      updateMcpConfig: async () => {},
+    };
+  }
+
+  // Wrap jobs — getPendingJobs triggers pollAndCompleteJob (UpdateItem)
+  if (full.jobs) {
+    full.jobs = {
+      getPendingJobs: async (avatarId) => {
+        // Read-only: just list jobs without polling/updating status
+        const jobs = await svc.mediaJobs.getPendingJobs(avatarId);
+        return jobs.map(job => ({
+          jobId: job.jobId,
+          type: job.type as 'image' | 'video' | 'sticker',
+          status: job.status as 'pending' | 'processing' | 'completed' | 'failed',
+          prompt: job.prompt,
+          resultUrl: job.resultUrl,
+          createdAt: job.createdAt,
+          completedAt: job.completedAt,
+        }));
+      },
+      getJob: async (avatarId, jobId) => {
+        // Read-only: return job without polling
+        const job = await svc.mediaJobs.getJob(jobId);
+        if (!job || job.avatarId !== avatarId) return null;
+        return {
+          jobId: job.jobId,
+          type: job.type as 'image' | 'video' | 'sticker',
+          status: job.status as 'pending' | 'processing' | 'completed' | 'failed',
+          prompt: job.prompt,
+          resultUrl: job.resultUrl,
+          error: job.error,
+          createdAt: job.createdAt,
+          completedAt: job.completedAt,
+        };
+      },
+    };
+  }
+
+  return full;
 }
 
 /**
