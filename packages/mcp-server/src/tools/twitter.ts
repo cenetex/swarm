@@ -315,7 +315,7 @@ export function createTwitterTools(services: TwitterServices) {
       toolset: 'twitter',
       inputSchema: z.object({
         text: z.string().max(10000).describe('The tweet text (280 chars for standard accounts, 10,000 for Premium)'),
-        mediaIds: z.array(z.string()).max(4).optional().describe('Gallery item IDs to attach (up to 4). Use the exact "id" value from generate_image response or list_gallery. Format: "1234567890123_abc123xyz" (timestamp_randomId). Do NOT use URLs, UUIDs, or Twitter media IDs.'),
+        mediaIds: z.array(z.string()).max(4).optional().describe('Gallery item IDs to attach (up to 4). Use the exact "id" value from generate_image response or list_gallery. Format: "1234567890123_abc123xyz" (timestamp_randomId). Do NOT use URLs or Twitter media IDs.'),
         mediaUrls: z.array(z.string().url()).max(4).optional().describe('DEPRECATED: Use mediaIds instead. Raw URLs may fail to upload.'),
       }),
       execute: async (input, _context): Promise<ToolResult> => {
