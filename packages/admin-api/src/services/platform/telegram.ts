@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Telegram Service
  * Handles Telegram API interactions for webhook registration
@@ -7,6 +6,9 @@
  * https://core.telegram.org/bots/api#setwebhook
  */
 import { randomBytes } from 'crypto';
+import { createSystemLogger } from '../structured-logger.js';
+
+const log = createSystemLogger('telegram');
 
 function defaultDomainForEnv(env: string): string {
   const normalized = env.trim().toLowerCase();
@@ -28,7 +30,8 @@ const WEBHOOK_DOMAIN = process.env.TELEGRAM_WEBHOOK_DOMAIN?.trim()
 // If WEBHOOK_DOMAIN ends up being a raw API Gateway host, the webhook will bypass CloudFront.
 // That can make domain cutovers confusing (bots won't follow the CloudFront CNAME).
 if (/execute-api\.[^.]+\.amazonaws\.com$/i.test(WEBHOOK_DOMAIN)) {
-  console.warn('[telegram] WEBHOOK_DOMAIN is an API Gateway host; consider setting TELEGRAM_WEBHOOK_DOMAIN to your CloudFront domain', {
+  log.warn('config', 'apigw_webhook_domain', {
+    message: 'WEBHOOK_DOMAIN is an API Gateway host; consider setting TELEGRAM_WEBHOOK_DOMAIN to your CloudFront domain',
     WEBHOOK_DOMAIN,
     API_DOMAIN,
   });
@@ -130,7 +133,7 @@ export async function registerTelegramWebhook(
   const result = await register();
 
   if (!result.ok) {
-    console.error('Failed to register webhook:', result);
+    log.error('webhook', 'register_failed', { avatarId, description: result.description });
     const raw = result.description ?? '';
     const message = (raw === 'Not Found' || raw === 'Unauthorized')
       ? 'Invalid bot token — could not register webhook'
@@ -138,14 +141,14 @@ export async function registerTelegramWebhook(
     return { success: false, message };
   }
 
-  console.log(`Registered Telegram webhook for avatar ${avatarId}: ${webhookUrl}`);
+  log.info('webhook', 'registered', { avatarId, webhookUrl });
 
   let webhookInfo: { url?: string; pending_update_count?: number } | undefined;
   let reRegistered = false;
   try {
     webhookInfo = await getTelegramWebhookInfo(botToken);
     if (webhookInfo.url && webhookInfo.url !== webhookUrl) {
-      console.warn('Webhook URL mismatch after registration', {
+      log.warn('webhook', 'url_mismatch', {
         avatarId,
         expected: webhookUrl,
         actual: webhookInfo.url,
@@ -155,20 +158,20 @@ export async function registerTelegramWebhook(
         reRegistered = true;
         webhookInfo = await getTelegramWebhookInfo(botToken);
       } else {
-        console.warn('Webhook re-registration failed', { avatarId, error: retry.description });
+        log.warn('webhook', 'reregister_failed', { avatarId, message: retry.description });
       }
     }
 
     if (webhookInfo.pending_update_count && webhookInfo.pending_update_count > 0) {
-      console.warn('Telegram webhook has pending updates', {
+      log.warn('webhook', 'pending_updates', {
         avatarId,
         pendingUpdateCount: webhookInfo.pending_update_count,
       });
     }
   } catch (error) {
-    console.warn('Failed to fetch Telegram webhook info', {
+    log.warn('webhook', 'info_fetch_failed', {
       avatarId,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 

@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Prompt Preview Handler
  *
@@ -28,6 +27,9 @@ import {
 import { createMCPServices } from '../services/mcp-adapter.js';
 import * as avatars from '../services/avatars.js';
 import { getEnabledToolsets } from '../services/mcp-config.js';
+import { createSystemLogger } from '../services/structured-logger.js';
+
+const log = createSystemLogger('prompt-preview');
 
 const PreviewRequestSchema = z.object({
   avatarId: z.string(),
@@ -278,7 +280,7 @@ export async function handler(
       };
     }
 
-    console.error('Prompt preview error:', error instanceof Error ? error.message : String(error));
+    log.error('handler', 'prompt_preview_error', { message: error instanceof Error ? error.message : String(error) });
     return {
       statusCode: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

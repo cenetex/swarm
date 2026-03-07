@@ -1,12 +1,14 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Wallet Balance Service
- * 
+ *
  * Gets token balances for avatar creator wallets
  * Used for dynamic energy refill rate calculation
  */
 import { Connection, PublicKey } from '@solana/web3.js';
 import type { AvatarRecord } from '../../types.js';
+import { createSystemLogger } from '../structured-logger.js';
+
+const log = createSystemLogger('wallet-balance');
 
 // Cache token balances for 5 minutes to avoid excessive RPC calls
 const BALANCE_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -143,14 +145,10 @@ export async function getTokenBalance(
     const msg = error instanceof Error ? error.message : String(error);
 
     if (msg.includes('could not find mint')) {
-      console.warn(JSON.stringify({
-        event: 'wallet_balance_mint_not_found',
-        mint: tokenMint,
-        wallet: walletAddress,
-      }));
+      log.warn('solana', 'mint_not_found', { mint: tokenMint, wallet: walletAddress });
     }
 
-    console.error(`[WalletBalance] Error getting token balance for ${walletAddress}:`, msg);
+    log.error('solana', 'token_balance_error', { wallet: walletAddress, message: msg });
 
     // Return cached value if available, even if stale
     if (cached) {

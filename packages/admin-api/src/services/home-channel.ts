@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Home Channel Registry Service
  *
@@ -19,6 +18,9 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import type { HomeChannelRecord } from '../types.js';
 import { getDynamoClient, _setDynamoClient as _setSharedDynamoClient } from './dynamo-client.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('home-channel');
 
 let dynamoClient: DynamoDBDocumentClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
@@ -84,7 +86,7 @@ export async function registerHomeChannel(
   // Invalidate cache
   homeChannelCache = null;
 
-  console.log('[HomeChannel] Registered home channel:', {
+  log.info('registry', 'channel_registered', {
     avatarId,
     chatId,
     botUsername,
@@ -109,7 +111,7 @@ export async function unregisterHomeChannel(chatId: string): Promise<void> {
   // Invalidate cache
   homeChannelCache = null;
 
-  console.log('[HomeChannel] Unregistered home channel:', { chatId });
+  log.info('registry', 'channel_unregistered', { chatId });
 }
 
 /**
@@ -199,7 +201,7 @@ export async function getHomeChannelByChatId(chatId: string): Promise<HomeChanne
 
     return (result.Item as HomeChannelRecord) || null;
   } catch (err) {
-    console.warn('[HomeChannel] Failed to get home channel:', err instanceof Error ? err.message : String(err));
+    log.warn('registry', 'get_channel_failed', { chatId, message: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }
@@ -239,7 +241,7 @@ export async function getAllHomeChannels(): Promise<HomeChannelRecord[]> {
 
     return records;
   } catch (err) {
-    console.warn('[HomeChannel] Failed to get all home channels:', err instanceof Error ? err.message : String(err));
+    log.warn('registry', 'get_all_channels_failed', { message: err instanceof Error ? err.message : String(err) });
     return [];
   }
 }

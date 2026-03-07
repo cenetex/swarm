@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Discord Service
  *
@@ -11,6 +10,9 @@
  */
 import * as secrets from '../secrets.js';
 import { ECSClient, DescribeServicesCommand } from '@aws-sdk/client-ecs';
+import { createSystemLogger } from '../structured-logger.js';
+
+const log = createSystemLogger('discord');
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
@@ -255,7 +257,7 @@ export async function getConnectionStatus(
         result.credentialsValid = false;
       }
     } catch (error) {
-      console.error('Failed to fetch Discord bot info:', error instanceof Error ? error.message : String(error));
+      log.error('api', 'bot_info_fetch_failed', { avatarId, message: error instanceof Error ? error.message : String(error) });
       // Network error — cannot confirm credentials are valid
       result.credentialsValid = false;
     }
@@ -281,7 +283,7 @@ export async function getConnectionStatus(
           }));
         }
       } catch (error) {
-        console.error('Failed to fetch Discord guilds:', error instanceof Error ? error.message : String(error));
+        log.error('api', 'guilds_fetch_failed', { avatarId, message: error instanceof Error ? error.message : String(error) });
       }
     }
   }
@@ -348,14 +350,14 @@ export async function sendMessage(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Discord send message failed:', errorText);
+      log.error('messaging', 'send_failed', { avatarId, channelId, message: errorText });
       return null;
     }
 
     const message = (await response.json()) as { id: string };
     return { messageId: message.id };
   } catch (error) {
-    console.error('Discord send message error:', error instanceof Error ? error.message : String(error));
+    log.error('messaging', 'send_error', { avatarId, channelId, message: error instanceof Error ? error.message : String(error) });
     return null;
   }
 }
@@ -399,14 +401,14 @@ export async function sendWebhookMessage(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Discord webhook message failed:', errorText);
+      log.error('messaging', 'webhook_send_failed', { avatarId, message: errorText });
       return null;
     }
 
     const message = (await response.json()) as { id?: string };
     return { messageId: message.id };
   } catch (error) {
-    console.error('Discord webhook message error:', error instanceof Error ? error.message : String(error));
+    log.error('messaging', 'webhook_send_error', { avatarId, message: error instanceof Error ? error.message : String(error) });
     return null;
   }
 }
@@ -445,7 +447,7 @@ export async function getChannel(avatarId: string, channelId: string): Promise<D
       parentId: channel.parent_id,
     };
   } catch (error) {
-    console.error('Discord get channel error:', error instanceof Error ? error.message : String(error));
+    log.error('api', 'get_channel_error', { avatarId, channelId, message: error instanceof Error ? error.message : String(error) });
     return null;
   }
 }
@@ -483,7 +485,7 @@ export async function listChannels(avatarId: string, guildId: string): Promise<D
       parentId: c.parent_id,
     }));
   } catch (error) {
-    console.error('Discord list channels error:', error instanceof Error ? error.message : String(error));
+    log.error('api', 'list_channels_error', { avatarId, guildId, message: error instanceof Error ? error.message : String(error) });
     return [];
   }
 }
@@ -520,7 +522,7 @@ export async function listGuilds(avatarId: string): Promise<DiscordGuild[]> {
       memberCount: g.approximate_member_count,
     }));
   } catch (error) {
-    console.error('Discord list guilds error:', error instanceof Error ? error.message : String(error));
+    log.error('api', 'list_guilds_error', { avatarId, message: error instanceof Error ? error.message : String(error) });
     return [];
   }
 }
@@ -572,7 +574,7 @@ export async function getMessages(
       })),
     }));
   } catch (error) {
-    console.error('Discord get messages error:', error instanceof Error ? error.message : String(error));
+    log.error('api', 'get_messages_error', { avatarId, channelId, message: error instanceof Error ? error.message : String(error) });
     return [];
   }
 }
@@ -603,7 +605,7 @@ export async function addReaction(
 
     return response.ok;
   } catch (error) {
-    console.error('Discord add reaction error:', error instanceof Error ? error.message : String(error));
+    log.error('api', 'add_reaction_error', { avatarId, channelId, messageId, message: error instanceof Error ? error.message : String(error) });
     return false;
   }
 }
@@ -634,7 +636,7 @@ export async function removeReaction(
 
     return response.ok;
   } catch (error) {
-    console.error('Discord remove reaction error:', error instanceof Error ? error.message : String(error));
+    log.error('api', 'remove_reaction_error', { avatarId, channelId, messageId, message: error instanceof Error ? error.message : String(error) });
     return false;
   }
 }
