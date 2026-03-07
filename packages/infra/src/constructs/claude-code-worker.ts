@@ -319,6 +319,31 @@ export class ClaudeCodeWorker extends Construct {
       );
     }
 
+    // ── CloudWatch alarm: DLQ depth detection ─────────────────────────────
+    // Any message in the DLQ means a Claude Code task has exhausted retries.
+    // 1-minute evaluation period for fastest possible detection.
+    const dlqQueue = this.queue.deadLetterQueue!.queue;
+    const claudeCodeDlqAlarm = new cloudwatch.Alarm(this, 'DlqDepthAlarm', {
+      alarmName: `swarm-claude-code-dlq-depth-${environment}${suffix}`,
+      alarmDescription:
+        'Messages detected in the Claude Code worker DLQ. A task has exhausted retries. ' +
+        'Runbook: docs/RUNBOOK.md § 3 "SQS DLQ Recovery" — inspect, correlate, and redrive.',
+      metric: dlqQueue.metricApproximateNumberOfMessagesVisible({
+        period: cdk.Duration.minutes(1),
+      }),
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    if (props.alarmTopic) {
+      claudeCodeDlqAlarm.addAlarmAction(
+        new cloudwatch_actions.SnsAction(props.alarmTopic)
+      );
+    }
+
     // Callback Lambda handler (processes results and sends to users)
     if (props.handlersCodePath) {
       const callbackLogGroup = new logs.LogGroup(this, 'CallbackLogGroup', {

@@ -659,13 +659,20 @@ export class SharedHandlers extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
-    // DLQ depth alarms (threshold: 1 message — any message in DLQ is actionable)
+    // DLQ depth alarms (threshold: >0 messages — any message in DLQ is actionable)
+    // 1-minute evaluation period for fastest possible detection.
+    // See RUNBOOK.md Section 3 "SQS DLQ Recovery" for triage steps.
     const dlqDepthAlarm = new cloudwatch.Alarm(this, 'DlqDepthAlarm', {
       alarmName: `${alarmPrefix}-dlq-depth`,
+      alarmDescription:
+        'Messages detected in the shared FIFO DLQ. At least one webhook, message-processor, ' +
+        'response-sender, or media-processor message has exhausted retries. ' +
+        'Runbook: docs/RUNBOOK.md § 3 "SQS DLQ Recovery" — inspect, correlate, and redrive.',
       metric: this.dlq.metricApproximateNumberOfMessagesVisible({
-        period: cdk.Duration.minutes(5),
+        period: cdk.Duration.minutes(1),
       }),
-      threshold: 1,
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       evaluationPeriods: 1,
       datapointsToAlarm: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
@@ -673,10 +680,15 @@ export class SharedHandlers extends Construct {
 
     const schedulerDlqDepthAlarm = new cloudwatch.Alarm(this, 'SchedulerDlqDepthAlarm', {
       alarmName: `${alarmPrefix}-scheduler-dlq-depth`,
+      alarmDescription:
+        'Messages detected in the scheduler DLQ. Scheduled events (Twitter poller, autonomous tweets, ' +
+        'platform heartbeats, DLQ processor) are failing. ' +
+        'Runbook: docs/RUNBOOK.md § 3 "SQS DLQ Recovery" — inspect, correlate, and redrive.',
       metric: this.schedulerDlq.metricApproximateNumberOfMessagesVisible({
-        period: cdk.Duration.minutes(5),
+        period: cdk.Duration.minutes(1),
       }),
-      threshold: 1,
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       evaluationPeriods: 1,
       datapointsToAlarm: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,

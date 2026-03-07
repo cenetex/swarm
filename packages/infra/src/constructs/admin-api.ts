@@ -2308,13 +2308,19 @@ export class AdminApiConstruct extends Construct {
     const alarmPrefix = `swarm-${environment}-admin`;
     const snsAction = props.alarmTopic ? new cw_actions.SnsAction(props.alarmTopic) : undefined;
 
-    // DLQ depth alarms (threshold: 1 — any message in DLQ is actionable)
+    // DLQ depth alarms (threshold: >0 messages — any message in DLQ is actionable)
+    // 1-minute evaluation period for fastest possible detection.
+    // See RUNBOOK.md Section 3 "SQS DLQ Recovery" for triage steps.
     const responseDlqAlarm = new cloudwatch.Alarm(this, 'ResponseDlqDepthAlarm', {
       alarmName: `${alarmPrefix}-response-dlq-depth`,
+      alarmDescription:
+        'Messages detected in the admin response DLQ. Admin API response delivery is failing. ' +
+        'Runbook: docs/RUNBOOK.md § 3 "SQS DLQ Recovery" — inspect, correlate, and redrive.',
       metric: this.responseDlq.metricApproximateNumberOfMessagesVisible({
-        period: cdk.Duration.minutes(5),
+        period: cdk.Duration.minutes(1),
       }),
-      threshold: 1,
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       evaluationPeriods: 1,
       datapointsToAlarm: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
@@ -2322,10 +2328,14 @@ export class AdminApiConstruct extends Construct {
 
     const chatDlqAlarm = new cloudwatch.Alarm(this, 'ChatDlqDepthAlarm', {
       alarmName: `${alarmPrefix}-chat-dlq-depth`,
+      alarmDescription:
+        'Messages detected in the admin chat DLQ. Chat worker message processing is failing. ' +
+        'Runbook: docs/RUNBOOK.md § 3 "SQS DLQ Recovery" — inspect, correlate, and redrive.',
       metric: this.chatDlq.metricApproximateNumberOfMessagesVisible({
-        period: cdk.Duration.minutes(5),
+        period: cdk.Duration.minutes(1),
       }),
-      threshold: 1,
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       evaluationPeriods: 1,
       datapointsToAlarm: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
@@ -2333,10 +2343,14 @@ export class AdminApiConstruct extends Construct {
 
     const dreamDlqAlarm = new cloudwatch.Alarm(this, 'DreamDlqDepthAlarm', {
       alarmName: `${alarmPrefix}-dream-dlq-depth`,
+      alarmDescription:
+        'Messages detected in the admin dream DLQ. Dream worker processing is failing. ' +
+        'Runbook: docs/RUNBOOK.md § 3 "SQS DLQ Recovery" — inspect, correlate, and redrive.',
       metric: this.dreamDlq.metricApproximateNumberOfMessagesVisible({
-        period: cdk.Duration.minutes(5),
+        period: cdk.Duration.minutes(1),
       }),
-      threshold: 1,
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       evaluationPeriods: 1,
       datapointsToAlarm: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
@@ -2344,10 +2358,14 @@ export class AdminApiConstruct extends Construct {
 
     const consolidationDlqAlarm = new cloudwatch.Alarm(this, 'ConsolidationDlqDepthAlarm', {
       alarmName: `${alarmPrefix}-consolidation-dlq-depth`,
+      alarmDescription:
+        'Messages detected in the admin consolidation DLQ. Memory consolidation scheduling is failing. ' +
+        'Runbook: docs/RUNBOOK.md § 3 "SQS DLQ Recovery" — inspect, correlate, and redrive.',
       metric: this.consolidationDlq.metricApproximateNumberOfMessagesVisible({
-        period: cdk.Duration.minutes(5),
+        period: cdk.Duration.minutes(1),
       }),
-      threshold: 1,
+      threshold: 0,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       evaluationPeriods: 1,
       datapointsToAlarm: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
