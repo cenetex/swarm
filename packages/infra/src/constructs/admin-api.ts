@@ -1069,6 +1069,7 @@ export class AdminApiConstruct extends Construct {
           process.env.ENERGY_BURN_ALLOWED_MINTS ||
           process.env.ENERGY_BURN_DEFAULT_MINT ||
           'Ci6Y1UX8bY4jxn6YiogJmdCxFEu2jmZhCcG65PStpump',
+        LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
         REPLICATE_API_KEY_SECRET_ARN: replicateApiKey?.secretArn || '',
         // POST_QUEUE for decoupled Twitter posting
         POST_QUEUE_URL: props.postQueue?.queueUrl || '',
@@ -1103,6 +1104,7 @@ export class AdminApiConstruct extends Construct {
     });
 
     // Grant permissions to avatars handler
+    llmApiKey.grantRead(avatarsHandler);
     this.table.grantReadWriteData(avatarsHandler);
     avatarsHandler.addToRolePolicy(
       new iam.PolicyStatement({
