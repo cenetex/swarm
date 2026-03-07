@@ -258,20 +258,34 @@ All alarms share these settings:
 
 | Severity | Response Time | Criteria | Action |
 |---|---|---|---|
-| **P1 Critical** | 15 minutes | DLQ filling, all consumers down, webhook returning 5xx to Telegram | Page on-call engineer. Begin incident response. |
-| **P2 High** | 30 minutes | Single consumer failing, queue backing up, one avatar not responding | Investigate root cause. Post to Slack ops channel. |
-| **P3 Medium** | 2 hours | Intermittent errors, non-critical function (media, tweets), scheduler DLQ | Monitor trend. Investigate when convenient. |
-| **P4 Low** | Next business day | Cosmetic log errors, stale cache, non-impacting warnings | Log for review in next ops check. |
+| **P1 Critical** | 15 minutes | DLQ filling, all consumers down, webhook returning 5xx to Telegram | SNS alarm auto-notifies on-call. Begin incident response. Escalate to Platform Lead (`hello@ratimics.com`) if unresolved in 30 min. |
+| **P2 High** | 30 minutes | Single consumer failing, queue backing up, one avatar not responding | On-call investigates. Post findings to GitHub issue. Escalate to Platform Lead if architecture decision needed. |
+| **P3 Medium** | 2 hours | Intermittent errors, non-critical function (media, tweets), scheduler DLQ | Monitor trend. Investigate during business hours. Track in GitHub issue. |
+| **P4 Low** | Next business day | Cosmetic log errors, stale cache, non-impacting warnings | Log for review in next daily ops check. Track in GitHub issue. |
 
 ### Escalation Contacts
 
-| Role | Contact | Notes |
+| Role | How to Reach | Notes |
 |---|---|---|
-| On-call engineer | `TODO` | First responder for P1/P2 |
-| Platform lead | `TODO` | P1 escalation, architecture decisions |
-| AWS account owner | `TODO` | Infrastructure and billing issues |
+| On-call engineer | SNS topic `swarm-alarms-{ENVIRONMENT}` auto-notifies; check `@cenetex/swarm-ops` GitHub team for current roster | First responder for P1/P2 |
+| Platform lead | `hello@ratimics.com` | P1 escalation, architecture decisions, deployment approvals |
+| AWS account owner | `hello@ratimics.com` | Infrastructure and billing issues (Staging: `022118847419`, Prod: `332730082708`) |
 
-> **Note:** Configure SNS subscriptions on the `swarm-alarms-ENVIRONMENT` topic to route alarm notifications to email, PagerDuty, Slack, or any webhook endpoint.
+### Escalation Flow
+
+```
+CloudWatch Alarm
+  → SNS topic: swarm-alarms-{ENVIRONMENT}
+    → Email: hello@ratimics.com (auto-subscribed via CDK)
+    → (Optional) Slack / PagerDuty webhook (add via SNS subscription)
+
+P0/P1: On-call engineer responds (15 min) → Platform Lead if unresolved in 30 min
+P2:    On-call engineer responds (30 min) → Platform Lead if architecture decision needed
+P3:    Investigate during business hours → no escalation unless trending to P2
+P4:    Next business day → track in GitHub issue
+```
+
+> **Adding notification channels:** Subscribe your Slack or PagerDuty webhook to the `swarm-alarms-{ENVIRONMENT}` SNS topic. The topic ARN follows the pattern `arn:aws:sns:us-east-1:{ACCOUNT_ID}:swarm-alarms-{ENVIRONMENT}`. See [RUNBOOK.md Section 1](./RUNBOOK.md) for `aws sns subscribe` examples.
 
 ---
 

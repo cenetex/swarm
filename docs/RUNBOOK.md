@@ -51,11 +51,50 @@ Shared handler alarms follow the pattern `swarm-ENVIRONMENT-*`.
 
 ### Escalation Contacts
 
-| Role | Contact | Notes |
+| Role | How to Reach | Notes |
 |---|---|---|
-| On-call engineer | `TODO` | First responder |
-| Platform lead | `TODO` | P1/P2 escalation |
-| AWS account owner | `TODO` | Infrastructure / billing issues |
+| On-call engineer | SNS topic `swarm-alarms-{ENVIRONMENT}` (auto-notifies subscribed operators) | First responder for all alarms. Current on-call roster is maintained in the GitHub team `@cenetex/swarm-ops`. |
+| Platform lead | `hello@ratimics.com` | P1/P2 escalation. Owns architecture decisions and deployment approvals. |
+| AWS account owner | `hello@ratimics.com` | Infrastructure, billing, and IAM issues. Staging: `022118847419`, Prod: `332730082708`. |
+
+> **Where is the on-call list?** The current on-call rotation is tracked via the `@cenetex/swarm-ops` GitHub team. SNS topic `swarm-alarms-{ENVIRONMENT}` delivers alarm notifications to all subscribed operators (email by default; add PagerDuty or Slack webhook subscriptions as needed).
+
+### Escalation Procedure by Severity
+
+| Severity | Step 1 | Step 2 | Step 3 |
+|---|---|---|---|
+| **P0 — Outage** | SNS alarm auto-pages on-call engineer | On-call engineer begins incident response within 15 min | If unresolved in 30 min, escalate to Platform Lead (`hello@ratimics.com`) |
+| **P1 — Critical** | On-call engineer investigates (15 min response) | If root cause requires infra/billing changes, escalate to AWS Account Owner | Post status update to GitHub issue |
+| **P2 — High** | On-call engineer investigates (1 hr response) | If architecture decision needed, loop in Platform Lead | Document findings in GitHub issue |
+| **P3 — Medium** | Investigate during business hours | No escalation unless trending toward P2 | Track in GitHub issue |
+| **P4 — Low** | Next business day | Address during regular ops review | Track in GitHub issue |
+
+### Alarm Routing Configuration
+
+All CloudWatch alarms route to SNS topic **`swarm-alarms-{ENVIRONMENT}`** (defined in `packages/infra/src/constructs/shared.ts`).
+
+**Current subscriptions** (configured via CDK `alarmNotificationEmail` or `adminEmails`):
+- **Email:** `hello@ratimics.com` (subscribed automatically by CDK when `alarmNotificationEmail` is set)
+
+**To add additional notification channels:**
+
+```bash
+# Add a Slack incoming webhook
+aws sns subscribe \
+  --region us-east-1 \
+  --topic-arn "arn:aws:sns:us-east-1:ACCOUNT_ID:swarm-alarms-ENVIRONMENT" \
+  --protocol https \
+  --notification-endpoint "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+
+# Add PagerDuty integration
+aws sns subscribe \
+  --region us-east-1 \
+  --topic-arn "arn:aws:sns:us-east-1:ACCOUNT_ID:swarm-alarms-ENVIRONMENT" \
+  --protocol https \
+  --notification-endpoint "https://events.pagerduty.com/integration/YOUR_KEY/enqueue"
+```
+
+Account IDs: Staging = `022118847419`, Production = `332730082708`.
 
 ---
 
