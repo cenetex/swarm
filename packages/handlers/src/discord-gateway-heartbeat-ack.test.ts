@@ -48,8 +48,11 @@ mock.module('@aws-sdk/client-sqs', () => ({
 mock.module('@aws-sdk/client-secrets-manager', () => ({
   SecretsManagerClient: class { send() { return Promise.resolve({}); } },
   GetSecretValueCommand: class { constructor(public input: unknown) {} },
-  DescribeSecretCommand: class { constructor(public input: unknown) {} },
   CreateSecretCommand: class { constructor(public input: unknown) {} },
+  UpdateSecretCommand: class { constructor(public input: unknown) {} },
+  DeleteSecretCommand: class { constructor(public input: unknown) {} },
+  DescribeSecretCommand: class { constructor(public input: unknown) {} },
+  RestoreSecretCommand: class { constructor(public input: unknown) {} },
   PutSecretValueCommand: class { constructor(public input: unknown) {} },
 }));
 

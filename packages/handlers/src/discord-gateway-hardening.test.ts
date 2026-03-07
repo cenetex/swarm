@@ -5,7 +5,7 @@
  * - Issue #830: Heartbeat interval bounds validation and jitter
  * - Issue #831: Session state reset on close codes 4007/4009
  */
-import { describe, it, expect, mock, beforeEach } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, it, expect, mock } from 'bun:test';
 
 // Track logger.warn calls for assertion
 const loggerWarnCalls: Array<{ message: string; meta: Record<string, unknown> }> = [];
@@ -60,13 +60,23 @@ mock.module('@aws-sdk/client-sqs', () => ({
 mock.module('@aws-sdk/client-secrets-manager', () => ({
   SecretsManagerClient: class { send() { return Promise.resolve({}); } },
   GetSecretValueCommand: class { constructor(public input: unknown) {} },
-  DescribeSecretCommand: class { constructor(public input: unknown) {} },
   CreateSecretCommand: class { constructor(public input: unknown) {} },
+  UpdateSecretCommand: class { constructor(public input: unknown) {} },
+  DeleteSecretCommand: class { constructor(public input: unknown) {} },
+  DescribeSecretCommand: class { constructor(public input: unknown) {} },
+  RestoreSecretCommand: class { constructor(public input: unknown) {} },
   PutSecretValueCommand: class { constructor(public input: unknown) {} },
 }));
 
+// Re-export the real @swarm/core module, overriding only what the gateway test
+// needs to control. This prevents global mock pollution (bun's mock.module is
+// process-global and would break tests in other files that import @swarm/core).
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- mock.module requires synchronous module object; dynamic import() is async
+const realCore = require('@swarm/core');
 mock.module('@swarm/core', () => ({
-  buildDiscordEnvelope: () => null,
+  ...realCore,
+  // Override only what this test needs to control; keep all other exports real
+  // to avoid polluting other test files (bun's mock.module is process-global).
   createStateService: () => ({
     listAvatars: async () => [],
     getAvatarConfigWithStatus: async () => null,
@@ -84,19 +94,35 @@ mock.module('@swarm/core', () => ({
     debug: () => {},
     setContext: () => {},
   },
-  DiscordRateLimiter: class {
-    constructor() {}
-  },
-  logIntentValidation: () => ({ valid: true, missingRequired: [], diagnostics: [] }),
-  logGatewayClose: (_code: number) => ({ reconnectable: true, description: 'test close', remediation: '' }),
-  computeReconnectDelay: () => 1000,
 }));
 
-// Stub required env vars
-process.env.STATE_TABLE = 'test-state-table';
-process.env.MESSAGE_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
+type GatewayConnectionClass = typeof import('./discord/discord-gateway-shared.js').GatewayConnection;
 
-import { GatewayConnection } from './discord/discord-gateway-shared.js';
+let GatewayConnection: GatewayConnectionClass;
+let previousStateTable: string | undefined;
+let previousMessageQueueUrl: string | undefined;
+
+beforeAll(async () => {
+  previousStateTable = process.env.STATE_TABLE;
+  previousMessageQueueUrl = process.env.MESSAGE_QUEUE_URL;
+  process.env.STATE_TABLE = 'test-state-table';
+  process.env.MESSAGE_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
+
+  ({ GatewayConnection } = await import('./discord/discord-gateway-shared.js'));
+});
+
+afterAll(() => {
+  if (previousStateTable === undefined) {
+    delete process.env.STATE_TABLE;
+  } else {
+    process.env.STATE_TABLE = previousStateTable;
+  }
+  if (previousMessageQueueUrl === undefined) {
+    delete process.env.MESSAGE_QUEUE_URL;
+  } else {
+    process.env.MESSAGE_QUEUE_URL = previousMessageQueueUrl;
+  }
+});
 
 /** Type alias for internal state we need to inspect in tests */
 interface GatewayInternals {
