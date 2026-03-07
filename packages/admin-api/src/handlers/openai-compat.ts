@@ -740,6 +740,17 @@ async function handleChatCompletions(
     return errorResponse(404, `Avatar not found: ${avatarId}`, 'not_found', 'avatar_not_found', corsHeaders);
   }
 
+  // Reject unsupported stream + audio combination
+  if (request.stream && request.include_audio) {
+    return errorResponse(
+      400,
+      'Audio generation is not supported with streaming. Set stream: false to use include_audio, or disable include_audio to use streaming.',
+      'invalid_request_error',
+      'unsupported_stream_audio',
+      corsHeaders,
+    );
+  }
+
   // Convert OpenAI messages to our internal format
   const history = request.messages.slice(0, -1).map(msg => ({
     role: msg.role as 'user' | 'assistant' | 'system',

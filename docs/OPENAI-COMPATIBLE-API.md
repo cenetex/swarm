@@ -174,7 +174,7 @@ Generate a chat completion from an avatar.
 | `messages` | array | Yes | Array of message objects with `role` and `content` |
 | `temperature` | number | No | Sampling temperature (0-2), default varies by avatar |
 | `max_tokens` | number | No | Maximum tokens to generate |
-| `stream` | boolean | No | **Not yet supported** - must be `false` or omitted |
+| `stream` | boolean | No | Enable SSE streaming (see [Streaming](#streaming) below). Cannot be combined with `include_audio`. |
 | `user` | string | No | Optional user identifier for tracking |
 | `include_audio` | boolean | No | Generate voice audio for the response (requires avatar with voice configured) |
 
@@ -216,6 +216,81 @@ Generate a chat completion from an avatar.
 The `audio` field is only present when:
 1. `include_audio: true` was specified in the request
 2. The avatar has voice generation configured and enabled
+
+---
+
+### Streaming
+
+Set `stream: true` to receive the response in OpenAI-compatible Server-Sent Events (SSE) format. This is useful for clients that expect the standard OpenAI streaming protocol (e.g., the OpenAI SDKs with `stream=True`).
+
+**Note:** Because the API runs on AWS Lambda behind API Gateway, the full response is generated first and then delivered as SSE-formatted chunks in a single HTTP response. This means latency to first byte is the same as a non-streaming request, but the response format is compatible with SSE parsers.
+
+**Streaming cannot be combined with `include_audio: true`.** If both are set, the API returns a 400 error.
+
+**SSE Chunk Format:**
+
+Each SSE event is a `data:` line containing a JSON `chat.completion.chunk` object:
+
+```
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1706644800,"model":"avatar:my-bot","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1706644800,"model":"avatar:my-bot","choices":[{"index":0,"delta":{"content":"Hello! How can I help you today?"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1706644800,"model":"avatar:my-bot","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":15,"completion_tokens":10,"total_tokens":25}}
+
+data: [DONE]
+```
+
+**Chunk sequence:**
+1. **Role chunk** - `delta.role` set to `"assistant"` with empty content
+2. **Content chunk(s)** - `delta.content` with the response text
+3. **Final chunk** - empty `delta`, `finish_reason: "stop"`, and `usage` object
+4. **Done sentinel** - `data: [DONE]` signals the stream is complete
+
+**Streaming Example (Python):**
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="sk-your-key",
+    base_url="https://swarm.rati.chat/api/v1"
+)
+
+stream = client.chat.completions.create(
+    model="avatar:my-bot",
+    messages=[{"role": "user", "content": "Hello!"}],
+    stream=True
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+```
+
+**Streaming Example (JavaScript):**
+
+```typescript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  apiKey: 'sk-your-key',
+  baseURL: 'https://swarm.rati.chat/api/v1',
+});
+
+const stream = await client.chat.completions.create({
+  model: 'avatar:my-bot',
+  messages: [{ role: 'user', content: 'Hello!' }],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  const content = chunk.choices[0]?.delta?.content;
+  if (content) process.stdout.write(content);
+}
+```
+
+**Error handling in streaming:** If an error occurs during generation, the error message is emitted as a content delta chunk followed by the `[DONE]` sentinel, with HTTP status 200 (since SSE headers are already sent).
 
 ---
 
@@ -316,7 +391,7 @@ Errors follow the OpenAI format:
 | `invalid_api_key` | 401 | API key not found or disabled |
 | `unauthorized_avatar` | 403 | API key not authorized for requested avatar |
 | `avatar_not_found` | 404 | Avatar ID doesn't exist |
-| `unsupported_stream` | 400 | Streaming is not yet supported |
+| `unsupported_stream_audio` | 400 | `stream: true` and `include_audio: true` cannot be combined |
 
 ---
 
@@ -338,7 +413,7 @@ X-RateLimit-Reset: 1706644860
 
 ## Limitations
 
-1. **Streaming not supported** - The `stream: true` parameter is not yet implemented
+1. **Streaming is buffered** - `stream: true` returns SSE-formatted chunks, but the response is buffered by Lambda/API Gateway (not true token-by-token streaming)
 2. **No function calling** - Tools/function calling is not exposed through this API
 3. **No image generation** - Media generation tools are not available
 4. **Token counting is approximate** - Usage stats use character-based estimation
@@ -357,7 +432,8 @@ X-RateLimit-Reset: 1706644860
 
 ## Coming Soon
 
-- [ ] Streaming responses
+- [x] Streaming responses (SSE format, buffered)
+- [ ] True token-by-token streaming (requires Lambda response streaming)
 - [ ] Tool/function calling
 - [ ] Image generation via chat
 - [ ] API key management UI
