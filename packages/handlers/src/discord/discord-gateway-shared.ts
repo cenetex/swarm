@@ -632,6 +632,25 @@ class GatewayConnection {
         return;
       }
 
+      // Close codes 4007 (invalid sequence) and 4009 (session timed out)
+      // indicate the session is no longer valid. Clear session state to
+      // force a full IDENTIFY on the next connection instead of RESUME.
+      if (code === 4007 || code === 4009) {
+        logger.warn('Session invalidated by close code, clearing session state', {
+          event: 'session_invalidated',
+          subsystem: 'discord',
+          closeCode: code,
+          description: closeInfo.description,
+          previousSessionId: this.sessionId,
+          botUserId: this.botUserId,
+        });
+        this.sessionId = null;
+        this.sequence = null;
+        this.resumeGatewayUrl = null;
+        this.scheduleReconnect(false);
+        return;
+      }
+
       this.scheduleReconnect();
     });
 
@@ -689,8 +708,32 @@ class GatewayConnection {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
     }
-    this.heartbeatIntervalMs = hello.heartbeat_interval;
-    this.heartbeatTimer = setInterval(() => this.sendHeartbeat(), hello.heartbeat_interval);
+
+    // Validate and clamp heartbeat interval to [10s, 120s]
+    const MIN_HEARTBEAT_MS = 10_000;
+    const MAX_HEARTBEAT_MS = 120_000;
+    let interval = hello.heartbeat_interval;
+
+    if (interval < MIN_HEARTBEAT_MS || interval > MAX_HEARTBEAT_MS) {
+      const original = interval;
+      interval = Math.max(MIN_HEARTBEAT_MS, Math.min(MAX_HEARTBEAT_MS, interval));
+      logger.warn('Heartbeat interval out of bounds, clamping', {
+        event: 'heartbeat_interval_clamped',
+        subsystem: 'discord',
+        originalMs: original,
+        clampedMs: interval,
+        minMs: MIN_HEARTBEAT_MS,
+        maxMs: MAX_HEARTBEAT_MS,
+        botUserId: this.botUserId,
+      });
+    }
+
+    // Apply random jitter of up to -10% to prevent thundering herd
+    const jitter = Math.floor(Math.random() * interval * 0.1);
+    const jitteredInterval = interval - jitter;
+
+    this.heartbeatIntervalMs = interval;
+    this.heartbeatTimer = setInterval(() => this.sendHeartbeat(), jitteredInterval);
 
     // Send initial heartbeat
     this.sendHeartbeat();
