@@ -20,6 +20,7 @@ import {
   createLLMService,
   createMediaServiceWithDeps,
   createMediaDependencies,
+  createGallerySaver,
   createContentStoreService,
   enqueuePost,
   logger,
@@ -211,6 +212,10 @@ async function processAvatar(
       }
 
       const mediaDeps = createMediaDependencies({ tableName: STATE_TABLE });
+      const adminTable = process.env.ADMIN_TABLE;
+      if (adminTable) {
+        mediaDeps.saveToGallery = createGallerySaver({ tableName: adminTable });
+      }
       const mediaService = createMediaServiceWithDeps(secrets, MEDIA_BUCKET, CDN_URL, mediaDeps);
 
       const imagePrompt = await generateImagePrompt(content.text, avatarConfig, llmService);
