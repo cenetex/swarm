@@ -2,6 +2,8 @@
 
 ## Architecture and Design
 
+- [ARCHITECTURE-ROOM-COORDINATION.md](ARCHITECTURE-ROOM-COORDINATION.md) — Room-scoped coordination RFC (shared ledger, turn arbiter, room ingress)
+- [COORDINATION-OWNERSHIP.md](COORDINATION-OWNERSHIP.md) — Which packages own live coordination vs control-plane
 - [BILLING-STRATEGY.md](BILLING-STRATEGY.md) — Web2 Floor + Web3 Ceiling billing model
 - [design-philosophy.md](design-philosophy.md) — Chat-first UI rules and design principles
 - [DISCORD-GATEWAY.md](DISCORD-GATEWAY.md) — Discord Gateway architecture and ECS deployment

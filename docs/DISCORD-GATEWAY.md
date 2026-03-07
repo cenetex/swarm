@@ -65,7 +65,7 @@ The Discord integration supports three modes of operation:
 
 ### Message Flow (Bot Mode)
 
-The following describes the end-to-end flow when a user sends a message in Discord and an avatar responds:
+The following describes the end-to-end flow when a user sends a message in Discord and an avatar responds. Shared channels (2+ registered avatars) use **room-scoped coordination** so a single inbound message produces at most one avatar reply (see [ARCHITECTURE-ROOM-COORDINATION.md](./ARCHITECTURE-ROOM-COORDINATION.md) and [COORDINATION-OWNERSHIP.md](./COORDINATION-OWNERSHIP.md)).
 
 ```
 Discord User
@@ -77,7 +77,7 @@ Discord User
 2. Discord Gateway delivers MESSAGE_CREATE event via WebSocket
     |
     v
-3. GatewayConnection routes event to all avatar bindings for that bot token
+3. GatewayConnection receives event for the bot token
     |
     v
 4. buildDiscordEnvelope() parses the raw event into a SwarmEnvelope
@@ -86,20 +86,30 @@ Discord User
 5. Idempotency check: discord:{avatarId}:{messageId}
     |  (skip if already processed)
     v
-6. Message evaluator determines if a response is needed
-    |  (checks: @mentions, replies to bot, DMs, channel filters)
-    v
-7. Enqueued to SQS FIFO with MessageGroupId for ordering
+6. Room-scoped ingress (shared channels):
+    |  a. buildRoomKey("discord", channelId)
+    |  b. isSharedRoom() -- checks if 2+ avatars are registered
+    |  c. processSharedRoomMessage() -- appends ONCE to the shared room ledger,
+    |     deduplicates by messageId
+    |  d. Enqueued ONCE to SQS FIFO with room-scoped MessageGroupId
+    |
+    |  Single-avatar channels / DMs:
+    |  Per-avatar enqueue (MessageGroupId: avatarId#conversationId)
     |
     v
-8. MessageProcessor Lambda picks up the envelope and runs the agent pipeline
-    |
+7. MessageProcessor Lambda:
+    |  a. For shared rooms: loads all registered avatars via getChannelAvatarIds()
+    |  b. Runs turn arbiter (selectPrimaryResponder) to elect 0 or 1 primary
+    |  c. Runs the agent pipeline only for the elected primary avatar
+    |  d. All other avatars are suppressed for this message
     v
-9. ResponseSender delivers the reply via webhook URL or bot API
-    |
+8. ResponseSender delivers the reply via webhook URL or bot API
+    |  and appends the bot reply to the shared room ledger
     v
 Discord Channel
 ```
+
+> **Key difference from the old model:** Previously, step 3 fanned out the event to all avatar bindings for the bot token, producing N independent SQS messages and N independent processing runs. The current model writes the message once to the shared ledger and elects one responder via the turn arbiter before any LLM generation occurs.
 
 ### Gateway Intents
 

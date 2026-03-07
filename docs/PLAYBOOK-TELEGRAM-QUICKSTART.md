@@ -19,7 +19,7 @@ Start here. Match the symptom, then jump to the indicated step.
 | Bot was working, then stopped | Secret mismatch or webhook URL changed after deploy | [Step 2](#2-diagnose-telegram-wiring-read-only), then [Webhook Secret Mismatch](#webhook-secret-mismatch-invalid_secret) |
 | `invalid_secret` in logs | Webhook secret in Secrets Manager differs from what Telegram has | [Webhook Secret Mismatch](#webhook-secret-mismatch-invalid_secret) |
 | `pending_update_count` growing | Telegram is queuing updates because the webhook is failing | [Step 5](#5-validate-telegram-side-webhook-state), then [Pending Updates](#pending-updates-or-last-webhook-error) |
-| Bot replies in some chats but not others | Group chat not registered as home channel | [RUNBOOK.md Section 2, Cause 6](./RUNBOOK.md#cause-6-chat-not-allowed-home-channel-registry) |
+| Bot replies in some chats but not others | Avatar not a registered member of the shared room | [RUNBOOK.md Section 2, Cause 6](./RUNBOOK.md#cause-6-chat-not-allowed-shared-room-membership-registry) |
 | Multiple avatars broken at once | Shared infrastructure issue or deploy regression | [Bulk Repair](#bulk-repair) |
 
 ## Prerequisites

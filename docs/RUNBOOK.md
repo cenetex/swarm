@@ -108,10 +108,15 @@ Telegram --> API Gateway (HTTP API) --> /webhook/telegram/{avatarId}
         --> Validates secret token (X-Telegram-Bot-Api-Secret-Token header)
         --> Falls back to adapter IP/signature verification
         --> Evaluates whether to respond
-        --> Enqueues to SQS FIFO (MessageGroupId: avatarId#conversationId)
+        --> Shared rooms (2+ registered avatars in channel):
+            --> room-ingress: append once to shared room ledger, dedup by messageId
+            --> Enqueue ONCE with room-scoped MessageGroupId
+            --> Turn arbiter elects 0 or 1 primary responder before LLM generation
+        --> Private chats / single-avatar channels:
+            --> Enqueue per-avatar (MessageGroupId: avatarId#conversationId)
 ```
 
-The webhook Lambda is `swarm-ENVIRONMENT-telegram-webhook` (shared multi-tenant handler).
+The webhook Lambda is `swarm-ENVIRONMENT-telegram-webhook` (shared multi-tenant handler). For details on room-scoped coordination, see [COORDINATION-OWNERSHIP.md](./COORDINATION-OWNERSHIP.md) and [ARCHITECTURE-ROOM-COORDINATION.md](./ARCHITECTURE-ROOM-COORDINATION.md).
 
 ### Symptom: Messages Not Being Received
 
@@ -320,9 +325,11 @@ aws dynamodb get-item \
   --expression-attribute-names '{"#s":"status"}'
 ```
 
-#### Cause 6: Chat Not Allowed (Home Channel Registry)
+#### Cause 6: Chat Not Allowed (Shared-Room Membership Registry)
 
-For group chats, the webhook checks if the chat is registered as a home channel. Messages from unregistered chats are dropped with `chat_blocked` in the logs.
+For group chats, the webhook checks if the avatar has **explicit membership** in the channel via the shared-room membership registry (`HOME_CHANNELS` records with `registeredAvatars`). Messages from channels where the avatar is not a registered member are dropped with `chat_blocked` in the logs.
+
+The membership registry is room-scoped: each channel record lists which avatars are members. This replaces the old model where the first group was auto-registered as a "home channel."
 
 **Diagnosis:**
 
@@ -335,7 +342,20 @@ aws logs filter-log-events \
   --limit 10
 ```
 
-**Resolution:** Use the `/activate` command in the Telegram group (must be sent by a superadmin, the bot owner, or an allowed DM user). Alternatively, add the bot to the group -- the webhook handler auto-registers the first group as a home channel.
+**Resolution:** Use the `/activate` command in the Telegram group (must be sent by a superadmin, the bot owner, or an allowed DM user). This calls `addSharedChannelMembership()` to explicitly register the avatar in that channel.
+
+You can also check and manage membership directly in DynamoDB:
+
+```bash
+# Check which avatars are registered in a channel
+aws dynamodb get-item \
+  --region REGION \
+  --table-name "<ADMIN_TABLE>" \
+  --key '{"pk":{"S":"HOME_CHANNELS"},"sk":{"S":"CHAT_ID"}}' \
+  --projection-expression "registeredAvatars"
+```
+
+Note: Membership is cached in-memory by the webhook Lambda with a 60-second TTL. After adding membership, there may be a brief delay before the avatar begins processing messages in that channel.
 
 ---
 
