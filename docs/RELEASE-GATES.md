@@ -3,8 +3,8 @@
 > **Owner**: Leadership
 > **Last reviewed**: 2026-02-23
 > **Status**: Active
-> **Canonical source**: This document is the authoritative reference for release gate policy. The summary in [STRATEGY-OPERATIONS.md -- Section 3](./STRATEGY-OPERATIONS.md) defers to this document for full detail.
-> **Related**: [STRATEGY-OPERATIONS.md](./STRATEGY-OPERATIONS.md) | [PRODUCTION-DEPLOYMENT-CHECKLIST.md](./PRODUCTION-DEPLOYMENT-CHECKLIST.md) | [SECURITY.md](./SECURITY.md) | [branch-protection.md](./branch-protection.md) | [CLAUDE.md](../CLAUDE.md)
+> **Canonical source**: This document is the authoritative reference for release gate policy.
+> **Related**: [PRODUCTION-DEPLOYMENT-CHECKLIST.md](./PRODUCTION-DEPLOYMENT-CHECKLIST.md) | [SECURITY.md](./SECURITY.md) | [CLAUDE.md](../CLAUDE.md)
 
 ---
 
@@ -28,7 +28,7 @@ A PR may only be merged to `main` -- and a release tag (`v*`) may only be create
 
 ### 1.1 Automated Gates (CI-enforced)
 
-These gates are enforced by the `ci.yml` workflow and GitHub branch protection. They cannot be bypassed without explicitly skipping branch protection (which is blocked for all users including admins per [branch-protection.md](./branch-protection.md)).
+These gates are enforced by the `ci.yml` workflow and GitHub branch protection. They cannot be bypassed without explicitly skipping branch protection (which is blocked for all users including admins — see GitHub Settings > Branches > `main`).
 
 | ID | Gate | What It Checks | Enforcement |
 |----|------|----------------|-------------|
@@ -41,7 +41,7 @@ The `ci` summary job aggregates G1-G4 into a single required status check (`CI`)
 
 ### 1.2 Branch Protection Gates
 
-These are enforced by GitHub branch protection rules on `main` (configured per [branch-protection.md](./branch-protection.md)):
+These are enforced by GitHub branch protection rules on `main` (configured in GitHub Settings > Branches > `main`):
 
 | ID | Gate | Enforcement |
 |----|------|-------------|
@@ -175,7 +175,7 @@ Every issue that results in a merged PR must have:
 | Evidence | Where | Required? |
 |----------|-------|-----------|
 | Acceptance criteria with checkboxes | Issue body | Yes (all issues) |
-| Validation commands | Issue body | Recommended (required for agent-assigned issues per [ISSUE-GOVERNANCE.md](./ISSUE-GOVERNANCE.md)) |
+| Validation commands | Issue body | Recommended (required for agent-assigned issues per [CLAUDE.md](../CLAUDE.md)) |
 | Package label | Issue labels | Yes |
 | Priority label | Issue labels | Yes |
 
@@ -233,7 +233,7 @@ This table maps each gate to its enforcement mechanism, making it auditable whet
 | G2 Build | `ci.yml` > `build-and-test` job | `.github/workflows/ci.yml` |
 | G3 Test | `ci.yml` > `build-and-test` job | `.github/workflows/ci.yml` |
 | G4 Security audit | `ci.yml` > `audit` job | `.github/workflows/ci.yml` |
-| G5 PR required | GitHub branch protection | Settings > Branches > `main` ([branch-protection.md](./branch-protection.md)) |
+| G5 PR required | GitHub branch protection | Settings > Branches > `main` |
 | G6 Review required | GitHub branch protection (CODEOWNERS) | `.github/CODEOWNERS` + branch protection |
 | G7 Conversations resolved | GitHub branch protection | Settings > Branches > `main` |
 | G8 Branch up-to-date | GitHub branch protection | Settings > Branches > `main` |
