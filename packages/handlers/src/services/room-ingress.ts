@@ -11,13 +11,8 @@
  *
  * Private chats and single-avatar channels continue to use per-avatar enqueue.
  */
-import {
-  appendMessage,
-  getRecentMessages,
-  logger,
-  type Platform,
-  type SharedRoomMessage,
-} from '@swarm/core';
+import { appendMessage, getRecentMessages } from '@swarm/core/services';
+import { logger, type Platform, type SharedRoomMessage } from '@swarm/core';
 import { getChannelAvatarIds } from '../telegram/webhook-home-channel.js';
 
 export interface RoomIngressResult {
