@@ -487,17 +487,9 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
     gallery: {
       getGallery: async (_avatarId: string, options?: { type?: 'image' | 'video' | 'sticker'; limit?: number }) => {
         try {
-          const result = await dynamoClient.send(new QueryCommand({
-            TableName: getAdminTable(),
-            KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
-            ExpressionAttributeValues: {
-              ':pk': `AVATAR#${avatarId}`,
-              ':sk': 'GALLERY#',
-            },
-            ScanIndexForward: false, // Most recent first
-            Limit: (options?.limit || 20) * 2,
-          }));
-          let items = (result.Items || []) as Array<{
+          const limit = options?.limit || 20;
+          const typeFilter = options?.type;
+          const matched: Array<{
             id: string;
             url: string;
             s3Key: string;
@@ -505,12 +497,49 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
             prompt?: string;
             platform?: string;
             createdAt: number;
-            postedToTwitter?: boolean;
-          }>;
-          if (options?.type) {
-            items = items.filter(item => item.type === options.type);
-          }
-          return items.slice(0, options?.limit || 20).map(item => ({
+          }> = [];
+          let lastEvaluatedKey: Record<string, unknown> | undefined;
+          const MAX_ROWS_SCANNED = 2000;
+          let rowsScanned = 0;
+
+          do {
+            const result = await dynamoClient.send(new QueryCommand({
+              TableName: getAdminTable(),
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+              ExpressionAttributeValues: {
+                ':pk': `AVATAR#${avatarId}`,
+                ':sk': 'GALLERY#',
+              },
+              ScanIndexForward: false, // Most recent first
+              Limit: typeFilter ? 100 : limit,
+              ExclusiveStartKey: lastEvaluatedKey,
+            }));
+
+            const items = (result.Items || []) as Array<{
+              id: string;
+              url: string;
+              s3Key: string;
+              type: string;
+              prompt?: string;
+              platform?: string;
+              createdAt: number;
+            }>;
+            rowsScanned += items.length;
+
+            for (const item of items) {
+              if (typeFilter && item.type !== typeFilter) continue;
+              matched.push(item);
+              if (matched.length >= limit) break;
+            }
+
+            lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+          } while (
+            matched.length < limit &&
+            lastEvaluatedKey &&
+            rowsScanned < MAX_ROWS_SCANNED
+          );
+
+          return matched.map(item => ({
             id: item.id,
             url: item.url,
             s3Key: item.s3Key,
@@ -573,20 +602,11 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
           return null;
         }
       },
-      searchGallery: async (_avatarId: string, query: string, _type?: 'image' | 'video' | 'sticker') => {
-        // Simple search by prompt text
+      searchGallery: async (_avatarId: string, query: string, type?: 'image' | 'video' | 'sticker') => {
+        // Simple search by prompt text — paginate through all gallery items
         try {
-          const result = await dynamoClient.send(new QueryCommand({
-            TableName: getAdminTable(),
-            KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
-            ExpressionAttributeValues: {
-              ':pk': `AVATAR#${avatarId}`,
-              ':sk': 'GALLERY#',
-            },
-            ScanIndexForward: false,
-            Limit: 100,
-          }));
-          const items = (result.Items || []) as Array<{
+          const lowerQuery = query.toLowerCase();
+          const matched: Array<{
             id: string;
             url: string;
             s3Key: string;
@@ -594,20 +614,59 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
             prompt?: string;
             platform?: string;
             createdAt: number;
-          }>;
-          const lowerQuery = query.toLowerCase();
-          return items
-            .filter(item => item.prompt?.toLowerCase().includes(lowerQuery))
-            .slice(0, 20)
-            .map(item => ({
-              id: item.id,
-              url: item.url,
-              s3Key: item.s3Key,
-              type: item.type as 'image' | 'video' | 'sticker',
-              prompt: item.prompt,
-              platform: item.platform,
-              createdAt: item.createdAt,
+          }> = [];
+          let lastEvaluatedKey: Record<string, unknown> | undefined;
+          const MAX_RESULTS = 20;
+          const MAX_ROWS_SCANNED = 2000;
+          let rowsScanned = 0;
+
+          do {
+            const result = await dynamoClient.send(new QueryCommand({
+              TableName: getAdminTable(),
+              KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+              ExpressionAttributeValues: {
+                ':pk': `AVATAR#${avatarId}`,
+                ':sk': 'GALLERY#',
+              },
+              ScanIndexForward: false,
+              Limit: 100,
+              ExclusiveStartKey: lastEvaluatedKey,
             }));
+
+            const items = (result.Items || []) as Array<{
+              id: string;
+              url: string;
+              s3Key: string;
+              type: string;
+              prompt?: string;
+              platform?: string;
+              createdAt: number;
+            }>;
+            rowsScanned += items.length;
+
+            for (const item of items) {
+              if (type && item.type !== type) continue;
+              if (!item.prompt?.toLowerCase().includes(lowerQuery)) continue;
+              matched.push(item);
+              if (matched.length >= MAX_RESULTS) break;
+            }
+
+            lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+          } while (
+            matched.length < MAX_RESULTS &&
+            lastEvaluatedKey &&
+            rowsScanned < MAX_ROWS_SCANNED
+          );
+
+          return matched.map(item => ({
+            id: item.id,
+            url: item.url,
+            s3Key: item.s3Key,
+            type: item.type as 'image' | 'video' | 'sticker',
+            prompt: item.prompt,
+            platform: item.platform,
+            createdAt: item.createdAt,
+          }));
         } catch {
           return [];
         }
