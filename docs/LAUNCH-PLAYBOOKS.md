@@ -411,7 +411,7 @@ Verify that the platform provides the governance primitives your organization re
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| Cannot delete specific memories | Memory deletion not yet available for the memory type | Report as a governance gap. Memory TTL and bulk delete are available; selective delete is being hardened. |
+| Cannot delete specific memories | Memory not found across tiers | Verify the memory ID is correct. Selective delete and bulk delete cover all memory tiers (legacy and durable). If the issue persists, report as a bug. |
 | Unclear what data is retained | Data retention policy not reviewed | See [DATA-RETENTION-MATRIX.md](DATA-RETENTION-MATRIX.md) for the full retention schedule by data type. |
 
 #### Escalation

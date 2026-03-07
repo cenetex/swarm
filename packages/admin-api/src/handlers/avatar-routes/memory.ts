@@ -34,17 +34,23 @@ export async function handleMemoryRoutes(
     }
 
     try {
-      const [immediate, recent, core] = await Promise.all([
+      const [immediate, recent, core, ephemeral, durable, archival] = await Promise.all([
         memoryService.getMemories(avatarId, { tier: 'immediate', limit: 500 }),
         memoryService.getMemories(avatarId, { tier: 'recent', limit: 500 }),
         memoryService.getMemories(avatarId, { tier: 'core', limit: 500 }),
+        memoryService.getMemories(avatarId, { tier: 'ephemeral', limit: 500 }),
+        memoryService.getMemories(avatarId, { tier: 'durable', limit: 500 }),
+        memoryService.getMemories(avatarId, { tier: 'archival', limit: 500 }),
       ]);
 
       const counts = {
         immediate: immediate.length,
         recent: recent.length,
         core: core.length,
-        total: immediate.length + recent.length + core.length,
+        ephemeral: ephemeral.length,
+        durable: durable.length,
+        archival: archival.length,
+        total: immediate.length + recent.length + core.length + ephemeral.length + durable.length + archival.length,
       };
 
       // Strip internal DynamoDB keys (pk, sk) and embeddings from export
@@ -59,6 +65,9 @@ export async function handleMemoryRoutes(
           immediate: sanitize(immediate),
           recent: sanitize(recent),
           core: sanitize(core),
+          ephemeral: sanitize(ephemeral),
+          durable: sanitize(durable),
+          archival: sanitize(archival),
         },
       };
 
@@ -147,17 +156,23 @@ export async function handleMemoryRoutes(
     }
 
     try {
-      // Fetch all memories across tiers
-      const [immediate, recent, core] = await Promise.all([
+      // Fetch all memories across tiers (legacy + durable)
+      const [immediate, recent, core, ephemeral, durable, archival] = await Promise.all([
         memoryService.getMemories(avatarId, { tier: 'immediate', limit: 500 }),
         memoryService.getMemories(avatarId, { tier: 'recent', limit: 500 }),
         memoryService.getMemories(avatarId, { tier: 'core', limit: 500 }),
+        memoryService.getMemories(avatarId, { tier: 'ephemeral', limit: 500 }),
+        memoryService.getMemories(avatarId, { tier: 'durable', limit: 500 }),
+        memoryService.getMemories(avatarId, { tier: 'archival', limit: 500 }),
       ]);
 
       const allSks = [
         ...immediate.map(m => m.sk),
         ...recent.map(m => m.sk),
         ...core.map(m => m.sk),
+        ...ephemeral.map(m => m.sk),
+        ...durable.map(m => m.sk),
+        ...archival.map(m => m.sk),
       ];
 
       if (allSks.length === 0) {

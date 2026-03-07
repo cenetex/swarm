@@ -190,8 +190,8 @@ export async function getMemory(
     return (result.Items?.[0] as AvatarMemory) || null;
   }
 
-  // Without tier, search all tiers
-  for (const t of ['immediate', 'recent', 'core'] as MemoryTier[]) {
+  // Without tier, search all tiers (legacy + durable)
+  for (const t of ['immediate', 'recent', 'core', 'ephemeral', 'durable', 'archival'] as MemoryTier[]) {
     const result = await getDynamoClient().send(new QueryCommand({
       TableName: ADMIN_TABLE,
       KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',

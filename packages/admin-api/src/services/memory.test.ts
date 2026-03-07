@@ -822,6 +822,82 @@ describe('Memory Service', () => {
       const result = await memory.getMemory('test-avatar', 'nonexistent');
 
       expect(result).toBeNull();
+      // Should have searched all 6 tiers (legacy + durable)
+      expect(mockSend).toHaveBeenCalledTimes(6);
+    });
+
+    it('should find memory in durable tier when no tier hint provided', async () => {
+      const mockMemory: AvatarMemory = {
+        pk: 'MEMORY#test-avatar',
+        sk: 'durable#999#uuid-durable',
+        id: 'uuid-durable',
+        avatarId: 'test-avatar',
+        tier: 'durable',
+        type: 'fact',
+        content: 'durable memory',
+        strength: 1.0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      // immediate, recent, core return nothing
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: [] }));
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: [] }));
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: [] }));
+      // ephemeral returns nothing
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: [] }));
+      // durable returns the memory
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: [mockMemory] }));
+
+      const result = await memory.getMemory('test-avatar', 'uuid-durable');
+
+      expect(result).toEqual(mockMemory);
+      // Searched immediate, recent, core, ephemeral, durable = 5 calls
+      expect(mockSend).toHaveBeenCalledTimes(5);
+    });
+
+    it('should find memory in archival tier with tier hint', async () => {
+      const mockMemory: AvatarMemory = {
+        pk: 'MEMORY#test-avatar',
+        sk: 'archival#888#uuid-archival',
+        id: 'uuid-archival',
+        avatarId: 'test-avatar',
+        tier: 'archival',
+        type: 'fact',
+        content: 'archival memory',
+        strength: 1.0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      mockSend.mockReturnValueOnce(Promise.resolve({ Items: [mockMemory] }));
+
+      const result = await memory.getMemory('test-avatar', 'uuid-archival', 'archival');
+
+      expect(result).toEqual(mockMemory);
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('deleteMemory for durable tiers', () => {
+    it('should delete a durable-tier memory by sort key', async () => {
+      mockSend.mockReturnValueOnce(Promise.resolve({}));
+
+      await expect(
+        memory.deleteMemory('test-avatar', 'durable#999#uuid-durable')
+      ).resolves.toBeUndefined();
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('should delete an ephemeral-tier memory by sort key', async () => {
+      mockSend.mockReturnValueOnce(Promise.resolve({}));
+
+      await expect(
+        memory.deleteMemory('test-avatar', 'ephemeral#111#uuid-eph')
+      ).resolves.toBeUndefined();
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
     });
   });
 
