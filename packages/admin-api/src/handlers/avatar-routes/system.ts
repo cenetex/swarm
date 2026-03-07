@@ -178,13 +178,15 @@ export async function handleSystemRoutes(
 
 /**
  * Infer capabilities from a Replicate model search result based on its name/description.
+ * Exported for testing.
  */
-function inferCapabilities(
+export function inferCapabilities(
   model: { name: string; description: string; owner: string },
 ): ModelInfo['capabilities'] {
   const text = `${model.name} ${model.description} ${model.owner}`.toLowerCase();
   const caps: ModelInfo['capabilities'] = [];
 
+  // Media generation domain — mutually exclusive (image > video > audio)
   if (
     text.includes('image') ||
     text.includes('flux') ||
@@ -195,17 +197,13 @@ function inferCapabilities(
     text.includes('img2img')
   ) {
     caps.push('image_generation');
-  }
-
-  if (
+  } else if (
     text.includes('video') ||
     text.includes('animate') ||
     text.includes('motion')
   ) {
     caps.push('video_generation');
-  }
-
-  if (
+  } else if (
     text.includes('audio') ||
     text.includes('music') ||
     text.includes('sound')
@@ -213,6 +211,7 @@ function inferCapabilities(
     caps.push('audio_generation');
   }
 
+  // Voice domain — orthogonal to media generation, can coexist
   if (
     text.includes('tts') ||
     text.includes('text-to-speech') ||
@@ -221,6 +220,7 @@ function inferCapabilities(
     caps.push('text_to_speech');
   }
 
+  // Transcription domain — input-focused, independent
   if (
     text.includes('transcri') ||
     text.includes('speech-to-text') ||

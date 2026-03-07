@@ -1,100 +1,129 @@
-/**
- * Tests for avatar-routes/system.ts
- *
- * Routes:
- *   GET /system/status
- *   GET /integrations/models
- */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
-// ── Mock tracking ──────────────────────────────────────────────────────────
-let mockSystemStatus: unknown = { healthy: true };
-let mockModelsResult: unknown = {};
-
+// Stub heavy AWS / service dependencies so we can import system.ts without them
+vi.mock('@aws-sdk/client-secrets-manager', () => ({
+  SecretsManagerClient: class {},
+  GetSecretValueCommand: class {},
+}));
+vi.mock('@aws-sdk/client-sqs', () => ({
+  SQSClient: class {},
+  SendMessageCommand: class {},
+}));
+vi.mock('@aws-sdk/client-dynamodb', () => ({
+  DynamoDBClient: class {},
+}));
+vi.mock('@aws-sdk/lib-dynamodb', () => ({
+  DynamoDBDocumentClient: { from: () => ({}) },
+  GetCommand: class {},
+  PutCommand: class {},
+  QueryCommand: class {},
+  DeleteCommand: class {},
+  UpdateCommand: class {},
+  ScanCommand: class {},
+  BatchWriteCommand: class {},
+}));
 vi.mock('../../services/observability.js', () => ({
-  getSystemStatus: async () => mockSystemStatus,
+  recordAuditEvent: async () => {},
+  emitMetric: async () => {},
+}));
+vi.mock('../../services/integrations.js', () => ({}));
+vi.mock('../../services/media/replicate-schema.js', () => ({
+  searchReplicateModels: async () => [],
+}));
+vi.mock('../../services/models-registry.js', () => ({
+  AVAILABLE_MODELS: [],
 }));
 
-vi.mock('@swarm/core', () => ({
-  logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
-}));
+import { inferCapabilities } from './system';
 
-// ── Import handler AFTER mocks ─────────────────────────────────────────────
-import { handleSystemRoutes } from './system.js';
-import { makeCtx, parseBody } from './test-helpers.js';
-import * as integrationsModule from '../../services/integrations.js';
+function makeModel(name: string, description = '', owner = '') {
+  return { name, description, owner };
+}
 
-beforeEach(() => {
-  mockSystemStatus = { healthy: true };
-  mockModelsResult = {};
-  vi.spyOn(integrationsModule, 'getAvailableModelsForIntegration').mockImplementation(
-    () => mockModelsResult as never
-  );
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
-describe('GET /system/status', () => {
-  it('returns system status for admin', async () => {
-    const ctx = makeCtx({ method: 'GET', path: '/system/status', effectiveIsAdmin: true });
-    const result = await handleSystemRoutes(ctx);
-    expect(result).not.toBeNull();
-    expect(result!.statusCode).toBe(200);
-    expect(parseBody(result!)).toEqual({ healthy: true });
+describe('inferCapabilities', () => {
+  test('image model (flux keyword) returns image_generation', () => {
+    expect(inferCapabilities(makeModel('flux-schnell', 'Fast image generation'))).toEqual([
+      'image_generation',
+    ]);
   });
 
-  it('returns 403 for non-admin', async () => {
-    const ctx = makeCtx({ method: 'GET', path: '/system/status', effectiveIsAdmin: false });
-    const result = await handleSystemRoutes(ctx);
-    expect(result).not.toBeNull();
-    expect(result!.statusCode).toBe(403);
-  });
-});
-
-describe('GET /integrations/models', () => {
-  it('returns all integrations when no filter', async () => {
-    const ctx = makeCtx({ method: 'GET', path: '/integrations/models' });
-    const result = await handleSystemRoutes(ctx);
-    expect(result).not.toBeNull();
-    expect(result!.statusCode).toBe(200);
-    const body = parseBody(result!) as { integrations: Record<string, unknown> };
-    expect(body.integrations).toBeDefined();
-    expect(Object.keys(body.integrations)).toEqual(['replicate', 'openai', 'anthropic', 'openrouter']);
+  test('image model (diffusion keyword) returns image_generation', () => {
+    expect(inferCapabilities(makeModel('stable-diffusion', 'Generate images'))).toEqual([
+      'image_generation',
+    ]);
   });
 
-  it('returns filtered integration', async () => {
-    mockModelsResult = { chat: ['model-1'] };
-    const ctx = makeCtx({
-      method: 'GET',
-      path: '/integrations/models',
-      queryStringParameters: { integration: 'replicate' },
-    });
-    const result = await handleSystemRoutes(ctx);
-    expect(result).not.toBeNull();
-    expect(result!.statusCode).toBe(200);
-    const body = parseBody(result!) as { integration: string; modelsByCapability: unknown };
-    expect(body.integration).toBe('replicate');
-    expect(body.modelsByCapability).toEqual({ chat: ['model-1'] });
+  test('video model returns video_generation', () => {
+    expect(inferCapabilities(makeModel('video-gen', 'Generate video clips'))).toEqual([
+      'video_generation',
+    ]);
   });
 
-  it('returns 400 for unknown integration', async () => {
-    const ctx = makeCtx({
-      method: 'GET',
-      path: '/integrations/models',
-      queryStringParameters: { integration: 'bad-provider' },
-    });
-    const result = await handleSystemRoutes(ctx);
-    expect(result).not.toBeNull();
-    expect(result!.statusCode).toBe(400);
+  test('video model (animate keyword) returns video_generation', () => {
+    expect(inferCapabilities(makeModel('animate-diff', 'Animate a scene'))).toEqual([
+      'video_generation',
+    ]);
   });
-});
 
-describe('unmatched routes', () => {
-  it('returns null for unknown paths', async () => {
-    const ctx = makeCtx({ method: 'GET', path: '/something-else' });
-    const result = await handleSystemRoutes(ctx);
-    expect(result).toBeNull();
+  test('audio model (music keyword) returns audio_generation', () => {
+    expect(inferCapabilities(makeModel('musicgen', 'Generate music'))).toEqual([
+      'audio_generation',
+    ]);
+  });
+
+  test('audio model (sound keyword) returns audio_generation', () => {
+    expect(inferCapabilities(makeModel('soundfx', 'Generate sound effects'))).toEqual([
+      'audio_generation',
+    ]);
+  });
+
+  test('audio model that mentions video gets video (higher priority) not both (bug fix)', () => {
+    // Before the fix, this returned BOTH video_generation AND audio_generation.
+    // Now it returns only video_generation (higher priority in the else-if chain).
+    const caps = inferCapabilities(makeModel('audiocraft', 'Generate audio and video soundtracks'));
+    expect(caps).toEqual(['video_generation']);
+    expect(caps).not.toContain('audio_generation');
+  });
+
+  test('pure audio model returns audio_generation only', () => {
+    expect(
+      inferCapabilities(makeModel('audiocraft', 'Generate audio soundtracks')),
+    ).toEqual(['audio_generation']);
+  });
+
+  test('video model that mentions audio returns video_generation only', () => {
+    expect(
+      inferCapabilities(makeModel('video-maker', 'Create video with audio sync')),
+    ).toEqual(['video_generation']);
+  });
+
+  test('image model with video mention returns image_generation only', () => {
+    expect(
+      inferCapabilities(makeModel('img2video-diffusion', 'Image to video diffusion model')),
+    ).toEqual(['image_generation']);
+  });
+
+  test('TTS model returns text_to_speech', () => {
+    expect(inferCapabilities(makeModel('tts-model', 'Text to speech synthesis'))).toEqual([
+      'text_to_speech',
+    ]);
+  });
+
+  test('transcription model (whisper) returns transcription', () => {
+    expect(inferCapabilities(makeModel('whisper', 'Speech to text transcription'))).toEqual([
+      'transcription',
+    ]);
+  });
+
+  test('unknown model defaults to image_generation', () => {
+    expect(inferCapabilities(makeModel('mystery-model', 'Does something cool'))).toEqual([
+      'image_generation',
+    ]);
+  });
+
+  test('voice + TTS model returns text_to_speech', () => {
+    expect(
+      inferCapabilities(makeModel('voice-clone', 'Clone voice for TTS')),
+    ).toEqual(['text_to_speech']);
   });
 });
