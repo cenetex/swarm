@@ -43,6 +43,7 @@ import {
   updateAvatarHomeChannel,
   createHomeChannelChecker,
   activateAvatarInChatFromWebhook,
+  addSharedChannelMembership,
   maybeBootstrapHomeChannelFromGroupEngagement,
 } from './webhook-home-channel.js';
 
@@ -66,6 +67,7 @@ export {
   isTelegramChatAllowed,
   resolveTelegramUsername,
   maybeBootstrapHomeChannelFromGroupEngagement,
+  addSharedChannelMembership,
 };
 export type { HomeChannelChecker };
 
@@ -342,6 +344,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
             invalidateAvatarConfigCache,
           });
 
+          // Register explicit shared-channel membership so home-channel
+          // checks scope this avatar (and only this avatar) to this channel.
+          const botUsername = avatarConfig.platforms.telegram?.botUsername || '';
+          await addSharedChannelMembership(avatarId, chatId, botUsername, chatTitle);
+
           await bot.api.sendMessage(
             parseInt(chatId),
             'Activated for this channel. I can now respond here (typically when mentioned or replied to).',
@@ -361,7 +368,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     // Use home channel checker for groups/channels if ADMIN_TABLE is configured
-    const homeChecker = ADMIN_TABLE ? createHomeChannelChecker() : undefined;
+    const homeChecker = ADMIN_TABLE ? createHomeChannelChecker(avatarId) : undefined;
 
     // Track username -> userId mapping for any user we see (for username-based allowlist resolution)
     const senderId = String(envelope.sender.platformUserId ?? envelope.sender.id);

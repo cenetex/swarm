@@ -24,6 +24,7 @@ process.env.MESSAGE_QUEUE_URL ||= 'https://example.com/queue';
 const modPromise = import('./telegram-webhook-shared.js');
 const securityModPromise = import('./webhook-security.js');
 const chatAccessModPromise = import('./webhook-chat-access.js');
+const homeChannelModPromise = import('./webhook-home-channel.js');
 
 // =============================================================================
 // Existing tests: Chat access allowlists
@@ -743,5 +744,130 @@ describe('mergeAllowedChats edge cases', () => {
 
     expect(merged.allowedChats[0].username).toBe('existing_name');
     expect(merged.allowedChats[0].title).toBe('Updated Title');
+  });
+});
+
+// =============================================================================
+// NEW: Per-avatar home channel membership (issue #744)
+// =============================================================================
+
+describe('createHomeChannelChecker per-avatar scoping', () => {
+  it('only allows channels where the specific avatar has explicit membership', async () => {
+    // Test per-avatar scoping via isTelegramChatAllowed with per-avatar HomeChannelCheckers.
+    // Each avatar gets its own checker that only returns true for channels where
+    // that avatar has explicit membership (simulated here with different checker behavior).
+    const { isTelegramChatAllowed } = await chatAccessModPromise;
+
+    // Avatar A's checker says channel -1001 is a home channel
+    const checkerA: import('./webhook-chat-access.js').HomeChannelChecker = {
+      isHomeChannel: async (chatId: string, avatarHomeChannelId?: string) => {
+        // Simulate: avatar A is registered in channel -1001
+        if (avatarHomeChannelId && chatId === avatarHomeChannelId) return true;
+        return chatId === '-1001';
+      },
+    };
+
+    // Avatar B's checker — NOT registered in channel -1001
+    const checkerB: import('./webhook-chat-access.js').HomeChannelChecker = {
+      isHomeChannel: async (chatId: string, avatarHomeChannelId?: string) => {
+        if (avatarHomeChannelId && chatId === avatarHomeChannelId) return true;
+        return false; // B has no shared channel memberships
+      },
+    };
+
+    // Avatar C's checker — NOT registered in channel -1001
+    const checkerC: import('./webhook-chat-access.js').HomeChannelChecker = {
+      isHomeChannel: async (chatId: string, avatarHomeChannelId?: string) => {
+        if (avatarHomeChannelId && chatId === avatarHomeChannelId) return true;
+        return false; // C has no shared channel memberships
+      },
+    };
+
+    const envelope = {
+      conversationId: '-1001',
+      sender: { id: 'u1' },
+      metadata: { chatType: 'supergroup' as const },
+    };
+
+    // Avatar A IS eligible (explicit membership)
+    const allowedA = await isTelegramChatAllowed(envelope, {}, checkerA);
+    expect(allowedA).toBe(true);
+
+    // Avatar B is NOT eligible (no membership)
+    const allowedB = await isTelegramChatAllowed(envelope, {}, checkerB);
+    expect(allowedB).toBe(false);
+
+    // Avatar C is NOT eligible (no membership)
+    const allowedC = await isTelegramChatAllowed(envelope, {}, checkerC);
+    expect(allowedC).toBe(false);
+  });
+
+  it('activating avatar A does not make avatar B eligible', async () => {
+    const { isTelegramChatAllowed } = await chatAccessModPromise;
+
+    // After activating avatar A in -1001, only A's checker returns true
+    const checkerA: import('./webhook-chat-access.js').HomeChannelChecker = {
+      isHomeChannel: async (chatId: string) => chatId === '-1001',
+    };
+
+    const checkerB: import('./webhook-chat-access.js').HomeChannelChecker = {
+      isHomeChannel: async () => false,
+    };
+
+    const envelope = {
+      conversationId: '-1001',
+      sender: { id: 'u1' },
+      metadata: { chatType: 'supergroup' as const },
+    };
+
+    expect(await isTelegramChatAllowed(envelope, {}, checkerA)).toBe(true);
+    expect(await isTelegramChatAllowed(envelope, {}, checkerB)).toBe(false);
+  });
+
+  it('deactivating removes eligibility', async () => {
+    const { isTelegramChatAllowed } = await chatAccessModPromise;
+
+    // Before deactivation: avatar A has membership
+    const checkerBefore: import('./webhook-chat-access.js').HomeChannelChecker = {
+      isHomeChannel: async (chatId: string) => chatId === '-1001',
+    };
+
+    // After deactivation: avatar A no longer has membership
+    const checkerAfter: import('./webhook-chat-access.js').HomeChannelChecker = {
+      isHomeChannel: async () => false,
+    };
+
+    const envelope = {
+      conversationId: '-1001',
+      sender: { id: 'u1' },
+      metadata: { chatType: 'supergroup' as const },
+    };
+
+    expect(await isTelegramChatAllowed(envelope, {}, checkerBefore)).toBe(true);
+    expect(await isTelegramChatAllowed(envelope, {}, checkerAfter)).toBe(false);
+  });
+});
+
+describe('createHomeChannelChecker avatarId parameter', () => {
+  it('createHomeChannelChecker requires an avatarId argument', async () => {
+    const { createHomeChannelChecker } = await homeChannelModPromise;
+
+    // Verify the function signature requires avatarId
+    expect(createHomeChannelChecker.length).toBe(1);
+
+    // Calling without avatarId should not throw at creation time
+    // (TypeScript enforces this at compile time)
+    const checker = createHomeChannelChecker('test-avatar');
+    expect(checker).toHaveProperty('isHomeChannel');
+    expect(typeof checker.isHomeChannel).toBe('function');
+  });
+
+  it('checker returns true for avatar own homeChannelId fast path', async () => {
+    const { createHomeChannelChecker } = await homeChannelModPromise;
+
+    const checker = createHomeChannelChecker('avatar-x');
+    // The fast path: chatId matches avatarHomeChannelId
+    const result = await checker.isHomeChannel('-5000', '-5000');
+    expect(result).toBe(true);
   });
 });

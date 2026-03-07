@@ -3,7 +3,7 @@
  * Handles home channel registration, cleanup, channel state management,
  * and bootstrap logic for the Telegram webhook handler.
  */
-import { QueryCommand, DeleteCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand, DeleteCommand, PutCommand, UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { logger, type AvatarConfig } from '@swarm/core';
 import { getDynamoClient } from '../services/dynamo-client.js';
 import { mergeAllowedChats } from './webhook-chat-access.js';
@@ -15,8 +15,16 @@ const ADMIN_TABLE = process.env.ADMIN_TABLE;
 
 const HOME_CHANNEL_CACHE_TTL_MS = 60_000;
 
-// Home channel cache (set of chat IDs that are home channels)
-let homeChannelCache: { ids: Set<string>; expiresAt: number } | null = null;
+/**
+ * Home channel record shape (minimal projection for the webhook layer).
+ */
+interface HomeChannelEntry {
+  sk: string; // chatId
+  registeredAvatars?: Array<{ avatarId: string; botUsername: string }>;
+}
+
+// Home channel cache (entries with per-avatar membership info)
+let homeChannelCache: { entries: HomeChannelEntry[]; expiresAt: number } | null = null;
 
 /**
  * Clean up channel state when bot is removed from a channel.
@@ -81,22 +89,52 @@ export async function registerHomeChannelFromWebhook(
   if (!ADMIN_TABLE) return;
 
   const now = Date.now();
+  const newMember = { avatarId, botUsername };
 
-  await dynamoClient.send(new PutCommand({
+  // Check if the home channel record already exists
+  const existing = await dynamoClient.send(new GetCommand({
     TableName: ADMIN_TABLE,
-    Item: {
-      pk: 'HOME_CHANNELS',
-      sk: chatId,
-      chatId,
-      avatarId,
-      botUsername,
-      channelUsername,
-      channelTitle,
-      registeredAvatars: [{ avatarId, botUsername }],
-      registeredAt: now,
-      updatedAt: now,
-    },
+    Key: { pk: 'HOME_CHANNELS', sk: chatId },
+    ProjectionExpression: 'registeredAvatars',
   }));
+
+  if (existing.Item) {
+    // Channel exists — add this avatar to registeredAvatars if not already present
+    const registeredAvatars = (existing.Item.registeredAvatars as Array<{ avatarId: string; botUsername: string }>) || [];
+    const alreadyRegistered = registeredAvatars.some((a) => a.avatarId === avatarId);
+    if (!alreadyRegistered) {
+      await dynamoClient.send(new UpdateCommand({
+        TableName: ADMIN_TABLE,
+        Key: { pk: 'HOME_CHANNELS', sk: chatId },
+        UpdateExpression: 'SET registeredAvatars = list_append(if_not_exists(registeredAvatars, :empty), :newMember), updatedAt = :now',
+        ExpressionAttributeValues: {
+          ':newMember': [newMember],
+          ':empty': [],
+          ':now': now,
+        },
+      }));
+    }
+  } else {
+    // New channel — create the record
+    await dynamoClient.send(new PutCommand({
+      TableName: ADMIN_TABLE,
+      Item: {
+        pk: 'HOME_CHANNELS',
+        sk: chatId,
+        chatId,
+        avatarId,
+        botUsername,
+        channelUsername,
+        channelTitle,
+        registeredAvatars: [newMember],
+        registeredAt: now,
+        updatedAt: now,
+      },
+    }));
+  }
+
+  // Invalidate cache so the new membership is immediately visible
+  homeChannelCache = null;
 }
 
 /**
@@ -185,18 +223,17 @@ export async function updateAvatarHomeChannel(
 }
 
 /**
- * Get all home channel IDs from the registry.
+ * Get all home channel entries from the registry.
  * Uses in-memory caching with 60 second TTL.
  */
-export async function getHomeChannelIds(): Promise<Set<string>> {
+async function getHomeChannelEntries(): Promise<HomeChannelEntry[]> {
   if (!ADMIN_TABLE) {
-    // ADMIN_TABLE not configured, home channel feature disabled
-    return new Set();
+    return [];
   }
 
   const now = Date.now();
-  if (homeChannelCache && homeChannelCache.expiresAt > now) {
-    return homeChannelCache.ids;
+  if (homeChannelCache && homeChannelCache.entries && homeChannelCache.expiresAt > now) {
+    return homeChannelCache.entries;
   }
 
   try {
@@ -206,22 +243,100 @@ export async function getHomeChannelIds(): Promise<Set<string>> {
       ExpressionAttributeValues: {
         ':pk': 'HOME_CHANNELS',
       },
-      ProjectionExpression: 'sk', // sk = chatId
+      ProjectionExpression: 'sk, registeredAvatars',
     }));
 
-    const ids = new Set<string>();
-    for (const item of result.Items || []) {
-      if (item.sk) {
-        ids.add(item.sk as string);
-      }
-    }
+    const entries: HomeChannelEntry[] = (result.Items || []).map((item) => ({
+      sk: item.sk as string,
+      registeredAvatars: item.registeredAvatars as HomeChannelEntry['registeredAvatars'],
+    }));
 
-    homeChannelCache = { ids, expiresAt: now + HOME_CHANNEL_CACHE_TTL_MS };
-    return ids;
+    homeChannelCache = { entries, expiresAt: now + HOME_CHANNEL_CACHE_TTL_MS };
+    return entries;
   } catch (err) {
     logger.warn('Failed to fetch home channels', { error: err instanceof Error ? err.message : String(err) });
-    return new Set();
+    return [];
   }
+}
+
+/**
+ * Get home channel IDs where a specific avatar has explicit membership.
+ * Only returns channels where the avatar appears in `registeredAvatars`.
+ */
+export async function getHomeChannelIdsForAvatar(avatarId: string): Promise<Set<string>> {
+  const entries = await getHomeChannelEntries();
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (entry.sk && entry.registeredAvatars?.some((a) => a.avatarId === avatarId)) {
+      ids.add(entry.sk);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Get all home channel IDs from the registry (global, for backward compatibility).
+ * Uses in-memory caching with 60 second TTL.
+ * @deprecated Prefer getHomeChannelIdsForAvatar for per-avatar scoping.
+ */
+export async function getHomeChannelIds(): Promise<Set<string>> {
+  const entries = await getHomeChannelEntries();
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (entry.sk) {
+      ids.add(entry.sk);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Add an avatar as an explicit member of a shared home channel.
+ * If the channel record does not exist yet, it is created.
+ */
+export async function addSharedChannelMembership(
+  avatarId: string,
+  chatId: string,
+  botUsername: string,
+  channelTitle?: string
+): Promise<void> {
+  // Delegate to registerHomeChannelFromWebhook which already handles upsert
+  await registerHomeChannelFromWebhook(avatarId, chatId, botUsername, undefined, channelTitle);
+}
+
+/**
+ * Remove an avatar's membership from a shared home channel.
+ * Removes the avatar from `registeredAvatars` on the home channel record.
+ */
+export async function removeSharedChannelMembership(
+  avatarId: string,
+  chatId: string
+): Promise<void> {
+  if (!ADMIN_TABLE) return;
+
+  const existing = await dynamoClient.send(new GetCommand({
+    TableName: ADMIN_TABLE,
+    Key: { pk: 'HOME_CHANNELS', sk: chatId },
+    ProjectionExpression: 'registeredAvatars',
+  }));
+
+  if (!existing.Item) return;
+
+  const registeredAvatars = (existing.Item.registeredAvatars as Array<{ avatarId: string; botUsername: string }>) || [];
+  const filtered = registeredAvatars.filter((a) => a.avatarId !== avatarId);
+
+  await dynamoClient.send(new UpdateCommand({
+    TableName: ADMIN_TABLE,
+    Key: { pk: 'HOME_CHANNELS', sk: chatId },
+    UpdateExpression: 'SET registeredAvatars = :filtered, updatedAt = :now',
+    ExpressionAttributeValues: {
+      ':filtered': filtered,
+      ':now': Date.now(),
+    },
+  }));
+
+  // Invalidate cache
+  homeChannelCache = null;
 }
 
 /**
@@ -232,9 +347,12 @@ export type { HomeChannelChecker } from './webhook-chat-access.js';
 
 /**
  * Create a home channel checker for a specific avatar.
- * Checks if a chat ID is a registered home channel.
+ * Only allows channels where the avatar has explicit membership
+ * (appears in registeredAvatars) or is the avatar's own homeChannelId.
+ *
+ * @param avatarId - The avatar to scope the check to
  */
-export function createHomeChannelChecker(): import('./webhook-chat-access.js').HomeChannelChecker {
+export function createHomeChannelChecker(avatarId: string): import('./webhook-chat-access.js').HomeChannelChecker {
   return {
     async isHomeChannel(chatId: string, avatarHomeChannelId?: string): Promise<boolean> {
       // Fast path: check if it's the avatar's own home channel
@@ -242,13 +360,9 @@ export function createHomeChannelChecker(): import('./webhook-chat-access.js').H
         return true;
       }
 
-      // Check against all registered home channels
-      const homeChannelIds = await getHomeChannelIds();
-      if (homeChannelIds.has(chatId)) {
-        return true;
-      }
-
-      return false;
+      // Check against home channels where this avatar has explicit membership
+      const avatarHomeChannelIds = await getHomeChannelIdsForAvatar(avatarId);
+      return avatarHomeChannelIds.has(chatId);
     },
   };
 }
