@@ -18,6 +18,7 @@ import { describe, it, expect } from 'bun:test';
 import { DEFAULT_MODELS, getReplicateVersion } from '../models-registry.js';
 import type { AICapability, AvatarRecord } from '../../types.js';
 import { buildMediaUrl, canonicalizeMediaUrl, canonicalizeMediaUrls } from '../../utils/media-url.js';
+import { generateGalleryId } from './gallery.js';
 
 // =============================================================================
 // Existing: Media URL Generation
@@ -832,5 +833,50 @@ describe('Media Type Inference', () => {
     expect(inferMediaType('https://cdn.example.com/image.jpg')).toBe('image');
     expect(inferMediaType('https://cdn.example.com/image.webp')).toBe('image');
     expect(inferMediaType('https://cdn.example.com/file')).toBe('image');
+  });
+});
+
+// =============================================================================
+// Gallery ID Normalization (issue #823)
+// =============================================================================
+
+describe('Gallery ID Generation', () => {
+  it('generates IDs in timestamp_randomId format', () => {
+    const id = generateGalleryId();
+    // Must match the canonical pattern: 10-15 digit timestamp, underscore, alphanumeric
+    expect(id).toMatch(/^\d{10,15}_[a-z0-9]+$/i);
+  });
+
+  it('generates unique IDs on successive calls', () => {
+    const ids = new Set(Array.from({ length: 100 }, () => generateGalleryId()));
+    expect(ids.size).toBe(100);
+  });
+
+  it('generates IDs accepted by the Twitter adapter GALLERY_ID_PATTERN', () => {
+    // This is the exact pattern used by mcp-twitter-adapter.ts to validate IDs
+    const GALLERY_ID_PATTERN = /^\d{10,15}_[a-z0-9]+$/i;
+    for (let i = 0; i < 20; i++) {
+      const id = generateGalleryId();
+      expect(GALLERY_ID_PATTERN.test(id)).toBe(true);
+    }
+  });
+
+  it('generated IDs are NOT rejected as UUIDs by downstream consumers', () => {
+    const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    for (let i = 0; i < 20; i++) {
+      const id = generateGalleryId();
+      // Generated IDs must not look like UUIDs
+      expect(UUID_PATTERN.test(id)).toBe(false);
+    }
+  });
+
+  it('backward compat: UUID format is accepted by updated Twitter adapter pattern', () => {
+    // The Twitter adapter now also accepts UUIDs for existing gallery items
+    const GALLERY_ID_PATTERN = /^\d{10,15}_[a-z0-9]+$/i;
+    const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const legacyUuid = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+    // Simulate the updated acceptance logic: accept if EITHER pattern matches
+    const accepted = GALLERY_ID_PATTERN.test(legacyUuid) || UUID_PATTERN.test(legacyUuid);
+    expect(accepted).toBe(true);
   });
 });

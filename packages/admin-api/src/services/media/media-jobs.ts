@@ -12,7 +12,6 @@ import {
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { v4 as uuid } from 'uuid';
 import type { MediaJob } from '../../types.js';
 import * as gallery from './gallery.js';
 import { getDynamoClient } from '../dynamo-client.js';
@@ -319,7 +318,7 @@ export async function pollAndCompleteJob(
       }
 
       const mediaBuffer = Buffer.from(await mediaResponse.arrayBuffer());
-      const mediaId = uuid();
+      const mediaId = gallery.generateGalleryId();
       const s3Key = `avatars/${job.avatarId}/${folder}/${mediaId}.${extension}`;
 
       console.log(`[MediaJobs] Uploading to S3: ${s3Key} (${mediaBuffer.length} bytes)`);

@@ -590,7 +590,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
   console.log(`Downloaded image: ${imageBuffer.length} bytes`);
 
   // Upload to S3
-  const imageId = uuid();
+  const imageId = gallery.generateGalleryId();
   const s3Key = `avatars/${avatarId}/images/${imageId}.png`;
 
   console.log(`Uploading to S3: bucket=${MEDIA_BUCKET}, key=${s3Key}`);
@@ -1023,7 +1023,7 @@ export async function generateSticker(options: GenerateStickerOptions): Promise<
   const stickerBuffer = Buffer.from(await stickerResponse.arrayBuffer());
 
   // Store as sticker
-  const stickerId = uuid();
+  const stickerId = gallery.generateGalleryId();
   const s3Key = `avatars/${avatarId}/stickers/${stickerId}.webp`;
 
   await s3Client.send(new PutObjectCommand({

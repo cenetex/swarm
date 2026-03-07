@@ -388,6 +388,8 @@ async function resolveGalleryIdsToUrls(
   const coercedMediaUrls: string[] = [];
 
   const GALLERY_ID_PATTERN = /^\d{10,15}_[a-z0-9]+$/i;
+  // Accept UUIDs for backward compatibility with gallery items created before
+  // the ID format was normalized to timestamp_randomId (see issue #823).
   const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const TWITTER_NUMERIC_ID_PATTERN = /^\d{18,22}$/;
   const looksLikeUrl = (value: string) => /^https?:\/\//i.test(value);
@@ -401,7 +403,8 @@ async function resolveGalleryIdsToUrls(
   if (galleryIds && galleryIds.length > 0) {
     console.log(`${context}: Resolving gallery IDs to URLs:`, galleryIds);
     for (const galleryId of galleryIds.slice(0, 4)) {
-      if (GALLERY_ID_PATTERN.test(galleryId)) {
+      // Accept both canonical timestamp_randomId format and legacy UUID format
+      if (GALLERY_ID_PATTERN.test(galleryId) || UUID_PATTERN.test(galleryId)) {
         try {
           const item = await gallery.getGalleryItem(avatarId, galleryId);
           if (item?.url) {
@@ -447,11 +450,9 @@ async function resolveGalleryIdsToUrls(
         }
       }
 
-      const event = UUID_PATTERN.test(galleryId)
-        ? 'twitter_post_invalid_gallery_id_uuid'
-        : TWITTER_NUMERIC_ID_PATTERN.test(galleryId)
-          ? 'twitter_post_invalid_gallery_id_twitter_numeric'
-          : 'twitter_post_invalid_gallery_id';
+      const event = TWITTER_NUMERIC_ID_PATTERN.test(galleryId)
+        ? 'twitter_post_invalid_gallery_id_twitter_numeric'
+        : 'twitter_post_invalid_gallery_id';
       console.error(JSON.stringify({
         level: 'ERROR',
         subsystem: 'twitter',
