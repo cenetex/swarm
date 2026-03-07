@@ -164,3 +164,8 @@ export {
   roomEventToTurnMessage,
   mapWinReason,
 } from './room-coordinator.js';
+export {
+  evaluateProactive,
+  calculateBotDensity,
+  DEFAULT_PROACTIVE_CONFIG,
+} from './proactive-scheduler.js';
