@@ -144,6 +144,19 @@ Use this section as the default workflow for AI coding/debug agents.
 
 **Cardinal rule:** Subagents only pick work that is represented by a GitHub issue. If no issue exists for the task, create one or request that one be created before starting work.
 
+### Backlog WIP Policy
+
+The project uses a hard backlog WIP limit. Treat this as a standing operating constraint, not a suggestion.
+
+- Keep at most **10 open GitHub issues** at a time.
+- Target composition is **8 product slots** and **2 bug-fix slots**.
+- Product slots include feature, tech-debt, docs, infra, and security work.
+- Bug-fix slots are reserved for `type:bug` issues only.
+- Before opening or reopening an issue, check the current open backlog. If the relevant lane is full, close/archive another issue first or stop and ask leadership which issue should leave the active set.
+- Do not keep speculative, umbrella, or “someday” issues open. Close them as `not planned` and recreate them later when capacity returns.
+- If a bug fix is merged or no longer active, close it promptly so the bug lane reopens.
+- Agents should prefer commenting on or updating an existing active issue over opening a new one when the work is materially the same.
+
 ### 0) Issue Intake & Scope Check (before writing any code)
 
 Before touching code, verify the assigned issue meets the minimum quality bar below. If it does not, comment on the issue requesting clarification and stop until the gaps are filled.

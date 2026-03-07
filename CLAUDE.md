@@ -13,7 +13,7 @@ Every piece of work MUST be tied to a GitHub issue. No exceptions.
 ### Starting an issue
 
 1. **Verify the issue is ready** — has acceptance criteria, scope boundaries, and `package:*` label.
-2. **Check WIP caps** — max 8 `status:in-progress` project-wide, max 3 open PRs per contributor, max 5 parallel worktrees.
+2. **Check WIP caps** — max 10 open GitHub issues total with a target of 8 product slots and 2 bug-fix slots; max 8 `status:in-progress` project-wide; max 3 open PRs per contributor; max 5 parallel worktrees.
 3. **Create branch** — `<type>/issue-<number>-<short-description>` (e.g., `fix/issue-42-dynamo-query`). The pre-commit hook validates issue readiness, and pre-push enforces the branch pattern.
 4. **For parallel work, use worktrees:**
    ```bash
@@ -107,10 +107,15 @@ Do not start P3/P4 work while P0/P1 issues are open.
 
 | Limit | Cap |
 |-------|-----|
+| Open GitHub issues total | **10** |
+| Product backlog slots | **8** |
+| Bug-fix backlog slots | **2** |
 | `status:in-progress` issues | **8** project-wide |
 | Open PRs per contributor | **3** |
 | Parallel agent worktrees | **5** |
 | Simultaneous `priority:high` | **5** |
+
+When the open backlog hits the cap, close/archive another issue before opening or reopening a new one. Do not leave speculative or parking-lot issues open.
 
 ### Key rules
 
