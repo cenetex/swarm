@@ -1,61 +1,212 @@
 #!/usr/bin/env bun
 /**
- * Telegram Canary Test
+ * Telegram Canary Smoke Test
  *
- * Sends a synthetic Telegram update to the staging webhook
- * and verifies the response. Optionally sends a real message
- * via the Telegram Bot API and polls for a response.
+ * Sends a [CANARY]-prefixed message to a staging avatar via Telegram Bot API,
+ * waits for a bot response within a configurable timeout, and reports
+ * pass/fail with structured JSON output.
+ *
+ * Environment variables:
+ *   CANARY_BOT_TOKEN   (required) — Telegram Bot API token for the canary bot
+ *   CANARY_CHAT_ID     (required) — Telegram chat ID where the canary avatar lives
+ *   CANARY_TIMEOUT_MS  (optional) — Response timeout in ms (default: 30000)
+ *
+ * Optional (webhook smoke tests):
+ *   WEBHOOK_URL        — Staging webhook endpoint URL
+ *   WEBHOOK_SECRET     — Telegram webhook secret token
  *
  * Usage:
- *   WEBHOOK_URL=https://xxx.execute-api.region.amazonaws.com/webhook/AVATAR_ID \
- *   WEBHOOK_SECRET=xxx \
- *   bun run scripts/telegram-canary.ts
+ *   CANARY_BOT_TOKEN=xxx CANARY_CHAT_ID=xxx bun run scripts/telegram-canary.ts
+ *   pnpm canary:telegram
  *
- * Optional:
- *   BOT_TOKEN=xxx  -- also send a real message and check for response
- *   CHAT_ID=xxx    -- Telegram chat ID for real message test
+ * Exit codes:
+ *   0 — all checks passed
+ *   1 — one or more checks failed
  */
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface CanaryResult {
+  timestamp: string;
+  suite: string;
+  status: "pass" | "fail" | "skip";
+  durationMs: number;
+  checks: CheckResult[];
+  summary: string;
+}
+
+interface CheckResult {
+  name: string;
+  status: "pass" | "fail" | "skip";
+  message: string;
+  durationMs: number;
+}
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+const CANARY_PREFIX = "[CANARY]";
+const DEFAULT_TIMEOUT_MS = 30_000;
+const POLL_INTERVAL_MS = 3_000;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const PASS = "[PASS]";
-const FAIL = "[FAIL]";
-const SKIP = "[SKIP]";
-
-let failures = 0;
-
-function log(status: string, message: string): void {
-  const ts = new Date().toISOString();
-  console.log(`${ts}  ${status}  ${message}`);
-  if (status === FAIL) failures++;
-}
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
     console.error(`Error: Required environment variable ${name} is not set.`);
     console.error("");
-    console.error("Usage:");
-    console.error("  WEBHOOK_URL=https://...  WEBHOOK_SECRET=xxx  bun run scripts/telegram-canary.ts");
+    console.error("Required:");
+    console.error("  CANARY_BOT_TOKEN=xxx  CANARY_CHAT_ID=xxx");
     console.error("");
     console.error("Optional:");
-    console.error("  BOT_TOKEN=xxx  CHAT_ID=xxx  -- enable real-message test");
+    console.error("  CANARY_TIMEOUT_MS=30000");
+    console.error("  WEBHOOK_URL=https://...  WEBHOOK_SECRET=xxx  -- enable webhook tests");
     process.exit(1);
   }
   return value;
 }
 
+function optionalEnv(name: string, fallback: string): string {
+  return process.env[name] || fallback;
+}
+
+async function timedCheck(
+  name: string,
+  fn: () => Promise<{ status: "pass" | "fail" | "skip"; message: string }>,
+): Promise<CheckResult> {
+  const start = Date.now();
+  try {
+    const result = await fn();
+    return { name, ...result, durationMs: Date.now() - start };
+  } catch (err) {
+    return {
+      name,
+      status: "fail",
+      message: `Unexpected error: ${err instanceof Error ? err.message : String(err)}`,
+      durationMs: Date.now() - start,
+    };
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Synthetic Telegram Update
+// Telegram Bot API helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Build a valid Telegram Update JSON that simulates a text message
- * from a test user. The structure matches what Telegram sends to
- * webhook endpoints.
- */
+function apiUrl(botToken: string, method: string): string {
+  return `https://api.telegram.org/bot${botToken}/${method}`;
+}
+
+async function telegramApiCall<T>(
+  botToken: string,
+  method: string,
+  body: Record<string, unknown>,
+): Promise<{ ok: boolean; result?: T; description?: string }> {
+  const res = await fetch(apiUrl(botToken, method), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return (await res.json()) as { ok: boolean; result?: T; description?: string };
+}
+
+// ---------------------------------------------------------------------------
+// Check: Send canary message and wait for bot response
+// ---------------------------------------------------------------------------
+
+async function checkBotResponse(
+  botToken: string,
+  chatId: string,
+  timeoutMs: number,
+): Promise<{ status: "pass" | "fail"; message: string }> {
+  const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const canaryText = `${CANARY_PREFIX} ping ${nonce}`;
+
+  // Send the canary message
+  const sendResult = await telegramApiCall<{ message_id: number }>(
+    botToken,
+    "sendMessage",
+    { chat_id: chatId, text: canaryText },
+  );
+
+  if (!sendResult.ok || !sendResult.result) {
+    return {
+      status: "fail",
+      message: `Failed to send canary message: ${sendResult.description || "unknown error"}`,
+    };
+  }
+
+  const sentMessageId = sendResult.result.message_id;
+
+  // Clear pending updates so we only see new ones
+  await telegramApiCall(botToken, "getUpdates", { offset: -1, limit: 1 });
+
+  // Poll for bot response
+  const pollStart = Date.now();
+  while (Date.now() - pollStart < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+    const pollResult = await telegramApiCall<
+      Array<{
+        update_id: number;
+        message?: {
+          message_id: number;
+          from?: { is_bot: boolean; username?: string };
+          chat: { id: number };
+          text?: string;
+          reply_to_message?: { message_id: number };
+        };
+      }>
+    >(botToken, "getUpdates", { timeout: 2, limit: 10 });
+
+    if (!pollResult.ok || !pollResult.result) continue;
+
+    for (const update of pollResult.result) {
+      const msg = update.message;
+      if (!msg) continue;
+
+      const isSameChat = String(msg.chat.id) === String(chatId);
+      const isFromBot = msg.from?.is_bot === true;
+      const isReply = msg.reply_to_message?.message_id === sentMessageId;
+      const isAfterSend = msg.message_id > sentMessageId;
+
+      if (isSameChat && isFromBot && (isReply || isAfterSend)) {
+        const preview = (msg.text || "[non-text]").slice(0, 120);
+        const elapsed = Date.now() - pollStart;
+
+        // Acknowledge processed updates
+        await telegramApiCall(botToken, "getUpdates", {
+          offset: update.update_id + 1,
+        });
+
+        return {
+          status: "pass",
+          message: `Bot responded in ${elapsed}ms (msg_id=${msg.message_id}, from=@${msg.from?.username}): "${preview}"`,
+        };
+      }
+
+      // Acknowledge this update
+      await telegramApiCall(botToken, "getUpdates", {
+        offset: update.update_id + 1,
+      });
+    }
+  }
+
+  return {
+    status: "fail",
+    message: `No bot response within ${timeoutMs}ms after sending "${canaryText}"`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Check: Webhook with correct secret (optional)
+// ---------------------------------------------------------------------------
+
 function buildSyntheticUpdate(text: string): Record<string, unknown> {
   const now = Math.floor(Date.now() / 1000);
   return {
@@ -83,16 +234,11 @@ function buildSyntheticUpdate(text: string): Record<string, unknown> {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Test: Synthetic webhook with correct secret
-// ---------------------------------------------------------------------------
-
-async function testWebhookWithCorrectSecret(
+async function checkWebhookAcceptsValidSecret(
   webhookUrl: string,
   webhookSecret: string,
-): Promise<void> {
-  const update = buildSyntheticUpdate("canary ping");
-
+): Promise<{ status: "pass" | "fail"; message: string }> {
+  const update = buildSyntheticUpdate(`${CANARY_PREFIX} webhook-ping`);
   const res = await fetch(webhookUrl, {
     method: "POST",
     headers: {
@@ -103,22 +249,19 @@ async function testWebhookWithCorrectSecret(
   });
 
   if (res.status === 200) {
-    log(PASS, `Webhook returned ${res.status} with correct secret`);
-  } else {
-    const body = await res.text().catch(() => "");
-    log(FAIL, `Webhook returned ${res.status} with correct secret (expected 200). Body: ${body.slice(0, 200)}`);
+    return { status: "pass", message: `Webhook returned ${res.status} with valid secret` };
   }
+  const body = await res.text().catch(() => "");
+  return {
+    status: "fail",
+    message: `Webhook returned ${res.status} (expected 200). Body: ${body.slice(0, 200)}`,
+  };
 }
 
-// ---------------------------------------------------------------------------
-// Test: Synthetic webhook with WRONG secret
-// ---------------------------------------------------------------------------
-
-async function testWebhookWithWrongSecret(
+async function checkWebhookRejectsInvalidSecret(
   webhookUrl: string,
-): Promise<void> {
-  const update = buildSyntheticUpdate("canary ping wrong secret");
-
+): Promise<{ status: "pass" | "fail"; message: string }> {
+  const update = buildSyntheticUpdate(`${CANARY_PREFIX} webhook-ping-bad-secret`);
   const res = await fetch(webhookUrl, {
     method: "POST",
     headers: {
@@ -128,53 +271,46 @@ async function testWebhookWithWrongSecret(
     body: JSON.stringify(update),
   });
 
-  // The handler returns 401 for invalid secrets (defense-in-depth).
-  // Some deployments may return 200 to avoid info disclosure.
-  // Either way, the message should NOT be processed.
   if (res.status === 200 || res.status === 401) {
-    log(PASS, `Webhook returned ${res.status} with wrong secret (message not processed)`);
-  } else {
-    const body = await res.text().catch(() => "");
-    log(FAIL, `Webhook returned ${res.status} with wrong secret (expected 200 or 401). Body: ${body.slice(0, 200)}`);
+    return {
+      status: "pass",
+      message: `Webhook returned ${res.status} with invalid secret (message not processed)`,
+    };
   }
+  const body = await res.text().catch(() => "");
+  return {
+    status: "fail",
+    message: `Webhook returned ${res.status} (expected 200 or 401). Body: ${body.slice(0, 200)}`,
+  };
 }
 
-// ---------------------------------------------------------------------------
-// Test: Synthetic webhook with MISSING secret
-// ---------------------------------------------------------------------------
-
-async function testWebhookWithMissingSecret(
+async function checkWebhookRejectsMissingSecret(
   webhookUrl: string,
-): Promise<void> {
-  const update = buildSyntheticUpdate("canary ping no secret");
-
+): Promise<{ status: "pass" | "fail"; message: string }> {
+  const update = buildSyntheticUpdate(`${CANARY_PREFIX} webhook-ping-no-secret`);
   const res = await fetch(webhookUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // No X-Telegram-Bot-Api-Secret-Token header
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(update),
   });
 
-  // Without the secret header, the handler should reject the request.
-  // It returns 401 when webhook secret is configured but not provided.
   if (res.status === 200 || res.status === 401) {
-    log(PASS, `Webhook returned ${res.status} with missing secret (message not processed)`);
-  } else {
-    const body = await res.text().catch(() => "");
-    log(FAIL, `Webhook returned ${res.status} with missing secret (expected 200 or 401). Body: ${body.slice(0, 200)}`);
+    return {
+      status: "pass",
+      message: `Webhook returned ${res.status} with missing secret (message not processed)`,
+    };
   }
+  const body = await res.text().catch(() => "");
+  return {
+    status: "fail",
+    message: `Webhook returned ${res.status} (expected 200 or 401). Body: ${body.slice(0, 200)}`,
+  };
 }
 
-// ---------------------------------------------------------------------------
-// Test: Invalid JSON body
-// ---------------------------------------------------------------------------
-
-async function testWebhookWithInvalidJson(
+async function checkWebhookRejectsInvalidJson(
   webhookUrl: string,
   webhookSecret: string,
-): Promise<void> {
+): Promise<{ status: "pass" | "fail"; message: string }> {
   const res = await fetch(webhookUrl, {
     method: "POST",
     headers: {
@@ -184,124 +320,14 @@ async function testWebhookWithInvalidJson(
     body: "this is not json{{{",
   });
 
-  // The handler returns 400 for invalid JSON
   if (res.status === 200 || res.status === 400) {
-    log(PASS, `Webhook returned ${res.status} for invalid JSON body`);
-  } else {
-    const body = await res.text().catch(() => "");
-    log(FAIL, `Webhook returned ${res.status} for invalid JSON (expected 200 or 400). Body: ${body.slice(0, 200)}`);
+    return { status: "pass", message: `Webhook returned ${res.status} for invalid JSON body` };
   }
-}
-
-// ---------------------------------------------------------------------------
-// Test: Real message via Telegram Bot API (optional)
-// ---------------------------------------------------------------------------
-
-async function testRealMessage(
-  botToken: string,
-  chatId: string,
-): Promise<void> {
-  const apiBase = `https://api.telegram.org/bot${botToken}`;
-  const canaryText = `canary test ${Date.now()}`;
-
-  // Send test message
-  log(SKIP, "Starting real message test...");
-
-  const sendRes = await fetch(`${apiBase}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: canaryText,
-    }),
-  });
-
-  if (!sendRes.ok) {
-    const body = await sendRes.text().catch(() => "");
-    log(FAIL, `Failed to send message via Bot API: ${sendRes.status} ${body.slice(0, 200)}`);
-    return;
-  }
-
-  const sendData = (await sendRes.json()) as { ok: boolean; result?: { message_id: number } };
-  if (!sendData.ok) {
-    log(FAIL, "Bot API sendMessage returned ok=false");
-    return;
-  }
-
-  const sentMessageId = sendData.result?.message_id;
-  log(PASS, `Sent canary message (message_id=${sentMessageId}): "${canaryText}"`);
-
-  // Poll getUpdates for a response (up to 30 seconds)
-  const pollStart = Date.now();
-  const pollTimeoutMs = 30_000;
-  const pollIntervalMs = 3_000;
-  let gotResponse = false;
-
-  // Clear any pending updates first
-  await fetch(`${apiBase}/getUpdates`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ offset: -1, limit: 1 }),
-  });
-
-  while (Date.now() - pollStart < pollTimeoutMs) {
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-
-    const pollRes = await fetch(`${apiBase}/getUpdates`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ timeout: 2, limit: 10 }),
-    });
-
-    if (!pollRes.ok) continue;
-
-    const pollData = (await pollRes.json()) as {
-      ok: boolean;
-      result?: Array<{
-        update_id: number;
-        message?: {
-          message_id: number;
-          from?: { is_bot: boolean; username?: string };
-          chat: { id: number };
-          text?: string;
-          reply_to_message?: { message_id: number };
-        };
-      }>;
-    };
-
-    if (!pollData.ok || !pollData.result) continue;
-
-    for (const update of pollData.result) {
-      const msg = update.message;
-      if (!msg) continue;
-
-      // Look for a bot reply in the same chat
-      const isSameChat = String(msg.chat.id) === String(chatId);
-      const isFromBot = msg.from?.is_bot === true;
-      const isReply = msg.reply_to_message?.message_id === sentMessageId;
-      const isAfterSend = msg.message_id > (sentMessageId || 0);
-
-      if (isSameChat && isFromBot && (isReply || isAfterSend)) {
-        const preview = (msg.text || "[non-text]").slice(0, 100);
-        log(PASS, `Got bot response (message_id=${msg.message_id}, from=@${msg.from?.username}): "${preview}"`);
-        gotResponse = true;
-        break;
-      }
-
-      // Acknowledge processed updates
-      await fetch(`${apiBase}/getUpdates`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ offset: update.update_id + 1 }),
-      });
-    }
-
-    if (gotResponse) break;
-  }
-
-  if (!gotResponse) {
-    log(FAIL, `No bot response received within ${pollTimeoutMs / 1000}s`);
-  }
+  const body = await res.text().catch(() => "");
+  return {
+    status: "fail",
+    message: `Webhook returned ${res.status} (expected 200 or 400). Body: ${body.slice(0, 200)}`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -309,45 +335,78 @@ async function testRealMessage(
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  console.log("=== Telegram Canary Test ===");
-  console.log("");
+  const suiteStart = Date.now();
 
-  const webhookUrl = requiredEnv("WEBHOOK_URL");
-  const webhookSecret = requiredEnv("WEBHOOK_SECRET");
-  const botToken = process.env.BOT_TOKEN;
-  const chatId = process.env.CHAT_ID;
+  const botToken = requiredEnv("CANARY_BOT_TOKEN");
+  const chatId = requiredEnv("CANARY_CHAT_ID");
+  const timeoutMs = parseInt(optionalEnv("CANARY_TIMEOUT_MS", String(DEFAULT_TIMEOUT_MS)), 10);
 
-  console.log(`Webhook URL: ${webhookUrl}`);
-  console.log(`Real message test: ${botToken && chatId ? "enabled" : "disabled (set BOT_TOKEN + CHAT_ID to enable)"}`);
-  console.log("");
+  const webhookUrl = process.env.WEBHOOK_URL;
+  const webhookSecret = process.env.WEBHOOK_SECRET;
 
-  // -- Synthetic webhook tests --
-  console.log("--- Synthetic Webhook Tests ---");
-  await testWebhookWithCorrectSecret(webhookUrl, webhookSecret);
-  await testWebhookWithWrongSecret(webhookUrl);
-  await testWebhookWithMissingSecret(webhookUrl);
-  await testWebhookWithInvalidJson(webhookUrl, webhookSecret);
-  console.log("");
+  const checks: CheckResult[] = [];
 
-  // -- Real message test (optional) --
-  if (botToken && chatId) {
-    console.log("--- Real Message Test ---");
-    await testRealMessage(botToken, chatId);
-    console.log("");
+  // -- Primary: Bot API round-trip test --
+  console.error(`[canary] Sending ${CANARY_PREFIX} message to chat ${chatId}...`);
+  const botCheck = await timedCheck("bot-response", () =>
+    checkBotResponse(botToken, chatId, timeoutMs),
+  );
+  checks.push(botCheck);
+  console.error(`[canary] bot-response: ${botCheck.status} (${botCheck.durationMs}ms)`);
+
+  // -- Optional: Webhook smoke tests --
+  if (webhookUrl && webhookSecret) {
+    console.error("[canary] Running webhook smoke tests...");
+
+    const webhookChecks = await Promise.all([
+      timedCheck("webhook-valid-secret", () =>
+        checkWebhookAcceptsValidSecret(webhookUrl, webhookSecret),
+      ),
+      timedCheck("webhook-invalid-secret", () =>
+        checkWebhookRejectsInvalidSecret(webhookUrl),
+      ),
+      timedCheck("webhook-missing-secret", () =>
+        checkWebhookRejectsMissingSecret(webhookUrl),
+      ),
+      timedCheck("webhook-invalid-json", () =>
+        checkWebhookRejectsInvalidJson(webhookUrl, webhookSecret),
+      ),
+    ]);
+
+    for (const c of webhookChecks) {
+      checks.push(c);
+      console.error(`[canary] ${c.name}: ${c.status} (${c.durationMs}ms)`);
+    }
   }
 
-  // -- Summary --
-  console.log("=== Summary ===");
-  if (failures === 0) {
-    console.log("All checks passed.");
-  } else {
-    console.log(`${failures} check(s) failed.`);
-  }
+  // -- Build structured result --
+  const failures = checks.filter((c) => c.status === "fail").length;
+  const passed = checks.filter((c) => c.status === "pass").length;
+
+  const result: CanaryResult = {
+    timestamp: new Date().toISOString(),
+    suite: "telegram-canary",
+    status: failures === 0 ? "pass" : "fail",
+    durationMs: Date.now() - suiteStart,
+    checks,
+    summary: `${passed}/${checks.length} checks passed${failures > 0 ? `, ${failures} failed` : ""}`,
+  };
+
+  // Structured JSON on stdout
+  console.log(JSON.stringify(result, null, 2));
 
   process.exit(failures > 0 ? 1 : 0);
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  const result: CanaryResult = {
+    timestamp: new Date().toISOString(),
+    suite: "telegram-canary",
+    status: "fail",
+    durationMs: 0,
+    checks: [],
+    summary: `Fatal error: ${err instanceof Error ? err.message : String(err)}`,
+  };
+  console.log(JSON.stringify(result, null, 2));
   process.exit(1);
 });
