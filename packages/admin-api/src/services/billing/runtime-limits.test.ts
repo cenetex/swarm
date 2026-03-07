@@ -1,11 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import {
   getEffectiveLimitsForAvatar,
   applyOrbHolderBoost,
+  syncRuntimeLimitsToState,
+  toRuntimeLimits,
   ORB_HOLDER_BOOST,
   type EffectiveLimitsResult,
 } from './runtime-limits.js';
+import { _setDynamoClient } from '../dynamo-client.js';
 import { PLAN_DEFAULTS } from '../../types.js';
 
 describe('runtime-limits.getEffectiveLimitsForAvatar', () => {
@@ -176,5 +180,87 @@ describe('applyOrbHolderBoost', () => {
 
     const boosted = applyOrbHolderBoost(resultWithStatus);
     expect(boosted.entitlementStatus).toBe('suspended');
+  });
+});
+
+describe('syncRuntimeLimitsToState', () => {
+  let mockSend: ReturnType<typeof import('vitest')['vi']['fn']>;
+
+  beforeEach(async () => {
+    const { vi } = await import('vitest');
+    mockSend = vi.fn().mockResolvedValue({});
+    _setDynamoClient({ send: mockSend } as unknown as DynamoDBDocumentClient);
+    process.env.STATE_TABLE = 'test-state-table';
+  });
+
+  afterEach(() => {
+    _setDynamoClient(null);
+    delete process.env.STATE_TABLE;
+  });
+
+  it('uses ExpressionAttributeNames for reserved DynamoDB keywords (plan, source)', async () => {
+    const runtimeLimits = toRuntimeLimits(PLAN_DEFAULTS.pro);
+
+    await syncRuntimeLimitsToState({
+      avatarId: 'avatar-123',
+      runtimeLimits,
+      plan: 'pro',
+      source: 'entitlement',
+      entitlementStatus: 'active',
+    });
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+
+    const command = mockSend.mock.calls[0][0];
+    const input = command.input;
+
+    // Verify ExpressionAttributeNames maps reserved words
+    expect(input.ExpressionAttributeNames).toBeDefined();
+    expect(input.ExpressionAttributeNames['#plan']).toBe('plan');
+    expect(input.ExpressionAttributeNames['#source']).toBe('source');
+
+    // Verify the UpdateExpression uses the escaped names
+    expect(input.UpdateExpression).toContain('#plan');
+    expect(input.UpdateExpression).toContain('#source');
+    // And does NOT use bare reserved words as attribute targets
+    expect(input.UpdateExpression).not.toMatch(/[^#]plan\s*=/);
+    expect(input.UpdateExpression).not.toMatch(/[^#]source\s*=/);
+  });
+
+  it('writes correct values to the state table', async () => {
+    const runtimeLimits = toRuntimeLimits(PLAN_DEFAULTS.free);
+
+    await syncRuntimeLimitsToState({
+      avatarId: 'avatar-456',
+      runtimeLimits,
+      plan: 'free',
+      source: 'default',
+    });
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+
+    const command = mockSend.mock.calls[0][0];
+    const input = command.input;
+
+    expect(input.TableName).toBe('test-state-table');
+    expect(input.Key).toEqual({ pk: 'LIMITS#avatar-456', sk: 'RUNTIME' });
+    expect(input.ExpressionAttributeValues[':plan']).toBe('free');
+    expect(input.ExpressionAttributeValues[':source']).toBe('default');
+    expect(input.ExpressionAttributeValues[':entitlementStatus']).toBe('none');
+    expect(input.ExpressionAttributeValues[':memoryEnabled']).toBe(runtimeLimits.memoryEnabled);
+    expect(input.ExpressionAttributeValues[':dailyMessageLimit']).toBe(runtimeLimits.dailyMessageLimit);
+  });
+
+  it('skips write when STATE_TABLE is not set', async () => {
+    delete process.env.STATE_TABLE;
+
+    await syncRuntimeLimitsToState({
+      avatarId: 'avatar-789',
+      runtimeLimits: toRuntimeLimits(PLAN_DEFAULTS.free),
+      plan: 'free',
+      source: 'default',
+    });
+
+    expect(mockSend).not.toHaveBeenCalled();
   });
 });

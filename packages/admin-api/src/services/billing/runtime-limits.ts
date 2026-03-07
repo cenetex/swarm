@@ -13,8 +13,6 @@ import {
 } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
 
-const dynamoClient = getDynamoClient();
-
 export interface RuntimeLimits {
   memoryEnabled: boolean;
   dailyMessageLimit: number;
@@ -150,7 +148,7 @@ export async function syncRuntimeLimitsToState(params: {
 
   const { avatarId, runtimeLimits, plan, source, entitlementStatus, augmentations } = params;
 
-  await dynamoClient.send(new UpdateCommand({
+  await getDynamoClient().send(new UpdateCommand({
     TableName: stateTable,
     Key: {
       pk: `LIMITS#${avatarId}`,
@@ -164,13 +162,17 @@ export async function syncRuntimeLimitsToState(params: {
           maxToolCallsPerMessage = :maxToolCallsPerMessage,
           autonomousPostsEnabled = :autonomousPostsEnabled,
           priorityProcessing = :priorityProcessing,
-          plan = :plan,
-          source = :source,
+          #plan = :plan,
+          #source = :source,
           entitlementStatus = :entitlementStatus,
           contractVersion = :contractVersion,
           augmentations = :augmentations,
           updatedAt = :now
     `,
+    ExpressionAttributeNames: {
+      '#plan': 'plan',
+      '#source': 'source',
+    },
     ExpressionAttributeValues: {
       ':memoryEnabled': runtimeLimits.memoryEnabled,
       ':dailyMessageLimit': runtimeLimits.dailyMessageLimit,
