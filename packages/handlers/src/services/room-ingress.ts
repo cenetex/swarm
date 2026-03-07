@@ -11,9 +11,14 @@
  *
  * Private chats and single-avatar channels continue to use per-avatar enqueue.
  */
-import { appendMessage, getRecentMessages } from '@swarm/core/services';
-import { logger, type Platform, type SharedRoomMessage } from '@swarm/core';
-import { getChannelAvatarIds } from '../telegram/webhook-home-channel.js';
+import {
+  appendMessage as _appendMessage,
+  getRecentMessages as _getRecentMessages,
+  logger,
+  type Platform,
+  type SharedRoomMessage,
+} from '@swarm/core';
+import { getChannelAvatarIds as _getChannelAvatarIds } from '../telegram/webhook-home-channel.js';
 
 export interface RoomIngressResult {
   /** Room key used for coordination (e.g. "telegram:-1001234567890") */
@@ -22,6 +27,31 @@ export interface RoomIngressResult {
   messageId: string;
   /** Whether this message was new (true) or a duplicate (false) */
   isNew: boolean;
+}
+
+/** Overridable dependencies for testing without process-global mock.module. */
+export interface RoomIngressDeps {
+  appendMessage: typeof _appendMessage;
+  getRecentMessages: typeof _getRecentMessages;
+  getChannelAvatarIds: typeof _getChannelAvatarIds;
+}
+
+const defaultDeps: RoomIngressDeps = {
+  appendMessage: _appendMessage,
+  getRecentMessages: _getRecentMessages,
+  getChannelAvatarIds: _getChannelAvatarIds,
+};
+
+/** Replace dependencies for testing. */
+export function _setDeps(deps: Partial<RoomIngressDeps>): void {
+  Object.assign(defaultDeps, deps);
+}
+
+/** Reset dependencies to originals. */
+export function _resetDeps(): void {
+  defaultDeps.appendMessage = _appendMessage;
+  defaultDeps.getRecentMessages = _getRecentMessages;
+  defaultDeps.getChannelAvatarIds = _getChannelAvatarIds;
 }
 
 /**
@@ -51,7 +81,7 @@ export async function processSharedRoomMessage(
   const roomKey = buildRoomKey(platform, channelId);
 
   // Dedup: check recent messages for this messageId
-  const recent = await getRecentMessages(channelId, 50);
+  const recent = await defaultDeps.getRecentMessages(channelId, 50);
   const alreadyExists = recent.some((m) => m.messageId === message.messageId);
 
   if (alreadyExists) {
@@ -65,7 +95,7 @@ export async function processSharedRoomMessage(
   }
 
   // Append to shared room ledger (one write per inbound message)
-  await appendMessage(channelId, {
+  await defaultDeps.appendMessage(channelId, {
     messageId: message.messageId,
     senderId: message.senderId,
     senderType: message.senderType,
@@ -96,6 +126,6 @@ export async function isSharedRoom(
   _platform: Platform,
   channelId: string,
 ): Promise<boolean> {
-  const avatarIds = await getChannelAvatarIds(channelId);
+  const avatarIds = await defaultDeps.getChannelAvatarIds(channelId);
   return avatarIds.length >= 2;
 }

@@ -1,30 +1,30 @@
-import { describe, it, expect, beforeEach, mock } from 'bun:test';
-
-// Mock @swarm/core/services (NOT the barrel @swarm/core) to avoid clobbering
-// the process-global module resolution that shared-room.test.ts depends on.
-const realServices = await import('@swarm/core/services');
-
-const mockAppendMessage = mock(() => Promise.resolve());
-const mockGetRecentMessages = mock(() => Promise.resolve([] as unknown[]));
-
-mock.module('@swarm/core/services', () => ({
-  ...realServices,
-  appendMessage: mockAppendMessage,
-  getRecentMessages: mockGetRecentMessages,
-}));
-
-const mockGetChannelAvatarIds = mock(() => Promise.resolve([] as string[]));
-mock.module('../telegram/webhook-home-channel.js', () => ({
-  getChannelAvatarIds: mockGetChannelAvatarIds,
-}));
-
-const { processSharedRoomMessage, isSharedRoom, buildRoomKey } = await import('./room-ingress.js');
+import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import {
+  processSharedRoomMessage,
+  isSharedRoom,
+  buildRoomKey,
+  _setDeps,
+  _resetDeps,
+} from './room-ingress.js';
 
 describe('room-ingress', () => {
+  const mockAppendMessage = mock(() => Promise.resolve());
+  const mockGetRecentMessages = mock(() => Promise.resolve([] as unknown[]));
+  const mockGetChannelAvatarIds = mock(() => Promise.resolve([] as string[]));
+
   beforeEach(() => {
     mockAppendMessage.mockClear();
     mockGetRecentMessages.mockClear();
     mockGetChannelAvatarIds.mockClear();
+    _setDeps({
+      appendMessage: mockAppendMessage as never,
+      getRecentMessages: mockGetRecentMessages as never,
+      getChannelAvatarIds: mockGetChannelAvatarIds as never,
+    });
+  });
+
+  afterEach(() => {
+    _resetDeps();
   });
 
   describe('buildRoomKey', () => {
