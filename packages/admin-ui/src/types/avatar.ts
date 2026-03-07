@@ -96,14 +96,18 @@ export interface MessageSender {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   /** Optional internal reasoning extracted from <thinking> tags. */
   thinking?: string[];
   timestamp: number;
   isLoading?: boolean;
-  /** UI-only: message originated from a tool result (role=tool on backend). Excluded from outbound history. */
+  /** UI-only: message originated from a tool result (role=tool on backend). Used for display styling. */
   isToolResult?: boolean;
+  /** The tool_call_id for role='tool' messages, linking back to the assistant's tool_calls entry. */
+  tool_call_id?: string;
+  /** OpenAI-format tool_calls from the server, stored for accurate history reconstruction. */
+  serverToolCalls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
   error?: string;
   /** Tool calls that need user interaction */
   toolCalls?: ToolCall[];

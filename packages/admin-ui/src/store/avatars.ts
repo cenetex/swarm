@@ -304,10 +304,16 @@ export const useAvatarStore = create<AvatarState>()(
 
               return {
                 id: `synced-${index}`,
-                role: (msg.role === 'tool' ? 'assistant' : msg.role) as 'user' | 'assistant',
+                role: msg.role as 'user' | 'assistant' | 'system' | 'tool',
                 content: msg.content,
                 thinking: (msg as unknown as { thinking?: string[] }).thinking,
                 isToolResult: msg.role === 'tool',
+                // Preserve tool_call_id for role='tool' messages (needed for history accuracy)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                tool_call_id: msg.role === 'tool' ? (msg as any).tool_call_id : undefined,
+                // Preserve serverToolCalls for assistant messages with tool_calls
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                serverToolCalls: Array.isArray((msg as any).tool_calls) ? (msg as any).tool_calls : undefined,
                 timestamp: Date.now() - (history.length - index) * 1000,
                 // Include media if present (for images to persist across refresh)
                 media: msg.media,

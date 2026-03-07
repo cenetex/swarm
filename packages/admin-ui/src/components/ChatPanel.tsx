@@ -292,10 +292,12 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
         // Note: messages is from the closure before we called addMessage, 
         // so it doesn't include the user message we just added
         const history = messages
-          .filter((m) => m.id !== 'welcome' && !m.isLoading && !m.isToolResult)
+          .filter((m) => m.id !== 'welcome' && !m.isLoading)
           .map((m) => ({
             role: m.role,
             content: m.content,
+            ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
+            ...(m.serverToolCalls ? { tool_calls: m.serverToolCalls } : {}),
           }));
 
         // Send to API with avatar context and sender info
@@ -366,18 +368,25 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
             }
             return -1;
           })();
-          const toolResultContents: string[] = [];
+          const toolResultEntries: Array<{ content: string; tool_call_id: string }> = [];
+          // Also find the assistant message with tool_calls (the one right before tool results)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let assistantToolCallsMsg: any = null;
           if (lastUserIndex >= 0) {
             for (const msg of historyFromServer.slice(lastUserIndex + 1)) {
               if (msg && msg.role === 'tool' && typeof msg.content === 'string') {
-                toolResultContents.push(msg.content);
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                toolResultEntries.push({ content: msg.content, tool_call_id: (msg as any).tool_call_id || '' });
+              }
+              if (msg && msg.role === 'assistant' && Array.isArray((msg as Record<string, unknown>).tool_calls)) {
+                assistantToolCallsMsg = msg;
               }
             }
           }
 
           // Extract job ids from tool-result messages (these often contain the only jobId)
-          for (const toolContent of toolResultContents) {
-            for (const j of extractPendingJobsFromText(toolContent)) {
+          for (const entry of toolResultEntries) {
+            for (const j of extractPendingJobsFromText(entry.content)) {
               if (!pendingJobsList.find(existing => existing.jobId === j.jobId)) {
                 pendingJobsList.push({ jobId: j.jobId, type: j.type });
               }
@@ -386,15 +395,31 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
 
           // Replace the loading message in-place (preserve messageId for job polling),
           // and splice tool-result messages right before it.
+          // Also insert a hidden assistant message with tool_calls for history accuracy.
           const current = useAvatarStore.getState().chats[targetAvatar.id] || [];
           const loadingIndex = current.findIndex(m => m.id === loadingMessage.id);
-          const toolMessages = toolResultContents.map((toolContent) => ({
+
+          // Build the hidden assistant-with-tool_calls message (needed for valid history)
+          const toolCallAssistantMessages = assistantToolCallsMsg ? [{
+            id: (globalThis.crypto && 'randomUUID' in globalThis.crypto)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ? (globalThis.crypto as any).randomUUID()
+              : `tc-ast-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            role: 'assistant' as const,
+            content: '',
+            timestamp: Date.now(),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            serverToolCalls: (assistantToolCallsMsg as any).tool_calls as Array<{ id: string; type: string; function: { name: string; arguments: string } }>,
+          }] : [];
+
+          const toolMessages = toolResultEntries.map((entry) => ({
             id: (globalThis.crypto && 'randomUUID' in globalThis.crypto)
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               ? (globalThis.crypto as any).randomUUID()
               : `tool-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            role: 'assistant' as const,
-            content: toolContent,
+            role: 'tool' as const,
+            content: entry.content,
+            tool_call_id: entry.tool_call_id,
             timestamp: Date.now(),
             isToolResult: true,
           }));
@@ -419,6 +444,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
           if (loadingIndex >= 0) {
             const next = [
               ...current.slice(0, loadingIndex),
+              ...toolCallAssistantMessages,
               ...toolMessages,
               updatedLoading,
               ...current.slice(loadingIndex + 1),
@@ -426,10 +452,18 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
             useAvatarStore.getState().setChat(targetAvatar.id, next);
           } else {
             // Fallback: if loading message vanished, just append.
+            for (const tcm of toolCallAssistantMessages) {
+              addMessage(targetAvatar.id, {
+                role: tcm.role,
+                content: tcm.content,
+                serverToolCalls: tcm.serverToolCalls,
+              });
+            }
             for (const tm of toolMessages) {
               addMessage(targetAvatar.id, {
                 role: tm.role,
                 content: tm.content,
+                tool_call_id: tm.tool_call_id,
                 isToolResult: true,
               });
             }

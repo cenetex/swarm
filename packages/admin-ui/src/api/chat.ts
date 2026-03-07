@@ -99,7 +99,7 @@ interface SenderContext {
  */
 export async function sendChatMessage(
   message: string,
-  history: Array<{ role: string; content: string }>,
+  history: Array<{ role: string; content: string; tool_call_id?: string; tool_calls?: unknown[] }>,
   avatar?: AvatarContext,
   sender?: SenderContext
 ): Promise<ChatResponse> {
