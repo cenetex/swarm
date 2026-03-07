@@ -17,7 +17,7 @@ import {
   getMemories,
   getIdentity,
   saveIdentitySnapshot,
-  getMemoryStats,
+  getMemoryCounts,
   pruneGraph,
   DEFAULT_CONFIG,
 } from './memory.js';
@@ -339,23 +339,38 @@ async function getAvatarsNeedingConsolidation(limit: number): Promise<string[]> 
   });
 
   // Scan for avatars (pk starts with AVATAR#, sk = CONFIG)
-  const result = await client.send(new ScanCommand({
-    TableName: ADMIN_TABLE,
-    FilterExpression: 'begins_with(pk, :prefix) AND sk = :sk',
-    ExpressionAttributeValues: {
-      ':prefix': 'AVATAR#',
-      ':sk': 'CONFIG',
-    },
-    ProjectionExpression: 'pk',
-    Limit: limit * 2, // Over-fetch to account for potential filtering
-  }));
+  // DynamoDB Limit restricts items *evaluated*, not items *returned after filter*.
+  // We must paginate to ensure we find all matching avatars.
+  const avatarIds: string[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
 
-  const avatarIds = (result.Items || [])
-    .map(item => {
+  do {
+    const result = await client.send(new ScanCommand({
+      TableName: ADMIN_TABLE,
+      FilterExpression: 'begins_with(pk, :prefix) AND sk = :sk',
+      ExpressionAttributeValues: {
+        ':prefix': 'AVATAR#',
+        ':sk': 'CONFIG',
+      },
+      ProjectionExpression: 'pk',
+      ExclusiveStartKey: exclusiveStartKey,
+    }));
+
+    for (const item of result.Items || []) {
       const pk = item.pk as string;
-      return pk.replace('AVATAR#', '');
-    })
-    .slice(0, limit);
+      avatarIds.push(pk.replace('AVATAR#', ''));
+      if (avatarIds.length >= limit) break;
+    }
+
+    exclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (exclusiveStartKey && avatarIds.length < limit);
+
+  logger.info('Avatars discovered for consolidation', {
+    event: 'consolidation_avatar_discovery',
+    avatarCount: avatarIds.length,
+    limit,
+    avatarIds,
+  });
 
   return avatarIds;
 }
@@ -397,11 +412,29 @@ export async function consolidateAllAvatars(
     for (const avatarId of avatarIds) {
       try {
         // Check if avatar has any memories (skip if empty)
-        const stats = await getMemoryStats(avatarId);
-        if (stats.totalMemories === 0) {
+        // Use getMemoryCounts (COUNT queries) instead of getMemoryStats
+        // to avoid fetching up to 300 memory items just for a skip check
+        const counts = await getMemoryCounts(avatarId);
+        const totalMemories = counts.immediate + counts.recent + counts.core
+          + counts.ephemeral + counts.durable + counts.archival;
+
+        if (totalMemories === 0) {
           result.skipped++;
+          logger.info('Skipping avatar consolidation: no memories', {
+            event: 'consolidation_avatar_skipped',
+            avatarId,
+            reason: 'no_memories',
+            counts,
+          });
           continue;
         }
+
+        logger.info('Starting avatar consolidation', {
+          event: 'consolidation_avatar_start',
+          avatarId,
+          totalMemories,
+          counts,
+        });
 
         const avatarResult = await consolidateAvatar(avatarId, options);
         result.results.push(avatarResult);
@@ -411,19 +444,31 @@ export async function consolidateAllAvatars(
           result.succeeded++;
         } else {
           result.failed++;
+          logger.warn('Avatar consolidation did not succeed', {
+            event: 'consolidation_avatar_failed',
+            avatarId,
+            error: avatarResult.error,
+            durationMs: avatarResult.durationMs,
+          });
         }
 
         // Small delay between avatars to be nice to DynamoDB
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
         result.failed++;
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        logger.error('Avatar consolidation threw unexpected error', {
+          event: 'consolidation_avatar_exception',
+          avatarId,
+          error: errorMessage,
+        });
         result.results.push({
           avatarId,
           success: false,
           decay: { recent: { decayed: 0, pruned: 0 }, core: { decayed: 0, pruned: 0 } },
           promotion: { promoted: 0 },
           durationMs: 0,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: errorMessage,
         });
       }
     }
