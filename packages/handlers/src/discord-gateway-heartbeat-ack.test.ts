@@ -5,7 +5,7 @@
  * responses and forces a reconnect when the server stops acknowledging.
  * See issue #829.
  */
-import { describe, it, expect, mock } from 'bun:test';
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
 
 // Mock all external dependencies before importing the module under test
 mock.module('ws', () => {
@@ -37,11 +37,11 @@ mock.module('ws', () => {
   return { default: MockWebSocket, __esModule: true };
 });
 
-mock.module('../services/sqs-send.js', () => ({
+mock.module('./services/sqs-send.js', () => ({
   sendSqsMessage: async () => {},
 }));
 
-mock.module('../services/room-ingress.js', () => ({
+mock.module('./services/room-ingress.js', () => ({
   processSharedRoomMessage: async () => ({ isNew: false }),
   buildRoomKey: (platform: string, channel: string) => `${platform}:${channel}`,
 }));
@@ -49,6 +49,7 @@ mock.module('../services/room-ingress.js', () => ({
 mock.module('@aws-sdk/client-sqs', () => ({
   SQSClient: class { send() { return Promise.resolve({}); } destroy() {} },
   GetQueueAttributesCommand: class { constructor() {} },
+  SendMessageCommand: class { constructor() {} },
 }));
 
 mock.module('@aws-sdk/client-secrets-manager', () => ({
@@ -81,11 +82,17 @@ mock.module('@swarm/core', () => ({
   computeReconnectDelay: () => 1000,
 }));
 
-// Stub required env vars
-process.env.STATE_TABLE = 'test-state-table';
-process.env.MESSAGE_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
+type GatewayConnectionClass = typeof import('./discord/discord-gateway-shared.js').GatewayConnection;
 
-import { GatewayConnection } from './discord/discord-gateway-shared.js';
+let GatewayConnection: GatewayConnectionClass;
+
+beforeAll(async () => {
+  // Stub required env vars before loading the module under test.
+  process.env.STATE_TABLE = 'test-state-table';
+  process.env.MESSAGE_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
+
+  ({ GatewayConnection } = await import('./discord/discord-gateway-shared.js'));
+});
 
 /** Type alias for internal state we need to inspect in tests */
 interface GatewayInternals {
