@@ -37,7 +37,7 @@ mock.module('ws', () => {
       for (const fn of list) fn(...args);
     }
   }
-  return { default: MockWebSocket, __esModule: true };
+  return { default: MockWebSocket, WebSocket: MockWebSocket, __esModule: true };
 });
 
 mock.module('../services/sqs-send.js', () => ({
@@ -51,12 +51,18 @@ mock.module('../services/room-ingress.js', () => ({
 
 mock.module('@aws-sdk/client-sqs', () => ({
   SQSClient: class { send() { return Promise.resolve({}); } destroy() {} },
-  GetQueueAttributesCommand: class { constructor() {} },
+  GetQueueAttributesCommand: class { constructor(public input: unknown) {} },
+  SendMessageCommand: class { constructor(public input: unknown) {} },
+  ReceiveMessageCommand: class { constructor(public input: unknown) {} },
+  DeleteMessageCommand: class { constructor(public input: unknown) {} },
 }));
 
 mock.module('@aws-sdk/client-secrets-manager', () => ({
   SecretsManagerClient: class { send() { return Promise.resolve({}); } },
-  GetSecretValueCommand: class { constructor() {} },
+  GetSecretValueCommand: class { constructor(public input: unknown) {} },
+  DescribeSecretCommand: class { constructor(public input: unknown) {} },
+  CreateSecretCommand: class { constructor(public input: unknown) {} },
+  PutSecretValueCommand: class { constructor(public input: unknown) {} },
 }));
 
 mock.module('@swarm/core', () => ({
