@@ -176,12 +176,15 @@ Generate a chat completion from an avatar.
 | `max_tokens` | number | No | Maximum tokens to generate |
 | `stream` | boolean | No | Enable SSE streaming (see [Streaming](#streaming) below). Cannot be combined with `include_audio`. |
 | `user` | string | No | Optional user identifier for tracking |
+| `tools` | array | No | Array of tool definitions (see [Tool Calling](#tool-calling) below) |
+| `tool_choice` | string/object | No | Controls tool use: `"none"`, `"auto"`, or `{"type":"function","function":{"name":"..."}}` |
 | `include_audio` | boolean | No | Generate voice audio for the response (requires avatar with voice configured) |
 
 **Message Roles:**
 - `system` - System instructions (optional, avatar persona is used if not provided)
 - `user` - User messages
-- `assistant` - Previous assistant responses (for context)
+- `assistant` - Previous assistant responses (for context, may include `tool_calls`)
+- `tool` - Tool execution results (must include `tool_call_id`)
 
 **Response:**
 ```json
@@ -216,6 +219,120 @@ Generate a chat completion from an avatar.
 The `audio` field is only present when:
 1. `include_audio: true` was specified in the request
 2. The avatar has voice generation configured and enabled
+
+---
+
+### Tool Calling
+
+The API supports OpenAI-compatible tool/function calling. When you include a `tools` array in your request, the avatar's server-side tools are enabled and the LLM can invoke them during response generation.
+
+**How it works:**
+
+1. Send a request with `tools` definitions to signal that tool use is desired
+2. The avatar's configured tools (image generation, voice, memory, platform integrations, etc.) are enabled based on the avatar's configuration
+3. The LLM may call tools during generation; tools are executed server-side
+4. The response includes both the final text and any `tool_calls` that were made
+
+**Request with tools:**
+```json
+{
+  "model": "avatar:my-bot",
+  "messages": [{"role": "user", "content": "Generate an image of a sunset"}],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "generate_image",
+        "description": "Generate an image from a text prompt",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "prompt": {"type": "string"}
+          },
+          "required": ["prompt"]
+        }
+      }
+    }
+  ]
+}
+```
+
+**Response with tool calls:**
+```json
+{
+  "id": "chatcmpl-abc123",
+  "object": "chat.completion",
+  "created": 1706644800,
+  "model": "avatar:my-bot",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Here is your sunset image!",
+        "tool_calls": [
+          {
+            "id": "call_abc123",
+            "type": "function",
+            "function": {
+              "name": "generate_image",
+              "arguments": "{\"prompt\":\"a beautiful sunset over the ocean\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 25,
+    "completion_tokens": 15,
+    "total_tokens": 40
+  }
+}
+```
+
+**Sending tool results back:**
+
+You can include previous tool calls and their results in the message history to continue a conversation:
+
+```json
+{
+  "model": "avatar:my-bot",
+  "messages": [
+    {"role": "user", "content": "Generate an image of a sunset"},
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [{
+        "id": "call_abc123",
+        "type": "function",
+        "function": {
+          "name": "generate_image",
+          "arguments": "{\"prompt\":\"a sunset\"}"
+        }
+      }]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_abc123",
+      "content": "{\"success\":true,\"url\":\"https://cdn.example.com/sunset.png\"}"
+    },
+    {"role": "user", "content": "Now make it more vibrant"}
+  ]
+}
+```
+
+**Disabling tools:**
+
+Set `tool_choice: "none"` to explicitly disable tool calling even when `tools` are provided. Omitting the `tools` array entirely also disables tool calling (backward compatible).
+
+**Tool calling limitations:**
+
+- Tools are executed server-side by the avatar's configured tool handlers, not by the client
+- The `tools` array signals intent to use tools; the actual available tools depend on the avatar's configuration (enabled platforms, media capabilities, etc.)
+- Client-defined tool schemas are not directly executed; they serve as hints for the LLM alongside the avatar's registered tools
+- `tool_choice: "required"` is not supported; use `"auto"` (default) instead
 
 ---
 
@@ -414,8 +531,8 @@ X-RateLimit-Reset: 1706644860
 ## Limitations
 
 1. **Streaming is buffered** - `stream: true` returns SSE-formatted chunks, but the response is buffered by Lambda/API Gateway (not true token-by-token streaming)
-2. **No function calling** - Tools/function calling is not exposed through this API
-3. **No image generation** - Media generation tools are not available
+2. **Server-side tool execution** - Tools are executed server-side; client-defined tool functions are not directly invoked
+3. **Tool availability depends on avatar config** - The `tools` array enables tool calling, but available tools are determined by the avatar's enabled platforms and capabilities
 4. **Token counting is approximate** - Usage stats use character-based estimation
 
 ---
@@ -433,8 +550,8 @@ X-RateLimit-Reset: 1706644860
 ## Coming Soon
 
 - [x] Streaming responses (SSE format, buffered)
+- [x] Tool/function calling (server-side execution with OpenAI-compatible request/response format)
 - [ ] True token-by-token streaming (requires Lambda response streaming)
-- [ ] Tool/function calling
-- [ ] Image generation via chat
+- [ ] Client-side tool execution (return tool_calls without server execution)
 - [ ] API key management UI
 - [ ] Usage analytics dashboard

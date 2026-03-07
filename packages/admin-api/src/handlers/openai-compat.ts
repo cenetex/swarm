@@ -27,7 +27,7 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 import { z } from 'zod';
 import { createHash, randomBytes } from 'crypto';
 import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { logger } from '@swarm/core';
+import { logger, detectEnabledCategories } from '@swarm/core';
 import type { ToolCategory } from '@swarm/core';
 import { processChat } from './chat.js';
 import type { UserSession } from '../types.js';
@@ -51,11 +51,49 @@ const docClient = getDynamoClient();
 // OpenAI-Compatible Types
 // =============================================================================
 
-const OpenAIMessageSchema = z.object({
-  role: z.enum(['system', 'user', 'assistant']),
-  content: z.string(),
-  name: z.string().optional(),
+const OpenAIToolCallSchema = z.object({
+  id: z.string(),
+  type: z.literal('function'),
+  function: z.object({
+    name: z.string(),
+    arguments: z.string(),
+  }),
 });
+
+const OpenAIFunctionSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  parameters: z.record(z.string(), z.unknown()).optional(),
+});
+
+const OpenAIToolSchema = z.object({
+  type: z.literal('function'),
+  function: OpenAIFunctionSchema,
+});
+
+const OpenAIMessageSchema = z.discriminatedUnion('role', [
+  z.object({
+    role: z.literal('system'),
+    content: z.string(),
+    name: z.string().optional(),
+  }),
+  z.object({
+    role: z.literal('user'),
+    content: z.string(),
+    name: z.string().optional(),
+  }),
+  z.object({
+    role: z.literal('assistant'),
+    content: z.string().nullable().optional(),
+    name: z.string().optional(),
+    tool_calls: z.array(OpenAIToolCallSchema).optional(),
+  }),
+  z.object({
+    role: z.literal('tool'),
+    content: z.string(),
+    tool_call_id: z.string(),
+  }),
+]);
 
 const ChatCompletionRequestSchema = z.object({
   model: z.string(), // Will be parsed as avatar ID
@@ -64,17 +102,34 @@ const ChatCompletionRequestSchema = z.object({
   max_tokens: z.number().int().positive().optional(),
   stream: z.boolean().optional().default(false),
   user: z.string().optional(), // Optional user identifier for tracking
+  // Tool/function calling support
+  tools: z.array(OpenAIToolSchema).optional(),
+  tool_choice: z.union([
+    z.literal('none'),
+    z.literal('auto'),
+    z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) }),
+  ]).optional(),
   // Non-standard extensions for avatar features
   include_audio: z.boolean().optional().default(false), // Generate voice audio for response
 });
 
 type ChatCompletionRequest = z.infer<typeof ChatCompletionRequestSchema>;
 
+interface OpenAIToolCallResponse {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
 interface ChatCompletionChoice {
   index: number;
   message: {
     role: 'assistant';
-    content: string;
+    content: string | null;
+    tool_calls?: OpenAIToolCallResponse[];
     audio?: {
       url: string;
       format: string;
@@ -751,22 +806,26 @@ async function handleChatCompletions(
     );
   }
 
+  // Determine if tool calling is enabled for this request
+  const toolsRequested = request.tools && request.tools.length > 0 && request.tool_choice !== 'none';
+
   // Convert OpenAI messages to our internal format
-  const history = request.messages.slice(0, -1).map(msg => ({
-    role: msg.role as 'user' | 'assistant' | 'system',
-    content: msg.content,
-  }));
+  const history = request.messages.slice(0, -1).map((msg: OpenAIMessage) => convertOpenAIMessage(msg));
 
   const lastMessage = request.messages[request.messages.length - 1];
   const userMessage = lastMessage.role === 'user' ? lastMessage.content : null;
 
-  // Build avatar context
+  // Build avatar context — enable tool categories when tools are requested
+  const enabledCategories: ToolCategory[] = toolsRequested
+    ? resolveToolCategoriesFromRequest(avatarRecord)
+    : [];
+
   const avatarContext = {
     id: avatarRecord.avatarId,
     name: avatarRecord.name,
     description: avatarRecord.description || '',
     persona: avatarRecord.persona || '',
-    enabledCategories: [] as ToolCategory[], // API users don't get tool access by default
+    enabledCategories,
   };
 
   logger.info('Processing chat completion', {
@@ -774,6 +833,8 @@ async function handleChatCompletions(
     subsystem: 'openai-compat',
     avatarId,
     messageCount: request.messages.length,
+    toolsEnabled: !!toolsRequested,
+    toolCount: request.tools?.length ?? 0,
     requestId,
   });
 
@@ -796,7 +857,7 @@ async function handleChatCompletions(
     // Resolve token usage: use model-aware estimation (provider-reported usage
     // will be preferred automatically when processChat returns it in the future).
     const llmModel = avatarRecord.llmConfig?.model || 'anthropic/claude-3-5-sonnet-latest';
-    const promptText = request.messages.map(m => m.content).join('\n');
+    const promptText = request.messages.map((m: { content?: string | null }) => m.content ?? '').join('\n');
     const tokenUsage = resolveTokenUsage(
       undefined, // provider usage not yet surfaced from processChat
       promptText,
@@ -882,6 +943,9 @@ async function handleChatCompletions(
       }
     }
 
+    // Extract tool calls from the result history (if any)
+    const toolCallsFromHistory = toolsRequested ? extractToolCallsFromHistory(result.history) : [];
+
     const response: ChatCompletionResponse = {
       id: completionId,
       object: 'chat.completion',
@@ -892,9 +956,10 @@ async function handleChatCompletions(
         message: {
           role: 'assistant',
           content: result.response,
+          ...(toolCallsFromHistory.length > 0 && { tool_calls: toolCallsFromHistory }),
           ...(audioData && { audio: audioData }),
         },
-        finish_reason: 'stop',
+        finish_reason: toolCallsFromHistory.length > 0 ? 'tool_calls' : 'stop',
       }],
       usage: {
         prompt_tokens: tokenUsage.promptTokens,
@@ -912,6 +977,7 @@ async function handleChatCompletions(
       totalTokens: tokenUsage.totalTokens,
       usageSource: tokenUsage.usageSource,
       hasAudio: !!audioData,
+      toolCallCount: toolCallsFromHistory.length,
       requestId,
     });
 
@@ -934,6 +1000,99 @@ async function handleChatCompletions(
 
     return errorResponse(500, `Chat completion failed: ${errorMessage}`, 'server_error', undefined, corsHeaders);
   }
+}
+
+// =============================================================================
+// Tool Calling Helpers
+// =============================================================================
+
+type OpenAIMessage = z.infer<typeof OpenAIMessageSchema>;
+
+/**
+ * Convert an OpenAI-format message to the internal AdminChatMessage format.
+ */
+function convertOpenAIMessage(msg: OpenAIMessage): { role: string; content: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>; tool_call_id?: string } {
+  if (msg.role === 'tool') {
+    return {
+      role: 'tool',
+      content: msg.content,
+      tool_call_id: msg.tool_call_id,
+    };
+  }
+
+  if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+    return {
+      role: 'assistant',
+      content: msg.content ?? '',
+      tool_calls: msg.tool_calls.map((tc: { id: string; type: string; function: { name: string; arguments: string } }) => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: {
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        },
+      })),
+    };
+  }
+
+  return {
+    role: msg.role,
+    content: msg.content ?? '',
+  };
+}
+
+/**
+ * Resolve tool categories to enable based on the avatar's configuration.
+ * When the API client sends tools, we enable the avatar's configured toolsets
+ * so that processChat can make them available to the LLM.
+ */
+function resolveToolCategoriesFromRequest(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  avatarRecord: any
+): ToolCategory[] {
+  const voiceEnabled = process.env.ENABLE_VOICE_TOOLS !== 'false';
+  const enabledToolsets = avatarRecord?.mcpConfig?.enabledToolsets || [];
+  const platforms = avatarRecord?.platforms as Record<string, { enabled?: boolean }> | undefined;
+
+  return detectEnabledCategories({
+    voice: voiceEnabled,
+    memory: enabledToolsets.includes('memory'),
+    telegram: Boolean(platforms?.telegram?.enabled),
+    twitter: Boolean(platforms?.twitter?.enabled),
+    discord: Boolean(platforms?.discord?.enabled),
+    nft: true,
+    property: enabledToolsets.includes('property'),
+  });
+}
+
+/**
+ * Extract tool calls from the processChat result history.
+ * The history may contain assistant messages with tool_calls arrays.
+ * We extract the LAST set of tool calls from the conversation.
+ */
+export function extractToolCallsFromHistory(
+  history: Array<{ role: string; tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }> }>
+): OpenAIToolCallResponse[] {
+  const toolCalls: OpenAIToolCallResponse[] = [];
+
+  // Find all assistant messages with tool calls
+  for (const msg of history) {
+    if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+      // Accumulate tool calls from this assistant turn
+      for (const tc of msg.tool_calls) {
+        toolCalls.push({
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          },
+        });
+      }
+    }
+  }
+
+  return toolCalls;
 }
 
 // =============================================================================
