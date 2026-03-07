@@ -16,6 +16,7 @@
  */
 import WebSocket from 'ws';
 import { sendSqsMessage } from '../services/sqs-send.js';
+import { processSharedRoomMessage, buildRoomKey } from '../services/room-ingress.js';
 import { SQSClient, GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { randomUUID } from 'node:crypto';
@@ -720,35 +721,96 @@ class GatewayConnection {
     if (eventType === 'MESSAGE_CREATE') {
       const message = data as DiscordMessage;
 
-      // Route to all avatar bindings that should handle this message
+      // Collect eligible avatar bindings for this message
+      const eligible: DiscordAvatarBinding[] = [];
       for (const binding of this.avatarBindings.values()) {
-        // Pre-filter for global-mode avatars to avoid N evaluator calls per message
         if (binding.isGlobalMode) {
-          // Skip bot's own messages (prevents loops)
           if (message.author.id === this.botUserId) continue;
-          // Skip webhook messages (our own webhook posts appear as webhooks)
           if (message.webhook_id) continue;
 
           const dc = binding.config.platforms?.discord;
-          // Guild filter
           if (dc?.allowedGuilds?.length && message.guild_id) {
             if (!dc.allowedGuilds.includes(message.guild_id)) continue;
           }
-          // Channel filter
           if (dc?.allowedChannels?.length) {
             if (!dc.allowedChannels.includes(message.channel_id)) continue;
           }
         }
+        eligible.push(binding);
+      }
 
+      // Shared room path: 2+ avatars targeting the same channel
+      if (eligible.length >= 2) {
+        const traceId = randomUUID();
         try {
-          await handleDiscordMessage(message, binding);
+          const ingressResult = await processSharedRoomMessage('discord', message.channel_id, {
+            messageId: message.id,
+            senderId: message.author.id,
+            senderType: message.author.bot ? 'avatar' : 'human',
+            content: message.content || '[media]',
+            timestamp: Date.now(),
+          });
+
+          if (ingressResult.isNew) {
+            // Build envelope from the first eligible binding for the SQS payload
+            const firstBinding = eligible[0];
+            const discordConfig = firstBinding.config.platforms.discord!;
+            const envelope = buildDiscordEnvelope(message, {
+              avatarId: firstBinding.avatarId,
+              botUserId: firstBinding.botUserId,
+              allowedGuilds: discordConfig.allowedGuilds,
+              allowedChannels: discordConfig.allowedChannels,
+              ignoreBots: firstBinding.config.behavior?.ignoreBots ?? true,
+            });
+
+            if (envelope) {
+              envelope.traceId = traceId;
+              const roomKey = buildRoomKey('discord', message.channel_id);
+              await sendSqsMessage({
+                QueueUrl: MESSAGE_QUEUE_URL,
+                MessageAttributes: {
+                  traceId: { DataType: 'String', StringValue: traceId },
+                },
+                MessageGroupId: roomKey,
+                MessageDeduplicationId: `discord:${message.id}`,
+              }, {
+                envelope,
+                roomKey,
+                enqueuedAt: Date.now(),
+                attempts: 0,
+                maxAttempts: 3,
+              });
+
+              logger.info('Discord shared room message queued (room-scoped)', {
+                event: 'room_message_queued',
+                subsystem: 'discord',
+                roomKey,
+                messageId: message.id,
+                eligibleAvatars: eligible.map(b => b.avatarId),
+              });
+            }
+          }
         } catch (err) {
-          logger.error('Error handling Discord message for avatar', err, {
-            event: 'message_handler_error',
+          logger.error('Error in Discord shared room ingress', err, {
+            event: 'room_ingress_error',
             subsystem: 'discord',
-            avatarId: binding.avatarId,
+            channelId: message.channel_id,
             messageId: message.id,
           });
+        }
+      } else {
+        // Single-avatar path: legacy per-avatar enqueue
+        for (const binding of eligible) {
+          try {
+            await handleDiscordMessage(message, binding);
+          } catch (err) {
+            logger.error('Error handling Discord message for avatar', err, {
+              event: 'message_handler_error',
+              subsystem: 'discord',
+              avatarId: binding.avatarId,
+              messageId: message.id,
+            });
+          }
         }
       }
     }

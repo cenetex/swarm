@@ -275,6 +275,17 @@ export async function getHomeChannelIdsForAvatar(avatarId: string): Promise<Set<
 }
 
 /**
+ * Get avatar IDs registered in a specific channel.
+ * Returns an empty array if the channel is not found or has no registered avatars.
+ */
+export async function getChannelAvatarIds(chatId: string): Promise<string[]> {
+  const entries = await getHomeChannelEntries();
+  const entry = entries.find((e) => e.sk === chatId);
+  if (!entry?.registeredAvatars) return [];
+  return entry.registeredAvatars.map((a) => a.avatarId);
+}
+
+/**
  * Get all home channel IDs from the registry (global, for backward compatibility).
  * Uses in-memory caching with 60 second TTL.
  * @deprecated Prefer getHomeChannelIdsForAvatar for per-avatar scoping.

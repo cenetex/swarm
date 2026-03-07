@@ -10,6 +10,7 @@
  */
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { sendSqsMessage } from '../services/sqs-send.js';
+import { processSharedRoomMessage, isSharedRoom, buildRoomKey } from '../services/room-ingress.js';
 import { randomUUID } from 'crypto';
 import type { Update } from 'grammy/types';
 import {
@@ -648,48 +649,105 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         ? envelope.metadata.chatType
         : undefined;
 
-    await stateService.addMessageToChannel(
-      avatarId,
-      envelope.conversationId,
-      'telegram',
-      {
+    // Check if this is a shared room (multiple avatars in the channel).
+    // Shared rooms use room-scoped ingress: one ledger append + one SQS job per
+    // inbound message, keyed by roomKey instead of avatarId#conversationId.
+    const shared = await isSharedRoom('telegram', envelope.conversationId);
+
+    if (shared) {
+      const senderId = String(envelope.sender.platformUserId ?? envelope.sender.id);
+      const ingressResult = await processSharedRoomMessage('telegram', envelope.conversationId, {
         messageId: envelope.messageId,
-        sender: envelope.sender.displayName || envelope.sender.username || envelope.sender.id,
-        isBot: envelope.sender.isBot,
+        senderId,
+        senderType: envelope.sender.isBot ? 'avatar' : 'human',
         content: envelope.content.text || '[media]',
         timestamp: envelope.timestamp,
-      },
-      undefined,
-      normalizedChatType,
-      envelope.metadata.chatTitle
-    );
+      });
 
-    // Send typing indicator immediately so group members see instant feedback
-    try {
-      await telegramAdapter.sendTypingIndicator(envelope.conversationId);
-    } catch { /* non-critical */ }
+      if (!ingressResult.isNew) {
+        logger.info('Shared room dedup — skipping duplicate', {
+          event: 'shared_room_dedup',
+          roomKey: ingressResult.roomKey,
+          messageId: envelope.messageId,
+        });
+        return ok();
+      }
 
-    await sendSqsMessage({
-      QueueUrl: MESSAGE_QUEUE_URL,
-      MessageAttributes: {
-        traceId: { DataType: 'String', StringValue: traceId },
-        [CORRELATION_ID_ATTR]: { DataType: 'String', StringValue: correlationId },
-      },
-      MessageGroupId: `${avatarId}#${envelope.conversationId}`,
-      MessageDeduplicationId: envelope.metadata.idempotencyKey,
-    }, {
-      envelope,
-      enqueuedAt: Date.now(),
-      attempts: 0,
-      maxAttempts: 3,
-    });
+      // Send typing indicator immediately so group members see instant feedback
+      try {
+        await telegramAdapter.sendTypingIndicator(envelope.conversationId);
+      } catch { /* non-critical */ }
 
-    logger.info('Message queued', {
-      event: 'message_queued',
-      messageId: envelope.messageId,
-      reason: evaluation.reason,
-      durationMs: Date.now() - startTime,
-    });
+      // Enqueue one coordination job keyed by roomKey (not per-avatar)
+      const roomKey = buildRoomKey('telegram', envelope.conversationId);
+      await sendSqsMessage({
+        QueueUrl: MESSAGE_QUEUE_URL,
+        MessageAttributes: {
+          traceId: { DataType: 'String', StringValue: traceId },
+          [CORRELATION_ID_ATTR]: { DataType: 'String', StringValue: correlationId },
+        },
+        MessageGroupId: roomKey,
+        MessageDeduplicationId: envelope.metadata.idempotencyKey,
+      }, {
+        envelope,
+        roomKey,
+        enqueuedAt: Date.now(),
+        attempts: 0,
+        maxAttempts: 3,
+      });
+
+      logger.info('Shared room message queued (room-scoped)', {
+        event: 'room_message_queued',
+        roomKey,
+        messageId: envelope.messageId,
+        reason: evaluation.reason,
+        durationMs: Date.now() - startTime,
+      });
+    } else {
+      // Single-avatar channel: use legacy per-avatar enqueue path
+      await stateService.addMessageToChannel(
+        avatarId,
+        envelope.conversationId,
+        'telegram',
+        {
+          messageId: envelope.messageId,
+          sender: envelope.sender.displayName || envelope.sender.username || envelope.sender.id,
+          isBot: envelope.sender.isBot,
+          content: envelope.content.text || '[media]',
+          timestamp: envelope.timestamp,
+        },
+        undefined,
+        normalizedChatType,
+        envelope.metadata.chatTitle
+      );
+
+      // Send typing indicator immediately so group members see instant feedback
+      try {
+        await telegramAdapter.sendTypingIndicator(envelope.conversationId);
+      } catch { /* non-critical */ }
+
+      await sendSqsMessage({
+        QueueUrl: MESSAGE_QUEUE_URL,
+        MessageAttributes: {
+          traceId: { DataType: 'String', StringValue: traceId },
+          [CORRELATION_ID_ATTR]: { DataType: 'String', StringValue: correlationId },
+        },
+        MessageGroupId: `${avatarId}#${envelope.conversationId}`,
+        MessageDeduplicationId: envelope.metadata.idempotencyKey,
+      }, {
+        envelope,
+        enqueuedAt: Date.now(),
+        attempts: 0,
+        maxAttempts: 3,
+      });
+
+      logger.info('Message queued (per-avatar)', {
+        event: 'message_queued',
+        messageId: envelope.messageId,
+        reason: evaluation.reason,
+        durationMs: Date.now() - startTime,
+      });
+    }
 
     return ok();
   } catch (err) {
