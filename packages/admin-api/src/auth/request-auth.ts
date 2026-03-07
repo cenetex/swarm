@@ -50,12 +50,18 @@ export async function authenticateRequest(
 
   const sessionToken = getSessionFromCookie(event) || getBearerSessionToken(event);
   if (!sessionToken) {
-    throw new Error('No authentication token provided');
+    throw new AuthError('No authentication token provided', {
+      code: SwarmErrorCode.AUTH_INVALID_TOKEN,
+      statusCode: 401,
+    });
   }
 
   const session = await getSessionWithUser(sessionToken);
   if (!session) {
-    throw new Error('Session expired');
+    throw new AuthError('Session expired', {
+      code: SwarmErrorCode.AUTH_INVALID_TOKEN,
+      statusCode: 401,
+    });
   }
 
   // Look up admin role from account record in database
