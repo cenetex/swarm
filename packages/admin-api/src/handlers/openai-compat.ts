@@ -19,7 +19,7 @@
  *   -d '{
  *     "model": "avatar:my-bot",
  *     "messages": [{"role": "user", "content": "Hello!"}],
- *     "stream": false
+ *     "stream": true
  *   }'
  * ```
  */
@@ -726,11 +726,6 @@ async function handleChatCompletions(
     return errorResponse(400, 'Invalid JSON body', 'invalid_request_error', undefined, corsHeaders);
   }
 
-  // Streaming not supported yet
-  if (request.stream) {
-    return errorResponse(400, 'Streaming is not yet supported', 'invalid_request_error', 'unsupported_stream', corsHeaders);
-  }
-
   // Parse avatar ID from model
   const avatarId = parseAvatarId(request.model);
 
@@ -814,6 +809,18 @@ async function handleChatCompletions(
         error: err instanceof Error ? err.message : String(err),
       });
     });
+
+    // Streaming response path: format as SSE chunks
+    if (request.stream) {
+      return formatStreamingResponse(
+        completionId,
+        created,
+        request.model,
+        result.response,
+        tokenUsage,
+        corsHeaders,
+      );
+    }
 
     // Generate audio if requested and avatar has voice configured
     let audioData: { url: string; format: string; duration_ms?: number } | undefined;
@@ -906,8 +913,186 @@ async function handleChatCompletions(
     });
 
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+
+    // If streaming was requested, return the error in SSE format
+    if (request.stream) {
+      const completionId = `chatcmpl-${requestId}`;
+      const created = Math.floor(Date.now() / 1000);
+      return formatStreamingError(completionId, created, request.model, errorMessage, corsHeaders);
+    }
+
     return errorResponse(500, `Chat completion failed: ${errorMessage}`, 'server_error', undefined, corsHeaders);
   }
+}
+
+// =============================================================================
+// Streaming Response Helpers
+// =============================================================================
+
+interface StreamChunkChoice {
+  index: number;
+  delta: {
+    role?: 'assistant';
+    content?: string;
+  };
+  finish_reason: string | null;
+}
+
+interface ChatCompletionChunk {
+  id: string;
+  object: 'chat.completion.chunk';
+  created: number;
+  model: string;
+  choices: StreamChunkChoice[];
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  } | null;
+}
+
+/**
+ * Format a complete response as OpenAI-compatible SSE stream.
+ *
+ * Since Lambda + API Gateway buffers the full response anyway, we collect the
+ * complete LLM output and emit it as SSE chunks in a single response body.
+ * Clients that parse SSE events will see the familiar OpenAI streaming format.
+ *
+ * Chunk layout:
+ * 1. First chunk with role delta
+ * 2. Content chunk(s) with the response text
+ * 3. Final chunk with finish_reason and usage
+ * 4. data: [DONE] sentinel
+ */
+export function formatStreamingResponse(
+  completionId: string,
+  created: number,
+  model: string,
+  content: string,
+  tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number },
+  corsHeaders: Record<string, string>,
+): APIGatewayProxyResultV2 {
+  let sseBody = '';
+
+  // First chunk: role announcement
+  const roleChunk: ChatCompletionChunk = {
+    id: completionId,
+    object: 'chat.completion.chunk',
+    created,
+    model,
+    choices: [{
+      index: 0,
+      delta: { role: 'assistant', content: '' },
+      finish_reason: null,
+    }],
+  };
+  sseBody += `data: ${JSON.stringify(roleChunk)}\n\n`;
+
+  // Content chunk: emit the full content as a single delta
+  // (Lambda buffers the response anyway, so splitting into word-level chunks
+  // would add complexity without real streaming benefit)
+  if (content) {
+    const contentChunk: ChatCompletionChunk = {
+      id: completionId,
+      object: 'chat.completion.chunk',
+      created,
+      model,
+      choices: [{
+        index: 0,
+        delta: { content },
+        finish_reason: null,
+      }],
+    };
+    sseBody += `data: ${JSON.stringify(contentChunk)}\n\n`;
+  }
+
+  // Final chunk: finish_reason + usage
+  const finalChunk: ChatCompletionChunk = {
+    id: completionId,
+    object: 'chat.completion.chunk',
+    created,
+    model,
+    choices: [{
+      index: 0,
+      delta: {},
+      finish_reason: 'stop',
+    }],
+    usage: {
+      prompt_tokens: tokenUsage.promptTokens,
+      completion_tokens: tokenUsage.completionTokens,
+      total_tokens: tokenUsage.totalTokens,
+    },
+  };
+  sseBody += `data: ${JSON.stringify(finalChunk)}\n\n`;
+
+  // Done sentinel
+  sseBody += 'data: [DONE]\n\n';
+
+  return {
+    statusCode: 200,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+    body: sseBody,
+  };
+}
+
+/**
+ * Format an error as an OpenAI-compatible SSE error event.
+ * Used when streaming is requested but an error occurs during LLM processing.
+ */
+export function formatStreamingError(
+  completionId: string,
+  created: number,
+  model: string,
+  errorMessage: string,
+  corsHeaders: Record<string, string>,
+): APIGatewayProxyResultV2 {
+  let sseBody = '';
+
+  // Emit an error as a chunk with empty content and a stop reason
+  const errorChunk: ChatCompletionChunk = {
+    id: completionId,
+    object: 'chat.completion.chunk',
+    created,
+    model,
+    choices: [{
+      index: 0,
+      delta: { content: `Error: ${errorMessage}` },
+      finish_reason: null,
+    }],
+  };
+  sseBody += `data: ${JSON.stringify(errorChunk)}\n\n`;
+
+  const finalChunk: ChatCompletionChunk = {
+    id: completionId,
+    object: 'chat.completion.chunk',
+    created,
+    model,
+    choices: [{
+      index: 0,
+      delta: {},
+      finish_reason: 'stop',
+    }],
+  };
+  sseBody += `data: ${JSON.stringify(finalChunk)}\n\n`;
+  sseBody += 'data: [DONE]\n\n';
+
+  return {
+    statusCode: 200,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+    body: sseBody,
+  };
 }
 
 // =============================================================================
