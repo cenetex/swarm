@@ -376,13 +376,33 @@ export function getModelChain(primaryModel: string): string[] {
 }
 
 // ============================================================================
+// MODEL ALIASES (stale → current ID mapping)
+// ============================================================================
+
+/**
+ * Maps stale or shorthand model IDs to their current canonical IDs.
+ * Applied during normalizeModel() so stored config values resolve without
+ * triggering "Unknown LLM model" warnings.
+ */
+export const MODEL_ALIASES: Record<string, string> = {
+  // Claude 3.x shorthand (missing -latest suffix)
+  'anthropic/claude-3-5-sonnet': 'anthropic/claude-3-5-sonnet-latest',
+  'anthropic/claude-3-opus': 'anthropic/claude-3-opus-latest',
+  // Claude 3.x dated snapshots → latest
+  'anthropic/claude-3-5-sonnet-20241022': 'anthropic/claude-3-5-sonnet-latest',
+  'anthropic/claude-3-5-sonnet-20240620': 'anthropic/claude-3-5-sonnet-latest',
+  'anthropic/claude-3-opus-20240229': 'anthropic/claude-3-opus-latest',
+};
+
+// ============================================================================
 // MODEL RESOLUTION
 // ============================================================================
 
 export function normalizeModel(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+  if (trimmed.length === 0) return undefined;
+  return MODEL_ALIASES[trimmed] ?? trimmed;
 }
 
 export function resolveChatModel(params: {
