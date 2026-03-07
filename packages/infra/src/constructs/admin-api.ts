@@ -1243,6 +1243,12 @@ export class AdminApiConstruct extends Construct {
     });
 
     this.api.addRoutes({
+      path: '/avatars/{avatarId}/tools/{toolCallId}',
+      methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
       path: '/api-keys',
       methods: [apigateway.HttpMethod.POST],
       integration: avatarsIntegration,
