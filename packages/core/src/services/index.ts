@@ -122,3 +122,12 @@ export {
   type OffloadResult,
   type OffloadedMessageRef,
 } from './sqs-offload.js';
+export {
+  chunkContent,
+  reassembleChunks,
+  storeDraft,
+  getDocument,
+  markChunkSent,
+  exportDocument,
+  _setDynamoClient as _setLongFormDynamoClient,
+} from './long-form.js';
