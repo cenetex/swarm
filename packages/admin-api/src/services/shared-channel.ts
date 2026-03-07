@@ -4,6 +4,18 @@
  * Manages the registry of avatars present in each Telegram channel.
  * Enables multi-avatar coordination by tracking which avatars are active
  * in a given chat.
+ *
+ * CONTROL-PLANE ONLY — this module is part of admin-api and provides the
+ * avatar-in-channel registry for multi-avatar awareness. It is NOT used
+ * for live turn-selection decisions. The authoritative runtime coordination
+ * lives in packages/core/src/services/state/channel-state.ts.
+ *
+ * Retained for:
+ *   - Avatar presence tracking (which avatars are in which channels)
+ *   - Admin diagnostics (listing avatars per channel)
+ *   - Future multi-avatar coordination (when migrated to core/handlers)
+ *
+ * @see docs/COORDINATION-OWNERSHIP.md for the full ownership model.
  */
 import {
   PutCommand,

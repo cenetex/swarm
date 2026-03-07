@@ -4,8 +4,19 @@
  *
  * Handles emoji reactions for avatars who lose initiative.
  * Uses Telegram's setMessageReaction API.
- * 
+ *
  * Uses SQS with DelaySeconds for reliable reaction delivery after Lambda completes.
+ *
+ * CONTROL-PLANE ONLY — this module is part of admin-api and is tied to the
+ * initiative system (initiative.ts). It is NOT wired into the live message
+ * processing pipeline. The runtime coordination lives in
+ * packages/core/src/services/state/channel-state.ts.
+ *
+ * Retained for:
+ *   - Future multi-avatar reaction support (when initiative is migrated)
+ *   - Reference implementation of SQS-delayed reaction delivery
+ *
+ * @see docs/COORDINATION-OWNERSHIP.md for the full ownership model.
  */
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 

@@ -5,6 +5,19 @@
  * Implements D&D-style initiative coordination for multi-avatar channels.
  * Avatars first check interest (CHA/WIS), then roll initiative (1d20 + DEX).
  * Winner responds, others can react.
+ *
+ * CONTROL-PLANE ONLY — this module is part of admin-api and should NOT be used
+ * for live turn-selection in production webhooks. The authoritative runtime
+ * coordination lives in packages/core/src/services/state/channel-state.ts.
+ *
+ * This initiative system was designed for multi-avatar coordination but is not
+ * wired into the live message processing pipeline (handlers/messaging/message-processor.ts).
+ * It is retained for:
+ *   - Future multi-avatar coordination (when migrated to core/handlers)
+ *   - Admin diagnostics and round inspection
+ *   - Reference implementation of the D&D-style coordination model
+ *
+ * @see docs/COORDINATION-OWNERSHIP.md for the full ownership model.
  */
 import {
   PutCommand,
@@ -56,6 +69,9 @@ export const INITIATIVE_CONFIG = {
  *
  * Direct mentions always pass (the mentioned avatar handles it outside initiative).
  * Bot-to-bot interactions are allowed but with higher DC to prevent spam.
+ *
+ * @deprecated CONTROL-PLANE ONLY — not wired into live message processing.
+ * @see docs/COORDINATION-OWNERSHIP.md
  *
  * @param stats - Avatar's D&D stats
  * @param message - The triggering message
@@ -462,11 +478,17 @@ export async function getRoundRolls(
 /**
  * Full initiative coordination flow for an avatar.
  * Returns what action the avatar should take.
- * 
+ *
  * Includes structured logging for observability (P2):
  * - Round ID for correlation
  * - Interest check results
  * - Initiative rolls and outcomes
+ *
+ * @deprecated CONTROL-PLANE ONLY — not wired into live message processing.
+ * The runtime message-processor.ts uses core's evaluateResponseTrigger for
+ * single-avatar turn decisions. This initiative system is a candidate for
+ * migration to core/handlers when multi-avatar coordination is needed.
+ * @see docs/COORDINATION-OWNERSHIP.md
  *
  * @param chatId - Telegram chat ID
  * @param messageId - Triggering message ID

@@ -8,6 +8,18 @@
  * - State machine: IDLE → ACTIVE → COOLDOWN
  * - Response triggers: direct engagement, message threshold, conversation gap
  * - Responds to CHANNEL with full context, not individual messages
+ *
+ * CONTROL-PLANE ONLY — this module is part of admin-api and should NOT be used
+ * for live message routing or turn-selection decisions in production webhooks.
+ * The authoritative runtime coordination lives in:
+ *   packages/core/src/services/state/channel-state.ts
+ *
+ * Functions here are retained for:
+ *   - Admin diagnostics and inspection (getChannelState, getKnownTelegramUsers)
+ *   - Shared history management (getSharedHistory, recordBotMessage)
+ *   - Reference configuration values
+ *
+ * @see docs/COORDINATION-OWNERSHIP.md for the full ownership model.
  */
 import {
   GetCommand,
@@ -103,6 +115,10 @@ export const SHARED_HISTORY_CONFIG = {
  * - Normal activity: 30s base cooldown
  * - Quiet (60s+ silence): up to 120s cooldown
  *
+ * @deprecated CONTROL-PLANE ONLY — not used for live routing. The runtime
+ * coordination implementation lives in packages/core/src/services/state/channel-state.ts.
+ * Retained for admin diagnostics and inspection.
+ *
  * @param state - Current channel state
  * @returns Cooldown duration in milliseconds
  */
@@ -144,6 +160,9 @@ export function calculateDynamicCooldown(state: ChannelStateRecord): number {
 
 /**
  * Check if dynamic cooldown has expired (for multi-avatar channels)
+ *
+ * @deprecated CONTROL-PLANE ONLY — not used for live routing.
+ * @see docs/COORDINATION-OWNERSHIP.md
  */
 export function isDynamicCooldownExpired(state: ChannelStateRecord): boolean {
   if (state.state !== 'COOLDOWN') return true;
@@ -157,7 +176,10 @@ export function isDynamicCooldownExpired(state: ChannelStateRecord): boolean {
 /**
  * Calculate stagger delay based on number of avatars in channel.
  * This helps space out responses when multiple bots are present.
- * 
+ *
+ * @deprecated CONTROL-PLANE ONLY — not used for live routing.
+ * @see docs/COORDINATION-OWNERSHIP.md
+ *
  * @param avatarCount - Number of avatars in the channel
  * @returns Delay in milliseconds (randomized within range)
  */
@@ -182,7 +204,10 @@ export function calculateStaggerDelay(avatarCount: number): number {
 /**
  * Calculate a natural "thinking" delay for cosy conversation pacing.
  * Longer delays for longer messages, bot messages, etc.
- * 
+ *
+ * @deprecated CONTROL-PLANE ONLY — not used for live routing.
+ * @see docs/COORDINATION-OWNERSHIP.md
+ *
  * @param messageLength - Length of the incoming message
  * @param isFromBot - Whether the triggering message is from a bot
  * @param avatarCount - Number of avatars in channel
@@ -295,6 +320,10 @@ export async function getOrCreateChannelState(
 
 /**
  * Add message to channel buffer
+ *
+ * @deprecated CONTROL-PLANE ONLY — live message buffering is handled by
+ * core's addMessageToChannel (packages/core/src/services/state/channel-state.ts).
+ * @see docs/COORDINATION-OWNERSHIP.md
  */
 export async function addMessageToBuffer(
   avatarId: string,
@@ -433,6 +462,9 @@ export async function saveChannelState(
 
 /**
  * Transition channel state
+ *
+ * @deprecated CONTROL-PLANE ONLY — runtime uses core's transitionState.
+ * @see docs/COORDINATION-OWNERSHIP.md
  */
 export async function transitionState(
   avatarId: string,
@@ -457,6 +489,11 @@ export async function transitionState(
 
 /**
  * Mark response sent - transitions to COOLDOWN and clears relevant state
+ *
+ * @deprecated CONTROL-PLANE ONLY — live response tracking is handled by
+ * core's markResponseSent (packages/core/src/services/state/channel-state.ts).
+ * @see docs/COORDINATION-OWNERSHIP.md
+ *
  * @param respondedToBotUsername - If set, tracks that we responded to a bot message
  */
 export async function markResponseSent(
@@ -523,6 +560,9 @@ export async function markResponseSent(
 
 /**
  * Check if cooldown has expired
+ *
+ * @deprecated CONTROL-PLANE ONLY — runtime uses core's isCooldownExpired.
+ * @see docs/COORDINATION-OWNERSHIP.md
  */
 export function isCooldownExpired(state: ChannelStateRecord): boolean {
   if (state.state !== 'COOLDOWN') return true;
@@ -532,6 +572,9 @@ export function isCooldownExpired(state: ChannelStateRecord): boolean {
 
 /**
  * Check if active state has timed out
+ *
+ * @deprecated CONTROL-PLANE ONLY — runtime uses core's isActiveTimedOut.
+ * @see docs/COORDINATION-OWNERSHIP.md
  */
 export function isActiveTimedOut(state: ChannelStateRecord): boolean {
   if (state.state !== 'ACTIVE') return false;
@@ -544,6 +587,13 @@ export function isActiveTimedOut(state: ChannelStateRecord): boolean {
 /**
  * Evaluate whether to respond to this channel
  * Returns decision with trigger type and delay
+ *
+ * @deprecated CONTROL-PLANE ONLY — live response decisions are made by
+ * core's evaluateResponseTrigger (packages/core/src/services/state/channel-state.ts),
+ * which is the authoritative runtime implementation called from message-processor.ts.
+ * This admin-api copy uses different config values (longer cooldowns, sticky engagement)
+ * and is retained only for admin diagnostics and testing.
+ * @see docs/COORDINATION-OWNERSHIP.md
  */
 export function evaluateResponseTrigger(
   state: ChannelStateRecord,
@@ -711,6 +761,9 @@ function randomDelay(): number {
 /**
  * Build conversation context from buffered messages
  * Formats all messages in buffer for LLM context
+ *
+ * @deprecated CONTROL-PLANE ONLY — runtime uses core's buildConversationContext.
+ * @see docs/COORDINATION-OWNERSHIP.md
  */
 export function buildConversationContext(
   state: ChannelStateRecord,
@@ -783,6 +836,9 @@ export function buildConversationContext(
 
 /**
  * Get the most recent message that triggered response (for reply targeting)
+ *
+ * @deprecated CONTROL-PLANE ONLY — runtime uses core's getResponseTarget.
+ * @see docs/COORDINATION-OWNERSHIP.md
  */
 export function getResponseTarget(
   state: ChannelStateRecord
@@ -826,6 +882,9 @@ function getPendingMessages(state: ChannelStateRecord): BufferedMessage[] {
 /**
  * Get users actively participating in the conversation
  * Useful for the LLM to know who's talking
+ *
+ * @deprecated CONTROL-PLANE ONLY — runtime uses core's getActiveParticipants.
+ * @see docs/COORDINATION-OWNERSHIP.md
  */
 export function getActiveParticipants(
   state: ChannelStateRecord
@@ -938,6 +997,9 @@ export async function recordBotMessage(
 /**
  * Build combined conversation context from human messages + shared bot history
  * Interleaves messages by timestamp for natural conversation flow
+ *
+ * @deprecated CONTROL-PLANE ONLY — not used for live routing.
+ * @see docs/COORDINATION-OWNERSHIP.md
  */
 export function buildCombinedConversationContext(
   state: ChannelStateRecord,

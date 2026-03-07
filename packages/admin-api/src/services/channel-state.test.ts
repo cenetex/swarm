@@ -1,5 +1,10 @@
 /**
  * Channel State Service Tests
+ *
+ * NOTE: These tests cover the admin-api (CONTROL-PLANE ONLY) copy of channel
+ * state logic. The authoritative runtime implementation is in
+ * packages/core/src/services/state/channel-state.ts.
+ * @see docs/COORDINATION-OWNERSHIP.md
  */
 import { describe, it, expect } from 'vitest';
 import type { ChannelStateRecord, BufferedMessage } from '../types.js';

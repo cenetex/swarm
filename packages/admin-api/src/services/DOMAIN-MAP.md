@@ -107,8 +107,8 @@ processor adaptation, initiative, reactions, and model resolution.
 | `chat-access` | Avatar chat access checking |
 | `idempotency` | Request idempotency store |
 | `processor-adapter` | Chat processor integration |
-| `initiative` | Proactive initiative system |
-| `reactions` | Message reaction handling |
+| `initiative` | Proactive initiative system (CONTROL-PLANE ONLY, not wired into live routing) |
+| `reactions` | Message reaction handling (CONTROL-PLANE ONLY, not wired into live routing) |
 | `models-registry` | LLM model selection and resolution |
 
 ### `platform/` — Platform Integrations
@@ -167,9 +167,9 @@ Channel state tracking, home channels, and shared channels.
 
 | Module | Description |
 |--------|-------------|
-| `channel-state` | Per-channel conversation state |
+| `channel-state` | Per-channel conversation state (CONTROL-PLANE ONLY, see `docs/COORDINATION-OWNERSHIP.md`) |
 | `home-channel` | Avatar home channel management |
-| `shared-channel` | Multi-avatar shared channels |
+| `shared-channel` | Multi-avatar shared channels (CONTROL-PLANE ONLY) |
 
 ### `property/` — Property Research
 Property research tools and web search.
