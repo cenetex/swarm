@@ -139,7 +139,7 @@ export class SwarmMediaService implements MediaService {
     let galleryItem: GalleryItemOutput | undefined;
     if (options?.saveToGallery !== false && avatarId && this.deps?.saveToGallery && result.s3Key) {
       galleryItem = await this.deps.saveToGallery(avatarId, {
-        id: result.s3Key.split('/').pop()?.split('.')[0] || `img_${Date.now()}`,
+        id: result.s3Key.split('/').pop()?.split('.')[0] || `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
         type: 'image',
         url: result.url,
         s3Key: result.s3Key,

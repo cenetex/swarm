@@ -9,7 +9,6 @@ import type {
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { v4 as uuid } from 'uuid';
 import * as mediaJobs from '../services/media-jobs.js';
 import * as gallery from '../services/gallery.js';
 import { recordError } from '../services/auto-issues.js';
@@ -141,7 +140,7 @@ export async function handler(
       }
 
       const mediaBuffer = Buffer.from(await response.arrayBuffer());
-      const mediaId = uuid();
+      const mediaId = gallery.generateGalleryId();
       const s3Key = `avatars/${job.avatarId}/${folder}/${mediaId}.${extension}`;
 
       logger.info('Uploading media to S3', { type: job.type, s3Key, bytes: mediaBuffer.length });

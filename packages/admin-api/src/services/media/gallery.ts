@@ -14,6 +14,23 @@ const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 /**
+ * Generate a gallery-compatible ID in the canonical format: `timestamp_randomId`.
+ *
+ * This is the authoritative ID format used across all generation paths (sync,
+ * async, webhook). Downstream consumers such as the Twitter adapter validate
+ * against this pattern so every generator MUST use this function instead of
+ * raw UUIDs.
+ *
+ * Backward-compatible UUIDs from older gallery items are accepted by consumers
+ * via a separate compatibility check.
+ */
+export function generateGalleryId(): string {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 10);
+  return `${timestamp}_${random}`;
+}
+
+/**
  * Add a new item to the gallery
  */
 export async function addToGallery(
