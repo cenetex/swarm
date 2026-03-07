@@ -7,7 +7,6 @@
  * @see https://github.com/cenetex/aws-swarm/issues/822
  */
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
-import { QueryCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { _setDynamoClient } from '../dynamo-client.js';
 
