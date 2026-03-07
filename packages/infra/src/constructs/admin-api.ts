@@ -718,12 +718,15 @@ export class AdminApiConstruct extends Construct {
     // The Admin API uses an HTTP API, so WAF protection must be applied at a
     // different layer (e.g., CloudFront or an ALB in front of the API).
 
-    // Telegram needs a publicly reachable webhook URL. In non-prod environments,
-    // our custom domain is often protected by upstream auth/WAF rules, so
-    // default Telegram webhooks to the raw execute-api host (still stable per stack).
+    // Telegram needs a publicly reachable webhook URL. Prefer the CloudFront
+    // domain (apiDomain / adminDomain) so webhooks route through the CDN —
+    // the Admin UI CloudFront distribution already has a /webhook/* behavior
+    // that proxies to the API Gateway origin. Fall back to the raw API Gateway
+    // host only when no custom domain is configured.
     const rawApiHost = cdk.Fn.select(2, cdk.Fn.split('/', this.api.apiEndpoint));
     const telegramWebhookDomain = props.telegramWebhookDomain
-      || (isProd ? (props.apiDomain || rawApiHost) : rawApiHost);
+      || props.apiDomain
+      || rawApiHost;
 
     // Chat Worker Lambda - processes async admin chat jobs
     this.chatWorkerHandler = new nodejs.NodejsFunction(this, 'ChatWorkerHandler', {
