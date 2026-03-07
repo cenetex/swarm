@@ -10,6 +10,7 @@ import { processChat } from './chat.js';
 import { LlmCreditsExhaustedError } from './chat-llm.js';
 import { parseOpenRouterStatusFromError } from './chat-error-mapping.js';
 import { recordError } from '../services/auto-issues.js';
+import { ensureRuntimeConfig } from '../services/runtime-config.js';
 
 type ChatJobMessage = {
   jobId: string;
@@ -24,6 +25,9 @@ function parseRecord(record: SQSRecord): ChatJobMessage {
 }
 
 export async function handler(event: SQSEvent): Promise<void> {
+  // Validate critical runtime config on cold start (no-op on warm invocations)
+  ensureRuntimeConfig();
+
   for (const record of event.Records) {
     try {
       const { jobId } = parseRecord(record);

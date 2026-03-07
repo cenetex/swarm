@@ -28,6 +28,7 @@ import {
 } from '../types.js';
 import { recordError } from '../services/auto-issues.js';
 import { createAvatarAccessChecker } from '../services/chat-access.js';
+import { ensureRuntimeConfig } from '../services/runtime-config.js';
 import { chatIdempotencyStore } from '../services/idempotency.js';
 
 import {
@@ -278,6 +279,9 @@ export async function processChat(
  * Lambda handler for chat API.
  */
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
+  // Validate critical runtime config on cold start (no-op on warm invocations)
+  ensureRuntimeConfig();
+
   const corsHeaders = getCorsHeaders(event);
   if (event.requestContext.http.method === 'OPTIONS') return { statusCode: 204, headers: corsHeaders };
 

@@ -20,6 +20,7 @@ import { getCorsHeaders } from '../http/cors.js';
 import { isAuthError } from '../auth/errors.js';
 import { isRequestValidationError } from '../middleware/validate.js';
 import { isAdminWallet, jsonResponse } from './avatar-routes/shared.js';
+import { ensureRuntimeConfig } from '../services/runtime-config.js';
 import type { RouteContext, RouteHandler } from './avatar-routes/types.js';
 
 // Domain route handlers
@@ -72,6 +73,9 @@ const routeHandlers: RouteHandler[] = [
 export async function handler(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResultV2> {
+  // Validate critical runtime config on cold start (no-op on warm invocations)
+  ensureRuntimeConfig();
+
   const corsHeaders = getCorsHeaders(event);
 
   // Handle preflight

@@ -282,6 +282,36 @@ export class AdminApiConstruct extends Construct {
 
     const isProd = environment === 'prod' || environment === 'production';
     const isPersistentEnv = isProd || environment === 'staging';
+
+    // -----------------------------------------------------------------------
+    // Synth-time config validation
+    // Fail fast during `cdk synth` when required props are missing or invalid,
+    // rather than discovering the problem after deploy via request-time errors.
+    // -----------------------------------------------------------------------
+    if (!adminEmails || adminEmails.trim().length === 0) {
+      throw new Error(
+        '[AdminApiConstruct] adminEmails is required but was empty. ' +
+        'Set it in cdk.context.json or pass it as a construct prop.',
+      );
+    }
+
+    if (isPersistentEnv && !props.openRouterApiKeyArn) {
+      throw new Error(
+        `[AdminApiConstruct] openRouterApiKeyArn is required for ${environment} environments. ` +
+        'The LLM subsystem cannot function without an API key.',
+      );
+    }
+
+    if (propsCdnUrl) {
+      try {
+        new URL(propsCdnUrl);
+      } catch {
+        throw new Error(
+          `[AdminApiConstruct] cdnUrl "${propsCdnUrl}" is not a valid URL. ` +
+          'Media delivery will fail at runtime.',
+        );
+      }
+    }
     const logLevel = isProd ? 'warn' : 'info';
     const logRetention = isProd
       ? logs.RetentionDays.TWO_WEEKS

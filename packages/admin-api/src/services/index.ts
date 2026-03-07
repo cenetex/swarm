@@ -68,3 +68,15 @@ export {
   _setDefaultContainer,
   type ServiceContainer,
 } from './service-container.js';
+
+// Runtime config validation
+export {
+  validateRuntimeConfig,
+  ensureRuntimeConfig,
+  _resetConfigCache,
+  RUNTIME_CONFIG_RULES,
+  type ConfigReport,
+  type ConfigViolation,
+  type ConfigSeverity,
+  type ConfigRule,
+} from './runtime-config.js';
