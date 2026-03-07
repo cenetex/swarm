@@ -7,11 +7,52 @@
  */
 import type { RouteContext } from './types.js';
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { jsonResponse, parseSinceQueryParam } from './shared.js';
 import * as observabilityService from '../../services/observability.js';
 import * as integrationsService from '../../services/integrations.js';
 import { searchReplicateModels } from '../../services/media/replicate-schema.js';
 import { AVAILABLE_MODELS, type ModelInfo } from '../../services/models-registry.js';
+
+// Module-level cache for the Replicate API key resolved from Secrets Manager.
+let cachedReplicateApiKey: string | null = null;
+
+/**
+ * Resolve the Replicate API key from env vars or Secrets Manager ARN.
+ * Caches the resolved value for the Lambda container lifetime.
+ */
+async function resolveReplicateApiKey(): Promise<string | null> {
+  // Check plain env vars first (fastest path)
+  const envKey = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_API_KEY;
+  if (envKey) return envKey;
+
+  // Return cached value if already resolved
+  if (cachedReplicateApiKey) return cachedReplicateApiKey;
+
+  // Resolve from Secrets Manager ARN
+  const secretArn = process.env.REPLICATE_API_KEY_SECRET_ARN;
+  if (!secretArn) return null;
+
+  try {
+    const secretsClient = new SecretsManagerClient({});
+    const response = await secretsClient.send(new GetSecretValueCommand({
+      SecretId: secretArn,
+    }));
+    if (response.SecretString) {
+      try {
+        const parsed = JSON.parse(response.SecretString);
+        cachedReplicateApiKey = parsed.api_key || parsed.apiKey || response.SecretString;
+      } catch {
+        cachedReplicateApiKey = response.SecretString;
+      }
+      return cachedReplicateApiKey;
+    }
+  } catch {
+    // Fall through — caller will use hardcoded fallback
+  }
+
+  return null;
+}
 
 export async function handleSystemRoutes(
   ctx: RouteContext,
@@ -81,10 +122,8 @@ export async function handleSystemRoutes(
       });
     }
 
-    // Get system Replicate API key from env
-    const apiKey =
-      process.env.REPLICATE_API_TOKEN ||
-      process.env.REPLICATE_API_KEY;
+    // Get system Replicate API key from env or Secrets Manager
+    const apiKey = await resolveReplicateApiKey();
 
     if (!apiKey) {
       // Fall back to hardcoded models filtered by query

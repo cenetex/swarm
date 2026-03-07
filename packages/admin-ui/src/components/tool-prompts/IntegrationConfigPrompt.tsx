@@ -3,7 +3,7 @@
  * Shows a complete configuration panel for platform integrations (Telegram, Twitter, Discord)
  * Includes: enable/disable, credential input, test, status
  */
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useActiveAvatar } from '../../store';
 import { API_BASE, type ToolPromptProps } from './types';
 
@@ -111,6 +111,31 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
   const [modelSearchResults, setModelSearchResults] = useState<Record<string, ModelOption[]>>({});
   const [modelSearchLoading, setModelSearchLoading] = useState<Record<string, boolean>>({});
   const searchTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [comboboxOpen, setComboboxOpen] = useState<Record<string, boolean>>({});
+  const [comboboxInputValues, setComboboxInputValues] = useState<Record<string, string>>({});
+  const [comboboxHighlight, setComboboxHighlight] = useState<Record<string, number>>({});
+  const comboboxRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Close combobox on outside click
+  const handleComboboxOutsideClick = useCallback((e: MouseEvent) => {
+    setComboboxOpen(prev => {
+      const next = { ...prev };
+      let changed = false;
+      for (const cap of Object.keys(next)) {
+        if (next[cap] && comboboxRefs.current[cap] && !comboboxRefs.current[cap]!.contains(e.target as Node)) {
+          next[cap] = false;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener('mousedown', handleComboboxOutsideClick);
+    return () => document.removeEventListener('mousedown', handleComboboxOutsideClick);
+  }, [handleComboboxOutsideClick]);
+
   const [telegramDiagnosis, setTelegramDiagnosis] = useState<TelegramDiagnosis | null>(null);
   const [telegramDiagnosisError, setTelegramDiagnosisError] = useState<string | null>(null);
   const [telegramDiagnosisLoading, setTelegramDiagnosisLoading] = useState(false);
@@ -1763,50 +1788,168 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                       <label className="block text-xs font-medium text-[var(--color-text-secondary)]">
                         {CAPABILITY_LABELS[capability] || capability}
                       </label>
-                      {integration === 'replicate' && (
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => handleModelSearch(capability, e.target.value)}
-                            placeholder="Search Replicate models..."
-                            disabled={disabled}
-                            className="w-full px-3 py-1.5 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-xs text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500"
-                          />
-                          {isSearching && (
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">
-                              ...
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      <select
-                        value={currentSelection}
-                        onChange={(e) => {
-                          setSavedAt(null);
-                          setSaveError(null);
-                          setSelectedModels(prev => ({ ...prev, [capability]: e.target.value }));
-                        }}
-                        disabled={disabled}
-                        className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-brand-500"
-                      >
-                        {extraSearchResults.length > 0 && (
-                          <optgroup label="Search Results">
-                            {extraSearchResults.map((model) => (
-                              <option key={model.id} value={model.id}>
-                                {model.name} - {model.description}
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        <optgroup label={extraSearchResults.length > 0 ? 'Default Models' : ''}>
-                          {catalogModels.map((model) => (
-                            <option key={model.id} value={model.id}>
-                              {model.name} {model.isDefault ? '(Default)' : ''} - {model.description}
-                            </option>
-                          ))}
-                        </optgroup>
-                      </select>
+                      {/* Combobox: combined search input + dropdown */}
+                      {(() => {
+                        const isOpen = comboboxOpen[capability] || false;
+                        const inputValue = comboboxInputValues[capability] ?? '';
+                        const highlightIdx = comboboxHighlight[capability] ?? -1;
+                        const selectedModel = allModels.find(m => m.id === currentSelection);
+                        const displayValue = isOpen ? inputValue : (selectedModel?.name || currentSelection?.split('/').pop() || '');
+
+                        // Filter catalog models locally by input text
+                        const filterText = inputValue.toLowerCase();
+                        const filteredCatalog = filterText
+                          ? catalogModels.filter(m =>
+                              m.id.toLowerCase().includes(filterText) ||
+                              m.name.toLowerCase().includes(filterText) ||
+                              m.description.toLowerCase().includes(filterText))
+                          : catalogModels;
+
+                        // Build flat option list for keyboard navigation
+                        const flatOptions: ModelOption[] = [];
+                        if (extraSearchResults.length > 0) flatOptions.push(...extraSearchResults);
+                        flatOptions.push(...filteredCatalog);
+
+                        const listboxId = `combobox-listbox-${capability}`;
+
+                        return (
+                          <div
+                            ref={(el) => { comboboxRefs.current[capability] = el; }}
+                            className="relative"
+                            role="combobox"
+                            aria-expanded={isOpen}
+                            aria-haspopup="listbox"
+                            aria-owns={listboxId}
+                          >
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={displayValue}
+                                onFocus={() => {
+                                  setComboboxOpen(prev => ({ ...prev, [capability]: true }));
+                                  setComboboxInputValues(prev => ({ ...prev, [capability]: '' }));
+                                  setComboboxHighlight(prev => ({ ...prev, [capability]: -1 }));
+                                }}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setComboboxInputValues(prev => ({ ...prev, [capability]: val }));
+                                  setComboboxHighlight(prev => ({ ...prev, [capability]: -1 }));
+                                  if (integration === 'replicate') {
+                                    handleModelSearch(capability, val);
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (!isOpen) {
+                                    if (e.key === 'ArrowDown' || e.key === 'Enter') {
+                                      setComboboxOpen(prev => ({ ...prev, [capability]: true }));
+                                      setComboboxInputValues(prev => ({ ...prev, [capability]: '' }));
+                                      e.preventDefault();
+                                    }
+                                    return;
+                                  }
+                                  if (e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                    setComboboxHighlight(prev => ({ ...prev, [capability]: Math.min((prev[capability] ?? -1) + 1, flatOptions.length - 1) }));
+                                  } else if (e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    setComboboxHighlight(prev => ({ ...prev, [capability]: Math.max((prev[capability] ?? 0) - 1, 0) }));
+                                  } else if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const idx = highlightIdx >= 0 && highlightIdx < flatOptions.length ? highlightIdx : 0;
+                                    const model = flatOptions[idx];
+                                    if (model) {
+                                      setSavedAt(null);
+                                      setSaveError(null);
+                                      setSelectedModels(prev => ({ ...prev, [capability]: model.id }));
+                                      setComboboxOpen(prev => ({ ...prev, [capability]: false }));
+                                    }
+                                  } else if (e.key === 'Escape') {
+                                    setComboboxOpen(prev => ({ ...prev, [capability]: false }));
+                                  }
+                                }}
+                                placeholder={integration === 'replicate' ? 'Search or select a model...' : 'Select a model...'}
+                                disabled={disabled}
+                                aria-autocomplete="list"
+                                aria-controls={listboxId}
+                                aria-activedescendant={highlightIdx >= 0 ? `combobox-opt-${capability}-${highlightIdx}` : undefined}
+                                className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500"
+                              />
+                              {isSearching && (
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)]">
+                                  ...
+                                </span>
+                              )}
+                            </div>
+                            {isOpen && flatOptions.length > 0 && (
+                              <ul
+                                id={listboxId}
+                                role="listbox"
+                                className="absolute z-50 mt-1 w-full max-h-60 overflow-auto bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg shadow-lg"
+                              >
+                                {extraSearchResults.length > 0 && (
+                                  <>
+                                    <li className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] select-none" aria-hidden="true">
+                                      Search Results
+                                    </li>
+                                    {extraSearchResults.map((model) => {
+                                      const idx = flatOptions.indexOf(model);
+                                      return (
+                                        <li
+                                          key={model.id}
+                                          id={`combobox-opt-${capability}-${idx}`}
+                                          role="option"
+                                          aria-selected={model.id === currentSelection}
+                                          onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            setSavedAt(null);
+                                            setSaveError(null);
+                                            setSelectedModels(prev => ({ ...prev, [capability]: model.id }));
+                                            setComboboxOpen(prev => ({ ...prev, [capability]: false }));
+                                          }}
+                                          onMouseEnter={() => setComboboxHighlight(prev => ({ ...prev, [capability]: idx }))}
+                                          className={`px-3 py-1.5 text-xs cursor-pointer ${idx === highlightIdx ? 'bg-brand-500/20 text-[var(--color-text)]' : 'text-[var(--color-text)] hover:bg-[var(--color-bg-elevated)]'} ${model.id === currentSelection ? 'font-semibold' : ''}`}
+                                        >
+                                          <span className="block truncate">{model.name}</span>
+                                          <span className="block truncate text-[10px] text-[var(--color-text-muted)]">{model.description}</span>
+                                        </li>
+                                      );
+                                    })}
+                                  </>
+                                )}
+                                <li className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] select-none" aria-hidden="true">
+                                  {extraSearchResults.length > 0 ? 'Popular' : 'Models'}
+                                </li>
+                                {filteredCatalog.map((model) => {
+                                  const idx = flatOptions.indexOf(model);
+                                  return (
+                                    <li
+                                      key={model.id}
+                                      id={`combobox-opt-${capability}-${idx}`}
+                                      role="option"
+                                      aria-selected={model.id === currentSelection}
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        setSavedAt(null);
+                                        setSaveError(null);
+                                        setSelectedModels(prev => ({ ...prev, [capability]: model.id }));
+                                        setComboboxOpen(prev => ({ ...prev, [capability]: false }));
+                                      }}
+                                      onMouseEnter={() => setComboboxHighlight(prev => ({ ...prev, [capability]: idx }))}
+                                      className={`px-3 py-1.5 text-xs cursor-pointer ${idx === highlightIdx ? 'bg-brand-500/20 text-[var(--color-text)]' : 'text-[var(--color-text)] hover:bg-[var(--color-bg-elevated)]'} ${model.id === currentSelection ? 'font-semibold' : ''}`}
+                                    >
+                                      <span className="block truncate">{model.name}{model.isDefault ? ' (Default)' : ''}</span>
+                                      <span className="block truncate text-[10px] text-[var(--color-text-muted)]">{model.description}</span>
+                                    </li>
+                                  );
+                                })}
+                                {filteredCatalog.length === 0 && extraSearchResults.length === 0 && (
+                                  <li className="px-3 py-2 text-xs text-[var(--color-text-muted)]">No models found</li>
+                                )}
+                              </ul>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {searchQuery.length >= 2 && searchResults.length === 0 && !isSearching && (
                         <p className="text-xs text-[var(--color-text-muted)]">No models found for &quot;{searchQuery}&quot;</p>
                       )}
