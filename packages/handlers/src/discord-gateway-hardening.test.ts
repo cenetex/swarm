@@ -5,7 +5,7 @@
  * - Issue #830: Heartbeat interval bounds validation and jitter
  * - Issue #831: Session state reset on close codes 4007/4009
  */
-import { describe, it, expect, mock, spyOn, beforeEach } from 'bun:test';
+import { describe, it, expect, mock, beforeEach } from 'bun:test';
 
 // Track logger.warn calls for assertion
 const loggerWarnCalls: Array<{ message: string; meta: Record<string, unknown> }> = [];
