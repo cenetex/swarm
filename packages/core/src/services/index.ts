@@ -167,5 +167,8 @@ export {
 export {
   evaluateProactive,
   calculateBotDensity,
+  recordProactiveMessage,
+  getAvatarBudgetUsed,
+  _resetBudgets as _resetProactiveBudgets,
   DEFAULT_PROACTIVE_CONFIG,
 } from './proactive-scheduler.js';

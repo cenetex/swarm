@@ -4,10 +4,13 @@
  * Covers quiet-room, busy-room, bot-heavy-room, budget, silence-window,
  * disabled config, and bot-to-bot continuation scenarios.
  */
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import {
   evaluateProactive,
   calculateBotDensity,
+  recordProactiveMessage,
+  getAvatarBudgetUsed,
+  _resetBudgets,
   DEFAULT_PROACTIVE_CONFIG,
 } from './proactive-scheduler.js';
 import type { SharedRoomMessage, AvatarRoomOverlay } from '../types/shared-room.js';
@@ -334,6 +337,121 @@ describe('proactive-scheduler', () => {
       // 5s > 3s custom silence window, should be eligible
       expect(result.shouldSpeak).toBe(true);
       expect(result.reason).toBe('eligible');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Per-avatar in-memory budget tracking
+  // -------------------------------------------------------------------------
+
+  describe('recordProactiveMessage / per-avatar budget', () => {
+    beforeEach(() => {
+      _resetBudgets();
+    });
+
+    it('recordProactiveMessage increments avatar budget count', () => {
+      expect(getAvatarBudgetUsed('room-1', 'avatar-1', NOW)).toBe(0);
+
+      recordProactiveMessage('room-1', 'avatar-1', NOW);
+      expect(getAvatarBudgetUsed('room-1', 'avatar-1', NOW)).toBe(1);
+
+      recordProactiveMessage('room-1', 'avatar-1', NOW + 1000);
+      expect(getAvatarBudgetUsed('room-1', 'avatar-1', NOW + 1000)).toBe(2);
+    });
+
+    it('tracks budgets independently per room', () => {
+      recordProactiveMessage('room-a', 'avatar-1', NOW);
+      recordProactiveMessage('room-b', 'avatar-1', NOW);
+      recordProactiveMessage('room-a', 'avatar-1', NOW + 1000);
+
+      expect(getAvatarBudgetUsed('room-a', 'avatar-1', NOW + 1000)).toBe(2);
+      expect(getAvatarBudgetUsed('room-b', 'avatar-1', NOW + 1000)).toBe(1);
+    });
+
+    it('tracks budgets independently per avatar', () => {
+      recordProactiveMessage('room-1', 'avatar-a', NOW);
+      recordProactiveMessage('room-1', 'avatar-b', NOW);
+
+      expect(getAvatarBudgetUsed('room-1', 'avatar-a', NOW)).toBe(1);
+      expect(getAvatarBudgetUsed('room-1', 'avatar-b', NOW)).toBe(1);
+    });
+
+    it('prunes expired timestamps after 1 hour', () => {
+      const oneHourAgo = NOW - 60 * 60 * 1000;
+      recordProactiveMessage('room-1', 'avatar-1', oneHourAgo - 1);
+      recordProactiveMessage('room-1', 'avatar-1', oneHourAgo + 1000);
+
+      // The first message is outside the window
+      expect(getAvatarBudgetUsed('room-1', 'avatar-1', NOW)).toBe(1);
+    });
+
+    it('suppresses evaluateProactive when per-avatar budget exhausted', () => {
+      // Use maxProactivePerHour: 2, record 2 messages for this avatar
+      recordProactiveMessage('room-1', 'avatar-1', NOW - 2000);
+      recordProactiveMessage('room-1', 'avatar-1', NOW - 1000);
+
+      const result = evaluateProactive(
+        'room-1',
+        'avatar-1',
+        { maxProactivePerHour: 2 },
+        [], // empty room history (no room-level budget hit)
+        null,
+        NOW,
+      );
+
+      expect(result.shouldSpeak).toBe(false);
+      expect(result.reason).toBe('budget-exceeded');
+    });
+
+    it('allows different avatar when one avatar budget is exhausted', () => {
+      recordProactiveMessage('room-1', 'avatar-a', NOW - 2000);
+      recordProactiveMessage('room-1', 'avatar-a', NOW - 1000);
+
+      // avatar-a is exhausted
+      const resultA = evaluateProactive(
+        'room-1',
+        'avatar-a',
+        { maxProactivePerHour: 2 },
+        [],
+        null,
+        NOW,
+      );
+      expect(resultA.shouldSpeak).toBe(false);
+
+      // avatar-b still has budget
+      const resultB = evaluateProactive(
+        'room-1',
+        'avatar-b',
+        { maxProactivePerHour: 2 },
+        [],
+        null,
+        NOW,
+      );
+      expect(resultB.shouldSpeak).toBe(true);
+    });
+
+    it('_resetBudgets clears all tracked state', () => {
+      recordProactiveMessage('room-1', 'avatar-1', NOW);
+      recordProactiveMessage('room-2', 'avatar-2', NOW);
+
+      _resetBudgets();
+
+      expect(getAvatarBudgetUsed('room-1', 'avatar-1', NOW)).toBe(0);
+      expect(getAvatarBudgetUsed('room-2', 'avatar-2', NOW)).toBe(0);
+    });
+
+    it('allows after budget window rolls over', () => {
+      recordProactiveMessage('room-1', 'avatar-1', NOW - 3_600_001);
+
+      const result = evaluateProactive(
+        'room-1',
+        'avatar-1',
+        { maxProactivePerHour: 1 },
+        [],
+        null,
+        NOW,
+      );
+      expect(result.shouldSpeak).toBe(true);
     });
   });
 });

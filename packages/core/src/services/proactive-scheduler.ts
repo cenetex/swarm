@@ -3,12 +3,19 @@
  *
  * Decides whether an avatar should speak proactively in a room
  * (i.e. without being directly addressed). Enforces:
- *   - Room-level budgets (max proactive per hour)
+ *   - Per-avatar per-room budgets (max proactive per hour, in-memory tracking)
  *   - Bot-density suppression
  *   - Silence windows
  *   - Avatar cooldowns (from overlay)
  *   - Bot-to-bot continuation budgets and delays
+ *
+ * Proactive messages are distinguishable in the shared room ledger via
+ * the `isProactive: true` metadata flag (set by the caller when appending).
+ *
+ * Budget tracking is in-memory (Map with hourly reset) — does not need
+ * to survive Lambda cold starts.
  */
+import { logger } from '../utils/logger.js';
 import type { SharedRoomMessage, AvatarRoomOverlay } from '../types/shared-room.js';
 import type { ProactiveConfig, ProactiveDecision } from '../types/proactive.js';
 
@@ -80,6 +87,94 @@ function countBotToBotInLastHour(
 }
 
 // =============================================================================
+// PER-AVATAR IN-MEMORY BUDGET TRACKER
+// =============================================================================
+
+interface BudgetEntry {
+  /** Timestamps of recorded proactive messages in the current window */
+  timestamps: number[];
+}
+
+/**
+ * In-memory budget tracker keyed by `roomKey:avatarId`.
+ * Entries auto-prune expired timestamps on access.
+ */
+const budgetMap = new Map<string, BudgetEntry>();
+
+function budgetKey(roomKey: string, avatarId: string): string {
+  return `${roomKey}:${avatarId}`;
+}
+
+/**
+ * Get the current budget entry for a room+avatar, pruning expired timestamps.
+ */
+function getBudgetEntry(roomKey: string, avatarId: string, now: number): BudgetEntry {
+  const key = budgetKey(roomKey, avatarId);
+  const existing = budgetMap.get(key);
+  const cutoff = now - ONE_HOUR_MS;
+
+  if (!existing) {
+    const entry: BudgetEntry = { timestamps: [] };
+    budgetMap.set(key, entry);
+    return entry;
+  }
+
+  // Prune timestamps outside the current window
+  existing.timestamps = existing.timestamps.filter((t) => t >= cutoff);
+  return existing;
+}
+
+/**
+ * Record that a proactive message was sent, consuming one budget slot.
+ *
+ * Call this AFTER the proactive message has been successfully sent
+ * (not before, to avoid counting failed attempts).
+ *
+ * @param roomKey  - Canonical room key (e.g. "telegram:-1001234567890")
+ * @param avatarId - Avatar identifier
+ * @param now      - Current timestamp in ms (injectable for testing)
+ */
+export function recordProactiveMessage(
+  roomKey: string,
+  avatarId: string,
+  now: number = Date.now(),
+): void {
+  const entry = getBudgetEntry(roomKey, avatarId, now);
+  entry.timestamps.push(now);
+
+  logger.info('proactive_record: message recorded', {
+    subsystem: 'proactive-scheduler',
+    roomKey,
+    avatarId,
+    budgetUsed: entry.timestamps.length,
+  });
+}
+
+/**
+ * Get the number of proactive messages recorded for an avatar in a room
+ * within the current hourly window.
+ *
+ * @param roomKey  - Canonical room key
+ * @param avatarId - Avatar identifier
+ * @param now      - Current timestamp in ms (injectable for testing)
+ */
+export function getAvatarBudgetUsed(
+  roomKey: string,
+  avatarId: string,
+  now: number = Date.now(),
+): number {
+  const entry = getBudgetEntry(roomKey, avatarId, now);
+  return entry.timestamps.length;
+}
+
+/**
+ * Reset all in-memory budget tracking. Test use only.
+ */
+export function _resetBudgets(): void {
+  budgetMap.clear();
+}
+
+// =============================================================================
 // MAIN EVALUATOR
 // =============================================================================
 
@@ -130,9 +225,22 @@ export function evaluateProactive(
     return { shouldSpeak: false, avatarId, reason: 'bot-density-high' };
   }
 
-  // 5. Room budget check (max proactive per hour)
+  // 5a. Room budget check (max proactive per hour across all avatars)
   const proactiveCount = countProactiveInLastHour(recentMessages, now);
   if (proactiveCount >= cfg.maxProactivePerHour) {
+    return { shouldSpeak: false, avatarId, reason: 'budget-exceeded' };
+  }
+
+  // 5b. Per-avatar budget check (in-memory tracked via recordProactiveMessage)
+  const avatarBudgetUsed = getAvatarBudgetUsed(_roomId, avatarId, now);
+  if (avatarBudgetUsed >= cfg.maxProactivePerHour) {
+    logger.info('proactive_eval: per-avatar budget exhausted', {
+      subsystem: 'proactive-scheduler',
+      roomKey: _roomId,
+      avatarId,
+      avatarBudgetUsed,
+      limit: cfg.maxProactivePerHour,
+    });
     return { shouldSpeak: false, avatarId, reason: 'budget-exceeded' };
   }
 
