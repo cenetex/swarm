@@ -24,6 +24,10 @@ if [ "$BRANCH" != "HEAD" ]; then
 	fi
 fi
 
+# Verify the linked GitHub issue is ready before spending time on lint.
+echo "pre-commit: issue hygiene"
+bash scripts/check-issue-hygiene.sh "$BRANCH"
+
 # Verify lockfile is in sync with all package.json files
 echo "pre-commit: lockfile check"
 pnpm install --frozen-lockfile --ignore-scripts > /dev/null 2>&1 || {

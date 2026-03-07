@@ -249,7 +249,7 @@ In addition to CI, developers have local gates via Husky:
 
 | Hook | Gates Covered | Skip With |
 |------|--------------|-----------|
-| `pre-commit` | Lockfile sync, lint (subset of G1) | `SKIP_PRECOMMIT=1` |
+| `pre-commit` | Branch guard, issue hygiene, lockfile sync, lint (subset of G1) | `SKIP_PRECOMMIT=1` |
 | `pre-push` | Lint, build, admin-ui build, Privy smoke test, tests (G1+G2+G3) | `SKIP_PREPUSH=1` |
 
 Skipping local hooks does not bypass CI gates. CI is the authoritative enforcement layer.

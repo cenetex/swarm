@@ -14,7 +14,7 @@ Every piece of work MUST be tied to a GitHub issue. No exceptions.
 
 1. **Verify the issue is ready** — has acceptance criteria, scope boundaries, and `package:*` label.
 2. **Check WIP caps** — max 8 `status:in-progress` project-wide, max 3 open PRs per contributor, max 5 parallel worktrees.
-3. **Create branch** — `<type>/issue-<number>-<short-description>` (e.g., `fix/issue-42-dynamo-query`). The pre-push hook enforces this pattern.
+3. **Create branch** — `<type>/issue-<number>-<short-description>` (e.g., `fix/issue-42-dynamo-query`). The pre-commit hook validates issue readiness, and pre-push enforces the branch pattern.
 4. **For parallel work, use worktrees:**
    ```bash
    git worktree add ../aws-swarm-042 -b fix/issue-42-dynamo-query main
@@ -52,7 +52,7 @@ pnpm typecheck                        # all packages
 
 | Hook | Runs | Skip with |
 |------|------|-----------|
-| **pre-commit** | lockfile check, `pnpm lint` | `SKIP_PRECOMMIT=1` |
+| **pre-commit** | branch guard, issue hygiene check, lockfile check, `pnpm lint` | `SKIP_PRECOMMIT=1` |
 | **pre-push** | branch name validation, `pnpm lint`, `pnpm build`, admin-ui build, smoke test, `bun test` | `SKIP_PREPUSH=1` |
 
 All deploys go through GitHub Actions (push to main → staging auto-deploy; tags → production deploy). Never run `cdk deploy` locally.
@@ -83,7 +83,7 @@ Always reference the governing issue: `Closes #42` or `Related to #42`.
 ## Branching & PRs
 
 - `main` is protected. All changes via PR + CI pass + squash merge.
-- Branch pattern: `<type>/issue-<number>-<short-description>` — **enforced by pre-push hook**.
+- Branch pattern: `<type>/issue-<number>-<short-description>` — validated before commit and enforced again by pre-push.
 - One issue = one PR. If too large, ask leadership to split the issue.
 - Copilot agent: `scripts/gh-assign-copilot.sh <issue-number>` or `scripts/gh-create-issue.sh --copilot`.
 
