@@ -103,8 +103,9 @@ describe('getTokenBalance mint-not-found logging', () => {
 
   it('emits wallet_balance_mint_not_found warn when error contains the mint message', async () => {
     clearBalanceCache();
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // The structured logger writes ALL levels via console.log (not console.warn),
+    // so we spy on console.log to capture the WARN-level structured log entry.
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     // Mock Connection.prototype.getParsedTokenAccountsByOwner to throw mint-not-found
     const { Connection } = await import('@solana/web3.js');
@@ -121,15 +122,22 @@ describe('getTokenBalance mint-not-found logging', () => {
       );
 
       expect(balance).toBe(0);
-      expect(warnSpy).toHaveBeenCalledTimes(1);
-      const logged = JSON.parse(warnSpy.mock.calls[0][0] as string);
-      expect(logged.event).toBe('wallet_balance_mint_not_found');
+
+      // Find the WARN-level mint_not_found log entry among all console.log calls
+      const warnCalls = logSpy.mock.calls.filter((args) => {
+        try {
+          const parsed = JSON.parse(args[0] as string);
+          return parsed.event === 'mint_not_found';
+        } catch { return false; }
+      });
+      expect(warnCalls).toHaveLength(1);
+      const logged = JSON.parse(warnCalls[0][0] as string);
+      expect(logged.event).toBe('mint_not_found');
       expect(logged.mint).toBe('So11111111111111111111111111111111111111112');
       expect(logged.wallet).toBe('11111111111111111111111111111111');
     } finally {
       Connection.prototype.getParsedTokenAccountsByOwner = originalMethod;
-      warnSpy.mockRestore();
-      errorSpy.mockRestore();
+      logSpy.mockRestore();
     }
   });
 });

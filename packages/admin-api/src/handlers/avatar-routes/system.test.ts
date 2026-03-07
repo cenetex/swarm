@@ -1,27 +1,36 @@
 import { describe, expect, test, vi } from 'vitest';
 
-// Stub heavy AWS / service dependencies so we can import system.ts without them
+// Stub heavy AWS / service dependencies so we can import system.ts without them.
+// IMPORTANT: bun:test vi.mock (mock.module) is process-global and persistent.
+// Mock classes MUST have proper prototypes (e.g., `send()` method, `input` property)
+// so that spyOn() and command inspection in other test files still works.
 vi.mock('@aws-sdk/client-secrets-manager', () => ({
-  SecretsManagerClient: class {},
-  GetSecretValueCommand: class {},
+  SecretsManagerClient: class { async send() { return {}; } },
+  GetSecretValueCommand: class { constructor(public input: unknown) {} },
 }));
 vi.mock('@aws-sdk/client-sqs', () => ({
-  SQSClient: class {},
-  SendMessageCommand: class {},
+  SQSClient: class { async send() { return {}; } },
+  SendMessageCommand: class { constructor(public input: unknown) {} },
 }));
 vi.mock('@aws-sdk/client-dynamodb', () => ({
-  DynamoDBClient: class {},
+  DynamoDBClient: class { async send() { return {}; } },
 }));
-vi.mock('@aws-sdk/lib-dynamodb', () => ({
-  DynamoDBDocumentClient: { from: () => ({}) },
-  GetCommand: class {},
-  PutCommand: class {},
-  QueryCommand: class {},
-  DeleteCommand: class {},
-  UpdateCommand: class {},
-  ScanCommand: class {},
-  BatchWriteCommand: class {},
-}));
+vi.mock('@aws-sdk/lib-dynamodb', () => {
+  class MockDynamoDBDocumentClient {
+    static from() { return new MockDynamoDBDocumentClient(); }
+    async send(_command: unknown) { return {}; }
+  }
+  return {
+    DynamoDBDocumentClient: MockDynamoDBDocumentClient,
+    GetCommand: class { constructor(public input: unknown) {} },
+    PutCommand: class { constructor(public input: unknown) {} },
+    QueryCommand: class { constructor(public input: unknown) {} },
+    DeleteCommand: class { constructor(public input: unknown) {} },
+    UpdateCommand: class { constructor(public input: unknown) {} },
+    ScanCommand: class { constructor(public input: unknown) {} },
+    BatchWriteCommand: class { constructor(public input: unknown) {} },
+  };
+});
 vi.mock('../../services/observability.js', () => ({
   recordAuditEvent: async () => {},
   emitMetric: async () => {},
@@ -30,9 +39,10 @@ vi.mock('../../services/integrations.js', () => ({}));
 vi.mock('../../services/media/replicate-schema.js', () => ({
   searchReplicateModels: async () => [],
 }));
-vi.mock('../../services/models-registry.js', () => ({
-  AVAILABLE_MODELS: [],
-}));
+// NOTE: Do NOT mock models-registry.js here. The test only uses
+// inferCapabilities which does not depend on AVAILABLE_MODELS.
+// Mocking it with empty data would pollute other test files
+// (bun:test mock.module is process-global and persistent).
 
 import { inferCapabilities } from './system';
 

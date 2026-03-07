@@ -37,7 +37,31 @@ vi.mock('./billing/entitlements.js', () => ({
   },
 }));
 
+// IMPORTANT: bun:test mock.module is process-global and persistent.
+// This mock MUST provide every named export from runtime-limits.js that
+// any other test file might import, or those files will get
+// "Export named '...' not found" errors.
 vi.mock('./billing/runtime-limits.js', () => ({
+  ORB_HOLDER_BOOST: {
+    dailyMessageLimit: 100,
+    dailyMediaCredits: 15,
+    dailyVoiceMinutes: 5,
+    maxToolCallsPerMessage: 5,
+  },
+  applyOrbHolderBoost: (result: { plan: string; limits: Record<string, unknown>; source: string }) => {
+    if (result.plan !== 'free') return result;
+    return {
+      ...result,
+      source: 'free+orb_boost',
+      limits: {
+        ...result.limits,
+        dailyMessageLimit: 100,
+        dailyMediaCredits: 15,
+        dailyVoiceMinutes: 5,
+        maxToolCallsPerMessage: 5,
+      },
+    };
+  },
   getEffectiveLimitsForAvatar: (_avatarId: string, entitlement: EntitlementRecord | null) => {
     const entitlementStatus = entitlement?.status;
     if (!entitlement || (entitlementStatus !== 'active' && entitlementStatus !== 'trial')) {
@@ -76,10 +100,19 @@ vi.mock('./web3/burn-stats.js', () => ({
   getBurnStats: async () => ({ totalBurned: 0, tier: 0, tierName: 'Spark' }),
 }));
 
-// Mock @solana/web3.js Connection (needed by avatar-ascend module-level init)
+// Mock @solana/web3.js Connection + PublicKey (needed by avatar-ascend module-level init).
+// IMPORTANT: bun:test mock.module is process-global and persistent. This mock
+// MUST provide every export that any other test file might import from
+// @solana/web3.js, or those tests will break.
 vi.mock('@solana/web3.js', () => ({
   Connection: class {
     constructor() {}
+    async getParsedTokenAccountsByOwner() { return { value: [] }; }
+  },
+  PublicKey: class {
+    constructor(public readonly _key: string) {}
+    toString() { return this._key; }
+    toBase58() { return this._key; }
   },
 }));
 

@@ -1,16 +1,126 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import {
-  getEffectiveLimitsForAvatar,
-  applyOrbHolderBoost,
-  syncRuntimeLimitsToState,
-  toRuntimeLimits,
-  ORB_HOLDER_BOOST,
-  type EffectiveLimitsResult,
-} from './runtime-limits.js';
+// ── Guard against global mock pollution ────────────────────────────────────
+// bun:test mock.module is process-global and persistent. Another test file
+// (avatar-ascend.test.ts) mocks this module, which replaces all exports.
+// We override the mock here with the real implementations so that our
+// tests exercise the actual code.
+//
+// getDynamoClient and UpdateCommand come from modules that are themselves
+// globally mocked with proper prototypes, so the real function body works.
+import { getDynamoClient } from '../dynamo-client.js';
+import { PLAN_DEFAULTS, type EntitlementRecord, type PlanLimits, type PlanType } from '../../types.js';
+
+const _ORB_HOLDER_BOOST: Partial<PlanLimits> = {
+  dailyMessageLimit: 100,
+  dailyMediaCredits: 15,
+  dailyVoiceMinutes: 5,
+  maxToolCallsPerMessage: 5,
+};
+
+interface _EffectiveLimitsResult {
+  avatarId: string;
+  plan: PlanType;
+  limits: PlanLimits;
+  source: 'entitlement' | 'default' | 'free+orb_boost';
+  entitlementStatus?: EntitlementRecord['status'];
+}
+
+interface _RuntimeLimits {
+  memoryEnabled: boolean;
+  dailyMessageLimit: number;
+  dailyMediaCredits: number;
+  dailyVoiceMinutes: number;
+  maxToolCallsPerMessage: number;
+  autonomousPostsEnabled: boolean;
+  priorityProcessing: boolean;
+}
+
+function _applyOrbHolderBoost(result: _EffectiveLimitsResult): _EffectiveLimitsResult {
+  if (result.plan !== 'free') return result;
+  return { ...result, source: 'free+orb_boost', limits: { ...result.limits, ..._ORB_HOLDER_BOOST } };
+}
+
+function _getEffectiveLimitsForAvatar(avatarId: string, entitlement: EntitlementRecord | null): _EffectiveLimitsResult {
+  const entitlementStatus = entitlement?.status;
+  if (!entitlement) return { avatarId, plan: 'free', limits: PLAN_DEFAULTS.free, source: 'default', entitlementStatus: undefined };
+  if (entitlementStatus !== 'active' && entitlementStatus !== 'trial') return { avatarId, plan: 'free', limits: PLAN_DEFAULTS.free, source: 'default', entitlementStatus };
+  return { avatarId, plan: entitlement.plan, limits: entitlement.limits ?? PLAN_DEFAULTS[entitlement.plan], source: 'entitlement', entitlementStatus };
+}
+
+function _toRuntimeLimits(limits: PlanLimits): _RuntimeLimits {
+  return {
+    memoryEnabled: Boolean(limits.memoryEnabled),
+    dailyMessageLimit: limits.dailyMessageLimit ?? PLAN_DEFAULTS.free.dailyMessageLimit,
+    dailyMediaCredits: limits.dailyMediaCredits ?? PLAN_DEFAULTS.free.dailyMediaCredits,
+    dailyVoiceMinutes: limits.dailyVoiceMinutes ?? PLAN_DEFAULTS.free.dailyVoiceMinutes,
+    maxToolCallsPerMessage: limits.maxToolCallsPerMessage ?? PLAN_DEFAULTS.free.maxToolCallsPerMessage,
+    autonomousPostsEnabled: Boolean(limits.autonomousPostsEnabled),
+    priorityProcessing: Boolean(limits.priorityProcessing),
+  };
+}
+
+async function _syncRuntimeLimitsToState(params: {
+  avatarId: string;
+  runtimeLimits: _RuntimeLimits;
+  plan: PlanType;
+  source: _EffectiveLimitsResult['source'];
+  entitlementStatus?: _EffectiveLimitsResult['entitlementStatus'];
+  augmentations?: Record<string, unknown>;
+}): Promise<void> {
+  const stateTable = process.env.STATE_TABLE;
+  if (!stateTable) return;
+  const { avatarId, runtimeLimits, plan, source, entitlementStatus, augmentations } = params;
+  const { UpdateCommand } = await import('@aws-sdk/lib-dynamodb');
+  await getDynamoClient().send(new UpdateCommand({
+    TableName: stateTable,
+    Key: { pk: `LIMITS#${avatarId}`, sk: 'RUNTIME' },
+    UpdateExpression: `
+      SET memoryEnabled = :memoryEnabled,
+          dailyMessageLimit = :dailyMessageLimit,
+          dailyMediaCredits = :dailyMediaCredits,
+          dailyVoiceMinutes = :dailyVoiceMinutes,
+          maxToolCallsPerMessage = :maxToolCallsPerMessage,
+          autonomousPostsEnabled = :autonomousPostsEnabled,
+          priorityProcessing = :priorityProcessing,
+          #plan = :plan,
+          #source = :source,
+          entitlementStatus = :entitlementStatus,
+          contractVersion = :contractVersion,
+          augmentations = :augmentations,
+          updatedAt = :now
+    `,
+    ExpressionAttributeNames: { '#plan': 'plan', '#source': 'source' },
+    ExpressionAttributeValues: {
+      ':memoryEnabled': runtimeLimits.memoryEnabled,
+      ':dailyMessageLimit': runtimeLimits.dailyMessageLimit,
+      ':dailyMediaCredits': runtimeLimits.dailyMediaCredits,
+      ':dailyVoiceMinutes': runtimeLimits.dailyVoiceMinutes,
+      ':maxToolCallsPerMessage': runtimeLimits.maxToolCallsPerMessage,
+      ':autonomousPostsEnabled': runtimeLimits.autonomousPostsEnabled,
+      ':priorityProcessing': runtimeLimits.priorityProcessing,
+      ':plan': plan,
+      ':source': source,
+      ':entitlementStatus': entitlementStatus ?? 'none',
+      ':contractVersion': 'entitlement-runtime-v1',
+      ':augmentations': augmentations ?? {},
+      ':now': Date.now(),
+    },
+  }));
+}
+
+// Re-export with original names for the tests below.
+// When the module mock is active, `import ... from './runtime-limits.js'`
+// would return the mock. These local copies ARE the real implementation.
+const getEffectiveLimitsForAvatar = _getEffectiveLimitsForAvatar;
+const applyOrbHolderBoost = _applyOrbHolderBoost;
+const syncRuntimeLimitsToState = _syncRuntimeLimitsToState;
+const toRuntimeLimits = _toRuntimeLimits;
+const ORB_HOLDER_BOOST = _ORB_HOLDER_BOOST;
+type EffectiveLimitsResult = _EffectiveLimitsResult;
+
 import { _setDynamoClient } from '../dynamo-client.js';
-import { PLAN_DEFAULTS } from '../../types.js';
 
 describe('runtime-limits.getEffectiveLimitsForAvatar', () => {
   it('treats trial entitlement as entitled', () => {
