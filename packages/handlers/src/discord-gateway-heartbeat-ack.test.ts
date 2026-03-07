@@ -5,7 +5,7 @@
  * responses and forces a reconnect when the server stops acknowledging.
  * See issue #829.
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
 
 // Mock all external dependencies before importing the module under test
 mock.module('ws', () => {
@@ -37,61 +37,45 @@ mock.module('ws', () => {
   return { default: MockWebSocket, __esModule: true };
 });
 
-mock.module('./services/sqs-send.js', () => ({
-  sendSqsMessage: async () => {},
-}));
-
-mock.module('./services/room-ingress.js', () => ({
-  processSharedRoomMessage: async () => ({ isNew: false }),
-  buildRoomKey: (platform: string, channel: string) => `${platform}:${channel}`,
-}));
-
 mock.module('@aws-sdk/client-sqs', () => ({
   SQSClient: class { send() { return Promise.resolve({}); } destroy() {} },
-  GetQueueAttributesCommand: class { constructor() {} },
-  SendMessageCommand: class { constructor() {} },
+  GetQueueAttributesCommand: class { constructor(public input: unknown) {} },
+  SendMessageCommand: class { constructor(public input: unknown) {} },
 }));
 
 mock.module('@aws-sdk/client-secrets-manager', () => ({
   SecretsManagerClient: class { send() { return Promise.resolve({}); } },
-  GetSecretValueCommand: class { constructor() {} },
-}));
-
-mock.module('@swarm/core', () => ({
-  buildDiscordEnvelope: () => null,
-  createStateService: () => ({
-    listAvatars: async () => [],
-    getAvatarConfigWithStatus: async () => null,
-    checkAndSetIdempotency: async () => true,
-    addMessageToChannel: async () => {},
-  }),
-  createMessageEvaluator: () => ({ evaluate: async () => ({ shouldRespond: false, reason: 'test' }) }),
-  createActivityService: () => null,
-  logger: {
-    info: () => {},
-    warn: () => {},
-    error: () => {},
-    debug: () => {},
-    setContext: () => {},
-  },
-  DiscordRateLimiter: class {
-    constructor() {}
-  },
-  logIntentValidation: () => ({ valid: true, missingRequired: [], diagnostics: [] }),
-  logGatewayClose: () => ({ reconnectable: true, description: '', remediation: '' }),
-  computeReconnectDelay: () => 1000,
+  GetSecretValueCommand: class { constructor(public input: unknown) {} },
 }));
 
 type GatewayConnectionClass = typeof import('./discord/discord-gateway-shared.js').GatewayConnection;
 
 let GatewayConnection: GatewayConnectionClass;
+let previousStateTable: string | undefined;
+let previousMessageQueueUrl: string | undefined;
 
 beforeAll(async () => {
   // Stub required env vars before loading the module under test.
+  previousStateTable = process.env.STATE_TABLE;
+  previousMessageQueueUrl = process.env.MESSAGE_QUEUE_URL;
   process.env.STATE_TABLE = 'test-state-table';
   process.env.MESSAGE_QUEUE_URL = 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue';
 
   ({ GatewayConnection } = await import('./discord/discord-gateway-shared.js'));
+});
+
+afterAll(() => {
+  if (previousStateTable === undefined) {
+    delete process.env.STATE_TABLE;
+  } else {
+    process.env.STATE_TABLE = previousStateTable;
+  }
+
+  if (previousMessageQueueUrl === undefined) {
+    delete process.env.MESSAGE_QUEUE_URL;
+  } else {
+    process.env.MESSAGE_QUEUE_URL = previousMessageQueueUrl;
+  }
 });
 
 /** Type alias for internal state we need to inspect in tests */
