@@ -228,7 +228,20 @@ let _cachedReport: ConfigReport | null = null;
  * Safe to call from every handler invocation — only the first call does work.
  */
 export function ensureRuntimeConfig(): ConfigReport {
-  if (_coldStartValidated && _cachedReport) return _cachedReport;
+  if (_coldStartValidated && _cachedReport) {
+    // Even on warm invocations, throw if the cached report has critical
+    // violations in deployed environments — config is still broken.
+    if (!_cachedReport.ok && !isTestOrLocalEnv()) {
+      const criticals = _cachedReport.violations.filter((v) => v.severity === 'critical');
+      if (criticals.length > 0) {
+        throw new Error(
+          '[runtime-config] CRITICAL configuration errors — handler cannot operate correctly:\n' +
+            criticals.map((v) => `  - ${v.message}`).join('\n'),
+        );
+      }
+    }
+    return _cachedReport;
+  }
 
   const report = validateRuntimeConfig();
   _cachedReport = report;

@@ -164,4 +164,55 @@ describe('ensureRuntimeConfig', () => {
     const r2 = ensureRuntimeConfig();
     expect(r1).not.toBe(r2);
   });
+
+  test('warm invocation still throws when cached report has critical violations', () => {
+    // Simulate a deployed environment with missing critical config.
+    // We need to temporarily override process.env so ensureRuntimeConfig
+    // (which reads process.env directly) sees a production environment
+    // with missing critical vars.
+    const origNodeEnv = process.env.NODE_ENV;
+    const origBunEnv = process.env.BUN_ENV;
+    const origCi = process.env.CI;
+    const origAdminTable = process.env.ADMIN_TABLE;
+    const origLlmArn = process.env.LLM_API_KEY_SECRET_ARN;
+
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.BUN_ENV;
+      delete process.env.CI;
+      // Remove critical vars to trigger violations
+      delete process.env.ADMIN_TABLE;
+      delete process.env.LLM_API_KEY_SECRET_ARN;
+
+      _resetConfigCache();
+
+      // First call should throw
+      expect(() => ensureRuntimeConfig()).toThrow('CRITICAL configuration errors');
+
+      // Second (warm) call should ALSO throw — this is the regression fix
+      expect(() => ensureRuntimeConfig()).toThrow('CRITICAL configuration errors');
+    } finally {
+      // Restore original env
+      process.env.NODE_ENV = origNodeEnv;
+      if (origBunEnv !== undefined) process.env.BUN_ENV = origBunEnv;
+      else delete process.env.BUN_ENV;
+      if (origCi !== undefined) process.env.CI = origCi;
+      else delete process.env.CI;
+      if (origAdminTable !== undefined) process.env.ADMIN_TABLE = origAdminTable;
+      else delete process.env.ADMIN_TABLE;
+      if (origLlmArn !== undefined) process.env.LLM_API_KEY_SECRET_ARN = origLlmArn;
+      else delete process.env.LLM_API_KEY_SECRET_ARN;
+      _resetConfigCache();
+    }
+  });
+
+  test('warm invocation does not throw in test/local environment even with violations', () => {
+    // In test environments, critical is downgraded to warning, so no throw
+    // process.env.NODE_ENV is already 'test' in the test runner
+    _resetConfigCache();
+    const r1 = ensureRuntimeConfig();
+    const r2 = ensureRuntimeConfig();
+    // Should return successfully (no throw) and be the same cached reference
+    expect(r1).toBe(r2);
+  });
 });
