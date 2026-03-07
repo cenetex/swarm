@@ -19,6 +19,7 @@ import {
   type SharedRoomMessage,
 } from '@swarm/core';
 import { getChannelAvatarIds as _getChannelAvatarIds } from '../telegram/webhook-home-channel.js';
+import { getRateLimiter, logRateLimited } from './room-rate-limiter.js';
 
 export interface RoomIngressResult {
   /** Room key used for coordination (e.g. "telegram:-1001234567890") */
@@ -27,6 +28,8 @@ export interface RoomIngressResult {
   messageId: string;
   /** Whether this message was new (true) or a duplicate (false) */
   isNew: boolean;
+  /** Whether this message was dropped due to rate limiting */
+  rateLimited?: boolean;
 }
 
 /** Overridable dependencies for testing without process-global mock.module. */
@@ -92,6 +95,13 @@ export async function processSharedRoomMessage(
       messageId: message.messageId,
     });
     return { roomKey, messageId: message.messageId, isNew: false };
+  }
+
+  // Rate limit check — drop message with structured logging if limits exceeded
+  const rateLimitResult = getRateLimiter().checkMessage(roomKey, message.senderId);
+  if (!rateLimitResult.allowed) {
+    logRateLimited(roomKey, message.messageId, message.senderId, rateLimitResult);
+    return { roomKey, messageId: message.messageId, isNew: false, rateLimited: true };
   }
 
   // Append to shared room ledger (one write per inbound message)
