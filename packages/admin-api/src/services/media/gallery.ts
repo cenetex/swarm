@@ -225,7 +225,8 @@ export async function findByDescription(
   description: string,
   type?: 'image' | 'video' | 'sticker'
 ): Promise<GalleryItem[]> {
-  const items = await getGallery(avatarId, { limit: 100, type });
+  const MAX_SEARCH_CANDIDATES = 2000;
+  const items = await getGallery(avatarId, { limit: MAX_SEARCH_CANDIDATES, type });
 
   const searchTerms = description.toLowerCase().split(/\s+/);
 

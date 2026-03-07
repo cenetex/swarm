@@ -169,4 +169,28 @@ describe('findByDescription — uses paginated getGallery', () => {
     expect(result).toHaveLength(1);
     expect(result[0].prompt).toBe('sunset over mountains');
   });
+
+  it('keeps scanning beyond the first 100 type-matched items', async () => {
+    const firstHundredImages = Array.from({ length: 100 }, (_, i) => ({
+      ...fakeItem(i, 'image'),
+      prompt: 'ordinary portrait',
+    }));
+    const lateMatch = [
+      { ...fakeItem(100, 'image'), prompt: 'sunset over mountains' },
+    ];
+
+    let callCount = 0;
+    mockSend.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({ Items: firstHundredImages, LastEvaluatedKey: { pk: 'x', sk: 'y' } });
+      }
+      return Promise.resolve({ Items: lateMatch });
+    });
+
+    const result = await findByDescription('test-avatar', 'sunset', 'image');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('item-100');
+    expect(callCount).toBe(2);
+  });
 });
