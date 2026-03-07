@@ -146,3 +146,11 @@ export {
   createIdentityLinkService,
   _setIdentityLinkDynamoClient,
 } from './identity-link.js';
+export {
+  selectPrimaryResponder,
+  DEFAULT_TURN_ARBITER_CONFIG,
+  type TurnCandidate,
+  type TurnMessage,
+  type TurnArbiterConfig,
+  type TurnDecision,
+} from './turn-arbiter.js';
