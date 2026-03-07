@@ -761,6 +761,121 @@ describe('createPlatformMCPServices', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Gallery services — storage unification (issue #821)
+  // ---------------------------------------------------------------------------
+
+  describe('gallery service - write-then-read unification', () => {
+    it('getGallery reads from ADMIN_TABLE (not STATE_TABLE)', async () => {
+      const services = createPlatformMCPServices({
+        avatarId: 'test-avatar',
+        avatarConfig: buildTestAvatarConfig(),
+        stateService: buildTestStateService(),
+        secrets: {},
+      });
+
+      const client = getDynamoClient();
+      const galleryItems = [
+        {
+          id: 'img_123',
+          url: 'https://cdn.example.com/image1.png',
+          s3Key: 'avatars/test-avatar/images/123.png',
+          type: 'image',
+          prompt: 'a sunset',
+          platform: 'telegram',
+          createdAt: 1000000,
+        },
+      ];
+
+      const sendSpy = spyOn(client, 'send').mockImplementation(async (cmd: unknown) => {
+        // Verify the query targets ADMIN_TABLE (TestTable), not STATE_TABLE
+        const input = (cmd as { input?: { TableName?: string } }).input;
+        expect(input?.TableName).toBe('TestTable');
+        return { Items: galleryItems };
+      });
+
+      try {
+        const result = await services.gallery.getGallery('test-avatar');
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('img_123');
+        expect(result[0].url).toBe('https://cdn.example.com/image1.png');
+      } finally {
+        sendSpy.mockRestore();
+      }
+    });
+
+    it('searchGallery reads from ADMIN_TABLE', async () => {
+      const services = createPlatformMCPServices({
+        avatarId: 'test-avatar',
+        avatarConfig: buildTestAvatarConfig(),
+        stateService: buildTestStateService(),
+        secrets: {},
+      });
+
+      const client = getDynamoClient();
+      const sendSpy = spyOn(client, 'send').mockImplementation(async (cmd: unknown) => {
+        const input = (cmd as { input?: { TableName?: string } }).input;
+        expect(input?.TableName).toBe('TestTable');
+        return {
+          Items: [
+            {
+              id: 'img_456',
+              url: 'https://cdn.example.com/sunset.png',
+              s3Key: 'avatars/test-avatar/images/456.png',
+              type: 'image',
+              prompt: 'beautiful sunset over ocean',
+              createdAt: 2000000,
+            },
+          ],
+        };
+      });
+
+      try {
+        const result = await services.gallery.searchGallery('test-avatar', 'sunset');
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('img_456');
+        expect(result[0].prompt).toBe('beautiful sunset over ocean');
+      } finally {
+        sendSpy.mockRestore();
+      }
+    });
+
+    it('getGalleryItem reads from ADMIN_TABLE', async () => {
+      const services = createPlatformMCPServices({
+        avatarId: 'test-avatar',
+        avatarConfig: buildTestAvatarConfig(),
+        stateService: buildTestStateService(),
+        secrets: {},
+      });
+
+      const client = getDynamoClient();
+      const sendSpy = spyOn(client, 'send').mockImplementation(async (cmd: unknown) => {
+        const input = (cmd as { input?: { TableName?: string } }).input;
+        expect(input?.TableName).toBe('TestTable');
+        return {
+          Items: [
+            {
+              id: 'img_789',
+              url: 'https://cdn.example.com/cat.png',
+              s3Key: 'avatars/test-avatar/images/789.png',
+              type: 'image',
+              prompt: 'a cat',
+              createdAt: 3000000,
+            },
+          ],
+        };
+      });
+
+      try {
+        const result = await services.gallery.getGalleryItem('test-avatar', 'img_789');
+        expect(result).not.toBeNull();
+        expect(result!.id).toBe('img_789');
+      } finally {
+        sendSpy.mockRestore();
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Gallery services — pagination regression (issue #234)
   // ---------------------------------------------------------------------------
 

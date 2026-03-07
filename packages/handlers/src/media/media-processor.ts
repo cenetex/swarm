@@ -10,6 +10,7 @@ import { logger, DEFAULT_LLM_MODEL } from '@swarm/core';
 import {
   createMediaServiceWithDeps,
   createMediaDependencies,
+  createGallerySaver,
   createSecretsService,
   createStateService,
 } from '@swarm/core/services';
@@ -257,6 +258,12 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarMediaRuntime> {
   }
 
   const mediaDeps = createMediaDependencies({ tableName: getStateTable() });
+  // Override gallery saver to write to ADMIN_TABLE so gallery reads
+  // (get_my_gallery, search_gallery, send_gallery_image) can find the items.
+  const adminTable = process.env.ADMIN_TABLE;
+  if (adminTable) {
+    mediaDeps.saveToGallery = createGallerySaver({ tableName: adminTable });
+  }
   const mediaService = createMediaServiceWithDeps(secrets, getMediaBucket(), process.env.CDN_URL, mediaDeps);
 
   const runtime: AvatarMediaRuntime = { avatarConfig, secrets, mediaService };

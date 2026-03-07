@@ -368,7 +368,9 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
           checkCredits: false,
           referenceImageUrls: params.referenceImageUrls,
         });
-        return { id: result.s3Key || 'generated', url: result.url };
+        // Return the real gallery item ID (if saved) instead of the raw S3 key
+        const galleryItem = (result as { galleryItem?: { id: string } }).galleryItem;
+        return { id: galleryItem?.id || result.s3Key || 'generated', url: result.url };
       },
 
       generateVideo: async (params: { prompt: string }) => {
@@ -400,7 +402,9 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
           saveToGallery: true,
           checkCredits: false,
         });
-        return { id: result.s3Key || 'sticker', url: result.url };
+        // Return the real gallery item ID (if saved) instead of the raw S3 key
+        const galleryItem = (result as { galleryItem?: { id: string } }).galleryItem;
+        return { id: galleryItem?.id || result.s3Key || 'sticker', url: result.url };
       },
 
       getProfileImageUrl: async () => {

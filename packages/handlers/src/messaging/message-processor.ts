@@ -20,6 +20,7 @@ import {
   createSecretsService,
   createMediaServiceWithDeps,
   createMediaDependencies,
+  createGallerySaver,
   createPresenceService,
   createRuntimeMetricsLogger,
   logger,
@@ -366,6 +367,12 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
 
   const mediaBucket = getMediaBucket();
   const mediaDeps = createMediaDependencies({ tableName: getStateTable() });
+  // Override gallery saver to write to ADMIN_TABLE so gallery reads
+  // (get_my_gallery, search_gallery, send_gallery_image) can find the items.
+  const adminTable = process.env.ADMIN_TABLE;
+  if (adminTable) {
+    mediaDeps.saveToGallery = createGallerySaver({ tableName: adminTable });
+  }
   const mediaService = mediaBucket
     ? createMediaServiceWithDeps(secrets, mediaBucket, getCdnUrl(), mediaDeps)
     : undefined;
