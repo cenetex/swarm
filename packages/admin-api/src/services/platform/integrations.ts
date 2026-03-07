@@ -412,6 +412,11 @@ export async function setIntegrationEnabled(
 
 /**
  * Set model preference for a capability
+ *
+ * DynamoDB rejects nested path writes (e.g. integrations.replicate.models.image_generation)
+ * when an intermediate map attribute does not exist yet. To handle this safely we first
+ * ensure the `models` map is initialised (using if_not_exists so existing values are
+ * preserved), then write the specific capability key in a second update.
  */
 export async function setModelPreference(
   avatarId: string,
@@ -420,13 +425,35 @@ export async function setModelPreference(
   modelId: string,
   session: UserSession
 ): Promise<void> {
+  const key = { pk: `AVATAR#${avatarId}`, sk: 'CONFIG' };
+
+  // Step 1: initialise the models map if it doesn't exist yet (no-op when it does).
   await dynamoClient.send(
     new UpdateCommand({
       TableName: ADMIN_TABLE,
-      Key: { pk: `AVATAR#${avatarId}`, sk: 'CONFIG' },
-      UpdateExpression: 'SET integrations.#integration.models.#capability = :model, updatedAt = :now, updatedBy = :by',
+      Key: key,
+      UpdateExpression:
+        'SET integrations.#integration.#models = if_not_exists(integrations.#integration.#models, :emptyMap)',
       ExpressionAttributeNames: {
         '#integration': integration,
+        '#models': 'models',
+      },
+      ExpressionAttributeValues: {
+        ':emptyMap': {},
+      },
+    })
+  );
+
+  // Step 2: write the capability key now that the map is guaranteed to exist.
+  await dynamoClient.send(
+    new UpdateCommand({
+      TableName: ADMIN_TABLE,
+      Key: key,
+      UpdateExpression:
+        'SET integrations.#integration.#models.#capability = :model, updatedAt = :now, updatedBy = :by',
+      ExpressionAttributeNames: {
+        '#integration': integration,
+        '#models': 'models',
         '#capability': capability,
       },
       ExpressionAttributeValues: {

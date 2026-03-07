@@ -6,12 +6,19 @@
  * @see packages/admin-api/src/services/integrations.ts
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import {
   INTEGRATION_METADATA,
   CONFIGURABLE_INTEGRATIONS,
   getAvailableModelsForIntegration,
 } from './integrations.js';
 import type { IntegrationType, AICapability } from '../../types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const integrationsSource = readFileSync(resolve(__dirname, 'integrations.ts'), 'utf-8');
 
 describe('Integration Metadata', () => {
   describe('INTEGRATION_METADATA structure', () => {
@@ -467,5 +474,71 @@ describe('Secret Types', () => {
     expect(INTEGRATION_METADATA.telegram.optionalSecrets).toContain('telegram_webhook_secret');
     expect(INTEGRATION_METADATA.discord.optionalSecrets).toContain('discord_webhook_url');
     expect(INTEGRATION_METADATA.solana.optionalSecrets).toContain('helius_api_key');
+  });
+});
+
+describe('setModelPreference — models map initialisation (issue #732)', () => {
+  /**
+   * DynamoDB rejects writes to nested paths like
+   * integrations.<provider>.models.<capability> when the intermediate
+   * `models` map does not exist. The fix uses two sequential UpdateCommand
+   * calls: one to initialise the map via if_not_exists, then one to set the
+   * capability key.
+   *
+   * These tests inspect the source to verify the two-step approach is in
+   * place, avoiding the need for a live DynamoDB mock.
+   */
+
+  it('should use two separate UpdateCommand calls in setModelPreference', () => {
+    // Extract the function body
+    const fnMatch = integrationsSource.match(
+      /export async function setModelPreference[\s\S]*?^}/m
+    );
+    expect(fnMatch).not.toBeNull();
+    const fnBody = fnMatch![0];
+
+    // There must be exactly two dynamoClient.send calls
+    const sendCalls = (fnBody.match(/dynamoClient\.send/g) ?? []).length;
+    expect(sendCalls).toBe(2);
+  });
+
+  it('should initialise models map with if_not_exists in the first update', () => {
+    const fnMatch = integrationsSource.match(
+      /export async function setModelPreference[\s\S]*?^}/m
+    );
+    const fnBody = fnMatch![0];
+
+    expect(fnBody).toContain('if_not_exists');
+    expect(fnBody).toContain(':emptyMap');
+    // The empty-map value must be initialised to an empty object
+    expect(fnBody).toContain("':emptyMap': {}");
+  });
+
+  it('should set the capability key in the second update without if_not_exists', () => {
+    const fnMatch = integrationsSource.match(
+      /export async function setModelPreference[\s\S]*?^}/m
+    );
+    const fnBody = fnMatch![0];
+
+    // Second update uses '#capability' attribute name placeholder
+    expect(fnBody).toContain('#capability');
+    expect(fnBody).toContain(':model');
+    expect(fnBody).toContain(':now');
+    expect(fnBody).toContain(':by');
+  });
+
+  it('should not write directly to models.<capability> without initialising models first', () => {
+    // The old (broken) single-call pattern would use
+    // 'integrations.#integration.models.#capability' in a single expression.
+    // After the fix, 'models' must be referenced via a name placeholder (#models)
+    // in both expressions, never as a bare literal path segment.
+    const fnMatch = integrationsSource.match(
+      /export async function setModelPreference[\s\S]*?^}/m
+    );
+    const fnBody = fnMatch![0];
+
+    // Bare 'models.#capability' (without going through an attribute name alias)
+    // would be the broken pattern — it must not appear.
+    expect(fnBody).not.toMatch(/\.models\.#capability/);
   });
 });
