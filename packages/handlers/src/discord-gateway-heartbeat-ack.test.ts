@@ -34,7 +34,7 @@ mock.module('ws', () => {
       for (const fn of list) fn(...args);
     }
   }
-  return { default: MockWebSocket, __esModule: true };
+  return { default: MockWebSocket, WebSocket: MockWebSocket, __esModule: true };
 });
 
 mock.module('@aws-sdk/client-sqs', () => ({
