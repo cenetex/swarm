@@ -235,15 +235,19 @@ export class IdentityLinkServiceImpl implements IdentityLinkService {
     const link = await this._getLink(userId, platform, platformUserId);
     const allowed = link?.status === 'active';
 
-    const now = new Date().toISOString();
-    await this.auditLog({
-      action: 'consent_checked',
-      userId,
-      platform,
-      platformUserId,
-      occurredAt: now,
-      reason: allowed ? 'consent_active' : 'no_active_link',
-    });
+    // Only audit denied checks — active consent is already recorded by the
+    // link_created event. This avoids excessive DynamoDB writes in hot paths.
+    if (!allowed) {
+      const now = new Date().toISOString();
+      await this.auditLog({
+        action: 'consent_checked',
+        userId,
+        platform,
+        platformUserId,
+        occurredAt: now,
+        reason: 'no_active_link',
+      });
+    }
 
     return allowed;
   }

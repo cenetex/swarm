@@ -260,7 +260,7 @@ describe('createIdentityLinkService', () => {
       expect(revoked!.userId).toBe('user-5');
     });
 
-    it('writes an audit entry for every consent_checked call', async () => {
+    it('writes an audit entry for consent_checked when denied', async () => {
       const svc = createIdentityLinkService(TABLE);
       await svc.hasConsent('user-6', 'twitter', 'tw-002');
 
@@ -271,6 +271,24 @@ describe('createIdentityLinkService', () => {
       const checked = auditEntries.find((e) => e.action === 'consent_checked');
       expect(checked).toBeDefined();
       expect(checked!.userId).toBe('user-6');
+    });
+
+    it('does not write audit entry when consent is active', async () => {
+      const svc = createIdentityLinkService(TABLE);
+      await svc.linkIdentity('user-6b', 'telegram', 'tg-active');
+
+      // Clear all audit entries so we can detect new writes.
+      for (const key of [...store.keys()]) {
+        if (key.startsWith('AUDIT')) store.delete(key);
+      }
+
+      await svc.hasConsent('user-6b', 'telegram', 'tg-active');
+
+      const auditEntries = [...store.entries()]
+        .filter(([k]) => k.startsWith('AUDIT'))
+        .map(([, v]) => v);
+
+      expect(auditEntries.length).toBe(0);
     });
   });
 
