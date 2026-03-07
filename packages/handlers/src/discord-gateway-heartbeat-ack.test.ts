@@ -37,20 +37,28 @@ mock.module('ws', () => {
   return { default: MockWebSocket, WebSocket: MockWebSocket, __esModule: true };
 });
 
+// Enumerate every named export other test files import from these SDK modules,
+// because bun's mock.module() is process-global and ESM resolves named exports
+// at link time (Proxy traps don't help).
+const Cmd = class { constructor(public input?: unknown) {} };
+
 mock.module('@aws-sdk/client-sqs', () => ({
   SQSClient: class { send() { return Promise.resolve({}); } destroy() {} },
-  GetQueueAttributesCommand: class { constructor(public input: unknown) {} },
-  SendMessageCommand: class { constructor(public input: unknown) {} },
-  ReceiveMessageCommand: class { constructor(public input: unknown) {} },
-  DeleteMessageCommand: class { constructor(public input: unknown) {} },
+  SendMessageCommand: Cmd,
+  GetQueueAttributesCommand: Cmd,
+  ReceiveMessageCommand: Cmd,
+  DeleteMessageCommand: Cmd,
 }));
 
 mock.module('@aws-sdk/client-secrets-manager', () => ({
   SecretsManagerClient: class { send() { return Promise.resolve({}); } },
-  GetSecretValueCommand: class { constructor(public input: unknown) {} },
-  DescribeSecretCommand: class { constructor(public input: unknown) {} },
-  CreateSecretCommand: class { constructor(public input: unknown) {} },
-  PutSecretValueCommand: class { constructor(public input: unknown) {} },
+  GetSecretValueCommand: Cmd,
+  CreateSecretCommand: Cmd,
+  UpdateSecretCommand: Cmd,
+  DeleteSecretCommand: Cmd,
+  DescribeSecretCommand: Cmd,
+  RestoreSecretCommand: Cmd,
+  PutSecretValueCommand: Cmd,
 }));
 
 type GatewayConnectionClass = typeof import('./discord/discord-gateway-shared.js').GatewayConnection;
