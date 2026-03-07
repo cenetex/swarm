@@ -10,7 +10,7 @@
  *
  * @module memory-consolidation
  */
-import { logger } from '@swarm/core';
+import { logger, MetricsLogger, getEnvironmentDimension } from '@swarm/core';
 import {
   applyDecay,
   promoteImmediateToRecent,
@@ -36,6 +36,20 @@ const MIN_MEMORIES_FOR_IDENTITY = 5;
 
 /** Maximum avatars to consolidate per invocation (for Lambda timeout safety) */
 const MAX_AVATARS_PER_RUN = 50;
+
+/** CloudWatch metric namespace for consolidation metrics */
+const METRICS_NAMESPACE = 'AwsSwarm/MemoryConsolidation';
+
+/**
+ * Create a MetricsLogger for consolidation, pre-configured with the
+ * AwsSwarm/MemoryConsolidation namespace and Environment dimension.
+ */
+export function createConsolidationMetrics(): MetricsLogger {
+  return new MetricsLogger('MemoryConsolidation', {
+    namespace: METRICS_NAMESPACE,
+    dimensions: { Environment: getEnvironmentDimension() },
+  });
+}
 
 // ============================================================================
 // Types
@@ -397,10 +411,16 @@ export async function consolidateAllAvatars(
     durationMs: 0,
   };
 
+  const metrics = createConsolidationMetrics();
+
   try {
     // Get avatars needing consolidation
     const avatarIds = await getAvatarsNeedingConsolidation(maxAvatars);
     result.totalAvatars = avatarIds.length;
+
+    // Emit discovery metric
+    metrics.putMetric('AvatarsDiscovered', avatarIds.length, 'Count');
+    metrics.flush();
 
     logger.info('Starting batch consolidation', {
       event: 'batch_consolidation_start',
@@ -489,6 +509,16 @@ export async function consolidateAllAvatars(
   }
 
   result.durationMs = Date.now() - startTime;
+
+  // Emit batch-completion metrics
+  metrics.putMetric('AvatarsProcessed', result.processed, 'Count');
+  metrics.putMetric('AvatarsSkipped', result.skipped, 'Count');
+  metrics.putMetric('AvatarsFailed', result.failed, 'Count');
+  metrics.putMetric('ConsolidationDurationMs', result.durationMs, 'Milliseconds');
+  metrics.setProperty('totalAvatars', result.totalAvatars);
+  metrics.setProperty('succeeded', result.succeeded);
+  metrics.flush();
+
   return result;
 }
 
