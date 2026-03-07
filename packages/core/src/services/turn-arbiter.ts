@@ -110,7 +110,11 @@ export function selectPrimaryResponder(
   };
 
   const reasons: Record<string, string> = {};
-  const log = logger.child({ subsystem: 'turn-arbiter', messageId: message.messageId, conversationId: message.conversationId });
+  const logContext = { subsystem: 'turn-arbiter', messageId: message.messageId, conversationId: message.conversationId };
+  const log = {
+    info: (msg: string, data?: Record<string, unknown>) => logger.info(msg, { ...logContext, ...data }),
+    warn: (msg: string, data?: Record<string, unknown>) => logger.warn(msg, { ...logContext, ...data }),
+  };
 
   // Edge case: no candidates
   if (candidates.length === 0) {
