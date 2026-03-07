@@ -503,6 +503,10 @@ interface GatewayReady {
 class GatewayConnection {
   private ws: WebSocket | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private heartbeatAckTimeoutTimer: NodeJS.Timeout | null = null;
+  private heartbeatIntervalMs: number | null = null;
+  private lastHeartbeatSentAt: number | null = null;
+  private lastHeartbeatAckAt: number | null = null;
   private sequence: number | null = null;
   private sessionId: string | null = null;
   private resumeGatewayUrl: string | null = null;
@@ -547,6 +551,10 @@ class GatewayConnection {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+    if (this.heartbeatAckTimeoutTimer) {
+      clearTimeout(this.heartbeatAckTimeoutTimer);
+      this.heartbeatAckTimeoutTimer = null;
     }
     if (this.ws) {
       this.ws.removeAllListeners();
@@ -641,6 +649,7 @@ class GatewayConnection {
         this.handleHello(payload.d as GatewayHello);
         return;
       case 11: // HEARTBEAT_ACK
+        this.handleHeartbeatAck();
         return;
       case 0: // DISPATCH
         await this.handleDispatch(payload.t, payload.d);
@@ -680,6 +689,7 @@ class GatewayConnection {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
     }
+    this.heartbeatIntervalMs = hello.heartbeat_interval;
     this.heartbeatTimer = setInterval(() => this.sendHeartbeat(), hello.heartbeat_interval);
 
     // Send initial heartbeat
@@ -840,7 +850,46 @@ class GatewayConnection {
   }
 
   private sendHeartbeat(): void {
+    this.lastHeartbeatSentAt = Date.now();
     this.send({ op: 1, d: this.sequence });
+
+    // Schedule ACK timeout at 1.5x heartbeat interval
+    if (this.heartbeatAckTimeoutTimer) {
+      clearTimeout(this.heartbeatAckTimeoutTimer);
+    }
+    if (this.heartbeatIntervalMs) {
+      const timeoutMs = Math.floor(this.heartbeatIntervalMs * 1.5);
+      this.heartbeatAckTimeoutTimer = setTimeout(() => {
+        logger.warn('Heartbeat ACK not received within timeout — forcing reconnect', {
+          event: 'heartbeat_ack_timeout',
+          subsystem: 'discord',
+          heartbeatIntervalMs: this.heartbeatIntervalMs,
+          timeoutMs,
+          lastHeartbeatSentAt: this.lastHeartbeatSentAt,
+          lastHeartbeatAckAt: this.lastHeartbeatAckAt,
+          botUserId: this.botUserId,
+          avatarCount: this.avatarBindings.size,
+        });
+        this.scheduleReconnect(true);
+      }, timeoutMs);
+    }
+  }
+
+  private handleHeartbeatAck(): void {
+    this.lastHeartbeatAckAt = Date.now();
+    if (this.heartbeatAckTimeoutTimer) {
+      clearTimeout(this.heartbeatAckTimeoutTimer);
+      this.heartbeatAckTimeoutTimer = null;
+    }
+    if (this.lastHeartbeatSentAt) {
+      const latencyMs = this.lastHeartbeatAckAt - this.lastHeartbeatSentAt;
+      logger.debug('Heartbeat ACK received', {
+        event: 'heartbeat_ack',
+        subsystem: 'discord',
+        latencyMs,
+        botUserId: this.botUserId,
+      });
+    }
   }
 
   private identify(): void {
@@ -890,6 +939,11 @@ class GatewayConnection {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+
+    if (this.heartbeatAckTimeoutTimer) {
+      clearTimeout(this.heartbeatAckTimeoutTimer);
+      this.heartbeatAckTimeoutTimer = null;
     }
 
     this.shouldResume = resume;
