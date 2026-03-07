@@ -114,6 +114,16 @@ export {
   type TierEvaluationOptions,
 } from './brain/memory-tiers.js';
 export {
+  appendMessage,
+  getRecentMessages,
+  updateOverlay,
+  getOverlay,
+  getRoomState,
+  _setDynamoClient as _setSharedRoomDynamoClient,
+  MESSAGE_TTL_DAYS,
+  OVERLAY_TTL_DAYS,
+} from './shared-room.js';
+export {
   createSqsOffloadService,
   createSqsOffloadServiceFromEnv,
   SQS_OFFLOAD_CONSTANTS,

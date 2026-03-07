@@ -974,6 +974,17 @@ export function parseJson<T>(json: string, schema: z.ZodSchema<T>): T {
 }
 
 // =============================================================================
+// SHARED ROOM TYPES (re-exported from shared-room.ts)
+// =============================================================================
+
+export type {
+  SharedRoomState,
+  SharedRoomMessage,
+  SharedRoomSenderType,
+  AvatarRoomOverlay,
+} from './shared-room.js';
+
+// =============================================================================
 // CONTINUATION TYPES (re-exported from continuation.ts)
 // =============================================================================
 
