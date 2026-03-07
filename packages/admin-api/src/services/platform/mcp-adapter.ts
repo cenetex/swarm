@@ -113,8 +113,14 @@ function createReadOnlyMCPServices(
     full.memory = {
       ...full.memory,
       remember: async () => ({ saved: false }),
-      backfillEmbeddings: async () => ({ processed: 0, total: 0 }),
-      consolidate: async () => ({ consolidated: 0 }),
+      backfillEmbeddings: async () => ({ processed: 0, succeeded: 0, failed: 0, skipped: 0 }),
+      consolidate: async () => ({
+        avatarId: '',
+        success: true,
+        decay: { recent: { decayed: 0, pruned: 0 }, core: { decayed: 0, pruned: 0 } },
+        promotion: { promoted: 0 },
+        durationMs: 0,
+      }),
     };
   }
 
@@ -122,8 +128,8 @@ function createReadOnlyMCPServices(
   if (full.diagnostics) {
     full.diagnostics = {
       ...full.diagnostics,
-      recordIssue: async () => ({ issueId: '' }),
-      recordFeedback: async () => ({ feedbackId: '' }),
+      recordIssue: async () => ({ id: '', type: 'issue' as const, timestamp: 0, avatarId: '', platform: '', severity: 'low' as const, category: 'other' as const, title: '', description: '' }),
+      recordFeedback: async () => ({ id: '', type: 'feedback' as const, timestamp: 0, avatarId: '', platform: '', sentiment: 'neutral' as const, feature: '', feedback: '' }),
     };
   }
 
