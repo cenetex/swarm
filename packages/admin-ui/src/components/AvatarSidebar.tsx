@@ -12,6 +12,7 @@ import { useAuth } from '../store/auth';
 import { ThemeToggle } from './ThemeToggle';
 import { PrivyLoginButton } from './PrivyLoginButton';
 import { AvatarReassignModal } from './AvatarReassignModal';
+import { HealthDashboard } from './HealthDashboard';
 import * as avatarApi from '../api/avatars';
 import type { Avatar } from '../types';
 
@@ -295,6 +296,7 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
   const { avatars, activeAvatarId, createAvatar, setActiveAvatar, isLoading, error, fetchAvatars } = useAvatarStore();
   const { isAuthenticated, user, gateStatus, account } = useAuth();
   const [reassignAvatarData, setReassignAvatarData] = React.useState<Avatar | null>(null);
+  const [showHealth, setShowHealth] = React.useState(false);
 
   const isAdmin = account?.role === 'admin';
 
@@ -589,6 +591,31 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
           ))
         )}
       </div>
+
+      {/* Admin Health Dashboard */}
+      {isAdmin && (
+        <div className="border-t border-[var(--color-border)]">
+          <button
+            onClick={() => setShowHealth((prev) => !prev)}
+            className="w-full px-4 py-2 flex items-center justify-between text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wider hover:text-[var(--color-text)] transition-colors"
+          >
+            <span>Health Dashboard</span>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className={`w-4 h-4 transition-transform ${showHealth ? 'rotate-180' : ''}`}
+            >
+              <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+            </svg>
+          </button>
+          {showHealth && (
+            <div className="max-h-72 overflow-y-auto">
+              <HealthDashboard onSelectAvatar={(id) => handleSelectAvatar(id)} />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Login Footer */}
       <div className="p-3 border-t border-[var(--color-border)]">

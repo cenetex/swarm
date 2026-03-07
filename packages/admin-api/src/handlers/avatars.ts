@@ -35,6 +35,7 @@ import { handleTwitterRoutes } from './avatar-routes/twitter.js';
 import { handleApiKeyRoutes } from './avatar-routes/api-keys.js';
 import { handleMemoryRoutes } from './avatar-routes/memory.js';
 import { handleUsageRoutes } from './avatar-routes/usage.js';
+import { handleHealthRoutes } from './avatar-routes/health.js';
 import { handleOnboardingAvatarRoutes } from './avatar-routes/onboarding.js';
 import { handleDesignPartnerRoutes } from './avatar-routes/design-partner.js';
 
@@ -50,6 +51,7 @@ async function getWalletSessionFromEvent(event: APIGatewayProxyEventV2) {
 
 const routeHandlers: RouteHandler[] = [
   handleSystemRoutes,
+  handleHealthRoutes,
   handleCrudRoutes,
   handleEntitlementRoutes,
   handleDesignPartnerRoutes,
