@@ -154,3 +154,13 @@ export {
   type TurnArbiterConfig,
   type TurnDecision,
 } from './turn-arbiter.js';
+export {
+  generateRoomKey,
+  parseRoomKey,
+  type ParsedRoomKey,
+} from './room-key.js';
+export {
+  DefaultRoomCoordinator,
+  roomEventToTurnMessage,
+  mapWinReason,
+} from './room-coordinator.js';
