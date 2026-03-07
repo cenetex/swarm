@@ -10,7 +10,6 @@ import {
 import type { GalleryItem } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
 
-const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 /**
@@ -48,7 +47,7 @@ export async function addToGallery(
     createdAt: now,
   };
 
-  await dynamoClient.send(new PutCommand({
+  await getDynamoClient().send(new PutCommand({
     TableName: ADMIN_TABLE,
     Item: galleryItem,
   }));
@@ -69,32 +68,46 @@ export async function getGallery(
   } = {}
 ): Promise<GalleryItem[]> {
   const { limit = 50, type, notPostedToTwitter, notConvertedToSticker } = options;
+  const hasFilters = !!(type || notPostedToTwitter || notConvertedToSticker);
 
-  const result = await dynamoClient.send(new QueryCommand({
-    TableName: ADMIN_TABLE,
-    KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
-    ExpressionAttributeValues: {
-      ':pk': `AVATAR#${avatarId}`,
-      ':sk': 'GALLERY#',
-    },
-    ScanIndexForward: false, // Most recent first
-    Limit: limit * 2, // Fetch extra for filtering
-  }));
+  const matched: GalleryItem[] = [];
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
+  // Hard cap: stop after scanning this many raw rows to prevent runaway queries
+  const MAX_ROWS_SCANNED = 2000;
+  let rowsScanned = 0;
 
-  let items = (result.Items || []) as GalleryItem[];
+  do {
+    const result = await getDynamoClient().send(new QueryCommand({
+      TableName: ADMIN_TABLE,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+      ExpressionAttributeValues: {
+        ':pk': `AVATAR#${avatarId}`,
+        ':sk': 'GALLERY#',
+      },
+      ScanIndexForward: false, // Most recent first
+      Limit: hasFilters ? 100 : limit, // Fetch in pages when filtering
+      ExclusiveStartKey: lastEvaluatedKey,
+    }));
 
-  // Apply filters
-  if (type) {
-    items = items.filter(item => item.type === type);
-  }
-  if (notPostedToTwitter) {
-    items = items.filter(item => !item.postedToTwitter);
-  }
-  if (notConvertedToSticker) {
-    items = items.filter(item => !item.convertedToSticker);
-  }
+    const items = (result.Items || []) as GalleryItem[];
+    rowsScanned += items.length;
 
-  return items.slice(0, limit);
+    for (const item of items) {
+      if (type && item.type !== type) continue;
+      if (notPostedToTwitter && item.postedToTwitter) continue;
+      if (notConvertedToSticker && item.convertedToSticker) continue;
+      matched.push(item);
+      if (matched.length >= limit) break;
+    }
+
+    lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (
+    matched.length < limit &&
+    lastEvaluatedKey &&
+    rowsScanned < MAX_ROWS_SCANNED
+  );
+
+  return matched;
 }
 
 /**
@@ -126,7 +139,7 @@ export async function getGalleryItem(
   let lastEvaluatedKey: Record<string, unknown> | undefined;
 
   do {
-    const result = await dynamoClient.send(new QueryCommand({
+    const result = await getDynamoClient().send(new QueryCommand({
       TableName: ADMIN_TABLE,
       KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
       FilterExpression: 'id = :id',
@@ -158,7 +171,7 @@ export async function markPostedToTwitter(
   _itemId: string,
   sk: string
 ): Promise<void> {
-  await dynamoClient.send(new UpdateCommand({
+  await getDynamoClient().send(new UpdateCommand({
     TableName: ADMIN_TABLE,
     Key: { pk: `AVATAR#${avatarId}`, sk },
     UpdateExpression: 'SET postedToTwitter = :val',
@@ -181,7 +194,7 @@ export async function markConvertedToSticker(
   }
 ): Promise<void> {
   if (stickerInfo) {
-    await dynamoClient.send(new UpdateCommand({
+    await getDynamoClient().send(new UpdateCommand({
       TableName: ADMIN_TABLE,
       Key: { pk: `AVATAR#${avatarId}`, sk },
       UpdateExpression: 'SET convertedToSticker = :val, stickerInfo = :info',
@@ -194,7 +207,7 @@ export async function markConvertedToSticker(
       },
     }));
   } else {
-    await dynamoClient.send(new UpdateCommand({
+    await getDynamoClient().send(new UpdateCommand({
       TableName: ADMIN_TABLE,
       Key: { pk: `AVATAR#${avatarId}`, sk },
       UpdateExpression: 'SET convertedToSticker = :val',
@@ -212,7 +225,8 @@ export async function findByDescription(
   description: string,
   type?: 'image' | 'video' | 'sticker'
 ): Promise<GalleryItem[]> {
-  const items = await getGallery(avatarId, { limit: 100, type });
+  const MAX_SEARCH_CANDIDATES = 2000;
+  const items = await getGallery(avatarId, { limit: MAX_SEARCH_CANDIDATES, type });
 
   const searchTerms = description.toLowerCase().split(/\s+/);
 
