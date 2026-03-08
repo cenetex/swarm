@@ -1037,3 +1037,28 @@ export type {
   IdentityLinkAuditEvent,
   IdentityLinkService,
 } from './identity-link.js';
+
+// =============================================================================
+// CONSTITUTIONAL TYPES (swarm governance layer)
+// =============================================================================
+
+export type {
+  TransitionKind,
+  TransitionStatus,
+  TransitionMeta,
+  EnvelopeRef,
+  StorageMutationMeta,
+  TransitionBase,
+  TransitionProposal,
+  AcceptedTransition,
+  TransitionRecord,
+  DecisionRecord,
+  InvariantCheck,
+  InvariantCheckResult,
+  PolicyRule,
+  PolicyScope,
+  PolicyContext,
+  PolicyCheckResult,
+  TransitionLedger,
+  AppendResult,
+} from './constitution.js';
