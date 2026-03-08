@@ -103,6 +103,20 @@ describe('redactData', () => {
     expect(emails[1]).toBe('[REDACTED_EMAIL]');
   });
 
+  it('preserves public token mint fields while redacting wallet fields', () => {
+    const data = {
+      mint: 'So11111111111111111111111111111111111111112',
+      wallet: '11111111111111111111111111111111',
+      message: 'wallet 11111111111111111111111111111111 triggered mint So11111111111111111111111111111111111111112',
+    };
+    const result = redactData(data) as Record<string, unknown>;
+    expect(result.mint).toBe('So11111111111111111111111111111111111111112');
+    expect(result.wallet).toBe('[REDACTED_WALLET]');
+    expect(result.message).toBe(
+      'wallet [REDACTED_WALLET] triggered mint [REDACTED_WALLET]'
+    );
+  });
+
   it('should handle null and undefined', () => {
     expect(redactData(null)).toBeNull();
     expect(redactData(undefined)).toBeUndefined();

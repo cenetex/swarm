@@ -108,18 +108,28 @@ const SENSITIVE_KEYS = new Set([
  * they produce too many false positives on numeric log data (timestamps, IDs).
  */
 export function redactString(value: string): string {
+  return redactStringWithOptions(value);
+}
+
+interface RedactStringOptions {
+  allowSolanaAddresses?: boolean;
+}
+
+function redactStringWithOptions(value: string, options: RedactStringOptions = {}): string {
   let result = value;
   result = result.replace(EMAIL_PATTERN, REDACTED_EMAIL);
   result = result.replace(ETH_ADDRESS_PATTERN, REDACTED_WALLET);
   result = result.replace(BEARER_TOKEN_PATTERN, REDACTED_TOKEN);
   result = result.replace(API_KEY_PATTERN, REDACTED_KEY);
-  // Solana wallets: only replace if it doesn't look like a typical ID/hash
-  // (we check length >= 32 which the pattern already enforces)
-  result = result.replace(SOLANA_WALLET_PATTERN, (match) => {
-    // Preserve short alphanumeric tokens that are likely IDs, not wallets
-    if (match.length < 32) return match;
-    return REDACTED_WALLET;
-  });
+  if (!options.allowSolanaAddresses) {
+    // Solana wallets: only replace if it doesn't look like a typical ID/hash
+    // (we check length >= 32 which the pattern already enforces)
+    result = result.replace(SOLANA_WALLET_PATTERN, (match) => {
+      // Preserve short alphanumeric tokens that are likely IDs, not wallets
+      if (match.length < 32) return match;
+      return REDACTED_WALLET;
+    });
+  }
   result = result.replace(IPV4_PATTERN, (match) => {
     // Preserve common non-routable / obvious non-PII addresses
     if (match === '0.0.0.0' || match === '127.0.0.1' || match.startsWith('169.254.')) {
@@ -139,14 +149,25 @@ export function redactString(value: string): string {
  * - Returns a new object (input is never mutated).
  */
 export function redactData(data: unknown): unknown {
+  return redactDataWithKey(undefined, data);
+}
+
+function shouldPreserveSolanaAddressForKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return normalized === 'mint' || normalized === 'tokenmint' || normalized === 'mintaddress';
+}
+
+function redactDataWithKey(key: string | undefined, data: unknown): unknown {
   if (data === null || data === undefined) return data;
 
   if (typeof data === 'string') {
-    return redactString(data);
+    return redactStringWithOptions(data, {
+      allowSolanaAddresses: key ? shouldPreserveSolanaAddressForKey(key) : false,
+    });
   }
 
   if (Array.isArray(data)) {
-    return data.map(item => redactData(item));
+    return data.map(item => redactDataWithKey(key, item));
   }
 
   if (typeof data === 'object') {
@@ -155,7 +176,7 @@ export function redactData(data: unknown): unknown {
       if (SENSITIVE_KEYS.has(key.toLowerCase())) {
         result[key] = typeof value === 'string' ? '[REDACTED]' : '[REDACTED]';
       } else {
-        result[key] = redactData(value);
+        result[key] = redactDataWithKey(key, value);
       }
     }
     return result;

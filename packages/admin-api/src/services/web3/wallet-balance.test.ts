@@ -134,7 +134,7 @@ describe('getTokenBalance mint-not-found logging', () => {
       const logged = JSON.parse(warnCalls[0][0] as string);
       expect(logged.event).toBe('mint_not_found');
       expect(logged.mint).toBe('So11111111111111111111111111111111111111112');
-      expect(logged.wallet).toBe('11111111111111111111111111111111');
+      expect(logged.wallet).toBe('[REDACTED_WALLET]');
     } finally {
       Connection.prototype.getParsedTokenAccountsByOwner = originalMethod;
       logSpy.mockRestore();

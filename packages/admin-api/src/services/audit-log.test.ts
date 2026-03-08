@@ -110,7 +110,7 @@ describe('recordAuditEventWith', () => {
     expect(item.gsi1pk).toBe('AUDIT_TYPE#entitlement_changed');
   });
 
-  it('sets TTL to approximately 90 days from now', async () => {
+  it('sets TTL to approximately 365 days from now', async () => {
     const deps = makeMockDeps();
     const before = Math.floor(Date.now() / 1000);
     await recordAuditEventWith(deps, {
@@ -123,9 +123,9 @@ describe('recordAuditEventWith', () => {
     const after = Math.floor(Date.now() / 1000);
     const item = putItems[0];
     const ttl = item.ttl as number;
-    const ninetyDays = 90 * 24 * 60 * 60;
-    expect(ttl).toBeGreaterThanOrEqual(before + ninetyDays);
-    expect(ttl).toBeLessThanOrEqual(after + ninetyDays);
+    const retentionDays = 365 * 24 * 60 * 60;
+    expect(ttl).toBeGreaterThanOrEqual(before + retentionDays);
+    expect(ttl).toBeLessThanOrEqual(after + retentionDays);
   });
 
   it('records avatar_created events', async () => {
