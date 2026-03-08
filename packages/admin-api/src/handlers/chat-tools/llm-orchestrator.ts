@@ -114,12 +114,12 @@ export async function runLlmCallLoop(params: {
           event: 'sdk_fallback', errorName, errorMessage: errorMessage.slice(0, 120),
         });
         const apiMessages = [
-          { role: 'system', content: systemPrompt },
+          { role: 'system' as const, content: systemPrompt },
           ...toSdkMessages(sanitizeMessages(messages)),
         ];
         const fallbackResult = await callLlmDirectFallback(
           effectiveModel,
-          apiMessages as Array<{ role: string; content: string }>,
+          apiMessages,
           effectiveMaxOutputTokens,
           tools.length > 0 ? tools : undefined
         );

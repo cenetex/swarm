@@ -430,7 +430,7 @@ export { sanitizeToolSchema as _sanitizeToolSchema, validateToolSchema as _valid
  */
 export async function callLlmDirectFallback(
   model: string,
-  messages: Array<{ role: string; content: string | { type: string; text?: string; image_url?: unknown }[] }>,
+  messages: Array<{ role: string; content: string | { type: string; text?: string; image_url?: unknown }[]; toolCallId?: string; tool_call_id?: string; name?: string; tool_calls?: unknown[] }>,
   maxTokens: number,
   tools?: unknown[]
 ): Promise<{
@@ -442,9 +442,31 @@ export async function callLlmDirectFallback(
   const apiKey = await getLlmApiKey();
   const start = Date.now();
 
+  // Normalize messages to OpenAI Chat Completions format:
+  // - Tool messages need `tool_call_id` (snake_case), not `toolCallId` (camelCase)
+  // - Assistant messages with tool_calls need them preserved
+  const normalizedMessages = messages.map(msg => {
+    if (msg.role === 'tool') {
+      const toolCallId = msg.tool_call_id || msg.toolCallId;
+      if (!toolCallId || toolCallId.trim() === '') {
+        // Convert orphaned tool message to user message to avoid provider 400
+        return { role: 'user', content: '[system: tool result omitted — missing tool_call_id]' };
+      }
+      return {
+        role: 'tool' as const,
+        content: msg.content,
+        tool_call_id: toolCallId,
+      };
+    }
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      return { role: msg.role, content: msg.content, tool_calls: msg.tool_calls };
+    }
+    return { role: msg.role, content: msg.content };
+  });
+
   const body: Record<string, unknown> = {
     model,
-    messages,
+    messages: normalizedMessages,
     max_tokens: maxTokens,
     stream: false, // Disable streaming to avoid SDK validation issues
   };
@@ -571,6 +593,16 @@ export async function callLlmDirectFallback(
       const shouldRetry = response.status === 429 || response.status >= 500;
       if (!shouldRetry || attempt >= LLM_MAX_RETRIES) {
         const errorText = await response.text();
+        logger.error(`OpenRouter API non-retryable error: ${response.status}`, undefined, {
+          event: 'provider_api_error',
+          subsystem: 'llm',
+          statusCode: response.status,
+          model,
+          responseBody: errorText.slice(0, 1000),
+          messageCount: normalizedMessages.length,
+          toolMessageCount: normalizedMessages.filter(m => m.role === 'tool').length,
+          hasTools: !!tools && tools.length > 0,
+        });
         throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
       }
 

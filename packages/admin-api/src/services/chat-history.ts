@@ -5,6 +5,7 @@
 import type { AdminChatMessage, UserSession } from '../types.js';
 import { createChatHistoryStore, type ChatHistoryRecord } from './chat-history-store.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { sanitizeMessages } from '../handlers/chat-tool-helpers.js';
 
 const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
@@ -26,7 +27,10 @@ export async function getChatHistory(
   session: UserSession,
   avatarId?: string
 ): Promise<AdminChatMessage[]> {
-  return store.getChatHistory(session, avatarId);
+  const raw = await store.getChatHistory(session, avatarId);
+  // Sanitize on load: strip orphaned tool results that may have been
+  // persisted before sanitization was added at save time.
+  return sanitizeMessages(raw);
 }
 
 /**

@@ -512,7 +512,7 @@ export function extractMediaFromToolResults(toolResults: ToolResult[]): MediaIte
 
 type MessageContent = string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
 
-export function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: MessageContent; toolCallId?: string }> {
+export function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: MessageContent; toolCallId?: string; tool_calls?: AdminChatMessage['tool_calls'] }> {
   return messages.map(message => {
     if (message.role === 'tool') {
       const tcId = message.tool_call_id;
@@ -552,7 +552,7 @@ export function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: 'user
       };
     }
 
-    return {
+    const result: { role: typeof message.role; content: MessageContent; tool_calls?: AdminChatMessage['tool_calls'] } = {
       role: message.role,
       content: (() => {
         const raw = message.content as MessageContent;
@@ -567,6 +567,12 @@ export function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: 'user
         return raw;
       })(),
     };
+    // Preserve tool_calls on assistant messages so the provider can match
+    // subsequent tool result messages to their originating tool calls.
+    if (message.role === 'assistant' && message.tool_calls && message.tool_calls.length > 0) {
+      result.tool_calls = message.tool_calls;
+    }
+    return result;
   });
 }
 
