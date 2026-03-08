@@ -3,10 +3,16 @@
  *
  * Verifies that ascension grants Pro-equivalent entitlements and
  * respects the plan hierarchy (no downgrade from enterprise).
+ *
+ * NOTE: This test uses spyOn + DI instead of vi.mock() to avoid
+ * bun:test's process-global mock bleed (see issue #876).
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { PLAN_DEFAULTS, type EntitlementRecord, type PlanLimits } from '../types.js';
+import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
+import { PLAN_DEFAULTS, type EntitlementRecord } from '../types.js';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import * as entitlements from './billing/entitlements.js';
+import * as runtimeLimits from './billing/runtime-limits.js';
+import { _setDynamoClient } from './dynamo-client.js';
 
 // ── Mock state ─────────────────────────────────────────────────────────────
 let mockGetEntitlementResult: EntitlementRecord | null = null;
@@ -16,175 +22,7 @@ let mockSyncCalls: Array<Record<string, unknown>> = [];
 const prevHeliusApiKey = process.env.HELIUS_API_KEY;
 process.env.HELIUS_API_KEY = 'test-helius-key';
 
-// ── Mock modules ───────────────────────────────────────────────────────────
-vi.mock('./billing/entitlements.js', () => ({
-  getEntitlement: async () => mockGetEntitlementResult,
-  setEntitlement: async (params: Record<string, unknown>) => {
-    mockSetEntitlementCalls.push(params);
-    const plan = params.plan as string;
-    return {
-      pk: `ENTITLEMENT#${params.accountId}`,
-      sk: `AVATAR#${params.avatarId}`,
-      accountId: params.accountId,
-      avatarId: params.avatarId,
-      plan,
-      limits: PLAN_DEFAULTS[plan as keyof typeof PLAN_DEFAULTS],
-      status: params.status ?? 'active',
-      entitlementSource: params.entitlementSource,
-      createdAt: Date.now(),
-      createdBy: params.actorId,
-      updatedAt: Date.now(),
-      updatedBy: params.actorId,
-      gsi1pk: `AVATAR#${params.avatarId}`,
-      gsi1sk: 'ENTITLEMENT',
-    } as EntitlementRecord;
-  },
-}));
-
-// IMPORTANT: bun:test mock.module is process-global and persistent.
-// This mock MUST provide every named export from runtime-limits.js that
-// any other test file might import, or those files will get
-// "Export named '...' not found" errors.
-vi.mock('./billing/runtime-limits.js', () => ({
-  ORB_HOLDER_BOOST: {
-    dailyMessageLimit: 100,
-    dailyMediaCredits: 15,
-    dailyVoiceMinutes: 5,
-    maxToolCallsPerMessage: 5,
-  },
-  applyOrbHolderBoost: (result: { plan: string; limits: Record<string, unknown>; source: string }) => {
-    if (result.plan !== 'free') return result;
-    return {
-      ...result,
-      source: 'free+orb_boost',
-      limits: {
-        ...result.limits,
-        dailyMessageLimit: 100,
-        dailyMediaCredits: 15,
-        dailyVoiceMinutes: 5,
-        maxToolCallsPerMessage: 5,
-      },
-    };
-  },
-  getEffectiveLimitsForAvatar: (_avatarId: string, entitlement: EntitlementRecord | null) => {
-    const entitlementStatus = entitlement?.status;
-    if (!entitlement || (entitlementStatus !== 'active' && entitlementStatus !== 'trial')) {
-      return {
-        avatarId: _avatarId,
-        plan: 'free',
-        limits: PLAN_DEFAULTS.free,
-        source: 'default',
-        entitlementStatus,
-      };
-    }
-    return {
-      avatarId: _avatarId,
-      plan: entitlement.plan,
-      limits: entitlement.limits ?? PLAN_DEFAULTS[entitlement.plan],
-      source: 'entitlement',
-      entitlementStatus,
-    };
-  },
-  toRuntimeLimits: (limits: PlanLimits) => ({
-    memoryEnabled: limits.memoryEnabled,
-    dailyMessageLimit: limits.dailyMessageLimit,
-    dailyMediaCredits: limits.dailyMediaCredits,
-    dailyVoiceMinutes: limits.dailyVoiceMinutes,
-    maxToolCallsPerMessage: limits.maxToolCallsPerMessage,
-    autonomousPostsEnabled: limits.autonomousPostsEnabled,
-    priorityProcessing: limits.priorityProcessing,
-  }),
-  syncRuntimeLimitsToState: async (params: Record<string, unknown>) => {
-    mockSyncCalls.push(params);
-  },
-}));
-
-// Mock burn-stats (needed by avatar-ascend module-level imports)
-vi.mock('./web3/burn-stats.js', () => ({
-  getBurnStats: async () => ({ totalBurned: 0, tier: 0, tierName: 'Spark' }),
-}));
-
-// Mock @solana/web3.js Connection + PublicKey (needed by avatar-ascend module-level init).
-// IMPORTANT: bun:test mock.module is process-global and persistent. This mock
-// MUST provide every export that any other test file might import from
-// @solana/web3.js, or those tests will break.
-vi.mock('@solana/web3.js', () => ({
-  Connection: class {
-    constructor() {}
-    async getParsedTokenAccountsByOwner() { return { value: [] }; }
-  },
-  PublicKey: class {
-    constructor(public readonly _key: string) {}
-    toString() { return this._key; }
-    toBase58() { return this._key; }
-  },
-}));
-
-// Mock @aws-sdk DynamoDB (needed by avatar-ascend module-level init).
-// IMPORTANT: mock classes must have `send` on the prototype so that
-// vi.spyOn(DynamoDBClient.prototype, 'send') in later test files still works
-// (bun:test mock.module is process-global and persistent).
-vi.mock('@aws-sdk/client-dynamodb', () => ({
-  DynamoDBClient: class MockDynamoDBClient {
-    constructor() {}
-    async send(_command: unknown) { return {}; }
-  },
-}));
-
-vi.mock('@aws-sdk/lib-dynamodb', () => {
-  class MockDynamoDBDocumentClient {
-    static from() { return new MockDynamoDBDocumentClient(); }
-    async send(_command: unknown) { return {}; }
-  }
-  return {
-    DynamoDBDocumentClient: MockDynamoDBDocumentClient,
-    GetCommand: class { constructor(public input: unknown) {} },
-    UpdateCommand: class { constructor(public input: unknown) {} },
-    PutCommand: class { constructor(public input: unknown) {} },
-  };
-});
-
-// IMPORTANT: bun:test mock.module is process-global and persistent. This @swarm/core
-// mock MUST provide every export that any other test file might import, or those
-// tests will break. We use a Proxy as the base so unknown properties return safe
-// defaults instead of undefined.
-const noopFn = () => {};
-const noopLogger = { debug: noopFn, info: noopFn, warn: noopFn, error: noopFn, child: () => noopLogger };
-const coreOverrides: Record<string, unknown> = {
-  RATI_MINT: 'mock-rati-mint',
-  GATE_COLLECTION: 'mock-gate-collection',
-  ASCENSION_ENERGY_BOOST: { maxEnergyMultiplier: 1.5, regenRateMultiplier: 1.5 },
-  getAscensionCost: () => ({ currentTier: { tier: 0, name: 'Spark' }, ratiBurnRequired: 100 }),
-  getTierForBurnAmount: () => ({ tier: 0, name: 'Spark' }),
-  getNextTier: () => ({ tier: 1, name: 'Ember', requiredBurn: 1000 }),
-  logger: noopLogger,
-  buildMediaUrl: noopFn,
-  canonicalizeMediaUrl: noopFn,
-  validateEnv: noopFn,
-  HandlerEnvSchema: {},
-  DEFAULT_AVATAR_CONFIG: {},
-  DEFAULT_LLM_MODEL: 'openrouter/auto',
-  extractCorrelationIdFromSqsRecord: () => undefined,
-  createContentStoreService: noopFn,
-  enqueuePost: noopFn,
-  isPostQueueConfigured: () => false,
-  getPostQueueUrl: () => '',
-  enqueueMediaJob: noopFn,
-  isMediaQueueConfigured: () => false,
-  getMediaQueueUrl: () => '',
-  // Platform adapters
-  TwitterAdapter: class { constructor() {} },
-  DiscordAdapter: class { constructor() {} },
-};
-vi.mock('@swarm/core', () => new Proxy(coreOverrides, {
-  get(target, prop) {
-    if (prop in target) return target[prop as string];
-    // Return a no-op function for unknown exports to prevent "X is undefined" errors
-    return noopFn;
-  },
-}));
-
-// ── Import AFTER mocks ─────────────────────────────────────────────────────
+// ── Import AFTER env setup ──────────────────────────────────────────────────
 const avatarAscendModule = await import('./avatar-ascend.js');
 const { grantAscensionEntitlement } = avatarAscendModule;
 
@@ -212,10 +50,51 @@ function makeEntitlement(
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 describe('grantAscensionEntitlement', () => {
+  let getEntitlementSpy: ReturnType<typeof spyOn>;
+  let setEntitlementSpy: ReturnType<typeof spyOn>;
+  let syncRuntimeLimitsSpy: ReturnType<typeof spyOn>;
+
   beforeEach(() => {
     mockGetEntitlementResult = null;
     mockSetEntitlementCalls = [];
     mockSyncCalls = [];
+
+    getEntitlementSpy = spyOn(entitlements, 'getEntitlement').mockImplementation(
+      async () => mockGetEntitlementResult
+    );
+    setEntitlementSpy = spyOn(entitlements, 'setEntitlement').mockImplementation(
+      async (params: Record<string, unknown>) => {
+        mockSetEntitlementCalls.push(params);
+        const plan = params.plan as string;
+        return {
+          pk: `ENTITLEMENT#${params.accountId}`,
+          sk: `AVATAR#${params.avatarId}`,
+          accountId: params.accountId,
+          avatarId: params.avatarId,
+          plan,
+          limits: PLAN_DEFAULTS[plan as keyof typeof PLAN_DEFAULTS],
+          status: params.status ?? 'active',
+          entitlementSource: params.entitlementSource,
+          createdAt: Date.now(),
+          createdBy: params.actorId,
+          updatedAt: Date.now(),
+          updatedBy: params.actorId,
+          gsi1pk: `AVATAR#${params.avatarId}`,
+          gsi1sk: 'ENTITLEMENT',
+        } as EntitlementRecord;
+      }
+    );
+    syncRuntimeLimitsSpy = spyOn(runtimeLimits, 'syncRuntimeLimitsToState').mockImplementation(
+      async (params: Record<string, unknown>) => {
+        mockSyncCalls.push(params);
+      }
+    );
+  });
+
+  afterEach(() => {
+    getEntitlementSpy.mockRestore();
+    setEntitlementSpy.mockRestore();
+    syncRuntimeLimitsSpy.mockRestore();
   });
 
   it('upgrades from free to pro on ascension', async () => {
@@ -227,16 +106,14 @@ describe('grantAscensionEntitlement', () => {
     expect(result.plan).toBe('pro');
     expect(result.reason).toBe('ascension_upgrade');
 
-    // Verify setEntitlement was called with correct params
     expect(mockSetEntitlementCalls.length).toBe(1);
     const call = mockSetEntitlementCalls[0];
     expect(call.plan).toBe('pro');
     expect(call.status).toBe('active');
     expect(call.actorId).toBe('wallet-abc');
     expect(call.entitlementSource).toBe('ascension');
-    expect(call.accountId).toBe('acc-1'); // Reuses existing accountId
+    expect(call.accountId).toBe('acc-1');
 
-    // Verify runtime limits were synced
     expect(mockSyncCalls.length).toBe(1);
     expect(mockSyncCalls[0].plan).toBe('pro');
   });
@@ -250,7 +127,6 @@ describe('grantAscensionEntitlement', () => {
     expect(result.plan).toBe('pro');
     expect(result.reason).toBe('ascension_upgrade');
 
-    // When no existing entitlement, uses wallet address as accountId
     expect(mockSetEntitlementCalls.length).toBe(1);
     expect(mockSetEntitlementCalls[0].accountId).toBe('wallet-abc');
     expect(mockSetEntitlementCalls[0].entitlementSource).toBe('ascension');
@@ -265,9 +141,7 @@ describe('grantAscensionEntitlement', () => {
     expect(result.plan).toBe('enterprise');
     expect(result.reason).toBe('already_enterprise');
 
-    // setEntitlement should NOT have been called
     expect(mockSetEntitlementCalls.length).toBe(0);
-    // syncRuntimeLimitsToState should NOT have been called
     expect(mockSyncCalls.length).toBe(0);
   });
 
@@ -285,8 +159,6 @@ describe('grantAscensionEntitlement', () => {
   });
 
   it('upgrades from suspended free entitlement', async () => {
-    // A suspended free entitlement should still allow upgrade since it is
-    // not an active paid plan
     mockGetEntitlementResult = makeEntitlement('free', 'suspended');
 
     const result = await grantAscensionEntitlement('avatar-1', 'wallet-abc');
@@ -298,8 +170,6 @@ describe('grantAscensionEntitlement', () => {
   });
 
   it('upgrades from suspended pro entitlement (not active)', async () => {
-    // A suspended pro entitlement is not active, so the rank check won't
-    // trigger the skip path. Ascension re-grants active pro.
     mockGetEntitlementResult = makeEntitlement('pro', 'suspended');
 
     const result = await grantAscensionEntitlement('avatar-1', 'wallet-abc');
@@ -322,82 +192,96 @@ describe('grantAscensionEntitlement', () => {
     expect(syncCall.plan).toBe('pro');
     expect(syncCall.source).toBe('entitlement');
 
-    // Verify the runtime limits reflect pro-tier values
-    const runtimeLimits = syncCall.runtimeLimits as Record<string, unknown>;
-    expect(runtimeLimits.memoryEnabled).toBe(true);
-    expect(runtimeLimits.dailyMessageLimit).toBe(500);
-    expect(runtimeLimits.dailyMediaCredits).toBe(50);
-    expect(runtimeLimits.autonomousPostsEnabled).toBe(true);
+    const runtimeLimitsVal = syncCall.runtimeLimits as Record<string, unknown>;
+    expect(runtimeLimitsVal.memoryEnabled).toBe(true);
+    expect(runtimeLimitsVal.dailyMessageLimit).toBe(500);
+    expect(runtimeLimitsVal.dailyMediaCredits).toBe(50);
+    expect(runtimeLimitsVal.autonomousPostsEnabled).toBe(true);
   });
 });
 
 // ── Ascension NFT validation tests ──────────────────────────────────────────
 describe('validateAscensionNftMint', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+  let dynamoSendMock: ReturnType<typeof spyOn>;
+  let fetchSpy: ReturnType<typeof spyOn>;
 
-  it('accepts an NFT whose owner and metadata match the ascended avatar', async () => {
-    vi.spyOn(DynamoDBDocumentClient.prototype, 'send').mockResolvedValue({
+  beforeEach(() => {
+    const mockClient = { send: async () => ({}) };
+    dynamoSendMock = spyOn(mockClient, 'send');
+    _setDynamoClient(mockClient as unknown as DynamoDBDocumentClient);
+
+    dynamoSendMock.mockResolvedValue({
       Item: {
         avatarId: 'avatar-1',
         name: 'Avatar One',
       },
-    } as never);
-    vi.spyOn(globalThis, 'fetch').mockImplementation(vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          result: {
-            ownership: { owner: 'wallet-abc' },
-            content: {
-              metadata: { name: 'Avatar One (Ascended)', symbol: 'ASCEND' },
-              json_uri: 'https://example.com/ascension.json',
+    });
+  });
+
+  afterEach(() => {
+    _setDynamoClient(null);
+    if (fetchSpy) fetchSpy.mockRestore();
+  });
+
+  it('accepts an NFT whose owner and metadata match the ascended avatar', async () => {
+    let fetchCallCount = 0;
+    fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      fetchCallCount++;
+      if (fetchCallCount === 1) {
+        return {
+          ok: true,
+          json: async () => ({
+            result: {
+              ownership: { owner: 'wallet-abc' },
+              content: {
+                metadata: { name: 'Avatar One (Ascended)', symbol: 'ASCEND' },
+                json_uri: 'https://example.com/ascension.json',
+              },
             },
-          },
-        }),
-      } as never)
-      .mockResolvedValueOnce({
+          }),
+        } as Response;
+      }
+      return {
         ok: true,
         json: async () => ({
           external_url: 'https://rati.chat/avatar/avatar-1',
           attributes: [{ trait_type: 'Avatar ID', value: 'avatar-1' }],
           properties: { creators: [{ address: 'wallet-abc', share: 100 }] },
         }),
-      } as never));
+      } as Response;
+    });
 
     const result = await avatarAscendModule.validateAscensionNftMint('avatar-1', 'wallet-abc', 'mint-1');
     expect(result).toEqual({ valid: true, owner: 'wallet-abc' });
   });
 
   it('rejects an owned NFT whose metadata is not linked to the avatar', async () => {
-    vi.spyOn(DynamoDBDocumentClient.prototype, 'send').mockResolvedValue({
-      Item: {
-        avatarId: 'avatar-1',
-        name: 'Avatar One',
-      },
-    } as never);
-    vi.spyOn(globalThis, 'fetch').mockImplementation(vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          result: {
-            ownership: { owner: 'wallet-abc' },
-            content: {
-              metadata: { name: 'Avatar One (Ascended)', symbol: 'ASCEND' },
-              json_uri: 'https://example.com/unrelated.json',
+    let fetchCallCount = 0;
+    fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      fetchCallCount++;
+      if (fetchCallCount === 1) {
+        return {
+          ok: true,
+          json: async () => ({
+            result: {
+              ownership: { owner: 'wallet-abc' },
+              content: {
+                metadata: { name: 'Avatar One (Ascended)', symbol: 'ASCEND' },
+                json_uri: 'https://example.com/unrelated.json',
+              },
             },
-          },
-        }),
-      } as never)
-      .mockResolvedValueOnce({
+          }),
+        } as Response;
+      }
+      return {
         ok: true,
         json: async () => ({
           external_url: 'https://rati.chat/avatar/other-avatar',
           attributes: [{ trait_type: 'Avatar ID', value: 'other-avatar' }],
           properties: { creators: [{ address: 'wallet-abc', share: 100 }] },
         }),
-      } as never));
+      } as Response;
+    });
 
     const result = await avatarAscendModule.validateAscensionNftMint('avatar-1', 'wallet-abc', 'mint-2');
     expect(result.valid).toBe(false);
@@ -405,13 +289,7 @@ describe('validateAscensionNftMint', () => {
   });
 
   it('rejects a mint owned by a different wallet', async () => {
-    vi.spyOn(DynamoDBDocumentClient.prototype, 'send').mockResolvedValue({
-      Item: {
-        avatarId: 'avatar-1',
-        name: 'Avatar One',
-      },
-    } as never);
-    vi.spyOn(globalThis, 'fetch').mockImplementation(vi.fn().mockResolvedValueOnce({
+    fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({
         result: {
@@ -422,7 +300,7 @@ describe('validateAscensionNftMint', () => {
           },
         },
       }),
-    } as never));
+    } as never);
 
     const result = await avatarAscendModule.validateAscensionNftMint('avatar-1', 'wallet-abc', 'mint-3');
     expect(result.valid).toBe(false);

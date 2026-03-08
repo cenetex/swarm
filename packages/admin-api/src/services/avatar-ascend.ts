@@ -42,16 +42,32 @@ import { getDynamoClient } from './dynamo-client.js';
 import { fetchAllAssetsByOwner } from './web3/helius-pagination.js';
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
-const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
-const HELIUS_RPC_URL = HELIUS_API_KEY
-  ? `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`
-  : 'https://api.mainnet-beta.solana.com';
-const HELIUS_TX_URL = HELIUS_API_KEY
-  ? `https://api.helius.xyz/v0/transactions/?api-key=${HELIUS_API_KEY}`
-  : null;
 
-const connection = new Connection(HELIUS_RPC_URL, 'confirmed');
-const dynamoClient = getDynamoClient();
+function getHeliusApiKey(): string | undefined {
+  return process.env.HELIUS_API_KEY;
+}
+
+function getHeliusRpcUrl(): string {
+  const key = getHeliusApiKey();
+  return key
+    ? `https://mainnet.helius-rpc.com/?api-key=${key}`
+    : 'https://api.mainnet-beta.solana.com';
+}
+
+function getHeliusTxUrl(): string | null {
+  const key = getHeliusApiKey();
+  return key
+    ? `https://api.helius.xyz/v0/transactions/?api-key=${key}`
+    : null;
+}
+
+let _connection: Connection | null = null;
+function getConnection(): Connection {
+  if (!_connection) {
+    _connection = new Connection(getHeliusRpcUrl(), 'confirmed');
+  }
+  return _connection;
+}
 
 // =============================================================================
 // Types
@@ -157,10 +173,10 @@ type OffchainAscensionMetadata = {
 };
 
 async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusParsedTransaction | null> {
-  if (!HELIUS_TX_URL) return null;
+  if (!getHeliusTxUrl()) return null;
 
   try {
-    const response = await fetch(HELIUS_TX_URL, {
+    const response = await fetch(getHeliusTxUrl()!, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ transactions: [signature] }),
@@ -191,10 +207,10 @@ async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusPa
 }
 
 async function getAsset(mint: string): Promise<HeliusAsset | null> {
-  if (!HELIUS_API_KEY) return null;
+  if (!getHeliusApiKey()) return null;
 
   try {
-    const response = await fetch(HELIUS_RPC_URL, {
+    const response = await fetch(getHeliusRpcUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -250,7 +266,7 @@ export async function getNftOwner(mint: string): Promise<string | null> {
 }
 
 async function getAscensionAvatar(avatarId: string): Promise<AvatarRecord | null> {
-  const result = await dynamoClient.send(new GetCommand({
+  const result = await getDynamoClient().send(new GetCommand({
     TableName: TABLE_NAME,
     Key: {
       pk: `AVATAR#${avatarId}`,
@@ -396,12 +412,12 @@ async function checkOrbOwnership(walletAddress: string): Promise<{
   hasOrb: boolean;
   ownedOrbs: Array<{ id: string; name: string }>;
 }> {
-  if (!HELIUS_API_KEY) {
+  if (!getHeliusApiKey()) {
     return { hasOrb: false, ownedOrbs: [] };
   }
 
   try {
-    const assets = await fetchAllAssetsByOwner(HELIUS_RPC_URL, walletAddress);
+    const assets = await fetchAllAssetsByOwner(getHeliusRpcUrl(), walletAddress);
 
     const orbs = assets.filter((asset) => {
       const collection = asset.grouping?.find((g) => g.group_key === 'collection');
@@ -433,7 +449,7 @@ export async function preflightAscend(
   walletAddress: string
 ): Promise<AscensionPreflightResult> {
   // Get the avatar
-  const avatarResult = await dynamoClient.send(new GetCommand({
+  const avatarResult = await getDynamoClient().send(new GetCommand({
     TableName: TABLE_NAME,
     Key: {
       pk: `AVATAR#${avatarId}`,
@@ -545,11 +561,11 @@ export async function verifyOrbBurn(
   signature: string
 ): Promise<BurnVerificationResult> {
   try {
-    if (!HELIUS_API_KEY) {
+    if (!getHeliusApiKey()) {
       return { verified: false, error: 'HELIUS_API_KEY not configured for burn verification' };
     }
 
-    const tx = await connection.getTransaction(signature, {
+    const tx = await getConnection().getTransaction(signature, {
       maxSupportedTransactionVersion: 0,
     });
 
@@ -617,7 +633,7 @@ export async function verifyRatiBurn(
   expectedAmount: number
 ): Promise<BurnVerificationResult> {
   try {
-    const tx = await connection.getTransaction(signature, {
+    const tx = await getConnection().getTransaction(signature, {
       maxSupportedTransactionVersion: 0,
     });
 
@@ -832,7 +848,7 @@ export async function executeAscension(
 
   try {
     // Update avatar record to mark as ascended
-    await dynamoClient.send(new UpdateCommand({
+    await getDynamoClient().send(new UpdateCommand({
       TableName: TABLE_NAME,
       Key: {
         pk: `AVATAR#${avatarId}`,
@@ -862,7 +878,7 @@ export async function executeAscension(
     }));
 
     // Create ascension NFT mapping for lookup
-    await dynamoClient.send(new PutCommand({
+    await getDynamoClient().send(new PutCommand({
       TableName: TABLE_NAME,
       Item: {
         pk: `ASCENSION_NFT#${nftMint}`,
@@ -874,7 +890,7 @@ export async function executeAscension(
     }));
 
     // Get updated avatar for response
-    const avatarResult = await dynamoClient.send(new GetCommand({
+    const avatarResult = await getDynamoClient().send(new GetCommand({
       TableName: TABLE_NAME,
       Key: {
         pk: `AVATAR#${avatarId}`,
@@ -969,7 +985,7 @@ export function generateAscensionMetadata(avatar: AvatarRecord): AscensionMetada
  */
 export async function getAscendedAvatarByNft(nftMint: string): Promise<AvatarRecord | null> {
   // First, look up the mapping
-  const mappingResult = await dynamoClient.send(new GetCommand({
+  const mappingResult = await getDynamoClient().send(new GetCommand({
     TableName: TABLE_NAME,
     Key: {
       pk: `ASCENSION_NFT#${nftMint}`,
@@ -984,7 +1000,7 @@ export async function getAscendedAvatarByNft(nftMint: string): Promise<AvatarRec
   const avatarId = mappingResult.Item.avatarId as string;
 
   // Fetch the avatar
-  const avatarResult = await dynamoClient.send(new GetCommand({
+  const avatarResult = await getDynamoClient().send(new GetCommand({
     TableName: TABLE_NAME,
     Key: {
       pk: `AVATAR#${avatarId}`,
@@ -1039,7 +1055,7 @@ export async function getAvatarAscensionStatus(avatarId: string): Promise<{
     regenMultiplier: number;
   };
 }> {
-  const result = await dynamoClient.send(new GetCommand({
+  const result = await getDynamoClient().send(new GetCommand({
     TableName: TABLE_NAME,
     Key: {
       pk: `AVATAR#${avatarId}`,
