@@ -192,6 +192,8 @@ async function getGlobalBotToken(): Promise<string | null> {
   for (const name of [
     `${SECRET_PREFIX}/global/discord_bot_token/global-bot`,
     `${SECRET_PREFIX}/global/discord-bot-token/global-bot`,
+    `${SECRET_PREFIX}/global/discord_bot_token/default`,
+    `${SECRET_PREFIX}/global/discord-bot-token/default`,
   ]) {
     try {
       const r = await secretsClient.send(new GetSecretValueCommand({ SecretId: name }));

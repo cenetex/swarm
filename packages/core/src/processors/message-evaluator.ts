@@ -187,9 +187,15 @@ export class MessageEvaluator {
       if (envelope.metadata.isMention) {
         return { shouldRespond: true, reason: 'Mentioned in global mode', priority: 'high' };
       }
-      // Respond if avatar's name appears in the message text
+      // Respond if avatar's base name appears in the message text.
+      // Strip emoji and special chars from avatar name, then match each word
+      // so "Chamuel 😇" matches "chamuel", "chamuel silverlight", "hey chamuel", etc.
       const text = envelope.content.text?.toLowerCase() || '';
-      if (text.includes(this.avatarConfig.name.toLowerCase())) {
+      const baseName = this.avatarConfig.name
+        .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '')
+        .trim()
+        .toLowerCase();
+      if (baseName && text.includes(baseName)) {
         return { shouldRespond: true, reason: 'Named in global mode', priority: 'normal' };
       }
       // If in an explicitly allowed channel, respond to all messages

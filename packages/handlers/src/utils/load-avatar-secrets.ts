@@ -52,6 +52,7 @@ function secretCandidates(
       `${base}/default`,
       base,
       `${globalBase}/default`,
+      `${globalBase}/global-bot`,
       globalBase,
       `${sharedBase}/default`,
       sharedBase,
@@ -207,11 +208,24 @@ export async function loadAvatarSecrets(
       adminApiNameCandidates.push(...secretCandidatesWithNames(secretPrefix, avatarId, secretName, ['api-token'], environment));
     }
 
-    const value = await getFirstSecret(secretsService, [
+    let value = await getFirstSecret(secretsService, [
       ...baseCandidates,
       ...adminApiNameCandidates,
     ]);
     if (value) {
+      // Unwrap JSON-wrapped secrets (e.g. {"DISCORD_BOT_TOKEN":"..."})
+      // Some secrets are stored as JSON objects with the env key as property name.
+      if (value.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(value);
+          const unwrapped = parsed[envKey] || parsed[secretName] || parsed[secretName.toUpperCase()];
+          if (typeof unwrapped === 'string') {
+            value = unwrapped;
+          }
+        } catch {
+          // Not valid JSON, use raw value
+        }
+      }
       result[envKey] = value;
     }
   }));

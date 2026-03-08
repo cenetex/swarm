@@ -466,7 +466,7 @@ export const TelegramConfigSchema = z.object({
 
 export const DiscordConfigSchema = z.object({
   enabled: z.boolean(),
-  mode: z.enum(['webhook', 'bot', 'hybrid']),
+  mode: z.enum(['webhook', 'bot', 'hybrid', 'global']),
 
   // Webhook mode
   webhookUrl: z.string().optional(),
