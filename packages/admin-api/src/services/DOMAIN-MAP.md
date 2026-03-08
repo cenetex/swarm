@@ -43,7 +43,7 @@ wallet linking.
 |--------|-------------|
 | `wallet-auth` | Wallet signature auth, session management |
 | `privy-auth` | Privy access token verification |
-| `account-gate` | Account-level access gating |
+| `account-gate` | Best-wallet gate status for account display (per-wallet enforcement) |
 | `accounts` | Account CRUD, wallet-to-account mapping |
 | `wallet-link` | Multi-wallet linking challenges |
 | `nft-gate` | NFT ownership verification for gating |

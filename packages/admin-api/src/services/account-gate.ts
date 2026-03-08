@@ -15,8 +15,22 @@ export interface AccountGateDeps {
 /**
  * Compute gate status at the account level.
  *
- * Current implementation selects the "best" linked wallet (max availableSlots, then nftsHeld)
- * and returns its GateStatus as the account-level status.
+ * **Design decision (per-wallet enforcement):**
+ * Gate enforcement is per-wallet, not aggregated across linked wallets.
+ * Each wallet's NFT holdings independently determine its own avatar creation
+ * slots (1 free + 1 per Orb held by that wallet). Avatar creation in
+ * `createAvatarWithWallet()` enforces slots against the individual
+ * `creatorWallet`, not the account as a whole.
+ *
+ * This function selects the "best" linked wallet (max availableSlots, then
+ * nftsHeld) and returns its GateStatus as the account-level status. This is
+ * used for UI display purposes (showing the user their best available gate
+ * status) but does NOT imply cross-wallet aggregation. The full per-wallet
+ * breakdown is available in `gateStatusByWallet` for transparency.
+ *
+ * True account-level aggregation (summing slots across wallets) would require
+ * changes to the avatar creation flow and slot reservation logic, and is
+ * intentionally out of scope.
  */
 export async function getAccountGateStatus(
   accountId: string,

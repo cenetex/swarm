@@ -69,9 +69,9 @@ Effective Limit = max(entitlement_limit, web3_augmented_limit)
 Gate NFTs control avatar creation slots. This stays as-is.
 
 - 1 free avatar per wallet
-- +1 slot per Gate NFT (Orb) held
+- +1 slot per Gate NFT (Orb) held by that wallet
 - Abandonment requires burning 1 Orb → mints Lineage NFT
-- Account-level gating aggregates across linked wallets
+- Gate enforcement is per-wallet: each wallet's NFT holdings determine its own avatar creation slots independently. Linking multiple wallets to one account does not aggregate slots across wallets. The UI shows the best single wallet's gate status for convenience.
 
 **Code:** `nft-gate.ts`, `avatar-ownership.ts`, `lineage-nft.ts`, `account-gate.ts`
 
@@ -191,5 +191,5 @@ This means:
 | `admin-api/src/services/energy-burn.ts` | Burn-to-energy conversion |
 | `admin-api/src/services/nft-gate.ts` | Gate NFT verification, slots |
 | `admin-api/src/services/avatar-ascend.ts` | Ascension with Orb + RATI burn |
-| `admin-api/src/services/account-gate.ts` | Account-level NFT aggregation |
+| `admin-api/src/services/account-gate.ts` | Best-wallet gate status selection for account display (per-wallet, not aggregated) |
 | `admin-api/src/handlers/avatar-routes/entitlements.ts` | Admin routes for entitlement management |
