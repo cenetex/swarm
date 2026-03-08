@@ -4,7 +4,7 @@
  * API endpoints for recording and querying privacy-policy consent.
  *
  * Routes:
- *   POST /consent  — record consent acceptance (body: { policyVersion })
+ *   POST /consent  — record consent acceptance (body: { policyVersion, noticeHash? })
  *   GET  /consent  — check current consent status (query: ?policyVersion=1.1)
  *   POST /consent/revoke — revoke consent (body: { policyVersion })
  */
@@ -27,6 +27,7 @@ import {
 
 const RecordConsentSchema = z.object({
   policyVersion: z.string().min(1),
+  noticeHash: z.string().min(1).optional(),
 });
 
 const RevokeConsentSchema = z.object({
@@ -98,7 +99,9 @@ async function handleRecordConsent(
 
   const record = await recordConsent({
     userId: session.userId,
+    accountId: session.accountId,
     policyVersion: parsed.data.policyVersion,
+    noticeHash: parsed.data.noticeHash,
   });
 
   return jsonResponse(200, {
@@ -106,6 +109,7 @@ async function handleRecordConsent(
       policyVersion: record.policyVersion,
       acceptedAt: record.acceptedAt,
       status: record.status,
+      noticeHash: record.noticeHash,
     },
   }, corsHeaders);
 }
@@ -123,6 +127,7 @@ async function handleGetConsent(
 
   const record = await getConsentStatus({
     userId: session.userId,
+    accountId: session.accountId,
     policyVersion,
   });
 
@@ -136,6 +141,7 @@ async function handleGetConsent(
       policyVersion: record.policyVersion,
       acceptedAt: record.acceptedAt,
       status: record.status,
+      noticeHash: record.noticeHash,
     },
   }, corsHeaders);
 }
@@ -159,6 +165,7 @@ async function handleRevokeConsent(
 
   const revoked = await revokeConsent({
     userId: session.userId,
+    accountId: session.accountId,
     policyVersion: parsed.data.policyVersion,
   });
 
