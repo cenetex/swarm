@@ -21,6 +21,8 @@ gh issue list --repo cenetex/aws-swarm --state open --limit 200
 ## 3) Keep local mirrors in sync (optional)
 
 - Local `issues/open` and `issues/features` are planning mirrors only.
+- The stale `issues/open/*.yml` mirror set was archived on 2026-03-08 to
+  `issues/archive/open-stale-2026-03-08/`.
 - Refresh a read-only mirror report:
 
 ```bash
@@ -38,3 +40,5 @@ This generates `issues/GITHUB-OPEN-ISSUES.md`.
 
 - Do not use local files to drive issue lifecycle.
 - If local and GitHub differ, GitHub is correct.
+- Do not repopulate `issues/open/` by hand; either regenerate from GitHub or
+  leave it empty.

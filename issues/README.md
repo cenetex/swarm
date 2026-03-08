@@ -13,6 +13,10 @@ GitHub Issues is the **only source of truth** for issue lifecycle (open/close/st
 - `issues/open/*.yml` and `issues/features/*.json` are optional local planning references.
 - These files should include `githubIssue` so every local item maps to a real GitHub issue.
 - If local and GitHub differ, GitHub wins.
+- The stale `issues/open/*.yml` mirror set was archived on 2026-03-08 to
+  `issues/archive/open-stale-2026-03-08/`.
+- `issues/open/` is now intentionally empty of issue mirror YAML files until a
+  fresh mirror is generated from GitHub.
 
 ## Recommended workflow
 
