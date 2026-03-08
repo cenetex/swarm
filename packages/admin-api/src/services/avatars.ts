@@ -3,6 +3,7 @@
  * Avatar Management Service
  */
 import {
+  DeleteCommand,
   PutCommand,
   GetCommand,
   QueryCommand,
@@ -36,6 +37,16 @@ import { emitAvatarCreated, emitAvatarCreationFailed } from './funnel-emitter.js
 
 const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
+
+async function releaseClaimedNFTMint(mintAddress: string): Promise<void> {
+  await dynamoClient.send(new DeleteCommand({
+    TableName: ADMIN_TABLE,
+    Key: {
+      pk: `CLAIMED_NFT#${mintAddress}`,
+      sk: 'AVATAR',
+    },
+  }));
+}
 
 /**
  * Generate a URL-safe avatar ID from name
@@ -469,6 +480,10 @@ export async function deleteAvatar(
   }
 
   await updateAvatar(avatarId, { status: 'deleted' }, session);
+
+  if (existing?.nftMint) {
+    await releaseClaimedNFTMint(existing.nftMint);
+  }
 }
 
 /**
