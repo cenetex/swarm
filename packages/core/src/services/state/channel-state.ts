@@ -7,6 +7,7 @@ import type {
   Platform,
   ResponseDecision,
 } from '../../types/index.js';
+import { truncateContent } from '../../utils/redact-pii.js';
 
 // =============================================================================
 // CHANNEL STATE CONFIGURATION (Kyro-style)
@@ -180,6 +181,14 @@ export async function addMessageToChannel(
   const ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
   const isDirect = Boolean(message.isMention || message.isReplyToBot);
 
+  // Data minimization: truncate message content stored in channel state buffers.
+  // Full content is available in CloudWatch logs for debugging; the state buffer
+  // only needs enough context for response evaluation and conversation display.
+  const truncatedMessage: ContextMessage = {
+    ...message,
+    content: truncateContent(message.content, 200),
+  };
+
   const updateParts = [
     'recentMessages = list_append(if_not_exists(recentMessages, :emptyList), :newMessage)',
     'messageCount = if_not_exists(messageCount, :zero) + :one',
@@ -244,7 +253,7 @@ export async function addMessageToChannel(
     ExpressionAttributeNames: expressionAttributeNames,
     ExpressionAttributeValues: {
       ':emptyList': [],
-      ':newMessage': [message],
+      ':newMessage': [truncatedMessage],
       ':zero': 0,
       ':one': 1,
       ':now': now,

@@ -84,3 +84,11 @@ export {
   markdownToTelegramHtml,
   stripMarkdown,
 } from './telegram-html.js';
+
+// PII redaction
+export {
+  redactString,
+  redactData,
+  redactLogData,
+  truncateContent,
+} from './redact-pii.js';

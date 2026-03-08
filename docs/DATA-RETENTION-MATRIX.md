@@ -44,7 +44,7 @@ a current implementation status, and an owner responsible for compliance.
 | Tweet Reply Tracking | `swarm-state-{env}` | `ttl` | 7 days | 7 days | Compliant | Core |
 | User Cooldowns | `swarm-state-{env}` | `ttl` | 1 day after expiry | 1 day after expiry | Compliant | Core |
 | Presence/Channel State | `swarm-state-{env}` | `ttl` | 2 hours | 2 hours | Compliant | Core |
-| Audit Events | `SwarmAdmin-{env}` | `ttl` | 90 days | 1 year | **Needs Change** | Admin API |
+| Audit Events | `SwarmAdmin-{env}` | `ttl` | 365 days (configurable via `AUDIT_TTL_DAYS`) | 1 year | Compliant | Admin API |
 | Admin Chat Sessions | `SwarmAdmin-{env}` | `ttl` | Per-item (varies) | 30 days | Compliant | Admin API |
 | Content Store (posted) | `swarm-state-{env}` | `ttl` | 90 days | 90 days | Compliant | Core |
 | Content Store (rejected) | `swarm-state-{env}` | `ttl` | 7 days | 7 days | Compliant | Core |
@@ -123,18 +123,15 @@ a current implementation status, and an owner responsible for compliance.
 
 | Status | Count | Action Required |
 |--------|-------|----------------|
-| Compliant | 44 | None |
-| **Needs Change** | 1 | Audit events TTL should be extended to 1 year |
+| Compliant | 45 | None |
 | **No Control** | 2 | Add rotation reminders for Secrets Manager keys |
 
 ### 3.1 Required Remediation
 
-#### R1: Extend Audit Event Retention to 1 Year
+#### R1: Extend Audit Event Retention to 1 Year -- RESOLVED
 
-**Current**: 90-day TTL in `packages/admin-api/src/services/audit-log.ts`
-**Target**: 365-day TTL
-**Rationale**: Audit events are compliance-critical and should survive longer than operational data. 90 days is insufficient for annual compliance reviews.
-**Tracked**: Issue to be filed separately.
+**Status**: Implemented in issue #881.
+**Change**: TTL extended from 90 days to 365 days (configurable via `AUDIT_TTL_DAYS` env var) in `packages/admin-api/src/services/audit-log.ts`.
 
 #### R2: Secret Rotation Policy
 
@@ -254,7 +251,28 @@ To request an exception to the standard retention policy:
 
 ---
 
-## 6. Change Control
+## 6. PII Minimization Controls (added in #881)
+
+### 6.1 Structured Log Redaction
+
+All structured log output is redacted via `packages/core/src/utils/redact-pii.ts`, applied at two integration points:
+
+1. **Core Logger** (`packages/core/src/utils/logger.ts`) -- redacts the `data` parameter of all log methods before JSON serialization.
+2. **Admin-API Structured Logger** (`packages/admin-api/src/services/structured-logger.ts`) -- redacts data before both console output and DynamoDB observability storage.
+
+Redacted patterns: email addresses, Ethereum/Solana wallet addresses, Bearer/Bot tokens, API key patterns, IPv4 addresses (except localhost). Sensitive key names (email, phone, password, token, etc.) are fully replaced with `[REDACTED]`.
+
+### 6.2 Channel State Message Truncation
+
+Message content stored in DynamoDB channel state buffers (`recentMessages`) is truncated to 200 characters at write time. Full message content is available only in CloudWatch logs (which have bounded retention). This limits PII exposure in the 90-day channel state TTL window.
+
+### 6.3 Telegram Webhook Log Reduction
+
+DM allowlist check logs that included sender identifiers (userId, username, allowedDmUserIds) have been demoted from INFO to DEBUG level. Production systems run at INFO level, so these identifiers are no longer retained in CloudWatch logs.
+
+---
+
+## 7. Change Control
 
 Any change to retention settings must:
 

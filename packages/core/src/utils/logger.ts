@@ -1,6 +1,11 @@
 /**
  * Logger utility with structured logging for CloudWatch
+ *
+ * All structured log output is automatically redacted for PII (emails, wallet
+ * addresses, tokens, API keys, IP addresses) via the central redact-pii utility.
  */
+import { redactLogData } from './redact-pii.js';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 const VALID_LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'] as const;
@@ -70,12 +75,13 @@ export class Logger {
     message: string,
     data?: Record<string, unknown>
   ): string {
+    const redactedData = redactLogData(data);
     const logEntry = {
       timestamp: new Date().toISOString(),
       level: level.toUpperCase(),
       message,
       ...this.context,
-      ...data,
+      ...redactedData,
     };
 
     return JSON.stringify(logEntry);

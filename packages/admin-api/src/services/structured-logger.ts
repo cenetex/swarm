@@ -1,16 +1,19 @@
 /* eslint-disable no-console -- This IS the structured logger; console is the CloudWatch transport */
 /**
  * Structured Logger
- * 
+ *
  * Dual-writes logs to:
  * 1. console.log (picked up by CloudWatch Logs for long-term storage)
  * 2. DynamoDB (for instant retrieval in the UI)
- * 
+ *
+ * All log data is automatically redacted for PII before output.
+ *
  * Usage:
  *   const log = createAvatarLogger('avatar-id', 'telegram');
  *   log.info('chat', 'message_received', { userId: '123' });
  *   log.error('llm', 'api_error', { error: 'timeout' });
  */
+import { redactLogData } from '@swarm/core';
 import { recordLog, type LogLevel } from './avatar-observability.js';
 
 export interface StructuredLogger {
@@ -43,6 +46,7 @@ export function createAvatarLogger(
     event: string,
     data?: Record<string, unknown>
   ) => {
+    const redactedData = redactLogData(data);
     const logEntry = {
       level,
       subsystem,
@@ -50,7 +54,7 @@ export function createAvatarLogger(
       avatarId: context.avatarId,
       platform: context.platform,
       requestId: context.requestId,
-      ...data,
+      ...redactedData,
     };
 
     // 1. Write to console (CloudWatch picks this up)
@@ -64,8 +68,8 @@ export function createAvatarLogger(
         level,
         subsystem,
         event,
-        message: data?.message as string || event,
-        data,
+        message: redactedData?.message as string || event,
+        data: redactedData,
         requestId: context.requestId,
         platform: context.platform,
       }).catch((err) => {

@@ -19,8 +19,14 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { getDynamoClient } from './dynamo-client.js';
 
-// Audit TTL: 90 days
-const AUDIT_TTL_SECONDS = 90 * 24 * 60 * 60;
+// Audit TTL: 365 days (configurable via environment variable).
+// Extended from 90 days to meet GDPR compliance evidence retention requirements.
+// Audit events record state transitions (activation, entitlement changes) and
+// contain actorId + eventType but no message content or user PII.
+const AUDIT_TTL_SECONDS = parseInt(
+  process.env.AUDIT_TTL_DAYS || '365',
+  10
+) * 24 * 60 * 60;
 
 // ============================================================================
 // Types

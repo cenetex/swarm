@@ -394,12 +394,10 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       const isAllowedUser = await isAllowedDmUser(senderId, senderUsername, allowedDmUserIds);
       const isBotOwner = await isTelegramUserOwnerOfAvatar(senderId, avatarId);
 
-      // Debug logging to understand why DMs are being blocked
-      logger.info('DM allowlist check', {
+      // Debug-level only: contains user identifiers for troubleshooting DM access.
+      // Demoted from INFO to avoid retaining PII in production CloudWatch logs.
+      logger.debug('DM allowlist check', {
         event: 'dm_allowlist_check',
-        senderId,
-        senderUsername,
-        allowedDmUserIds,
         isAllowedDmUser: isAllowedUser,
         isBotOwner,
         hasTelegramCfg: !!telegramCfg,
