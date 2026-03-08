@@ -1943,6 +1943,49 @@ export class AdminApiConstruct extends Construct {
       integration: billingIntegration,
     });
 
+    // Consent handler - privacy-policy consent persistence
+    const consentHandler = new nodejs.NodejsFunction(this, 'ConsentHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/consent.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
+        ALLOWED_ORIGINS: allowedOrigins.join(','),
+        AUTH_DOMAIN: adminDomain || 'admin.rati.chat',
+        ...activeUserLimitEnvVars,
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+      logRetention,
+      tracing: lambda.Tracing.ACTIVE,
+    });
+
+    this.table.grantReadWriteData(consentHandler);
+
+    const consentIntegration = new integrations.HttpLambdaIntegration(
+      'ConsentIntegration',
+      consentHandler,
+    );
+
+    this.api.addRoutes({
+      path: '/consent',
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      integration: consentIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/consent/revoke',
+      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      integration: consentIntegration,
+    });
+
     // Telegram webhook handler - MUST use shared @swarm/handlers multi-tenant webhook.
     // The legacy admin-api implementation has been removed.
     if (!props.telegramWebhookFunction) {

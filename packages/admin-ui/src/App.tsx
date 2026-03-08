@@ -138,6 +138,14 @@ function App() {
     };
   }, [authChecked]);
 
+  // Sync consent status from backend once authenticated
+  useEffect(() => {
+    if (!authChecked || !isAuthenticated) return;
+    useConsentStore.getState().syncFromBackend().catch(() => {
+      // Fallback to localStorage state on error
+    });
+  }, [authChecked, isAuthenticated]);
+
   // Fetch avatars from backend once authenticated (run once when conditions are met)
   useEffect(() => {
     if (initialized || !authChecked || !isAuthenticated) return;
