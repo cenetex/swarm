@@ -581,6 +581,11 @@ export class AdminApiConstruct extends Construct {
         INTERNAL_TEST_KEY: internalTestKey,
         // Discord gateway runtime status (so admin API can report accurate health)
         DISCORD_GATEWAY_ENABLED: props.enableDiscordGateway ? 'true' : 'false',
+        // GitHub issue tracking (read-only, for MCP tools)
+        ...(props.githubTokenSecretArn ? {
+          GITHUB_TOKEN_SECRET_ARN: props.githubTokenSecretArn,
+          GITHUB_REPO: props.githubRepo || 'cenetex/aws-swarm',
+        } : {}),
         ...activeUserLimitEnvVars,
       },
       bundling: {
@@ -2787,6 +2792,8 @@ export class AdminApiConstruct extends Construct {
       // Grant permissions
       this.table.grantReadWriteData(githubIssueSyncFn);
       githubTokenSecret.grantRead(githubIssueSyncFn);
+      // Also grant chat handler read access for MCP issue tracking tools
+      githubTokenSecret.grantRead(this.chatHandler);
 
       // Wire DynamoDB Streams event source with filter for ISSUE#/META inserts.
       // The filter uses DynamoDB JSON format for stream record matching.

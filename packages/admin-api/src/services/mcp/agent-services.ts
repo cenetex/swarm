@@ -5,14 +5,45 @@
  * observability, MCP admin, Moltbook, and media jobs.
  */
 import type { AllServices, VoiceServices } from '@swarm/mcp-server';
+import {
+  listGitHubAvatarIssues,
+  getGitHubDeploymentStatus,
+  type GitHubClientConfig,
+} from '@swarm/core';
+import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import type { UserSession } from '../../types.js';
 import type { ServiceContainer } from '../service-container.js';
 import { getBotToken } from './helpers.js';
 
 type AgentServices = Pick<
   AllServices,
-  'memory' | 'voice' | 'diagnostics' | 'observability' | 'mcpAdmin' | 'moltbook' | 'jobs'
+  'memory' | 'voice' | 'diagnostics' | 'observability' | 'mcpAdmin' | 'moltbook' | 'jobs' | 'githubIssues'
 >;
+
+// ---------------------------------------------------------------------------
+// GitHub token cache (lazy, 5-min TTL)
+// ---------------------------------------------------------------------------
+let _ghToken: string | undefined;
+let _ghTokenExpiresAt = 0;
+const GH_TOKEN_TTL_MS = 5 * 60 * 1000;
+
+async function getGitHubConfig(): Promise<GitHubClientConfig | null> {
+  const secretArn = process.env.GITHUB_TOKEN_SECRET_ARN;
+  if (!secretArn) return null;
+
+  const now = Date.now();
+  if (_ghToken && now < _ghTokenExpiresAt) {
+    return { token: _ghToken, repo: process.env.GITHUB_REPO || 'cenetex/aws-swarm' };
+  }
+
+  const client = new SecretsManagerClient({});
+  const result = await client.send(new GetSecretValueCommand({ SecretId: secretArn }));
+  if (!result.SecretString) return null;
+
+  _ghToken = result.SecretString.trim();
+  _ghTokenExpiresAt = now + GH_TOKEN_TTL_MS;
+  return { token: _ghToken, repo: process.env.GITHUB_REPO || 'cenetex/aws-swarm' };
+}
 
 /**
  * Create agent-facing MCP services for a specific avatar.
@@ -258,5 +289,33 @@ export function createAgentServices(
     // Moltbook Services (Social network for AI agents)
     // =========================================================================
     moltbook: svc.createMoltbookServices(avatarId, session),
+
+    // =========================================================================
+    // GitHub Issue Tracking (read-only, avatar-scoped)
+    // =========================================================================
+    githubIssues: {
+      getMyIssues: async (reqAvatarId, state) => {
+        const cfg = await getGitHubConfig();
+        if (!cfg) return [];
+
+        const issues = await listGitHubAvatarIssues(cfg, reqAvatarId, state);
+        return Promise.all(issues.map(async (issue) => {
+          const deployment = issue.state === 'closed'
+            ? await getGitHubDeploymentStatus(cfg, issue)
+            : null;
+          return {
+            number: issue.number,
+            title: issue.title,
+            state: issue.state,
+            labels: issue.labels,
+            assignee: issue.assignee,
+            updatedAt: issue.updatedAt,
+            closedAt: issue.closedAt,
+            deployedIn: deployment?.status === 'released' ? (deployment.releaseName ?? 'yes') : null,
+            url: issue.htmlUrl,
+          };
+        }));
+      },
+    },
   };
 }
