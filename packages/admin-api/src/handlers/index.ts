@@ -11,3 +11,4 @@ export { handler as consolidationWorkerHandler } from './consolidation-worker.js
 export { handler as openaiCompatHandler, createApiKey } from './openai-compat.js';
 export { handler as publicProfileHandler, leaderboardHandler } from './public-profile.js';
 export { handler as billingHandler } from './billing.js';
+export { handler as consentHandler } from './consent.js';

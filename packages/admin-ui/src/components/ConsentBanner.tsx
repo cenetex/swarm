@@ -64,7 +64,7 @@ export function ConsentBanner() {
             <ConsentItem
               emoji="💬"
               title="AI Conversations"
-              desc="Your chat messages (up to 20 recent messages) are sent to third-party AI providers (Anthropic Claude, OpenAI GPT-4 via OpenRouter) for response generation."
+              desc="Your chat messages are sent to third-party AI providers (Anthropic Claude, OpenAI GPT-4 via OpenRouter) for response generation. Media prompts are sent to Replicate."
             />
             <ConsentItem
               emoji="🔗"
@@ -79,7 +79,7 @@ export function ConsentBanner() {
             <ConsentItem
               emoji="🗄️"
               title="Storage &amp; Retention"
-              desc="Chat history is auto-deleted after 24 hours. Avatar memories are retained for 30 days. Audit logs are kept for 90 days."
+              desc="Chat history is auto-deleted after 24 hours. AI memories are tiered: ephemeral (1 day), durable (90 days), and archival (permanent until avatar deletion). Audit logs are kept for 90 days. Depending on the data type, retention is enforced through TTLs, lifecycle rules, or deletion workflows."
             />
           </div>
         </div>
