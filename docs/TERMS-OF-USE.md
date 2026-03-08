@@ -404,20 +404,32 @@ data, secrets, or configuration.
 
 ### 11.3 Data Retention
 
-Data is retained according to the Platform's Data Retention Matrix:
+Data is retained according to the Platform's Data Retention Matrix
+(see `docs/DATA-RETENTION-MATRIX.md` for full details). All retention
+windows below are enforced by automatic TTL-based deletion or lifecycle
+policies:
 
 | Data Type | Retention Period |
 |-----------|-----------------|
-| Channel State | 90 days |
+| Session Records | 24 hours |
 | Activity Records | 24 hours |
-| Chat History | Per platform (processed, not stored long-term) |
+| Admin Chat Messages | 24 hours (configurable) |
+| Channel State | 90 days |
 | AI Memory (Ephemeral) | 1 day |
 | AI Memory (Durable) | 90 days |
-| AI Memory (Archival) | Unlimited |
-| Audit Events | 90 days (planned: 1 year) |
-| Application Logs | 14-30 days |
-| Media Assets | 30 days (temp: 1 day) |
+| AI Memory (Archival) | Unlimited (until avatar deletion) |
+| Canonical Memories | 30 days |
+| Extracted Facts | 90 days |
+| Content Store (posted) | 90 days |
+| Content Store (pending) | 30 days |
+| Content Store (rejected) | 7 days |
+| Audit Events | 90 days |
+| Application Logs (message processing) | 30 days |
+| Application Logs (admin, Discord, other) | 14 days |
+| Media Assets (temporary) | 1 day |
+| Media Assets (general) | 30 days, then tiered storage |
 | Avatar Secrets | Until avatar deletion |
+| Account & Identity Records | Until account deletion |
 
 ### 11.4 Data Deletion
 
