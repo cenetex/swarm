@@ -376,7 +376,10 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
             for (const msg of historyFromServer.slice(lastUserIndex + 1)) {
               if (msg && msg.role === 'tool' && typeof msg.content === 'string') {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                toolResultEntries.push({ content: msg.content, tool_call_id: (msg as any).tool_call_id || '' });
+                const tcId = (msg as any).tool_call_id;
+                if (tcId && typeof tcId === 'string') {
+                  toolResultEntries.push({ content: msg.content, tool_call_id: tcId });
+                }
               }
               if (msg && msg.role === 'assistant' && Array.isArray((msg as Record<string, unknown>).tool_calls)) {
                 assistantToolCallsMsg = msg;

@@ -50,7 +50,7 @@ export function sanitizeMessages(messages: AdminChatMessage[]): AdminChatMessage
     if (msg.role === 'tool') {
       // Only include tool results that have a matching tool call
       const toolCallId = (msg as ToolResult).tool_call_id;
-      if (!toolCallId || !validToolCallIds.has(toolCallId)) {
+      if (!toolCallId || toolCallId.trim() === '' || !validToolCallIds.has(toolCallId)) {
         logger.info('Skipping orphaned tool result', { toolCallId });
         continue;
       }
@@ -515,10 +515,18 @@ type MessageContent = string | Array<{ type: string; text?: string; image_url?: 
 export function toSdkMessages(messages: AdminChatMessage[]): Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: MessageContent; toolCallId?: string }> {
   return messages.map(message => {
     if (message.role === 'tool') {
+      const tcId = message.tool_call_id;
+      if (!tcId || (typeof tcId === 'string' && tcId.trim() === '')) {
+        // Skip tool messages with missing/empty tool_call_id — they cause provider 400 errors
+        return {
+          role: 'user' as const,
+          content: '[system: tool result omitted — missing tool_call_id]',
+        };
+      }
       return {
         role: 'tool' as const,
         content: typeof message.content === 'string' ? redactMediaUrlsFromText(message.content) : message.content,
-        toolCallId: message.tool_call_id,
+        toolCallId: tcId,
       };
     }
 
