@@ -477,7 +477,9 @@ export const createNFTTools = (services: NFTServices) => [
             avatarName: result.avatarName,
             avatarImage: result.avatarImage,
             nftMint: input.mint,
-            note: 'This avatar is linked to your NFT. If you sell the NFT, you will lose access to this avatar.',
+            // TODO(#857): Wire getAvatarWithOwnershipCheck() into avatar access path to enforce
+            // ownership revocation on NFT transfer. Until then, messaging reflects current behavior.
+            note: 'This avatar is linked to your NFT. Ownership was recorded at claim time.',
           },
         };
       } catch (error) {

@@ -774,6 +774,12 @@ export async function createAvatarFromNFT(
  * Get an avatar with NFT ownership verification
  * For NFT-backed avatars, verifies the wallet still owns the NFT
  * Returns null if the avatar is inaccessible (NFT sold)
+ *
+ * TODO(#857): This function exists but is NOT wired into the normal avatar
+ * access path (e.g. GET /avatars/:id, chat routes, tool execution). NFT-backed
+ * avatars remain accessible after the backing NFT is transferred. To enforce
+ * revocation, call this instead of getAvatar() in the request middleware —
+ * but be aware it adds a Helius RPC call per request for NFT-backed avatars.
  */
 export async function getAvatarWithOwnershipCheck(
   avatarId: string,
