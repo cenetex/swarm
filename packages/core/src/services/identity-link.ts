@@ -20,13 +20,16 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
+  DeleteCommand,
   GetCommand,
   PutCommand,
   QueryCommand,
+  ScanCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { Platform } from '../types/platform.js';
 import type {
+  ConsentRevocationResult,
   IdentityLink,
   IdentityLinkAuditEvent,
   IdentityLinkService,
@@ -115,6 +118,10 @@ export class IdentityLinkServiceImpl implements IdentityLinkService {
       return existing;
     }
 
+    // Determine whether this is a fresh link or a re-grant after revocation.
+    // Re-grants start fresh — previously purged data is NOT recovered.
+    const isRegrant = existing?.status === 'revoked';
+
     const link: IdentityLink = {
       userId,
       platform,
@@ -138,11 +145,14 @@ export class IdentityLinkServiceImpl implements IdentityLinkService {
     );
 
     await this.auditLog({
-      action: 'link_created',
+      action: isRegrant ? 'link_regrant' : 'link_created',
       userId,
       platform,
       platformUserId,
       occurredAt: now,
+      reason: isRegrant
+        ? 'consent_regranted_after_revocation — fresh_start — previously_purged_data_not_recovered'
+        : undefined,
     });
 
     return link;
@@ -280,8 +290,152 @@ export class IdentityLinkServiceImpl implements IdentityLinkService {
   }
 
   // -------------------------------------------------------------------------
+  // revokeAndPurge
+  // -------------------------------------------------------------------------
+
+  async revokeAndPurge(
+    userId: string,
+    platform: Platform,
+    platformUserId: string,
+  ): Promise<ConsentRevocationResult> {
+    const now = new Date().toISOString();
+
+    // Step 1: Revoke the identity link (forward block)
+    const revokedLink = await this.revokeLink(userId, platform, platformUserId);
+
+    // Step 2: Log purge initiation
+    await this.auditLog({
+      action: 'purge_started',
+      userId,
+      platform,
+      platformUserId,
+      occurredAt: now,
+    });
+
+    // Step 3: Find and purge cross-platform memories tagged with source platform.
+    // Memories are stored under MEMORY#<avatarId> with a `sourcePlatform` attribute
+    // when created via cross-platform merge. We scan for memories belonging to this
+    // user that were sourced from the revoked platform.
+    const memoriesPurged = await this._purgeCrossPlatformMemories(
+      userId,
+      platform,
+    );
+
+    // Step 4: Document retention exceptions for stores where retroactive purge
+    // is not technically feasible.
+    const retentionExceptions = [
+      {
+        store: 'audit_log',
+        reason:
+          'Audit events are append-only and immutable. They contain only metadata ' +
+          '(actorId, eventType, timestamps) — no message content or user PII.',
+        lawfulBasis: 'GDPR Art. 17(3)(e) — establishment, exercise, or defence of legal claims',
+      },
+      {
+        store: 'channel_state_buffers',
+        reason:
+          'Channel state buffers contain truncated message snippets (max 200 chars) ' +
+          'used for response evaluation. These have a 90-day TTL and self-expire. ' +
+          'Messages are not individually attributable to cross-platform sources.',
+        lawfulBasis: 'GDPR Art. 17(3)(e) — legitimate interest in service operation; self-expiring with TTL',
+      },
+      {
+        store: 'cloudwatch_logs',
+        reason:
+          'Structured log events may reference userId/platform combinations. ' +
+          'CloudWatch Logs are retained per log-group retention policy and cannot ' +
+          'be selectively purged by user.',
+        lawfulBasis: 'GDPR Art. 17(3)(e) — security and incident investigation; time-limited retention',
+      },
+    ];
+
+    // Log each retention exception
+    for (const exception of retentionExceptions) {
+      await this.auditLog({
+        action: 'purge_limitation_documented',
+        userId,
+        platform,
+        platformUserId,
+        occurredAt: now,
+        reason: `${exception.store}: ${exception.reason} (${exception.lawfulBasis})`,
+      });
+    }
+
+    // Step 5: Log purge completion
+    await this.auditLog({
+      action: 'purge_completed',
+      userId,
+      platform,
+      platformUserId,
+      occurredAt: now,
+      reason: `memories_purged=${memoriesPurged}`,
+    });
+
+    return {
+      revokedLink,
+      memoriesPurged,
+      retentionExceptions,
+      revokedAt: now,
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // Private helpers
   // -------------------------------------------------------------------------
+
+  /**
+   * Find and delete memories that were created via cross-platform merging
+   * from the specified platform. Memories created through cross-platform
+   * merge are tagged with `sourcePlatform` to enable selective purge.
+   *
+   * Memories without a `sourcePlatform` tag are presumed to be
+   * single-platform and are not purged.
+   */
+  private async _purgeCrossPlatformMemories(
+    userId: string,
+    sourcePlatform: Platform,
+  ): Promise<number> {
+    let purged = 0;
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+    let pagesScanned = 0;
+    const maxPages = 20;
+
+    while (pagesScanned < maxPages) {
+      const result = await this.docClient.send(
+        new ScanCommand({
+          TableName: this.tableName,
+          FilterExpression:
+            'begins_with(pk, :memPrefix) AND userId = :userId AND sourcePlatform = :sourcePlatform',
+          ExpressionAttributeValues: {
+            ':memPrefix': 'MEMORY#',
+            ':userId': userId,
+            ':sourcePlatform': sourcePlatform,
+          },
+          Limit: 100,
+          ExclusiveStartKey: exclusiveStartKey,
+        }),
+      );
+
+      const items = result.Items ?? [];
+      for (const item of items) {
+        await this.docClient.send(
+          new DeleteCommand({
+            TableName: this.tableName,
+            Key: { pk: item.pk as string, sk: item.sk as string },
+          }),
+        );
+        purged++;
+      }
+
+      pagesScanned++;
+      exclusiveStartKey = result.LastEvaluatedKey as
+        | Record<string, unknown>
+        | undefined;
+      if (!exclusiveStartKey) break;
+    }
+
+    return purged;
+  }
 
   private async _getLink(
     userId: string,

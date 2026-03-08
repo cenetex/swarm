@@ -51,9 +51,13 @@ export interface IdentityLink {
 export type IdentityLinkAuditAction =
   | 'link_created'
   | 'link_revoked'
+  | 'link_regrant'
   | 'merge_allowed'
   | 'merge_denied'
-  | 'consent_checked';
+  | 'consent_checked'
+  | 'purge_started'
+  | 'purge_completed'
+  | 'purge_limitation_documented';
 
 export interface IdentityLinkAuditEvent {
   /** Audit event type. */
@@ -106,4 +110,42 @@ export interface IdentityLinkService {
    * Emit a structured audit event. Implementations must not include PII.
    */
   auditLog(event: IdentityLinkAuditEvent): Promise<void>;
+
+  /**
+   * Revoke consent and purge previously mirrored cross-platform data.
+   *
+   * This performs three operations atomically:
+   * 1. Revokes the identity link (forward block)
+   * 2. Purges cross-platform memories tagged with the source platform
+   * 3. Logs all purge actions in the audit trail
+   *
+   * @returns A summary of the revocation and purge actions taken.
+   */
+  revokeAndPurge(
+    userId: string,
+    platform: Platform,
+    platformUserId: string,
+  ): Promise<ConsentRevocationResult>;
+}
+
+// =============================================================================
+// CONSENT REVOCATION RESULT
+// =============================================================================
+
+/**
+ * Result of a consent revocation with purge operation.
+ */
+export interface ConsentRevocationResult {
+  /** The revoked identity link (null if no link existed). */
+  revokedLink: IdentityLink | null;
+  /** Number of cross-platform memories purged. */
+  memoriesPurged: number;
+  /** Data stores where retroactive purge was not technically feasible. */
+  retentionExceptions: Array<{
+    store: string;
+    reason: string;
+    lawfulBasis: string;
+  }>;
+  /** ISO-8601 timestamp of the revocation. */
+  revokedAt: string;
 }

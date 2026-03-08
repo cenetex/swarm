@@ -1032,6 +1032,7 @@ export * from './admin-bridge.js';
 
 export type {
   IdentityLinkStatus,
+  ConsentRevocationResult,
   IdentityLink,
   IdentityLinkAuditAction,
   IdentityLinkAuditEvent,
