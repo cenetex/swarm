@@ -20,6 +20,8 @@ to erasure / "right to be forgotten").
 | Identity Links | `SwarmAdmin-{env}` | `USER#{userId}` / `IDENTITY_LINK#{platform}#{platformUserId}` | Yes | Until revoked |
 | Avatar Memories | `SwarmAdmin-{env}` | `MEMORY#{avatarId}` / `{tier}#{ts}#{id}` (filtered by userId) | Yes | 30 days TTL |
 | Auto-Issues | `SwarmAdmin-{env}` | `ISSUE#{issueId}` / `META` (filtered by avatarId) | Yes | 30 days TTL |
+| Media Assets (Gallery) | `SwarmAdmin-{env}` + S3 `swarm-media-*` | `AVATAR#{avatarId}` / `GALLERY#{ts}#{id}` | Yes (DynamoDB record + S3 object) | 30-day S3 Intelligent Tiering |
+| Media Jobs | `SwarmAdmin-{env}` + S3 `swarm-media-*` | `MEDIAJOB#{jobId}` / `STATUS` (filtered by avatarId) | Yes (DynamoDB record + result S3 object) | 24h TTL |
 
 ---
 
@@ -167,8 +169,10 @@ DSAR Lambda Handler
          +-- exportUserData()   -- full export
          +-- eraseUserData()    -- delete + audit
               |
-              +-- QueryCommand (CHAT#, USER#, MEMORY#, ISSUE#, AUDIT#)
-              +-- DeleteCommand (for deletable data)
+              +-- QueryCommand (CHAT#, USER#, MEMORY#, ISSUE#, AUDIT#, GALLERY#)
+              +-- ScanCommand (MEDIAJOB# filtered by avatarId)
+              +-- DeleteCommand (for deletable DynamoDB data)
+              +-- DeleteObjectCommand (for S3 media objects)
               +-- PutCommand (audit trail of erasure)
 ```
 
@@ -178,11 +182,16 @@ DSAR Lambda Handler
 
 - **CloudWatch logs** are not covered by the automated erasure. Structured logging
   does NOT log message content (only metadata). Logs auto-expire per retention policy.
-- **S3 media assets** are not yet covered. Avatar media follows S3 lifecycle rules.
 - **Memories** are discovered via table scan filtered by userId. For large tables,
   consider adding a GSI on userId for better performance.
 - **Cross-table data**: only the `SwarmAdmin` table is covered. The `swarm-state`
   table (channel state, activity records) uses TTL-based auto-expiry.
+- **S3 media exports**: the export endpoint includes gallery metadata (URLs, s3Keys,
+  prompts) but does not download or bundle actual S3 objects. Users can retrieve
+  media via the provided URLs before erasure.
+- **Shared media assets**: if an avatar's gallery item is referenced by other avatars
+  (e.g., a shared sticker set), the S3 object deletion may affect other users. This
+  is documented as a retention exception if detected.
 
 ---
 
@@ -194,7 +203,11 @@ bun test packages/admin-api/src/services/dsar.test.ts
 
 Tests cover:
 - Data discovery with populated and empty data
+- Data discovery includes media asset and media job counts
 - Export returns structured data with retention exceptions
-- Erasure deletes records and records an audit event
-- Dry-run mode previews without deleting
+- Export includes gallery metadata (url, s3Key, prompt, type, createdAt)
+- Export includes media job metadata (jobId, status, resultS3Key)
+- Erasure deletes DynamoDB records and S3 objects for gallery items and media jobs
+- Erasure records media deletion counts in audit event
+- Dry-run mode previews without deleting (including S3 objects)
 - Graceful handling of users with no data

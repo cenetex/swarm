@@ -14,6 +14,8 @@
  *   Avatar memories        | MEMORY#<avatarId> / *           | Scan with userId filter
  *   Audit log              | AUDIT#<avatarId> / EVENT#       | Query (retained, not deleted)
  *   Auto-issues            | ISSUE#<issueId> / META          | Scan with avatarId filter
+ *   Media assets (gallery) | AVATAR#<avatarId> / GALLERY#*   | Query by inhabited avatarId
+ *   Media jobs             | MEDIAJOB#<jobId> / STATUS       | Scan with avatarId filter
  *
  * Sessions (SESSION#<token> / DATA) cannot be efficiently queried by accountId
  * without a GSI. The service documents this limitation and skips session
@@ -31,6 +33,7 @@ import {
   DeleteCommand,
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getDynamoClient } from './dynamo-client.js';
 import {
   recordAuditEventWith,
@@ -68,6 +71,8 @@ export interface DSARExport {
     auditLog: AuditEvent[];
     memories: Record<string, unknown>[];
     issues: Record<string, unknown>[];
+    mediaAssets: Record<string, unknown>[];
+    mediaJobs: Record<string, unknown>[];
   };
   retentionExceptions: Array<{ dataClass: string; reason: string }>;
 }
@@ -85,6 +90,8 @@ export interface DSARErasureResult {
 export interface DSARDeps {
   dynamoClient: Pick<DynamoDBDocumentClient, 'send'>;
   tableName: string;
+  s3Client?: Pick<S3Client, 'send'>;
+  mediaBucket?: string;
 }
 
 // ============================================================================
@@ -98,6 +105,8 @@ function getDefaultDeps(): DSARDeps {
     _defaultDeps = {
       dynamoClient: getDynamoClient(),
       tableName: process.env.ADMIN_TABLE || 'swarm-admin',
+      s3Client: new S3Client({}),
+      mediaBucket: process.env.MEDIA_BUCKET,
     };
   }
   return _defaultDeps;
@@ -256,6 +265,121 @@ async function queryIssuesForUser(
 }
 
 /**
+ * Find avatarIds inhabited by a wallet address.
+ * Uses GSI1 to query sk=INHABITANT#<wallet> records, or falls back to the
+ * WALLET#<wallet>/INHABITS direct mapping.
+ */
+async function findInhabitedAvatarIds(
+  deps: DSARDeps,
+  walletAddress: string,
+): Promise<string[]> {
+  const avatarIds: string[] = [];
+
+  // Check the WALLET#<wallet>/INHABITS direct mapping
+  const walletMapping = await deps.dynamoClient.send(
+    new GetCommand({
+      TableName: deps.tableName,
+      Key: { pk: `WALLET#${walletAddress}`, sk: 'INHABITS' },
+    }),
+  );
+  if (walletMapping.Item) {
+    const avatarId = (walletMapping.Item as { avatarId?: string }).avatarId;
+    if (avatarId) avatarIds.push(avatarId);
+  }
+
+  // Also scan for INHABITANT# records (legacy schema) to catch all associations
+  const scanResult = await deps.dynamoClient.send(
+    new ScanCommand({
+      TableName: deps.tableName,
+      FilterExpression: 'begins_with(sk, :prefix) AND walletAddress = :wallet',
+      ExpressionAttributeValues: {
+        ':prefix': 'INHABITANT#',
+        ':wallet': walletAddress,
+      },
+      Limit: 100,
+    }),
+  );
+  for (const item of (scanResult.Items || []) as Record<string, unknown>[]) {
+    const id = item.avatarId as string;
+    if (id && !avatarIds.includes(id)) avatarIds.push(id);
+  }
+
+  return avatarIds;
+}
+
+/**
+ * Query gallery items for an avatar: pk=AVATAR#<avatarId>, sk begins_with GALLERY#
+ */
+async function queryGalleryItems(
+  deps: DSARDeps,
+  avatarId: string,
+): Promise<Record<string, unknown>[]> {
+  const collected: Record<string, unknown>[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  let pagesQueried = 0;
+  const maxPages = 20;
+
+  while (pagesQueried < maxPages) {
+    const result = await deps.dynamoClient.send(
+      new QueryCommand({
+        TableName: deps.tableName,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+        ExpressionAttributeValues: {
+          ':pk': `AVATAR#${avatarId}`,
+          ':prefix': 'GALLERY#',
+        },
+        Limit: 100,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+
+    collected.push(...((result.Items || []) as Record<string, unknown>[]));
+    pagesQueried += 1;
+    exclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    if (!exclusiveStartKey) break;
+  }
+
+  return collected;
+}
+
+/**
+ * Query media job records that reference a given avatarId.
+ * Jobs are keyed by MEDIAJOB#<jobId>, so we scan with a filter.
+ */
+async function queryMediaJobsForAvatar(
+  deps: DSARDeps,
+  avatarId: string,
+): Promise<Record<string, unknown>[]> {
+  const collected: Record<string, unknown>[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  let pagesScanned = 0;
+  const maxPages = 5;
+
+  while (pagesScanned < maxPages) {
+    const result = await deps.dynamoClient.send(
+      new ScanCommand({
+        TableName: deps.tableName,
+        FilterExpression: 'begins_with(pk, :jobPrefix) AND sk = :status AND avatarId = :avatarId',
+        ExpressionAttributeValues: {
+          ':jobPrefix': 'MEDIAJOB#',
+          ':status': 'STATUS',
+          ':avatarId': avatarId,
+        },
+        Limit: 100,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+
+    collected.push(...((result.Items || []) as Record<string, unknown>[]));
+    pagesScanned += 1;
+    exclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    if (!exclusiveStartKey) break;
+  }
+
+  return collected;
+}
+
+/**
  * Derive the chat-history lookup key (email) from the account profile.
  * The admin chat history is keyed by CHAT#<email>, where email comes from
  * the account profile or falls back to a wallet address used as the email field.
@@ -321,12 +445,29 @@ export async function discoverUserDataWith(
   // Use walletAddress as the userId for memories/issues (matches how authenticateRequest sets userId)
   const userId = walletAddress || accountId;
 
+  // Step 3b: Find inhabited avatarIds for media asset lookup
+  const avatarIds = walletAddress
+    ? await findInhabitedAvatarIds(deps, walletAddress)
+    : [];
+
   const [chatRecords, memories, auditEvents, issues] = await Promise.all([
     email ? queryChatHistory(deps, email) : Promise.resolve([]),
     queryMemoriesForUser(deps, userId),
     listAuditEventsWith(auditDeps, userId, { limit: 500 }),
     queryIssuesForUser(deps, userId),
   ]);
+
+  // Step 4: Query media assets (gallery items and media jobs) for each avatar
+  const allGalleryItems: Record<string, unknown>[] = [];
+  const allMediaJobs: Record<string, unknown>[] = [];
+  for (const avatarId of avatarIds) {
+    const [galleryItems, mediaJobs] = await Promise.all([
+      queryGalleryItems(deps, avatarId),
+      queryMediaJobsForAvatar(deps, avatarId),
+    ]);
+    allGalleryItems.push(...galleryItems);
+    allMediaJobs.push(...mediaJobs);
+  }
 
   const dataClasses: DSARInventoryItem[] = [
     {
@@ -370,6 +511,24 @@ export async function discoverUserDataWith(
       approximateCount: issues.length,
       retentionPolicy: '30 days (TTL)',
       identifierUsed: `avatarId=${userId} (scan filter)`,
+    },
+    {
+      dataClass: 'mediaAssets',
+      description: 'Gallery items (generated images, videos, stickers) stored in S3',
+      approximateCount: allGalleryItems.length,
+      retentionPolicy: '30-day transition to Intelligent Tiering',
+      identifierUsed: avatarIds.length > 0
+        ? avatarIds.map((id) => `AVATAR#${id} / GALLERY#*`).join(', ')
+        : 'N/A (no inhabited avatars)',
+    },
+    {
+      dataClass: 'mediaJobs',
+      description: 'Media generation job records (async image/video processing)',
+      approximateCount: allMediaJobs.length,
+      retentionPolicy: '24 hours (TTL)',
+      identifierUsed: avatarIds.length > 0
+        ? avatarIds.map((id) => `avatarId=${id} (scan filter)`).join(', ')
+        : 'N/A (no inhabited avatars)',
     },
   ];
 
@@ -417,12 +576,55 @@ export async function exportUserDataWith(
     tableName: deps.tableName,
   };
 
+  // Step 3b: Find inhabited avatarIds for media asset lookup
+  const avatarIds = walletAddress
+    ? await findInhabitedAvatarIds(deps, walletAddress)
+    : [];
+
   const [chatRecords, memories, auditEvents, issues] = await Promise.all([
     email ? queryChatHistory(deps, email) : Promise.resolve([]),
     queryMemoriesForUser(deps, userId),
     listAuditEventsWith(auditDeps, userId, { limit: 500 }),
     queryIssuesForUser(deps, userId),
   ]);
+
+  // Step 4: Query media assets for each avatar
+  const allGalleryItems: Record<string, unknown>[] = [];
+  const allMediaJobs: Record<string, unknown>[] = [];
+  for (const avatarId of avatarIds) {
+    const [galleryItems, mediaJobs] = await Promise.all([
+      queryGalleryItems(deps, avatarId),
+      queryMediaJobsForAvatar(deps, avatarId),
+    ]);
+    allGalleryItems.push(...galleryItems);
+    allMediaJobs.push(...mediaJobs);
+  }
+
+  // Export gallery items with relevant metadata (no S3 download — metadata only)
+  const mediaAssetExport = allGalleryItems.map((item) => ({
+    id: item.id,
+    avatarId: item.avatarId,
+    type: item.type,
+    url: item.url,
+    s3Key: item.s3Key,
+    prompt: item.prompt,
+    caption: item.caption,
+    model: item.model,
+    platform: item.platform,
+    createdAt: item.createdAt,
+  }));
+
+  const mediaJobExport = allMediaJobs.map((item) => ({
+    jobId: item.jobId,
+    avatarId: item.avatarId,
+    type: item.type,
+    status: item.status,
+    prompt: item.prompt,
+    resultUrl: item.resultUrl,
+    resultS3Key: item.resultS3Key,
+    createdAt: item.createdAt,
+    completedAt: item.completedAt,
+  }));
 
   // Combine identity records: account-side + reverse-mapping
   const allIdentityRecords = [
@@ -440,6 +642,8 @@ export async function exportUserDataWith(
       auditLog: auditEvents,
       memories,
       issues,
+      mediaAssets: mediaAssetExport,
+      mediaJobs: mediaJobExport,
     },
     retentionExceptions: [
       {
@@ -498,12 +702,29 @@ export async function eraseUserDataWith(
     tableName: deps.tableName,
   };
 
+  // Step 3b: Find inhabited avatarIds for media asset lookup
+  const avatarIds = walletAddress
+    ? await findInhabitedAvatarIds(deps, walletAddress)
+    : [];
+
   const [chatRecords, memories, auditEvents, issues] = await Promise.all([
     email ? queryChatHistory(deps, email) : Promise.resolve([]),
     queryMemoriesForUser(deps, userId),
     listAuditEventsWith(auditDeps, userId, { limit: 500 }),
     queryIssuesForUser(deps, userId),
   ]);
+
+  // Query media assets for each avatar
+  const allGalleryItems: Record<string, unknown>[] = [];
+  const allMediaJobs: Record<string, unknown>[] = [];
+  for (const avatarId of avatarIds) {
+    const [galleryItems, mediaJobs] = await Promise.all([
+      queryGalleryItems(deps, avatarId),
+      queryMediaJobsForAvatar(deps, avatarId),
+    ]);
+    allGalleryItems.push(...galleryItems);
+    allMediaJobs.push(...mediaJobs);
+  }
 
   const deleted: Array<{ dataClass: string; count: number }> = [];
   const retained: Array<{ dataClass: string; count: number; reason: string }> = [];
@@ -594,7 +815,58 @@ export async function eraseUserDataWith(
     deleted.push({ dataClass: 'issues', count: issues.length });
   }
 
-  // 7. Audit events are RETAINED (compliance exception — lawful basis)
+  // 7. Delete gallery items (DynamoDB records + S3 objects)
+  if (!dryRun) {
+    for (const galleryItem of allGalleryItems) {
+      // Delete DynamoDB record
+      await deps.dynamoClient.send(
+        new DeleteCommand({
+          TableName: deps.tableName,
+          Key: { pk: galleryItem.pk as string, sk: galleryItem.sk as string },
+        }),
+      );
+      // Delete S3 object if s3Key and bucket are available
+      const s3Key = galleryItem.s3Key as string | undefined;
+      if (s3Key && deps.s3Client && deps.mediaBucket) {
+        await deps.s3Client.send(
+          new DeleteObjectCommand({
+            Bucket: deps.mediaBucket,
+            Key: s3Key,
+          }),
+        );
+      }
+    }
+  }
+  if (allGalleryItems.length > 0) {
+    deleted.push({ dataClass: 'mediaAssets', count: allGalleryItems.length });
+  }
+
+  // 8. Delete media job records
+  if (!dryRun) {
+    for (const job of allMediaJobs) {
+      await deps.dynamoClient.send(
+        new DeleteCommand({
+          TableName: deps.tableName,
+          Key: { pk: job.pk as string, sk: job.sk as string },
+        }),
+      );
+      // Delete result S3 object if present
+      const resultS3Key = job.resultS3Key as string | undefined;
+      if (resultS3Key && deps.s3Client && deps.mediaBucket) {
+        await deps.s3Client.send(
+          new DeleteObjectCommand({
+            Bucket: deps.mediaBucket,
+            Key: resultS3Key,
+          }),
+        );
+      }
+    }
+  }
+  if (allMediaJobs.length > 0) {
+    deleted.push({ dataClass: 'mediaJobs', count: allMediaJobs.length });
+  }
+
+  // 9. Audit events are RETAINED (compliance exception — lawful basis)
   if (auditEvents.length > 0) {
     retained.push({
       dataClass: 'auditLog',
@@ -603,7 +875,7 @@ export async function eraseUserDataWith(
     });
   }
 
-  // 8. Record the erasure request as an audit event (immutable)
+  // 10. Record the erasure request as an audit event (immutable)
   if (!dryRun) {
     await recordAuditEventWith(auditDeps, {
       avatarId: userId,
@@ -618,6 +890,10 @@ export async function eraseUserDataWith(
         chatHistoryDeleted: chatRecords.length,
         memoriesDeleted: memories.length,
         issuesDeleted: issues.length,
+        mediaAssetsDeleted: allGalleryItems.length,
+        mediaJobsDeleted: allMediaJobs.length,
+        s3ObjectsDeleted: allGalleryItems.filter((i) => i.s3Key).length +
+          allMediaJobs.filter((j) => j.resultS3Key).length,
         auditEventsRetained: auditEvents.length,
       },
     });
