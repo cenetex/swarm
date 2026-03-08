@@ -172,3 +172,15 @@ export {
   _resetBudgets as _resetProactiveBudgets,
   DEFAULT_PROACTIVE_CONFIG,
 } from './proactive-scheduler.js';
+export {
+  getIssue as getGitHubIssue,
+  listIssues as listGitHubIssues,
+  listAvatarIssues as listGitHubAvatarIssues,
+  getRecentReleases as getGitHubRecentReleases,
+  getDeploymentStatus as getGitHubDeploymentStatus,
+  clearGitHubCache,
+  type GitHubIssue,
+  type GitHubRelease,
+  type GitHubClientConfig,
+  type GitHubIssueFilters,
+} from './github-client.js';

@@ -118,6 +118,10 @@ export {
   type BillingEntitlement,
   type BillingUsage,
 } from './billing.js';
+export {
+  createGitHubIssueTools,
+  type GitHubIssueServices,
+} from './github-issues.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';
 import { createGalleryTools } from './gallery.js';
@@ -145,6 +149,7 @@ import { createObservabilityTools } from './observability.js';
 import { createMoltbookTools } from './moltbook.js';
 import { createTokenLaunchTools } from './token-launch.js';
 import { createBillingTools } from './billing.js';
+import { createGitHubIssueTools } from './github-issues.js';
 import type { ToolRegistry } from '../registry.js';
 
 /**
@@ -187,6 +192,8 @@ export interface AllServices {
   billing?: import('./billing.js').BillingServices;
   // Media model discovery & configuration (Replicate)
   mediaModels?: import('./media-models.js').MediaModelServices;
+  // GitHub issue tracking (read-only)
+  githubIssues?: import('./github-issues.js').GitHubIssueServices;
 }
 
 /**
@@ -253,5 +260,8 @@ export function registerAllTools(
   }
   if (services.mediaModels) {
     registry.registerAll(createMediaModelTools(services.mediaModels));
+  }
+  if (services.githubIssues) {
+    registry.registerAll(createGitHubIssueTools(services.githubIssues));
   }
 }

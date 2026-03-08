@@ -17,7 +17,7 @@ export type ToolsetId =
   | 'core' | 'media' | 'voice' | 'wallet' | 'profile' | 'gallery'
   | 'secrets' | 'jobs' | 'reference' | 'models' | 'config' | 'admin'
   | 'diagnostics' | 'telegram' | 'twitter' | 'discord' | 'property'
-  | 'memory' | 'nft' | 'claude-code' | 'moltbook';
+  | 'memory' | 'nft' | 'claude-code' | 'moltbook' | 'github';
 
 export interface ExternalMcpServer {
   id: string;                    // Unique identifier

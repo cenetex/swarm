@@ -39,6 +39,7 @@ const TOOLSET_KEYWORDS: Record<ToolsetId, string[]> = {
   nft: ['nft', 'ownership', 'claim', 'lineage'],
   'claude-code': ['code', 'coding', 'implement', 'refactor', 'debug', 'fix bug', 'write code', 'programming'],
   moltbook: ['moltbook', 'molty', 'submolt', 'karma', 'social', 'post', 'comment', 'vote'],
+  github: ['github', 'issue', 'bug report', 'reported', 'tracking', 'deployed', 'fixed', 'status'],
 };
 
 const TOOLSET_PRIORITY: ToolsetId[] = [
@@ -62,6 +63,7 @@ const TOOLSET_PRIORITY: ToolsetId[] = [
   'reference',
   'nft',
   'claude-code',
+  'github',
 ];
 
 function scoreToolset(text: string, keywords: string[]): number {

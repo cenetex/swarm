@@ -135,6 +135,11 @@ export function buildLabels(issue: AutoIssueRecord): string[] {
     labels.push(`type:bug`);
   }
 
+  // Avatar label (for agent-scoped issue tracking)
+  if (issue.avatarId) {
+    labels.push(`auto-issue:avatar:${issue.avatarId}`);
+  }
+
   // Subsystem label
   if (issue.subsystem) {
     const subsystemToPackage: Record<string, string> = {

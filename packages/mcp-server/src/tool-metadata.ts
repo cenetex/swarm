@@ -23,6 +23,7 @@ export const TOOLSETS = [
   'nft',
   'claude-code',
   'moltbook',
+  'github',
 ] as const;
 
 export type ToolsetId = typeof TOOLSETS[number];
@@ -70,6 +71,9 @@ export const TOOL_TAGS = [
   'presence',
   'channels',
   'cross-platform',
+  'github',
+  'issue-tracking',
+  'deployed',
 ] as const;
 
 export type ToolTag = typeof TOOL_TAGS[number];
@@ -86,6 +90,7 @@ export const CATEGORY_TOOLSET_MAP: Record<string, ToolsetId> = {
   telegram: 'telegram',
   property: 'property',
   nft: 'nft',
+  github: 'github',
 };
 
 export const TOOLSET_DEFAULT_TAGS: Record<ToolsetId, ToolTag[]> = {
@@ -110,4 +115,5 @@ export const TOOLSET_DEFAULT_TAGS: Record<ToolsetId, ToolTag[]> = {
   nft: ['nft', 'ownership'],
   'claude-code': ['claude-code', 'coding', 'avatar'],
   moltbook: [],
+  github: ['github', 'issue-tracking', 'deployed'],
 };
