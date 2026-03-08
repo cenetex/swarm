@@ -13,6 +13,7 @@ import {
   GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager';
 import { getDynamoClient } from '../dynamo-client.js';
+import { fetchAllAssetsByOwner } from './helius-pagination.js';
 
 // Required collection for access (Orb/Gate NFTs)
 const GATE_COLLECTION = '8GCAyy5L2o2ZPdQKo3EtYAYNKYT8Y6sqGHweintLTSJ';
@@ -340,42 +341,9 @@ export async function checkNFTGate(walletAddress: string): Promise<NFTGateResult
       return result;
     }
     
-    const response = await fetch(heliusRpcUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'nft-gate-check',
-        method: 'getAssetsByOwner',
-        params: {
-          ownerAddress: walletAddress,
-          page: 1,
-          limit: 100,
-          displayOptions: {
-            showCollectionMetadata: true,
-          },
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`[NFTGate] Helius API error: ${response.status}`);
-      result.error = 'Failed to verify NFT ownership';
-      return result;
-    }
-
-    const data = await response.json() as {
-      error?: { message?: string };
-      result?: { items?: NFTAsset[] };
-    };
-
-    if (data.error) {
-      console.error('[NFTGate] RPC error:', data.error);
-      result.error = data.error.message || 'RPC error';
-      return result;
-    }
-
-    const assets = data.result?.items || [];
+    const assets = await fetchAllAssetsByOwner(heliusRpcUrl, walletAddress, {
+      displayOptions: { showCollectionMetadata: true },
+    }) as NFTAsset[];
 
     // Filter for NFTs in the Gate collection
     const matchingNFTs = assets.filter((asset) => {
@@ -551,41 +519,10 @@ export async function getClaimableNFTs(walletAddress: string): Promise<Claimable
   }
 
   try {
-    // 1. Get all NFTs owned by wallet
-    const response = await fetch(heliusRpcUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'claimable-nfts',
-        method: 'getAssetsByOwner',
-        params: {
-          ownerAddress: walletAddress,
-          page: 1,
-          limit: 1000,
-          displayOptions: {
-            showCollectionMetadata: true,
-          },
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`[NFTGate] Helius API error fetching NFTs: ${response.status}`);
-      return [];
-    }
-
-    const data = await response.json() as {
-      error?: { message?: string };
-      result?: { items?: NFTAsset[] };
-    };
-
-    if (data.error) {
-      console.error('[NFTGate] RPC error:', data.error);
-      return [];
-    }
-
-    const assets = data.result?.items || [];
+    // 1. Get all NFTs owned by wallet (paginated)
+    const assets = await fetchAllAssetsByOwner(heliusRpcUrl, walletAddress, {
+      displayOptions: { showCollectionMetadata: true },
+    }) as NFTAsset[];
 
     // 2. Filter for NFTs in whitelisted collections
     const whitelistedNFTs = assets.filter((asset) => {

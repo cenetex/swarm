@@ -39,6 +39,7 @@ import {
   syncRuntimeLimitsToState,
 } from './billing/runtime-limits.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { fetchAllAssetsByOwner } from './web3/helius-pagination.js';
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
@@ -310,43 +311,8 @@ async function checkOrbOwnership(walletAddress: string): Promise<{
   }
 
   try {
-    const response = await fetch(HELIUS_RPC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'check-orb-ownership',
-        method: 'getAssetsByOwner',
-        params: {
-          ownerAddress: walletAddress,
-          page: 1,
-          limit: 100,
-        },
-      }),
-    });
+    const assets = await fetchAllAssetsByOwner(HELIUS_RPC_URL, walletAddress);
 
-    if (!response.ok) {
-      console.warn(`[AvatarAscend] Failed to check orb ownership: ${response.status}`);
-      return { hasOrb: false, ownedOrbs: [] };
-    }
-
-    const data = await response.json() as {
-      error?: { message?: string };
-      result?: {
-        items?: Array<{
-          id: string;
-          content?: { metadata?: { name?: string } };
-          grouping?: Array<{ group_key: string; group_value: string }>;
-        }>;
-      };
-    };
-
-    if (data.error) {
-      console.warn('[AvatarAscend] getAssetsByOwner error:', data.error.message);
-      return { hasOrb: false, ownedOrbs: [] };
-    }
-
-    const assets = data.result?.items || [];
     const orbs = assets.filter((asset) => {
       const collection = asset.grouping?.find((g) => g.group_key === 'collection');
       return collection?.group_value === GATE_COLLECTION;
