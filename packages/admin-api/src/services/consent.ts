@@ -171,26 +171,35 @@ export async function revokeConsentWith(
     userId: string;
     policyVersion: string;
   },
-): Promise<void> {
+): Promise<boolean> {
   const now = Date.now();
 
-  await deps.dynamoClient.send(
-    new UpdateCommand({
-      TableName: deps.tableName,
-      Key: {
-        pk: `CONSENT#${params.userId}`,
-        sk: `v${params.policyVersion}`,
-      },
-      UpdateExpression: 'SET #status = :status, revokedAt = :revokedAt',
-      ExpressionAttributeNames: {
-        '#status': 'status',
-      },
-      ExpressionAttributeValues: {
-        ':status': 'revoked',
-        ':revokedAt': now,
-      },
-    }),
-  );
+  try {
+    await deps.dynamoClient.send(
+      new UpdateCommand({
+        TableName: deps.tableName,
+        Key: {
+          pk: `CONSENT#${params.userId}`,
+          sk: `v${params.policyVersion}`,
+        },
+        UpdateExpression: 'SET #status = :status, revokedAt = :revokedAt',
+        ConditionExpression: 'attribute_exists(pk) AND attribute_exists(sk)',
+        ExpressionAttributeNames: {
+          '#status': 'status',
+        },
+        ExpressionAttributeValues: {
+          ':status': 'revoked',
+          ':revokedAt': now,
+        },
+      }),
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ConditionalCheckFailedException') {
+      return false;
+    }
+    throw error;
+  }
 }
 
 // ============================================================================
@@ -217,6 +226,6 @@ export async function listConsentRecords(
 
 export async function revokeConsent(
   params: Parameters<typeof revokeConsentWith>[1],
-): Promise<void> {
+): Promise<boolean> {
   return revokeConsentWith(getDefaultDeps(), params);
 }

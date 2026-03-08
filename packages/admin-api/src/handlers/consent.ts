@@ -157,10 +157,14 @@ async function handleRevokeConsent(
     return jsonResponse(400, { error: 'Invalid request', details: parsed.error.issues }, corsHeaders);
   }
 
-  await revokeConsent({
+  const revoked = await revokeConsent({
     userId: session.userId,
     policyVersion: parsed.data.policyVersion,
   });
+
+  if (!revoked) {
+    return jsonResponse(404, { error: 'Consent record not found' }, corsHeaders);
+  }
 
   return jsonResponse(200, { revoked: true }, corsHeaders);
 }

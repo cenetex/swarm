@@ -176,21 +176,47 @@ describe('revokeConsentWith', () => {
   it('sends an update command with revoked status', async () => {
     const deps = makeMockDeps();
 
-    await revokeConsentWith(deps, {
+    const revoked = await revokeConsentWith(deps, {
       userId: 'wallet-abc',
       policyVersion: '1.0',
     });
 
+    expect(revoked).toBe(true);
     expect(updateCalls.length).toBe(1);
     const call = updateCalls[0];
     expect(call.Key).toEqual({
       pk: 'CONSENT#wallet-abc',
       sk: 'v1.0',
     });
+    expect(call.ConditionExpression).toBe('attribute_exists(pk) AND attribute_exists(sk)');
     expect(call.ExpressionAttributeValues).toMatchObject({
       ':status': 'revoked',
     });
     expect((call.ExpressionAttributeValues as Record<string, unknown>)[':revokedAt']).toBeGreaterThan(0);
+  });
+
+  it('returns false when the consent record does not exist', async () => {
+    const send = async (cmd: unknown) => {
+      const command = cmd as { constructor?: { name?: string } };
+      if (command?.constructor?.name === 'UpdateCommand') {
+        const error = new Error('missing');
+        error.name = 'ConditionalCheckFailedException';
+        throw error;
+      }
+      return {};
+    };
+
+    const deps: ConsentDeps = {
+      dynamoClient: { send } as unknown as ConsentDeps['dynamoClient'],
+      tableName: 'test-admin',
+    };
+
+    const revoked = await revokeConsentWith(deps, {
+      userId: 'wallet-abc',
+      policyVersion: '9.9',
+    });
+
+    expect(revoked).toBe(false);
   });
 });
 

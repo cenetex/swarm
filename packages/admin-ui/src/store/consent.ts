@@ -19,9 +19,9 @@ interface ConsentState {
   /** Whether a backend sync is in progress */
   syncing: boolean;
   /** Accept privacy policy & data usage consent */
-  acceptConsent: () => void;
+  acceptConsent: () => Promise<boolean>;
   /** Revoke consent (for settings / GDPR) */
-  revokeConsent: () => void;
+  revokeConsent: () => Promise<boolean>;
   /** Whether the consent banner should be shown */
   needsConsent: () => boolean;
   /** Sync consent status from the backend (call after login) */
@@ -29,7 +29,7 @@ interface ConsentState {
 }
 
 /** Bump this when the privacy policy materially changes */
-export const CURRENT_POLICY_VERSION = '1.1';
+export const CURRENT_POLICY_VERSION = '1.2';
 
 export const useConsentStore = create<ConsentState>()(
   persist(
@@ -37,27 +37,43 @@ export const useConsentStore = create<ConsentState>()(
       consent: null,
       syncing: false,
 
-      acceptConsent: () => {
-        const consent: ConsentRecord = {
-          acceptedAt: new Date().toISOString(),
-          policyVersion: CURRENT_POLICY_VERSION,
-        };
-        // Update localStorage immediately for responsive UI
-        set({ consent });
-        // Fire-and-forget backend persistence
-        recordConsent(CURRENT_POLICY_VERSION).catch((err) => {
+      acceptConsent: async () => {
+        set({ syncing: true });
+        try {
+          const result = await recordConsent(CURRENT_POLICY_VERSION);
+          set({
+            consent: {
+              acceptedAt: new Date(result.consent.acceptedAt).toISOString(),
+              policyVersion: result.consent.policyVersion,
+            },
+          });
+          return true;
+        } catch (err) {
+          set({ consent: null });
           console.warn('[Consent] Failed to persist consent to backend:', err);
-        });
+          return false;
+        } finally {
+          set({ syncing: false });
+        }
       },
 
-      revokeConsent: () => {
+      revokeConsent: async () => {
         const { consent } = get();
-        set({ consent: null });
-        // Fire-and-forget backend revocation
-        if (consent?.policyVersion) {
-          revokeConsentApi(consent.policyVersion).catch((err) => {
-            console.warn('[Consent] Failed to revoke consent on backend:', err);
-          });
+        if (!consent?.policyVersion) {
+          set({ consent: null });
+          return true;
+        }
+
+        set({ syncing: true });
+        try {
+          await revokeConsentApi(consent.policyVersion);
+          set({ consent: null });
+          return true;
+        } catch (err) {
+          console.warn('[Consent] Failed to revoke consent on backend:', err);
+          return false;
+        } finally {
+          set({ syncing: false });
         }
       },
 
@@ -87,8 +103,9 @@ export const useConsentStore = create<ConsentState>()(
             set({ consent: null });
           }
         } catch {
-          // On error, keep localStorage state as fallback
-          console.warn('[Consent] Failed to sync from backend, using local state');
+          // If the backend cannot confirm consent, keep the app in a re-consent state.
+          set({ consent: null });
+          console.warn('[Consent] Failed to sync from backend, clearing local state');
         } finally {
           set({ syncing: false });
         }
