@@ -35,12 +35,13 @@ import { clearStripeDataForAvatar } from './billing/entitlements.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { emitAvatarCreated, emitAvatarCreationFailed } from './funnel-emitter.js';
 
-const dynamoClient = getDynamoClient();
-const ADMIN_TABLE = process.env.ADMIN_TABLE!;
+function getAdminTable(): string {
+  return process.env.ADMIN_TABLE!;
+}
 
 async function releaseClaimedNFTMint(mintAddress: string): Promise<void> {
-  await dynamoClient.send(new DeleteCommand({
-    TableName: ADMIN_TABLE,
+  await getDynamoClient().send(new DeleteCommand({
+    TableName: getAdminTable(),
     Key: {
       pk: `CLAIMED_NFT#${mintAddress}`,
       sk: 'AVATAR',
@@ -99,8 +100,8 @@ export async function createAvatar(
     updatedBy: session.email,
   };
 
-  await dynamoClient.send(new PutCommand({
-    TableName: ADMIN_TABLE,
+  await getDynamoClient().send(new PutCommand({
+    TableName: getAdminTable(),
     Item: avatar,
     ConditionExpression: 'attribute_not_exists(pk)',
   }));
@@ -183,8 +184,8 @@ export async function createAvatarWithWalletLegacy(
   };
 
   try {
-    await dynamoClient.send(new PutCommand({
-      TableName: ADMIN_TABLE,
+    await getDynamoClient().send(new PutCommand({
+      TableName: getAdminTable(),
       Item: avatar,
       ConditionExpression: 'attribute_not_exists(pk)',
     }));
@@ -244,8 +245,8 @@ export async function createAvatarWithWalletV2(
  * Only checks inhabitantWallet - ownerWallet is a legacy field
  */
 export async function listUnclaimedAvatars(): Promise<AvatarRecord[]> {
-  const result = await dynamoClient.send(new ScanCommand({
-    TableName: ADMIN_TABLE,
+  const result = await getDynamoClient().send(new ScanCommand({
+    TableName: getAdminTable(),
     FilterExpression: 'sk = :sk AND #status <> :deleted AND attribute_not_exists(inhabitantWallet)',
     ExpressionAttributeNames: {
       '#status': 'status',
@@ -263,8 +264,8 @@ export async function listUnclaimedAvatars(): Promise<AvatarRecord[]> {
  * Get an avatar by ID
  */
 export async function getAvatar(avatarId: string): Promise<AvatarRecord | null> {
-  const result = await dynamoClient.send(new GetCommand({
-    TableName: ADMIN_TABLE,
+  const result = await getDynamoClient().send(new GetCommand({
+    TableName: getAdminTable(),
     Key: {
       pk: `AVATAR#${avatarId}`,
       sk: 'CONFIG',
@@ -343,8 +344,8 @@ export async function updateAvatar(
     updatedBy: session.email,
   };
 
-  await dynamoClient.send(new PutCommand({
-    TableName: ADMIN_TABLE,
+  await getDynamoClient().send(new PutCommand({
+    TableName: getAdminTable(),
     Item: updated,
   }));
 
@@ -396,8 +397,8 @@ export async function listAvatars(): Promise<AvatarRecord[]> {
   let lastKey: Record<string, unknown> | undefined;
 
   do {
-    const result = await dynamoClient.send(new QueryCommand({
-      TableName: ADMIN_TABLE,
+    const result = await getDynamoClient().send(new QueryCommand({
+      TableName: getAdminTable(),
       IndexName: 'GSI1',
       KeyConditionExpression: 'sk = :sk AND begins_with(pk, :avatarPrefix)',
       FilterExpression: '#status <> :deleted',
@@ -428,8 +429,8 @@ export async function listAvatarsByWallet(walletAddress: string): Promise<Avatar
   let lastKey: Record<string, unknown> | undefined;
 
   do {
-    const result = await dynamoClient.send(new QueryCommand({
-      TableName: ADMIN_TABLE,
+    const result = await getDynamoClient().send(new QueryCommand({
+      TableName: getAdminTable(),
       IndexName: 'GSI1',
       KeyConditionExpression: 'sk = :sk AND begins_with(pk, :avatarPrefix)',
       FilterExpression: '#status <> :deleted AND creatorWallet = :wallet',
@@ -451,21 +452,35 @@ export async function listAvatarsByWallet(walletAddress: string): Promise<Avatar
   return items;
 }
 
+/** Injectable deps for deleteAvatar (test seam) */
+export interface DeleteAvatarDeps {
+  decrementCreatorCount: typeof decrementCreatorCount;
+  removeAvatarFromAllHomeChannels: typeof removeAvatarFromAllHomeChannels;
+  deleteAllAvatarSecrets: typeof deleteAllAvatarSecrets;
+}
+
+const _defaultDeleteDeps: DeleteAvatarDeps = {
+  decrementCreatorCount,
+  removeAvatarFromAllHomeChannels,
+  deleteAllAvatarSecrets,
+};
+
 /**
  * Delete an avatar (soft delete)
  */
 export async function deleteAvatar(
   avatarId: string,
-  session: UserSession
+  session: UserSession,
+  deps: DeleteAvatarDeps = _defaultDeleteDeps,
 ): Promise<void> {
   const existing = await getAvatar(avatarId);
   if (existing?.creatorWallet && existing.status !== 'deleted') {
-    await decrementCreatorCount(existing.creatorWallet);
+    await deps.decrementCreatorCount(existing.creatorWallet);
   }
 
   // Unregister home channel if configured
   try {
-    await removeAvatarFromAllHomeChannels(avatarId);
+    await deps.removeAvatarFromAllHomeChannels(avatarId);
   } catch (err) {
     console.warn(`[Avatars] Failed to unregister home channel for ${avatarId}:`, err instanceof Error ? err.message : String(err));
     // Don't fail the delete if home channel unregistration fails
@@ -473,7 +488,7 @@ export async function deleteAvatar(
 
   // Clean up Secrets Manager secrets to avoid ongoing per-secret charges
   try {
-    await deleteAllAvatarSecrets(avatarId, session);
+    await deps.deleteAllAvatarSecrets(avatarId, session);
   } catch (err) {
     console.warn(`[Avatars] Failed to clean up secrets for ${avatarId}:`, err instanceof Error ? err.message : String(err));
     // Don't fail the delete if secret cleanup fails
@@ -612,8 +627,8 @@ export async function reassignAvatar(
     updated.creatorWallet = newCreatorWallet;
   }
 
-  await dynamoClient.send(new PutCommand({
-    TableName: ADMIN_TABLE,
+  await getDynamoClient().send(new PutCommand({
+    TableName: getAdminTable(),
     Item: updated,
   }));
 
@@ -758,12 +773,12 @@ export async function createAvatarFromNFT(
 
   // 5. Atomically create avatar + claim NFT mint (prevents double-claim)
   try {
-    await dynamoClient.send(new TransactWriteCommand({
+    await getDynamoClient().send(new TransactWriteCommand({
       TransactItems: [
         {
           // Create the avatar record (fails if avatar ID already exists)
           Put: {
-            TableName: ADMIN_TABLE,
+            TableName: getAdminTable(),
             Item: avatar,
             ConditionExpression: 'attribute_not_exists(pk)',
           },
@@ -771,7 +786,7 @@ export async function createAvatarFromNFT(
         {
           // Claim the NFT mint (fails if mint already claimed)
           Put: {
-            TableName: ADMIN_TABLE,
+            TableName: getAdminTable(),
             Item: {
               pk: `CLAIMED_NFT#${nft.mint}`,
               sk: 'AVATAR',
@@ -871,8 +886,8 @@ export async function getAvatarWithOwnershipCheck(
  */
 export async function getAvatarByNFTMint(mintAddress: string): Promise<AvatarRecord | null> {
   try {
-    const result = await dynamoClient.send(new ScanCommand({
-      TableName: ADMIN_TABLE,
+    const result = await getDynamoClient().send(new ScanCommand({
+      TableName: getAdminTable(),
       FilterExpression: 'sk = :sk AND nftMint = :mint AND #status <> :deleted',
       ExpressionAttributeNames: {
         '#status': 'status',
@@ -1036,8 +1051,8 @@ export async function createAvatarFromTelegram(
   };
 
   try {
-    await dynamoClient.send(new PutCommand({
-      TableName: ADMIN_TABLE,
+    await getDynamoClient().send(new PutCommand({
+      TableName: getAdminTable(),
       Item: avatar,
       ConditionExpression: 'attribute_not_exists(pk)',
     }));
@@ -1093,8 +1108,8 @@ export async function createAvatarFromTelegram(
 export async function findAvatarByTelegramBotId(botId: number): Promise<AvatarRecord | null> {
   try {
     // First try GSI3 lookup (fast)
-    const gsiResult = await dynamoClient.send(new ScanCommand({
-      TableName: ADMIN_TABLE,
+    const gsiResult = await getDynamoClient().send(new ScanCommand({
+      TableName: getAdminTable(),
       FilterExpression: 'gsi3pk = :gsi3pk AND #status <> :deleted',
       ExpressionAttributeNames: {
         '#status': 'status',
@@ -1111,8 +1126,8 @@ export async function findAvatarByTelegramBotId(botId: number): Promise<AvatarRe
     }
 
     // Fallback: scan for botId in platforms.telegram.botId
-    const scanResult = await dynamoClient.send(new ScanCommand({
-      TableName: ADMIN_TABLE,
+    const scanResult = await getDynamoClient().send(new ScanCommand({
+      TableName: getAdminTable(),
       FilterExpression: 'sk = :sk AND #status <> :deleted AND platforms.telegram.botId = :botId',
       ExpressionAttributeNames: {
         '#status': 'status',
@@ -1178,8 +1193,8 @@ export async function activateAvatar(
   try {
     const now = Date.now();
 
-    await dynamoClient.send(new UpdateCommand({
-      TableName: ADMIN_TABLE,
+    await getDynamoClient().send(new UpdateCommand({
+      TableName: getAdminTable(),
       Key: {
         pk: `AVATAR#${avatarId}`,
         sk: 'CONFIG',
@@ -1229,8 +1244,8 @@ export async function deactivateAvatar(
   try {
     const now = Date.now();
 
-    await dynamoClient.send(new UpdateCommand({
-      TableName: ADMIN_TABLE,
+    await getDynamoClient().send(new UpdateCommand({
+      TableName: getAdminTable(),
       Key: {
         pk: `AVATAR#${avatarId}`,
         sk: 'CONFIG',
