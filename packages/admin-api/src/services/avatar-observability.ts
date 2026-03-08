@@ -27,6 +27,7 @@ import {
   UpdateCommand,
   BatchWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { redactLogData, redactString } from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
 
 const dynamoClient = getDynamoClient();
@@ -165,6 +166,16 @@ export async function recordLog(params: {
   const now = Date.now();
   const id = `log-${now}-${Math.random().toString(36).slice(2, 8)}`;
 
+  // Redact PII at the write boundary. Structured metadata fields (avatarId,
+  // level, subsystem, event, platform, requestId, timestamp) are preserved
+  // because they contain system-generated identifiers needed for querying and
+  // debugging. Free-form content fields (message, data) are redacted because
+  // they may contain user-supplied PII (emails, wallet addresses, API keys).
+  const redactedMessage = params.message
+    ? redactString(params.message)
+    : params.event;
+  const redactedData = redactLogData(params.data);
+
   const entry: AvatarLogEntry = {
     id,
     timestamp: now,
@@ -172,8 +183,8 @@ export async function recordLog(params: {
     level: params.level,
     subsystem: params.subsystem,
     event: params.event,
-    message: params.message || params.event,
-    data: params.data,
+    message: redactedMessage,
+    data: redactedData,
     requestId: params.requestId,
     platform: params.platform,
   };
@@ -225,9 +236,16 @@ export async function recordLogBatchWith(
   const delay = deps.delay ?? defaultDelay;
   const now = Date.now();
 
-  // Build all DynamoDB put-request items up front
+  // Build all DynamoDB put-request items up front.
+  // Redact free-form content (message, data) at the write boundary; structured
+  // metadata (avatarId, level, subsystem, event, platform, requestId) is
+  // preserved for queryability.
   const allItems = entries.map((params, idx) => {
     const id = `log-${now}-${idx}-${Math.random().toString(36).slice(2, 8)}`;
+    const redactedMessage = params.message
+      ? redactString(params.message)
+      : params.event;
+    const redactedData = redactLogData(params.data);
     return {
       PutRequest: {
         Item: {
@@ -242,8 +260,8 @@ export async function recordLogBatchWith(
           level: params.level,
           subsystem: params.subsystem,
           event: params.event,
-          message: params.message || params.event,
-          data: params.data,
+          message: redactedMessage,
+          data: redactedData,
           requestId: params.requestId,
           platform: params.platform,
         },
@@ -533,6 +551,9 @@ export async function recordIssue(params: {
   const now = Date.now();
   const id = `issue-${now}-${Math.random().toString(36).slice(2, 8)}`;
 
+  // Redact PII from free-form content fields (title, description, userMessage,
+  // context) at the write boundary. Structured metadata (avatarId, platform,
+  // severity, category, type, status, timestamp) is preserved for querying.
   const event: AvatarIssueEvent = {
     id,
     type: 'issue',
@@ -541,10 +562,12 @@ export async function recordIssue(params: {
     platform: params.platform,
     severity: params.severity,
     category: params.category,
-    title: params.title,
-    description: params.description,
-    userMessage: params.userMessage,
-    context: params.context,
+    title: redactString(params.title),
+    description: redactString(params.description),
+    userMessage: params.userMessage ? redactString(params.userMessage) : undefined,
+    context: params.context
+      ? redactLogData(params.context as unknown as Record<string, unknown>) as unknown as AvatarIssueEvent['context']
+      : undefined,
     status: 'open',
   };
 
@@ -576,6 +599,9 @@ export async function recordFeedback(params: {
   const now = Date.now();
   const id = `feedback-${now}-${Math.random().toString(36).slice(2, 8)}`;
 
+  // Redact PII from free-form content (feedback text) at the write boundary.
+  // Structured metadata (avatarId, platform, sentiment, feature, type,
+  // timestamp) is preserved for querying.
   const event: AvatarFeedbackEvent = {
     id,
     type: 'feedback',
@@ -584,7 +610,7 @@ export async function recordFeedback(params: {
     platform: params.platform,
     sentiment: params.sentiment,
     feature: params.feature,
-    feedback: params.feedback,
+    feedback: redactString(params.feedback),
   };
 
   await dynamoClient.send(new PutCommand({

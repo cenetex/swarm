@@ -1,11 +1,14 @@
 /**
- * Tests for avatar-observability recordLogBatch chunking and retry behavior.
+ * Tests for avatar-observability:
+ *   - recordLogBatch chunking and retry behavior
+ *   - PII redaction at the write boundary
  *
  * Uses the dependency-injection variant (recordLogBatchWith) with an
  * in-memory DynamoDB mock to verify:
  *   - Input is chunked (not truncated) for batches > 25
  *   - UnprocessedItems are retried with exponential backoff
  *   - Residual failures after retries are surfaced in the result
+ *   - PII is redacted from free-form content fields before persistence
  */
 import { describe, it, expect, vi } from 'vitest';
 import {
@@ -300,5 +303,121 @@ describe('recordLogBatchWith', () => {
     expect(item.data).toEqual({ code: 429 });
     expect(item.requestId).toBe('req-abc');
     expect(item.platform).toBe('telegram');
+  });
+});
+
+// ── PII Redaction Tests ────────────────────────────────────────────────────────
+
+const SAMPLE_EMAIL = 'user@example.com';
+const SAMPLE_WALLET = '0x1234567890abcdef1234567890abcdef12345678';
+const SAMPLE_API_KEY = 'sk_live_abcdefghijklmnop1234';
+const SENSITIVE_MESSAGE = `Contact ${SAMPLE_EMAIL} at wallet ${SAMPLE_WALLET} key ${SAMPLE_API_KEY}`;
+
+describe('recordLogBatchWith PII redaction', () => {
+  it('redacts PII from message and data fields', async () => {
+    const send = vi.fn(async () => ({ UnprocessedItems: {} }));
+
+    await recordLogBatchWith(makeDeps(send), [
+      {
+        avatarId: 'avatar-1',
+        level: 'INFO' as const,
+        subsystem: 'chat',
+        event: 'msg_received',
+        message: SENSITIVE_MESSAGE,
+        data: { email: SAMPLE_EMAIL, note: `key is ${SAMPLE_API_KEY}` },
+      },
+    ]);
+
+    const cmd = send.mock.calls[0][0] as {
+      input: { RequestItems: Record<string, Array<{ PutRequest: { Item: Record<string, unknown> } }>> };
+    };
+    const item = cmd.input.RequestItems[TABLE][0].PutRequest.Item;
+
+    // Free-form message is redacted
+    expect(item.message).not.toContain(SAMPLE_EMAIL);
+    expect(item.message).not.toContain(SAMPLE_WALLET);
+    expect(item.message).not.toContain(SAMPLE_API_KEY);
+    expect(item.message as string).toContain('[REDACTED_EMAIL]');
+
+    // Data bag: sensitive key name fully redacted, pattern-matched value redacted
+    const data = item.data as Record<string, unknown>;
+    expect(data.email).toBe('[REDACTED]');
+    expect(data.note).not.toContain(SAMPLE_API_KEY);
+  });
+
+  it('preserves structured metadata fields (avatarId, level, subsystem, event, platform, requestId)', async () => {
+    const send = vi.fn(async () => ({ UnprocessedItems: {} }));
+
+    await recordLogBatchWith(makeDeps(send), [
+      {
+        avatarId: 'avatar-42',
+        level: 'ERROR' as const,
+        subsystem: 'llm',
+        event: 'api_error',
+        message: SENSITIVE_MESSAGE,
+        requestId: 'req-abc',
+        platform: 'telegram',
+      },
+    ]);
+
+    const cmd = send.mock.calls[0][0] as {
+      input: { RequestItems: Record<string, Array<{ PutRequest: { Item: Record<string, unknown> } }>> };
+    };
+    const item = cmd.input.RequestItems[TABLE][0].PutRequest.Item;
+
+    expect(item.avatarId).toBe('avatar-42');
+    expect(item.level).toBe('ERROR');
+    expect(item.subsystem).toBe('llm');
+    expect(item.event).toBe('api_error');
+    expect(item.requestId).toBe('req-abc');
+    expect(item.platform).toBe('telegram');
+  });
+
+  it('uses event as message when message is omitted (no redaction needed)', async () => {
+    const send = vi.fn(async () => ({ UnprocessedItems: {} }));
+
+    await recordLogBatchWith(makeDeps(send), [
+      {
+        avatarId: 'avatar-1',
+        level: 'INFO' as const,
+        subsystem: 'chat',
+        event: 'heartbeat',
+      },
+    ]);
+
+    const cmd = send.mock.calls[0][0] as {
+      input: { RequestItems: Record<string, Array<{ PutRequest: { Item: Record<string, unknown> } }>> };
+    };
+    const item = cmd.input.RequestItems[TABLE][0].PutRequest.Item;
+    expect(item.message).toBe('heartbeat');
+  });
+
+  it('redacts PII across multiple batch entries', async () => {
+    const send = vi.fn(async () => ({ UnprocessedItems: {} }));
+
+    await recordLogBatchWith(makeDeps(send), [
+      {
+        avatarId: 'avatar-1',
+        level: 'INFO' as const,
+        subsystem: 'chat',
+        event: 'msg1',
+        message: `Hello ${SAMPLE_EMAIL}`,
+      },
+      {
+        avatarId: 'avatar-2',
+        level: 'WARN' as const,
+        subsystem: 'auth',
+        event: 'msg2',
+        message: `Wallet ${SAMPLE_WALLET}`,
+      },
+    ]);
+
+    const cmd = send.mock.calls[0][0] as {
+      input: { RequestItems: Record<string, Array<{ PutRequest: { Item: Record<string, unknown> } }>> };
+    };
+    const items = cmd.input.RequestItems[TABLE];
+
+    expect(items[0].PutRequest.Item.message).not.toContain(SAMPLE_EMAIL);
+    expect(items[1].PutRequest.Item.message).not.toContain(SAMPLE_WALLET);
   });
 });
