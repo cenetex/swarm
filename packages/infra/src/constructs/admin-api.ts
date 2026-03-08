@@ -1480,6 +1480,57 @@ export class AdminApiConstruct extends Construct {
       integration: issuesIntegration,
     });
 
+    // DSAR handler - privacy data export and erasure (GDPR Article 15/17)
+    const dsarHandler = new nodejs.NodejsFunction(this, 'DSARHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/dsar.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
+        ALLOWED_ORIGINS: allowedOrigins.join(','),
+        CDN_URL: cdnUrl || '',
+        ...activeUserLimitEnvVars,
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+      logRetention,
+      tracing: lambda.Tracing.ACTIVE,
+    });
+
+    // Grant permissions to DSAR handler
+    this.table.grantReadWriteData(dsarHandler);
+
+    const dsarIntegration = new integrations.HttpLambdaIntegration(
+      'DSARIntegration',
+      dsarHandler
+    );
+
+    // DSAR routes
+    this.api.addRoutes({
+      path: '/dsar/inventory',
+      methods: [apigateway.HttpMethod.GET],
+      integration: dsarIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/dsar/export',
+      methods: [apigateway.HttpMethod.POST],
+      integration: dsarIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/dsar/erase',
+      methods: [apigateway.HttpMethod.POST],
+      integration: dsarIntegration,
+    });
+
     // Health check endpoint
     const healthHandler = new nodejs.NodejsFunction(this, 'HealthHandler', {
       runtime: lambda.Runtime.NODEJS_20_X,
