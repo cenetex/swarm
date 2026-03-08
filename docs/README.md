@@ -27,7 +27,10 @@
 
 ## Product and GTM
 
-- [ICP.md](ICP.md) — Ideal customer profile, buying signals, design partner criteria, and messaging guidelines
+- [PROJECT-CHARTER.md](PROJECT-CHARTER.md) — Project scope, milestone gates, risks, and launch constraints
+- [ICP.md](ICP.md) — Ideal customer profile, buying signals, design partner criteria
+- [ICP-MESSAGING-MATRIX.md](ICP-MESSAGING-MATRIX.md) — Positioning, messaging, and proof claims per ICP segment
+- [GTM-STRATEGY-M2.md](GTM-STRATEGY-M2.md) — Go-to-market strategy, funnel KPIs, channel strategy, activation flow
 - [LAUNCH-PLAYBOOKS.md](LAUNCH-PLAYBOOKS.md) — Launch playbooks by ICP
 - [PLAYBOOK-TELEGRAM-QUICKSTART.md](PLAYBOOK-TELEGRAM-QUICKSTART.md) — Telegram quickstart and repair playbook
 
