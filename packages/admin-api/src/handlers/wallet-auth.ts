@@ -42,6 +42,7 @@ import {
   verifyAscensionBurns,
   executeAscension,
   getAvatarAscensionStatus,
+  getNftOwner,
 } from '../services/avatar-ascend.js';
 
 // Internal test key for E2E tests - bypasses NFT gate requirements
@@ -820,6 +821,19 @@ export async function handleExecuteAscension(
         error: burnVerification.error || 'Burn verification failed',
         orb: burnVerification.orbResult,
         rati: burnVerification.ratiResult,
+      }, cors);
+    }
+
+    // Verify the ascension NFT mint exists and is owned by the caller
+    const nftOwner = await getNftOwner(nftMint);
+    if (!nftOwner) {
+      return jsonResponse(400, {
+        error: 'Ascension NFT mint not found on-chain',
+      }, cors);
+    }
+    if (nftOwner !== session.user.walletAddress) {
+      return jsonResponse(400, {
+        error: 'Ascension NFT is not owned by your wallet',
       }, cors);
     }
 

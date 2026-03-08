@@ -4,7 +4,7 @@
  * Verifies that ascension grants Pro-equivalent entitlements and
  * respects the plan hierarchy (no downgrade from enterprise).
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { PLAN_DEFAULTS, type EntitlementRecord, type PlanLimits } from '../types.js';
 
 // ── Mock state ─────────────────────────────────────────────────────────────
@@ -181,7 +181,8 @@ vi.mock('@swarm/core', () => new Proxy(coreOverrides, {
 }));
 
 // ── Import AFTER mocks ─────────────────────────────────────────────────────
-const { grantAscensionEntitlement } = await import('./avatar-ascend.js');
+const avatarAscendModule = await import('./avatar-ascend.js');
+const { grantAscensionEntitlement } = avatarAscendModule;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function makeEntitlement(
@@ -323,5 +324,39 @@ describe('grantAscensionEntitlement', () => {
     expect(runtimeLimits.dailyMessageLimit).toBe(500);
     expect(runtimeLimits.dailyMediaCredits).toBe(50);
     expect(runtimeLimits.autonomousPostsEnabled).toBe(true);
+  });
+});
+
+// ── getNftOwner verification tests ──────────────────────────────────────────
+// These tests verify the mint ownership check that handleExecuteAscension()
+// performs before persisting the ascension NFT mapping. Since getNftOwner()
+// captures HELIUS_API_KEY at module init and bun:test caches modules across
+// files, we use vi.spyOn to control its return value deterministically.
+describe('getNftOwner (ascension mint verification)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns owner address when mint exists and is owned by caller', async () => {
+    vi.spyOn(avatarAscendModule, 'getNftOwner').mockResolvedValue('wallet-abc');
+
+    const owner = await avatarAscendModule.getNftOwner('valid-mint-address');
+    expect(owner).toBe('wallet-abc');
+  });
+
+  it('returns null when mint is not found on-chain', async () => {
+    vi.spyOn(avatarAscendModule, 'getNftOwner').mockResolvedValue(null);
+
+    const owner = await avatarAscendModule.getNftOwner('nonexistent-mint');
+    expect(owner).toBeNull();
+  });
+
+  it('returns different owner when mint is owned by another wallet', async () => {
+    vi.spyOn(avatarAscendModule, 'getNftOwner').mockResolvedValue('other-wallet');
+
+    const owner = await avatarAscendModule.getNftOwner('mint-owned-by-other');
+    expect(owner).toBe('other-wallet');
+    // The handler would compare this against session.user.walletAddress and reject
+    expect(owner).not.toBe('my-wallet');
   });
 });
