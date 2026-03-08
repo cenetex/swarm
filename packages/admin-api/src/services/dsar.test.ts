@@ -2,9 +2,10 @@
  * Tests for DSAR (Data Subject Access Request) service.
  *
  * Uses the dependency-injection variants with an in-memory DynamoDB mock
- * to verify discovery, export, erasure, and dry-run behavior.
+ * to verify discovery, export, erasure, and dry-run behavior against the
+ * LIVE account schema (ACCOUNT#, IDENTITY#, CHAT#, MEMORY#, etc.).
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import {
   discoverUserDataWith,
   exportUserDataWith,
@@ -23,6 +24,14 @@ function makeMockDeps(): DSARDeps {
   const send = async (cmd: unknown) => {
     const command = cmd as { input?: Record<string, unknown>; constructor?: { name?: string } };
     const name = command?.constructor?.name;
+
+    if (name === 'GetCommand') {
+      const input = command.input as { Key: { pk: string; sk: string } };
+      const item = storedItems.find(
+        (i) => i.pk === input.Key.pk && i.sk === input.Key.sk,
+      );
+      return { Item: item || undefined };
+    }
 
     if (name === 'QueryCommand') {
       const input = command.input as {
@@ -109,18 +118,70 @@ function makeMockDeps(): DSARDeps {
   };
 }
 
-// ── Test data ───────────────────────────────────────────────────────────────
+// ── Test data (live schema) ─────────────────────────────────────────────────
 
-function seedTestData(userId: string): void {
-  // Chat history records
+const TEST_ACCOUNT_ID = 'acc-uuid-001';
+const TEST_WALLET = '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU';
+
+function seedTestData(accountId: string, walletAddress: string): void {
+  // Account profile: pk=ACCOUNT#<accountId>, sk=PROFILE
   storedItems.push({
-    pk: `CHAT#${userId}`,
+    pk: `ACCOUNT#${accountId}`,
+    sk: 'PROFILE',
+    accountId,
+    role: 'user',
+    createdAt: Date.now(),
+    sessionCount: 3,
+    lastSeenAt: Date.now(),
+  });
+
+  // Linked identity (account-side): pk=ACCOUNT#<accountId>, sk=IDENTITY#wallet#<addr>
+  storedItems.push({
+    pk: `ACCOUNT#${accountId}`,
+    sk: `IDENTITY#wallet#${walletAddress}`,
+    identityType: 'wallet',
+    providerId: walletAddress,
+    createdAt: Date.now(),
+  });
+
+  // Linked identity (account-side): privy
+  storedItems.push({
+    pk: `ACCOUNT#${accountId}`,
+    sk: 'IDENTITY#privy#did:privy:abc123',
+    identityType: 'privy',
+    providerId: 'did:privy:abc123',
+    createdAt: Date.now(),
+  });
+
+  // Identity reverse-mapping: pk=IDENTITY#wallet#<addr>, sk=ACCOUNT
+  storedItems.push({
+    pk: `IDENTITY#wallet#${walletAddress}`,
+    sk: 'ACCOUNT',
+    identityType: 'wallet',
+    providerId: walletAddress,
+    accountId,
+    createdAt: Date.now(),
+  });
+
+  // Identity reverse-mapping: privy
+  storedItems.push({
+    pk: 'IDENTITY#privy#did:privy:abc123',
+    sk: 'ACCOUNT',
+    identityType: 'privy',
+    providerId: 'did:privy:abc123',
+    accountId,
+    createdAt: Date.now(),
+  });
+
+  // Chat history: pk=CHAT#<email>, sk=GLOBAL or AVATAR#<id>
+  storedItems.push({
+    pk: `CHAT#${walletAddress}`,
     sk: 'GLOBAL',
     messages: [{ role: 'user', content: 'hello' }],
     updatedAt: Date.now(),
   });
   storedItems.push({
-    pk: `CHAT#${userId}`,
+    pk: `CHAT#${walletAddress}`,
     sk: 'AVATAR#avatar-1',
     messages: [
       { role: 'user', content: 'hi avatar' },
@@ -129,37 +190,25 @@ function seedTestData(userId: string): void {
     updatedAt: Date.now(),
   });
 
-  // Identity links
-  storedItems.push({
-    pk: `USER#${userId}`,
-    sk: 'IDENTITY_LINK#telegram#12345',
-    userId,
-    platform: 'telegram',
-    platformUserId: '12345',
-    linkedAt: '2026-01-01T00:00:00Z',
-    consentGrantedAt: '2026-01-01T00:00:00Z',
-    status: 'active',
-  });
-
-  // Memories
+  // Memories: pk=MEMORY#<avatarId>, userId=<walletAddress>
   storedItems.push({
     pk: 'MEMORY#avatar-1',
     sk: `immediate#${Date.now()}#mem-1`,
     id: 'mem-1',
     avatarId: 'avatar-1',
-    userId,
+    userId: walletAddress,
     content: 'User likes cats',
     about: 'preferences',
     tier: 'immediate',
     createdAt: Date.now(),
   });
 
-  // Issues
+  // Issues: pk=ISSUE#<issueId>, sk=META, avatarId=<walletAddress>
   storedItems.push({
     pk: 'ISSUE#issue-abc',
     sk: 'META',
     issueId: 'issue-abc',
-    avatarId: userId,
+    avatarId: walletAddress,
     title: 'Test error',
     status: 'open',
     severity: 'low',
@@ -168,14 +217,14 @@ function seedTestData(userId: string): void {
     occurrenceCount: 1,
   });
 
-  // Audit events (keyed by AUDIT#{avatarId})
+  // Audit events: pk=AUDIT#<walletAddress>, sk=EVENT#<ts>#<uuid>
   storedItems.push({
-    pk: `AUDIT#${userId}`,
+    pk: `AUDIT#${walletAddress}`,
     sk: `EVENT#${Date.now()}#audit-1`,
     id: 'audit-1',
-    avatarId: userId,
+    avatarId: walletAddress,
     eventType: 'activated',
-    actorId: userId,
+    actorId: walletAddress,
     actorType: 'owner',
     details: {},
     timestamp: Date.now(),
@@ -192,20 +241,25 @@ beforeEach(() => {
 describe('discoverUserDataWith', () => {
   it('returns inventory of all data classes with counts', async () => {
     const deps = makeMockDeps();
-    const userId = 'test-user-1';
-    seedTestData(userId);
+    seedTestData(TEST_ACCOUNT_ID, TEST_WALLET);
 
-    const inventory = await discoverUserDataWith(deps, userId);
+    const inventory = await discoverUserDataWith(deps, TEST_ACCOUNT_ID);
 
-    expect(inventory.userId).toBe(userId);
+    expect(inventory.accountId).toBe(TEST_ACCOUNT_ID);
     expect(inventory.generatedAt).toBeTruthy();
-    expect(inventory.dataClasses).toHaveLength(5);
+    expect(inventory.dataClasses).toHaveLength(6);
+
+    const profile = inventory.dataClasses.find((dc) => dc.dataClass === 'accountProfile');
+    expect(profile?.approximateCount).toBe(1);
+    expect(profile?.identifierUsed).toBe(`ACCOUNT#${TEST_ACCOUNT_ID}`);
+
+    const identities = inventory.dataClasses.find((dc) => dc.dataClass === 'linkedIdentities');
+    // 2 account-side + 2 reverse-mapping = 4
+    expect(identities?.approximateCount).toBe(4);
 
     const chat = inventory.dataClasses.find((dc) => dc.dataClass === 'chatHistory');
     expect(chat?.approximateCount).toBe(2);
-
-    const links = inventory.dataClasses.find((dc) => dc.dataClass === 'identityLinks');
-    expect(links?.approximateCount).toBe(1);
+    expect(chat?.identifierUsed).toBe(`CHAT#${TEST_WALLET}`);
 
     const memories = inventory.dataClasses.find((dc) => dc.dataClass === 'memories');
     expect(memories?.approximateCount).toBe(1);
@@ -216,12 +270,13 @@ describe('discoverUserDataWith', () => {
     const audit = inventory.dataClasses.find((dc) => dc.dataClass === 'auditLog');
     expect(audit?.approximateCount).toBe(1);
 
-    expect(inventory.totalRecords).toBe(6);
+    // 1 profile + 4 identities + 2 chat + 1 memory + 1 issue + 1 audit = 10
+    expect(inventory.totalRecords).toBe(10);
   });
 
-  it('returns zero counts for user with no data', async () => {
+  it('returns zero counts for account with no data', async () => {
     const deps = makeMockDeps();
-    const inventory = await discoverUserDataWith(deps, 'nonexistent-user');
+    const inventory = await discoverUserDataWith(deps, 'nonexistent-account');
 
     expect(inventory.totalRecords).toBe(0);
     for (const dc of inventory.dataClasses) {
@@ -233,30 +288,34 @@ describe('discoverUserDataWith', () => {
 describe('exportUserDataWith', () => {
   it('returns structured export with all data classes', async () => {
     const deps = makeMockDeps();
-    const userId = 'test-user-2';
-    seedTestData(userId);
+    seedTestData(TEST_ACCOUNT_ID, TEST_WALLET);
 
-    const exportData = await exportUserDataWith(deps, userId);
+    const exportData = await exportUserDataWith(deps, TEST_ACCOUNT_ID);
 
     expect(exportData.exportedAt).toBeTruthy();
-    expect(exportData.userId).toBe(userId);
+    expect(exportData.accountId).toBe(TEST_ACCOUNT_ID);
+    expect(exportData.dataClasses.accountProfile).toBeTruthy();
+    expect((exportData.dataClasses.accountProfile as Record<string, unknown>).accountId).toBe(TEST_ACCOUNT_ID);
+    // 2 account-side identities + 2 reverse mappings
+    expect(exportData.dataClasses.linkedIdentities).toHaveLength(4);
     expect(exportData.dataClasses.chatHistory).toHaveLength(2);
-    expect(exportData.dataClasses.identityLinks).toHaveLength(1);
     expect(exportData.dataClasses.memories).toHaveLength(1);
     expect(exportData.dataClasses.issues).toHaveLength(1);
     expect(exportData.dataClasses.auditLog).toHaveLength(1);
 
     // Verify retention exceptions are documented
-    expect(exportData.retentionExceptions).toHaveLength(1);
+    expect(exportData.retentionExceptions).toHaveLength(2);
     expect(exportData.retentionExceptions[0].dataClass).toBe('auditLog');
+    expect(exportData.retentionExceptions[1].dataClass).toBe('consentRecords');
   });
 
-  it('returns empty export for user with no data', async () => {
+  it('returns empty export for account with no data', async () => {
     const deps = makeMockDeps();
-    const exportData = await exportUserDataWith(deps, 'no-data-user');
+    const exportData = await exportUserDataWith(deps, 'no-data-account');
 
+    expect(exportData.dataClasses.accountProfile).toBeNull();
+    expect(exportData.dataClasses.linkedIdentities).toHaveLength(0);
     expect(exportData.dataClasses.chatHistory).toHaveLength(0);
-    expect(exportData.dataClasses.identityLinks).toHaveLength(0);
     expect(exportData.dataClasses.memories).toHaveLength(0);
     expect(exportData.dataClasses.issues).toHaveLength(0);
     expect(exportData.dataClasses.auditLog).toHaveLength(0);
@@ -266,21 +325,25 @@ describe('exportUserDataWith', () => {
 describe('eraseUserDataWith', () => {
   it('deletes user data across all deletable stores', async () => {
     const deps = makeMockDeps();
-    const userId = 'test-user-3';
-    seedTestData(userId);
+    seedTestData(TEST_ACCOUNT_ID, TEST_WALLET);
 
-    const result = await eraseUserDataWith(deps, userId);
+    const result = await eraseUserDataWith(deps, TEST_ACCOUNT_ID);
 
-    expect(result.userId).toBe(userId);
+    expect(result.accountId).toBe(TEST_ACCOUNT_ID);
     expect(result.dryRun).toBe(false);
     expect(result.erasedAt).toBeTruthy();
 
-    // Should have deleted chat, links, memories, issues
+    // Should have deleted account profile
+    const profileDeleted = result.deleted.find((d) => d.dataClass === 'accountProfile');
+    expect(profileDeleted?.count).toBe(1);
+
+    // Should have deleted identity records (2 account-side + 2 reverse-mapping = 4)
+    const identitiesDeleted = result.deleted.find((d) => d.dataClass === 'linkedIdentities');
+    expect(identitiesDeleted?.count).toBe(4);
+
+    // Should have deleted chat history
     const chatDeleted = result.deleted.find((d) => d.dataClass === 'chatHistory');
     expect(chatDeleted?.count).toBe(2);
-
-    const linksDeleted = result.deleted.find((d) => d.dataClass === 'identityLinks');
-    expect(linksDeleted?.count).toBe(1);
 
     const memoriesDeleted = result.deleted.find((d) => d.dataClass === 'memories');
     expect(memoriesDeleted?.count).toBe(1);
@@ -293,19 +356,19 @@ describe('eraseUserDataWith', () => {
     expect(auditRetained?.count).toBe(1);
     expect(auditRetained?.reason).toContain('compliance');
 
-    expect(result.totalDeleted).toBe(5);
+    // 1 profile + 4 identities + 2 chat + 1 memory + 1 issue = 9
+    expect(result.totalDeleted).toBe(9);
     expect(result.totalRetained).toBe(1);
 
-    // Verify delete commands were issued (5 data items + 1 audit event put for recording erasure)
-    expect(deletedKeys.length).toBe(5);
+    // Verify delete commands were issued for all deletable records
+    expect(deletedKeys.length).toBe(9);
   });
 
   it('records the erasure as an audit event', async () => {
     const deps = makeMockDeps();
-    const userId = 'test-user-4';
-    seedTestData(userId);
+    seedTestData(TEST_ACCOUNT_ID, TEST_WALLET);
 
-    await eraseUserDataWith(deps, userId);
+    await eraseUserDataWith(deps, TEST_ACCOUNT_ID);
 
     // An audit event should have been recorded (PutCommand)
     const auditItems = storedItems.filter(
@@ -317,26 +380,29 @@ describe('eraseUserDataWith', () => {
         (item.details as Record<string, unknown>).action === 'dsar_erasure',
     );
     expect(auditItems.length).toBe(1);
+
+    // Verify the audit event references accountId
+    const auditDetail = auditItems[0].details as Record<string, unknown>;
+    expect(auditDetail.accountId).toBe(TEST_ACCOUNT_ID);
   });
 
   it('dry-run mode does not delete any data', async () => {
     const deps = makeMockDeps();
-    const userId = 'test-user-5';
-    seedTestData(userId);
+    seedTestData(TEST_ACCOUNT_ID, TEST_WALLET);
 
     const initialItemCount = storedItems.length;
 
-    const result = await eraseUserDataWith(deps, userId, { dryRun: true });
+    const result = await eraseUserDataWith(deps, TEST_ACCOUNT_ID, { dryRun: true });
 
     expect(result.dryRun).toBe(true);
-    expect(result.totalDeleted).toBe(5); // Reports what WOULD be deleted
+    expect(result.totalDeleted).toBe(9); // Reports what WOULD be deleted
     expect(deletedKeys.length).toBe(0); // But no actual deletes happened
     expect(storedItems.length).toBe(initialItemCount); // Items still there
   });
 
-  it('handles user with no data gracefully', async () => {
+  it('handles account with no data gracefully', async () => {
     const deps = makeMockDeps();
-    const result = await eraseUserDataWith(deps, 'empty-user');
+    const result = await eraseUserDataWith(deps, 'empty-account');
 
     expect(result.totalDeleted).toBe(0);
     expect(result.totalRetained).toBe(0);

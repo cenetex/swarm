@@ -7,7 +7,8 @@
  *   POST /dsar/erase     — trigger erasure (requires { confirm: true } in body)
  *
  * Auth: all endpoints require an authenticated session.
- * Users can only request their own data.
+ * Users can only request their own data. The DSAR service operates on accountId
+ * (not the legacy userId/walletAddress) to correctly traverse the live schema.
  */
 import type {
   APIGatewayProxyEventV2,
@@ -17,6 +18,7 @@ import { logger } from '@swarm/core';
 import { getCorsHeaders } from '../http/cors.js';
 import { parseJsonBody } from '../http/request-body.js';
 import { authenticateRequest } from '../auth/request-auth.js';
+import { getOrCreateAccountForWallet } from '../services/accounts.js';
 import {
   discoverUserData,
   exportUserData,
@@ -49,12 +51,15 @@ export async function handler(
   try {
     // All DSAR endpoints require authentication
     const session = await authenticateRequest(event);
-    const userId = session.userId;
+
+    // Resolve the accountId — this is what the DSAR service operates on.
+    // authenticateRequest may already set accountId; fall back to wallet lookup.
+    const accountId = session.accountId || await getOrCreateAccountForWallet(session.userId);
 
     // GET /dsar/inventory
     if (method === 'GET' && (path === '/inventory' || path === '/inventory/')) {
-      logger.info('DSAR inventory requested', { event: 'dsar_inventory', userId });
-      const inventory = await discoverUserData(userId);
+      logger.info('DSAR inventory requested', { event: 'dsar_inventory', accountId });
+      const inventory = await discoverUserData(accountId);
 
       return {
         statusCode: 200,
@@ -65,8 +70,8 @@ export async function handler(
 
     // POST /dsar/export
     if (method === 'POST' && (path === '/export' || path === '/export/')) {
-      logger.info('DSAR export requested', { event: 'dsar_export', userId });
-      const exportData = await exportUserData(userId);
+      logger.info('DSAR export requested', { event: 'dsar_export', accountId });
+      const exportData = await exportUserData(accountId);
 
       return {
         statusCode: 200,
@@ -91,8 +96,8 @@ export async function handler(
       }
 
       const dryRun = body.dryRun ?? false;
-      logger.info('DSAR erasure requested', { event: 'dsar_erase', userId, dryRun });
-      const result = await eraseUserData(userId, { dryRun });
+      logger.info('DSAR erasure requested', { event: 'dsar_erase', accountId, dryRun });
+      const result = await eraseUserData(accountId, { dryRun });
 
       return {
         statusCode: 200,
