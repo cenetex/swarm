@@ -8,6 +8,7 @@ import {
   QueryCommand,
   ScanCommand,
   UpdateCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { DEFAULT_LLM_MODEL, DEFAULT_LLM_PROVIDER, DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_MAX_TOKENS } from '@swarm/core';
 import type { AvatarRecord, UserSession } from '../types.js';
@@ -18,7 +19,6 @@ import {
   incrementCreatorCount,
   checkNFTGate,
   reserveCreatorSlot,
-  isNFTClaimed,
   verifyNFTOwnership,
   isCollectionWhitelisted,
   type GateStatus,
@@ -625,6 +625,10 @@ export interface CreateAvatarFromNFTResult {
 /**
  * Create a new avatar from an NFT in a whitelisted collection
  * Uses the normal slot system (free + Orb NFTs)
+ *
+ * Atomicity guarantees:
+ * - Slot reservation uses DynamoDB ConditionExpression (prevents oversubscription)
+ * - Avatar creation + NFT claim use TransactWriteItems (prevents double-claim)
  */
 export async function createAvatarFromNFT(
   nft: ClaimableNFT,
@@ -639,16 +643,7 @@ export async function createAvatarFromNFT(
     };
   }
 
-  // 2. Verify NFT not already claimed
-  if (await isNFTClaimed(nft.mint)) {
-    console.log(`[Avatars] NFT ${nft.mint.slice(0, 8)}... already claimed as avatar`);
-    return {
-      success: false,
-      error: 'nft_already_claimed',
-    };
-  }
-
-  // 3. Verify wallet owns this NFT
+  // 2. Verify wallet owns this NFT
   if (!(await verifyNFTOwnership(creatorWallet, nft.mint))) {
     console.log(`[Avatars] Wallet ${creatorWallet.slice(0, 8)}... does not own NFT ${nft.mint.slice(0, 8)}...`);
     return {
@@ -657,10 +652,17 @@ export async function createAvatarFromNFT(
     };
   }
 
-  // 4. Check gate status (uses normal slot system)
-  const gateStatus = await getGateStatus(creatorWallet);
-  if (!gateStatus.canCreate) {
-    console.log(`[Avatars] No gate slot for wallet=${creatorWallet.slice(0, 8)}...`);
+  // 3. Atomically reserve a gate slot (prevents slot oversubscription)
+  const nftResult = await checkNFTGate(creatorWallet);
+  const totalSlots = 1 + nftResult.ownedCount;
+
+  const reservation = await reserveCreatorSlot(creatorWallet, totalSlots);
+  if (!reservation.reserved) {
+    const gateStatus = await getGateStatus(creatorWallet);
+    console.log(
+      `[Avatars] No gate slot for wallet=${creatorWallet.slice(0, 8)}... (held=${gateStatus.nftsHeld}, created=${gateStatus.avatarsCreated})`
+    );
+    emitAvatarCreationFailed(creatorWallet, 'no_gate_slot', { nftsHeld: gateStatus.nftsHeld, avatarsCreated: gateStatus.avatarsCreated });
     return {
       success: false,
       error: 'no_gate_slot',
@@ -668,12 +670,12 @@ export async function createAvatarFromNFT(
     };
   }
 
-  // 5. Generate avatar ID from NFT name
+  // 4. Generate avatar ID from NFT name
   const avatarId = generateAvatarId(nft.name);
   const now = Date.now();
 
   // Determine slot type: first avatar = free, subsequent = orb
-  const slotType: 'free' | 'orb' = gateStatus.avatarsCreated === 0 ? 'free' : 'orb';
+  const slotType: 'free' | 'orb' = reservation.previousCreated === 0 ? 'free' : 'orb';
 
   // Build description from NFT metadata
   const description = nft.description || `Avatar created from NFT: ${nft.name}`;
@@ -739,21 +741,63 @@ export async function createAvatarFromNFT(
     updatedBy: creatorWallet,
   };
 
+  // 5. Atomically create avatar + claim NFT mint (prevents double-claim)
   try {
-    await dynamoClient.send(new PutCommand({
-      TableName: ADMIN_TABLE,
-      Item: avatar,
-      ConditionExpression: 'attribute_not_exists(pk)',
+    await dynamoClient.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          // Create the avatar record (fails if avatar ID already exists)
+          Put: {
+            TableName: ADMIN_TABLE,
+            Item: avatar,
+            ConditionExpression: 'attribute_not_exists(pk)',
+          },
+        },
+        {
+          // Claim the NFT mint (fails if mint already claimed)
+          Put: {
+            TableName: ADMIN_TABLE,
+            Item: {
+              pk: `CLAIMED_NFT#${nft.mint}`,
+              sk: 'AVATAR',
+              avatarId,
+              creatorWallet,
+              claimedAt: now,
+            },
+            ConditionExpression: 'attribute_not_exists(pk)',
+          },
+        },
+      ],
     }));
   } catch (err: unknown) {
-    if (err instanceof Error && err.name === 'ConditionalCheckFailedException') {
-      // Rare case: avatar ID collision
-      return { success: false, error: 'nft_already_claimed', gateStatus };
+    if (err instanceof Error && err.name === 'TransactionCanceledException') {
+      // Roll back the reserved slot since avatar creation failed
+      await decrementCreatorCount(creatorWallet);
+
+      // Check which condition failed by inspecting the cancellation reasons
+      const cancelReasons = (err as { CancellationReasons?: Array<{ Code?: string }> }).CancellationReasons;
+      if (cancelReasons && cancelReasons.length >= 2) {
+        // Index 1 = CLAIMED_NFT condition
+        if (cancelReasons[1]?.Code === 'ConditionalCheckFailed') {
+          console.log(`[Avatars] NFT ${nft.mint.slice(0, 8)}... already claimed as avatar`);
+          return { success: false, error: 'nft_already_claimed' };
+        }
+        // Index 0 = avatar ID condition (collision)
+        if (cancelReasons[0]?.Code === 'ConditionalCheckFailed') {
+          console.log(`[Avatars] Avatar ID collision for ${avatarId}, NFT ${nft.mint.slice(0, 8)}...`);
+          // Avatar ID collision is rare; caller can retry
+          return { success: false, error: 'nft_already_claimed' };
+        }
+      }
+
+      // Fallback: could not determine which condition failed
+      console.log(`[Avatars] Transaction cancelled for NFT ${nft.mint.slice(0, 8)}..., treating as already claimed`);
+      return { success: false, error: 'nft_already_claimed' };
     }
+    // Non-transaction error: roll back slot and re-throw
+    await decrementCreatorCount(creatorWallet);
     throw err;
   }
-
-  await incrementCreatorCount(creatorWallet);
 
   // Sync to state table
   await syncAvatarConfig(avatar);
