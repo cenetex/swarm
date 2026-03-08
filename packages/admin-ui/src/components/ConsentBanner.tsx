@@ -79,7 +79,7 @@ export function ConsentBanner() {
             <ConsentItem
               emoji="🗄️"
               title="Storage &amp; Retention"
-              desc="Chat history is auto-deleted after 24 hours. AI memories are tiered: ephemeral (1 day), durable (90 days), and archival (permanent until avatar deletion). Audit logs are kept for 90 days. All retention is enforced by automatic TTL-based deletion."
+              desc="Chat history is auto-deleted after 24 hours. AI memories are tiered: ephemeral (1 day), durable (90 days), and archival (permanent until avatar deletion). Audit logs are kept for 90 days. Depending on the data type, retention is enforced through TTLs, lifecycle rules, or deletion workflows."
             />
           </div>
         </div>

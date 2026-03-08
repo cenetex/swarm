@@ -109,7 +109,7 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
             </h3>
             <ul className="list-disc pl-6 space-y-1">
               <li><strong>Audit logs</strong> &mdash; records of administrative actions (avatar creation, updates, secret changes, entitlement changes), retained for 90 days in DynamoDB.</li>
-              <li><strong>Application logs</strong> &mdash; structured logs in AWS CloudWatch. Message processing logs are retained for 30 days; admin and other service logs are retained for 14 days. Logs do not contain message content (metadata only).</li>
+              <li><strong>Application logs</strong> &mdash; structured logs in AWS CloudWatch. Message processing logs are retained for 30 days; admin and other service logs are retained for 14 days. Operational logs are intended to store metadata rather than message content, but troubleshooting reports or feedback you submit may include text you provide.</li>
               <li><strong>API access logs</strong> &mdash; API Gateway request logs, retained for 30 days.</li>
               <li><strong>Activity records</strong> &mdash; avatar activity tracking events, auto-deleted after 24 hours.</li>
             </ul>
@@ -243,7 +243,7 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
               <li>All data in transit is encrypted via TLS (HTTPS enforced).</li>
               <li>DynamoDB data is encrypted at rest with AES-256 (AWS-managed keys).</li>
               <li>Secrets (API keys, wallet private keys) are stored in AWS Secrets Manager with KMS encryption.</li>
-              <li>Structured logging does not record message content &mdash; only metadata such as chat IDs and message length.</li>
+              <li>Operational logging is designed to minimize stored content, though troubleshooting reports or feedback you submit may include text you provide.</li>
               <li>Telegram webhook handlers verify secret tokens and validate sender IP against Telegram&apos;s official IP ranges.</li>
               <li>Wallet signatures are verified using Ed25519 (SIWS &mdash; Sign In With Solana).</li>
               <li>Each avatar&apos;s data is isolated from other avatars through partition-key isolation in DynamoDB.</li>
@@ -284,7 +284,7 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
                 <strong>localStorage: swarm-theme</strong> &mdash; stores your UI theme preference.
               </li>
               <li>
-                <strong>localStorage</strong> &mdash; authentication state (wallet/Privy session tokens) and temporary OAuth flow data for cross-tab communication.
+                <strong>localStorage</strong> &mdash; authentication and account metadata (for example login state, linked account details, and gate status) plus temporary OAuth flow data for cross-tab communication. Session cookies remain HttpOnly cookies and are not stored in localStorage.
               </li>
             </ul>
             <p className="mt-2">
