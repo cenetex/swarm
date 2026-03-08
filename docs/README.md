@@ -33,7 +33,10 @@
 
 ## Legal
 
-- [TERMS-OF-USE.md](TERMS-OF-USE.md) — Platform terms of use
+- [TERMS-OF-USE.md](TERMS-OF-USE.md) — Platform terms of use (approved for design-partner use)
+- [DSAR-WORKFLOW.md](DSAR-WORKFLOW.md) — Data Subject Access Request workflow (inventory, export, erasure)
+- [CONSENT-REVOCATION-SEMANTICS.md](CONSENT-REVOCATION-SEMANTICS.md) — Cross-platform consent revocation semantics
+- [SUBPROCESSOR-REGISTER.md](SUBPROCESSOR-REGISTER.md) — Third-party processor and subprocessor register
 
 ## Release Notes
 

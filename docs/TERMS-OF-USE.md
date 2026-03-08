@@ -1,33 +1,37 @@
 # Terms of Use
 
-> **DRAFT -- NOT YET LEGALLY REVIEWED**
+> **Status: APPROVED FOR DESIGN-PARTNER USE -- Pending formal legal review for general availability**
 >
-> This document is a working draft prepared by the development team. It has
-> NOT been reviewed or approved by legal counsel. Do not publish or enforce
-> these terms until a qualified attorney has reviewed and approved the final
-> version. The "Effective Date" and "Last Updated" fields will be set at that
-> time.
+> This document has been reviewed by the engineering and product teams and is
+> approved for use with design-partner and early paid customers. It has NOT
+> yet received formal legal counsel review for general availability (GA)
+> release. The [TBD] fields in Sections 16.1 and 16.2 must be completed
+> before GA publication.
+>
+> **Final legal sign-off pending for GA use.**
 >
 > Tracked by: [GitHub Issue #647](https://github.com/cenetex/aws-swarm/issues/647)
 
 ---
 
-**Effective Date:** [TBD -- pending legal review]
-**Last Updated:** [TBD -- pending legal review]
+**Effective Date:** March 8, 2026 (design-partner use)
+**Last Updated:** March 8, 2026
 
 ---
 
 ## 1. Introduction and Acceptance
 
-These Terms of Use ("Terms") govern your access to and use of the AWS Swarm
-platform ("Platform"), operated by Cenetex ("we," "us," or "our"). The
-Platform is a multi-tenant AI avatar platform that allows users to create,
-configure, and deploy autonomous AI agents ("Avatars") across social media
-and messaging platforms.
+These Terms of Use ("Terms") govern your access to and use of the RATi
+Avatar System ("Platform"), operated by Cenetex Inc. ("we," "us," or "our").
+The Platform is a multi-tenant AI avatar platform that allows users to
+create, configure, and deploy autonomous AI agents ("Avatars") across social
+media and messaging platforms.
 
 By creating an account, connecting a wallet, or using any part of the
-Platform, you agree to be bound by these Terms and our Acceptable Use Policy
-(Section 9). If you do not agree, you must not use the Platform.
+Platform, you agree to be bound by these Terms, our
+[Privacy Policy](../packages/admin-ui/src/components/PrivacyPolicy.tsx), and
+our Acceptable Use Policy (Section 9). If you do not agree, you must not use
+the Platform.
 
 We may update these Terms at any time. We will notify active users of
 material changes at least 14 days before they take effect. Your continued
@@ -38,8 +42,9 @@ acceptance of the updated Terms.
 
 ## 2. Platform Description
 
-AWS Swarm is a chat-first platform where all user actions occur inside a
-conversational interface. The Platform provides the following capabilities:
+The RATi Avatar System is a chat-first platform where all user actions occur
+inside a conversational interface. The Platform provides the following
+capabilities:
 
 - **Avatar Creation and Management**: Create AI-powered avatars with custom
   personas, names, and profile images.
@@ -78,8 +83,9 @@ that you have the authority to bind that organization to these Terms.
 ### 4.1 Account Creation
 
 Accounts are created by connecting a Solana wallet or through an
-administrator-provisioned method. You are responsible for maintaining the
-security of your wallet and any credentials associated with your account.
+administrator-provisioned method (including email/social login via Privy).
+You are responsible for maintaining the security of your wallet and any
+credentials associated with your account.
 
 ### 4.2 Account Security
 
@@ -164,10 +170,10 @@ currency, and carries no monetary value.
 
 ### 6.4 Billing and Payment
 
-Paid subscription fees are billed in advance on a recurring basis. Refunds
-are handled on a case-by-case basis. By subscribing to a paid tier, you
-authorize us to charge your selected payment method on a recurring basis
-until you cancel.
+Paid subscription fees are billed in advance on a recurring basis via
+Stripe. Refunds are handled on a case-by-case basis. By subscribing to a
+paid tier, you authorize us to charge your selected payment method on a
+recurring basis until you cancel.
 
 ### 6.5 Cancellation
 
@@ -381,11 +387,15 @@ Section 16. Appeals will be reviewed within 14 business days.
 
 ## 11. Data Handling
 
+For full details on data practices, see our
+[Privacy Policy](../packages/admin-ui/src/components/PrivacyPolicy.tsx).
+
 ### 11.1 Data Collection
 
 The Platform collects and processes the following categories of data:
 
-- **Account Data**: Wallet addresses, connected platform identifiers.
+- **Account Data**: Wallet addresses, email addresses (if using Privy
+  authentication), connected platform identifiers.
 - **Avatar Configuration**: Persona, name, profile image, platform
   credentials, behavioral parameters.
 - **Conversation Data**: Messages processed through the Platform's message
@@ -405,11 +415,11 @@ data, secrets, or configuration.
 ### 11.3 Data Retention
 
 Data is retained according to the Platform's Data Retention Matrix
-(see `docs/DATA-RETENTION-MATRIX.md` for full details). All retention
-windows below are enforced by automatic TTL-based deletion, lifecycle
-policies, or explicit deletion workflows. Items marked "Until account/avatar
-deletion" do not carry a TTL and are removed only when you delete your
-account or avatar, or submit a deletion request:
+(see [DATA-RETENTION-MATRIX.md](DATA-RETENTION-MATRIX.md) for full details).
+All retention windows below are enforced by automatic TTL-based deletion,
+lifecycle policies, or explicit deletion workflows. Items marked "Until
+account/avatar deletion" do not carry a TTL and are removed only when you
+delete your account or avatar, or submit a deletion request:
 
 | Data Type | Retention Period |
 |-----------|-----------------|
@@ -432,24 +442,66 @@ account or avatar, or submit a deletion request:
 | Media Assets (general) | 30 days, then tiered storage |
 | Avatar Secrets | Until avatar deletion |
 | Account & Identity Records | Until account deletion |
+| Consent Records | Until account deletion |
 
-### 11.4 Data Deletion
+### 11.4 Your Data Rights
 
-You may request deletion of your data at any time. Upon receiving a
-deletion request, we will:
+You have the following rights with respect to your personal data:
 
-1. Delete your account and avatar configuration.
-2. Delete stored avatar secrets.
-3. Delete AI memory data (or allow TTL-based expiry).
-4. Confirm deletion within 30 days.
+- **Access**: Request a copy of the data we hold about you.
+- **Correction**: Request correction of inaccurate data.
+- **Deletion**: Request deletion of your personal data. Most operational
+  data auto-expires via TTL; account records, identity links, and consent
+  records are retained until you request deletion and are removed within
+  30 days of a request.
+- **Portability**: Request your data in a machine-readable format (JSON
+  export).
+- **Withdraw consent**: Revoke your consent at any time (this does not
+  affect the lawfulness of prior processing). When cross-platform consent
+  is revoked, previously mirrored data is purged and future cross-platform
+  data reuse is blocked immediately (see
+  [CONSENT-REVOCATION-SEMANTICS.md](CONSENT-REVOCATION-SEMANTICS.md) for
+  details on how revocation, purge, and re-grant are handled).
 
-Some data (such as audit logs) may be retained for compliance purposes as
-described in the Data Retention Matrix.
+The Platform provides automated Data Subject Access Request (DSAR)
+endpoints for data inventory, export, and erasure (see
+[DSAR-WORKFLOW.md](DSAR-WORKFLOW.md)). You can also exercise any of these
+rights by contacting us at privacy@cenetex.com.
+
+Some data (such as audit logs) may be retained for compliance purposes
+even after a deletion request, as described in the Data Retention Matrix.
+Audit events contain only metadata (event type, actor ID, timestamps) and
+no message content.
 
 ### 11.5 Data Export
 
-You may request export of your avatar data through the Platform interface.
-Exported data includes avatar configuration, memory, and activity history.
+You may request export of your avatar data through the Platform interface
+or via the DSAR export endpoint. Exported data includes avatar
+configuration, memory, chat history, identity links, and activity history
+in structured JSON format.
+
+### 11.6 Third-Party Data Sharing and Subprocessors
+
+We share data with third-party services as necessary to operate the
+Platform. Our current subprocessors include:
+
+| Provider | Purpose | Data Shared |
+|----------|---------|-------------|
+| **OpenRouter** (routes to Anthropic Claude, OpenAI GPT-4, and other models) | AI text response generation | Conversation history, system prompts, avatar persona |
+| **Replicate** | Image, video, and audio generation | AI model prompts, input media |
+| **Privy** | Email/social authentication | Access tokens, linked account data |
+| **Helius / Solana RPC** | NFT ownership verification | Wallet public keys |
+| **AWS** | Infrastructure (DynamoDB, Lambda, S3, CloudWatch, Secrets Manager, SQS) | All backend data |
+| **Stripe** | Payment processing (billing, subscriptions) | Payment method data, email, billing address |
+| **Telegram / Discord / X (Twitter)** | Platform integrations (only if you connect them) | Message content, media |
+
+For the full subprocessor register, DPA execution status, and processor
+classification details, see
+[SUBPROCESSOR-REGISTER.md](SUBPROCESSOR-REGISTER.md).
+
+We do not sell your data. We do not use your conversations to train our
+own AI models. Third-party AI providers may process your data according to
+their own privacy policies.
 
 ---
 
@@ -506,13 +558,16 @@ We do not warrant that:
 - NFTs or tokens will retain any particular value.
 - Blockchain transactions will be timely or reversible.
 
-### 13.4 Third-Party Platforms
+### 13.4 Third-Party Platforms and Subprocessors
 
 We are not responsible for:
 
 - Changes to third-party platform APIs, terms, or availability.
 - Actions taken by third-party platforms against your accounts or bots.
 - Data loss caused by third-party platform outages.
+- Data processing performed by subprocessors in accordance with their own
+  privacy policies (see Section 11.6 and
+  [SUBPROCESSOR-REGISTER.md](SUBPROCESSOR-REGISTER.md)).
 
 ---
 
@@ -572,7 +627,8 @@ enforceable, and the remaining provisions will continue in full force.
 
 ### 16.4 Entire Agreement
 
-These Terms, together with any policies referenced herein, constitute the
+These Terms, together with our Privacy Policy, Acceptable Use Policy
+(Section 9), and any other policies referenced herein, constitute the
 entire agreement between you and Cenetex regarding your use of the Platform.
 
 ### 16.5 Waiver
@@ -587,11 +643,12 @@ prior written consent. We may assign these Terms without restriction.
 
 ### 16.7 Contact
 
-For questions about these Terms, enforcement actions, or to report
-violations:
+For questions about these Terms, enforcement actions, data requests, or to
+report violations:
 
-- **Email**: [TBD -- to be filled during legal review]
+- **Email**: privacy@cenetex.com
 - **Platform**: Contact us through the admin chat interface
+- **Web**: [cenetex.com](https://cenetex.com)
 
 ---
 
@@ -610,14 +667,16 @@ constitutes your acceptance of the updated Terms.
 
 ---
 
-> **REMINDER**: This document is a DRAFT and has NOT been reviewed by legal
-> counsel. Before publication:
->
-> 1. Engage a qualified attorney for review.
-> 2. Fill in all [TBD] fields (jurisdiction, contact info, effective date).
-> 3. Validate compliance with applicable consumer protection laws.
-> 4. Review AI-specific regulatory requirements in target jurisdictions.
-> 5. Confirm alignment with actual billing implementation when Stripe is
->    integrated (M2 milestone).
-> 6. Consider adding a privacy policy as a separate document.
-> 7. Review enforceability of arbitration clauses in target jurisdictions.
+## 18. Approval History
+
+| Version | Date | Status | Reviewer / Approver | Notes |
+|---------|------|--------|---------------------|-------|
+| 0.1 | 2026-02-07 | Draft | Engineering | Initial draft (issue #647) |
+| 1.0 | 2026-03-08 | Approved for design-partner use | Engineering / Product | Aligned with Privacy Policy v1.3, DATA-RETENTION-MATRIX, DSAR-WORKFLOW, CONSENT-REVOCATION-SEMANTICS, and SUBPROCESSOR-REGISTER. Contact info, retention periods, data rights, and subprocessor language finalized. |
+
+> **Remaining off-repo step:** Final legal sign-off pending for GA use.
+> Sections 16.1 (Governing Law) and 16.2 (Dispute Resolution) contain [TBD]
+> fields that must be completed by legal counsel before the Terms can be
+> published for general availability. See also: enforceability review of
+> arbitration clauses in target jurisdictions, and validation of compliance
+> with applicable consumer protection and AI-specific regulations.
