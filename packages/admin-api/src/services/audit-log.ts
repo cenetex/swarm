@@ -10,7 +10,7 @@
  *   gsi1pk: AUDIT_TYPE#<eventType>  (for cross-avatar queries)
  *   gsi1sk: <timestamp>
  *
- * TTL: 90 days (audit events have longer retention than operational logs).
+ * TTL: 365 days (audit events have longer retention than operational logs).
  */
 import {
   type DynamoDBDocumentClient,

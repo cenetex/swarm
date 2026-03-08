@@ -5,8 +5,15 @@
  * Software licensed from: RATi™ Open Software Foundation (https://rati.foundation)
  * Contact: privacy@cenetex.com
  *
- * Policy version: 1.2 (2026-03-08)
+ * Policy version: 1.3 (2026-03-08)
  * Aligned with DATA-RETENTION-MATRIX.md and implemented backend controls.
+ *
+ * DRIFT PREVENTION — the following source files must stay in sync with this
+ * privacy policy whenever retention periods or deletion mechanics change:
+ *   - docs/DATA-RETENTION-MATRIX.md          (canonical retention matrix)
+ *   - packages/admin-api/src/services/audit-log.ts  (AUDIT_TTL_DAYS constant)
+ *   - packages/admin-ui/src/components/ConsentBanner.tsx  (consent summary)
+ *   - docs/TERMS-OF-USE.md                   (Section 11.3 retention table)
  */
 
 interface PrivacyPolicyProps {
@@ -32,7 +39,7 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
         </div>
 
         <p className="text-sm text-[var(--color-text-secondary)] mb-8">
-          Last updated: March 8, 2026 &middot; Policy version 1.2
+          Last updated: March 8, 2026 &middot; Policy version 1.3
         </p>
 
         <div className="prose prose-invert max-w-none space-y-8 text-[var(--color-text-secondary)]">
@@ -108,7 +115,7 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
               2.5 Audit &amp; Operational Logs
             </h3>
             <ul className="list-disc pl-6 space-y-1">
-              <li><strong>Audit logs</strong> &mdash; records of administrative actions (avatar creation, updates, secret changes, entitlement changes), retained for 90 days in DynamoDB.</li>
+              <li><strong>Audit logs</strong> &mdash; records of administrative actions (avatar creation, updates, secret changes, entitlement changes), retained for 365 days (1 year) in DynamoDB.</li>
               <li><strong>Application logs</strong> &mdash; structured logs in AWS CloudWatch. Message processing logs are retained for 30 days; admin and other service logs are retained for 14 days. Operational logs are intended to store metadata rather than message content, but troubleshooting reports or feedback you submit may include text you provide.</li>
               <li><strong>API access logs</strong> &mdash; API Gateway request logs, retained for 30 days.</li>
               <li><strong>Activity records</strong> &mdash; avatar activity tracking events, auto-deleted after 24 hours.</li>
@@ -201,7 +208,7 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
           <section>
             <h2 className="text-xl font-semibold text-[var(--color-text)] mb-3">5. Data Retention</h2>
             <p className="mb-3">
-              All retention periods below are enforced by automatic TTL-based deletion in DynamoDB or lifecycle policies in S3 and CloudWatch. No manual intervention is required.
+              Retention periods are enforced through a combination of automatic TTL-based deletion in DynamoDB, lifecycle policies in S3 and CloudWatch, and explicit deletion workflows. Data that expires automatically is marked &quot;auto-deleted&quot; below. Account records, identity links, consent records, and archival memories do not carry a TTL and are retained until you delete your account or avatar, or submit a deletion request.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
@@ -224,13 +231,14 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
                   <tr><td className="py-2 pr-4">Content store (posted)</td><td className="py-2">90 days (auto-deleted)</td></tr>
                   <tr><td className="py-2 pr-4">Content store (pending)</td><td className="py-2">30 days (auto-deleted)</td></tr>
                   <tr><td className="py-2 pr-4">Content store (rejected)</td><td className="py-2">7 days (auto-deleted)</td></tr>
-                  <tr><td className="py-2 pr-4">Audit logs</td><td className="py-2">90 days (auto-deleted)</td></tr>
+                  <tr><td className="py-2 pr-4">Audit logs</td><td className="py-2">365 days / 1 year (auto-deleted)</td></tr>
                   <tr><td className="py-2 pr-4">Application logs (message processing)</td><td className="py-2">30 days (CloudWatch retention)</td></tr>
                   <tr><td className="py-2 pr-4">Application logs (admin, Discord, other)</td><td className="py-2">14 days (CloudWatch retention)</td></tr>
                   <tr><td className="py-2 pr-4">Media assets (temporary)</td><td className="py-2">1 day (S3 lifecycle)</td></tr>
                   <tr><td className="py-2 pr-4">Media assets (general)</td><td className="py-2">30 days then tiered storage</td></tr>
-                  <tr><td className="py-2 pr-4">Account &amp; identity records</td><td className="py-2">Until account deletion</td></tr>
-                  <tr><td className="py-2 pr-4">Avatar secrets (API keys)</td><td className="py-2">Until avatar deletion</td></tr>
+                  <tr><td className="py-2 pr-4">Account &amp; identity records</td><td className="py-2">Until account deletion (no TTL)</td></tr>
+                  <tr><td className="py-2 pr-4">Consent records</td><td className="py-2">Until account deletion (no TTL)</td></tr>
+                  <tr><td className="py-2 pr-4">Avatar secrets (API keys)</td><td className="py-2">Until avatar deletion (no TTL)</td></tr>
                 </tbody>
               </table>
             </div>
@@ -258,7 +266,7 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
             <ul className="list-disc pl-6 space-y-1">
               <li><strong>Access</strong> &mdash; request a copy of the data we hold about you.</li>
               <li><strong>Correction</strong> &mdash; request correction of inaccurate data.</li>
-              <li><strong>Deletion</strong> &mdash; request deletion of your personal data. Most data auto-expires via TTL; remaining items are deleted within 30 days of a request.</li>
+              <li><strong>Deletion</strong> &mdash; request deletion of your personal data. Most operational data auto-expires via TTL; account records, identity links, and consent records are retained until you request deletion and are removed within 30 days of a request.</li>
               <li><strong>Portability</strong> &mdash; request your data in a machine-readable format.</li>
               <li><strong>Withdraw consent</strong> &mdash; revoke your consent at any time (this does not affect the lawfulness of prior processing).</li>
             </ul>
@@ -371,7 +379,7 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
 
         {/* Footer */}
         <div className="mt-12 pt-8 border-t border-[var(--color-border)] text-center text-sm text-[var(--color-text-muted)] space-y-1">
-          <p>RATi OS &mdash; Privacy Policy v1.2</p>
+          <p>RATi OS &mdash; Privacy Policy v1.3</p>
           <p>Operated by <a href="https://cenetex.com" className="underline hover:text-[var(--color-text-secondary)]" target="_blank" rel="noopener noreferrer">Cenetex Inc.</a> &middot; Licensed from <a href="https://rati.foundation" className="underline hover:text-[var(--color-text-secondary)]" target="_blank" rel="noopener noreferrer">RATi&#8482; Open Software Foundation</a></p>
         </div>
       </div>

@@ -29,7 +29,7 @@ interface ConsentState {
 }
 
 /** Bump this when the privacy policy materially changes */
-export const CURRENT_POLICY_VERSION = '1.2';
+export const CURRENT_POLICY_VERSION = '1.3';
 
 export const useConsentStore = create<ConsentState>()(
   persist(

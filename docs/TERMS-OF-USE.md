@@ -406,8 +406,10 @@ data, secrets, or configuration.
 
 Data is retained according to the Platform's Data Retention Matrix
 (see `docs/DATA-RETENTION-MATRIX.md` for full details). All retention
-windows below are enforced by automatic TTL-based deletion or lifecycle
-policies:
+windows below are enforced by automatic TTL-based deletion, lifecycle
+policies, or explicit deletion workflows. Items marked "Until account/avatar
+deletion" do not carry a TTL and are removed only when you delete your
+account or avatar, or submit a deletion request:
 
 | Data Type | Retention Period |
 |-----------|-----------------|
@@ -423,7 +425,7 @@ policies:
 | Content Store (posted) | 90 days |
 | Content Store (pending) | 30 days |
 | Content Store (rejected) | 7 days |
-| Audit Events | 90 days |
+| Audit Events | 365 days (1 year) |
 | Application Logs (message processing) | 30 days |
 | Application Logs (admin, Discord, other) | 14 days |
 | Media Assets (temporary) | 1 day |
