@@ -126,6 +126,35 @@ type HeliusParsedTransaction = {
   }>;
 };
 
+type HeliusAsset = {
+  ownership?: { owner?: string };
+  content?: {
+    metadata?: {
+      name?: string;
+      symbol?: string;
+    };
+    json_uri?: string;
+  };
+  grouping?: Array<{
+    group_key: string;
+    group_value: string;
+  }>;
+};
+
+type OffchainAscensionMetadata = {
+  external_url?: string;
+  attributes?: Array<{
+    trait_type?: string;
+    value?: string | number | boolean;
+  }>;
+  properties?: {
+    creators?: Array<{
+      address?: string;
+      share?: number;
+    }>;
+  };
+};
+
 async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusParsedTransaction | null> {
   if (!HELIUS_TX_URL) return null;
 
@@ -160,7 +189,7 @@ async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusPa
   }
 }
 
-async function getAssetCollection(mint: string): Promise<string | null> {
+async function getAsset(mint: string): Promise<HeliusAsset | null> {
   if (!HELIUS_API_KEY) return null;
 
   try {
@@ -182,7 +211,7 @@ async function getAssetCollection(mint: string): Promise<string | null> {
 
     const data = await response.json() as {
       error?: { message?: string };
-      result?: { grouping?: Array<{ group_key: string; group_value: string }> };
+      result?: HeliusAsset;
     };
 
     if (data.error) {
@@ -190,7 +219,19 @@ async function getAssetCollection(mint: string): Promise<string | null> {
       return null;
     }
 
-    const grouping = data.result?.grouping || [];
+    return data.result || null;
+  } catch (error) {
+    console.warn('[AvatarAscend] Helius getAsset error:', error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
+async function getAssetCollection(mint: string): Promise<string | null> {
+  const asset = await getAsset(mint);
+  if (!asset) return null;
+
+  try {
+    const grouping = asset.grouping || [];
     const collection = grouping.find((group) => group.group_key === 'collection');
     return collection?.group_value || null;
   } catch (error) {
@@ -203,40 +244,89 @@ async function getAssetCollection(mint: string): Promise<string | null> {
  * Get the current owner of an NFT
  */
 export async function getNftOwner(mint: string): Promise<string | null> {
-  if (!HELIUS_API_KEY) return null;
+  const asset = await getAsset(mint);
+  return asset?.ownership?.owner || null;
+}
 
+async function getAscensionAvatar(avatarId: string): Promise<AvatarRecord | null> {
+  const result = await dynamoClient.send(new GetCommand({
+    TableName: TABLE_NAME,
+    Key: {
+      pk: `AVATAR#${avatarId}`,
+      sk: 'CONFIG',
+    },
+  }));
+
+  return (result.Item as AvatarRecord) || null;
+}
+
+async function fetchOffchainAscensionMetadata(jsonUri: string): Promise<OffchainAscensionMetadata | null> {
   try {
-    const response = await fetch(HELIUS_RPC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'get-nft-owner',
-        method: 'getAsset',
-        params: { id: mint },
-      }),
-    });
-
+    const response = await fetch(jsonUri);
     if (!response.ok) {
-      console.warn(`[AvatarAscend] Failed to get NFT owner: ${response.status}`);
+      console.warn(`[AvatarAscend] Failed to fetch off-chain metadata: ${response.status}`);
       return null;
     }
-
-    const data = await response.json() as {
-      error?: { message?: string };
-      result?: { ownership?: { owner?: string } };
-    };
-
-    if (data.error) {
-      console.warn('[AvatarAscend] getAsset error:', data.error.message);
-      return null;
-    }
-
-    return data.result?.ownership?.owner || null;
+    return await response.json() as OffchainAscensionMetadata;
   } catch (error) {
-    console.warn('[AvatarAscend] Error getting NFT owner:', error instanceof Error ? error.message : String(error));
+    console.warn('[AvatarAscend] Failed to fetch off-chain metadata:', error instanceof Error ? error.message : String(error));
     return null;
   }
+}
+
+export async function validateAscensionNftMint(
+  avatarId: string,
+  walletAddress: string,
+  nftMint: string
+): Promise<{ valid: boolean; owner?: string | null; error?: string }> {
+  const avatar = await getAscensionAvatar(avatarId);
+  if (!avatar) {
+    return { valid: false, error: 'Avatar not found' };
+  }
+
+  const asset = await getAsset(nftMint);
+  if (!asset) {
+    return { valid: false, error: 'Ascension NFT mint not found on-chain' };
+  }
+
+  const owner = asset.ownership?.owner || null;
+  if (owner !== walletAddress) {
+    return { valid: false, owner, error: 'Ascension NFT is not owned by your wallet' };
+  }
+
+  const expectedName = `${avatar.name} (Ascended)`;
+  const assetName = asset.content?.metadata?.name;
+  if (assetName !== expectedName) {
+    return { valid: false, owner, error: 'Ascension NFT metadata does not match avatar' };
+  }
+
+  const assetSymbol = asset.content?.metadata?.symbol;
+  if (assetSymbol && assetSymbol !== 'ASCEND') {
+    return { valid: false, owner, error: 'Ascension NFT metadata does not match avatar' };
+  }
+
+  const jsonUri = asset.content?.json_uri;
+  if (!jsonUri) {
+    return { valid: false, owner, error: 'Ascension NFT metadata is missing avatar linkage' };
+  }
+
+  const metadata = await fetchOffchainAscensionMetadata(jsonUri);
+  if (!metadata) {
+    return { valid: false, owner, error: 'Ascension NFT metadata is missing avatar linkage' };
+  }
+
+  const avatarIdAttribute = metadata.attributes?.find((attribute) =>
+    attribute.trait_type?.toLowerCase() === 'avatar id'
+  );
+  const externalUrlMatches = metadata.external_url === `https://rati.chat/avatar/${avatar.avatarId}`;
+  const avatarIdMatches = String(avatarIdAttribute?.value ?? '') === avatar.avatarId;
+  const creatorMatches = metadata.properties?.creators?.some((creator) => creator.address === walletAddress) ?? false;
+
+  if (!externalUrlMatches || !avatarIdMatches || !creatorMatches) {
+    return { valid: false, owner, error: 'Ascension NFT metadata is not linked to this avatar' };
+  }
+
+  return { valid: true, owner };
 }
 
 function extractBurnedMints(tx: VersionedTransactionResponse): string[] {
