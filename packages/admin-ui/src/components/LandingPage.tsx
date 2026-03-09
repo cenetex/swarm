@@ -1,6 +1,7 @@
 /**
  * Landing Page - Shown to unauthenticated users
- * Explains what the platform is and guides users to sign in
+ * Explains what the platform does and guides users to sign in.
+ * Aligned with docs/POSITIONING.md messaging.
  */
 import { useState } from 'react';
 import { PrivyLoginButton } from './PrivyLoginButton';
@@ -15,7 +16,7 @@ export function LandingPage() {
 
   return (
     <div className="min-h-[100dvh] bg-[var(--color-bg)] flex flex-col relative overflow-hidden">
-      {/* Layered background gradients */}
+      {/* Background gradients */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(122,99,149,0.3),transparent)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_40%_at_80%_60%,rgba(167,139,250,0.08),transparent)]" />
@@ -29,41 +30,64 @@ export function LandingPage() {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 z-10">
-        {/* Logo and title */}
-        <div className="flex items-center gap-3 mb-4">
+        {/* Logo */}
+        <div className="flex items-center gap-3 mb-6">
           <img src="/swarm.svg" alt="Swarm" className="w-14 h-14 drop-shadow-[0_0_12px_rgba(122,99,149,0.5)]" />
           <h1 className="text-4xl font-bold tracking-tight text-[var(--color-text)]">Swarm</h1>
         </div>
 
-        {/* Tagline */}
-        <p className="text-lg text-[var(--color-text-secondary)] text-center mb-2 max-w-sm">
-          Your AI. Your voice. On-chain.
-        </p>
-        <p className="text-sm text-[var(--color-text-muted)] text-center mb-10 max-w-md">
-          Create autonomous AI avatars on Solana — connect them to Telegram, Twitter, and Discord.
+        {/* Headline */}
+        <h2 className="text-xl sm:text-2xl font-semibold text-[var(--color-text)] text-center mb-3 max-w-md leading-snug">
+          AI avatars that live on your platforms
+        </h2>
+        <p className="text-sm text-[var(--color-text-secondary)] text-center mb-10 max-w-md leading-relaxed">
+          Create an AI personality, connect it to Telegram, Discord, or X — it responds 24/7 with persistent memory and zero infrastructure.
         </p>
 
-        {/* Feature cards */}
+        {/* How it works — chat demo */}
+        <div className="w-full max-w-sm mb-10">
+          <div className="rounded-xl bg-[var(--color-bg-secondary)]/60 backdrop-blur-sm border border-[var(--color-border)] overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-[var(--color-border)] flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-green-400" />
+              <span className="text-xs font-medium text-[var(--color-text-muted)]">How it works</span>
+            </div>
+            <div className="p-4 space-y-3">
+              <ChatBubble role="user" text="Create an avatar called Astra" />
+              <ChatBubble role="assistant" text="Done! Give her a personality?" />
+              <ChatBubble role="user" text="Friendly crypto nerd who explains DeFi simply" />
+              <ChatBubble role="assistant" text="Persona set. Connect her to Telegram?" />
+              <ChatBubble role="user" text="Yes — here's the bot token" />
+              <ChatBubble role="assistant" text="Astra is live on Telegram and responding." check />
+            </div>
+          </div>
+        </div>
+
+        {/* Value props */}
         <div className="grid gap-3 mb-10 max-w-lg w-full">
           <FeatureCard
-            icon={<AvatarIcon />}
-            title="Create Your Avatar"
-            description="Every wallet gets one free AI avatar. Configure its personality, voice, and channel integrations."
+            icon={<BoltIcon />}
+            title="Live in 10 minutes"
+            description="Create an avatar, set its personality, paste your bot token. No servers, no code, no config files."
           />
           <FeatureCard
-            icon={<ConnectIcon />}
-            title="Claim Your Presence"
-            description="Sign in with Privy to manage your avatars and collaborate across channels."
+            icon={<BrainIcon />}
+            title="Persistent memory"
+            description="Your avatar remembers conversations across sessions. Same personality, same context, every time."
           />
           <FeatureCard
-            icon={<OrbIcon />}
-            title="Collect Orbs"
-            description="Hold Orb NFTs to unlock additional avatar slots, premium models, and exclusive features."
+            icon={<MultiPlatformIcon />}
+            title="Multi-platform, one identity"
+            description="Connect Telegram, Discord, and X. One avatar, one personality, shared memory across all platforms."
           />
         </div>
 
-        {/* Login options */}
+        {/* CTA */}
         <PrivyLoginButton className="w-full max-w-sm justify-center" />
+
+        {/* Social proof hint */}
+        <p className="mt-4 text-xs text-[var(--color-text-muted)] text-center">
+          Free tier included — 50 messages/day, no credit card required
+        </p>
       </div>
 
       {/* Footer */}
@@ -71,7 +95,7 @@ export function LandingPage() {
         <p className="flex items-center justify-center gap-1.5 flex-wrap">
           <span>Operated by</span>
           <a href="https://cenetex.com" className="font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">Cenetex Inc.</a>
-          <span className="text-[var(--color-border-secondary)]">·</span>
+          <span className="text-[var(--color-border-secondary)]">&middot;</span>
           <span>Powered by</span>
           <span className="font-medium text-[var(--color-text-tertiary)]">Solana</span>
         </p>
@@ -91,6 +115,26 @@ export function LandingPage() {
     </div>
   );
 }
+
+/* ---- Chat Demo Bubbles ---- */
+
+function ChatBubble({ role, text, check }: { role: 'user' | 'assistant'; text: string; check?: boolean }) {
+  const isUser = role === 'user';
+  return (
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div className={`rounded-xl px-3 py-1.5 max-w-[85%] text-xs leading-relaxed ${
+        isUser
+          ? 'bg-brand-600 text-white rounded-br-sm'
+          : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] rounded-bl-sm'
+      }`}>
+        {check && <span className="text-green-400 mr-1">&#10003;</span>}
+        {text}
+      </div>
+    </div>
+  );
+}
+
+/* ---- Feature Cards ---- */
 
 interface FeatureCardProps {
   icon: React.ReactNode;
@@ -114,26 +158,26 @@ function FeatureCard({ icon, title, description }: FeatureCardProps) {
 
 /* ---- Inline SVG Icons ---- */
 
-function AvatarIcon() {
+function BoltIcon() {
   return (
     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
     </svg>
   );
 }
 
-function ConnectIcon() {
+function BrainIcon() {
   return (
     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 12h9m0 0l-3-3m3 3l-3 3M4.5 6.75h15m-15 10.5h15" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
     </svg>
   );
 }
 
-function OrbIcon() {
+function MultiPlatformIcon() {
   return (
     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
     </svg>
   );
 }
