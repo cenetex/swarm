@@ -81,12 +81,42 @@ export function LandingPage() {
           />
         </div>
 
+        {/* Pricing */}
+        <div className="w-full max-w-lg mb-10">
+          <h3 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider text-center mb-4">
+            Simple pricing
+          </h3>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <PricingCard
+              name="Free"
+              price="$0"
+              features={['50 msgs/day', '1 platform', 'No memory', '5 media/day']}
+              color="text-[var(--color-text-secondary)]"
+            />
+            <PricingCard
+              name="Pro"
+              price="$9"
+              period="/mo"
+              features={['500 msgs/day', '3 platforms', '30-day memory', '50 media/day']}
+              color="text-blue-400"
+              highlight
+            />
+            <PricingCard
+              name="Enterprise"
+              price="$29"
+              period="/mo"
+              features={['Unlimited msgs', 'Unlimited platforms', '365-day memory', 'Unlimited media']}
+              color="text-purple-400"
+            />
+          </div>
+        </div>
+
         {/* CTA */}
         <PrivyLoginButton className="w-full max-w-sm justify-center" />
 
         {/* Social proof hint */}
         <p className="mt-4 text-xs text-[var(--color-text-muted)] text-center">
-          Free tier included — 50 messages/day, no credit card required
+          Free tier included — no credit card required
         </p>
       </div>
 
@@ -152,6 +182,38 @@ function FeatureCard({ icon, title, description }: FeatureCardProps) {
         <h3 className="font-semibold text-[var(--color-text)] mb-0.5 text-sm">{title}</h3>
         <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">{description}</p>
       </div>
+    </div>
+  );
+}
+
+/* ---- Pricing Card ---- */
+
+interface PricingCardProps {
+  name: string;
+  price: string;
+  period?: string;
+  features: string[];
+  color: string;
+  highlight?: boolean;
+}
+
+function PricingCard({ name, price, period, features, color, highlight }: PricingCardProps) {
+  return (
+    <div className={`rounded-xl p-3 sm:p-4 border text-center ${
+      highlight
+        ? 'bg-blue-900/20 border-blue-500/30'
+        : 'bg-[var(--color-bg-secondary)]/60 border-[var(--color-border)]'
+    }`}>
+      <div className={`text-xs font-semibold uppercase tracking-wider mb-1 ${color}`}>{name}</div>
+      <div className="text-xl sm:text-2xl font-bold text-[var(--color-text)]">
+        {price}
+        {period && <span className="text-xs font-normal text-[var(--color-text-muted)]">{period}</span>}
+      </div>
+      <ul className="mt-2 space-y-1">
+        {features.map((f) => (
+          <li key={f} className="text-[10px] sm:text-xs text-[var(--color-text-muted)]">{f}</li>
+        ))}
+      </ul>
     </div>
   );
 }
