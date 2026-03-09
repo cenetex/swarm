@@ -153,7 +153,7 @@ When a KPI exceeds its target, the variance determines the response urgency.
 
 ## 7. Weekly Cost Review Cadence
 
-A proactive weekly review complements the reactive playbook (sections 1-5). The review runs every **Monday during triage** (see `docs/STRATEGY-OPERATIONS.md` section 6 for the full weekly operating cadence).
+A proactive weekly review complements the reactive playbook (sections 1-5). The review runs every **Monday during triage**.
 
 ### Owner
 
@@ -280,7 +280,7 @@ gh issue create \
 ## References
 
 - [Cost Controls Playbook](docs/COST-CONTROLS-PLAYBOOK.md)
-- [Strategy Operations -- Cost Governance](docs/STRATEGY-OPERATIONS.md#4-cost-governance-kpi-cadence)
+- [Cost Controls Playbook](docs/COST-CONTROLS-PLAYBOOK.md)
 EOF
 )"
 ```
@@ -299,10 +299,10 @@ EOF
 
 Cost corrective-action issues participate in the standard triage process defined in `docs/ISSUE-GOVERNANCE.md`:
 
-1. Cost issues labeled `priority:high` are subject to **Risk-First Sequencing** (see `docs/STRATEGY-OPERATIONS.md` section 1) -- they are worked before feature issues of equal or lower priority.
-2. If a cost issue causes the WIP cap to be reached, the **Overflow Protocol** (`docs/STRATEGY-OPERATIONS.md` section 2) applies: blocked or stale items are returned to backlog to make room.
-3. Cost issues that require infrastructure changes follow the standard PR workflow and must pass the **Release Gate Contract** (`docs/STRATEGY-OPERATIONS.md` section 3) before deployment.
-4. Resolution of cost issues is tracked in the **Leadership Scorecard** as part of the "Cost trend" operating metric (`docs/STRATEGY-OPERATIONS.md` section 6).
+1. Cost issues labeled `priority:high` are worked before feature issues of equal or lower priority (see priority order in `CLAUDE.md`).
+2. If a cost issue causes the WIP cap to be reached, blocked or stale items are returned to backlog to make room (see WIP caps in `CLAUDE.md`).
+3. Cost issues that require infrastructure changes follow the standard PR workflow and must pass the release gate contract (see `RELEASE-GATES.md`) before deployment.
+4. Resolution of cost issues is tracked as part of the "Cost trend" operating metric in Monday triage.
 
 ---
 

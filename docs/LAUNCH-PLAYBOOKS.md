@@ -4,8 +4,9 @@ Reproducible launch playbooks for each priority ICP segment. Use these to go fro
 
 **Related docs:**
 
-- [GTM-STRATEGY-M2.md](GTM-STRATEGY-M2.md) -- ICP definitions, messaging matrix, funnel KPIs
+- [ICP.md](ICP.md) -- ideal customer profile and buying signals
 - [BILLING-STRATEGY.md](BILLING-STRATEGY.md) -- entitlement tiers and web3 augmentation
+- [POSITIONING.md](POSITIONING.md) -- product positioning and messaging
 - [PLAYBOOK-TELEGRAM-QUICKSTART.md](PLAYBOOK-TELEGRAM-QUICKSTART.md) -- operational repair playbook
 - [design-philosophy.md](design-philosophy.md) -- chat-first design principles
 

@@ -123,7 +123,7 @@ When the open backlog hits the cap, close/archive another issue before opening o
 - **Issue is the spec.** Do not expand scope beyond what the issue describes.
 - **Branches without an issue number must not be pushed to origin.**
 
-Full governance details: [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md), [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md), [docs/STRATEGY-OPERATIONS.md](docs/STRATEGY-OPERATIONS.md), [docs/SECURITY.md](docs/SECURITY.md).
+Full governance details: [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md), [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md), [docs/SECURITY.md](docs/SECURITY.md).
 
 ---
 

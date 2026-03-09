@@ -27,7 +27,8 @@
 
 ## Product and GTM
 
-- [ICP.md](ICP.md) — Ideal customer profile, buying signals, design partner criteria, and messaging guidelines
+- [POSITIONING.md](POSITIONING.md) — Product positioning, messaging, and channel strategy
+- [ICP.md](ICP.md) — Ideal customer profile, buying signals, design partner criteria
 - [LAUNCH-PLAYBOOKS.md](LAUNCH-PLAYBOOKS.md) — Launch playbooks by ICP
 - [PLAYBOOK-TELEGRAM-QUICKSTART.md](PLAYBOOK-TELEGRAM-QUICKSTART.md) — Telegram quickstart and repair playbook
 

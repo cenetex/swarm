@@ -119,7 +119,7 @@ Security exceptions are temporary risk acceptances for known vulnerabilities tha
 | Registry schema | [`.audit-exceptions.schema.json`](../.audit-exceptions.schema.json) | JSON Schema defining required fields and validation rules |
 | Validation script | [`scripts/validate-security-exceptions.mjs`](../scripts/validate-security-exceptions.mjs) | Validates registry entries, checks expiry, outputs CI annotations |
 | Automated workflow | [`.github/workflows/security-exceptions.yml`](../.github/workflows/security-exceptions.yml) | Weekly Monday 09:00 UTC automated validation; creates issues for expired/expiring entries |
-| Governance rules | [STRATEGY-OPERATIONS.md -- Section 5](./STRATEGY-OPERATIONS.md) | High-level rules (S1-S6) and lifecycle overview |
+| Governance rules | [CLAUDE.md](../CLAUDE.md) | WIP caps, priority order, and lifecycle rules |
 
 ### Required Fields
 
@@ -145,7 +145,7 @@ Optional but recommended fields: `cve`, `npmAdvisoryId`, `title`, `installedVers
 | Frequency | Activity | Mechanism |
 |-----------|----------|-----------|
 | **Weekly (Monday 09:00 UTC)** | Automated validation of all registry entries. Expired or expiring-within-14-days entries trigger a `type:security` + `priority:high` GitHub issue. | [`.github/workflows/security-exceptions.yml`](../.github/workflows/security-exceptions.yml) |
-| **Weekly (Monday triage)** | Leadership reviews any open security exception issues during triage. Exception count is a scorecard metric. | [STRATEGY-OPERATIONS.md -- Section 6](./STRATEGY-OPERATIONS.md) |
+| **Weekly (Monday triage)** | Leadership reviews any open security exception issues during triage. Exception count is a scorecard metric. | Monday triage cadence |
 | **Per-exception cadence** | Each exception defines its own `reviewCadence` (weekly, monthly, or quarterly). The `lastReviewed` and `reviewBy` fields track compliance. | Registry entry fields |
 | **On every PR** | `pnpm audit --audit-level=high` runs in CI. New high/critical findings that are not covered by an active exception block the merge. | CI pipeline (`ci.yml`) |
 
@@ -218,7 +218,7 @@ An exception becomes "stale" when it expires and is not acted upon within the de
 | Exception expires | Day 0 | Automated workflow creates `type:security` + `priority:high` issue |
 | No action on expired exception | Day 7 | Owner is pinged on the issue. Exception is flagged in the next Monday triage review. |
 | Still no action | Day 14 | Leadership escalation: the exception is added to the Monday triage agenda as a blocking item. No new feature work may start until addressed. |
-| Still no action | Day 21 | The exception blocks the next production release (Release Gate G4 in [STRATEGY-OPERATIONS.md](./STRATEGY-OPERATIONS.md)). |
+| Still no action | Day 21 | The exception blocks the next production release (Release Gate G4 in [RELEASE-GATES.md](./RELEASE-GATES.md)). |
 | Renewal limit exceeded | On renewal attempt | Escalate to leadership. Requires leadership sign-off with documented justification for continued acceptance. |
 
 ### Closure Criteria
@@ -363,7 +363,7 @@ For security concerns or questions:
 
 Privileged identities (GitHub admins, deployment roles, admin wallets/emails, environment secrets) are reviewed quarterly via an automated workflow. The workflow produces evidence artifacts and creates follow-up issues for stale or unknown principals.
 
-See [ACCESS-REVIEW.md](./ACCESS-REVIEW.md) for the full process, break-glass documentation, and recertification timeline.
+The review covers GitHub admins, deployment roles, admin wallets/emails, and environment secrets. Break-glass access requires post-incident documentation.
 
 ## Compliance
 
@@ -372,7 +372,7 @@ This project follows security best practices including:
 - AWS Well-Architected Framework security pillar
 - Principle of least privilege
 - Defense in depth
-- Quarterly privileged-access recertification ([ACCESS-REVIEW.md](./ACCESS-REVIEW.md))
+- Quarterly privileged-access recertification
 
 ## License
 

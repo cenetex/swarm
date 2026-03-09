@@ -3,19 +3,16 @@
 **Status:** DRAFT -- needs validation through design-partner conversations
 **Date:** 2026-03-01
 **Owner:** Leadership
-**Charter Reference:** PROJECT-CHARTER.md Risk R8, Section 1b (Public Billing Launch gate)
 
 **Related documents:**
 - [BILLING-STRATEGY.md](BILLING-STRATEGY.md) -- tier definitions, entitlement limits, pricing
-- [GTM-STRATEGY-M2.md](GTM-STRATEGY-M2.md) -- funnel KPIs, channel strategy, activation flow
-- [ICP-MESSAGING-MATRIX.md](ICP-MESSAGING-MATRIX.md) -- positioning, messaging, proof claims
-- [PROJECT-CHARTER.md](PROJECT-CHARTER.md) -- revenue activation gate, stop/go clause
+- [POSITIONING.md](POSITIONING.md) -- product positioning and messaging
 
 ---
 
 ## Why This Document Exists
 
-The Project Charter (R8) identifies "No clear ICP defined for paying users" as high-probability, high-impact risk. Stripe activation alone does not equal revenue readiness. Section 1b requires ICP validation with at least 5 design-partner conversations before public billing launch.
+Revenue readiness requires ICP validation. Stripe activation alone does not equal revenue readiness. ICP must be validated with at least 5 design-partner conversations before public billing launch.
 
 This document defines who we believe our paying customers are, what signals indicate readiness to pay, and how we will validate these assumptions before turning on public billing.
 
@@ -171,7 +168,7 @@ These are observable behaviors that indicate a user is ready to pay or should be
 
 ## 5. Design Partner Beta Criteria
 
-The Project Charter (Section 1b) permits a Design Partner Paid Beta before the full public billing gate. Maximum 10 customers, manual onboarding, with the purpose of validating ICP, testing billing flow, and gathering feedback.
+Maximum 10 design partners, manual onboarding, with the purpose of validating ICP, testing billing flow, and gathering feedback.
 
 ### What Makes a Good Design Partner
 
@@ -206,7 +203,7 @@ The Project Charter (Section 1b) permits a Design Partner Paid Beta before the f
 
 ## 6. Validation Plan: 5+ Design Partner Conversations
 
-The Project Charter requires ICP validation with at least 5 design-partner conversations before public billing launch. This section defines what "validated" means.
+ICP validation requires at least 5 design-partner conversations before public billing launch. This section defines what "validated" means.
 
 ### Conversation Goals
 

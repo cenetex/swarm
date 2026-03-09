@@ -84,7 +84,7 @@ Query: `milestone:"Roadmap: Later" is:open` (4 open as of 2026-02-23)
 
 - [#208](https://github.com/cenetex/aws-swarm/issues/208) -- Break up admin-api monolith (60K LOC, 50% of codebase).
 - [#270](https://github.com/cenetex/aws-swarm/issues/270) -- M2 GTM execution epic.
-- [#271](https://github.com/cenetex/aws-swarm/issues/271) -- Operationalize ICP positioning and messaging matrix. See [docs/ICP-MESSAGING-MATRIX.md](docs/ICP-MESSAGING-MATRIX.md).
+- [#271](https://github.com/cenetex/aws-swarm/issues/271) -- Operationalize ICP positioning and messaging matrix. See [docs/POSITIONING.md](docs/POSITIONING.md).
 - [#274](https://github.com/cenetex/aws-swarm/issues/274) -- Publish ICP launch playbooks and demo checklists.
 - [#276](https://github.com/cenetex/aws-swarm/issues/276) -- Define M2 design-partner program and qualification rubric.
 
@@ -100,8 +100,8 @@ Strategic PRDs:
 - [docs/PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md](docs/PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md)
 
 GTM and positioning:
-- [docs/GTM-STRATEGY-M2.md](docs/GTM-STRATEGY-M2.md) -- ICP prioritization, funnel KPIs, channel strategy
-- [docs/ICP-MESSAGING-MATRIX.md](docs/ICP-MESSAGING-MATRIX.md) -- canonical messaging matrix with proof claims and activation paths
+- [docs/ICP.md](docs/ICP.md) -- ideal customer profile, buying signals, design partner criteria
+- [docs/POSITIONING.md](docs/POSITIONING.md) -- product positioning, messaging, and channel strategy
 
 ## Risk-first sequencing
 
@@ -119,15 +119,15 @@ When the backlog has competing priorities, apply this order:
 
 A RED health grade on the [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) blocks promoting any P3/P4 items from Next to Now until the grade returns to YELLOW or GREEN. Active CloudWatch alarms trigger immediate incident response per the [RUNBOOK.md](docs/RUNBOOK.md).
 
-For the full rule set (R1-R4) and enforcement mechanisms, see [docs/STRATEGY-OPERATIONS.md -- Risk-First Sequencing](docs/STRATEGY-OPERATIONS.md#1-risk-first-sequencing).
+The priority order (P0-P4) is defined in [CLAUDE.md](CLAUDE.md).
 
 ### Active WIP cap
 
-A maximum of **8** issues may carry the `status:in-progress` label at any time. When the cap is reached, existing items must be completed, unblocked, or returned to the backlog before new items are pulled into Now. See [docs/STRATEGY-OPERATIONS.md -- Constrained Active Queue](docs/STRATEGY-OPERATIONS.md#2-constrained-active-queue-wip-cap) for the full overflow protocol and per-contributor limits.
+A maximum of **8** issues may carry the `status:in-progress` label at any time. When the cap is reached, existing items must be completed, unblocked, or returned to the backlog before new items are pulled into Now. See WIP caps in [CLAUDE.md](CLAUDE.md).
 
 ## Portfolio allocation policy
 
-Engineering effort is allocated across four buckets. Allocation targets, rebalancing rules, and the quarterly review cadence are defined in [docs/STRATEGY-OPERATIONS.md -- Portfolio Allocation Rules](docs/STRATEGY-OPERATIONS.md#portfolio-allocation-rules). The summary below is provided for quick reference; defer to STRATEGY-OPERATIONS.md for enforcement details.
+Engineering effort is allocated across four buckets:
 
 | Bucket | Target | Issue label mapping |
 |--------|--------|---------------------|
@@ -136,7 +136,7 @@ Engineering effort is allocated across four buckets. Allocation targets, rebalan
 | Tech Debt + Quality | 10-20% | `type:tech-debt`, `type:docs`, `type:refactor` |
 | Operational Tooling | 5-10% | `type:infra` (when tooling-focused), `ci` scope commits |
 
-During incidents (scorecard health grade RED), feature delivery capacity is reallocated to reliability until the grade returns to YELLOW or GREEN. See [docs/STRATEGY-OPERATIONS.md -- Incident Rebalancing](docs/STRATEGY-OPERATIONS.md#incident-rebalancing) for the full rebalancing protocol.
+During incidents (scorecard health grade RED), feature delivery capacity is reallocated to reliability until the grade returns to YELLOW or GREEN.
 
 Allocation assumptions are reviewed quarterly alongside the [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) threshold tuning (Jan, Apr, Jul, Oct). See [docs/ISSUE-GOVERNANCE.md -- Portfolio Allocation Label Mapping](docs/ISSUE-GOVERNANCE.md#portfolio-allocation-label-mapping) for how issue labels map to allocation buckets during measurement.
 
@@ -156,7 +156,7 @@ Issue reprioritization follows the cadence defined in [docs/ISSUE-GOVERNANCE.md]
 - An issue moves from **Later to Next** when: it is decomposed into actionable scope with acceptance criteria and the biweekly review approves it.
 - A **narrative goal** becomes executable when: it is decomposed into one or more issues with acceptance criteria, package labels, and priority labels.
 - An issue is **demoted or closed** per the aging policy in [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md).
-- **Risk-first gate**: P3 (feature) and P4 (tech debt) issues cannot be promoted to Now while any P0 or P1 issue is unresolved. See [docs/STRATEGY-OPERATIONS.md -- Risk-First Sequencing](docs/STRATEGY-OPERATIONS.md#1-risk-first-sequencing).
+- **Risk-first gate**: P3 (feature) and P4 (tech debt) issues cannot be promoted to Now while any P0 or P1 issue is unresolved.
 - **Queue overflow demotion**: When the in-progress count exceeds the WIP cap, the lowest-priority in-progress items are returned to backlog. See [docs/ISSUE-GOVERNANCE.md -- Priority Promotion and Demotion Criteria](docs/ISSUE-GOVERNANCE.md#priority-promotion-and-demotion-criteria) for objective criteria.
 
 ## Legacy

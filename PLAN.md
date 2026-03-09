@@ -125,7 +125,7 @@ A RED health grade on the [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) b
 
 ### Active WIP cap
 
-A maximum of **8** issues may carry `status:in-progress` at any time across all M2 workstreams. When the cap is reached, items must be completed or returned to backlog before new work begins. See [docs/STRATEGY-OPERATIONS.md -- Constrained Active Queue](docs/STRATEGY-OPERATIONS.md#2-constrained-active-queue-wip-cap) for the full protocol.
+A maximum of **8** issues may carry `status:in-progress` at any time across all M2 workstreams. When the cap is reached, items must be completed or returned to backlog before new work begins. See WIP caps in [CLAUDE.md](CLAUDE.md).
 
 When pulling issues from the execution queue into active work, apply the promotion and demotion criteria in [docs/ISSUE-GOVERNANCE.md -- Priority Promotion and Demotion Criteria](docs/ISSUE-GOVERNANCE.md#priority-promotion-and-demotion-criteria).
 

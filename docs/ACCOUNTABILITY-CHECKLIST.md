@@ -114,7 +114,7 @@ At least three trigger criteria are met (profiling/evaluation, innovative techno
 | Transfer impact assessment refresh | Legal counsel | Privacy team | Annual |
 | Security measures and incident response | Engineering | -- | Ongoing |
 | Audit log review | Engineering | -- | Monthly |
-| Privileged access review | Engineering + Leadership | -- | Quarterly (see ACCESS-REVIEW.md) |
+| Privileged access review | Engineering + Leadership | -- | Quarterly |
 | Training and awareness | Leadership | -- | Annual |
 
 ### 3.2 Incident Response Contacts
@@ -150,7 +150,7 @@ At least three trigger criteria are met (profiling/evaluation, innovative techno
 | Transfer impact assessment refresh | Annual | 2027-03-08 | Legal counsel | Updated TRANSFER-IMPACT-ASSESSMENT.md |
 | DPIA refresh | Annual | TBD (after initial DPIA) | Legal counsel + Engineering | Updated DPIA document |
 | Security audit (dependencies) | Continuous (CI) + Weekly | Ongoing | Engineering | pnpm audit, security exception review |
-| Privileged access recertification | Quarterly | Per ACCESS-REVIEW.md schedule | Engineering + Leadership | Access review evidence artifacts |
+| Privileged access recertification | Quarterly | Per quarterly review schedule | Engineering + Leadership | Access review evidence artifacts |
 | Training and awareness | Annual | 2027-03-08 | Leadership | Training records |
 
 ### 4.2 Event-Triggered Reviews
@@ -178,7 +178,7 @@ At least three trigger criteria are met (profiling/evaluation, innovative techno
 | Transfer Impact Assessment | `docs/TRANSFER-IMPACT-ASSESSMENT.md` | International transfer safeguards |
 | DSAR Workflow | `docs/DSAR-WORKFLOW.md` | Data subject rights implementation |
 | Security Policy | `docs/SECURITY.md` | Security practices and dependency management |
-| Access Review | `docs/ACCESS-REVIEW.md` | Privileged access recertification |
+| Security Policy | `docs/SECURITY.md` | Privileged access recertification (Section: Privileged Access Review) |
 | Terms of Use | `docs/TERMS-OF-USE.md` | User terms (DRAFT) |
 | Consent Banner | `packages/admin-ui/src/components/ConsentBanner.tsx` | Consent collection UI |
 
