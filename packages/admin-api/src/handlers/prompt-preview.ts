@@ -36,7 +36,7 @@ const PreviewRequestSchema = z.object({
   message: z.string().optional(),
   history: z.array(z.object({
     role: z.enum(['user', 'assistant', 'system', 'tool']),
-    content: z.string(),
+    content: z.string().nullish().transform(v => v ?? ''),
   })).optional(),
 });
 
