@@ -32,16 +32,19 @@ import * as avatars from '../services/avatars.js';
  */
 export function sanitizeMessages(messages: AdminChatMessage[]): AdminChatMessage[] {
   const sanitized: AdminChatMessage[] = [];
-  const validToolCallIds = new Set<string>();
+  const toolCallIds = new Set<string>();
+  const toolResultIds = new Set<string>();
 
-  // First pass: collect valid tool call IDs from assistant messages
+  // First pass: collect IDs from both sides
   for (const msg of messages) {
     if (msg.role === 'assistant' && msg.tool_calls) {
       for (const tc of msg.tool_calls) {
-        if (tc.id) {
-          validToolCallIds.add(tc.id);
-        }
+        if (tc.id) toolCallIds.add(tc.id);
       }
+    }
+    if (msg.role === 'tool') {
+      const tcId = (msg as ToolResult).tool_call_id;
+      if (tcId && tcId.trim() !== '') toolResultIds.add(tcId);
     }
   }
 
@@ -50,13 +53,43 @@ export function sanitizeMessages(messages: AdminChatMessage[]): AdminChatMessage
     if (msg.role === 'tool') {
       // Only include tool results that have a matching tool call
       const toolCallId = (msg as ToolResult).tool_call_id;
-      if (!toolCallId || toolCallId.trim() === '' || !validToolCallIds.has(toolCallId)) {
+      if (!toolCallId || toolCallId.trim() === '' || !toolCallIds.has(toolCallId)) {
         logger.info('Skipping orphaned tool result', { toolCallId });
         continue;
       }
     }
 
     if (msg.role === 'assistant') {
+      // Strip tool_calls whose results are missing (e.g. truncated away).
+      // Anthropic requires every tool_use to have a matching tool_result.
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        const matchedCalls = msg.tool_calls.filter(tc => tc.id && toolResultIds.has(tc.id));
+        if (matchedCalls.length < msg.tool_calls.length) {
+          logger.info('Stripping unmatched tool_calls from assistant message', {
+            total: msg.tool_calls.length,
+            matched: matchedCalls.length,
+          });
+          const stripped = { ...msg, tool_calls: matchedCalls.length > 0 ? matchedCalls : undefined };
+
+          // Ensure assistant messages have non-empty content
+          const rawContent = stripped.content;
+          const isEmpty = rawContent === null || rawContent === undefined || rawContent === '';
+
+          if (isEmpty && stripped.tool_calls && stripped.tool_calls.length > 0) {
+            sanitized.push({ ...stripped, content: null as unknown as string });
+          } else if (isEmpty && !stripped.tool_calls) {
+            // No content and no tool_calls left — skip entirely
+            continue;
+          } else if (typeof rawContent === 'string') {
+            const { cleanContent } = extractThinking(rawContent);
+            sanitized.push({ ...stripped, content: cleanContent });
+          } else {
+            sanitized.push(stripped);
+          }
+          continue;
+        }
+      }
+
       // Ensure assistant messages have non-empty content.
       // Some providers (e.g. Moonshot AI via OpenRouter) reject empty assistant messages.
       const rawContent = msg.content;

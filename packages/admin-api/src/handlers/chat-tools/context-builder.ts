@@ -65,9 +65,12 @@ export function buildModelInput(systemPrompt: string, messages: AdminChatMessage
       maxContextMessages: MAX_CONTEXT_MESSAGES,
     });
   }
+  // Re-sanitize after truncation: slicing may orphan tool results whose
+  // matching assistant tool_calls were trimmed from the start of the window.
+  const finalMessages = sanitizeMessages(truncatedMessages);
   const inputMessages = [
     { role: 'system' as const, content: systemPrompt },
-    ...truncatedMessages,
+    ...finalMessages,
   ];
 
   // JUSTIFIED TYPE ASSERTION:
