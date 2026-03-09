@@ -304,16 +304,17 @@ export interface ToolCreditStatus {
 export async function getToolStatusStructured(
   avatarId: string
 ): Promise<Record<string, ToolCreditStatus>> {
+  const entries = Object.entries(TOOL_CREDITS);
+  const buckets = await Promise.all(
+    entries.map(([toolName]) => getOrCreateBucket(avatarId, toolName))
+  );
+  const now = Date.now();
   const result: Record<string, ToolCreditStatus> = {};
 
-  for (const [toolName, config] of Object.entries(TOOL_CREDITS)) {
-    const bucket = await getOrCreateBucket(avatarId, toolName);
-    const now = Date.now();
-
-    // Calculate current credits
+  for (let i = 0; i < entries.length; i++) {
+    const [toolName, config] = entries[i];
+    const bucket = buckets[i];
     const currentCredits = calculateRefill(bucket, config);
-
-    // Check daily reset
     let dailyRemaining = config.dailyLimit - bucket.dailyUsed;
     if (now >= bucket.dailyResetAt) {
       dailyRemaining = config.dailyLimit;
@@ -336,27 +337,24 @@ export async function getToolStatusStructured(
  * Get credit status for all tools (for AI prompt injection)
  */
 export async function getToolStatus(avatarId: string): Promise<string> {
-  const statuses: string[] = [];
+  const entries = Object.entries(TOOL_CREDITS);
+  const buckets = await Promise.all(
+    entries.map(([toolName]) => getOrCreateBucket(avatarId, toolName))
+  );
+  const now = Date.now();
 
-  for (const [toolName, config] of Object.entries(TOOL_CREDITS)) {
-    const bucket = await getOrCreateBucket(avatarId, toolName);
-    const now = Date.now();
-
-    // Calculate current credits
+  const statuses = entries.map(([toolName, config], i) => {
+    const bucket = buckets[i];
     const currentCredits = calculateRefill(bucket, config);
-
-    // Check daily reset
     let dailyRemaining = config.dailyLimit - bucket.dailyUsed;
     if (now >= bucket.dailyResetAt) {
       dailyRemaining = config.dailyLimit;
     }
 
-    const status = currentCredits > 0
+    return currentCredits > 0
       ? `${toolName}: ${currentCredits}/${config.maxCredits} credits (${dailyRemaining} daily remaining)`
       : `${toolName}: NO CREDITS (refills hourly, ${dailyRemaining} daily remaining)`;
-
-    statuses.push(status);
-  }
+  });
 
   return `## Tool Status\n${statuses.join('\n')}`;
 }

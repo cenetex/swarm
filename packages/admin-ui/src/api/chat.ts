@@ -115,7 +115,9 @@ export async function sendChatMessage(
       message,
       history: history.map((m) => ({
         role: m.role,
-        content: m.content,
+        content: m.content ?? '',
+        ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
+        ...(m.tool_calls?.length ? { tool_calls: m.tool_calls } : {}),
       })),
       // Pass avatar context so the LLM knows which avatar it IS
       avatar: avatar ? {

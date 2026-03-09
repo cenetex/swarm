@@ -5,7 +5,7 @@
  * Designed to be rendered inside the chat header area (chat-first, not a modal).
  * Single fetch lifecycle with clear loading/error states.
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   getAvatarEffectiveLimits,
   setAvatarEntitlement,
@@ -185,10 +185,13 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose }: PlanU
   const [billingError, setBillingError] = useState<string | null>(null);
   const [showUpgradeOptions, setShowUpgradeOptions] = useState(false);
 
-  // ── Fetch all data in parallel ──────────────────────────────────────────
+  // ── Fetch all data in parallel (stale-while-revalidate) ────────────────
+
+  const hasFetchedRef = useRef(false);
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
+    // Only show loading spinner on first load — subsequent fetches are background refreshes
+    if (!hasFetchedRef.current) setLoading(true);
     setError(null);
     try {
       const [limitsResult, usageResult, historyResult] = await Promise.allSettled([
@@ -226,6 +229,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose }: PlanU
       setError(e instanceof Error ? e.message : 'Failed to load plan & usage data');
     } finally {
       setLoading(false);
+      hasFetchedRef.current = true;
     }
   }, [avatarId]);
 
