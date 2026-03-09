@@ -118,7 +118,17 @@ export async function handler(
     const { avatarId, message, history = [] } = await validateRequestBody(PreviewRequestSchema)(event);
 
     // Get avatar config
-    const avatarRecord = await avatars.getAvatar(avatarId);
+    let avatarRecord;
+    try {
+      avatarRecord = await avatars.getAvatar(avatarId);
+    } catch (e) {
+      log.error('handler', 'avatar_lookup_failed', { avatarId, message: e instanceof Error ? e.message : String(e) });
+      return {
+        statusCode: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Failed to load avatar', message: e instanceof Error ? e.message : 'Database error' }),
+      };
+    }
     if (!avatarRecord) {
       return {
         statusCode: 404,
@@ -157,8 +167,13 @@ export async function handler(
     };
     const systemPrompt = buildDynamicSystemPrompt(avatarConfig, 'admin-ui');
 
-    // Get enabled toolsets from MCP config (or defaults if not configured)
-    const mcpEnabledToolsets = await getEnabledToolsets(avatarId);
+    // Get enabled toolsets (fallback to category defaults on failure)
+    let mcpEnabledToolsets: ToolsetId[] = [];
+    try {
+      mcpEnabledToolsets = await getEnabledToolsets(avatarId);
+    } catch (e) {
+      log.warn('handler', 'mcp_config_lookup_failed', { avatarId, message: e instanceof Error ? e.message : String(e) });
+    }
     const categoryToolsets = resolveAllowedToolsets(enabledCategories);
 
     // Merge: use MCP enabled toolsets if configured, otherwise use category-based defaults
@@ -166,66 +181,83 @@ export async function handler(
       ? mcpEnabledToolsets
       : categoryToolsets;
 
-    // Build tool registry (read-only: preview never executes tools, so skip
-    // write-capable service bindings to avoid DynamoDB UpdateItem failures
-    // under the preview Lambda's read-only IAM policy)
-    const mcpServices = createMCPServices(avatarId, session, undefined, { readOnly: true });
-    const toolRegistry = new ToolRegistry();
-    registerAllTools(toolRegistry, mcpServices);
+    // Build tool registry — if this fails, return partial response with system prompt only
+    let toolPreviews: ToolPreview[] = [];
+    let toolError: string | undefined;
+    try {
+      const mcpServices = createMCPServices(avatarId, session, undefined, { readOnly: true });
+      const toolRegistry = new ToolRegistry();
+      registerAllTools(toolRegistry, mcpServices);
 
-    const toolContext: ToolContext = {
-      avatarId,
-      platform: 'admin-ui',
-      session: {
-        email: session.email,
-        isAdmin: session.isAdmin,
-      },
-    };
+      const toolContext: ToolContext = {
+        avatarId,
+        platform: 'admin-ui',
+        session: {
+          email: session.email,
+          isAdmin: session.isAdmin,
+        },
+      };
 
-    // Get tools filtered by platform and toolsets
-    const allTools = toolRegistry.getForPlatform(toolContext.platform);
-    const toolsetFiltered = allTools.filter(tool =>
-      effectiveToolsets.includes(tool.toolset || 'core')
-    );
+      // Get tools filtered by platform and toolsets
+      const allTools = toolRegistry.getForPlatform(toolContext.platform);
+      const toolsetFiltered = allTools.filter(tool =>
+        effectiveToolsets.includes(tool.toolset || 'core')
+      );
 
-    // Filter out tools where shouldShow returns false
-    const visibilityChecks = await Promise.all(
-      toolsetFiltered.map(async (tool) => {
-        if (tool.shouldShow) {
-          try {
-            return await tool.shouldShow(toolContext);
-          } catch {
-            return true; // Show on error
-          }
-        }
-        return true; // No shouldShow = always visible
-      })
-    );
-    const filteredTools = toolsetFiltered.filter((_, index) => visibilityChecks[index]);
-
-    // Build tool previews
-    const toolPreviews: ToolPreview[] = await Promise.all(
-      filteredTools.map(async (tool) => {
-        let description = tool.description;
-        if (tool.contextBuilder) {
-          try {
-            const contextStr = await tool.contextBuilder(toolContext);
-            if (contextStr) {
-              description = `${description}\n\n📌 ${contextStr}`;
+      // Filter out tools where shouldShow returns false
+      const visibilityChecks = await Promise.all(
+        toolsetFiltered.map(async (tool) => {
+          if (tool.shouldShow) {
+            try {
+              return await tool.shouldShow(toolContext);
+            } catch {
+              return true; // Show on error
             }
-          } catch {
-            // Ignore context builder errors in preview
           }
-        }
+          return true; // No shouldShow = always visible
+        })
+      );
+      const filteredTools = toolsetFiltered.filter((_, index) => visibilityChecks[index]);
 
-        return {
-          name: tool.name,
-          description,
-          toolset: tool.toolset || 'core',
-          parameters: (() => { const { $schema: _, ...rest } = z.toJSONSchema(tool.inputSchema) as Record<string, unknown>; return rest; })(),
-        };
-      })
-    );
+      // Build tool previews — skip individual tools that fail schema conversion
+      const results = await Promise.allSettled(
+        filteredTools.map(async (tool) => {
+          let description = tool.description;
+          if (tool.contextBuilder) {
+            try {
+              const contextStr = await tool.contextBuilder(toolContext);
+              if (contextStr) {
+                description = `${description}\n\n📌 ${contextStr}`;
+              }
+            } catch {
+              // Ignore context builder errors in preview
+            }
+          }
+
+          let parameters: Record<string, unknown> = {};
+          try {
+            const { $schema: _, ...rest } = z.toJSONSchema(tool.inputSchema) as Record<string, unknown>;
+            parameters = rest;
+          } catch (e) {
+            log.warn('handler', 'tool_schema_conversion_failed', { tool: tool.name, message: e instanceof Error ? e.message : String(e) });
+            parameters = { error: 'Schema conversion failed' };
+          }
+
+          return {
+            name: tool.name,
+            description,
+            toolset: tool.toolset || 'core',
+            parameters,
+          };
+        })
+      );
+      toolPreviews = results
+        .filter((r): r is PromiseFulfilledResult<ToolPreview> => r.status === 'fulfilled')
+        .map(r => r.value);
+    } catch (e) {
+      toolError = e instanceof Error ? e.message : String(e);
+      log.error('handler', 'tool_registry_failed', { avatarId, message: toolError });
+    }
 
     // Build message preview
     const messages = [
@@ -261,7 +293,7 @@ export async function handler(
     return {
       statusCode: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify(response),
+      body: JSON.stringify({ ...response, ...(toolError ? { toolError } : {}) }),
     };
   } catch (error) {
     if (isAuthError(error)) {

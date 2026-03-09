@@ -213,19 +213,19 @@ describe('prompt-preview handler CORS consistency', () => {
     expectNoWildcardCredentialCombo(headers);
   });
 
-  it('returns CORS headers on 500 internal error', async () => {
+  it('returns CORS headers on 502 avatar lookup error', async () => {
     // Make authenticateRequest succeed but getAvatar throw an unexpected error
     getAvatarMock.mockRejectedValue(new Error('DynamoDB timeout'));
 
     const result = await handler(createEvent());
 
-    expect(result.statusCode).toBe(500);
+    expect(result.statusCode).toBe(502);
     const headers = result.headers as Record<string, string>;
     expectCorsHeaders(headers);
     expectNoWildcardCredentialCombo(headers);
 
     const body = JSON.parse(result.body as string);
-    expect(body.error).toBe('Internal server error');
+    expect(body.error).toBe('Failed to load avatar');
   });
 
   it('never uses wildcard origin with credentials: true', async () => {
