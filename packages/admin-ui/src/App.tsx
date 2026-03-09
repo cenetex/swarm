@@ -91,20 +91,29 @@ function App() {
   );
   const [chatSynced, setChatSynced] = useState(false);
 
-  // Clean up OAuth query params immediately on mount (before anything else)
+  // Parse ?invite=DP-XXXX-XXXX query param for design partner redemption
+  const [pendingInviteCode] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const invite = params.get('invite');
+    return invite && /^DP-[A-Z0-9]{4}-[A-Z0-9]{4}$/i.test(invite.trim()) ? invite.trim().toUpperCase() : null;
+  });
+
+  // Clean up OAuth and invite query params immediately on mount (before anything else)
   useEffect(() => {
-    if (pendingOAuthResult) {
+    if (pendingOAuthResult || pendingInviteCode) {
       try {
         const cleanUrl = `${window.location.pathname}`;
         window.history.replaceState({}, '', cleanUrl);
       } catch {
         // ignore
       }
-      // Also store in localStorage for cross-tab communication
-      try {
-        localStorage.setItem(TWITTER_OAUTH_STORAGE_KEY, JSON.stringify(pendingOAuthResult));
-      } catch {
-        // ignore
+      // Also store OAuth result in localStorage for cross-tab communication
+      if (pendingOAuthResult) {
+        try {
+          localStorage.setItem(TWITTER_OAUTH_STORAGE_KEY, JSON.stringify(pendingOAuthResult));
+        } catch {
+          // ignore
+        }
       }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -445,6 +454,7 @@ function App() {
         {/* Main Route Area */}
         <ChatPanel
           onMenuClick={() => setSidebarOpen(true)}
+          initialInviteCode={pendingInviteCode || undefined}
         />
       </div>
       

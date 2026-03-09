@@ -19,13 +19,15 @@ import {
   type UsageMeter,
   type DailyUsageSummary,
 } from '../api/usage';
-import { createCheckoutSession, createPortalSession } from '../api/billing';
+import { createCheckoutSession, createPortalSession, redeemInviteCode } from '../api/billing';
 
 interface PlanUsagePanelProps {
   avatarId: string;
   avatarName: string;
   canEdit: boolean;
   onClose: () => void;
+  /** Pre-filled invite code (e.g., from ?invite=DP-XXXX-XXXX query param) */
+  initialInviteCode?: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -164,7 +166,7 @@ function MeterBar({
 
 // ── Main Component ───────────────────────────────────────────────────────────
 
-export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose }: PlanUsagePanelProps) {
+export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initialInviteCode }: PlanUsagePanelProps) {
   // Plan/entitlement state
   const [effective, setEffective] = useState<EffectiveLimitsResponse | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlanType>('free');
@@ -184,6 +186,12 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose }: PlanU
   const [upgrading, setUpgrading] = useState(false);
   const [billingError, setBillingError] = useState<string | null>(null);
   const [showUpgradeOptions, setShowUpgradeOptions] = useState(false);
+
+  // Invite code state
+  const [showInviteInput, setShowInviteInput] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [redeemingInvite, setRedeemingInvite] = useState(false);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
 
   // ── Fetch all data in parallel (stale-while-revalidate) ────────────────
 
@@ -284,6 +292,42 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose }: PlanU
     } catch (e) {
       setBillingError(e instanceof Error ? e.message : 'Could not open billing portal');
       setUpgrading(false);
+    }
+  };
+
+  // ── Invite code handler ────────────────────────────────────────────────
+
+  // Auto-open invite input if initialInviteCode is provided
+  useEffect(() => {
+    if (initialInviteCode) {
+      setShowInviteInput(true);
+      setInviteCode(initialInviteCode);
+    }
+  }, [initialInviteCode]);
+
+  const handleRedeemInvite = async () => {
+    const trimmed = inviteCode.trim().toUpperCase();
+    if (!trimmed) return;
+    setRedeemingInvite(true);
+    setBillingError(null);
+    setInviteSuccess(null);
+    try {
+      const result = await redeemInviteCode(trimmed, avatarId);
+      setInviteSuccess(result.message);
+      setInviteCode('');
+      setShowInviteInput(false);
+      // Refresh plan data to reflect the upgrade
+      const [limitsData, usageData] = await Promise.all([
+        getAvatarEffectiveLimits(avatarId),
+        getAvatarUsage(avatarId),
+      ]);
+      setEffective(limitsData);
+      setSelectedPlan(limitsData.plan);
+      setUsage(usageData);
+    } catch (e) {
+      setBillingError(e instanceof Error ? e.message : 'Failed to redeem invite code');
+    } finally {
+      setRedeemingInvite(false);
     }
   };
 
@@ -504,6 +548,55 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose }: PlanU
             >
               {upgrading ? 'Loading...' : 'Manage Billing'}
             </button>
+          )}
+        </div>
+      )}
+
+      {/* Invite code success banner */}
+      {inviteSuccess && (
+        <div className="mb-3 p-2 rounded-lg bg-green-900/20 border border-green-500/30 text-green-400 text-xs flex items-center justify-between">
+          <span>{inviteSuccess}</span>
+          <button onClick={() => setInviteSuccess(null)} className="text-green-400 hover:text-green-300 ml-2">&times;</button>
+        </div>
+      )}
+
+      {/* Invite code input */}
+      {!canEdit && (
+        <div className="mb-3">
+          {!showInviteInput ? (
+            <button
+              onClick={() => setShowInviteInput(true)}
+              className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] underline underline-offset-2"
+            >
+              Have an invite code?
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === 'Enter' && handleRedeemInvite()}
+                placeholder="DP-XXXX-XXXX"
+                disabled={redeemingInvite}
+                className="flex-1 px-2 py-1.5 text-xs rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] font-mono focus:outline-none focus:border-brand-500 disabled:opacity-50"
+                autoFocus
+              />
+              <button
+                onClick={handleRedeemInvite}
+                disabled={redeemingInvite || !inviteCode.trim()}
+                className="px-3 py-1.5 text-xs rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-medium transition-colors disabled:opacity-50"
+              >
+                {redeemingInvite ? 'Redeeming...' : 'Redeem'}
+              </button>
+              <button
+                onClick={() => { setShowInviteInput(false); setInviteCode(''); }}
+                disabled={redeemingInvite}
+                className="px-2 py-1.5 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+              >
+                &times;
+              </button>
+            </div>
           )}
         </div>
       )}

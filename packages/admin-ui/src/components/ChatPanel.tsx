@@ -23,9 +23,11 @@ const activePollers = new Map<string, { controller: AbortController; avatarId: s
 
 interface ChatPanelProps {
   onMenuClick?: () => void;
+  /** Pre-filled invite code from ?invite= query param */
+  initialInviteCode?: string;
 }
 
-export function ChatPanel({ onMenuClick }: ChatPanelProps) {
+export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const activeAvatar = useActiveAvatar();
   const messages = useActiveChat();
   // Extract action functions directly — they're stable references and don't
@@ -35,7 +37,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
-  const [planUsagePanelOpen, setPlanUsagePanelOpen] = useState(false);
+  const [planUsagePanelOpen, setPlanUsagePanelOpen] = useState(!!initialInviteCode);
   const [isCreatingAvatar, setIsCreatingAvatar] = useState(false);
   const [showHint, setShowHint] = useState(true);
   const [activationLoading, setActivationLoading] = useState(false);
@@ -1249,6 +1251,7 @@ export function ChatPanel({ onMenuClick }: ChatPanelProps) {
               avatarName={activeAvatar.name}
               canEdit={account?.role === 'admin'}
               onClose={() => setPlanUsagePanelOpen(false)}
+              initialInviteCode={initialInviteCode}
             />
           </div>
         </div>

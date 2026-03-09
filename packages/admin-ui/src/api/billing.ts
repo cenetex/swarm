@@ -1,5 +1,5 @@
 /**
- * Billing API client — Stripe Checkout and Customer Portal.
+ * Billing API client — Stripe Checkout, Customer Portal, and Design Partner invites.
  */
 import { API_BASE } from './apiBase';
 
@@ -50,6 +50,40 @@ export async function createPortalSession(
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `Portal session failed (${res.status})`);
+  }
+
+  return res.json();
+}
+
+// ── Design Partner Invite Redemption ──────────────────────────────────────────
+
+export interface RedeemInviteResponse {
+  success: boolean;
+  message: string;
+  partner: {
+    accountId: string;
+    avatarId: string;
+    plan: 'pro' | 'enterprise';
+    status: string;
+    refundEligible: boolean;
+    refundDeadline: string;
+  };
+}
+
+export async function redeemInviteCode(
+  code: string,
+  avatarId: string,
+): Promise<RedeemInviteResponse> {
+  const res = await fetch(`${API_BASE}/design-partners/redeem`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ code, avatarId }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to redeem invite code (${res.status})`);
   }
 
   return res.json();
