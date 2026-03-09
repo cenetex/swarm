@@ -29,7 +29,7 @@ export const AdminChatMessageSchema = z.object({
   tool_call_id: z.string().optional(),
   sender: MessageSenderSchema.optional(),
   media: z.array(z.object({
-    type: z.enum(['image', 'video', 'sticker']),
+    type: z.enum(['image', 'video', 'sticker', 'audio']),
     url: z.string(),
     prompt: z.string().optional(),
     id: z.string().optional(),

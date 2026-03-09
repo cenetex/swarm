@@ -252,14 +252,16 @@ export async function processChat(
   const cleaned = cleanResponse(response);
   response = cleaned.response;
 
-  messages.push({
-    role: 'assistant', content: response,
-    ...(cleaned.extractedThinking ? { thinking: cleaned.extractedThinking } : {}),
-  });
-
   const pendingJobs = extractPendingJobs(toolCalls, toolResults);
   allMedia.push(...extractMedia(toolResults));
   const avatarUpdates = await detectAvatarUpdates(toolCalls, toolResults, avatarId);
+
+  messages.push({
+    role: 'assistant', content: response,
+    ...(cleaned.extractedThinking ? { thinking: cleaned.extractedThinking } : {}),
+    // Attach media to the assistant message so it persists with chat history
+    ...(allMedia.length > 0 ? { media: allMedia } : {}),
+  });
 
   // Emit EMF metrics
   chatMetrics.trackDuration('ChatLatency', chatStartTime);

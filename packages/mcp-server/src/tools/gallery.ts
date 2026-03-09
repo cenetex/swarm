@@ -187,6 +187,39 @@ export const createGalleryTools = (services: GalleryServices) => [
       };
     },
   }),
+
+  defineTool({
+    name: 'send_gallery_media',
+    description: 'Send any media item (image, video, or sticker) from my gallery to the chat. Use an item ID from get_my_gallery.',
+    category: 'gallery',
+    inputSchema: z.object({
+      itemId: z.string()
+        .trim()
+        .min(1, 'Item ID is required')
+        .describe('ID of the gallery item to send'),
+    }),
+    contextBuilder: async (context) => {
+      return buildGalleryContext(services, context.avatarId, {
+        emptyMessage: 'Gallery is empty - generate some media first.',
+      });
+    },
+    execute: async (input, context): Promise<ToolResult> => {
+      const item = await services.getGalleryItem(context.avatarId, input.itemId);
+
+      if (!item) {
+        return {
+          success: false,
+          error: 'FAILED: Item ID not found in gallery. The item may have been deleted or the ID is stale. Run get_my_gallery to fetch current valid IDs before retrying.',
+        };
+      }
+
+      return {
+        success: true,
+        data: { id: item.id, type: item.type, url: item.url },
+        media: { type: item.type, url: item.url, caption: item.prompt },
+      };
+    },
+  }),
 ];
 
 export default createGalleryTools;

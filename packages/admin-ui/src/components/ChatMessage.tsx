@@ -83,10 +83,11 @@ const SenderAvatar = memo(function SenderAvatar({ sender }: { sender?: MessageSe
  * Parsed tool result from message content
  */
 interface ParsedToolResult {
-  type: 'image' | 'gallery' | 'audio' | 'success' | 'error' | 'info' | 'wallet' | 'tweet' | 'twitter_status' | 'discord_status' | 'model_list' | 'unknown';
+  type: 'image' | 'gallery' | 'audio' | 'video' | 'success' | 'error' | 'info' | 'wallet' | 'tweet' | 'twitter_status' | 'discord_status' | 'model_list' | 'unknown';
   data: unknown;
   imageUrl?: string;
   audioUrl?: string;
+  videoUrl?: string;
   message?: string;
   // Wallet-specific fields
   publicKey?: string;
@@ -242,16 +243,21 @@ function processMessageContent(
       return { type: 'audio', data: parsed, audioUrl: audioUrlCandidate };
     }
     
-    // Check for image URL
+    // Check for media URL (video, image)
     if (parsed.url && typeof parsed.url === 'string') {
       const url = parsed.url;
       if (isAudioUrl(url)) {
         // Avoid treating voice/audio URLs as images
         return { type: 'audio', data: parsed, audioUrl: url };
       }
+      // Video result
+      const isVideo = url.includes('.mp4') || url.includes('.webm') || url.includes('/video');
+      if (isVideo || parsed.type === 'video') {
+        return { type: 'video', data: parsed, videoUrl: url };
+      }
       // Image generation result
-      const isImage = url.includes('.png') || url.includes('.jpg') || 
-                      url.includes('.webp') || url.includes('rati.chat') || 
+      const isImage = url.includes('.png') || url.includes('.jpg') ||
+                      url.includes('.webp') || url.includes('rati.chat') ||
                       url.includes('/images/');
       if (isImage) {
         embeddedImages.push(url);
@@ -537,6 +543,36 @@ function extractImagesFromToolCalls(toolCalls?: ChatMessageType['toolCalls']): s
 }
 
 /**
+ * Extract video URLs from tool call results
+ */
+function extractVideosFromToolCalls(toolCalls?: ChatMessageType['toolCalls']): string[] {
+  if (!toolCalls) return [];
+  const videoUrls: string[] = [];
+  for (const tc of toolCalls) {
+    if (tc.result && typeof tc.result === 'object') {
+      const result = tc.result as Record<string, unknown>;
+      const url = (result.url || result.resultUrl) as string | undefined;
+      if (url && typeof url === 'string') {
+        const isVideo = url.includes('.mp4') || url.includes('.webm') || url.includes('/video');
+        if (isVideo || result.type === 'video') {
+          videoUrls.push(url);
+        }
+      }
+      // Check gallery items for videos
+      const items = Array.isArray(result.items) ? result.items : Array.isArray(result.data) ? result.data : null;
+      if (items) {
+        for (const item of items) {
+          if (item && typeof item === 'object' && item.url && item.type === 'video') {
+            videoUrls.push(item.url as string);
+          }
+        }
+      }
+    }
+  }
+  return videoUrls;
+}
+
+/**
  * Extract images from completed pending jobs
  */
 function extractImagesFromPendingJobs(pendingJobs?: ChatMessageType['pendingJobs']): string[] {
@@ -575,6 +611,7 @@ export const AUTO_EXECUTED_TOOLS = [
   'generate_sticker',
   'get_my_gallery',
   'send_gallery_image',
+  'send_gallery_media',
   'search_gallery',
   'send_voice_message',
   'create_my_voice',
@@ -674,14 +711,24 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
     .filter(m => m.type === 'image' || m.type === 'sticker')
     .map(m => m.url);
 
+  const videosFromMedia = (message.media || [])
+    .filter(m => m.type === 'video')
+    .map(m => m.url);
+
   const audiosFromMedia = (message.media || [])
     .filter(m => m.type === 'audio')
     .map(m => m.url);
   
+  // Extract video URLs from tool call results
+  const videosFromTools = extractVideosFromToolCalls(message.toolCalls);
+
   // Combine all image sources, deduplicate
   const allImages = [...imagesFromTools, ...imagesFromJobs, ...embeddedImages, ...imagesFromMedia];
   const images = [...new Set(allImages)];
-  
+
+  // Combine all video sources, deduplicate
+  const videos = [...new Set([...videosFromTools, ...videosFromMedia])];
+
   // Combine all audio sources, deduplicate
   const allAudios = [...audiosFromTools, ...embeddedAudios, ...audiosFromMedia];
   const audios = [...new Set(allAudios)];
@@ -695,9 +742,9 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
   const discordStatusResults = toolResults.filter(r => r.type === 'discord_status');
   const modelListResults = toolResults.filter(r => r.type === 'model_list');
     const unknownResults = toolResults.filter(r => r.type === 'unknown');
-  // Filter tool results that should be shown (not images/audio/wallet/twitter/discord/models - those are rendered separately)
+  // Filter tool results that should be shown (not images/audio/video/wallet/twitter/discord/models - those are rendered separately)
   const visibleToolResults = toolResults.filter(
-    r => r.type !== 'image' && r.type !== 'gallery' && r.type !== 'audio' &&
+    r => r.type !== 'image' && r.type !== 'gallery' && r.type !== 'audio' && r.type !== 'video' &&
          r.type !== 'wallet' && r.type !== 'tweet' &&
       r.type !== 'twitter_status' && r.type !== 'discord_status' && r.type !== 'model_list' && r.type !== 'unknown'
   );
@@ -718,6 +765,7 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
     visibleToolResults.length > 0 ||
     unknownResults.length > 0 ||
     images.length > 0 ||
+    videos.length > 0 ||
     audios.length > 0 ||
     visibleToolCalls.length > 0 ||
     activeJobs.length > 0 ||
@@ -1227,6 +1275,25 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
                       loading="lazy"
                     />
                   </button>
+                ))}
+              </div>
+            )}
+
+            {/* Render videos inline */}
+            {videos.length > 0 && (
+              <div className={`space-y-2 ${cleanedContent || visibleToolResults.length > 0 || images.length > 0 ? 'mt-3' : ''}`}>
+                {videos.map((url, idx) => (
+                  <div key={idx} className="rounded-lg overflow-hidden max-w-xs sm:max-w-sm">
+                    <video
+                      controls
+                      preload="metadata"
+                      className="w-full h-auto rounded-lg"
+                      playsInline
+                    >
+                      <source src={url} type={url.includes('.webm') ? 'video/webm' : 'video/mp4'} />
+                      Your browser does not support video playback.
+                    </video>
+                  </div>
                 ))}
               </div>
             )}
