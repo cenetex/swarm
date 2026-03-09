@@ -17,6 +17,7 @@ import { createIdentityServices } from '../mcp/identity-services.js';
 import { createAgentServices } from '../mcp/agent-services.js';
 import { createNFTServices } from '../mcp/nft-services.js';
 import { createPropertyServices } from '../mcp/property-services.js';
+import { createDesignPartnerServices } from '../mcp/design-partner-services.js';
 
 export interface MCPServicesOptions {
   /** When true, skip services that perform write operations (for preview/read-only contexts) */
@@ -48,6 +49,7 @@ export function createMCPServices(
     ...createAgentServices(_avatarId, session, svc),
     nft: createNFTServices(svc),
     property: createPropertyServices(_avatarId, session, svc),
+    designPartner: session.isAdmin ? createDesignPartnerServices() : undefined,
   };
 }
 

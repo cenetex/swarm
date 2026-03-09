@@ -122,6 +122,13 @@ export {
   createGitHubIssueTools,
   type GitHubIssueServices,
 } from './github-issues.js';
+export {
+  createDesignPartnerTools,
+  type DesignPartnerServices,
+  type DesignPartnerInviteInfo,
+  type DesignPartnerInfo,
+  type DesignPartnerMeta as DesignPartnerMetaInfo,
+} from './design-partner.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';
 import { createGalleryTools } from './gallery.js';
@@ -150,6 +157,7 @@ import { createMoltbookTools } from './moltbook.js';
 import { createTokenLaunchTools } from './token-launch.js';
 import { createBillingTools } from './billing.js';
 import { createGitHubIssueTools } from './github-issues.js';
+import { createDesignPartnerTools } from './design-partner.js';
 import type { ToolRegistry } from '../registry.js';
 
 /**
@@ -194,6 +202,8 @@ export interface AllServices {
   mediaModels?: import('./media-models.js').MediaModelServices;
   // GitHub issue tracking (read-only)
   githubIssues?: import('./github-issues.js').GitHubIssueServices;
+  // Design partner invite management (admin-only)
+  designPartner?: import('./design-partner.js').DesignPartnerServices;
 }
 
 /**
@@ -263,5 +273,8 @@ export function registerAllTools(
   }
   if (services.githubIssues) {
     registry.registerAll(createGitHubIssueTools(services.githubIssues));
+  }
+  if (services.designPartner) {
+    registry.registerAll(createDesignPartnerTools(services.designPartner));
   }
 }
