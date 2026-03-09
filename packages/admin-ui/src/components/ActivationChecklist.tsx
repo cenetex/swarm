@@ -67,20 +67,15 @@ function getChecklistItems(avatar: Avatar): ChecklistItem[] {
     priority: 'optional',
   });
 
-  // 5. Discord connected (only shown when Discord platform is enabled)
+  // 5. Discord connected
   const discordEnabled = avatar.platforms?.discord?.enabled === true;
-  if (discordEnabled) {
-    const discordBotTokenSet = avatar.secrets?.some(
-      s => s.key === 'DISCORD_BOT_TOKEN' && s.isSet
-    ) ?? false;
-    items.push({
-      id: 'discord',
-      label: discordBotTokenSet ? 'Discord bot token configured' : 'Configure Discord bot token',
-      done: discordBotTokenSet,
-      suggestion: 'Connect me to Discord',
-      priority: 'optional',
-    });
-  }
+  items.push({
+    id: 'discord',
+    label: 'Configure Discord bot token',
+    done: discordEnabled,
+    suggestion: 'Connect me to Discord',
+    priority: 'optional',
+  });
 
   return items;
 }
