@@ -1,15 +1,19 @@
 {
   "_mode": "test",
-  "_created_at": null,
-  "_note": "Populated by scripts/setup-products.sh and scripts/setup-metered-prices.sh",
+  "_created_at": "2026-03-09T00:39:04Z",
   "products": {
-    "free": { "product_id": null, "price_id": null },
-    "pro": { "product_id": null, "price_id": null },
-    "enterprise": { "product_id": null, "price_id": null }
+    "free": {
+      "product_id": "prod_U762mYDS44aSQ2",
+      "price_id": "price_1T8rqfC2kFW3ZwsZt6Ip486R"
+    },
+    "pro": {
+      "product_id": "prod_U762K5opZwikGf",
+      "price_id": "price_1T8rqgC2kFW3ZwsZXa6HUyjV"
+    },
+    "enterprise": {
+      "product_id": "prod_U762EkfTR4zOir",
+      "price_id": "price_1T8rqhC2kFW3ZwsZ8PwDjMxZ"
+    }
   },
-  "metered_prices": {
-    "media_overage": { "price_id": null, "enterprise_price_id": null },
-    "voice_overage": { "price_id": null, "enterprise_price_id": null },
-    "video_overage": { "price_id": null, "enterprise_price_id": null }
-  }
+  "metered_prices": {}
 }

@@ -113,10 +113,26 @@ create_or_find_product() {
 
   echo -e "  Creating product..." >&2
   local result
+  # Convert --metadata key=val args to -d metadata[key]=val for Stripe CLI
+  local converted_args=()
+  local i=0
+  while [[ $i -lt ${#metadata_args[@]} ]]; do
+    local arg="${metadata_args[$i]}"
+    if [[ "$arg" == "--metadata" ]]; then
+      i=$((i + 1))
+      local kv="${metadata_args[$i]}"
+      local key="${kv%%=*}"
+      local val="${kv#*=}"
+      converted_args+=(-d "metadata[${key}]=${val}")
+    else
+      converted_args+=("$arg")
+    fi
+    i=$((i + 1))
+  done
   if ! result=$(stripe products create \
     --name "$name" \
     --description "$description" \
-    "${metadata_args[@]}" \
+    "${converted_args[@]}" \
     $STRIPE_FLAGS 2>&1); then
     echo -e "  ${RED}Failed to create product: ${result}${NC}" >&2
     exit 1
@@ -147,7 +163,7 @@ create_price() {
     --currency usd \
     --unit-amount "$amount_cents" \
     -d "recurring[interval]=month" \
-    --metadata plan_type="$plan_type" \
+    -d "metadata[plan_type]=${plan_type}" \
     $STRIPE_FLAGS 2>&1); then
     echo -e "  ${RED}Failed to create price: ${result}${NC}" >&2
     exit 1
