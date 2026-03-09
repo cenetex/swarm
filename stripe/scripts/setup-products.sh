@@ -62,7 +62,7 @@ fi
 
 # Show current account
 echo -e "${BLUE}Stripe account:${NC}"
-stripe config --list $STRIPE_FLAGS 2>/dev/null | head -5 || true
+stripe config --list 2>/dev/null | head -5 || true
 echo ""
 
 # Live mode confirmation
@@ -98,12 +98,11 @@ create_or_find_product() {
 
   echo -e "${BLUE}[$plan_type]${NC} Checking for existing product..." >&2
 
-  # Search by metadata
+  # Search by listing products and filtering by metadata
   local existing
-  existing=$(stripe products search \
-    --query "metadata['plan_type']:'${plan_type}'" \
-    $STRIPE_FLAGS \
-    -d limit=1 2>&1 | jq -r '.data[0].id // empty') || existing=""
+  existing=$(stripe products list \
+    -d limit=100 \
+    $STRIPE_FLAGS 2>/dev/null | jq -r ".data[] | select(.metadata.plan_type == \"${plan_type}\") | .id" | head -1) || existing=""
 
   if [[ -n "$existing" ]]; then
     echo -e "  ${YELLOW}Already exists: ${existing}${NC}" >&2

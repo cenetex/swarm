@@ -140,8 +140,8 @@
       "crossmintApiKeyArn": "arn:aws:secretsmanager:us-east-1:332730082708:secret:swarm/prod/crossmint-api-key-XF3XuF",
       "stripeSecretKeyArn": "arn:aws:secretsmanager:us-east-1:332730082708:secret:swarm/staging/stripe-secret-key-jq0rEK",
       "stripeWebhookSecretArn": "arn:aws:secretsmanager:us-east-1:332730082708:secret:swarm/prod/stripe-webhook-secret-NQ2IDP",
-      "stripePriceIdPro": "price_1T8rqgC2kFW3ZwsZXa6HUyjV",
-      "stripePriceIdEnterprise": "price_1T8rqhC2kFW3ZwsZ8PwDjMxZ"
+      "stripePriceIdPro": "price_1T8sGGFfeGTTyFW4k1VmYJkH",
+      "stripePriceIdEnterprise": "price_1T8sGHFfeGTTyFW4R7QnXlLA"
     }
   }
 }
