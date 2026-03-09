@@ -31,27 +31,81 @@ import * as avatars from '../services/avatars.js';
  * Removes orphaned tool results and ensures proper message structure
  */
 export function sanitizeMessages(messages: AdminChatMessage[]): AdminChatMessage[] {
-  const sanitized: AdminChatMessage[] = [];
-  const toolCallIds = new Set<string>();
-  const toolResultIds = new Set<string>();
+  // -------------------------------------------------------------------------
+  // Phase 1: Enforce adjacency — tool messages must immediately follow their
+  // matching assistant message. Anthropic rejects tool_result blocks that
+  // don't have a tool_use in the *previous* message. Reorder or strip to fix.
+  // -------------------------------------------------------------------------
+  const reordered: AdminChatMessage[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const msg = messages[i];
 
-  // First pass: collect IDs from both sides
-  for (const msg of messages) {
+    if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+      // Collect the IDs this assistant expects results for
+      const expectedIds = new Set(msg.tool_calls.map(tc => tc.id).filter(Boolean));
+
+      // Gather matching tool results — they may be immediately after, or
+      // separated by intervening messages (e.g. error messages added to history).
+      const toolResults: AdminChatMessage[] = [];
+      const deferred: AdminChatMessage[] = [];
+      for (let j = i + 1; j < messages.length; j++) {
+        const candidate = messages[j];
+        if (candidate.role === 'tool') {
+          const tcId = (candidate as ToolResult).tool_call_id;
+          if (tcId && expectedIds.has(tcId)) {
+            toolResults.push(candidate);
+            expectedIds.delete(tcId);
+            continue;
+          }
+        }
+        // Stop scanning when we hit another assistant message (new turn)
+        if (candidate.role === 'assistant') break;
+        deferred.push(candidate);
+      }
+
+      if (toolResults.length > 0) {
+        // Keep only the tool_calls that have results
+        const resultIds = new Set(toolResults.map(tr => (tr as ToolResult).tool_call_id));
+        const matchedCalls = msg.tool_calls.filter(tc => tc.id && resultIds.has(tc.id));
+        const assistantMsg = matchedCalls.length < msg.tool_calls.length
+          ? { ...msg, tool_calls: matchedCalls.length > 0 ? matchedCalls : undefined }
+          : msg;
+
+        reordered.push(assistantMsg);
+        // Tool results immediately after assistant (adjacency enforced)
+        reordered.push(...toolResults);
+        // Then any non-tool messages that were between them
+        reordered.push(...deferred);
+        i += 1 + toolResults.length + deferred.length;
+      } else {
+        // No tool results found — strip tool_calls from this assistant message
+        reordered.push({ ...msg, tool_calls: undefined });
+        i++;
+      }
+      continue;
+    }
+
+    reordered.push(msg);
+    i++;
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 2: Clean up — remove orphaned tool results and empty assistants,
+  // strip thinking tags, normalize empty content.
+  // -------------------------------------------------------------------------
+  const toolCallIds = new Set<string>();
+  for (const msg of reordered) {
     if (msg.role === 'assistant' && msg.tool_calls) {
       for (const tc of msg.tool_calls) {
         if (tc.id) toolCallIds.add(tc.id);
       }
     }
-    if (msg.role === 'tool') {
-      const tcId = (msg as ToolResult).tool_call_id;
-      if (tcId && tcId.trim() !== '') toolResultIds.add(tcId);
-    }
   }
 
-  // Second pass: filter and validate messages
-  for (const msg of messages) {
+  const sanitized: AdminChatMessage[] = [];
+  for (const msg of reordered) {
     if (msg.role === 'tool') {
-      // Only include tool results that have a matching tool call
       const toolCallId = (msg as ToolResult).tool_call_id;
       if (!toolCallId || toolCallId.trim() === '' || !toolCallIds.has(toolCallId)) {
         logger.info('Skipping orphaned tool result', { toolCallId });
@@ -60,44 +114,16 @@ export function sanitizeMessages(messages: AdminChatMessage[]): AdminChatMessage
     }
 
     if (msg.role === 'assistant') {
-      // Strip tool_calls whose results are missing (e.g. truncated away).
-      // Anthropic requires every tool_use to have a matching tool_result.
-      if (msg.tool_calls && msg.tool_calls.length > 0) {
-        const matchedCalls = msg.tool_calls.filter(tc => tc.id && toolResultIds.has(tc.id));
-        if (matchedCalls.length < msg.tool_calls.length) {
-          logger.info('Stripping unmatched tool_calls from assistant message', {
-            total: msg.tool_calls.length,
-            matched: matchedCalls.length,
-          });
-          const stripped = { ...msg, tool_calls: matchedCalls.length > 0 ? matchedCalls : undefined };
-
-          // Ensure assistant messages have non-empty content
-          const rawContent = stripped.content;
-          const isEmpty = rawContent === null || rawContent === undefined || rawContent === '';
-
-          if (isEmpty && stripped.tool_calls && stripped.tool_calls.length > 0) {
-            sanitized.push({ ...stripped, content: null as unknown as string });
-          } else if (isEmpty && !stripped.tool_calls) {
-            // No content and no tool_calls left — skip entirely
-            continue;
-          } else if (typeof rawContent === 'string') {
-            const { cleanContent } = extractThinking(rawContent);
-            sanitized.push({ ...stripped, content: cleanContent });
-          } else {
-            sanitized.push(stripped);
-          }
-          continue;
-        }
-      }
-
-      // Ensure assistant messages have non-empty content.
-      // Some providers (e.g. Moonshot AI via OpenRouter) reject empty assistant messages.
       const rawContent = msg.content;
       const isEmpty = rawContent === null || rawContent === undefined || rawContent === '';
 
       if (isEmpty && msg.tool_calls && msg.tool_calls.length > 0) {
-        // Tool-call-only assistant turn: use a null sentinel that OpenAI/OpenRouter accept
         sanitized.push({ ...msg, content: null as unknown as string });
+        continue;
+      }
+
+      if (isEmpty && !msg.tool_calls) {
+        // No content and no tool_calls — skip entirely
         continue;
       }
 
