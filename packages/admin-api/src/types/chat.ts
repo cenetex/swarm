@@ -24,7 +24,7 @@ export type MessageSender = z.infer<typeof MessageSenderSchema>;
 
 export const AdminChatMessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system', 'tool']),
-  content: z.string(),
+  content: z.string().nullish().transform(v => v ?? ''),
   tool_calls: z.array(ToolCallSchema).optional(),
   tool_call_id: z.string().optional(),
   sender: MessageSenderSchema.optional(),
@@ -44,14 +44,14 @@ export const ToolResultSchema = z.object({
 });
 
 // Avatar context in chat request
+// Uses .nullish() because DynamoDB stores missing values as null, and JSON.stringify
+// preserves null (unlike undefined), causing z.string().optional() to reject valid requests.
 export const AvatarContextSchema = z.object({
   id: z.string(),
-  name: z.string().optional(),
-  description: z.string().optional(),
-  persona: z.string().optional(),
-  // Optional: when present, used to constrain tool availability/prompt generation.
-  // Uses z.string() to allow arbitrary MCP toolset categories beyond core-defined ones.
-  enabledCategories: z.array(z.string()).optional(),
+  name: z.string().nullish(),
+  description: z.string().nullish(),
+  persona: z.string().nullish(),
+  enabledCategories: z.array(z.string()).nullish(),
 });
 
 // Chat request body schema
