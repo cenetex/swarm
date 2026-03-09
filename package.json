@@ -60,9 +60,9 @@
     "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
-    "@aws-sdk/client-dynamodb": "^3.995.0",
-    "@aws-sdk/client-secrets-manager": "^3.995.0",
-    "@aws-sdk/lib-dynamodb": "^3.995.0",
+    "@aws-sdk/client-dynamodb": "^3.1004.0",
+    "@aws-sdk/client-secrets-manager": "^3.1004.0",
+    "@aws-sdk/lib-dynamodb": "^3.1004.0",
     "@eslint/js": "^9.39.3",
     "@swarm/core": "workspace:*",
     "@types/node": "^22.0.0",
@@ -73,15 +73,15 @@
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "globals": "^17.3.0",
+    "globals": "^17.4.0",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.7",
+    "lint-staged": "^16.3.2",
     "madge": "^8.0.0",
     "playwright": "^1.58.2",
     "prettier": "^3.8.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.0",
-    "typescript-eslint": "^8.56.0",
+    "typescript-eslint": "^8.56.1",
     "yaml": "^2.6.0"
   },
   "pnpm": {
