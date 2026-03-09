@@ -19,6 +19,7 @@ import {
   type UsageMeter,
   type DailyUsageSummary,
 } from '../api/usage';
+import { createCheckoutSession, createPortalSession } from '../api/billing';
 
 interface PlanUsagePanelProps {
   avatarId: string;
@@ -179,6 +180,11 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose }: PlanU
   const [showDetails, setShowDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<'usage' | 'limits'>('usage');
 
+  // Billing state
+  const [upgrading, setUpgrading] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
+  const [showUpgradeOptions, setShowUpgradeOptions] = useState(false);
+
   // ── Fetch all data in parallel ──────────────────────────────────────────
 
   const fetchData = useCallback(async () => {
@@ -248,6 +254,32 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose }: PlanU
       setError(e instanceof Error ? e.message : 'Failed to update plan');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── Billing handlers ───────────────────────────────────────────────────
+
+  const handleUpgrade = async (targetPlan: 'pro' | 'enterprise') => {
+    setUpgrading(true);
+    setBillingError(null);
+    try {
+      const { url } = await createCheckoutSession(avatarId, targetPlan);
+      window.location.href = url;
+    } catch (e) {
+      setBillingError(e instanceof Error ? e.message : 'Checkout failed');
+      setUpgrading(false);
+    }
+  };
+
+  const handleManageBilling = async () => {
+    setUpgrading(true);
+    setBillingError(null);
+    try {
+      const { url } = await createPortalSession(avatarId);
+      window.location.href = url;
+    } catch (e) {
+      setBillingError(e instanceof Error ? e.message : 'Could not open billing portal');
+      setUpgrading(false);
     }
   };
 
@@ -373,6 +405,104 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose }: PlanU
           </button>
         </div>
       </div>
+
+      {/* Billing error banner */}
+      {billingError && (
+        <div className="mb-3 p-2 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 text-xs flex items-center justify-between">
+          <span>{billingError}</span>
+          <button onClick={() => setBillingError(null)} className="text-red-400 hover:text-red-300 ml-2">&times;</button>
+        </div>
+      )}
+
+      {/* Billing success banner (from redirect) */}
+      {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('billing') === 'success' && (
+        <div className="mb-3 p-2 rounded-lg bg-green-900/20 border border-green-500/30 text-green-400 text-xs">
+          Subscription activated! Your plan will update shortly.
+        </div>
+      )}
+
+      {/* Upgrade / Manage Billing */}
+      {!canEdit && (
+        <div className="mb-3">
+          {plan === 'free' ? (
+            <div className="space-y-2">
+              {!showUpgradeOptions ? (
+                <button
+                  onClick={() => setShowUpgradeOptions(true)}
+                  disabled={upgrading}
+                  className="w-full px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors disabled:opacity-50"
+                >
+                  Upgrade Plan
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => handleUpgrade('pro')}
+                      disabled={upgrading}
+                      className="px-3 py-3 rounded-lg bg-blue-900/30 border border-blue-500/30 hover:border-blue-400/50 text-left transition-colors disabled:opacity-50"
+                    >
+                      <div className="text-sm font-medium text-blue-300">Pro</div>
+                      <div className="text-lg font-bold text-[var(--color-text)]">$9<span className="text-xs font-normal text-[var(--color-text-muted)]">/mo</span></div>
+                      <div className="text-[10px] text-[var(--color-text-muted)] mt-1 space-y-0.5">
+                        <div>500 msgs/day</div>
+                        <div>50 media credits</div>
+                        <div>30-day memory</div>
+                        <div>3 platforms</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => handleUpgrade('enterprise')}
+                      disabled={upgrading}
+                      className="px-3 py-3 rounded-lg bg-purple-900/30 border border-purple-500/30 hover:border-purple-400/50 text-left transition-colors disabled:opacity-50"
+                    >
+                      <div className="text-sm font-medium text-purple-300">Enterprise</div>
+                      <div className="text-lg font-bold text-[var(--color-text)]">$29<span className="text-xs font-normal text-[var(--color-text-muted)]">/mo</span></div>
+                      <div className="text-[10px] text-[var(--color-text-muted)] mt-1 space-y-0.5">
+                        <div>Unlimited msgs</div>
+                        <div>Unlimited media</div>
+                        <div>365-day memory</div>
+                        <div>Unlimited platforms</div>
+                      </div>
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowUpgradeOptions(false)}
+                    className="w-full text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : plan === 'pro' ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleUpgrade('enterprise')}
+                disabled={upgrading}
+                className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-purple-900/30 border border-purple-500/30 hover:border-purple-400/50 text-purple-300 font-medium transition-colors disabled:opacity-50"
+              >
+                {upgrading ? 'Loading...' : 'Upgrade to Enterprise'}
+              </button>
+              <button
+                onClick={handleManageBilling}
+                disabled={upgrading}
+                className="px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] hover:border-[var(--color-text-muted)] text-[var(--color-text-secondary)] transition-colors disabled:opacity-50"
+              >
+                {upgrading ? '...' : 'Manage Billing'}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleManageBilling}
+              disabled={upgrading}
+              className="w-full px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] hover:border-[var(--color-text-muted)] text-[var(--color-text-secondary)] transition-colors disabled:opacity-50"
+            >
+              {upgrading ? 'Loading...' : 'Manage Billing'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Inline error banner (partial data loaded) */}
       {error && (
