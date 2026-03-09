@@ -52,6 +52,7 @@ import {
 import { recordError } from '../services/auto-issues.js';
 import { mapAdminChatHandlerError } from './chat-error-mapping.js';
 import { redactMediaUrlsFromText } from '../utils/redact-media-urls.js';
+import { incrementUsage } from '../services/billing/entitlements.js';
 
 // ---- SSE Helpers ----
 
@@ -409,6 +410,11 @@ export async function handler(
       ];
 
       await chatHistory.saveChatHistory(session, updatedHistory, avatar?.id);
+
+      // Track message usage against entitlement quota
+      if (avatar?.id) {
+        incrementUsage(avatar.id, 'messagesProcessed').catch(() => {});
+      }
 
       // Append a final history event for the client
       sseBody += sseEvent('history', {

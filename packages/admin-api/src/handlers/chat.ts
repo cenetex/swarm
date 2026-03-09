@@ -30,6 +30,7 @@ import { recordError } from '../services/auto-issues.js';
 import { createAvatarAccessChecker } from '../services/chat-access.js';
 import { ensureRuntimeConfig } from '../services/runtime-config.js';
 import { chatIdempotencyStore } from '../services/idempotency.js';
+import { incrementUsage } from '../services/billing/entitlements.js';
 
 import {
   ToolRegistry,
@@ -411,6 +412,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       maxTokens: typeof avatarMaxTokens === 'number' ? avatarMaxTokens : undefined,
     });
     await chatHistory.saveChatHistory(session, result.history, avatar?.id);
+
+    // Track message usage against entitlement quota
+    if (avatar?.id) {
+      incrementUsage(avatar.id, 'messagesProcessed').catch(() => {});
+    }
 
     const responsePayload = {
       statusCode: 200,

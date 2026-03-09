@@ -48,6 +48,11 @@ async function getCheckLimit() {
   return checkLimit;
 }
 
+async function getIncrementUsage() {
+  const { incrementUsage } = await import('./entitlements.js');
+  return incrementUsage;
+}
+
 /**
  * Check if avatar can use energy (backward compatible signature)
  */
@@ -419,13 +424,20 @@ export async function checkMediaWithEnergyFallback(
   const checkLimitFn = await getCheckLimit();
   const entitlementCheck = await checkLimitFn(avatarId, 'media');
 
+  // Helper to track media usage (fire-and-forget)
+  const trackMedia = () => {
+    getIncrementUsage().then(fn => fn(avatarId, 'mediaCreditsUsed')).catch(() => {});
+  };
+
   // Enterprise / unlimited
   if (entitlementCheck.limit === -1) {
+    trackMedia();
     return { allowed: true };
   }
 
   // Within entitlement limit -- no energy consumed
   if (entitlementCheck.allowed) {
+    trackMedia();
     return { allowed: true };
   }
 
@@ -448,6 +460,7 @@ export async function checkMediaWithEnergyFallback(
     };
   }
 
+  trackMedia();
   return {
     allowed: true,
     energyBurst: true,
@@ -463,17 +476,24 @@ export async function checkMediaWithEnergyFallback(
 export async function checkVoiceWithEnergyFallback(
   avatarId: string,
 ): Promise<BurstPoolResult> {
+  // Helper to track voice usage (fire-and-forget)
+  const trackVoice = () => {
+    getIncrementUsage().then(fn => fn(avatarId, 'voiceMinutesUsed')).catch(() => {});
+  };
+
   // Entitlement daily limit check
   const checkLimitFn = await getCheckLimit();
   const entitlementCheck = await checkLimitFn(avatarId, 'voice');
 
   // Enterprise / unlimited
   if (entitlementCheck.limit === -1) {
+    trackVoice();
     return { allowed: true };
   }
 
   // Within entitlement limit -- no energy consumed
   if (entitlementCheck.allowed) {
+    trackVoice();
     return { allowed: true };
   }
 
@@ -495,6 +515,7 @@ export async function checkVoiceWithEnergyFallback(
     };
   }
 
+  trackVoice();
   return {
     allowed: true,
     energyBurst: true,
@@ -508,6 +529,11 @@ export async function checkVoiceWithEnergyFallback(
 export async function checkVideoWithEnergyFallback(
   avatarId: string,
 ): Promise<BurstPoolResult> {
+  // Helper to track media usage (video shares media counter, fire-and-forget)
+  const trackMedia = () => {
+    getIncrementUsage().then(fn => fn(avatarId, 'mediaCreditsUsed')).catch(() => {});
+  };
+
   // Step 1: Tool rate-limit check
   const toolCheck = await canUseTool(avatarId, 'generate_video');
   if (!toolCheck.allowed) {
@@ -519,10 +545,12 @@ export async function checkVideoWithEnergyFallback(
   const entitlementCheck = await checkLimitFn(avatarId, 'media');
 
   if (entitlementCheck.limit === -1) {
+    trackMedia();
     return { allowed: true };
   }
 
   if (entitlementCheck.allowed) {
+    trackMedia();
     return { allowed: true };
   }
 
@@ -544,6 +572,7 @@ export async function checkVideoWithEnergyFallback(
     };
   }
 
+  trackMedia();
   return {
     allowed: true,
     energyBurst: true,

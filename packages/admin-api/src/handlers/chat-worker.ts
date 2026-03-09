@@ -11,6 +11,7 @@ import { LlmCreditsExhaustedError } from './chat-llm.js';
 import { parseOpenRouterStatusFromError } from './chat-error-mapping.js';
 import { recordError } from '../services/auto-issues.js';
 import { ensureRuntimeConfig } from '../services/runtime-config.js';
+import { incrementUsage } from '../services/billing/entitlements.js';
 
 type ChatJobMessage = {
   jobId: string;
@@ -62,6 +63,13 @@ export async function handler(event: SQSEvent): Promise<void> {
       );
 
       await chatHistory.saveChatHistory(session, result.history, job.avatarId);
+
+      // Track message usage against entitlement quota
+      if (job.avatarId) {
+        incrementUsage(job.avatarId, 'messagesProcessed').catch(err => {
+          logger.warn('Failed to increment message usage', { event: 'usage_increment_failed', avatarId: job.avatarId, error: err instanceof Error ? err.message : String(err) });
+        });
+      }
 
       await updateChatJobStatus(jobId, 'completed', {
         result: {
