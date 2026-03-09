@@ -46,12 +46,14 @@ export const ToolResultSchema = z.object({
 // Avatar context in chat request
 // Uses .nullish() because DynamoDB stores missing values as null, and JSON.stringify
 // preserves null (unlike undefined), causing z.string().optional() to reject valid requests.
+const nullToUndef = <T,>(v: T | null | undefined): T | undefined => v ?? undefined;
+
 export const AvatarContextSchema = z.object({
   id: z.string(),
-  name: z.string().nullish(),
-  description: z.string().nullish(),
-  persona: z.string().nullish(),
-  enabledCategories: z.array(z.string()).nullish(),
+  name: z.string().nullish().transform(nullToUndef),
+  description: z.string().nullish().transform(nullToUndef),
+  persona: z.string().nullish().transform(nullToUndef),
+  enabledCategories: z.array(z.string()).nullish().transform(nullToUndef),
 });
 
 // Chat request body schema
