@@ -1788,7 +1788,8 @@ export class AdminApiConstruct extends Construct {
     });
 
     // Grant permissions to prompt preview handler
-    this.table.grantReadData(promptPreviewHandler);
+    // Needs read-write because transitive services (session touch, audit log) perform UpdateItem
+    this.table.grantReadWriteData(promptPreviewHandler);
     if (stateTable) {
       stateTable.grantReadData(promptPreviewHandler);
     }

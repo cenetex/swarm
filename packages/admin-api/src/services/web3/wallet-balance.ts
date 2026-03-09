@@ -146,9 +146,9 @@ export async function getTokenBalance(
 
     if (msg.includes('could not find mint')) {
       log.warn('solana', 'mint_not_found', { mint: tokenMint, wallet: walletAddress });
+    } else {
+      log.error('solana', 'token_balance_error', { wallet: walletAddress, message: msg });
     }
-
-    log.error('solana', 'token_balance_error', { wallet: walletAddress, message: msg });
 
     // Return cached value if available, even if stale
     if (cached) {
