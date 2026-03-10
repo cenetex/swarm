@@ -809,8 +809,29 @@ export class TelegramAdapter extends PlatformAdapter {
       
       return true;
     } catch (error) {
-      logger.error('Failed to execute Telegram action', error, { subsystem: 'platform', platform: 'telegram' });
-      return false;
+      const status = (error as { status?: number }).status
+        ?? (error as { error_code?: number }).error_code;
+
+      // Telegram 4xx errors (except 429 rate limit) are permanent — do not retry.
+      const isNonRetryable = typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
+
+      logger.error('Failed to execute Telegram action', error, {
+        subsystem: 'platform',
+        platform: 'telegram',
+        ...(typeof status === 'number' ? { statusCode: status } : {}),
+        retryable: !isNonRetryable,
+      });
+
+      throw new PlatformError(
+        error instanceof Error ? error.message : String(error),
+        {
+          platform: 'telegram',
+          statusCode: typeof status === 'number' ? status : undefined,
+          retryable: !isNonRetryable,
+          cause: error,
+          code: SwarmErrorCode.PLATFORM_API_ERROR,
+        },
+      );
     }
   }
 
@@ -842,14 +863,23 @@ export class TelegramAdapter extends PlatformAdapter {
         ...extra,
       });
     } catch (error) {
-      // If Telegram rejects the HTML (400 Bad Request), retry as plain text
       const status = (error as { status?: number }).status
         ?? (error as { error_code?: number }).error_code;
-      if (status === 400) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      // Only fall back to plain text for HTML formatting errors.
+      // Other 400 errors (reply not found, chat not found, etc.) must propagate.
+      const isHtmlFormattingError = status === 400
+        && !errorMsg.includes('message to be replied not found')
+        && !errorMsg.includes('chat not found')
+        && !errorMsg.includes('bot was blocked')
+        && !errorMsg.includes('bot was kicked');
+
+      if (isHtmlFormattingError) {
         logger.warn('Telegram rejected HTML formatting, falling back to plain text', {
           subsystem: 'platform',
           platform: 'telegram',
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMsg,
         });
         const plainText = stripMarkdown(text);
         await this.bot.api.sendMessage(chatIdNum, plainText, extra);

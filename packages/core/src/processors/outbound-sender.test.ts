@@ -126,7 +126,7 @@ describe('OutboundSender - ActionError structure (#368)', () => {
     expect(err.statusCode).toBeUndefined();
   });
 
-  it('should return non-retryable ActionError when adapter returns false', async () => {
+  it('should return retryable ActionError when adapter returns false', async () => {
     const registry = new PlatformRegistry();
     registry.register(
       createMockAdapter({
@@ -140,6 +140,54 @@ describe('OutboundSender - ActionError structure (#368)', () => {
     expect(result.success).toBe(false);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].action).toBe('send_message');
+    expect(result.errors[0].isRetryable).toBe(true);
+  });
+
+  it('should return isRetryable=false for Telegram 400 (message to be replied not found)', async () => {
+    const registry = new PlatformRegistry();
+    registry.register(
+      createMockAdapter({
+        executeAction: async () => {
+          throw new PlatformError("Call to 'sendMessage' failed! (400: Bad Request: message to be replied not found)", {
+            platform: 'twitter', // using twitter since mock adapter is twitter
+            statusCode: 400,
+            retryable: false,
+            code: SwarmErrorCode.PLATFORM_API_ERROR,
+          });
+        },
+      }) as never,
+    );
+
+    const sender = new OutboundSender(registry);
+    const result = await sender.send(makeResponse());
+
+    expect(result.success).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].statusCode).toBe(400);
+    expect(result.errors[0].isRetryable).toBe(false);
+  });
+
+  it('should return isRetryable=true for 429 rate limit errors', async () => {
+    const registry = new PlatformRegistry();
+    registry.register(
+      createMockAdapter({
+        executeAction: async () => {
+          throw new PlatformError('Too Many Requests', {
+            platform: 'twitter',
+            statusCode: 429,
+            retryable: true,
+            code: SwarmErrorCode.PLATFORM_API_ERROR,
+          });
+        },
+      }) as never,
+    );
+
+    const sender = new OutboundSender(registry);
+    const result = await sender.send(makeResponse());
+
+    expect(result.success).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].statusCode).toBe(429);
     expect(result.errors[0].isRetryable).toBe(true);
   });
 
