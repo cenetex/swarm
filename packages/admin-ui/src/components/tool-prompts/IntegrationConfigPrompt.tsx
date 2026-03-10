@@ -1193,28 +1193,28 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
   return (
     <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-tertiary)]">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">{config.icon}</span>
+      <div className="px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg-tertiary)]">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">{config.icon}</span>
           <div>
-            <h4 className="font-medium text-[var(--color-text)]">
+            <h4 className="text-sm font-medium text-[var(--color-text)]">
               Configure {config.name}
             </h4>
             {args.reason && (
-              <p className="text-sm text-[var(--color-text-secondary)]">{args.reason}</p>
+              <p className="text-xs text-[var(--color-text-secondary)]">{args.reason}</p>
             )}
           </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="p-4 space-y-4">
+      <div className="p-3 space-y-3">
         {savedAt && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg">
-            <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 bg-green-500/10 border border-green-500/30 rounded-lg">
+            <svg className="w-3.5 h-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
-            <span className="text-sm text-green-300">Saved. You can keep editing and save again.</span>
+            <span className="text-xs text-green-300">Saved. You can keep editing and save again.</span>
           </div>
         )}
 
@@ -1341,16 +1341,16 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
 
         {config.usesOAuth ? (
           // OAuth-based integration (Twitter) with advanced config
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* OAuth Connection */}
-            <div className="space-y-2">
-              <p className="text-sm text-[var(--color-text-secondary)]">
+            <div className="flex items-center gap-2">
+              <p className="flex-1 text-xs text-[var(--color-text-secondary)]">
                 Connect your {config.name} account to enable posting and interaction.
               </p>
               <button
                 onClick={handleOAuth}
                 disabled={disabled || !activeAgent?.id}
-                className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
+                className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium flex-shrink-0"
               >
                 Connect {config.name}
               </button>
@@ -1360,18 +1360,18 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
             {integration === 'twitter' && (
               <>
                 {/* Features Selection */}
-                <div className="p-3 bg-[var(--color-bg-tertiary)] rounded-lg border border-[var(--color-border)] space-y-3">
-                  <p className="text-sm font-medium text-[var(--color-text)]">Features</p>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Select which Twitter features to enable for this avatar.
-                  </p>
-                  <div className="space-y-2">
+                <div className="p-2.5 bg-[var(--color-bg-tertiary)] rounded-lg border border-[var(--color-border)] space-y-2">
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-xs font-medium text-[var(--color-text)]">Features</p>
+                    <p className="text-[11px] text-[var(--color-text-muted)]">Select which to enable</p>
+                  </div>
+                  <div className="space-y-1.5">
                     {[
                       { id: 'mention_replies', label: 'Mention Replies', desc: 'Reply to @mentions' },
                       { id: 'autonomous_posts', label: 'Autonomous Posts', desc: 'Post automatically on a schedule' },
                       { id: 'community_posts', label: 'Community Posts', desc: 'Post to Twitter Communities' },
                     ].map((feature) => (
-                      <label key={feature.id} className="flex items-start gap-3 cursor-pointer">
+                      <label key={feature.id} className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={twitterFeatures.includes(feature.id)}
@@ -1385,12 +1385,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                             }
                           }}
                           disabled={disabled}
-                          className="mt-1 w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-brand-600 focus:ring-brand-500"
+                          className="w-3.5 h-3.5 rounded border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-brand-600 focus:ring-brand-500"
                         />
-                        <div>
-                          <span className="text-sm text-[var(--color-text)]">{feature.label}</span>
-                          <p className="text-xs text-[var(--color-text-muted)]">{feature.desc}</p>
-                        </div>
+                        <span className="text-xs text-[var(--color-text)]">{feature.label}</span>
+                        <span className="text-[11px] text-[var(--color-text-muted)]">{feature.desc}</span>
                       </label>
                     ))}
                   </div>
@@ -2433,8 +2431,8 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         )}
 
         {/* Security note */}
-        <p className="text-xs text-[var(--color-text-muted)] pt-2 border-t border-[var(--color-border)]">
-          🔒 Credentials are encrypted and never shared with the AI
+        <p className="text-[11px] text-[var(--color-text-muted)] pt-2 border-t border-[var(--color-border)]">
+          🔒 Credentials encrypted — never shared with the AI
         </p>
       </div>
     </div>

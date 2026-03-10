@@ -41,7 +41,7 @@ export function FeatureTogglePrompt({ toolCall, onSubmit, disabled }: ToolPrompt
 
   if (submitted) {
     return (
-      <div className={`flex items-center gap-2 px-4 py-3 rounded-lg ${
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
         enabled
           ? 'bg-green-500/10 border border-green-500/30'
           : 'bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]'
@@ -56,29 +56,23 @@ export function FeatureTogglePrompt({ toolCall, onSubmit, disabled }: ToolPrompt
   const currentEnabled = enabled ?? args.currentState;
 
   return (
-    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
-      <div className="flex items-start gap-3">
-        <div className={`p-2 rounded-lg ${currentEnabled ? 'bg-green-500/20' : 'bg-[var(--color-bg-tertiary)]'}`}>
-          <svg className={`w-5 h-5 ${currentEnabled ? 'text-green-400' : 'text-[var(--color-text-tertiary)]'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <div className={`p-1.5 rounded-md ${currentEnabled ? 'bg-green-500/20' : 'bg-[var(--color-bg-tertiary)]'}`}>
+          <svg className={`w-4 h-4 ${currentEnabled ? 'text-green-400' : 'text-[var(--color-text-tertiary)]'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
         </div>
-        <div className="flex-1">
-          <h4 className="font-medium text-[var(--color-text)]">{args.label}</h4>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-medium text-[var(--color-text)]">{args.label}</h4>
           {args.description && (
-            <p className="text-sm text-[var(--color-text-secondary)] mt-1">{args.description}</p>
+            <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{args.description}</p>
           )}
         </div>
-      </div>
-
-      <div className="flex items-center justify-between pt-2 border-t border-[var(--color-border)]">
-        <span className="text-sm text-[var(--color-text-secondary)]">
-          {currentEnabled ? 'Currently enabled' : 'Currently disabled'}
-        </span>
         <button
           onClick={handleToggle}
           disabled={disabled || isSubmitting}
-          className={`relative w-14 h-7 rounded-full transition-colors ${
+          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
             disabled || isSubmitting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
           } ${
             currentEnabled
@@ -87,8 +81,8 @@ export function FeatureTogglePrompt({ toolCall, onSubmit, disabled }: ToolPrompt
           }`}
         >
           <span
-            className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform shadow-xs ${
-              currentEnabled ? 'left-8' : 'left-1'
+            className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-xs ${
+              currentEnabled ? 'left-[22px]' : 'left-0.5'
             }`}
           />
         </button>

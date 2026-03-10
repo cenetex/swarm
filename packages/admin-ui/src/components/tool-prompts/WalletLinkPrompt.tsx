@@ -269,18 +269,18 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
     null;
 
   return (
-    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
-      <div className="flex items-start gap-3">
-        <div className="p-2 bg-brand-500/20 rounded-lg flex-shrink-0">
-          <svg className="w-5 h-5 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="p-1.5 bg-brand-500/20 rounded-md flex-shrink-0">
+          <svg className="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
           </svg>
         </div>
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-[var(--color-text)]">
+          <h4 className="text-sm font-medium text-[var(--color-text)]">
             Link a Wallet
           </h4>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-1">
+          <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
             {args.reason || 'Connect and sign with a Solana wallet to link it to your account.'}
           </p>
 
@@ -306,16 +306,16 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
             </div>
           )}
 
-          <p className="text-xs text-[var(--color-text-muted)] mt-2">
-            Signing does not trigger any blockchain transaction or cost any fees.
+          <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+            Signing does not trigger any transaction or cost fees.
           </p>
         </div>
       </div>
 
       {/* Processing indicator */}
       {isProcessing && statusLabel && (
-        <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+        <div className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
+          <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
@@ -333,12 +333,12 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
                   key={wallet.name}
                   onClick={() => handleLinkWithProvider(wallet.provider)}
                   disabled={disabled}
-                  className="flex items-center gap-3 w-full px-4 py-2.5 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                  className="flex items-center gap-2 w-full px-3 py-1.5 text-sm bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors"
                 >
                   <img
                     src={wallet.icon}
                     alt={wallet.name}
-                    className="w-5 h-5 rounded"
+                    className="w-4 h-4 rounded"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   />
                   {status === 'error' ? `Retry with ${wallet.name}` : `Connect ${wallet.name}`}
@@ -366,7 +366,7 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
               onSubmit(toolCall.id, { linked: false, cancelled: true });
             }}
             disabled={disabled}
-            className="px-4 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] disabled:opacity-50 text-[var(--color-text)] rounded-lg transition-colors"
+            className="px-3 py-1.5 text-sm bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] disabled:opacity-50 text-[var(--color-text)] rounded-lg transition-colors"
           >
             Skip
           </button>

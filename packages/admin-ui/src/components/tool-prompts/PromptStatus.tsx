@@ -23,9 +23,9 @@ interface PromptSuccessProps {
  */
 export function PromptSuccess({ message, children }: PromptSuccessProps) {
   return (
-    <div className="flex items-center gap-2 px-4 py-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+    <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg text-sm">
       {children}
-      <svg className="w-5 h-5 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
       </svg>
       <span className="text-green-300">{message}</span>
@@ -79,8 +79,8 @@ interface PromptProcessingProps {
 export function PromptProcessing({ message }: PromptProcessingProps) {
   return (
     <div className="flex items-center gap-2">
-      <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-      <span className="text-[var(--color-text-secondary)]">{message}</span>
+      <div className="w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+      <span className="text-sm text-[var(--color-text-secondary)]">{message}</span>
     </div>
   );
 }

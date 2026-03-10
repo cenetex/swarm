@@ -88,8 +88,8 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
   if (submitted) {
     const modelName = models.find(m => m.id === selectedModel)?.name || selectedModel;
     return (
-      <div className="flex items-center gap-2 px-4 py-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-        <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-lg text-sm">
+        <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
         <span className="text-green-300">
@@ -100,20 +100,20 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
   }
 
   return (
-    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
-      <div className="flex items-start gap-3">
-        <div className="p-2 bg-brand-500/20 rounded-lg">
-          <svg className="w-5 h-5 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="p-1.5 bg-brand-500/20 rounded-md">
+          <svg className="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         </div>
-        <div className="flex-1">
-          <h4 className="font-medium text-[var(--color-text)]">Select LLM Model</h4>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-medium text-[var(--color-text)]">Select LLM Model</h4>
           {args.instructions && (
-            <p className="text-sm text-[var(--color-text-secondary)] mt-1">{args.instructions}</p>
+            <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{args.instructions}</p>
           )}
           {currentModel && (
-            <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
+            <p className="text-[11px] text-[var(--color-text-tertiary)] mt-0.5">
               Current: <span className="text-brand-400">{currentModel}</span>
             </p>
           )}
@@ -130,7 +130,7 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search models (e.g., claude, gpt-4, llama)..."
-          className="w-full pl-10 pr-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+          className="w-full pl-9 pr-3 py-1.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
           disabled={disabled || isSubmitting}
         />
       </div>
@@ -210,7 +210,7 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
         <button
           onClick={handleSubmit}
           disabled={!selectedModel || selectedModel === currentModel || disabled || isSubmitting}
-          className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
+          className="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
         >
           {isSubmitting ? 'Changing...' : 'Change Model'}
         </button>

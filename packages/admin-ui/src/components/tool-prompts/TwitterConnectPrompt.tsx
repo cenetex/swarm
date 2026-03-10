@@ -51,49 +51,43 @@ export function TwitterConnectPrompt({ toolCall, onSubmit: _onSubmit, disabled }
   // Show waiting state while user is in OAuth popup
   if (started) {
     return (
-      <div className="bg-[var(--color-bg-secondary)] border border-yellow-500/30 rounded-lg p-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-yellow-500/20 rounded-lg">
-            <svg className="w-5 h-5 text-yellow-400 animate-pulse" fill="currentColor" viewBox="0 0 24 24">
+      <div className="bg-[var(--color-bg-secondary)] border border-yellow-500/30 rounded-lg p-3">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-yellow-500/20 rounded-md">
+            <svg className="w-4 h-4 text-yellow-400 animate-pulse" fill="currentColor" viewBox="0 0 24 24">
               <path d="M13.95 10.85L20.54 3h-1.56l-5.74 6.84L8.5 3H3.1l6.92 10.09L3.1 21h1.56l5.97-7.11L15.5 21h5.4l-6.95-10.15zm-2.45 2.92l-.7-1.03L5.8 4.5h2.46l4.06 5.98.7 1.02 5.24 7.71h-2.46l-4.3-6.44z" />
             </svg>
           </div>
-          <div className="flex-1">
-            <h4 className="font-medium text-[var(--color-text)]">Waiting for Authorization</h4>
-            <p className="text-sm text-[var(--color-text-secondary)] mt-1">
+          <div className="flex-1 min-w-0">
+            <h4 className="text-sm font-medium text-[var(--color-text)]">Waiting for Authorization</h4>
+            <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
               Complete the X/Twitter authorization in the popup window.
             </p>
           </div>
-          <div className="w-5 h-5 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+          <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
-      <div className="flex items-start gap-3">
-        <div className="p-2 bg-blue-500/20 rounded-lg">
-          <svg className="w-5 h-5 text-blue-300" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="p-1.5 bg-blue-500/20 rounded-md">
+          <svg className="w-4 h-4 text-blue-300" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M13.95 10.85L20.54 3h-1.56l-5.74 6.84L8.5 3H3.1l6.92 10.09L3.1 21h1.56l5.97-7.11L15.5 21h5.4l-6.95-10.15zm-2.45 2.92l-.7-1.03L5.8 4.5h2.46l4.06 5.98.7 1.02 5.24 7.71h-2.46l-4.3-6.44z" />
           </svg>
         </div>
-        <div className="flex-1">
-          <h4 className="font-medium text-[var(--color-text)]">Connect X/Twitter</h4>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-1">
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-medium text-[var(--color-text)]">Connect X/Twitter</h4>
+          <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
             {args.message || 'Authorize this avatar to post and manage tweets.'}
           </p>
         </div>
-      </div>
-
-      <div className="flex items-center justify-between pt-2 border-t border-[var(--color-border)]">
-        <span className="text-xs text-[var(--color-text-muted)]">
-          Opens a new window for OAuth authorization (disconnects any existing link first).
-        </span>
         <button
           onClick={handleConnect}
           disabled={!activeAgent?.id || disabled || isSubmitting}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
+          className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors flex-shrink-0"
         >
           {isSubmitting ? 'Opening...' : 'Connect X'}
         </button>

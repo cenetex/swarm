@@ -27,7 +27,7 @@ export function PropertyAuthPrompt({ toolCall, onSubmit, disabled }: ToolPromptP
 
   if (responded) {
     return (
-      <div className={`flex items-center gap-2 px-4 py-3 rounded-lg ${
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
         responded === 'granted'
           ? 'bg-green-500/10 border border-green-500/30'
           : 'bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]'
@@ -40,20 +40,20 @@ export function PropertyAuthPrompt({ toolCall, onSubmit, disabled }: ToolPromptP
   }
 
   return (
-    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 space-y-3">
-      <div className="flex items-start gap-3">
-        <div className="p-2 bg-amber-500/20 rounded-lg">
-          <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="p-1.5 bg-amber-500/20 rounded-md">
+          <svg className="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
           </svg>
         </div>
-        <div className="flex-1">
-          <h4 className="font-medium text-amber-100">Property Research Authorization</h4>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-medium text-amber-100">Property Research Authorization</h4>
           {reason && (
-            <p className="text-sm text-amber-200/80 mt-1">{reason}</p>
+            <p className="text-xs text-amber-200/80 mt-0.5">{reason}</p>
           )}
-          <p className="text-xs text-amber-300/60 mt-2">
-            This will allow the avatar to search for property listings, comparables, and neighborhood data.
+          <p className="text-[11px] text-amber-300/60 mt-1">
+            Allows the avatar to search property listings, comparables, and neighborhood data.
           </p>
         </div>
       </div>
@@ -62,14 +62,14 @@ export function PropertyAuthPrompt({ toolCall, onSubmit, disabled }: ToolPromptP
         <button
           onClick={() => handleResponse(false)}
           disabled={disabled || isSubmitting}
-          className="flex-1 px-4 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] disabled:opacity-50 text-[var(--color-text)] rounded-lg transition-colors"
+          className="flex-1 px-3 py-1.5 text-sm bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] disabled:opacity-50 text-[var(--color-text)] rounded-lg transition-colors"
         >
           Deny
         </button>
         <button
           onClick={() => handleResponse(true)}
           disabled={disabled || isSubmitting}
-          className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+          className="flex-1 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors"
         >
           {isSubmitting ? 'Enabling...' : 'Grant Access'}
         </button>

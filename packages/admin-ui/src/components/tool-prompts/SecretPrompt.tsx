@@ -40,22 +40,22 @@ export function SecretPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
   }
 
   return (
-    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
-      <div className="flex items-start gap-3">
-        <div className="p-2 bg-yellow-500/20 rounded-lg">
-          <svg className="w-5 h-5 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="p-1.5 bg-yellow-500/20 rounded-md">
+          <svg className="w-4 h-4 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
           </svg>
         </div>
-        <div className="flex-1">
-          <h4 className="font-medium text-[var(--color-text)]">
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-medium text-[var(--color-text)]">
             {secretName}
           </h4>
           {description && (
-            <p className="text-sm text-[var(--color-text-secondary)] mt-1">{description}</p>
+            <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{description}</p>
           )}
-          <p className="text-xs text-[var(--color-text-muted)] mt-2">
-            🔒 This value is encrypted and never sent to the AI
+          <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+            🔒 Encrypted — never sent to the AI
           </p>
         </div>
       </div>
@@ -68,14 +68,14 @@ export function SecretPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Enter secret value..."
-          className="flex-1 px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+          className="flex-1 px-2.5 py-1.5 text-sm bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
           disabled={disabled || phase === 'processing'}
           onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
         />
         <button
           onClick={handleSubmit}
           disabled={!value.trim() || disabled || phase === 'processing'}
-          className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+          className="px-3 py-1.5 text-sm bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors"
         >
           {phase === 'processing' ? 'Saving...' : 'Save'}
         </button>

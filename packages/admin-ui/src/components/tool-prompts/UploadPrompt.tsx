@@ -103,19 +103,19 @@ export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
   }
 
   return (
-    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
-      <div className="flex items-start gap-3">
-        <div className="p-2 bg-brand-500/20 rounded-lg">
-          <svg className="w-5 h-5 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="p-1.5 bg-brand-500/20 rounded-md">
+          <svg className="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         </div>
-        <div className="flex-1">
-          <h4 className="font-medium text-[var(--color-text)]">
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-medium text-[var(--color-text)]">
             Upload {args.purpose === 'character_reference' ? 'Character Reference' : args.category ? `${args.category} ` : ''}Image
           </h4>
           {args.instructions && (
-            <p className="text-sm text-[var(--color-text-secondary)] mt-1">{args.instructions}</p>
+            <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{args.instructions}</p>
           )}
         </div>
       </div>
@@ -135,7 +135,7 @@ export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         className={`
-          border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
+          border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors
           ${dragOver
             ? 'border-brand-500 bg-brand-500/10'
             : 'border-[var(--color-border)] hover:border-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)]/50'
@@ -145,8 +145,8 @@ export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
       >
         {isUploading ? (
           <div className="flex flex-col items-center gap-2">
-            <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-[var(--color-text-secondary)]">Uploading...</span>
+            <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm text-[var(--color-text-secondary)]">Uploading...</span>
           </div>
         ) : preview ? (
           <div className="flex flex-col items-center gap-2">
@@ -155,11 +155,11 @@ export function UploadPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) 
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2">
-            <svg className="w-10 h-10 text-[var(--color-text-tertiary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-8 h-8 text-[var(--color-text-tertiary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
-            <span className="text-[var(--color-text-secondary)]">Drop an image here or click to browse</span>
-            <span className="text-[var(--color-text-muted)] text-sm">PNG, JPG, WebP supported</span>
+            <span className="text-sm text-[var(--color-text-secondary)]">Drop an image here or click to browse</span>
+            <span className="text-xs text-[var(--color-text-muted)]">PNG, JPG, WebP supported</span>
           </div>
         )}
       </div>
