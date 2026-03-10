@@ -17,6 +17,7 @@ import { PromptPreviewPanel } from './PromptPreviewPanel';
 import { PlanUsagePanel } from './PlanUsagePanel';
 import { ActivationChecklist } from './ActivationChecklist';
 import { getErrorRecovery } from '../utils/error-recovery';
+import { WelcomeMessage } from './WelcomeMessage';
 
 // Track active polling jobs to avoid duplicate polling
 const activePollers = new Map<string, { controller: AbortController; avatarId: string }>();
@@ -1267,13 +1268,21 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               onSuggest={handleSendMessage}
             />
           )}
-          {messages.map((message) => (
-            <ChatMessageComponent
-              key={message.id}
-              message={message}
-              onToolSubmit={handleToolSubmit}
+          {/* Show welcome message with action chips when the only message is the seeded welcome */}
+          {messages.length === 1 && messages[0].id === 'welcome' && activeAvatar ? (
+            <WelcomeMessage
+              avatarName={activeAvatar.name}
+              onAction={handleSendMessage}
             />
-          ))}
+          ) : (
+            messages.map((message) => (
+              <ChatMessageComponent
+                key={message.id}
+                message={message}
+                onToolSubmit={handleToolSubmit}
+              />
+            ))
+          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
