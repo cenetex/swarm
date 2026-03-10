@@ -8,8 +8,8 @@
     "dev": "vitepress dev",
     "build": "vitepress build",
     "preview": "vitepress preview",
-    "deploy:staging": "pnpm run build && aws s3 sync .vitepress/dist/ s3://swarm-docs-staging --delete",
-    "deploy:prod": "pnpm run build && aws s3 sync .vitepress/dist/ s3://swarm-docs-prod --delete"
+    "deploy:staging": "pnpm run build && BUCKET=$(aws cloudformation describe-stacks --stack-name SwarmDocsSite-staging-split --query 'Stacks[0].Outputs[?OutputKey==`DocsSiteBucketName`].OutputValue' --output text) && DIST_ID=$(aws cloudformation describe-stacks --stack-name SwarmDocsSite-staging-split --query 'Stacks[0].Outputs[?OutputKey==`DocsSiteDistributionId`].OutputValue' --output text) && aws s3 sync .vitepress/dist/ s3://$BUCKET --delete && aws cloudfront create-invalidation --distribution-id $DIST_ID --paths '/*'",
+    "deploy:prod": "pnpm run build && BUCKET=$(aws cloudformation describe-stacks --stack-name SwarmDocsSite-prod --profile prod --query 'Stacks[0].Outputs[?OutputKey==`DocsSiteBucketName`].OutputValue' --output text) && DIST_ID=$(aws cloudformation describe-stacks --stack-name SwarmDocsSite-prod --profile prod --query 'Stacks[0].Outputs[?OutputKey==`DocsSiteDistributionId`].OutputValue' --output text) && aws s3 sync .vitepress/dist/ s3://$BUCKET --delete --profile prod && aws cloudfront create-invalidation --distribution-id $DIST_ID --paths '/*' --profile prod"
   },
   "devDependencies": {
     "vitepress": "^1.6.3"

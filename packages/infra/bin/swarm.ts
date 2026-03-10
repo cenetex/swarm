@@ -15,6 +15,7 @@ import { SharedInfraStack } from '../src/stacks/shared-infra-stack.js';
 import { AdminApiStack } from '../src/stacks/admin-api-stack.js';
 import { AdminUiStack } from '../src/stacks/admin-ui-stack.js';
 import { ProfilePageStack } from '../src/stacks/profile-page-stack.js';
+import { DocsSiteStack } from '../src/stacks/docs-site-stack.js';
 
 // ESM equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -105,6 +106,9 @@ const mediaCdnUrl = getContextValue<string>('mediaCdnUrl', envConfig);
 const profileDomain = getContextValue<string>('profileDomain', envConfig);
 const profileCertificateArn = getContextValue<string>('profileCertificateArn', envConfig);
 const profileApiUrl = getContextValue<string>('profileApiUrl', envConfig);
+const docsDomain = getContextValue<string>('docsDomain', envConfig)
+  || computeStackDomain({ environment: rawEnvironment, stackSubdomain: 'docs', baseDomain: domainBase });
+const docsCertificateArn = getContextValue<string>('docsCertificateArn', envConfig);
 const alarmNotificationEmail = getContextValue<string>('alarmNotificationEmail', envConfig) || process.env.ALARM_EMAIL || adminEmails;
 const monthlyBudgetUsd = getContextValue<number>('monthlyBudgetUsd', envConfig);
 // WAF adds ~$3.92/week per Web ACL. Disable for staging via cdk.context.json to reduce idle cost.
@@ -254,6 +258,22 @@ if (profileDomain || app.node.tryGetContext('deployProfilePage')) {
     apiUrl: profileApiUrl,
     env: stackEnv,
     description: `Swarm Profile Page (${environment})`,
+  });
+}
+
+// 5. Docs Site Stack (independent, changes with docs updates)
+// Hosts API documentation at docs.rati.chat
+if (docsDomain || app.node.tryGetContext('deployDocsSite')) {
+  new DocsSiteStack(app, `SwarmDocsSite-${environment}${nameSuffix}`, {
+    environment,
+    nameSuffix: nonSharedResourceSuffix,
+    docsDomain,
+    docsCertificateArn: docsCertificateArn || adminCertificateArn,
+    useExistingBuckets,
+    skipDomainAliases,
+    enableWaf,
+    env: stackEnv,
+    description: `Swarm Docs Site (${environment})`,
   });
 }
 
