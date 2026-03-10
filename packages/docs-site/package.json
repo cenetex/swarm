@@ -1,0 +1,17 @@
+{
+  "name": "@swarm/docs-site",
+  "version": "0.0.1",
+  "description": "API documentation site for docs.rati.chat",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview",
+    "deploy:staging": "pnpm run build && aws s3 sync .vitepress/dist/ s3://swarm-docs-staging --delete",
+    "deploy:prod": "pnpm run build && aws s3 sync .vitepress/dist/ s3://swarm-docs-prod --delete"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.3"
+  }
+}
