@@ -24,6 +24,9 @@ import { CopyableAddress } from '../CopyableAddress';
 
 type LinkStatus = 'idle' | 'connecting' | 'challenging' | 'signing' | 'verifying' | 'success' | 'error';
 
+/** Timeout (ms) for wallet connection approval. */
+const CONNECT_TIMEOUT_MS = 30_000;
+
 interface DetectedWallet {
   name: string;
   icon: string;
@@ -83,16 +86,17 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
   const [status, setStatus] = useState<LinkStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [linkedAddress, setLinkedAddress] = useState<string | null>(null);
-
-  // Track the directly connected wallet provider.
-  const connectedProviderRef = useRef<PhantomProvider | null>(null);
+  // Counter to re-detect wallets on retry (extensions may load late).
+  const [detectAttempt, setDetectAttempt] = useState(0);
 
   // Ref to track challenge expiry timer so we can clear it.
   const challengeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const args = toolCall.arguments as { reason?: string };
 
-  const detectedWallets = useMemo(() => detectWallets(), []);
+  // Re-detect wallets when detectAttempt changes (e.g. on retry after error).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const detectedWallets = useMemo(() => detectWallets(), [detectAttempt]);
 
   const linkedWallets = useMemo(
     () => account?.identities
@@ -102,15 +106,30 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
   );
 
   const handleLinkWithProvider = useCallback(async (provider: PhantomProvider) => {
+    // Guard against double-clicks — ignore if already processing.
+    if (['connecting', 'challenging', 'signing', 'verifying'].includes(status)) return;
+
     setErrorMessage(null);
 
     try {
       // Step 0: Connect to wallet directly (bypasses adapter modal)
       setStatus('connecting');
-      connectedProviderRef.current = provider;
 
       if (!provider.isConnected && provider.connect) {
-        await provider.connect();
+        // Race the connection against a timeout so the UI doesn't get stuck
+        // if the user never approves/rejects the popup.
+        const connectResult = await Promise.race([
+          provider.connect(),
+          new Promise<'timeout'>((resolve) =>
+            setTimeout(() => resolve('timeout'), CONNECT_TIMEOUT_MS),
+          ),
+        ]);
+        if (connectResult === 'timeout') {
+          setStatus('idle');
+          setErrorMessage('Wallet connection timed out. Please try again.');
+          setDetectAttempt((n) => n + 1);
+          return;
+        }
       }
 
       const walletAddress = provider.publicKey?.toString();
@@ -213,8 +232,10 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
 
       setStatus('error');
       setErrorMessage(humanizeWalletSignatureError(err));
+      // Re-detect wallets on error so late-loading extensions get picked up.
+      setDetectAttempt((n) => n + 1);
     }
-  }, [linkedWallets, refreshAccount, onSubmit, toolCall.id]);
+  }, [status, linkedWallets, refreshAccount, onSubmit, toolCall.id]);
 
   // ------------------------------------------------------------------
   // Cleanup challenge timer on unmount.
