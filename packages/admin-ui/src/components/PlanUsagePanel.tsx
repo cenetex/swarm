@@ -65,11 +65,11 @@ function formatLimitValue(value: unknown): string {
 function planBadgeColor(plan: string): string {
   switch (plan) {
     case 'enterprise':
-      return 'bg-purple-900/30 text-purple-300 border-purple-500/30';
+      return 'bg-purple-500/15 text-purple-600 border-purple-500/30';
     case 'pro':
-      return 'bg-blue-900/30 text-blue-300 border-blue-500/30';
+      return 'bg-blue-500/15 text-blue-600 border-blue-500/30';
     default:
-      return 'bg-gray-800/30 text-gray-300 border-gray-500/30';
+      return 'bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border)]';
   }
 }
 
@@ -488,11 +488,11 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                     <button
                       onClick={() => handleUpgrade('pro')}
                       disabled={upgrading}
-                      className="px-3 py-3 rounded-lg bg-blue-900/30 border border-blue-500/30 hover:border-blue-400/50 text-left transition-colors disabled:opacity-50"
+                      className="px-3 py-3 rounded-lg bg-blue-500/15 border border-blue-500/30 hover:border-blue-500/50 text-left transition-colors disabled:opacity-50"
                     >
-                      <div className="text-sm font-medium text-blue-300">Pro</div>
-                      <div className="text-lg font-bold text-[var(--color-text)]">$9<span className="text-xs font-normal text-[var(--color-text-muted)]">/mo</span></div>
-                      <div className="text-[10px] text-[var(--color-text-muted)] mt-1 space-y-0.5">
+                      <div className="text-sm font-semibold text-blue-600">Pro</div>
+                      <div className="text-lg font-bold text-[var(--color-text)]">$9<span className="text-xs font-normal text-[var(--color-text-secondary)]">/mo</span></div>
+                      <div className="text-[10px] text-[var(--color-text-secondary)] mt-1 space-y-0.5">
                         <div>500 msgs/day</div>
                         <div>50 media credits</div>
                         <div>30-day memory</div>
@@ -502,11 +502,11 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                     <button
                       onClick={() => handleUpgrade('enterprise')}
                       disabled={upgrading}
-                      className="px-3 py-3 rounded-lg bg-purple-900/30 border border-purple-500/30 hover:border-purple-400/50 text-left transition-colors disabled:opacity-50"
+                      className="px-3 py-3 rounded-lg bg-purple-500/15 border border-purple-500/30 hover:border-purple-500/50 text-left transition-colors disabled:opacity-50"
                     >
-                      <div className="text-sm font-medium text-purple-300">Enterprise</div>
-                      <div className="text-lg font-bold text-[var(--color-text)]">$29<span className="text-xs font-normal text-[var(--color-text-muted)]">/mo</span></div>
-                      <div className="text-[10px] text-[var(--color-text-muted)] mt-1 space-y-0.5">
+                      <div className="text-sm font-semibold text-purple-600">Enterprise</div>
+                      <div className="text-lg font-bold text-[var(--color-text)]">$29<span className="text-xs font-normal text-[var(--color-text-secondary)]">/mo</span></div>
+                      <div className="text-[10px] text-[var(--color-text-secondary)] mt-1 space-y-0.5">
                         <div>Unlimited msgs</div>
                         <div>Unlimited media</div>
                         <div>365-day memory</div>
@@ -528,7 +528,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
               <button
                 onClick={() => handleUpgrade('enterprise')}
                 disabled={upgrading}
-                className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-purple-900/30 border border-purple-500/30 hover:border-purple-400/50 text-purple-300 font-medium transition-colors disabled:opacity-50"
+                className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-purple-500/15 border border-purple-500/30 hover:border-purple-500/50 text-purple-600 font-medium transition-colors disabled:opacity-50"
               >
                 {upgrading ? 'Loading...' : 'Upgrade to Enterprise'}
               </button>
