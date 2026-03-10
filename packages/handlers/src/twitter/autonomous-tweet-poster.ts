@@ -429,11 +429,24 @@ export const handler: ScheduledHandler = async (_event, context: Context) => {
     try {
       logger.setContext({ avatarId, requestId: context.awsRequestId });
 
-      const avatarConfig = await stateService.getAvatarConfig(avatarId);
-      if (!avatarConfig) {
+      // Check avatar status - only active avatars should post
+      const configWithStatus = await stateService.getAvatarConfigWithStatus(avatarId);
+      if (!configWithStatus) {
         logger.debug('Avatar config not found', { avatarId });
         continue;
       }
+
+      if (configWithStatus.status !== 'active') {
+        logger.info('Avatar not active, skipping autonomous posting', {
+          event: 'avatar_inactive',
+          avatarId,
+          status: configWithStatus.status,
+        });
+        avatarsSkipped++;
+        continue;
+      }
+
+      const avatarConfig = configWithStatus.config;
 
       // Quick check for autonomous posts feature before loading secrets
       const twitterConfig = avatarConfig.platforms?.twitter;

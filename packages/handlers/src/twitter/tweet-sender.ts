@@ -164,13 +164,25 @@ async function processMessage(message: PostQueueMessage): Promise<{ success: boo
     return { success: false, error: `Invalid post status: ${post.status}` };
   }
 
-  // Get avatar config and secrets
-  const avatarConfig = await stateService.getAvatarConfig(avatarId);
-  if (!avatarConfig) {
+  // Get avatar config and check status - paused avatars must not post
+  const configWithStatus = await stateService.getAvatarConfigWithStatus(avatarId);
+  if (!configWithStatus) {
     logger.error('Avatar config not found', undefined, { avatarId });
     await contentStoreService.markFailed(avatarId, postId, 'Avatar config not found');
     return { success: false, error: 'Avatar config not found' };
   }
+
+  if (configWithStatus.status !== 'active') {
+    logger.info('Avatar not active, skipping tweet send', {
+      event: 'avatar_inactive',
+      avatarId,
+      postId,
+      status: configWithStatus.status,
+    });
+    return { success: false, error: `Avatar is ${configWithStatus.status}` };
+  }
+
+  const avatarConfig = configWithStatus.config;
 
   const secrets = await loadAvatarSecrets(secretsService, avatarId, SECRET_PREFIX);
 
