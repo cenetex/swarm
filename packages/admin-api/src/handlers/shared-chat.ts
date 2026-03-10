@@ -201,6 +201,8 @@ export interface ChannelAvatarInfo {
   name: string;
   description?: string;
   profileImageUrl?: string;
+  persona?: string;
+  connectedPlatforms: string[];
 }
 
 // Request schemas
@@ -250,11 +252,24 @@ async function getChannelAvatarInfo(channelId: string): Promise<ChannelAvatarInf
   const avatar = await avatarService.getAvatar(channelId);
   if (!avatar) return null;
 
+  // Derive connected platforms from config (only expose names, not secrets)
+  const connectedPlatforms: string[] = [];
+  const platforms = avatar.platforms as Record<string, unknown> | undefined;
+  if (platforms) {
+    for (const key of ['telegram', 'discord', 'twitter'] as const) {
+      if (platforms[key] && typeof platforms[key] === 'object') {
+        connectedPlatforms.push(key);
+      }
+    }
+  }
+
   return {
     avatarId: avatar.avatarId,
     name: avatar.name,
     description: avatar.description,
     profileImageUrl: avatar.profileImage?.url,
+    persona: avatar.persona,
+    connectedPlatforms,
   };
 }
 

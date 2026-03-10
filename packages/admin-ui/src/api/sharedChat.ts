@@ -19,6 +19,7 @@ export interface ChannelAvatarInfo {
   description?: string;
   profileImageUrl?: string;
   persona?: string;
+  connectedPlatforms?: string[];
 }
 
 export async function getSharedChatMessages(channelId: string): Promise<{
