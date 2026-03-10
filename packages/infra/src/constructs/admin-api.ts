@@ -2159,6 +2159,56 @@ export class AdminApiConstruct extends Construct {
       description: 'Daily memory consolidation for all avatars',
     });
 
+    // Metadata Evolution Worker: scheduled monthly to evolve Ascension NFT metadata
+    const metadataEvolutionWorker = new nodejs.NodejsFunction(this, 'MetadataEvolutionHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/metadata-evolution.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.minutes(10),
+      memorySize: 512,
+      layers: dependencyLayer ? [dependencyLayer] : undefined,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        ARWEAVE_NETWORK: environment === 'production' ? 'mainnet' : 'devnet',
+        ARWEAVE_WALLET_SECRET: `${props.secretPrefix || 'swarm'}/arweave-wallet`,
+        EVOLUTION_COOLDOWN_DAYS: '7',
+        NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+      },
+      logRetention,
+      tracing: lambda.Tracing.ACTIVE,
+    });
+
+    this.table.grantReadWriteData(metadataEvolutionWorker);
+
+    // Grant Secrets Manager access for the Arweave wallet keypair
+    metadataEvolutionWorker.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['secretsmanager:GetSecretValue'],
+      resources: [`arn:aws:secretsmanager:*:*:secret:${props.secretPrefix || 'swarm'}/arweave-wallet*`],
+    }));
+
+    // Schedule metadata evolution: 1st of every month at 4 AM UTC
+    new events.Rule(this, 'MetadataEvolutionSchedule', {
+      schedule: events.Schedule.cron({
+        minute: '0',
+        hour: '4',
+        day: '1',
+        month: '*',
+      }),
+      targets: [new targets.LambdaFunction(metadataEvolutionWorker, {
+        deadLetterQueue: this.consolidationDlq,
+        retryAttempts: 2,
+        maxEventAge: cdk.Duration.hours(2),
+      })],
+      description: 'Monthly Ascension NFT metadata evolution',
+    });
+
     const telegramIntegration = new integrations.HttpLambdaIntegration(
       'TelegramWebhookIntegration',
       telegramWebhookHandler
