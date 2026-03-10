@@ -2,40 +2,81 @@
  * Wallet Link Prompt - Inline chat prompt for linking an additional Solana wallet.
  *
  * Flow:
- * 1. User clicks "Connect & Link Wallet"
- * 2. Wallet adapter opens to select/connect a wallet
+ * 1. User clicks a wallet button (e.g. "Phantom")
+ * 2. The wallet extension opens for approval
  * 3. A challenge is requested from the backend
  * 4. The user signs the challenge message with the connected wallet
  * 5. The signed message is sent to the backend for verification
  * 6. On success the account is refreshed so the new wallet appears in identities
  *
- * NOTE: This component keeps its own multi-step state machine (LinkStatus)
- * rather than adopting useToolPromptState, because the wallet-linking flow
- * has intermediate steps (connecting, challenging, signing, verifying) that
- * don't map to the simple idle/processing/success/error lifecycle.
+ * NOTE: This bypasses the @solana/wallet-adapter modal and connects to wallet
+ * extensions directly. The adapter modal conflicts with Privy's wallet standard
+ * connectors, causing click handlers to silently fail (issue #948).
  */
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import type { ToolPromptProps } from './types';
 import { API_BASE } from './types';
 import { PromptSuccess, PromptError } from './PromptStatus';
-import { signWalletLinkMessage } from '../../auth/wallet-linking';
+import { signWalletLinkMessage, type PhantomProvider } from '../../auth/wallet-linking';
 import { humanizeWalletSignatureError } from '../../auth/wallet-errors';
 import { useAuthStore } from '../../store/auth';
 import { CopyableAddress } from '../CopyableAddress';
 
 type LinkStatus = 'idle' | 'connecting' | 'challenging' | 'signing' | 'verifying' | 'success' | 'error';
 
-/** States where a wallet disconnect should abort the flow. */
-const ACTIVE_STATES: LinkStatus[] = ['connecting', 'challenging', 'signing'];
+interface DetectedWallet {
+  name: string;
+  icon: string;
+  provider: PhantomProvider;
+}
 
-/** Timeout (ms) for wallet connection. */
-const CONNECT_TIMEOUT_MS = 30_000;
+/** Detect Solana wallet extensions injected into the browser. */
+function detectWallets(): DetectedWallet[] {
+  if (typeof window === 'undefined') return [];
+  const wallets: DetectedWallet[] = [];
+
+  const win = window as unknown as Record<string, unknown>;
+
+  // Phantom
+  const phantom = win.phantom as
+    | { solana?: PhantomProvider & { isPhantom?: boolean } }
+    | undefined;
+  if (phantom?.solana?.isPhantom) {
+    wallets.push({
+      name: 'Phantom',
+      icon: 'https://phantom.app/img/phantom-icon-purple-rounded.png',
+      provider: phantom.solana,
+    });
+  }
+
+  // Solflare
+  const solflare = win.solflare as
+    | (PhantomProvider & { isSolflare?: boolean })
+    | undefined;
+  if (solflare?.isSolflare) {
+    wallets.push({
+      name: 'Solflare',
+      icon: 'https://solflare.com/favicon.ico',
+      provider: solflare,
+    });
+  }
+
+  // Backpack
+  const backpack = win.backpack as
+    | (PhantomProvider & { isBackpack?: boolean })
+    | undefined;
+  if (backpack?.isBackpack) {
+    wallets.push({
+      name: 'Backpack',
+      icon: 'https://backpack.app/favicon.ico',
+      provider: backpack,
+    });
+  }
+
+  return wallets;
+}
 
 export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
-  const { publicKey, signMessage, connected, disconnect } = useWallet();
-  const { setVisible: openWalletModal } = useWalletModal();
   const refreshAccount = useAuthStore((s) => s.refreshAccount);
   const account = useAuthStore((s) => s.account);
 
@@ -43,10 +84,15 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [linkedAddress, setLinkedAddress] = useState<string | null>(null);
 
+  // Track the directly connected wallet provider.
+  const connectedProviderRef = useRef<PhantomProvider | null>(null);
+
   // Ref to track challenge expiry timer so we can clear it.
   const challengeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const args = toolCall.arguments as { reason?: string };
+
+  const detectedWallets = useMemo(() => detectWallets(), []);
 
   const linkedWallets = useMemo(
     () => account?.identities
@@ -55,25 +101,30 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
     [account?.identities],
   );
 
-  const handleLink = useCallback(async () => {
+  const handleLinkWithProvider = useCallback(async (provider: PhantomProvider) => {
     setErrorMessage(null);
 
-    // If no wallet is connected, open the modal
-    if (!connected || !publicKey) {
-      setStatus('connecting');
-      openWalletModal(true);
-      return;
-    }
-
-    const walletAddress = publicKey.toBase58();
-
-    // Check if this wallet is already linked
-    if (linkedWallets.includes(walletAddress)) {
-      setErrorMessage('This wallet is already linked to your account.');
-      return;
-    }
-
     try {
+      // Step 0: Connect to wallet directly (bypasses adapter modal)
+      setStatus('connecting');
+      connectedProviderRef.current = provider;
+
+      if (!provider.isConnected && provider.connect) {
+        await provider.connect();
+      }
+
+      const walletAddress = provider.publicKey?.toString();
+      if (!walletAddress) {
+        throw new Error('Wallet did not return a public key after connecting.');
+      }
+
+      // Check if this wallet is already linked
+      if (linkedWallets.includes(walletAddress)) {
+        setStatus('idle');
+        setErrorMessage('This wallet is already linked to your account.');
+        return;
+      }
+
       // Step 1: Request challenge
       setStatus('challenging');
       const challengeResponse = await fetch(`${API_BASE}/auth/link/wallet/challenge`, {
@@ -113,12 +164,7 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
 
       const { signatureBase58 } = await signWalletLinkMessage({
         message: messageBytes,
-        privySignMessage: signMessage
-          ? async (msg: Uint8Array) => {
-              const sig = await signMessage(msg);
-              return sig;
-            }
-          : undefined,
+        phantomProvider: provider,
       });
 
       // Clear challenge TTL timer — signing succeeded before expiry.
@@ -168,48 +214,7 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
       setStatus('error');
       setErrorMessage(humanizeWalletSignatureError(err));
     }
-  }, [connected, publicKey, signMessage, openWalletModal, linkedWallets, refreshAccount, onSubmit, toolCall.id]);
-
-  // ------------------------------------------------------------------
-  // Ref for handleLink to avoid circular dependency in useEffect deps.
-  // ------------------------------------------------------------------
-  const handleLinkRef = useRef(handleLink);
-  handleLinkRef.current = handleLink;
-
-  // ------------------------------------------------------------------
-  // 1. Timeout for "connecting" state — if the wallet hasn't connected
-  //    after 30 s, reset to idle with an error.
-  // ------------------------------------------------------------------
-  useEffect(() => {
-    if (status !== 'connecting') return;
-
-    const timer = setTimeout(() => {
-      setStatus('idle');
-      setErrorMessage('Wallet connection timed out. Please try again.');
-    }, CONNECT_TIMEOUT_MS);
-
-    return () => clearTimeout(timer);
-  }, [status]);
-
-  // ------------------------------------------------------------------
-  // 2. Auto-continue when wallet connects — eliminates the manual
-  //    "Continue with ..." step.
-  // ------------------------------------------------------------------
-  useEffect(() => {
-    if (status === 'connecting' && connected && publicKey) {
-      handleLinkRef.current();
-    }
-  }, [status, connected, publicKey]);
-
-  // ------------------------------------------------------------------
-  // 3. Detect wallet disconnect mid-flow — abort active operations.
-  // ------------------------------------------------------------------
-  useEffect(() => {
-    if (!connected && (ACTIVE_STATES as string[]).includes(status)) {
-      setStatus('error');
-      setErrorMessage('Wallet disconnected. Please reconnect and try again.');
-    }
-  }, [connected, status]);
+  }, [linkedWallets, refreshAccount, onSubmit, toolCall.id]);
 
   // ------------------------------------------------------------------
   // Cleanup challenge timer on unmount.
@@ -233,17 +238,14 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
     );
   }
 
-  const statusLabels: Record<LinkStatus, string> = {
-    idle: 'Connect & Link Wallet',
-    connecting: 'Waiting for wallet...',
-    challenging: 'Requesting challenge...',
-    signing: 'Sign in your wallet...',
-    verifying: 'Verifying signature...',
-    success: 'Done',
-    error: 'Try Again',
-  };
+  const isProcessing = ['connecting', 'challenging', 'signing', 'verifying'].includes(status);
 
-  const isProcessing = ['challenging', 'signing', 'verifying'].includes(status);
+  const statusLabel =
+    status === 'connecting' ? 'Connecting...' :
+    status === 'challenging' ? 'Requesting challenge...' :
+    status === 'signing' ? 'Sign in your wallet...' :
+    status === 'verifying' ? 'Verifying...' :
+    null;
 
   return (
     <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4 space-y-3">
@@ -289,47 +291,66 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
         </div>
       </div>
 
-      <div className="flex gap-2">
-        <button
-          onClick={handleLink}
-          disabled={disabled || isProcessing}
-          className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
-        >
-          {(isProcessing || status === 'connecting') && (
-            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-          )}
-          {statusLabels[status]}
-        </button>
+      {/* Processing indicator */}
+      {isProcessing && statusLabel && (
+        <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          {statusLabel}
+        </div>
+      )}
 
-        {/* Cancel button to dismiss without linking */}
-        {status !== 'success' && !isProcessing && status !== 'connecting' && (
+      {/* Wallet buttons — shown when idle or error (retry) */}
+      {!isProcessing && (
+        <div className="flex flex-col gap-2">
+          {detectedWallets.length > 0 ? (
+            <>
+              {detectedWallets.map((wallet) => (
+                <button
+                  key={wallet.name}
+                  onClick={() => handleLinkWithProvider(wallet.provider)}
+                  disabled={disabled}
+                  className="flex items-center gap-3 w-full px-4 py-2.5 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                >
+                  <img
+                    src={wallet.icon}
+                    alt={wallet.name}
+                    className="w-5 h-5 rounded"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  {status === 'error' ? `Retry with ${wallet.name}` : `Connect ${wallet.name}`}
+                </button>
+              ))}
+            </>
+          ) : (
+            <div className="text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-tertiary)] rounded-lg p-3">
+              No Solana wallet detected. Please install{' '}
+              <a
+                href="https://phantom.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-brand-400 hover:text-brand-300 underline"
+              >
+                Phantom
+              </a>{' '}
+              or another Solana wallet extension and reload this page.
+            </div>
+          )}
+
+          {/* Cancel button */}
           <button
             onClick={() => {
               onSubmit(toolCall.id, { linked: false, cancelled: true });
             }}
-            disabled={disabled || isProcessing}
+            disabled={disabled}
             className="px-4 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] disabled:opacity-50 text-[var(--color-text)] rounded-lg transition-colors"
           >
             Skip
           </button>
-        )}
-
-        {/* Disconnect current wallet if one is connected but user wants to switch */}
-        {connected && status === 'idle' && (
-          <button
-            onClick={() => {
-              disconnect().catch(() => {});
-            }}
-            className="px-4 py-2 text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
-            title="Disconnect current wallet to link a different one"
-          >
-            Switch
-          </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
