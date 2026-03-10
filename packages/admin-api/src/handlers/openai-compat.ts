@@ -142,14 +142,14 @@ interface ApiKeyValidationResult {
 /**
  * Hash an API key for secure storage/lookup
  */
-function hashApiKey(key: string): string {
+export function hashApiKey(key: string): string {
   return createHash('sha256').update(key).digest('hex');
 }
 
 /**
  * Extract API key from Authorization header
  */
-function extractApiKey(event: APIGatewayProxyEventV2): string | null {
+export function extractApiKey(event: APIGatewayProxyEventV2): string | null {
   const authHeader = event.headers['authorization'] || event.headers['Authorization'];
   if (!authHeader) return null;
 
@@ -281,7 +281,7 @@ export async function checkApiKeyRateLimit(
 /**
  * Validate API key and return the associated session
  */
-async function validateApiKey(apiKey: string): Promise<ApiKeyValidationResult> {
+export async function validateApiKey(apiKey: string): Promise<ApiKeyValidationResult> {
   const keyHash = hashApiKey(apiKey);
 
   try {
@@ -356,7 +356,7 @@ async function validateApiKey(apiKey: string): Promise<ApiKeyValidationResult> {
  * Parse the model parameter to extract avatar ID
  * Supports: "avatar:my-bot", "my-bot", etc.
  */
-function parseAvatarId(model: string): string {
+export function parseAvatarId(model: string): string {
   // Handle "avatar:{id}" format
   if (model.startsWith('avatar:')) {
     return model.slice(7);

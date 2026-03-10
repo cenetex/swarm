@@ -1691,6 +1691,63 @@ export class AdminApiConstruct extends Construct {
       resources: secretArnPatterns,
     }));
 
+    // ─── OpenAI-Compatible Streaming Handler (Function URL) ──────────
+    // True token-by-token SSE streaming via Lambda response streaming.
+    // Separate from the buffered API Gateway path above.
+    const openaiStreamHandler = new nodejs.NodejsFunction(this, 'OpenAIStreamHandler', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(__dirname, '../../../admin-api/src/handlers/openai-compat-stream.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(120),
+      memorySize: 1024,
+      reservedConcurrentExecutions: 5,
+      layers: dependencyLayer ? [dependencyLayer] : undefined,
+      environment: {
+        ADMIN_TABLE: this.table.tableName,
+        STATE_TABLE: stateTable?.tableName || '',
+        SECRET_PREFIX: secretPrefix,
+        LLM_TIMEOUT_MS: '90000',
+        LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
+        NODE_ENV: environment,
+        LOG_LEVEL: logLevel,
+      },
+      bundling: {
+        externalModules: ['@aws-sdk/*', 'sharp'],
+        minify: true,
+        sourceMap: true,
+      },
+      logRetention,
+      tracing: lambda.Tracing.ACTIVE,
+    });
+
+    // Grant same permissions as the buffered handler
+    this.table.grantReadWriteData(openaiStreamHandler);
+    llmApiKey.grantRead(openaiStreamHandler);
+    if (stateTable) {
+      stateTable.grantReadData(openaiStreamHandler);
+    }
+    openaiStreamHandler.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['secretsmanager:GetSecretValue'],
+      resources: secretArnPatterns,
+    }));
+
+    // Function URL with response streaming for true SSE
+    const streamFunctionUrl = openaiStreamHandler.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE, // Auth handled in handler via API key
+      invokeMode: lambda.InvokeMode.RESPONSE_STREAM,
+      cors: {
+        allowedOrigins: ['*'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+        allowedMethods: [lambda.HttpMethod.POST],
+      },
+    });
+
+    new cdk.CfnOutput(this, 'StreamingApiUrl', {
+      value: streamFunctionUrl.url,
+      description: 'OpenAI-compatible streaming API URL (Function URL)',
+    });
+
     const openaiCompatIntegration = new integrations.HttpLambdaIntegration(
       'OpenAICompatIntegration',
       this.openaiCompatHandler
