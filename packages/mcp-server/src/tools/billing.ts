@@ -80,7 +80,7 @@ export interface BillingServices {
 const PLAN_INFO: Record<string, { name: string; price: string; description: string }> = {
   free: { name: 'Free', price: '$0/mo', description: 'Basic access with limited features' },
   pro: { name: 'Pro', price: '$9/mo', description: 'Full platform access with memory and autonomy' },
-  enterprise: { name: 'Enterprise', price: '$29/mo', description: 'Unlimited usage with priority processing' },
+  enterprise: { name: 'Enterprise', price: '$29/mo', description: 'High-volume usage with priority processing' },
 };
 
 // ============================================================================

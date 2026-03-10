@@ -7,7 +7,7 @@
  * Unified Burst Pool Model:
  * Entitlement daily limits are checked first. Energy is only consumed when the
  * entitlement daily limit is exhausted, acting as a "burst" mechanism.
- * Enterprise avatars (limit = -1) never touch the energy pool.
+ * Higher-tier avatars with large limits rarely exhaust their entitlement pool.
  */
 import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { logger } from '@swarm/core';

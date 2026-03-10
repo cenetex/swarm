@@ -105,7 +105,7 @@ export function LandingPage() {
               name="Enterprise"
               price="$29"
               period="/mo"
-              features={['Unlimited msgs', 'Unlimited platforms', '365-day memory', 'Unlimited media']}
+              features={['5,000 msgs/day', '10 platforms', '365-day memory', '500 media/day']}
               color="text-purple-400"
             />
           </div>

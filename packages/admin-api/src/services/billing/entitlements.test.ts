@@ -42,12 +42,14 @@ describe('Entitlements', () => {
       expect(pro.dailyMediaCredits).toBe(50);
     });
 
-    it('should have enterprise tier with unlimited resources', () => {
+    it('should have enterprise tier with high-volume limits', () => {
       const enterprise = PLAN_DEFAULTS.enterprise;
       expect(enterprise.memoryEnabled).toBe(true);
       expect(enterprise.memoryRetentionDays).toBe(365);
-      expect(enterprise.dailyMessageLimit).toBe(-1); // Unlimited
-      expect(enterprise.dailyMediaCredits).toBe(-1); // Unlimited
+      expect(enterprise.dailyMessageLimit).toBe(5000);
+      expect(enterprise.dailyMediaCredits).toBe(500);
+      expect(enterprise.maxPlatforms).toBe(10);
+      expect(enterprise.maxChannels).toBe(50);
       expect(enterprise.priorityProcessing).toBe(true);
     });
   });

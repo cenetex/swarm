@@ -72,12 +72,12 @@ export const PLAN_DEFAULTS: Record<PlanType, PlanLimits> = {
     memoryEnabled: true,
     memoryRetentionDays: 365,
     maxMemoriesPerTier: 1000,
-    dailyMessageLimit: -1,  // Unlimited
-    dailyMediaCredits: -1,  // Unlimited
-    dailyVoiceMinutes: -1,  // Unlimited
+    dailyMessageLimit: 5000,
+    dailyMediaCredits: 500,
+    dailyVoiceMinutes: 120,
     maxToolCallsPerMessage: 10,
-    maxPlatforms: -1,       // Unlimited
-    maxChannels: -1,        // Unlimited
+    maxPlatforms: 10,
+    maxChannels: 50,
     autonomousPostsEnabled: true,
     customModelEnabled: true,
     priorityProcessing: true,

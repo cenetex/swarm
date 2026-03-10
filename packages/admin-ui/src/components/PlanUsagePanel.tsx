@@ -507,10 +507,10 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                       <div className="text-sm font-semibold text-purple-600">Enterprise</div>
                       <div className="text-lg font-bold text-[var(--color-text)]">$29<span className="text-xs font-normal text-[var(--color-text-secondary)]">/mo</span></div>
                       <div className="text-[10px] text-[var(--color-text-secondary)] mt-1 space-y-0.5">
-                        <div>Unlimited msgs</div>
-                        <div>Unlimited media</div>
+                        <div>5,000 msgs/day</div>
+                        <div>500 media credits</div>
                         <div>365-day memory</div>
-                        <div>Unlimited platforms</div>
+                        <div>10 platforms</div>
                       </div>
                     </button>
                   </div>
