@@ -45,7 +45,6 @@ import { createPlatformMCPServices } from '../services/platform-mcp-adapter.js';
 import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../services/sqs-send.js';
 import {
   checkAndIncrementMessageUsage,
-  checkToolCallLimit,
   isMemoryWriteAllowed,
 } from '../services/entitlement-enforcement.js';
 import { ensureReplicateKey } from '../utils/system-replicate-key.js';
@@ -54,11 +53,12 @@ import { createRuntimeBrainService } from '../services/brain.js';
 
 // Extracted modules
 import { callLLM, stripAvatarNamePrefix, type LLMMessage } from './llm-client.js';
-import { toolResultsToActions, maybeTranscribeAudio } from './tool-executor.js';
+import { maybeTranscribeAudio } from './tool-executor.js';
+import { executeToolLoop, buildResponseFromToolLoop } from './tool-loop.js';
 import { buildSystemPrompt, formatBrainMemoryContext } from './context-builder.js';
 import { extractMediaContext, buildUserMessageContent, type MediaExtractionConfig } from './media-extractor.js';
+import type { ChatWorkerMessage } from './chat-worker.js';
 
-const MAX_TOOL_ITERATIONS = 5;
 const REPLY_CONTEXT_MAX_LENGTH = 200;
 
 /**
@@ -452,8 +452,17 @@ function envelopeToContextMessage(envelope: SwarmEnvelope): ContextMessage {
   };
 }
 
+type GenerateResponseResult =
+  | { type: 'complete'; response: SwarmResponse }
+  | { type: 'needs_worker'; payload: ChatWorkerMessage };
+
 /**
- * Generate response with iterative tool execution
+ * Generate response with iterative tool execution.
+ *
+ * If the first LLM call returns tool_calls AND a chat worker queue is
+ * configured, returns a `needs_worker` result so the caller can delegate
+ * tool execution to the async chat-worker Lambda. Otherwise (no tools or
+ * no worker queue), runs the full tool loop inline.
  */
 async function generateResponse(
   envelope: SwarmEnvelope,
@@ -462,7 +471,8 @@ async function generateResponse(
   avatarRuntime: AvatarRuntime,
   channelHistory?: ContextMessage[],
   refreshTyping?: () => Promise<void>,
-): Promise<SwarmResponse> {
+  extraContext?: { traceId: string; correlationId: string; cooldownMinutes: number },
+): Promise<GenerateResponseResult> {
   await maybeTranscribeAudio(envelope, toolClient, toolContext, avatarRuntime.avatarConfig);
   const brainService = createRuntimeBrainService(stateService, avatarRuntime.avatarConfig.brain);
   const systemPrompt = await buildSystemPrompt(
@@ -643,65 +653,67 @@ async function generateResponse(
     });
   }
 
-  const allToolResults: Array<{ name: string; result: { success: boolean; data?: unknown; media?: { type: string; url: string } } }> = [];
-  let finalContent: string | undefined;
-  let cleanFinalContent: string | undefined; // Content without thinking tags
-  let iterations = 0;
-  let totalTokens = 0;
+  // ─── First LLM call ─────────────────────────────────────────────────────
+  if (refreshTyping) await refreshTyping();
 
-  while (iterations < MAX_TOOL_ITERATIONS) {
-    iterations++;
+  const llmResponse = await callLLM(messages, enabledTools, avatarRuntime.avatarConfig.llm, avatarRuntime.secrets);
 
-    // Refresh typing indicator before each LLM round-trip (expires after ~5s)
-    if (refreshTyping) await refreshTyping();
+  // ─── Fast path: no tool calls → return response directly ──────────────
+  if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
+    const finalContent = llmResponse.content;
+    let cleanFinalContent: string | undefined;
 
-    const llmResponse = await callLLM(messages, enabledTools, avatarRuntime.avatarConfig.llm, avatarRuntime.secrets);
-    totalTokens += 100; // Approximate, would need actual count from API
+    if (finalContent) {
+      const { cleanContent, thinkingBlocks, hasThinking } = extractThinking(finalContent);
+      cleanFinalContent = cleanContent;
 
-    if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
-      // No tool calls, we have a final response
-      finalContent = llmResponse.content;
-
-      // Extract thinking tags - save to memory, strip from output
-      if (finalContent) {
-        const { cleanContent, thinkingBlocks, hasThinking } = extractThinking(finalContent);
-        cleanFinalContent = cleanContent;
-
-        if (hasThinking && thinkingBlocks.length > 0) {
-          // Save thinking to avatar's memory (if memory is enabled)
-          const memoryAllowed = await isMemoryWriteAllowed(envelope.avatarId);
-          if (memoryAllowed) {
-            for (const thinking of thinkingBlocks) {
-              try {
-                await brainService.remember(
-                  envelope.avatarId,
-                  `[Internal thought in ${envelope.conversationId}]: ${thinking}`,
-                  'thinking'
-                );
-              } catch (err) {
-                logger.error('Failed to save thinking to memory', { error: err });
-              }
+      if (hasThinking && thinkingBlocks.length > 0) {
+        const memoryAllowed = await isMemoryWriteAllowed(envelope.avatarId);
+        if (memoryAllowed) {
+          for (const thinking of thinkingBlocks) {
+            try {
+              await brainService.remember(
+                envelope.avatarId,
+                `[Internal thought in ${envelope.conversationId}]: ${thinking}`,
+                'thinking'
+              );
+            } catch (err) {
+              logger.error('Failed to save thinking to memory', { error: err });
             }
-            logger.info('Saved thinking blocks to memory', {
-              count: thinkingBlocks.length,
-              avatarId: envelope.avatarId
-            });
-          } else {
-            logger.debug('Memory writes disabled, skipping thinking storage', {
-              avatarId: envelope.avatarId,
-              thinkingCount: thinkingBlocks.length,
-            });
           }
         }
-
-        // Strip avatar name prefix if the model accidentally added it
-        // (e.g., "[Chamuel 😇]: Hey!" becomes "Hey!")
-        cleanFinalContent = stripAvatarNamePrefix(cleanFinalContent, avatarRuntime.avatarConfig.name);
       }
-      break;
+
+      cleanFinalContent = stripAvatarNamePrefix(cleanFinalContent, avatarRuntime.avatarConfig.name);
     }
 
-    // Add assistant message with tool calls
+    const outputContent = cleanFinalContent || finalContent;
+    let actions: ResponseAction[] = [];
+    if (outputContent) {
+      actions = [{ type: 'send_message', text: outputContent, replyToMessageId: envelope.messageId }];
+    }
+
+    return {
+      type: 'complete',
+      response: {
+        avatarId: envelope.avatarId,
+        platform: envelope.platform,
+        conversationId: envelope.conversationId,
+        replyToMessageId: envelope.messageId,
+        actions,
+        generatedAt: Date.now(),
+        llmModel: avatarRuntime.avatarConfig.llm.model,
+        tokensUsed: 100,
+      },
+    };
+  }
+
+  // ─── Tool calls detected: delegate to async worker if available ───────
+  const chatWorkerQueueUrl = process.env.CHAT_WORKER_QUEUE_URL;
+
+  if (chatWorkerQueueUrl && extraContext) {
+    // Add the assistant message with tool_calls to the messages array
+    // so the worker has the full conversation state
     messages.push({
       role: 'assistant',
       content: llmResponse.content || '',
@@ -715,86 +727,89 @@ async function generateResponse(
       })),
     });
 
-    // Execute tool calls
-    for (const toolCall of llmResponse.toolCalls) {
-      const toolLimit = await checkToolCallLimit(envelope.avatarId, allToolResults.length);
-      if (!toolLimit.allowed) {
-        logger.warn('Tool call blocked by entitlement limits', {
-          event: 'limit_exceeded',
-          subsystem: 'entitlements',
-          tool: toolCall.name,
-          reason: toolLimit.reason,
-          limit: toolLimit.limit,
-          current: toolLimit.current,
-        });
+    const workerPayload: ChatWorkerMessage = {
+      envelope,
+      avatarId: envelope.avatarId,
+      messages,
+      pendingToolCalls: llmResponse.toolCalls.map(tc => ({
+        id: tc.id,
+        name: tc.name,
+        arguments: tc.arguments,
+      })),
+      enabledTools,
+      traceId: extraContext.traceId,
+      correlationId: extraContext.correlationId,
+      processingStartedAt: Date.now(),
+      toolResultCount: 0,
+      cooldownMinutes: extraContext.cooldownMinutes,
+    };
 
-        // Tell the model the tool call failed due to policy and stop executing further tools.
-        messages.push({
-          role: 'tool',
-          tool_call_id: toolCall.id,
-          content: JSON.stringify({
-            error: toolLimit.reason || 'Tool calls are limited by your current plan',
-          }),
-        });
-        break;
-      }
+    logger.info('Delegating tool loop to chat worker', {
+      event: 'chat_worker_delegation',
+      subsystem: 'chat',
+      toolCount: llmResponse.toolCalls.length,
+      toolNames: llmResponse.toolCalls.map(tc => tc.name),
+    });
 
-      logger.info('Executing tool', { tool: toolCall.name, args: toolCall.arguments });
+    return { type: 'needs_worker', payload: workerPayload };
+  }
 
-      const result = await toolClient.execute(toolCall.name, toolCall.arguments, toolContext);
+  // ─── Fallback: run tool loop synchronously (no worker queue) ──────────
+  // Add assistant message with tool_calls
+  messages.push({
+    role: 'assistant',
+    content: llmResponse.content || '',
+    tool_calls: llmResponse.toolCalls.map(tc => ({
+      id: tc.id,
+      type: 'function' as const,
+      function: {
+        name: tc.name,
+        arguments: JSON.stringify(tc.arguments),
+      },
+    })),
+  });
 
-      allToolResults.push({ name: toolCall.name, result });
-
-      // Add tool result message (include media so the model can reference outputs)
+  // Execute the pending tool calls inline
+  for (const toolCall of llmResponse.toolCalls) {
+    const result = await toolClient.execute(toolCall.name, toolCall.arguments, toolContext);
+    messages.push({
+      role: 'tool',
+      tool_call_id: toolCall.id,
+      content: JSON.stringify(result.success
+        ? { data: result.data, media: result.media, pendingJob: result.pendingJob }
+        : { error: result.error }),
+    });
+    if (result.success && result.media?.type === 'image' && result.media.url) {
       messages.push({
-        role: 'tool',
-        tool_call_id: toolCall.id,
-        content: JSON.stringify(result.success
-          ? { data: result.data, media: result.media, pendingJob: result.pendingJob }
-          : { error: result.error }),
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Here is the image you just generated. Please look at it and respond.' },
+          { type: 'image_url', image_url: { url: result.media.url } },
+        ],
       });
-
-      // If a tool produced an image, feed it back into context so vision-capable models can see it.
-      if (result.success && result.media?.type === 'image' && result.media.url) {
-        messages.push({
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Here is the image you just generated. Please look at it and respond.' },
-            { type: 'image_url', image_url: { url: result.media.url } },
-          ],
-        });
-      }
-
-      logger.info('Tool result', { tool: toolCall.name, success: result.success });
     }
   }
 
-  // Build response actions
-  let actions: ResponseAction[] = toolResultsToActions(allToolResults);
-
-  // Use clean content (without thinking tags) for user-facing messages
-  const outputContent = cleanFinalContent || finalContent;
-
-  // If we got final content but no send_message action, add it
-  if (outputContent && !actions.some(a => a.type === 'send_message')) {
-    actions.push({ type: 'send_message', text: outputContent, replyToMessageId: envelope.messageId });
-  }
-
-  // If no actions at all, add the content as a message
-  if (actions.length === 0 && outputContent) {
-    actions = [{ type: 'send_message', text: outputContent, replyToMessageId: envelope.messageId }];
-  }
-
-  return {
+  // Run remaining iterations
+  const toolLoopResult = await executeToolLoop({
+    messages,
+    enabledTools,
+    toolClient,
+    toolContext,
     avatarId: envelope.avatarId,
-    platform: envelope.platform,
-    conversationId: envelope.conversationId,
-    replyToMessageId: envelope.messageId,
-    actions,
-    generatedAt: Date.now(),
-    llmModel: avatarRuntime.avatarConfig.llm.model,
-    tokensUsed: totalTokens,
-  };
+    avatarName: avatarRuntime.avatarConfig.name,
+    llmConfig: avatarRuntime.avatarConfig.llm,
+    secrets: avatarRuntime.secrets,
+    envelope,
+    brainService,
+    refreshTyping,
+    initialToolResultCount: llmResponse.toolCalls.length,
+    startIteration: 1,
+  });
+
+  const { response } = buildResponseFromToolLoop(envelope, toolLoopResult, avatarRuntime.avatarConfig.llm.model);
+
+  return { type: 'complete', response };
 }
 
 export const handler = async (event: SQSEvent, context: Context): Promise<{ batchItemFailures: { itemIdentifier: string }[] }> => {
@@ -992,47 +1007,74 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
         : undefined;
       if (refreshTyping) await refreshTyping();
 
-      const response = await generateResponse(envelope, toolClient, toolContext, avatarRuntime, updatedState.recentMessages, refreshTyping);
+      const result = await generateResponse(
+        envelope, toolClient, toolContext, avatarRuntime,
+        updatedState.recentMessages, refreshTyping,
+        { traceId, correlationId, cooldownMinutes: avatarRuntime.avatarConfig.behavior.cooldownMinutes },
+      );
 
       metrics.trackDuration('ProcessingLatency', recordStartTime);
       metrics.incrementCounter('MessagesProcessed');
-      metrics.incrementCounter('ResponsesEnqueued');
-      metrics.setProperty('Outcome', 'success');
 
-      logger.info('Response generated', {
-        event: 'response_generated',
-        subsystem: 'llm',
-        actions: response.actions.length,
-        tokensUsed: response.tokensUsed,
-      });
+      if (result.type === 'needs_worker') {
+        // Delegate tool execution to the async chat worker
+        const chatWorkerQueueUrl = process.env.CHAT_WORKER_QUEUE_URL!;
+        await sendSqsMessage({
+          QueueUrl: chatWorkerQueueUrl,
+          MessageAttributes: {
+            traceId: { DataType: 'String', StringValue: traceId },
+            [CORRELATION_ID_ATTR]: { DataType: 'String', StringValue: correlationId },
+          },
+          MessageGroupId: `${avatarId}#${envelope.conversationId}`,
+          MessageDeduplicationId: `chatworker_${avatarId}_${envelope.conversationId}_${envelope.messageId}`,
+        }, result.payload);
 
-      // Queue response for sending (with S3 offload for large payloads)
-      await sendSqsMessage({
-        QueueUrl: getResponseQueueUrl(),
-        MessageAttributes: {
-          traceId: { DataType: 'String', StringValue: traceId },
-          [CORRELATION_ID_ATTR]: { DataType: 'String', StringValue: correlationId },
-        },
-        MessageGroupId: `${avatarId}#${envelope.conversationId}`,
-        MessageDeduplicationId: `resp_${avatarId}_${envelope.conversationId}_${envelope.messageId}`,
-      }, response);
+        metrics.incrementCounter('ToolLoopsDelegated');
+        metrics.setProperty('Outcome', 'delegated');
+
+        logger.info('Tool loop delegated to chat worker', {
+          event: 'delegated_to_worker',
+          subsystem: 'chat',
+          toolCount: result.payload.pendingToolCalls.length,
+        });
+      } else {
+        // Direct response (no tools or sync fallback)
+        const response = result.response;
+
+        metrics.incrementCounter('ResponsesEnqueued');
+        metrics.setProperty('Outcome', 'success');
+
+        logger.info('Response generated', {
+          event: 'response_generated',
+          subsystem: 'llm',
+          actions: response.actions.length,
+          tokensUsed: response.tokensUsed,
+        });
+
+        await sendSqsMessage({
+          QueueUrl: getResponseQueueUrl(),
+          MessageAttributes: {
+            traceId: { DataType: 'String', StringValue: traceId },
+            [CORRELATION_ID_ATTR]: { DataType: 'String', StringValue: correlationId },
+          },
+          MessageGroupId: `${avatarId}#${envelope.conversationId}`,
+          MessageDeduplicationId: `resp_${avatarId}_${envelope.conversationId}_${envelope.messageId}`,
+        }, response);
+
+        // Post-response state: cooldown (only when completing inline)
+        if (avatarRuntime.avatarConfig.behavior.cooldownMinutes > 0) {
+          await stateService.setUserCooldown({
+            avatarId,
+            platform: envelope.platform,
+            userId: envelope.sender.id,
+            cooldownUntil: Date.now() + (avatarRuntime.avatarConfig.behavior.cooldownMinutes * 60 * 1000),
+          });
+        }
+      }
 
       // Clean up offloaded S3 payload from the inbound message (if any)
       if (wasOffloaded) {
         await cleanupSqsRecord(rawBody);
-      }
-
-      // =========================================================
-      // POST-RESPONSE STATE UPDATES
-      // =========================================================
-
-      if (avatarRuntime.avatarConfig.behavior.cooldownMinutes > 0) {
-        await stateService.setUserCooldown({
-          avatarId,
-          platform: envelope.platform,
-          userId: envelope.sender.id,
-          cooldownUntil: Date.now() + (avatarRuntime.avatarConfig.behavior.cooldownMinutes * 60 * 1000),
-        });
       }
 
     } catch (error) {

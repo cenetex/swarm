@@ -89,9 +89,11 @@ export class SharedHandlers extends Construct {
   public readonly responseQueue: sqs.Queue;
   public readonly mediaQueue: sqs.Queue;
   public readonly postQueue: sqs.Queue;
+  public readonly chatWorkerQueue: sqs.Queue;
   public readonly telegramWebhook: lambda.Function;
   public readonly raticrossRelay: nodejs.NodejsFunction;
   public readonly messageProcessor: nodejs.NodejsFunction;
+  public readonly chatWorker: nodejs.NodejsFunction;
   public readonly responseSender: nodejs.NodejsFunction;
   public readonly mediaProcessor: nodejs.NodejsFunction;
   public readonly tweetSender: nodejs.NodejsFunction;
@@ -174,6 +176,17 @@ export class SharedHandlers extends Construct {
       encryption: sqs.QueueEncryption.SQS_MANAGED,
     });
 
+    // CHAT_WORKER_QUEUE for async tool-call loop processing
+    this.chatWorkerQueue = new sqs.Queue(this, 'ChatWorkerQueue', {
+      queueName: `swarm-${environment}${suffix}-chat-worker.fifo`,
+      fifo: true,
+      contentBasedDeduplication: true,
+      // Lambda timeout is 300s; add 60s buffer.
+      visibilityTimeout: cdk.Duration.seconds(360),
+      deadLetterQueue: { queue: this.dlq, maxReceiveCount: 3 },
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+    });
+
     // POST_QUEUE for decoupled Twitter posting with rate limit handling
     this.postQueue = new sqs.Queue(this, 'PostQueue', {
       queueName: `swarm-${environment}${suffix}-posts.fifo`,
@@ -205,6 +218,8 @@ export class SharedHandlers extends Construct {
     this.responseQueue.grantConsumeMessages(lambdaRole);
     this.mediaQueue.grantSendMessages(lambdaRole);
     this.mediaQueue.grantConsumeMessages(lambdaRole);
+    this.chatWorkerQueue.grantSendMessages(lambdaRole);
+    this.chatWorkerQueue.grantConsumeMessages(lambdaRole);
     this.postQueue.grantSendMessages(lambdaRole);
     this.postQueue.grantConsumeMessages(lambdaRole);
 
@@ -251,6 +266,7 @@ export class SharedHandlers extends Construct {
       MESSAGE_QUEUE_URL: this.messageQueue.queueUrl,
       RESPONSE_QUEUE_URL: this.responseQueue.queueUrl,
       MEDIA_QUEUE_URL: this.mediaQueue.queueUrl,
+      CHAT_WORKER_QUEUE_URL: this.chatWorkerQueue.queueUrl,
       POST_QUEUE_URL: this.postQueue.queueUrl,
       CDN_URL: cdnUrl || '',
       ENVIRONMENT: environment,
@@ -351,6 +367,12 @@ export class SharedHandlers extends Construct {
       removalPolicy: logRemovalPolicy,
     });
 
+    const chatWorkerLogGroup = new LogGroupWithRetention(this, 'ChatWorkerLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-chat-worker`,
+      retention: logRetention,
+      removalPolicy: logRemovalPolicy,
+    });
+
     this.messageProcessor = new nodejs.NodejsFunction(this, 'MessageProcessor', {
       functionName: `swarm-${environment}${suffix}-message-processor`,
       runtime: lambda.Runtime.NODEJS_20_X,
@@ -407,6 +429,27 @@ export class SharedHandlers extends Construct {
 
     this.messageProcessor.addEventSource(new lambdaEventSources.SqsEventSource(this.messageQueue, {
       batchSize: 10,
+      reportBatchItemFailures: true,
+    }));
+
+    this.chatWorker = new nodejs.NodejsFunction(this, 'ChatWorker', {
+      functionName: `swarm-${environment}${suffix}-chat-worker`,
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(handlersEntry, 'messaging/chat-worker.ts'),
+      handler: 'handler',
+      layers: dependencyLayer ? [dependencyLayer] : undefined,
+      role: lambdaRole,
+      timeout: cdk.Duration.seconds(300),
+      memorySize: 1024,
+      reservedConcurrentExecutions: 20,
+      environment: commonEnv,
+      bundling: bundlingOptions,
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: chatWorkerLogGroup.logGroup,
+    });
+
+    this.chatWorker.addEventSource(new lambdaEventSources.SqsEventSource(this.chatWorkerQueue, {
+      batchSize: 1,
       reportBatchItemFailures: true,
     }));
 
