@@ -117,6 +117,8 @@ export interface ChatMessage {
   sender?: MessageSender;
   /** Media items returned from tool execution (gallery, generated images, etc) */
   media?: Array<{ type: 'image' | 'video' | 'sticker' | 'audio'; url: string; prompt?: string; id?: string }>;
+  /** Structured limit info when a free-tier limit was hit — drives inline upgrade nudge */
+  limitInfo?: { limitType: string; current: number; limit: number; remaining: number };
 }
 
 export interface AvatarChat {

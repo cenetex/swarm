@@ -35,6 +35,13 @@ function getChatUrl(path: string = ''): string {
   return publicAccess ? `${url}${path ? '&' : '?'}publicAccess=true` : url;
 }
 
+export interface LimitErrorInfo {
+  limitType: 'messages' | 'media' | 'voice' | 'tools';
+  current: number;
+  limit: number;
+  remaining: number;
+}
+
 interface PendingToolCall {
   id: string;
   name: string;
@@ -163,7 +170,17 @@ export async function sendChatMessage(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || `HTTP ${response.status}`);
+    const err = new Error(error.error || `HTTP ${response.status}`);
+    // Attach structured limit info for upgrade nudge rendering
+    if (response.status === 429 && error.limitType) {
+      (err as Error & { limitInfo?: LimitErrorInfo }).limitInfo = {
+        limitType: error.limitType,
+        current: error.current,
+        limit: error.limit,
+        remaining: error.remaining ?? 0,
+      };
+    }
+    throw err;
   }
 
   return response.json();

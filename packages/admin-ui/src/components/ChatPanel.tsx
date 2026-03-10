@@ -18,6 +18,7 @@ import { PlanUsagePanel } from './PlanUsagePanel';
 import { ActivationChecklist } from './ActivationChecklist';
 import { getErrorRecovery } from '../utils/error-recovery';
 import { WelcomeMessage } from './WelcomeMessage';
+import { UpgradeNudge } from './UpgradeNudge';
 
 // Track active polling jobs to avoid duplicate polling
 const activePollers = new Map<string, { controller: AbortController; avatarId: string }>();
@@ -44,6 +45,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const [activationLoading, setActivationLoading] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
   const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
+  // Track which limit types have already shown an upgrade nudge this session
+  const shownNudgesRef = useRef(new Set<string>());
 
   const formatUserFacingError = useCallback((raw: unknown): string => {
     const rawMessage = raw instanceof Error ? raw.message : typeof raw === 'string' ? raw : 'Failed to send message';
@@ -612,6 +615,9 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         const errorMsg = formatUserFacingError(error);
         setError(errorMsg);
 
+        // Extract structured limit info if present (from 429 limit errors)
+        const errorLimitInfo = (error as Error & { limitInfo?: { limitType: string; current: number; limit: number; remaining: number } }).limitInfo;
+
         // Build rich error message with recovery guidance
         const recovery = getErrorRecovery(errorMsg);
         let errorContent: string;
@@ -625,6 +631,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         addMessage(targetAvatar.id, {
           role: 'assistant',
           content: errorContent,
+          // Attach limit info so ChatMessage can render the upgrade nudge
+          ...(errorLimitInfo ? { limitInfo: errorLimitInfo } : {}),
         });
       } finally {
         setLoading(false);
@@ -1275,13 +1283,31 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               onAction={handleSendMessage}
             />
           ) : (
-            messages.map((message) => (
-              <ChatMessageComponent
-                key={message.id}
-                message={message}
-                onToolSubmit={handleToolSubmit}
-              />
-            ))
+            messages.map((message) => {
+              // Show upgrade nudge inline after limit-error messages (once per limit type per session)
+              const shouldShowNudge = Boolean(
+                message.limitInfo &&
+                activeAvatar?.id &&
+                !shownNudgesRef.current.has(message.limitInfo.limitType)
+              );
+              if (shouldShowNudge && message.limitInfo) {
+                shownNudgesRef.current.add(message.limitInfo.limitType);
+              }
+              return (
+                <div key={message.id}>
+                  <ChatMessageComponent
+                    message={message}
+                    onToolSubmit={handleToolSubmit}
+                  />
+                  {shouldShowNudge && message.limitInfo && activeAvatar && (
+                    <UpgradeNudge
+                      avatarId={activeAvatar.id}
+                      limitInfo={message.limitInfo as { limitType: 'messages' | 'media' | 'voice' | 'tools'; current: number; limit: number; remaining: number }}
+                    />
+                  )}
+                </div>
+              );
+            })
           )}
           <div ref={messagesEndRef} />
         </div>

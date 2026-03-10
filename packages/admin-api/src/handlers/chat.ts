@@ -30,7 +30,7 @@ import { recordError } from '../services/auto-issues.js';
 import { createAvatarAccessChecker } from '../services/chat-access.js';
 import { ensureRuntimeConfig } from '../services/runtime-config.js';
 import { chatIdempotencyStore } from '../services/idempotency.js';
-import { incrementUsage } from '../services/billing/entitlements.js';
+import { incrementUsage, checkLimit } from '../services/billing/entitlements.js';
 
 import {
   ToolRegistry,
@@ -406,6 +406,26 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       const asyncResponse = { statusCode: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId, status: 'pending' }) };
       if (idempotencyKey) await chatIdempotencyStore.update(idempotencyKey, asyncResponse);
       return asyncResponse;
+    }
+
+    // Enforce entitlement limits before processing
+    if (avatar?.id) {
+      const limitCheck = await checkLimit(avatar.id, 'messages');
+      if (!limitCheck.allowed) {
+        const limitResponse = {
+          statusCode: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            error: limitCheck.reason || 'Daily message limit reached',
+            limitType: 'messages',
+            current: limitCheck.current,
+            limit: limitCheck.limit,
+            remaining: 0,
+          }),
+        };
+        if (idempotencyKey) await chatIdempotencyStore.update(idempotencyKey, limitResponse);
+        return limitResponse;
+      }
     }
 
     // Synchronous chat processing
