@@ -119,6 +119,55 @@ function truncateWallet(wallet: string | undefined): string {
   return `${wallet.slice(0, 4)}...${wallet.slice(-4)}`;
 }
 
+/**
+ * Derive connection health from avatar config.
+ * Green: at least one platform integration connected
+ * Yellow: persona set but no platform connected
+ * Gray: no persona set (incomplete setup)
+ */
+function getConnectionHealth(avatar: Avatar): { color: string; label: string } {
+  const platforms = avatar.platforms ?? {};
+  const connectedPlatforms: string[] = [];
+
+  if (platforms.telegram?.enabled) connectedPlatforms.push('Telegram');
+  if (platforms.discord?.enabled) connectedPlatforms.push('Discord');
+  if (platforms.twitter?.enabled) connectedPlatforms.push('Twitter');
+
+  // Also check secrets for platform tokens as a fallback
+  if (connectedPlatforms.length === 0 && avatar.secrets?.length) {
+    for (const secret of avatar.secrets) {
+      if (secret.isSet && /telegram/i.test(secret.key) && !connectedPlatforms.includes('Telegram')) {
+        connectedPlatforms.push('Telegram');
+      }
+      if (secret.isSet && /discord/i.test(secret.key) && !connectedPlatforms.includes('Discord')) {
+        connectedPlatforms.push('Discord');
+      }
+      if (secret.isSet && /twitter/i.test(secret.key) && !connectedPlatforms.includes('Twitter')) {
+        connectedPlatforms.push('Twitter');
+      }
+    }
+  }
+
+  if (connectedPlatforms.length > 0) {
+    return {
+      color: 'bg-green-400',
+      label: `Connected to ${connectedPlatforms.join(', ')}`,
+    };
+  }
+
+  if (avatar.persona) {
+    return {
+      color: 'bg-yellow-400',
+      label: 'No platforms connected',
+    };
+  }
+
+  return {
+    color: 'bg-gray-400',
+    label: 'Incomplete setup — no persona set',
+  };
+}
+
 function getStatusDescription(avatar: Avatar): string {
   // Health status takes priority
   if (avatar.healthStatus === 'error') return avatar.healthMessage || 'Error';
@@ -212,7 +261,11 @@ function AvatarListItem({ avatar, isActive, onClick, isAdmin, onReassign }: Avat
         <AvatarDisplay avatar={avatar} size="sm" />
         <div className="flex-1 min-w-0">
           <div className="font-medium truncate">{avatar.name}</div>
-          <div className="text-xs text-[var(--color-text-muted)] truncate">
+          <div className="text-xs text-[var(--color-text-muted)] truncate flex items-center gap-1.5">
+            <span
+              className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${getConnectionHealth(avatar).color}`}
+              title={getConnectionHealth(avatar).label}
+            />
             {getStatusDescription(avatar)}
           </div>
           {/* Energy indicator for active avatar */}
