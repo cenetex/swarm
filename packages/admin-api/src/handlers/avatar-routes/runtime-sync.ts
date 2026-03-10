@@ -11,6 +11,7 @@ import * as energyService from '../../services/billing/energy.js';
 import * as entitlementsService from '../../services/billing/entitlements.js';
 import * as avatarsService from '../../services/avatars.js';
 import { checkNFTGate } from '../../services/web3/nft-gate.js';
+import { getOrbResonance } from '../../services/web3/orb-slots.js';
 import {
   getEffectiveLimitsForAvatar,
   applyOrbHolderBoost,
@@ -24,10 +25,11 @@ export type { RuntimeAugmentations };
 export async function buildRuntimeAugmentations(
   avatarId: string,
 ): Promise<RuntimeAugmentations | undefined> {
-  const [burnResult, energyResult, bankResult] = await Promise.allSettled([
+  const [burnResult, energyResult, bankResult, resonanceResult] = await Promise.allSettled([
     burnStatsService.getBurnStats(avatarId),
     energyService.getEnergyStatus(avatarId),
     energyService.getEnergyBankBalance(avatarId),
+    getOrbResonance(avatarId),
   ]);
 
   if (burnResult.status === 'rejected') {
@@ -55,6 +57,15 @@ export async function buildRuntimeAugmentations(
         bankResult.reason instanceof Error
           ? bankResult.reason.message
           : String(bankResult.reason),
+    });
+  }
+  if (resonanceResult.status === 'rejected') {
+    logger.warn('Failed to fetch Orb resonance for runtime augmentation', {
+      avatarId,
+      error:
+        resonanceResult.reason instanceof Error
+          ? resonanceResult.reason.message
+          : String(resonanceResult.reason),
     });
   }
 
@@ -85,11 +96,32 @@ export async function buildRuntimeAugmentations(
         }
       : undefined;
 
-  if (!burn && !energy) return undefined;
+  // Apply resonance energy regen bonus to burn augmentation
+  const resonanceData =
+    resonanceResult.status === 'fulfilled' ? resonanceResult.value : null;
+
+  const resonance = resonanceData
+    ? {
+        resonance: resonanceData.resonance,
+        tier: resonanceData.tier.tier,
+        tierLabel: resonanceData.tier.label,
+        energyRegenBonus: resonanceData.tier.energyRegenBonus,
+        updatedAt: Date.now(),
+      }
+    : undefined;
+
+  // If the resonance tier provides an energy regen bonus, apply it to the
+  // burn augmentation's regenPerHour so handlers pick it up automatically.
+  if (burn && resonanceData && resonanceData.tier.energyRegenBonus > 0) {
+    burn.regenPerHour = (burn.regenPerHour ?? 0) + resonanceData.tier.energyRegenBonus;
+  }
+
+  if (!burn && !energy && !resonance) return undefined;
 
   return {
     ...(burn ? { burn } : {}),
     ...(energy ? { energy } : {}),
+    ...(resonance ? { resonance } : {}),
   };
 }
 

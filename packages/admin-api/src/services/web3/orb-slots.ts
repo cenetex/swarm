@@ -1,10 +1,13 @@
 import {
   GetCommand,
+  QueryCommand,
   TransactWriteCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { getGateStatus } from './nft-gate.js';
 import type { AvatarRecord } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
+import { logger } from '@swarm/core';
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 
@@ -28,6 +31,8 @@ export interface OrbSlotRecord {
   avatarId: string;
   slottedAt: number;
   updatedAt: number;
+  resonance: number;
+  resonanceUpdatedAt: number;
 }
 
 export interface OrbSlotsDeps {
@@ -83,7 +88,12 @@ export async function slotOrbToAvatar(
                 avatarId: avatar.avatarId,
                 slottedAt: now,
                 updatedAt: now,
-              } satisfies OrbSlotRecord,
+                resonance: 0,
+                resonanceUpdatedAt: now,
+                // GSI1 allows lookup by avatarId for resonance tracking
+                gsi1pk: `AVATAR#${avatar.avatarId}`,
+                gsi1sk: ORB_SLOT_SK,
+              } satisfies OrbSlotRecord & { gsi1pk: string; gsi1sk: string },
               ConditionExpression: 'attribute_not_exists(pk)',
             },
           },
@@ -202,4 +212,136 @@ export async function unslotOrbFromAvatar(
   );
 
   return { success: true };
+}
+
+// ── Resonance Tiers ─────────────────────────────────────────────────────
+
+export interface ResonanceTier {
+  tier: 'none' | 'bronze' | 'silver' | 'gold';
+  label: string;
+  energyRegenBonus: number;
+}
+
+export function getResonanceTier(resonance: number): ResonanceTier {
+  if (resonance >= 25000) {
+    return { tier: 'gold', label: 'Gold', energyRegenBonus: 2 };
+  }
+  if (resonance >= 5000) {
+    return { tier: 'silver', label: 'Silver', energyRegenBonus: 1 };
+  }
+  if (resonance >= 1000) {
+    return { tier: 'bronze', label: 'Bronze', energyRegenBonus: 0.5 };
+  }
+  return { tier: 'none', label: 'No Resonance', energyRegenBonus: 0 };
+}
+
+// ── Resonance Increment ─────────────────────────────────────────────────
+
+/**
+ * Look up the slotted Orb for an avatar and atomically increment its
+ * resonance counter.  Designed for fire-and-forget usage — logs errors
+ * but never throws.
+ */
+export async function incrementOrbResonance(
+  avatarId: string,
+  amount = 1,
+  deps?: OrbSlotsDeps,
+): Promise<void> {
+  const resolvedDdb = deps?.ddb ?? ddb;
+  const resolvedTableName = deps?.tableName ?? TABLE_NAME;
+  const now = deps?.now?.() ?? Date.now();
+
+  try {
+    // Find the Orb slotted to this avatar via a query on the GSI or scan.
+    // Since we key Orb records by mint address, we need to find the record
+    // for this avatar.  We query using a begins_with on pk=ORB# and filter
+    // on avatarId.
+    const queryResult = await resolvedDdb.send(
+      new QueryCommand({
+        TableName: resolvedTableName,
+        IndexName: 'gsi1',
+        KeyConditionExpression: 'gsi1pk = :avatarKey AND gsi1sk = :slot',
+        ExpressionAttributeValues: {
+          ':avatarKey': `AVATAR#${avatarId}`,
+          ':slot': ORB_SLOT_SK,
+        },
+        Limit: 1,
+      }),
+    );
+
+    // Fallback: scan for the orb slot if no GSI available
+    let orbRecord: OrbSlotRecord | null = null;
+    if (queryResult.Items && queryResult.Items.length > 0) {
+      orbRecord = queryResult.Items[0] as OrbSlotRecord;
+    }
+
+    if (!orbRecord) {
+      // No Orb slotted to this avatar — nothing to do.
+      return;
+    }
+
+    await resolvedDdb.send(
+      new UpdateCommand({
+        TableName: resolvedTableName,
+        Key: orbSlotKey(orbRecord.mintAddress),
+        UpdateExpression:
+          'SET resonance = if_not_exists(resonance, :zero) + :amount, resonanceUpdatedAt = :now',
+        ExpressionAttributeValues: {
+          ':zero': 0,
+          ':amount': amount,
+          ':now': now,
+        },
+      }),
+    );
+  } catch (err) {
+    logger.warn('Failed to increment Orb resonance', {
+      avatarId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * Get the resonance data for a slotted Orb by avatar ID.
+ * Returns null if no Orb is slotted.
+ */
+export async function getOrbResonance(
+  avatarId: string,
+  deps?: OrbSlotsDeps,
+): Promise<{ resonance: number; tier: ResonanceTier; mintAddress: string } | null> {
+  const resolvedDdb = deps?.ddb ?? ddb;
+  const resolvedTableName = deps?.tableName ?? TABLE_NAME;
+
+  try {
+    const queryResult = await resolvedDdb.send(
+      new QueryCommand({
+        TableName: resolvedTableName,
+        IndexName: 'gsi1',
+        KeyConditionExpression: 'gsi1pk = :avatarKey AND gsi1sk = :slot',
+        ExpressionAttributeValues: {
+          ':avatarKey': `AVATAR#${avatarId}`,
+          ':slot': ORB_SLOT_SK,
+        },
+        Limit: 1,
+      }),
+    );
+
+    if (!queryResult.Items || queryResult.Items.length === 0) {
+      return null;
+    }
+
+    const record = queryResult.Items[0] as OrbSlotRecord;
+    const resonance = record.resonance ?? 0;
+    return {
+      resonance,
+      tier: getResonanceTier(resonance),
+      mintAddress: record.mintAddress,
+    };
+  } catch (err) {
+    logger.warn('Failed to get Orb resonance', {
+      avatarId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
 }

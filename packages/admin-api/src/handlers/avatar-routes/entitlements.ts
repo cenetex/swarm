@@ -16,6 +16,7 @@ import { parseJsonBody } from '../../http/request-body.js';
 import { logger } from '@swarm/core';
 import * as avatarService from '../../services/avatars.js';
 import * as orbSlotsService from '../../services/web3/orb-slots.js';
+import { getOrbResonance } from '../../services/web3/orb-slots.js';
 import * as entitlementsService from '../../services/billing/entitlements.js';
 import { getEffectiveLimitsForAvatar } from '../../services/billing/runtime-limits.js';
 import {
@@ -244,12 +245,24 @@ export async function handleEntitlementRoutes(
     const entitlement = await entitlementsService.getEntitlement(avatarId);
     const effective = getEffectiveLimitsForAvatar(avatarId, entitlement);
 
+    // Include resonance data if an Orb is slotted
+    let resonance: Awaited<ReturnType<typeof getOrbResonance>> = null;
+    try {
+      resonance = await getOrbResonance(avatarId);
+    } catch (err) {
+      logger.warn('Failed to fetch Orb resonance for effective-limits', {
+        avatarId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     return jsonResponse(corsHeaders, 200, {
       avatarId,
       plan: effective.plan,
       limits: effective.limits,
       source: effective.source,
       entitlementStatus: effective.entitlementStatus,
+      ...(resonance ? { resonance } : {}),
     });
   }
 

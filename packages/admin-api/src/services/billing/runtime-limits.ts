@@ -41,9 +41,18 @@ export interface RuntimeEnergyAugmentation {
   updatedAt?: number;
 }
 
+export interface RuntimeResonanceAugmentation {
+  resonance?: number;
+  tier?: string;
+  tierLabel?: string;
+  energyRegenBonus?: number;
+  updatedAt?: number;
+}
+
 export interface RuntimeAugmentations {
   burn?: RuntimeBurnAugmentation;
   energy?: RuntimeEnergyAugmentation;
+  resonance?: RuntimeResonanceAugmentation;
 }
 
 export interface EffectiveLimitsResult {
