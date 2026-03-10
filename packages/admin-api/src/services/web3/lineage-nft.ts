@@ -243,6 +243,15 @@ export interface LineageMetadata {
   inhabitantWallet: string;
   avatarUrl?: string;
   snapshotUrl?: string;
+  /** Lifetime stats — optional; metadata generates correctly without them. */
+  stats?: {
+    messagesProcessed: number;
+    mediaGenerated: number;
+    voiceMinutesUsed: number;
+    daysActive: number;
+    burnTier?: number;
+    burnTierName?: string;
+  };
 }
 
 export interface LineageCollection {
@@ -426,7 +435,10 @@ export async function incrementMintedCount(avatarId: string): Promise<number> {
 }
 
 /**
- * Prepare metadata for a lineage NFT mint
+ * Prepare metadata for a lineage NFT mint.
+ *
+ * Fetches avatar lifetime stats on a best-effort basis — a stats fetch
+ * failure is logged but never prevents the abandon flow from completing.
  */
 export async function prepareLineageMint(
   avatarId: string,
@@ -455,6 +467,18 @@ export async function prepareLineageMint(
   const era = (avatar.currentEra || 0) + 1;
   const isGenesis = era === 1;
 
+  // Best-effort stats fetch — never blocks the abandon flow
+  let stats: LineageMetadata['stats'];
+  try {
+    const { getAvatarLifetimeStats } = await import('./avatar-lifetime-stats.js');
+    stats = await getAvatarLifetimeStats(avatarId);
+  } catch (error) {
+    console.warn(
+      '[LineageNFT] Failed to fetch lifetime stats for metadata — continuing without stats:',
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
   const metadata: LineageMetadata = {
     avatarId,
     avatarName: avatar.name,
@@ -463,6 +487,7 @@ export async function prepareLineageMint(
     abandonedAt: Date.now(),
     inhabitantWallet: walletAddress,
     avatarUrl: avatar.profileImage?.url,
+    stats,
   };
 
   return {
@@ -543,21 +568,46 @@ export async function getLineageHistory(avatarId: string): Promise<Array<{
 }
 
 /**
- * Generate Metaplex metadata JSON for a lineage NFT
+ * Generate Metaplex metadata JSON for a lineage NFT.
+ *
+ * If `metadata.stats` is provided the output includes Metaplex-standard
+ * attributes for Messages Processed, Media Generated, Voice Minutes,
+ * Days Active, and Burn Tier. When stats are absent the metadata still
+ * generates correctly (backward compatible).
  */
 export function generateLineageMetadataJson(metadata: LineageMetadata): object {
+  const attributes: Array<{ trait_type: string; value: string | number | boolean; display_type?: string }> = [
+    { trait_type: 'Avatar', value: metadata.avatarName },
+    { trait_type: 'Era', value: metadata.era },
+    { trait_type: 'Abandoned At', value: new Date(metadata.abandonedAt).toISOString() },
+  ];
+
+  // Genesis trait — always present when era === 1
+  if (metadata.isGenesis) {
+    attributes.push({ trait_type: 'Genesis', value: 'true' });
+  }
+
+  // Lifetime stats (when available)
+  if (metadata.stats) {
+    attributes.push(
+      { trait_type: 'Messages Processed', value: metadata.stats.messagesProcessed, display_type: 'number' },
+      { trait_type: 'Media Generated', value: metadata.stats.mediaGenerated, display_type: 'number' },
+      { trait_type: 'Voice Minutes', value: Math.round(metadata.stats.voiceMinutesUsed * 10) / 10, display_type: 'number' },
+      { trait_type: 'Days Active', value: metadata.stats.daysActive, display_type: 'number' },
+    );
+
+    if (metadata.stats.burnTierName) {
+      attributes.push({ trait_type: 'Burn Tier', value: metadata.stats.burnTierName });
+    }
+  }
+
   return {
     name: `${metadata.avatarName} - Era ${metadata.era}`,
     symbol: 'SWARM',
     description: `Lineage NFT for ${metadata.avatarName}. Era ${metadata.era}${metadata.isGenesis ? ' (Genesis)' : ''}.`,
     image: metadata.avatarUrl || metadata.snapshotUrl,
     external_url: `https://swarm.rati.chat/avatar/${metadata.avatarId}`,
-    attributes: [
-      { trait_type: 'Avatar', value: metadata.avatarName },
-      { trait_type: 'Era', value: metadata.era },
-      { trait_type: 'Genesis', value: metadata.isGenesis },
-      { trait_type: 'Abandoned At', value: new Date(metadata.abandonedAt).toISOString() },
-    ],
+    attributes,
     properties: {
       category: 'image',
       creators: [

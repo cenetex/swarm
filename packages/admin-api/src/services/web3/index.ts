@@ -7,6 +7,7 @@
  */
 export * from './wallets.js';
 export * from './lineage-nft.js';
+export * from './avatar-lifetime-stats.js';
 export * from './vanity-mint.js';
 export * from './nft-gate.js';
 export * from './wallet-link.js';
