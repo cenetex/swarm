@@ -251,7 +251,7 @@ export async function handler(
           };
         })
       );
-      toolPreviews = results
+      toolPreviews = (results as PromiseSettledResult<ToolPreview>[])
         .filter((r): r is PromiseFulfilledResult<ToolPreview> => r.status === 'fulfilled')
         .map(r => r.value);
     } catch (e) {
