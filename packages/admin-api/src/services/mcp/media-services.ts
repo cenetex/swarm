@@ -151,6 +151,25 @@ export function createMediaServices(
           createdAt: item.createdAt,
         }));
       },
+
+      getUploadUrl: async (avatarId, contentType) => {
+        return media.getGalleryUploadUrl(avatarId, contentType);
+      },
+
+      saveUploadedPhoto: async (avatarId, data) => {
+        const id = gallery.generateGalleryId();
+        await gallery.addToGallery(avatarId, {
+          id,
+          type: 'image',
+          url: data.publicUrl,
+          s3Key: data.s3Key,
+          prompt: '',
+          caption: data.caption || '',
+          model: 'upload',
+          platform: 'admin-ui',
+        });
+        return { id };
+      },
     },
 
     // =========================================================================

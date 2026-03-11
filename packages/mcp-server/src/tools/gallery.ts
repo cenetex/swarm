@@ -27,6 +27,18 @@ export interface GalleryServices {
   getGalleryItem: (avatarId: string, itemId: string) => Promise<GalleryItem | null>;
 
   searchGallery: (avatarId: string, query: string, type?: 'image' | 'video' | 'sticker') => Promise<GalleryItem[]>;
+
+  getUploadUrl?: (avatarId: string, contentType: string) => Promise<{
+    uploadUrl: string;
+    s3Key: string;
+    publicUrl: string;
+  }>;
+
+  saveUploadedPhoto?: (avatarId: string, data: {
+    s3Key: string;
+    publicUrl: string;
+    caption?: string;
+  }) => Promise<{ id: string }>;
 }
 
 // ============================================================================
@@ -220,6 +232,69 @@ export const createGalleryTools = (services: GalleryServices) => [
       };
     },
   }),
+  ...(services.getUploadUrl ? [defineTool({
+    name: 'upload_photo_to_gallery',
+    description: 'Get a signed URL to upload a photo to the gallery. Returns an upload URL for the user to send their image to.',
+    category: 'gallery',
+    platforms: ['admin-ui'],
+    inputSchema: z.object({
+      contentType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+        .optional()
+        .default('image/png')
+        .describe('The MIME type of the image being uploaded'),
+      caption: z.string().optional().describe('Optional caption or description for the photo'),
+    }),
+    execute: async (input, context): Promise<ToolResult> => {
+      const uploadInfo = await services.getUploadUrl!(context.avatarId, input.contentType);
+
+      return {
+        success: true,
+        data: {
+          ...uploadInfo,
+          contentType: input.contentType,
+          caption: input.caption,
+        },
+        uiAction: {
+          type: 'upload_widget',
+          payload: {
+            ...uploadInfo,
+            purpose: 'gallery',
+            contentType: input.contentType,
+            caption: input.caption,
+          },
+        },
+      };
+    },
+  })] : []),
+
+  ...(services.saveUploadedPhoto ? [defineTool({
+    name: 'save_gallery_upload',
+    description: 'Save metadata for a photo after it has been uploaded to the gallery.',
+    category: 'gallery',
+    platforms: ['admin-ui'],
+    inputSchema: z.object({
+      s3Key: z.string().describe('The S3 key returned from upload_photo_to_gallery'),
+      publicUrl: z.string().describe('The public URL returned from upload_photo_to_gallery'),
+      caption: z.string().optional().describe('Optional caption for the photo'),
+    }),
+    execute: async (input, context): Promise<ToolResult> => {
+      const result = await services.saveUploadedPhoto!(context.avatarId, {
+        s3Key: input.s3Key,
+        publicUrl: input.publicUrl,
+        caption: input.caption,
+      });
+
+      return {
+        success: true,
+        data: {
+          message: 'Photo saved to gallery!',
+          id: result.id,
+          url: input.publicUrl,
+        },
+        media: { type: 'image', url: input.publicUrl, caption: input.caption },
+      };
+    },
+  })] : []),
 ];
 
 export default createGalleryTools;

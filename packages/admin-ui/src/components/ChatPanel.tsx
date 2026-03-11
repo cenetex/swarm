@@ -19,6 +19,7 @@ import { ActivationChecklist } from './ActivationChecklist';
 import { getErrorRecovery } from '../utils/error-recovery';
 import { WelcomeMessage } from './WelcomeMessage';
 import { UpgradeNudge } from './UpgradeNudge';
+import { GalleryPanel } from './GalleryPanel';
 
 // Track active polling jobs to avoid duplicate polling
 const activePollers = new Map<string, { controller: AbortController; avatarId: string }>();
@@ -45,6 +46,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const [activationLoading, setActivationLoading] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
   const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
+  const [galleryPanelOpen, setGalleryPanelOpen] = useState(false);
   // Track which limit types have already shown an upgrade nudge this session
   const shownNudgesRef = useRef(new Set<string>());
 
@@ -1045,7 +1047,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full min-w-0 bg-[var(--color-bg)]">
+    <div className="flex-1 flex h-full min-w-0 bg-[var(--color-bg)]">
+    <div className="flex-1 flex flex-col h-full min-w-0">
       {/* Avatar Header */}
       {shouldRenderHeader ? (
         <header className="bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm border-b border-[var(--color-border)] px-4 lg:px-6 py-3 lg:py-4">
@@ -1163,6 +1166,16 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                   title="View plan and usage"
                 >
                   Plan & Usage
+                </button>
+                <button
+                  onClick={() => setGalleryPanelOpen(!galleryPanelOpen)}
+                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${galleryPanelOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
+                  title="View gallery"
+                >
+                  <span className="hidden sm:inline">Gallery</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
+                    <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 013.25 3h13.5A2.25 2.25 0 0119 5.25v9.5A2.25 2.25 0 0116.75 17H3.25A2.25 2.25 0 011 14.75v-9.5zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 00.75-.75v-2.69l-2.22-2.219a.75.75 0 00-1.06 0l-1.91 1.909-4.97-4.969a.75.75 0 00-1.06 0L1.5 11.06zm12.22-5.81a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" clipRule="evenodd" />
+                  </svg>
                 </button>
                 <button
                   onClick={() => setPromptPreviewOpen(true)}
@@ -1347,6 +1360,17 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         isOpen={promptPreviewOpen}
         onClose={() => setPromptPreviewOpen(false)}
       />
+
+    </div>
+
+    {/* Gallery Sidebar Panel */}
+    {activeAvatar && (
+      <GalleryPanel
+        avatarId={activeAvatar.id}
+        isOpen={galleryPanelOpen}
+        onClose={() => setGalleryPanelOpen(false)}
+      />
+    )}
 
     </div>
   );

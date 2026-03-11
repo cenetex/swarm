@@ -338,6 +338,31 @@ export async function getReferenceImageUploadUrl(
 }
 
 /**
+ * Generate a signed URL for uploading a photo to the gallery
+ */
+export async function getGalleryUploadUrl(
+  avatarId: string,
+  contentType: string = 'image/png'
+): Promise<{ uploadUrl: string; s3Key: string; publicUrl: string }> {
+  const extension = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg'
+    : contentType.includes('webp') ? 'webp'
+    : contentType.includes('gif') ? 'gif'
+    : 'png';
+  const s3Key = `avatars/${avatarId}/gallery/${uuid()}.${extension}`;
+
+  const command = new PutObjectCommand({
+    Bucket: MEDIA_BUCKET,
+    Key: s3Key,
+    ContentType: contentType,
+  });
+
+  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
+
+  return { uploadUrl, s3Key, publicUrl };
+}
+
+/**
  * Get API key for a provider
  */
 export async function getProviderApiKey(
