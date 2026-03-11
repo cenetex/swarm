@@ -108,10 +108,12 @@ export async function runLlmCallLoop(params: {
         const errorName = sdkError instanceof Error ? sdkError.name : '';
         const errorMessage = sdkError instanceof Error ? sdkError.message : '';
         const isZodError = errorName === 'ZodError' || errorMessage.includes('invalid_type') || errorMessage.includes('Invalid Zod schema');
-        if (!isZodError) throw sdkError;
+        const isResponsesApiError = errorMessage.includes('Unexpected response type from API');
+        if (!isZodError && !isResponsesApiError) throw sdkError;
 
-        logger.info('SDK Zod v3/v4 mismatch, using direct API with pre-sanitized schemas', {
+        logger.info('SDK error, falling back to direct API call', {
           event: 'sdk_fallback', errorName, errorMessage: errorMessage.slice(0, 120),
+          reason: isResponsesApiError ? 'responses_api_incompatible' : 'zod_mismatch',
         });
         const apiMessages = [
           { role: 'system' as const, content: systemPrompt },
