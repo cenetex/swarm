@@ -1396,6 +1396,25 @@ export class AdminApiConstruct extends Construct {
       integration: avatarsIntegration,
     });
 
+    // Gallery routes
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/gallery',
+      methods: [apigateway.HttpMethod.GET],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/gallery/upload-url',
+      methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/gallery/save',
+      methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
     // Telegram diagnostics and repair routes
     this.api.addRoutes({
       path: '/avatars/{avatarId}/telegram/diagnostics',
