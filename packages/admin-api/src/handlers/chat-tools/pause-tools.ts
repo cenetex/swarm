@@ -6,7 +6,6 @@
  */
 import { logger } from '@swarm/core';
 import { isPauseForInputTool, type AllServices } from '@swarm/mcp-server';
-import type { Tool } from '@openrouter/sdk';
 import type { AdminChatMessage } from '../../types.js';
 import {
   executeUiTool,
@@ -15,6 +14,7 @@ import {
   buildPendingToolResponse,
   toAdminToolCall,
   type SdkToolCall,
+  type Tool,
 } from '../chat-tool-helpers.js';
 import { getToolArgs } from './tool-execution.js';
 

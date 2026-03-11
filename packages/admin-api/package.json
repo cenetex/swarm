@@ -26,7 +26,6 @@
     "@aws-sdk/lib-dynamodb": "^3.1004.0",
     "@aws-sdk/s3-request-presigner": "^3.1004.0",
     "@aws-sdk/util-dynamodb": "^3.996.2",
-    "@openrouter/sdk": "0.9.11",
     "@privy-io/node": "^0.10.1",
     "@solana/spl-token": "^0.4.0",
     "@solana/web3.js": "^1.98.0",

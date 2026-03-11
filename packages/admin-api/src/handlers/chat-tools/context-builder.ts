@@ -10,12 +10,11 @@ import {
   type ToolCategory,
   type ProcessorAvatarConfig,
 } from '@swarm/core';
-import { fromChatMessages } from '@openrouter/sdk';
 import type { AdminChatMessage } from '../../types.js';
 import * as voice from '../../services/voice.js';
 import * as memory from '../../services/memory.js';
 import { formatDreamForPrompt, getDreamForResponse } from '../../services/dreams.js';
-import { sanitizeMessages, toSdkMessages } from '../chat-tool-helpers.js';
+import { sanitizeMessages } from '../chat-tool-helpers.js';
 import type { AvatarContext, ProcessChatOptions } from './types.js';
 
 const DREAMS_ENABLED = process.env.DREAMS_ENABLED === 'true';
@@ -52,9 +51,12 @@ export function buildSystemPrompt(avatar?: AvatarContext): string {
 }
 
 /**
- * Build the model input by sanitizing + truncating messages and wrapping in SDK format.
+ * Sanitize and truncate messages for the LLM context window.
+ *
+ * Returns the sanitized messages array (no SDK wrapping needed — we call
+ * the Chat Completions API directly).
  */
-export function buildModelInput(systemPrompt: string, messages: AdminChatMessage[]) {
+export function buildModelInput(_systemPrompt: string, messages: AdminChatMessage[]): AdminChatMessage[] {
   const sanitizedMessages = sanitizeMessages(messages);
   const truncatedMessages = sanitizedMessages.slice(-MAX_CONTEXT_MESSAGES);
   if (sanitizedMessages.length > truncatedMessages.length) {
@@ -67,16 +69,7 @@ export function buildModelInput(systemPrompt: string, messages: AdminChatMessage
   }
   // Re-sanitize after truncation: slicing may orphan tool results whose
   // matching assistant tool_calls were trimmed from the start of the window.
-  const finalMessages = sanitizeMessages(truncatedMessages);
-  const inputMessages = [
-    { role: 'system' as const, content: systemPrompt },
-    ...finalMessages,
-  ];
-
-  // JUSTIFIED TYPE ASSERTION:
-  // Cast to any to work around OpenRouter SDK's strict internal types.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return fromChatMessages(toSdkMessages(inputMessages) as any);
+  return sanitizeMessages(truncatedMessages);
 }
 
 /**

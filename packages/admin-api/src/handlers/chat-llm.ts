@@ -9,7 +9,6 @@ import {
   DEFAULT_LLM_MODEL,
   logger,
 } from '@swarm/core';
-import { OpenRouter } from '@openrouter/sdk';
 import { z } from 'zod';
 
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
@@ -75,7 +74,7 @@ export function logLlmMetrics(params: {
   usage?: LlmUsage;
   toolCalls: number;
   finishReason?: string;
-  mode: 'sdk' | 'fallback';
+  mode: 'direct';
   step?: number;
 }): void {
   logger.info('LLM call completed', {
@@ -194,20 +193,6 @@ export async function getLlmApiKey(): Promise<string> {
 
   logger.info('LLM API key loaded', { keyPrefix: cachedApiKey.substring(0, 10) });
   return cachedApiKey!;
-}
-
-let cachedOpenRouter: OpenRouter | null = null;
-
-export function getOpenRouterClient(): OpenRouter {
-  if (!cachedOpenRouter) {
-    cachedOpenRouter = new OpenRouter({
-      apiKey: getLlmApiKey,
-      httpReferer: 'https://swarm.admin',
-      xTitle: 'Swarm Admin',
-      timeoutMs: LLM_TIMEOUT_MS,
-    });
-  }
-  return cachedOpenRouter;
 }
 
 type FallbackTool = {

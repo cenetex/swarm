@@ -5,8 +5,6 @@
  * mismatch occurs) and the SDK streaming tool execution path.
  */
 import { logger } from '@swarm/core';
-import { hasExecuteFunction } from '@openrouter/sdk';
-import type { Tool } from '@openrouter/sdk';
 import { isPauseForInputTool } from '@swarm/mcp-server';
 import type { AdminChatMessage, ToolResult } from '../../types.js';
 import {
@@ -15,7 +13,9 @@ import {
   stringifyToolResultForModel,
   toAdminToolCall,
   buildPendingToolResponse,
+  hasExecuteFunction,
   type SdkToolCall,
+  type Tool,
 } from '../chat-tool-helpers.js';
 import {
   callLlmDirectFallback,
@@ -202,7 +202,7 @@ export async function executeFallbackToolLoop(params: {
       latencyMs: next.latencyMs,
       usage: next.usage,
       toolCalls: next.toolCalls.length,
-      mode: 'fallback',
+      mode: 'direct',
       step: fallbackStep,
     });
 

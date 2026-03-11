@@ -20,7 +20,6 @@ import { getCorsHeaders } from '../http/cors.js';
 import { parseJsonBody } from '../http/request-body.js';
 import * as chatHistory from '../services/chat-history.js';
 import { createChatJob, createJobId } from '../services/chat-jobs.js';
-import { toChatMessage } from '@openrouter/sdk';
 import {
   ChatRequestSchema,
   type AdminChatMessage,
@@ -71,7 +70,6 @@ import {
   buildUserMessageContent,
   runLlmCallLoop,
   executeFallbackToolLoop,
-  executeSdkToolStream,
   handlePauseToolCalls,
   cleanResponse,
   surfaceModelConfig,
@@ -161,7 +159,8 @@ export async function processChat(
       ? [...conversationHistory, { role: 'user' as const, content: userMessageContent as string }]
       : messages;
 
-  const input = buildModelInput(systemPrompt, messagesWithAttachments);
+  // Sanitize and truncate messages for the LLM context window
+  const preparedMessages = buildModelInput(systemPrompt, messagesWithAttachments);
   const effectiveModel = options?.model || LLM_MODEL;
   const maxOutputTokens = clampInt(options?.maxTokens ?? LLM_MAX_TOKENS, 1, 8192);
   const effectiveMaxOutputTokens = tools.length > 0 ? Math.min(maxOutputTokens, LLM_TOOL_MAX_TOKENS) : maxOutputTokens;
@@ -173,18 +172,16 @@ export async function processChat(
 
   // --- LLM call loop ---
   const llmResult = await runLlmCallLoop({
-    input, systemPrompt, messages, tools,
+    systemPrompt, messages: preparedMessages, tools,
     effectiveModel, effectiveMaxOutputTokens, avatarId,
   });
 
   let response = llmResult.response;
-  const { toolCalls, adminToolCalls, modelResult, usedFallback, fallbackResponse } = llmResult;
+  const { toolCalls, adminToolCalls, usedFallback, fallbackResponse } = llmResult;
 
   // Record LLM call latency
-  if (llmResult.lastLlmMode === 'fallback' && typeof llmResult.lastFallbackLatency === 'number') {
+  if (typeof llmResult.lastFallbackLatency === 'number') {
     chatMetrics.putMetric('LlmCallLatency', llmResult.lastFallbackLatency, 'Milliseconds');
-  } else if (llmResult.lastLlmMode === 'sdk' && llmResult.lastLlmStart > 0) {
-    chatMetrics.putMetric('LlmCallLatency', Date.now() - llmResult.lastLlmStart, 'Milliseconds');
   }
 
   logger.info('LLM response', {
@@ -217,21 +214,9 @@ export async function processChat(
     if (fallbackResult.response) response = fallbackResult.response;
   }
 
-  if (toolCalls.length > 0 && modelResult && !usedFallback) {
-    logger.info('Processing tool execution stream', { toolCallCount: toolCalls.length });
-    toolResults = await executeSdkToolStream(modelResult);
-  }
-
   // Get final response if not yet resolved
-  if (!response) {
-    if (usedFallback) {
-      response = fallbackResponse;
-    } else if (modelResult) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const finalResponse: any = await modelResult.getResponse();
-      const assistantMessage = toChatMessage(finalResponse);
-      response = typeof assistantMessage.content === 'string' ? assistantMessage.content : '';
-    }
+  if (!response && fallbackResponse) {
+    response = fallbackResponse;
   }
 
   // Append tool call/result messages to history

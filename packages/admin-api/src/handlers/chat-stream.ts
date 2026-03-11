@@ -192,7 +192,7 @@ async function* streamLlmResponse(
     usage,
     toolCalls: 0,
     finishReason,
-    mode: 'fallback',
+    mode: 'direct',
   });
 
   // Yield the final content and usage in a done event

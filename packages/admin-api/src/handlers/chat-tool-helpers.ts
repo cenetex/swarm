@@ -15,7 +15,6 @@ import {
   type ToolResult as McpToolResult,
   type AllServices,
 } from '@swarm/mcp-server';
-import { hasExecuteFunction, type Tool } from '@openrouter/sdk';
 import { z } from 'zod';
 import type {
   AdminChatMessage,
@@ -25,6 +24,30 @@ import type {
 import { isProbablyPrivateMediaUrl, redactMediaUrlsFromText } from '../utils/redact-media-urls.js';
 import { _sanitizeToolSchema } from './chat-llm.js';
 import * as avatars from '../services/avatars.js';
+
+/**
+ * Local Tool type — replaces @openrouter/sdk's Tool type.
+ * Matches the shape we build in buildOpenRouterTools().
+ */
+export interface Tool {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+    inputSchema?: unknown;
+    execute?: (params: Record<string, unknown>) => Promise<unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [key: string]: any;
+  };
+}
+
+/**
+ * Check if a tool has an executable function — replaces @openrouter/sdk's hasExecuteFunction.
+ */
+export function hasExecuteFunction(tool: Tool): tool is Tool & { function: { execute: (params: Record<string, unknown>) => Promise<unknown> } } {
+  return typeof tool.function.execute === 'function';
+}
 
 /**
  * Sanitize conversation history to ensure valid message format
@@ -331,7 +354,7 @@ export async function buildOpenRouterTools(
     return {
       type: 'function',
       function: toolFn,
-    } as unknown as Tool;
+    } as Tool;
   }));
 }
 
