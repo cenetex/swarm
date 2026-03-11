@@ -54,7 +54,7 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.CANARY_API_KEY }}" \
             -d "{
-              \"model\": \"default\",
+              \"model\": \"agent-1-kt7l\",
               \"messages\": [
                 {\"role\": \"user\", \"content\": \"${CANARY_MSG}\"}
               ],
