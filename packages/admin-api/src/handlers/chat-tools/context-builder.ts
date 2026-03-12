@@ -282,5 +282,11 @@ export async function buildEnrichedSystemPrompt(
     systemPrompt = await injectUserIdentityContext(systemPrompt, options.userAccountId);
   }
 
+  // Inject active task context (admin UI workspace state)
+  if (options?.activeTask) {
+    const t = options.activeTask;
+    systemPrompt += `\n\n## Active Task\nThe user is currently focused on a "${t.toolName}" task (status: ${t.status}, surface: ${t.surface}). Tailor your response to this context.`;
+  }
+
   return systemPrompt;
 }

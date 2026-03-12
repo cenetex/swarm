@@ -101,6 +101,14 @@ interface SenderContext {
   avatarUrl?: string;
 }
 
+/** Concise snapshot of the user's active task (sent as request metadata). */
+export interface ActiveTaskMeta {
+  taskId: string;
+  toolName: string;
+  status: string;
+  surface: 'inline' | 'workspace';
+}
+
 /**
  * Send a chat message to the admin API
  */
@@ -108,7 +116,8 @@ export async function sendChatMessage(
   message: string,
   history: Array<{ role: string; content: string; tool_call_id?: string; tool_calls?: unknown[] }>,
   avatar?: AvatarContext,
-  sender?: SenderContext
+  sender?: SenderContext,
+  activeTask?: ActiveTaskMeta,
 ): Promise<ChatResponse> {
   const response = await fetch(getChatUrl(), {
     method: 'POST',
@@ -139,6 +148,8 @@ export async function sendChatMessage(
         displayName: sender.displayName,
         avatarUrl: sender.avatarUrl,
       } : undefined,
+      // Pass active task context for system prompt enrichment
+      activeTask: activeTask || undefined,
     }),
   });
 

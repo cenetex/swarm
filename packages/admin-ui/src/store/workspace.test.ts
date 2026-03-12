@@ -1,14 +1,16 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { useWorkspaceStore } from './workspace';
+import { useTaskCardStore } from './task-cards';
 
 describe('WorkspaceStore', () => {
   beforeEach(() => {
-    // Reset to default state
     useWorkspaceStore.setState({
       isOpen: false,
       activeTaskCardId: null,
       title: '',
+      openedAt: null,
     });
+    useTaskCardStore.setState({ cards: {} });
   });
 
   test('starts closed with no active task', () => {
@@ -16,31 +18,97 @@ describe('WorkspaceStore', () => {
     expect(state.isOpen).toBe(false);
     expect(state.activeTaskCardId).toBeNull();
     expect(state.title).toBe('');
+    expect(state.openedAt).toBeNull();
   });
 
-  test('openForTask sets isOpen, activeTaskCardId, and title', () => {
-    useWorkspaceStore.getState().openForTask('tc-123', 'Twitter Connect');
+  test('openForTask sets isOpen, activeTaskCardId, title, and openedAt', () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-123', avatarId: 'a1', toolName: 'request_secret', arguments: {},
+    });
+
+    useWorkspaceStore.getState().openForTask('tc-123', 'Secret Input');
     const state = useWorkspaceStore.getState();
     expect(state.isOpen).toBe(true);
     expect(state.activeTaskCardId).toBe('tc-123');
-    expect(state.title).toBe('Twitter Connect');
+    expect(state.title).toBe('Secret Input');
+    expect(state.openedAt).toBeGreaterThan(0);
   });
 
-  test('close resets all state', () => {
-    useWorkspaceStore.getState().openForTask('tc-123', 'Twitter Connect');
+  test('openForTask updates task card workspaceState to open', () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-1', avatarId: 'a1', toolName: 'confirm_action', arguments: {},
+    });
+
+    useWorkspaceStore.getState().openForTask('tc-1', 'Confirm');
+    const card = useTaskCardStore.getState().getCard('tc-1');
+    expect(card?.workspaceState).toBe('open');
+  });
+
+  test('close resets state and sets card workspaceState to available', () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-1', avatarId: 'a1', toolName: 'confirm_action', arguments: {},
+    });
+
+    useWorkspaceStore.getState().openForTask('tc-1', 'Confirm');
     useWorkspaceStore.getState().close();
+
     const state = useWorkspaceStore.getState();
     expect(state.isOpen).toBe(false);
     expect(state.activeTaskCardId).toBeNull();
-    expect(state.title).toBe('');
+    expect(state.openedAt).toBeNull();
+
+    const card = useTaskCardStore.getState().getCard('tc-1');
+    expect(card?.workspaceState).toBe('available');
   });
 
-  test('opening a different task replaces the previous one', () => {
-    useWorkspaceStore.getState().openForTask('tc-1', 'First Task');
-    useWorkspaceStore.getState().openForTask('tc-2', 'Second Task');
+  test('dismissTask cancels pending card and hides it', () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-1', avatarId: 'a1', toolName: 'request_secret', arguments: {},
+    });
+
+    useWorkspaceStore.getState().openForTask('tc-1', 'Secret');
+    useWorkspaceStore.getState().dismissTask();
+
     const state = useWorkspaceStore.getState();
-    expect(state.isOpen).toBe(true);
-    expect(state.activeTaskCardId).toBe('tc-2');
-    expect(state.title).toBe('Second Task');
+    expect(state.isOpen).toBe(false);
+
+    const card = useTaskCardStore.getState().getCard('tc-1');
+    expect(card?.status).toBe('cancelled');
+    expect(card?.workspaceState).toBe('hidden');
+  });
+
+  test('opening a different task sets previous card to available', () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-1', avatarId: 'a1', toolName: 'confirm_action', arguments: {},
+    });
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-2', avatarId: 'a1', toolName: 'request_secret', arguments: {},
+    });
+
+    useWorkspaceStore.getState().openForTask('tc-1', 'First');
+    useWorkspaceStore.getState().openForTask('tc-2', 'Second');
+
+    expect(useTaskCardStore.getState().getCard('tc-1')?.workspaceState).toBe('available');
+    expect(useTaskCardStore.getState().getCard('tc-2')?.workspaceState).toBe('open');
+    expect(useWorkspaceStore.getState().activeTaskCardId).toBe('tc-2');
+  });
+
+  test('getActiveTaskContext returns null when no task is active', () => {
+    expect(useWorkspaceStore.getState().getActiveTaskContext()).toBeNull();
+  });
+
+  test('getActiveTaskContext returns snapshot when task is open', () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-1', avatarId: 'a1', toolName: 'request_secret', arguments: {},
+    });
+
+    useWorkspaceStore.getState().openForTask('tc-1', 'Secret');
+    const ctx = useWorkspaceStore.getState().getActiveTaskContext();
+    expect(ctx).not.toBeNull();
+    expect(ctx!.taskId).toBe('tc-1');
+    expect(ctx!.toolName).toBe('request_secret');
+    expect(ctx!.status).toBe('pending');
+    expect(ctx!.surface).toBe('workspace');
+    expect(ctx!.openedAt).toBeGreaterThan(0);
   });
 });

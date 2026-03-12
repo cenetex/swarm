@@ -9,6 +9,7 @@
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { useAvatarStore, useActiveAvatar, useActiveChat } from '../store';
 import { useTaskCardStore, useTranscriptTimeline } from '../store/task-cards';
+import { useWorkspaceStore } from '../store/workspace';
 import { TaskCard as TaskCardComponent } from './tool-prompts/TaskCard';
 import { useAuth } from '../store/auth';
 import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion, updateAvatar as updateAvatarApi, getAvatar, toggleFeature, transcribeAudio, activateAvatar as apiActivateAvatar, deactivateAvatar as apiDeactivateAvatar, type JobStatus } from '../api';
@@ -312,13 +313,22 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             ...(m.serverToolCalls ? { tool_calls: m.serverToolCalls } : {}),
           }));
 
+        // Build active task snapshot for system prompt enrichment
+        const taskCtx = useWorkspaceStore.getState().getActiveTaskContext();
+        const activeTaskMeta = taskCtx ? {
+          taskId: taskCtx.taskId,
+          toolName: taskCtx.toolName,
+          status: taskCtx.status,
+          surface: taskCtx.surface,
+        } : undefined;
+
         // Send to API with avatar context and sender info
         const response = await sendChatMessage(content, history, {
           id: targetAvatar.id,
           name: targetAvatar.name,
           description: targetAvatar.description,
           persona: targetAvatar.persona,
-        }, sender);
+        }, sender, activeTaskMeta);
 
         // Update avatar avatar if profile image was changed
         if (response.avatarUpdates?.profileImageUrl) {

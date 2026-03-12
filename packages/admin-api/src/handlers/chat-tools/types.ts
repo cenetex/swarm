@@ -22,6 +22,8 @@ export interface ProcessChatOptions {
   maxTokens?: number;
   /** Account ID of the current user — used to inject linked wallet context. */
   userAccountId?: string;
+  /** Active task context from the admin UI (for system prompt enrichment). */
+  activeTask?: { taskId: string; toolName: string; status: string; surface: 'inline' | 'workspace' };
 }
 
 export interface ProcessChatResult {

@@ -56,12 +56,23 @@ export const AvatarContextSchema = z.object({
   enabledCategories: z.array(z.string()).nullish().transform(nullToUndef),
 });
 
+// Active task context (passed from admin UI for system prompt enrichment)
+export const ActiveTaskSchema = z.object({
+  taskId: z.string(),
+  toolName: z.string(),
+  status: z.string(),
+  surface: z.enum(['inline', 'workspace']),
+}).strict();
+
+export type ActiveTask = z.infer<typeof ActiveTaskSchema>;
+
 // Chat request body schema
 export const ChatRequestSchema = z.object({
   message: z.string().min(1),
   history: z.array(AdminChatMessageSchema).default([]),
   avatar: AvatarContextSchema.optional(),
   sender: MessageSenderSchema.optional(),
+  activeTask: ActiveTaskSchema.optional(),
   systemPrompt: z.string().optional(), // Override default system prompt
   attachments: z.array(z.object({
     type: z.enum(['image', 'file', 'audio']),
