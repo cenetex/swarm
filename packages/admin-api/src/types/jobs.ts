@@ -3,6 +3,7 @@
  */
 import type { z } from 'zod';
 import type {
+  ActiveTask,
   AdminChatMessage,
   AvatarContextSchema,
   MessageSender,
@@ -36,6 +37,7 @@ export interface ChatJob {
     systemPrompt?: string;
     attachments?: Array<{ type: 'image' | 'file' | 'audio'; data: string; name?: string }>;
     model?: string;
+    activeTask?: ActiveTask;
   };
 
   // Results (filled on completion)

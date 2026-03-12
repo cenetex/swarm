@@ -59,6 +59,7 @@ export async function handler(event: SQSEvent): Promise<void> {
           customSystemPrompt: job.request.systemPrompt,
           attachments: job.request.attachments,
           model: job.request.model,
+          activeTask: job.request.activeTask,
         }
       );
 

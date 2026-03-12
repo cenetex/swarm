@@ -311,7 +311,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         }),
       };
     }
-    const { message, history, avatar, systemPrompt: customSystemPrompt, attachments, model } = parseResult.data;
+    const { message, history, avatar, systemPrompt: customSystemPrompt, attachments, model, activeTask } = parseResult.data;
 
     if (idempotencyKey) {
       const cached = await chatIdempotencyStore.get(idempotencyKey) as APIGatewayProxyResultV2 | null;
@@ -418,6 +418,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       customSystemPrompt, attachments, model: resolvedModel,
       maxTokens: typeof avatarMaxTokens === 'number' ? avatarMaxTokens : undefined,
       userAccountId: session.accountId,
+      activeTask,
     });
     await chatHistory.saveChatHistory(session, result.history, avatar?.id);
 

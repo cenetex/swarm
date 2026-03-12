@@ -32,6 +32,7 @@ interface TaskCardState {
   updateStatus: (id: string, status: TaskCard['status'], result?: unknown) => void;
   setSummary: (id: string, summary: string) => void;
   toggleExpanded: (id: string) => void;
+  setWorkspaceState: (id: string, state: TaskCard['workspaceState']) => void;
   clearForAvatar: (avatarId: string) => void;
   getCard: (id: string) => TaskCard | undefined;
   getCardsForAvatar: (avatarId: string) => TaskCard[];
@@ -100,6 +101,19 @@ export const useTaskCardStore = create<TaskCardState>((set, get) => ({
         cards: {
           ...state.cards,
           [id]: { ...existing, inlineExpanded: !existing.inlineExpanded },
+        },
+      };
+    });
+  },
+
+  setWorkspaceState: (id, workspaceState) => {
+    set((state) => {
+      const existing = state.cards[id];
+      if (!existing) return state;
+      return {
+        cards: {
+          ...state.cards,
+          [id]: { ...existing, workspaceState, updatedAt: Date.now() },
         },
       };
     });
