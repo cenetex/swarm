@@ -13,7 +13,6 @@
  *   - docs/DATA-RETENTION-MATRIX.md          (canonical retention matrix)
  *   - packages/admin-api/src/services/audit-log.ts  (AUDIT_TTL_DAYS constant)
  *   - packages/admin-ui/src/components/ConsentBanner.tsx  (consent summary)
- *   - docs/TERMS-OF-USE.md                   (Section 11.3 retention table)
  */
 
 interface PrivacyPolicyProps {

@@ -17,8 +17,6 @@
  *   anticipate future phases belong in the manifesto until they have a
  *   first consumer.
  *
- * See docs/SWARM-CONSTITUTION.md for the full manifesto.
- *
  * @module constitution
  */
 

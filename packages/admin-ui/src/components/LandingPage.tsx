@@ -1,7 +1,6 @@
 /**
  * Landing Page - Shown to unauthenticated users
  * Explains what the platform does and guides users to sign in.
- * Aligned with docs/POSITIONING.md messaging.
  */
 import { useState } from 'react';
 import { PrivyLoginButton } from './PrivyLoginButton';
