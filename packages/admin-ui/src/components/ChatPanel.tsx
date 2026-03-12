@@ -22,6 +22,7 @@ import { getErrorRecovery } from '../utils/error-recovery';
 import { WelcomeMessage } from './WelcomeMessage';
 import { UpgradeNudge } from './UpgradeNudge';
 import { GalleryPanel } from './GalleryPanel';
+import { TaskWorkspace } from './TaskWorkspace';
 
 // Track active polling jobs to avoid duplicate polling
 const activePollers = new Map<string, { controller: AbortController; avatarId: string }>();
@@ -1437,6 +1438,9 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         onClose={() => setGalleryPanelOpen(false)}
       />
     )}
+
+    {/* Task Workspace Panel */}
+    <TaskWorkspace />
 
     </div>
   );

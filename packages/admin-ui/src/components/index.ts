@@ -23,3 +23,4 @@ export { ConsentBanner } from './ConsentBanner';
 export { PrivacyPolicy } from './PrivacyPolicy';
 export { ErrorBoundary } from './ErrorBoundary';
 export { HealthDashboard } from './HealthDashboard';
+export { TaskWorkspace } from './TaskWorkspace';
