@@ -6,6 +6,7 @@ import { persist } from 'zustand/middleware';
 import type { Avatar, ChatMessage } from '../types';
 import * as api from '../api/avatars';
 import { fetchChatHistory as apiFetchChatHistory, clearChatHistory as apiClearChatHistory } from '../api/chat';
+import { useTaskCardStore } from './task-cards';
 
 // Generate a unique ID
 const generateId = () => crypto.randomUUID();
@@ -265,6 +266,9 @@ export const useAvatarStore = create<AvatarState>()(
         } catch (error) {
           console.error('Failed to clear chat on backend:', error instanceof Error ? error.message : String(error));
         }
+
+        // Clear task cards for this avatar
+        useTaskCardStore.getState().clearForAvatar(avatarId);
 
         set((state) => ({
           chats: {

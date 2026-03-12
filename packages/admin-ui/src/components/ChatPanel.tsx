@@ -8,6 +8,8 @@
  */
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { useAvatarStore, useActiveAvatar, useActiveChat } from '../store';
+import { useTaskCardStore, useTranscriptTimeline } from '../store/task-cards';
+import { TaskCard as TaskCardComponent } from './tool-prompts/TaskCard';
 import { useAuth } from '../store/auth';
 import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion, updateAvatar as updateAvatarApi, getAvatar, toggleFeature, transcribeAudio, activateAvatar as apiActivateAvatar, deactivateAvatar as apiDeactivateAvatar, type JobStatus } from '../api';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
@@ -33,6 +35,7 @@ interface ChatPanelProps {
 export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const activeAvatar = useActiveAvatar();
   const messages = useActiveChat();
+  const timeline = useTranscriptTimeline(messages, activeAvatar?.id);
   // Extract action functions directly — they're stable references and don't
   // need reactive subscriptions, avoiding full-store re-renders.
   const { addMessage, updateMessage, removeMessage, clearChat, updateAvatar, setLoading, setError, createAvatar } = useAvatarStore.getState();
@@ -452,6 +455,16 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             media: response.media,
           };
 
+          // Register in task card store so it survives setChat() replacements
+          if (pendingToolCall) {
+            useTaskCardStore.getState().registerTaskCard({
+              id: pendingToolCall.id,
+              avatarId: targetAvatar.id,
+              toolName: pendingToolCall.name,
+              arguments: pendingToolCall.arguments,
+            });
+          }
+
           if (loadingIndex >= 0) {
             const next = [
               ...current.slice(0, loadingIndex),
@@ -692,8 +705,30 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         }
       }
       
-      // Update the tool call status in the message
+      // Register a resumed pendingToolCall into the task card store
+      const registerResumedToolCall = (
+        pendingToolCall: { id: string; name: string; arguments: Record<string, unknown> },
+      ) => {
+        useTaskCardStore.getState().registerTaskCard({
+          id: pendingToolCall.id,
+          avatarId: activeAvatar.id,
+          toolName: pendingToolCall.name,
+          arguments: pendingToolCall.arguments,
+        });
+      };
+
+      // Detect if this submission is a cancellation
+      const isCancelled = resultObj.cancelled === true ||
+        (resultObj.confirmed === false) ||
+        (resultObj.linked === false && resultObj.cancelled === true);
+
+      // Update the tool call status in both the message and the task card store.
+      // The task card store supports richer statuses (cancelled/dismissed) while
+      // the ToolCall type on messages only supports pending/completed/failed.
       const updateToolCallStatus = (status: 'completed' | 'failed' = 'completed') => {
+        // Map to the richer task card status
+        const cardStatus = (status === 'completed' && isCancelled) ? 'cancelled' as const : status;
+        useTaskCardStore.getState().updateStatus(toolCallId, cardStatus, result);
         const msgs = useAvatarStore.getState().chats[activeAvatar.id] || [];
         for (const msg of msgs) {
           const toolCall = msg.toolCalls?.find(tc => tc.id === toolCallId);
@@ -714,12 +749,13 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       if (resultObj.secretKey && resultObj.value) {
         try {
           await saveAvatarSecret(activeAvatar.id, resultObj.secretKey as string, resultObj.value as string);
-          updateToolCallStatus();
 
           const resumed = await submitToolResult(activeAvatar.id, toolCallId, {
             stored: true,
             secretKey: resultObj.secretKey,
           });
+
+          updateToolCallStatus();
 
           if (resumed.avatarUpdates?.profileImageUrl) {
             updateAvatar(activeAvatar.id, { avatar: resumed.avatarUpdates.profileImageUrl });
@@ -739,6 +775,9 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             }] : undefined,
             media: resumed.media,
           });
+          if (resumed.pendingToolCall) {
+            registerResumedToolCall(resumed.pendingToolCall);
+          }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to save secret';
           result = { ...(result as Record<string, unknown>), error: errorMsg };
@@ -751,8 +790,6 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       // Handle image upload completion
       if (resultObj.success && resultObj.s3Key && resultObj.publicUrl) {
         try {
-          updateToolCallStatus();
-
           // Check if this is a character reference upload
           const isCharacterReferenceUpload = toolName === 'set_character_reference' ||
                                               toolName === 'get_character_reference_upload_url' ||
@@ -828,8 +865,14 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               }] : undefined,
               media: resumed.media,
             });
+            if (resumed.pendingToolCall) {
+              registerResumedToolCall(resumed.pendingToolCall);
+            }
           }
-          
+
+          // Mark complete only after the async branch succeeded
+          updateToolCallStatus();
+
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to process upload';
           result = { ...(result as Record<string, unknown>), error: errorMsg };
@@ -886,19 +929,24 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             );
             if (hasPendingConnect) return;
 
+            const twitterToolCallId = crypto.randomUUID();
+            const twitterArgs = {
+              type: 'twitter_connect' as const,
+              message: 'Authorize this avatar to post and manage tweets.',
+            };
             addMessage(activeAvatar.id, {
               role: 'assistant',
               content: '', // TwitterConnectPrompt renders its own UI
               toolCalls: [{
-                id: crypto.randomUUID(),
+                id: twitterToolCallId,
                 name: 'request_twitter_connection',
-                arguments: {
-                  type: 'twitter_connect',
-                  message: 'Authorize this avatar to post and manage tweets.',
-                },
+                arguments: twitterArgs,
                 status: 'pending',
               }],
             });
+            registerResumedToolCall(
+              { id: twitterToolCallId, name: 'request_twitter_connection', arguments: twitterArgs },
+            );
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to toggle feature';
@@ -911,9 +959,9 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
 
       // Handle confirmation response
       if ('confirmed' in resultObj) {
-        updateToolCallStatus();
         try {
           const resumed = await submitToolResult(activeAvatar.id, toolCallId, resultObj);
+          updateToolCallStatus();
 
           if (resumed.avatarUpdates?.profileImageUrl) {
             updateAvatar(activeAvatar.id, { avatar: resumed.avatarUpdates.profileImageUrl });
@@ -933,6 +981,9 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             }] : undefined,
             media: resumed.media,
           });
+          if (resumed.pendingToolCall) {
+            registerResumedToolCall(resumed.pendingToolCall);
+          }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to submit tool result';
           result = { ...(result as Record<string, unknown>), error: errorMsg };
@@ -944,9 +995,9 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
 
       // Handle configure_integration results — persist config to backend
       if (resultObj.configured === true && typeof resultObj.integration === 'string') {
-        updateToolCallStatus();
         try {
           const resumed = await submitToolResult(activeAvatar.id, toolCallId, resultObj);
+          updateToolCallStatus();
 
           if (resumed.avatarUpdates?.profileImageUrl) {
             updateAvatar(activeAvatar.id, { avatar: resumed.avatarUpdates.profileImageUrl });
@@ -966,6 +1017,9 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             }] : undefined,
             media: resumed.media,
           });
+          if (resumed.pendingToolCall) {
+            registerResumedToolCall(resumed.pendingToolCall);
+          }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Failed to save integration config';
           result = { ...(result as Record<string, unknown>), error: errorMsg };
@@ -1296,7 +1350,18 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               onAction={handleSendMessage}
             />
           ) : (
-            messages.map((message) => {
+            timeline.map((item) => {
+              if (item.type === 'task-card') {
+                return (
+                  <TaskCardComponent
+                    key={`tc-${item.card.id}`}
+                    cardId={item.card.id}
+                    onSubmit={handleToolSubmit}
+                    disabled={!handleToolSubmit}
+                  />
+                );
+              }
+              const message = item.message;
               // Show upgrade nudge inline after limit-error messages (once per limit type per session)
               const shouldShowNudge = Boolean(
                 message.limitInfo &&

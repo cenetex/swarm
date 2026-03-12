@@ -2,8 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { extractThinkingTags } from '../utils/thinkingTags';
 import type { ChatMessage as ChatMessageType, MessageSender } from '../types';
-import { ToolPrompt } from './ToolPrompts';
-import { PromptSuccess, PromptError } from './tool-prompts/PromptStatus';
+import { useTaskCardStore } from '../store/task-cards';
 import { ImageModal } from './ImageModal';
 
 /**
@@ -634,42 +633,9 @@ export function getVisibleToolCalls(
 /** @deprecated Use getVisibleToolCalls instead */
 export const getInteractiveToolCalls = getVisibleToolCalls;
 
-/**
- * Generate a user-friendly completion message for a resolved tool call.
- */
-function getCompletedMessage(toolCall: NonNullable<ChatMessageType['toolCalls']>[number]): string {
-  const result = toolCall.result as Record<string, unknown> | undefined;
-  const args = toolCall.arguments as Record<string, unknown>;
-  switch (toolCall.name) {
-    case 'configure_integration': {
-      const integration = result?.integration || args?.integration;
-      return integration ? `${String(integration)} configured` : 'Integration configured';
-    }
-    case 'confirm_action':
-      return result?.confirmed ? 'Confirmed' : 'Cancelled';
-    case 'request_secret':
-    case 'prompt_secret':
-      return 'Secret saved';
-    case 'request_wallet_link':
-      return 'Wallet linked';
-    case 'request_twitter_connection':
-    case 'twitter_request_integration':
-      return 'Twitter connected';
-    case 'request_feature_toggle':
-      return 'Features updated';
-    case 'request_property_research':
-      return 'Property authorized';
-    default:
-      // Type-based routing fallbacks
-      if (args?.type === 'model_selector') return 'Model selected';
-      if (args?.type === 'feature_toggle') return 'Features updated';
-      if (args?.type === 'upload_url') return 'Upload complete';
-      if (args?.type === 'twitter_connect') return 'Twitter connected';
-      return 'Completed';
-  }
-}
 
-function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
+
+function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const hasPendingTools = message.toolCalls?.some(tc => tc.status === 'pending');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -751,9 +717,15 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
   
   // Filter out auto-executed tools from display
   const visibleToolCalls = getVisibleToolCalls(message.toolCalls);
-  
+  // Task cards managed by the task card store render as standalone transcript items.
+  // Exclude them from the message bubble so they aren't rendered twice.
+  const taskCardStoreCards = useTaskCardStore((s) => s.cards);
+  const unmanagedToolCalls = visibleToolCalls.filter((tc) => !taskCardStoreCards[tc.id]);
+
   // Don't render empty bubbles - check if there's any visible content
-  const hasVisibleContent = 
+  // Tool calls that have task cards render as separate transcript items, so they
+  // still count as "visible content" for the purpose of keeping the message bubble.
+  const hasVisibleContent =
     message.isLoading ||
     cleanedContent ||
     (!isUser && thoughts.length > 0) ||
@@ -767,7 +739,7 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
     images.length > 0 ||
     videos.length > 0 ||
     audios.length > 0 ||
-    visibleToolCalls.length > 0 ||
+    unmanagedToolCalls.length > 0 ||
     activeJobs.length > 0 ||
     failedJobs.length > 0;
   
@@ -1338,30 +1310,8 @@ function ChatMessageInner({ message, onToolSubmit }: ChatMessageProps) {
               />
             )}
             
-            {/* Render tool prompts inline — pending as interactive forms, completed/failed as badges */}
-            {visibleToolCalls.length > 0 && (
-              <div className={`space-y-3 ${message.content || images.length > 0 ? 'mt-3' : ''}`}>
-                {visibleToolCalls.map((toolCall) => {
-                  if (toolCall.status === 'completed') {
-                    return <PromptSuccess key={toolCall.id} message={getCompletedMessage(toolCall)} />;
-                  }
-                  if (toolCall.status === 'failed') {
-                    const errMsg = typeof (toolCall.result as Record<string, unknown>)?.error === 'string'
-                      ? (toolCall.result as Record<string, unknown>).error as string
-                      : 'Action failed';
-                    return <PromptError key={toolCall.id} message={errMsg} />;
-                  }
-                  return (
-                    <ToolPrompt
-                      key={toolCall.id}
-                      toolCall={toolCall}
-                      onSubmit={onToolSubmit || (() => {})}
-                      disabled={!onToolSubmit}
-                    />
-                  );
-                })}
-              </div>
-            )}
+            {/* Tool calls managed by the task card store render as standalone transcript items.
+                Only render tool calls here that do NOT have a corresponding task card. */}
 
             {/* Render pending job indicators */}
             {activeJobs.length > 0 && (
