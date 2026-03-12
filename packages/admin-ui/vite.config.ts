@@ -70,11 +70,15 @@ export default defineConfig({
           }
 
           // --- Solana wallet stack
+          // eventemitter3 is a transitive dep of @solana/wallet-adapter-base
+          // and must live here (not in vendor-walletconnect) to avoid a
+          // circular chunk dependency: walletconnect ↔ solana.
           if (
             id.includes('/node_modules/@solana/') ||
             id.includes('/node_modules/@solana-program/') ||
             id.includes('/node_modules/bs58/') ||
-            id.includes('/node_modules/base-x/')
+            id.includes('/node_modules/base-x/') ||
+            id.includes('/node_modules/eventemitter3/')
           ) {
             return 'vendor-solana';
           }
