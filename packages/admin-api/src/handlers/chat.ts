@@ -417,6 +417,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     const result = await processChat(message, history, session, avatarContext, {
       customSystemPrompt, attachments, model: resolvedModel,
       maxTokens: typeof avatarMaxTokens === 'number' ? avatarMaxTokens : undefined,
+      userAccountId: session.accountId,
     });
     await chatHistory.saveChatHistory(session, result.history, avatar?.id);
 

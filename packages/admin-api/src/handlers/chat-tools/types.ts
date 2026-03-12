@@ -20,6 +20,8 @@ export interface ProcessChatOptions {
   attachments?: Array<{ type: 'image' | 'file' | 'audio'; data: string; name?: string }>;
   model?: string;
   maxTokens?: number;
+  /** Account ID of the current user — used to inject linked wallet context. */
+  userAccountId?: string;
 }
 
 export interface ProcessChatResult {

@@ -15,6 +15,7 @@ import * as voice from '../../services/voice.js';
 import * as memory from '../../services/memory.js';
 import { formatDreamForPrompt, getDreamForResponse } from '../../services/dreams.js';
 import { sanitizeMessages } from '../chat-tool-helpers.js';
+import { getAccountSummary } from '../../services/accounts.js';
 import type { AvatarContext, ProcessChatOptions } from './types.js';
 
 const DREAMS_ENABLED = process.env.DREAMS_ENABLED === 'true';
@@ -212,6 +213,51 @@ export function buildUserMessageContent(
 }
 
 /**
+ * Inject current user identity context (linked wallets, Orb status) into the
+ * system prompt so the avatar knows who it is talking to.
+ */
+export async function injectUserIdentityContext(
+  systemPrompt: string,
+  accountId: string
+): Promise<string> {
+  try {
+    const account = await getAccountSummary(accountId);
+    if (!account) return systemPrompt;
+
+    const wallets = account.identities
+      .filter(i => i.type === 'wallet')
+      .map(i => i.providerId);
+
+    if (wallets.length === 0) return systemPrompt;
+
+    const shortAddr = (addr: string) =>
+      addr.length > 10 ? `${addr.slice(0, 4)}...${addr.slice(-4)}` : addr;
+
+    const lines = [
+      '\n\n## Current User',
+      `- Account: ${account.displayName || account.email || shortAddr(wallets[0])}`,
+      `- Linked wallets: ${wallets.map(w => shortAddr(w)).join(', ')}`,
+    ];
+
+    systemPrompt += lines.join('\n');
+
+    logger.info('User identity context injected', {
+      event: 'user_identity_injected',
+      accountId,
+      walletCount: wallets.length,
+    });
+  } catch (err) {
+    logger.warn('Failed to inject user identity context', {
+      event: 'user_identity_error',
+      accountId,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+
+  return systemPrompt;
+}
+
+/**
  * Build the enriched system prompt with optional dream + memory context.
  */
 export async function buildEnrichedSystemPrompt(
@@ -229,6 +275,11 @@ export async function buildEnrichedSystemPrompt(
   // Inject memory context
   if (avatar?.id && avatar?.enabledCategories?.includes('memory')) {
     systemPrompt = await injectMemoryContext(systemPrompt, avatar.id, userMessage);
+  }
+
+  // Inject user identity context (linked wallets)
+  if (options?.userAccountId) {
+    systemPrompt = await injectUserIdentityContext(systemPrompt, options.userAccountId);
   }
 
   return systemPrompt;

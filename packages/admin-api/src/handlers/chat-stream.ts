@@ -318,7 +318,12 @@ export async function handler(
       enabledCategories,
     } : undefined;
 
-    const systemPrompt = buildSystemPrompt(avatarContext);
+    let systemPrompt = buildSystemPrompt(avatarContext);
+    // Inject user identity context (linked wallets) for the streaming path
+    if (session.accountId) {
+      const { injectUserIdentityContext } = await import('./chat-tools/context-builder.js');
+      systemPrompt = await injectUserIdentityContext(systemPrompt, session.accountId);
+    }
     const resolvedModel = resolveChatModel({
       requestModel: model,
       avatarModel: avatarRecord?.llmConfig?.model,

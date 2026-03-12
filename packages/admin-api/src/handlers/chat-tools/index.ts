@@ -13,6 +13,7 @@ export {
   buildSystemPrompt,
   buildModelInput,
   buildEnrichedSystemPrompt,
+  injectUserIdentityContext,
   transcribeAudioAttachments,
   buildUserMessageContent,
 } from './context-builder.js';
