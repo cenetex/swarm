@@ -269,7 +269,11 @@ describe('composeTimeline', () => {
 
 // Replicate the resolveOAuthTaskCard helper from App.tsx so tests
 // exercise the same logic that runs in production.
-const OAUTH_TOOL_NAMES = new Set(['request_twitter_connection', 'configure_integration', 'twitter_request_integration']);
+function isTwitterCard(c: { toolName: string; arguments: Record<string, unknown> }) {
+  if (c.toolName === 'request_twitter_connection' || c.toolName === 'twitter_request_integration') return true;
+  if (c.toolName === 'configure_integration') return c.arguments.integration === 'twitter';
+  return false;
+}
 
 function resolveOAuthTaskCard(
   avatarId: string,
@@ -278,7 +282,7 @@ function resolveOAuthTaskCard(
 ): string | undefined {
   const cards = useTaskCardStore.getState().getCardsForAvatar(avatarId);
   const pending = cards
-    .filter((c) => c.status === 'pending' && OAUTH_TOOL_NAMES.has(c.toolName))
+    .filter((c) => c.status === 'pending' && isTwitterCard(c))
     .sort((a, b) => b.createdAt - a.createdAt);
 
   if (pending.length === 0) return undefined;
@@ -400,6 +404,69 @@ describe('OAuth task card scoping (store-based resolver)', () => {
     expect(resolved).toBeUndefined();
     // Existing card unchanged
     expect(useTaskCardStore.getState().cards['tc-already-done'].status).toBe('completed');
+  });
+
+  it('resolves only the Twitter card when a non-Twitter configure_integration card is also pending', () => {
+    const { registerTaskCard } = useTaskCardStore.getState();
+
+    // Pending configure_integration for telegram — should NOT be touched
+    registerTaskCard({
+      id: 'tc-telegram',
+      avatarId: 'a1',
+      toolName: 'configure_integration',
+      arguments: { integration: 'telegram', type: 'configure_integration' },
+    });
+
+    // Pending configure_integration for twitter — should be resolved
+    registerTaskCard({
+      id: 'tc-twitter-cfg',
+      avatarId: 'a1',
+      toolName: 'configure_integration',
+      arguments: { integration: 'twitter', type: 'configure_integration' },
+    });
+
+    const resolved = resolveOAuthTaskCard('a1', 'completed', { connected: true });
+
+    expect(resolved).toBe('tc-twitter-cfg');
+    expect(useTaskCardStore.getState().cards['tc-twitter-cfg'].status).toBe('completed');
+    // Telegram card remains pending
+    expect(useTaskCardStore.getState().cards['tc-telegram'].status).toBe('pending');
+  });
+
+  it('resolves request_twitter_connection over non-Twitter configure_integration', () => {
+    const { registerTaskCard } = useTaskCardStore.getState();
+
+    // Pending configure_integration for discord
+    registerTaskCard({
+      id: 'tc-discord',
+      avatarId: 'a1',
+      toolName: 'configure_integration',
+      arguments: { integration: 'discord' },
+    });
+
+    // Pending request_twitter_connection
+    registerTaskCard({
+      id: 'tc-twitter-req',
+      avatarId: 'a1',
+      toolName: 'request_twitter_connection',
+      arguments: { type: 'twitter_connect' },
+    });
+
+    // Pending configure_integration for openai
+    registerTaskCard({
+      id: 'tc-openai',
+      avatarId: 'a1',
+      toolName: 'configure_integration',
+      arguments: { integration: 'openai' },
+    });
+
+    const resolved = resolveOAuthTaskCard('a1', 'completed', { connected: true });
+
+    expect(resolved).toBe('tc-twitter-req');
+    expect(useTaskCardStore.getState().cards['tc-twitter-req'].status).toBe('completed');
+    // Non-Twitter cards untouched
+    expect(useTaskCardStore.getState().cards['tc-discord'].status).toBe('pending');
+    expect(useTaskCardStore.getState().cards['tc-openai'].status).toBe('pending');
   });
 });
 

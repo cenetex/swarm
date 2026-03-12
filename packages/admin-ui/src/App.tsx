@@ -232,11 +232,18 @@ function App() {
     status: 'completed' | 'failed',
     resultData: unknown,
   ): string | undefined => {
-    const OAUTH_TOOL_NAMES = new Set(['request_twitter_connection', 'configure_integration', 'twitter_request_integration']);
     const cards = useTaskCardStore.getState().getCardsForAvatar(avatarId);
-    // Find the most recent pending card by createdAt (descending)
+
+    const isTwitterCard = (c: { toolName: string; arguments: Record<string, unknown> }) => {
+      if (c.toolName === 'request_twitter_connection' || c.toolName === 'twitter_request_integration') return true;
+      // configure_integration is shared across many integrations — only match twitter
+      if (c.toolName === 'configure_integration') return c.arguments.integration === 'twitter';
+      return false;
+    };
+
+    // Find the most recent pending Twitter-specific card by createdAt (descending)
     const pending = cards
-      .filter((c) => c.status === 'pending' && OAUTH_TOOL_NAMES.has(c.toolName))
+      .filter((c) => c.status === 'pending' && isTwitterCard(c))
       .sort((a, b) => b.createdAt - a.createdAt);
 
     if (pending.length === 0) return undefined;
