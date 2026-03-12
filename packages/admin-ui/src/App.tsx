@@ -273,6 +273,11 @@ function App() {
       const displayUsername = backendUsername || result.username;
 
       if (backendConnected === false) {
+        // Resolve the pending task card as failed before returning
+        resolveOAuthTaskCard(targetAvatarId, 'failed', {
+          error: 'OAuth completed but backend still reports disconnected',
+        });
+
         const disconnectErrorContent = JSON.stringify({
           connected: false,
           error: true,
@@ -307,7 +312,6 @@ function App() {
               toolCalls: chatMsg.toolCalls?.map(t =>
                 t.id === pendingOAuthCardId ? { ...t, status: 'completed' as const } : t
               ),
-              content: '',
             });
             break;
           }
@@ -362,7 +366,6 @@ function App() {
               toolCalls: chatMsg.toolCalls?.map(t =>
                 t.id === failedOAuthCardId ? { ...t, status: 'failed' as const, result: { error: result.error } } : t
               ),
-              content: '',
             });
             break;
           }

@@ -920,6 +920,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             resultObj.feature as 'media' | 'voice' | 'twitter' | 'telegram' | 'discord',
             resultObj.enabled
           );
+          updateToolCallStatus();
 
           // Fallback UX: if Twitter was enabled but model didn't prompt for connect
           if (resultObj.feature === 'twitter' && resultObj.enabled) {
