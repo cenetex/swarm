@@ -1450,7 +1450,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
     )}
 
     {/* Task Workspace Panel */}
-    <TaskWorkspace />
+    <TaskWorkspace onToolSubmit={handleToolSubmit} />
 
     </div>
   );

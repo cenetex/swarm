@@ -20,6 +20,7 @@ import { PromptSuccess, PromptError } from './PromptStatus';
 import { signWalletLinkMessage, type PhantomProvider } from '../../auth/wallet-linking';
 import { humanizeWalletSignatureError } from '../../auth/wallet-errors';
 import { useAuthStore } from '../../store/auth';
+import { useTaskCardStore } from '../../store/task-cards';
 import { CopyableAddress } from '../CopyableAddress';
 
 type LinkStatus = 'idle' | 'connecting' | 'challenging' | 'signing' | 'verifying' | 'success' | 'error';
@@ -218,6 +219,10 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
         console.warn('[WalletLinkPrompt] Account refresh failed after successful link — UI may be stale.');
       }
 
+      // Write receipt to task card with linked address
+      const shortAddr = `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`;
+      useTaskCardStore.getState().setSummary(toolCall.id, `Linked ${shortAddr}`);
+
       // Submit tool result so the chat conversation can continue
       onSubmit(toolCall.id, {
         linked: true,
@@ -363,6 +368,7 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
           {/* Cancel button */}
           <button
             onClick={() => {
+              useTaskCardStore.getState().setSummary(toolCall.id, 'Skipped by user');
               onSubmit(toolCall.id, { linked: false, cancelled: true });
             }}
             disabled={disabled}
