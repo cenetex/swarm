@@ -1,4 +1,4 @@
-import { PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { MemoryFact } from '../../types/index.js';
 
@@ -37,18 +37,39 @@ export async function getFacts(
   query: string,
   userId?: string
 ): Promise<MemoryFact[]> {
-  // Query facts by prefix (about field)
-  // For more sophisticated search, would need GSI or OpenSearch
-  const result = await docClient.send(new ScanCommand({
+  // Use Query on pk + sk prefix instead of Scan to avoid scanning the entire table.
+  // Sort key format: FACT#<about>#<factId>
+  // When query matches an about category exactly, use a tighter sk prefix.
+  const lowerQuery = query.toLowerCase();
+  const skPrefix = `FACT#${query}`;
+
+  // First try an exact category match (e.g. query='posted_tweet' → sk prefix 'FACT#posted_tweet')
+  let result = await docClient.send(new QueryCommand({
     TableName: tableName,
-    FilterExpression: 'pk = :pk AND begins_with(sk, :prefix) AND (contains(fact, :query) OR contains(about, :query))',
+    KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
     ExpressionAttributeValues: {
       ':pk': `AVATAR#${avatarId}`,
-      ':prefix': 'FACT#',
-      ':query': query.toLowerCase(),
+      ':prefix': skPrefix,
     },
     Limit: 20,
+    ScanIndexForward: false,
   }));
+
+  // If no exact category match, fall back to querying all facts with a content filter
+  if (!result.Items || result.Items.length === 0) {
+    result = await docClient.send(new QueryCommand({
+      TableName: tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :factPrefix)',
+      FilterExpression: 'contains(fact, :query) OR contains(about, :query)',
+      ExpressionAttributeValues: {
+        ':pk': `AVATAR#${avatarId}`,
+        ':factPrefix': 'FACT#',
+        ':query': lowerQuery,
+      },
+      Limit: 50,
+      ScanIndexForward: false,
+    }));
+  }
 
   const facts = (result.Items || [])
     .filter(item => {
