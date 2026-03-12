@@ -21,11 +21,18 @@ export interface ActiveTaskContext {
   openedAt: number;
 }
 
+/** What type of content the workspace is showing. */
+export type WorkspaceContentType = 'task' | 'gallery';
+
 export interface WorkspaceState {
   /** Whether the workspace panel is open */
   isOpen: boolean;
+  /** What content the workspace is displaying */
+  contentType: WorkspaceContentType;
   /** The task card ID currently displayed in the workspace (if any) */
   activeTaskCardId: string | null;
+  /** Avatar ID for gallery content (when contentType is 'gallery') */
+  galleryAvatarId: string | null;
   /** Human-readable title shown in the workspace header */
   title: string;
   /** When the workspace was opened (ms since epoch) */
@@ -33,6 +40,8 @@ export interface WorkspaceState {
 
   /** Open the workspace for a specific task card */
   openForTask: (taskCardId: string, title: string) => void;
+  /** Open the workspace showing gallery content */
+  openGallery: (avatarId: string) => void;
   /** Close the workspace (user dismiss) */
   close: () => void;
   /** Dismiss the active task (closes workspace + marks card dismissed/cancelled) */
@@ -47,7 +56,9 @@ export interface WorkspaceState {
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   isOpen: false,
+  contentType: 'task',
   activeTaskCardId: null,
+  galleryAvatarId: null,
   title: '',
   openedAt: null,
 
@@ -59,7 +70,35 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
     // Mark the new card as open in workspace
     useTaskCardStore.getState().setWorkspaceState(taskCardId, 'open');
-    set({ isOpen: true, activeTaskCardId: taskCardId, title, openedAt: Date.now() });
+    set({
+      isOpen: true,
+      contentType: 'task',
+      activeTaskCardId: taskCardId,
+      galleryAvatarId: null,
+      title,
+      openedAt: Date.now(),
+    });
+  },
+
+  openGallery: (avatarId) => {
+    // Release any previously open task card
+    const prev = get().activeTaskCardId;
+    if (prev) {
+      useTaskCardStore.getState().setWorkspaceState(prev, 'available');
+    }
+    // Toggle: if gallery is already open, close the workspace
+    if (get().isOpen && get().contentType === 'gallery') {
+      set({ isOpen: false, contentType: 'task', activeTaskCardId: null, galleryAvatarId: null, title: '', openedAt: null });
+      return;
+    }
+    set({
+      isOpen: true,
+      contentType: 'gallery',
+      activeTaskCardId: null,
+      galleryAvatarId: avatarId,
+      title: 'Gallery',
+      openedAt: Date.now(),
+    });
   },
 
   close: () => {
@@ -67,7 +106,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (cardId) {
       useTaskCardStore.getState().setWorkspaceState(cardId, 'available');
     }
-    set({ isOpen: false, activeTaskCardId: null, title: '', openedAt: null });
+    set({ isOpen: false, contentType: 'task', activeTaskCardId: null, galleryAvatarId: null, title: '', openedAt: null });
   },
 
   dismissTask: () => {
@@ -79,12 +118,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
       useTaskCardStore.getState().setWorkspaceState(cardId, 'hidden');
     }
-    set({ isOpen: false, activeTaskCardId: null, title: '', openedAt: null });
+    set({ isOpen: false, contentType: 'task', activeTaskCardId: null, galleryAvatarId: null, title: '', openedAt: null });
   },
 
   getActiveTaskContext: () => {
-    const { activeTaskCardId, isOpen } = get();
-    if (!activeTaskCardId) return null;
+    const { activeTaskCardId, isOpen, contentType } = get();
+    if (!activeTaskCardId || contentType !== 'task') return null;
     const card = useTaskCardStore.getState().getCard(activeTaskCardId);
     if (!card) return null;
     return {

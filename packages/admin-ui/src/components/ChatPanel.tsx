@@ -22,7 +22,6 @@ import { ActivationChecklist } from './ActivationChecklist';
 import { getErrorRecovery } from '../utils/error-recovery';
 import { WelcomeMessage } from './WelcomeMessage';
 import { UpgradeNudge } from './UpgradeNudge';
-import { GalleryPanel } from './GalleryPanel';
 import { TaskWorkspace } from './TaskWorkspace';
 
 // Track active polling jobs to avoid duplicate polling
@@ -51,7 +50,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const [activationLoading, setActivationLoading] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
   const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
-  const [galleryPanelOpen, setGalleryPanelOpen] = useState(false);
+  const galleryOpen = useWorkspaceStore((s) => s.isOpen && s.contentType === 'gallery');
   // Track which limit types have already shown an upgrade nudge this session
   const shownNudgesRef = useRef(new Set<string>());
 
@@ -1234,8 +1233,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                   Plan & Usage
                 </button>
                 <button
-                  onClick={() => setGalleryPanelOpen(!galleryPanelOpen)}
-                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${galleryPanelOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
+                  onClick={() => useWorkspaceStore.getState().openGallery(activeAvatar.id)}
+                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${galleryOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
                   title="View gallery"
                 >
                   <span className="hidden sm:inline">Gallery</span>
@@ -1440,16 +1439,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
 
     </div>
 
-    {/* Gallery Sidebar Panel */}
-    {activeAvatar && (
-      <GalleryPanel
-        avatarId={activeAvatar.id}
-        isOpen={galleryPanelOpen}
-        onClose={() => setGalleryPanelOpen(false)}
-      />
-    )}
-
-    {/* Task Workspace Panel */}
+    {/* Task Workspace Panel (gallery + task content) */}
     <TaskWorkspace onToolSubmit={handleToolSubmit} />
 
     </div>

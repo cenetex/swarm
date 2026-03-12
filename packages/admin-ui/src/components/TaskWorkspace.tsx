@@ -1,22 +1,25 @@
 /**
- * TaskWorkspace — secondary focus surface for task interactions.
+ * TaskWorkspace — secondary focus surface for task interactions and gallery.
  *
  * Desktop: slides in as a right-side panel beside the chat transcript.
  * Mobile: slides up as a bottom drawer/sheet.
  *
  * The workspace is hidden by default and opens from explicit task card
- * actions. The transcript remains readable and the chat input stays
- * pinned while the workspace is open.
+ * actions or the gallery button. The transcript remains readable and
+ * the chat input stays pinned while the workspace is open.
  *
- * When a task card is active and pending, the workspace renders the
- * appropriate tool prompt component (e.g. WalletLinkPrompt) so the
- * user can complete the task in a focused surface.
+ * Content types:
+ * - 'task': renders the appropriate tool prompt for a pending task card,
+ *   or resolved state (success/error/cancelled).
+ * - 'gallery': renders the avatar media gallery with upload, filter,
+ *   preview, and drag-drop.
  */
 import { useEffect, useRef } from 'react';
 import { useWorkspaceStore } from '../store/workspace';
 import { useTaskCardStore } from '../store/task-cards';
 import { ToolPrompt } from './tool-prompts';
 import { PromptSuccess, PromptError } from './tool-prompts/PromptStatus';
+import { GalleryContent } from './GalleryPanel';
 
 interface TaskWorkspaceProps {
   /** Callback when a tool prompt is submitted from within the workspace. */
@@ -24,7 +27,7 @@ interface TaskWorkspaceProps {
 }
 
 export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
-  const { isOpen, title, close, activeTaskCardId } = useWorkspaceStore();
+  const { isOpen, title, close, activeTaskCardId, contentType, galleryAvatarId } = useWorkspaceStore();
   const card = useTaskCardStore((s) => activeTaskCardId ? s.cards[activeTaskCardId] : undefined);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -111,9 +114,10 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
         </header>
 
         {/* Content area */}
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          {/* Active pending task — render the tool prompt */}
-          {toolCallForPrompt && onToolSubmit ? (
+        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col">
+          {contentType === 'gallery' && galleryAvatarId ? (
+            <GalleryContent avatarId={galleryAvatarId} isOpen={isOpen} />
+          ) : toolCallForPrompt && onToolSubmit ? (
             <ToolPrompt
               toolCall={toolCallForPrompt}
               onSubmit={onToolSubmit}

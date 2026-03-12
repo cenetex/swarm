@@ -6,7 +6,9 @@ describe('WorkspaceStore', () => {
   beforeEach(() => {
     useWorkspaceStore.setState({
       isOpen: false,
+      contentType: 'task',
       activeTaskCardId: null,
+      galleryAvatarId: null,
       title: '',
       openedAt: null,
     });
@@ -16,7 +18,9 @@ describe('WorkspaceStore', () => {
   test('starts closed with no active task', () => {
     const state = useWorkspaceStore.getState();
     expect(state.isOpen).toBe(false);
+    expect(state.contentType).toBe('task');
     expect(state.activeTaskCardId).toBeNull();
+    expect(state.galleryAvatarId).toBeNull();
     expect(state.title).toBe('');
     expect(state.openedAt).toBeNull();
   });
@@ -29,6 +33,7 @@ describe('WorkspaceStore', () => {
     useWorkspaceStore.getState().openForTask('tc-123', 'Secret Input');
     const state = useWorkspaceStore.getState();
     expect(state.isOpen).toBe(true);
+    expect(state.contentType).toBe('task');
     expect(state.activeTaskCardId).toBe('tc-123');
     expect(state.title).toBe('Secret Input');
     expect(state.openedAt).toBeGreaterThan(0);
@@ -110,5 +115,57 @@ describe('WorkspaceStore', () => {
     expect(ctx!.status).toBe('pending');
     expect(ctx!.surface).toBe('workspace');
     expect(ctx!.openedAt).toBeGreaterThan(0);
+  });
+
+  test('openGallery sets contentType to gallery with avatarId', () => {
+    useWorkspaceStore.getState().openGallery('avatar-123');
+    const state = useWorkspaceStore.getState();
+    expect(state.isOpen).toBe(true);
+    expect(state.contentType).toBe('gallery');
+    expect(state.galleryAvatarId).toBe('avatar-123');
+    expect(state.activeTaskCardId).toBeNull();
+    expect(state.title).toBe('Gallery');
+  });
+
+  test('openGallery toggles off when gallery is already open', () => {
+    useWorkspaceStore.getState().openGallery('avatar-123');
+    expect(useWorkspaceStore.getState().isOpen).toBe(true);
+
+    useWorkspaceStore.getState().openGallery('avatar-123');
+    expect(useWorkspaceStore.getState().isOpen).toBe(false);
+    expect(useWorkspaceStore.getState().galleryAvatarId).toBeNull();
+  });
+
+  test('openGallery releases any active task card', () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-1', avatarId: 'a1', toolName: 'confirm_action', arguments: {},
+    });
+
+    useWorkspaceStore.getState().openForTask('tc-1', 'Task');
+    expect(useTaskCardStore.getState().getCard('tc-1')?.workspaceState).toBe('open');
+
+    useWorkspaceStore.getState().openGallery('avatar-123');
+    expect(useTaskCardStore.getState().getCard('tc-1')?.workspaceState).toBe('available');
+    expect(useWorkspaceStore.getState().contentType).toBe('gallery');
+  });
+
+  test('openForTask clears gallery state', () => {
+    useWorkspaceStore.getState().openGallery('avatar-123');
+    expect(useWorkspaceStore.getState().contentType).toBe('gallery');
+
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-1', avatarId: 'a1', toolName: 'confirm_action', arguments: {},
+    });
+    useWorkspaceStore.getState().openForTask('tc-1', 'Task');
+
+    const state = useWorkspaceStore.getState();
+    expect(state.contentType).toBe('task');
+    expect(state.galleryAvatarId).toBeNull();
+    expect(state.activeTaskCardId).toBe('tc-1');
+  });
+
+  test('getActiveTaskContext returns null when gallery is open', () => {
+    useWorkspaceStore.getState().openGallery('avatar-123');
+    expect(useWorkspaceStore.getState().getActiveTaskContext()).toBeNull();
   });
 });
