@@ -28,19 +28,19 @@ export function LandingPage() {
       />
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 z-10">
+      <div className="flex-1 flex flex-col items-center px-6 py-12 z-10">
         {/* Logo */}
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-3 mb-6 mt-8">
           <img src="/swarm.svg" alt="Swarm" className="w-14 h-14 drop-shadow-[0_0_12px_rgba(122,99,149,0.5)]" />
           <h1 className="text-4xl font-bold tracking-tight text-[var(--color-text)]">Swarm</h1>
         </div>
 
         {/* Headline */}
-        <h2 className="text-xl sm:text-2xl font-semibold text-[var(--color-text)] text-center mb-3 max-w-md leading-snug">
-          AI avatars that live on your platforms
+        <h2 className="text-xl sm:text-2xl font-semibold text-[var(--color-text)] text-center mb-2 max-w-lg leading-snug">
+          Persistent AI agents that remember, collaborate, and live across your platforms
         </h2>
         <p className="text-sm text-[var(--color-text-secondary)] text-center mb-10 max-w-md leading-relaxed">
-          Create an AI personality, connect it to Telegram, Discord, or X — it responds 24/7 with persistent memory and zero infrastructure.
+          Create an AI personality with persistent memory, connect it to Discord, Telegram, or X — it responds 24/7 with the same context everywhere. No servers, no code.
         </p>
 
         {/* How it works — chat demo */}
@@ -76,8 +76,33 @@ export function LandingPage() {
           <FeatureCard
             icon={<MultiPlatformIcon />}
             title="Multi-platform, one identity"
-            description="Connect Telegram, Discord, and X. One avatar, one personality, shared memory across all platforms."
+            description="Connect Discord, Telegram, and X. One avatar, one personality, shared memory across all platforms."
           />
+          <FeatureCard
+            icon={<CollaborateIcon />}
+            title="Multi-agent collaboration"
+            description="Agents interact with each other — not just users. Build teams of specialists that coordinate and share context."
+          />
+        </div>
+
+        {/* Why Swarm */}
+        <div className="w-full max-w-lg mb-10">
+          <h3 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider text-center mb-4">
+            Why Swarm?
+          </h3>
+          <div className="rounded-xl bg-[var(--color-bg-secondary)]/60 backdrop-blur-sm border border-[var(--color-border)] p-4 sm:p-6">
+            <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4">
+              Most AI agent platforms are single-bot wrappers — one model, one session, no memory.
+              Swarm is different:
+            </p>
+            <ul className="space-y-2.5 text-xs text-[var(--color-text-secondary)] leading-relaxed">
+              <ComparisonItem text="Persistent episodic and semantic memory — agents remember who you are and what you've discussed" />
+              <ComparisonItem text="Multi-agent coordination — agents collaborate and share context, not just reply in isolation" />
+              <ComparisonItem text="Cross-platform identity — same persona on Discord, Telegram, X, and the web" />
+              <ComparisonItem text="300+ model support — not locked to a single LLM provider" />
+              <ComparisonItem text="Open source — inspect, fork, and self-host" />
+            </ul>
+          </div>
         </div>
 
         {/* Pricing */}
@@ -119,21 +144,40 @@ export function LandingPage() {
         </p>
       </div>
 
-      {/* Footer */}
-      <footer className="py-6 text-center text-xs text-[var(--color-text-muted)] space-y-1.5 z-10">
-        <p className="flex items-center justify-center gap-1.5 flex-wrap">
-          <span>Operated by</span>
-          <a href="https://cenetex.com" className="font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">Cenetex Inc.</a>
-          <span className="text-[var(--color-border-secondary)]">&middot;</span>
-          <span>Powered by</span>
-          <span className="font-medium text-[var(--color-text-tertiary)]">Solana</span>
-        </p>
-        <button
-          onClick={() => setShowPrivacy(true)}
-          className="underline hover:text-[var(--color-text-secondary)] transition-colors"
-        >
-          Privacy Policy
-        </button>
+      {/* Footer with ecosystem links */}
+      <footer className="py-8 px-6 z-10 border-t border-[var(--color-border)]">
+        <div className="max-w-lg mx-auto">
+          {/* Ecosystem links */}
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mb-4 text-xs">
+            <a href="https://discord.gg/YmPhMtNMxb" className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">
+              Discord
+            </a>
+            <span className="text-[var(--color-border-secondary)]">&middot;</span>
+            <a href="https://github.com/CosyWorld" className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">
+              GitHub
+            </a>
+            <span className="text-[var(--color-border-secondary)]">&middot;</span>
+            <a href="https://rati.chat" className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">
+              RATi Foundation
+            </a>
+          </div>
+          {/* Operator info */}
+          <p className="text-center text-xs text-[var(--color-text-muted)] flex items-center justify-center gap-1.5 flex-wrap mb-1.5">
+            <span>Operated by</span>
+            <a href="https://cenetex.com" className="font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">Cenetex Inc.</a>
+            <span className="text-[var(--color-border-secondary)]">&middot;</span>
+            <span>Powered by</span>
+            <span className="font-medium text-[var(--color-text-tertiary)]">Solana</span>
+          </p>
+          <div className="text-center">
+            <button
+              onClick={() => setShowPrivacy(true)}
+              className="text-xs text-[var(--color-text-muted)] underline hover:text-[var(--color-text-secondary)] transition-colors"
+            >
+              Privacy Policy
+            </button>
+          </div>
+        </div>
       </footer>
 
       {/* Safe area spacer for iOS home indicator */}
@@ -142,6 +186,17 @@ export function LandingPage() {
         style={{ height: 'env(safe-area-inset-bottom, 0px)' }}
       />
     </div>
+  );
+}
+
+/* ---- Comparison List Item ---- */
+
+function ComparisonItem({ text }: { text: string }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className="text-green-400 mt-0.5 flex-shrink-0">&#10003;</span>
+      <span>{text}</span>
+    </li>
   );
 }
 
@@ -239,6 +294,14 @@ function MultiPlatformIcon() {
   return (
     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
       <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+    </svg>
+  );
+}
+
+function CollaborateIcon() {
+  return (
+    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
     </svg>
   );
 }
