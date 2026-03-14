@@ -100,7 +100,6 @@ export function LandingPage() {
               <ComparisonItem text="Multi-agent coordination — agents collaborate and share context, not just reply in isolation" />
               <ComparisonItem text="Cross-platform identity — same persona on Discord, Telegram, X, and the web" />
               <ComparisonItem text="300+ model support — not locked to a single LLM provider" />
-              <ComparisonItem text="Open source — inspect, fork, and self-host" />
             </ul>
           </div>
         </div>
@@ -151,10 +150,6 @@ export function LandingPage() {
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mb-4 text-xs">
             <a href="https://discord.gg/YmPhMtNMxb" className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">
               Discord
-            </a>
-            <span className="text-[var(--color-border-secondary)]">&middot;</span>
-            <a href="https://github.com/CosyWorld" className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">
-              GitHub
             </a>
             <span className="text-[var(--color-border-secondary)]">&middot;</span>
             <a href="https://rati.chat" className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">
