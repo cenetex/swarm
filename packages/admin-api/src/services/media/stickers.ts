@@ -180,6 +180,15 @@ export async function generateSticker(
     // Generate image with sticker-friendly styling
     const stickerPrompt = `${prompt}. STICKER ART: bold clean lines, simplified shapes, flat vibrant colors, cartoon style. BACKGROUND: Must be PURE BLACK (#000000), solid and uniform, no gradients or patterns. OUTLINE: Include a THICK BRIGHT WHITE stroke (3-5px) around the entire subject edge.`;
 
+    // Fetch character and style reference images for visual consistency
+    const [characterRefs, styleRefs] = await Promise.all([
+      media.listReferenceImages(avatarId, 'character'),
+      media.listReferenceImages(avatarId, 'style'),
+    ]);
+    const referenceImageUrls = [...characterRefs, ...styleRefs]
+      .map(ref => ref.url)
+      .filter(Boolean);
+
     let imageResult;
     try {
       imageResult = await media.generateImage({
@@ -188,6 +197,7 @@ export async function generateSticker(
         platform: 'telegram',
         resolution: '1K',
         aspectRatio: '1:1',
+        referenceImageUrls,
       });
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Failed to generate image' };
