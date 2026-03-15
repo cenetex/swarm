@@ -22,16 +22,6 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 // const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET!;
 
 /**
- * Map Stripe product metadata to our PlanType.
- * Products are created with metadata.plan_type by setup-products.sh.
- */
-function stripePlanType(metadata: Record<string, string>): 'free' | 'pro' | 'enterprise' | 'team' {
-  const plan = metadata?.plan_type;
-  if (plan === 'free' || plan === 'pro' || plan === 'enterprise' || plan === 'team') return plan;
-  throw new Error(`Unknown plan_type in Stripe product metadata: ${plan}`);
-}
-
-/**
  * Lambda handler for POST /api/stripe/webhook
  */
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
