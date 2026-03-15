@@ -4,6 +4,7 @@ import { AppRouter } from './App.tsx';
 import { WalletProvider } from './components/WalletProvider';
 import { PrivyProvider } from './components/PrivyProvider';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import './i18n';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

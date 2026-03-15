@@ -15,6 +15,7 @@
  *   preview, and drag-drop.
  */
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore } from '../store/workspace';
 import { useTaskCardStore } from '../store/task-cards';
 import { ToolPrompt } from './tool-prompts';
@@ -27,6 +28,7 @@ interface TaskWorkspaceProps {
 }
 
 export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
+  const { t } = useTranslation();
   const { isOpen, title, close, activeTaskCardId, contentType, galleryAvatarId } = useWorkspaceStore();
   const card = useTaskCardStore((s) => activeTaskCardId ? s.cards[activeTaskCardId] : undefined);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -100,12 +102,12 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
         {/* Header */}
         <header className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] flex-shrink-0">
           <h2 className="text-sm font-semibold text-[var(--color-text)] truncate">
-            {title || 'Task'}
+            {title || t('workspace.title')}
           </h2>
           <button
             onClick={close}
             className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-            aria-label="Close workspace"
+            aria-label={t('workspace.closeWorkspace')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
               <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -125,7 +127,7 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
             />
           ) : card && card.status === 'completed' ? (
             <div className="space-y-3">
-              <PromptSuccess message={card.summary || 'Completed'} />
+              <PromptSuccess message={card.summary || t('workspace.completed')} />
             </div>
           ) : card && card.status === 'failed' ? (
             <div className="space-y-3">
@@ -133,13 +135,13 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
                 message={
                   typeof (card.result as Record<string, unknown>)?.error === 'string'
                     ? (card.result as Record<string, unknown>).error as string
-                    : card.summary || 'Action failed'
+                    : card.summary || t('workspace.actionFailed')
                 }
               />
             </div>
           ) : card && card.status === 'cancelled' ? (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-sm text-[var(--color-text-secondary)]">
-              {card.summary || 'Cancelled'}
+              {card.summary || t('workspace.cancelled')}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center gap-3">
@@ -149,7 +151,7 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
                 </svg>
               </div>
               <p className="text-sm text-[var(--color-text-muted)]">
-                No active task
+                {t('workspace.noActiveTask')}
               </p>
             </div>
           )}

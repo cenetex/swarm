@@ -1,0 +1,210 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "close": "Fermer",
+    "save": "Enregistrer",
+    "skip": "Passer",
+    "retry": "Réessayer",
+    "send": "Envoyer",
+    "upload": "Téléverser",
+    "uploading": "Téléversement...",
+    "processing": "Traitement...",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "back": "Retour",
+    "next": "Suivant",
+    "done": "Terminé",
+    "error": "Erreur",
+    "success": "Succès",
+    "noResults": "Aucun résultat",
+    "tryAgain": "Réessayer",
+    "reloadPage": "Recharger la page",
+    "signOut": "Se déconnecter",
+    "copied": "Copié !",
+    "copy": "Copier"
+  },
+  "error": {
+    "somethingWentWrong": "Une erreur est survenue",
+    "unexpectedError": "Une erreur inattendue s'est produite. Vous pouvez réessayer ou recharger la page.",
+    "connectionFailed": "Échec de la connexion",
+    "checkoutFailed": "Échec du paiement",
+    "uploadFailed": "Échec du téléversement",
+    "failedToLoad": "Échec du chargement"
+  },
+  "auth": {
+    "loginWithPrivy": "Se connecter avec Privy",
+    "creatingWallet": "Création du portefeuille...",
+    "syncing": "Synchronisation...",
+    "connecting": "Connexion...",
+    "connected": "Connecté",
+    "walletSetupBlocked": "Configuration du portefeuille bloquée"
+  },
+  "chat": {
+    "typeMessage": "Écrivez un message...",
+    "clearChat": "Effacer le chat",
+    "messageInput": "Champ de message",
+    "cancelRecording": "Annuler l'enregistrement",
+    "stopRecording": "Arrêter et envoyer",
+    "recordVoice": "Enregistrer un message vocal"
+  },
+  "welcome": {
+    "greeting": "Bonjour ! Je suis <strong>{{name}}</strong>, votre assistant avatar. Voici quelques actions pour commencer :",
+    "setPersonality": "Définir une personnalité",
+    "connectTelegram": "Connecter Telegram",
+    "generateProfileImage": "Générer une image de profil"
+  },
+  "gallery": {
+    "title": "Galerie",
+    "all": "Tout",
+    "images": "Images",
+    "videos": "Vidéos",
+    "stickers": "Autocollants",
+    "noMedia": "Aucun média",
+    "noMediaHint": "Téléversez des photos ou générez des images pour alimenter la galerie",
+    "dropToUpload": "Déposer pour téléverser",
+    "onlyImages": "Seuls les fichiers image sont acceptés",
+    "fileTooLarge": "Le fichier doit faire moins de 10 Mo",
+    "viewGallery": "Voir la galerie"
+  },
+  "workspace": {
+    "title": "Tâche",
+    "noActiveTask": "Aucune tâche active",
+    "closeWorkspace": "Fermer l'espace de travail",
+    "completed": "Terminé",
+    "cancelled": "Annulé",
+    "actionFailed": "L'action a échoué",
+    "openInWorkspace": "Ouvrir dans l'espace de travail"
+  },
+  "taskCard": {
+    "secretInput": "Saisie secrète",
+    "confirmation": "Confirmation",
+    "walletLink": "Lier un portefeuille",
+    "twitterConnect": "Connexion Twitter",
+    "featureToggle": "Activation de fonctionnalité",
+    "propertyAuth": "Autorisation de propriété",
+    "integrationSetup": "Configuration d'intégration",
+    "profileUpload": "Photo de profil",
+    "imageUpload": "Téléversement d'image",
+    "referenceUpload": "Image de référence",
+    "characterReference": "Référence de personnage",
+    "modelSelection": "Sélection du modèle",
+    "fileUpload": "Téléversement de fichier",
+    "actionRequired": "Action requise",
+    "secretSaved": "Secret enregistré",
+    "walletLinked": "Portefeuille lié",
+    "twitterConnected": "Twitter connecté",
+    "featuresUpdated": "Fonctionnalités mises à jour",
+    "propertyAuthorized": "Propriété autorisée",
+    "modelSelected": "Modèle sélectionné",
+    "uploadComplete": "Téléversement terminé",
+    "confirmed": "Confirmé",
+    "integrationConfigured": "{{integration}} configuré",
+    "failed": "Échoué"
+  },
+  "walletLink": {
+    "title": "Lier un portefeuille",
+    "defaultReason": "Connectez et signez avec un portefeuille Solana pour le lier à votre compte.",
+    "currentlyLinked": "Portefeuilles actuellement liés :",
+    "alreadyLinked": "Ce portefeuille est déjà lié à votre compte.",
+    "noWalletDetected": "Aucun portefeuille Solana détecté. Veuillez installer",
+    "orAnother": "ou une autre extension de portefeuille Solana et recharger la page.",
+    "signingNote": "La signature ne déclenche aucune transaction et n'entraîne aucun frais.",
+    "connectingStatus": "Connexion...",
+    "challengeStatus": "Demande de défi...",
+    "signingStatus": "Signez dans votre portefeuille...",
+    "verifyingStatus": "Vérification...",
+    "connectWith": "Connecter {{wallet}}",
+    "retryWith": "Réessayer avec {{wallet}}",
+    "connectionTimeout": "Délai de connexion dépassé. Veuillez réessayer.",
+    "challengeExpired": "Défi expiré. Veuillez réessayer.",
+    "walletLinkedSuccess": "Portefeuille lié :",
+    "skippedByUser": "Ignoré par l'utilisateur",
+    "linkedShort": "{{address}} lié"
+  },
+  "upgrade": {
+    "messages": {
+      "title": "Limite de messages quotidiens atteinte",
+      "description": "Les comptes gratuits peuvent envoyer jusqu'à 50 messages par jour."
+    },
+    "media": {
+      "title": "Limite de médias quotidiens atteinte",
+      "description": "Les comptes gratuits disposent de 5 crédits média par jour."
+    },
+    "voice": {
+      "title": "Limite vocale quotidienne atteinte",
+      "description": "Les comptes gratuits disposent de 2 minutes de voix par jour."
+    },
+    "tools": {
+      "title": "Limite d'appels d'outils atteinte",
+      "description": "Les comptes gratuits peuvent utiliser jusqu'à 3 appels d'outils par message."
+    },
+    "default": {
+      "title": "Limite d'utilisation atteinte",
+      "description": "Vous avez atteint la limite de votre forfait."
+    },
+    "upgradeDescription": "Passez à un forfait supérieur pour des limites plus élevées, la mémoire et le support multi-plateforme.",
+    "upgradeToPro": "Passer à Créateur — 9 $/mois",
+    "talkToUs": "Contactez-nous pour l'offre Équipe — 299 $/mois",
+    "haveInviteCode": "Vous avez un code d'invitation ?",
+    "redeem": "Utiliser",
+    "redeeming": "Utilisation...",
+    "benefits": {
+      "upTo3Bots": "Jusqu'à 3 bots",
+      "persistentMemory": "Mémoire persistante",
+      "models300": "Plus de 300 modèles",
+      "noBranding": "Sans marque",
+      "unlimitedBots": "Bots illimités/serveur",
+      "sharedMemory": "Mémoire partagée",
+      "adminDashboard": "Tableau de bord admin",
+      "priorityAccess": "Accès prioritaire"
+    }
+  },
+  "avatar": {
+    "draft": "Brouillon — pas encore activé",
+    "paused": "En pause — intégrations arrêtées",
+    "activeOrb": "Actif (Orb)",
+    "activeFree": "Actif (gratuit)",
+    "inactive": "Inactif",
+    "rateLimited": "Limité en débit",
+    "errorState": "Erreur",
+    "activate": "Activer",
+    "planAndUsage": "Forfait et utilisation",
+    "preview": "Aperçu"
+  },
+  "activation": {
+    "setPersonality": "Définir la personnalité",
+    "setProfileImage": "Définir l'image de profil",
+    "connectTelegramItem": "Connecter Telegram",
+    "personalitySuggestion": "Donne-moi une personnalité amusante ! Je veux être un passionné de tech sympathique qui adore les chats"
+  },
+  "consent": {
+    "walletIdentity": "Portefeuille et identité",
+    "aiConversations": "Conversations IA",
+    "blockchainData": "Données blockchain",
+    "connectedServices": "Services connectés",
+    "storageRetention": "Stockage et conservation",
+    "acceptButton": "Je comprends et j'accepte"
+  },
+  "energy": {
+    "title": "Énergie",
+    "burnDeposits": "Brûler des dépôts",
+    "burning": "Combustion…",
+    "set": "Définir",
+    "add": "Ajouter",
+    "apply": "Appliquer",
+    "refill": "Recharge :",
+    "fullyCharged": "Complètement chargé !",
+    "nextCharge": "Prochain ⚡",
+    "full": "Plein :",
+    "holdTokens": "Détenez des jetons $RATI pour une récupération d'énergie plus rapide !",
+    "bankCredits": "Crédits en banque :"
+  },
+  "language": {
+    "label": "Langue",
+    "en": "English",
+    "fr": "Français",
+    "zh-CN": "中文"
+  }
+}

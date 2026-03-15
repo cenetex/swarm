@@ -1,0 +1,210 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "close": "Close",
+    "save": "Save",
+    "skip": "Skip",
+    "retry": "Retry",
+    "send": "Send",
+    "upload": "Upload",
+    "uploading": "Uploading...",
+    "processing": "Processing...",
+    "delete": "Delete",
+    "edit": "Edit",
+    "back": "Back",
+    "next": "Next",
+    "done": "Done",
+    "error": "Error",
+    "success": "Success",
+    "noResults": "No results",
+    "tryAgain": "Try Again",
+    "reloadPage": "Reload Page",
+    "signOut": "Sign out",
+    "copied": "Copied!",
+    "copy": "Copy"
+  },
+  "error": {
+    "somethingWentWrong": "Something went wrong",
+    "unexpectedError": "An unexpected error occurred. You can try again or reload the page.",
+    "connectionFailed": "Connection failed",
+    "checkoutFailed": "Checkout failed",
+    "uploadFailed": "Upload failed",
+    "failedToLoad": "Failed to load"
+  },
+  "auth": {
+    "loginWithPrivy": "Login with Privy",
+    "creatingWallet": "Creating wallet...",
+    "syncing": "Syncing...",
+    "connecting": "Connecting...",
+    "connected": "Connected",
+    "walletSetupBlocked": "Wallet setup blocked"
+  },
+  "chat": {
+    "typeMessage": "Type a message...",
+    "clearChat": "Clear Chat",
+    "messageInput": "Message input",
+    "cancelRecording": "Cancel recording",
+    "stopRecording": "Stop recording and send",
+    "recordVoice": "Record voice message"
+  },
+  "welcome": {
+    "greeting": "Hi! I'm <strong>{{name}}</strong>, your avatar assistant. Here are some things to get started:",
+    "setPersonality": "Set a personality",
+    "connectTelegram": "Connect Telegram",
+    "generateProfileImage": "Generate a profile image"
+  },
+  "gallery": {
+    "title": "Gallery",
+    "all": "All",
+    "images": "Images",
+    "videos": "Videos",
+    "stickers": "Stickers",
+    "noMedia": "No media yet",
+    "noMediaHint": "Upload photos or generate images to populate the gallery",
+    "dropToUpload": "Drop to upload",
+    "onlyImages": "Only image files are supported",
+    "fileTooLarge": "File must be under 10MB",
+    "viewGallery": "View gallery"
+  },
+  "workspace": {
+    "title": "Task",
+    "noActiveTask": "No active task",
+    "closeWorkspace": "Close workspace",
+    "completed": "Completed",
+    "cancelled": "Cancelled",
+    "actionFailed": "Action failed",
+    "openInWorkspace": "Open in workspace"
+  },
+  "taskCard": {
+    "secretInput": "Secret Input",
+    "confirmation": "Confirmation",
+    "walletLink": "Wallet Link",
+    "twitterConnect": "Twitter Connect",
+    "featureToggle": "Feature Toggle",
+    "propertyAuth": "Property Auth",
+    "integrationSetup": "Integration Setup",
+    "profileUpload": "Profile Upload",
+    "imageUpload": "Image Upload",
+    "referenceUpload": "Reference Upload",
+    "characterReference": "Character Reference",
+    "modelSelection": "Model Selection",
+    "fileUpload": "File Upload",
+    "actionRequired": "Action Required",
+    "secretSaved": "Secret saved",
+    "walletLinked": "Wallet linked",
+    "twitterConnected": "Twitter connected",
+    "featuresUpdated": "Features updated",
+    "propertyAuthorized": "Property authorized",
+    "modelSelected": "Model selected",
+    "uploadComplete": "Upload complete",
+    "confirmed": "Confirmed",
+    "integrationConfigured": "{{integration}} configured",
+    "failed": "Failed"
+  },
+  "walletLink": {
+    "title": "Link a Wallet",
+    "defaultReason": "Connect and sign with a Solana wallet to link it to your account.",
+    "currentlyLinked": "Currently linked wallets:",
+    "alreadyLinked": "This wallet is already linked to your account.",
+    "noWalletDetected": "No Solana wallet detected. Please install",
+    "orAnother": "or another Solana wallet extension and reload this page.",
+    "signingNote": "Signing does not trigger any transaction or cost fees.",
+    "connectingStatus": "Connecting...",
+    "challengeStatus": "Requesting challenge...",
+    "signingStatus": "Sign in your wallet...",
+    "verifyingStatus": "Verifying...",
+    "connectWith": "Connect {{wallet}}",
+    "retryWith": "Retry with {{wallet}}",
+    "connectionTimeout": "Wallet connection timed out. Please try again.",
+    "challengeExpired": "Challenge expired. Please try again.",
+    "walletLinkedSuccess": "Wallet linked:",
+    "skippedByUser": "Skipped by user",
+    "linkedShort": "Linked {{address}}"
+  },
+  "upgrade": {
+    "messages": {
+      "title": "Daily message limit reached",
+      "description": "Free accounts can send up to 50 messages per day."
+    },
+    "media": {
+      "title": "Daily media limit reached",
+      "description": "Free accounts get 5 media credits per day."
+    },
+    "voice": {
+      "title": "Daily voice limit reached",
+      "description": "Free accounts get 2 minutes of voice per day."
+    },
+    "tools": {
+      "title": "Tool call limit reached",
+      "description": "Free accounts can use up to 3 tool calls per message."
+    },
+    "default": {
+      "title": "Usage limit reached",
+      "description": "You have reached your plan limit."
+    },
+    "upgradeDescription": "Upgrade for higher limits, memory, and multi-platform support.",
+    "upgradeToPro": "Upgrade to Creator — $9/mo",
+    "talkToUs": "Talk to Us About Team — $299/mo",
+    "haveInviteCode": "Have an invite code?",
+    "redeem": "Redeem",
+    "redeeming": "Redeeming...",
+    "benefits": {
+      "upTo3Bots": "Up to 3 bots",
+      "persistentMemory": "Persistent memory",
+      "models300": "300+ models",
+      "noBranding": "No branding",
+      "unlimitedBots": "Unlimited bots/server",
+      "sharedMemory": "Shared memory",
+      "adminDashboard": "Admin dashboard",
+      "priorityAccess": "Priority access"
+    }
+  },
+  "avatar": {
+    "draft": "Draft — not yet activated",
+    "paused": "Paused — integrations stopped",
+    "activeOrb": "Active (Orb-backed)",
+    "activeFree": "Active (Free slot)",
+    "inactive": "Inactive",
+    "rateLimited": "Rate limited",
+    "errorState": "Error",
+    "activate": "Activate",
+    "planAndUsage": "Plan & Usage",
+    "preview": "Preview"
+  },
+  "activation": {
+    "setPersonality": "Set personality",
+    "setProfileImage": "Set profile image",
+    "connectTelegramItem": "Connect Telegram",
+    "personalitySuggestion": "Give me a fun personality! I want to be a friendly tech nerd who loves cats"
+  },
+  "consent": {
+    "walletIdentity": "Wallet & Identity",
+    "aiConversations": "AI Conversations",
+    "blockchainData": "Blockchain Data",
+    "connectedServices": "Connected Services",
+    "storageRetention": "Storage & Retention",
+    "acceptButton": "I Understand & Accept"
+  },
+  "energy": {
+    "title": "Energy",
+    "burnDeposits": "Burn deposits",
+    "burning": "Burning…",
+    "set": "Set",
+    "add": "Add",
+    "apply": "Apply",
+    "refill": "Refill:",
+    "fullyCharged": "Fully charged!",
+    "nextCharge": "Next ⚡",
+    "full": "Full:",
+    "holdTokens": "Hold $RATI tokens for faster energy recovery!",
+    "bankCredits": "Bank credits:"
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "fr": "Français",
+    "zh-CN": "中文"
+  }
+}

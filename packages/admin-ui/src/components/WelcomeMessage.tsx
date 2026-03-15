@@ -4,19 +4,22 @@
  * Rendered as a fake assistant bubble with tappable action chips.
  * Disappears once the avatar has any real messages.
  */
+import { useTranslation, Trans } from 'react-i18next';
 
 interface WelcomeMessageProps {
   avatarName: string;
   onAction: (text: string) => void;
 }
 
-const ACTION_CHIPS = [
-  'Set a personality',
-  'Connect Telegram',
-  'Generate a profile image',
-] as const;
-
 export function WelcomeMessage({ avatarName, onAction }: WelcomeMessageProps) {
+  const { t } = useTranslation();
+
+  const actionChips = [
+    t('welcome.setPersonality'),
+    t('welcome.connectTelegram'),
+    t('welcome.generateProfileImage'),
+  ];
+
   return (
     <div className="flex gap-3 items-start">
       {/* Bot avatar placeholder — matches ChatMessage assistant layout */}
@@ -40,14 +43,13 @@ export function WelcomeMessage({ avatarName, onAction }: WelcomeMessageProps) {
         {/* Bubble — same classes as an assistant ChatMessage */}
         <div className="rounded-2xl px-3 lg:px-4 py-2.5 lg:py-3 bg-[var(--color-bg-secondary)] text-[var(--color-text)] rounded-bl-md border border-[var(--color-border)]">
           <p className="text-sm leading-relaxed">
-            Hi! I&apos;m <strong>{avatarName}</strong>, your avatar assistant.
-            Here are some things to get started:
+            <Trans i18nKey="welcome.greeting" values={{ name: avatarName }} />
           </p>
         </div>
 
         {/* Action chips */}
         <div className="flex flex-wrap gap-2 mt-2">
-          {ACTION_CHIPS.map((label) => (
+          {actionChips.map((label) => (
             <button
               key={label}
               type="button"

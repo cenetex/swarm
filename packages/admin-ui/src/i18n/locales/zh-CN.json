@@ -1,0 +1,210 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "cancel": "取消",
+    "confirm": "确认",
+    "close": "关闭",
+    "save": "保存",
+    "skip": "跳过",
+    "retry": "重试",
+    "send": "发送",
+    "upload": "上传",
+    "uploading": "上传中...",
+    "processing": "处理中...",
+    "delete": "删除",
+    "edit": "编辑",
+    "back": "返回",
+    "next": "下一步",
+    "done": "完成",
+    "error": "错误",
+    "success": "成功",
+    "noResults": "无结果",
+    "tryAgain": "重试",
+    "reloadPage": "刷新页面",
+    "signOut": "退出登录",
+    "copied": "已复制！",
+    "copy": "复制"
+  },
+  "error": {
+    "somethingWentWrong": "出了点问题",
+    "unexpectedError": "发生了意外错误。您可以重试或刷新页面。",
+    "connectionFailed": "连接失败",
+    "checkoutFailed": "结账失败",
+    "uploadFailed": "上传失败",
+    "failedToLoad": "加载失败"
+  },
+  "auth": {
+    "loginWithPrivy": "使用 Privy 登录",
+    "creatingWallet": "正在创建钱包...",
+    "syncing": "同步中...",
+    "connecting": "连接中...",
+    "connected": "已连接",
+    "walletSetupBlocked": "钱包设置被阻止"
+  },
+  "chat": {
+    "typeMessage": "输入消息...",
+    "clearChat": "清除聊天",
+    "messageInput": "消息输入",
+    "cancelRecording": "取消录音",
+    "stopRecording": "停止录音并发送",
+    "recordVoice": "录制语音消息"
+  },
+  "welcome": {
+    "greeting": "你好！我是 <strong>{{name}}</strong>，你的虚拟形象助手。以下是一些入门操作：",
+    "setPersonality": "设置个性",
+    "connectTelegram": "连接 Telegram",
+    "generateProfileImage": "生成头像"
+  },
+  "gallery": {
+    "title": "画廊",
+    "all": "全部",
+    "images": "图片",
+    "videos": "视频",
+    "stickers": "贴纸",
+    "noMedia": "暂无媒体",
+    "noMediaHint": "上传照片或生成图片来填充画廊",
+    "dropToUpload": "拖放上传",
+    "onlyImages": "仅支持图片文件",
+    "fileTooLarge": "文件大小不能超过 10MB",
+    "viewGallery": "查看画廊"
+  },
+  "workspace": {
+    "title": "任务",
+    "noActiveTask": "无活动任务",
+    "closeWorkspace": "关闭工作区",
+    "completed": "已完成",
+    "cancelled": "已取消",
+    "actionFailed": "操作失败",
+    "openInWorkspace": "在工作区中打开"
+  },
+  "taskCard": {
+    "secretInput": "密钥输入",
+    "confirmation": "确认",
+    "walletLink": "链接钱包",
+    "twitterConnect": "连接 Twitter",
+    "featureToggle": "功能开关",
+    "propertyAuth": "属性授权",
+    "integrationSetup": "集成配置",
+    "profileUpload": "上传头像",
+    "imageUpload": "上传图片",
+    "referenceUpload": "上传参考图",
+    "characterReference": "角色参考",
+    "modelSelection": "模型选择",
+    "fileUpload": "上传文件",
+    "actionRequired": "需要操作",
+    "secretSaved": "密钥已保存",
+    "walletLinked": "钱包已链接",
+    "twitterConnected": "Twitter 已连接",
+    "featuresUpdated": "功能已更新",
+    "propertyAuthorized": "属性已授权",
+    "modelSelected": "模型已选择",
+    "uploadComplete": "上传完成",
+    "confirmed": "已确认",
+    "integrationConfigured": "{{integration}} 已配置",
+    "failed": "失败"
+  },
+  "walletLink": {
+    "title": "链接钱包",
+    "defaultReason": "连接并使用 Solana 钱包签名，将其链接到您的账户。",
+    "currentlyLinked": "当前已链接的钱包：",
+    "alreadyLinked": "此钱包已链接到您的账户。",
+    "noWalletDetected": "未检测到 Solana 钱包。请安装",
+    "orAnother": "或其他 Solana 钱包扩展并刷新页面。",
+    "signingNote": "签名不会触发任何交易，也不会产生费用。",
+    "connectingStatus": "连接中...",
+    "challengeStatus": "正在请求验证...",
+    "signingStatus": "请在钱包中签名...",
+    "verifyingStatus": "验证中...",
+    "connectWith": "连接 {{wallet}}",
+    "retryWith": "重试 {{wallet}}",
+    "connectionTimeout": "钱包连接超时，请重试。",
+    "challengeExpired": "验证已过期，请重试。",
+    "walletLinkedSuccess": "钱包已链接：",
+    "skippedByUser": "用户已跳过",
+    "linkedShort": "已链接 {{address}}"
+  },
+  "upgrade": {
+    "messages": {
+      "title": "已达每日消息限额",
+      "description": "免费账户每天最多可发送 50 条消息。"
+    },
+    "media": {
+      "title": "已达每日媒体限额",
+      "description": "免费账户每天有 5 个媒体额度。"
+    },
+    "voice": {
+      "title": "已达每日语音限额",
+      "description": "免费账户每天有 2 分钟语音时间。"
+    },
+    "tools": {
+      "title": "已达工具调用限额",
+      "description": "免费账户每条消息最多可使用 3 次工具调用。"
+    },
+    "default": {
+      "title": "已达使用限额",
+      "description": "您已达到套餐限额。"
+    },
+    "upgradeDescription": "升级以获得更高限额、记忆功能和多平台支持。",
+    "upgradeToPro": "升级到创作者 — $9/月",
+    "talkToUs": "联系我们了解团队方案 — $299/月",
+    "haveInviteCode": "有邀请码？",
+    "redeem": "兑换",
+    "redeeming": "兑换中...",
+    "benefits": {
+      "upTo3Bots": "最多 3 个机器人",
+      "persistentMemory": "持久记忆",
+      "models300": "300+ 模型",
+      "noBranding": "无品牌标识",
+      "unlimitedBots": "无限机器人/服务器",
+      "sharedMemory": "共享记忆",
+      "adminDashboard": "管理面板",
+      "priorityAccess": "优先访问"
+    }
+  },
+  "avatar": {
+    "draft": "草稿 — 尚未激活",
+    "paused": "已暂停 — 集成已停止",
+    "activeOrb": "活跃（Orb 支持）",
+    "activeFree": "活跃（免费）",
+    "inactive": "未激活",
+    "rateLimited": "速率受限",
+    "errorState": "错误",
+    "activate": "激活",
+    "planAndUsage": "套餐与用量",
+    "preview": "预览"
+  },
+  "activation": {
+    "setPersonality": "设置个性",
+    "setProfileImage": "设置头像",
+    "connectTelegramItem": "连接 Telegram",
+    "personalitySuggestion": "给我一个有趣的个性！我想成为一个友善的科技爱好者，喜欢猫咪"
+  },
+  "consent": {
+    "walletIdentity": "钱包与身份",
+    "aiConversations": "AI 对话",
+    "blockchainData": "区块链数据",
+    "connectedServices": "已连接的服务",
+    "storageRetention": "存储与保留",
+    "acceptButton": "我理解并接受"
+  },
+  "energy": {
+    "title": "能量",
+    "burnDeposits": "燃烧存款",
+    "burning": "燃烧中…",
+    "set": "设置",
+    "add": "添加",
+    "apply": "应用",
+    "refill": "充能：",
+    "fullyCharged": "充能完毕！",
+    "nextCharge": "下次 ⚡",
+    "full": "满：",
+    "holdTokens": "持有 $RATI 代币可加速能量恢复！",
+    "bankCredits": "银行额度："
+  },
+  "language": {
+    "label": "语言",
+    "en": "English",
+    "fr": "Français",
+    "zh-CN": "中文"
+  }
+}

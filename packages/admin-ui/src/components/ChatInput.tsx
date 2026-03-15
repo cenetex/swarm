@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, FormEvent, KeyboardEvent, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -8,7 +9,8 @@ interface ChatInputProps {
   placeholder?: string;
 }
 
-export function ChatInput({ onSend, onSendAudio, disabled, voiceEnabled = true, placeholder = "Type a message..." }: ChatInputProps) {
+export function ChatInput({ onSend, onSendAudio, disabled, voiceEnabled = true, placeholder }: ChatInputProps) {
+  const { t } = useTranslation();
   const [message, setMessage] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -141,7 +143,7 @@ export function ChatInput({ onSend, onSendAudio, disabled, voiceEnabled = true, 
             type="button"
             onClick={cancelRecording}
             className="text-red-500 hover:text-red-400 p-1"
-            title="Cancel recording"
+            title={t('chat.cancelRecording')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
               <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clipRule="evenodd" />
@@ -158,7 +160,7 @@ export function ChatInput({ onSend, onSendAudio, disabled, voiceEnabled = true, 
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             onInput={handleInput}
-            placeholder={placeholder}
+            placeholder={placeholder || t('chat.typeMessage')}
             disabled={disabled}
             rows={1}
             aria-label="Message input"
@@ -179,7 +181,7 @@ export function ChatInput({ onSend, onSendAudio, disabled, voiceEnabled = true, 
               ? 'bg-red-600 text-white hover:bg-red-500' 
               : 'bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-brand-500'
           }`}
-          title={isRecording ? 'Stop recording and send' : 'Record voice message'}
+          title={isRecording ? t('chat.stopRecording') : t('chat.recordVoice')}
         >
           {isRecording ? (
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">

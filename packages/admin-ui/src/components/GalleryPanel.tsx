@@ -12,6 +12,7 @@
  * but retained for backward compat until fully migrated).
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as galleryApi from '../api/gallery';
 import type { GalleryItem } from '../api/gallery';
 
@@ -22,6 +23,7 @@ interface GalleryContentProps {
 }
 
 export function GalleryContent({ avatarId, isOpen, onSelectImage }: GalleryContentProps) {
+  const { t } = useTranslation();
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,11 +56,11 @@ export function GalleryContent({ avatarId, isOpen, onSelectImage }: GalleryConte
 
   const handleUpload = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
-      setError('Only image files are supported');
+      setError(t('gallery.onlyImages'));
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      setError('File must be under 10MB');
+      setError(t('gallery.fileTooLarge'));
       return;
     }
 
@@ -74,7 +76,7 @@ export function GalleryContent({ avatarId, isOpen, onSelectImage }: GalleryConte
     } finally {
       setUploading(false);
     }
-  }, [avatarId, fetchGallery]);
+  }, [avatarId, fetchGallery, t]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -99,7 +101,7 @@ export function GalleryContent({ avatarId, isOpen, onSelectImage }: GalleryConte
           className="px-3 py-1.5 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-colors disabled:opacity-50"
           title="Upload photo"
         >
-          {uploading ? 'Uploading...' : 'Upload'}
+          {uploading ? t('common.uploading') : t('common.upload')}
         </button>
       </div>
 
@@ -115,7 +117,7 @@ export function GalleryContent({ avatarId, isOpen, onSelectImage }: GalleryConte
                 : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
             }`}
           >
-            {type === 'all' ? 'All' : type.charAt(0).toUpperCase() + type.slice(1) + 's'}
+            {type === 'all' ? t('gallery.all') : type === 'image' ? t('gallery.images') : type === 'video' ? t('gallery.videos') : t('gallery.stickers')}
           </button>
         ))}
       </div>
@@ -136,12 +138,12 @@ export function GalleryContent({ avatarId, isOpen, onSelectImage }: GalleryConte
       >
         {loading && items.length === 0 ? (
           <div className="flex items-center justify-center h-32 text-[var(--color-text-tertiary)] text-sm">
-            Loading...
+            {t('common.loading')}
           </div>
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-[var(--color-text-tertiary)] text-sm gap-2">
-            <p>No media yet</p>
-            <p className="text-xs">Upload photos or generate images to populate the gallery</p>
+            <p>{t('gallery.noMedia')}</p>
+            <p className="text-xs">{t('gallery.noMediaHint')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
@@ -187,7 +189,7 @@ export function GalleryContent({ avatarId, isOpen, onSelectImage }: GalleryConte
         {dragOver && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium">
-              Drop to upload
+              {t('gallery.dropToUpload')}
             </div>
           </div>
         )}

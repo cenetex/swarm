@@ -10,6 +10,7 @@ import React from 'react';
 import { useAvatarStore } from '../store/avatars';
 import { useAuth } from '../store/auth';
 import { ThemeToggle } from './ThemeToggle';
+import { LanguageSelector } from './LanguageSelector';
 import { PrivyLoginButton } from './PrivyLoginButton';
 import { AvatarReassignModal } from './AvatarReassignModal';
 import { HealthDashboard } from './HealthDashboard';
@@ -441,6 +442,7 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
             <h2 className="font-semibold text-[var(--color-text)]">Avatars</h2>
           </div>
           <div className="flex items-center gap-2">
+            <LanguageSelector />
             <ThemeToggle />
             {showCreateButton && (
               <button
