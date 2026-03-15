@@ -668,6 +668,7 @@ interface GenerateImageAsyncOptions extends GenerateImageOptions {
   conversationId: string;
   replyToMessageId?: string;
   apiKey?: string;
+  purpose?: 'profile' | 'post_to_twitter' | 'send_to_chat' | 'gallery';
 }
 
 /**
@@ -688,6 +689,7 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     replyToMessageId,
     chargeEnergy = true,
     apiKey: apiKeyOverride,
+    purpose,
   } = options;
 
   // Unified burst pool check: entitlement-first, energy-fallback
@@ -782,6 +784,7 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     platform: platform || 'unknown',
     replyToMessageId,
     provider: 'replicate',
+    purpose,
   });
 
   console.log(`[Media] Starting async image generation: job=${jobId}, model=${modelId}, refs=${referenceImageUrls.length}`);
@@ -1103,6 +1106,7 @@ export async function generateProfileImageAsync(
     resolution: '1K',
     aspectRatio: '1:1',
     conversationId: '',
+    purpose: 'profile',
   });
 
   const consumed = await credits.consumeCredit(avatarId, 'set_profile_image');

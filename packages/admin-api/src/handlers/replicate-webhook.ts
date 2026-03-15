@@ -11,6 +11,7 @@ import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { createHmac, timingSafeEqual } from 'crypto';
 import * as mediaJobs from '../services/media-jobs.js';
 import * as gallery from '../services/gallery.js';
+import { updateAvatarProfileImage } from '../services/avatars.js';
 import { recordError } from '../services/auto-issues.js';
 import { logger } from '@swarm/core';
 import { parseJsonBody } from '../http/request-body.js';
@@ -175,6 +176,20 @@ export async function handler(
           predictTime: prediction.metrics?.predict_time,
         },
       });
+
+      // If purpose is 'profile', persist as the avatar's profile image
+      if (job.purpose === 'profile') {
+        try {
+          await updateAvatarProfileImage(job.avatarId, {
+            url: publicUrl,
+            s3Key,
+            updatedAt: Date.now(),
+          });
+          logger.info('Profile image persisted to avatar', { avatarId: job.avatarId, url: publicUrl });
+        } catch (err) {
+          logger.error('Failed to persist profile image to avatar', err, { avatarId: job.avatarId });
+        }
+      }
 
       // Send callback message to response queue if configured
       // Allow sending when we have conversationId (will post to chat) or replyToMessageId (will reply to specific message)

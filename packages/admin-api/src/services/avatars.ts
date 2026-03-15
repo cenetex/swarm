@@ -276,6 +276,45 @@ export async function getAvatar(avatarId: string): Promise<AvatarRecord | null> 
 }
 
 /**
+ * System-level update of avatar profile image (no session required).
+ * Used by async webhook handlers where no user session is available.
+ */
+export async function updateAvatarProfileImage(
+  avatarId: string,
+  profileImage: { url: string; s3Key: string; updatedAt: number }
+): Promise<void> {
+  const existing = await getAvatar(avatarId);
+  if (!existing) {
+    throw new Error(`Avatar not found: ${avatarId}`);
+  }
+
+  // Do not overwrite profile image on ascended avatars
+  if (existing.isAscended) {
+    console.warn(`[Avatars] Skipping profile image update for ascended avatar: ${avatarId}`);
+    return;
+  }
+
+  await getDynamoClient().send(new UpdateCommand({
+    TableName: getAdminTable(),
+    Key: {
+      pk: `AVATAR#${avatarId}`,
+      sk: 'CONFIG',
+    },
+    UpdateExpression: 'SET profileImage = :pi, updatedAt = :now',
+    ExpressionAttributeValues: {
+      ':pi': profileImage,
+      ':now': Date.now(),
+    },
+  }));
+
+  // Sync to state table
+  const updated = await getAvatar(avatarId);
+  if (updated) {
+    await syncAvatarConfig(updated);
+  }
+}
+
+/**
  * Update an avatar
  */
 export async function updateAvatar(

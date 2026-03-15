@@ -152,7 +152,7 @@ export const createProfileTools = (services: ProfileServices) => [
             jobId: result.jobId,
             type: 'image',
             prompt: input.prompt || 'profile image',
-            purpose: 'profile_image',
+            purpose: 'profile',
           },
         };
       }
