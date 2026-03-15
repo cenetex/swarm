@@ -115,6 +115,11 @@ export interface AdminApiConstructProps {
   stripePriceIdEnterprise?: string;
 
   /**
+   * Stripe price ID for Team monthly plan.
+   */
+  stripePriceIdTeam?: string;
+
+  /**
    * Environment (development/production)
    */
   environment?: string;
@@ -2032,6 +2037,7 @@ export class AdminApiConstruct extends Construct {
         STRIPE_WEBHOOK_SECRET_ARN: stripeWebhookSecret?.secretArn || '',
         STRIPE_PRICE_ID_PRO: props.stripePriceIdPro || '',
         STRIPE_PRICE_ID_ENTERPRISE: props.stripePriceIdEnterprise || '',
+        STRIPE_PRICE_ID_TEAM: props.stripePriceIdTeam || '',
         CDN_URL: cdnUrl || '',
         ...activeUserLimitEnvVars,
       },

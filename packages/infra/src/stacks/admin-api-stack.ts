@@ -126,6 +126,11 @@ export interface AdminApiStackProps extends cdk.StackProps {
   stripePriceIdEnterprise?: string;
 
   /**
+   * Stripe Team plan price ID
+   */
+  stripePriceIdTeam?: string;
+
+  /**
    * Anthropic API key secret ARN
    */
   anthropicApiKeyArn?: string;
@@ -213,6 +218,7 @@ export class AdminApiStack extends cdk.Stack {
       stripeWebhookSecretArn,
       stripePriceIdPro,
       stripePriceIdEnterprise,
+      stripePriceIdTeam,
       anthropicApiKeyArn,
       enableClaudeCode = false,
       claudeCodeMinCapacity = 0,
@@ -338,6 +344,7 @@ export class AdminApiStack extends cdk.Stack {
         stripeWebhookSecretArn,
         stripePriceIdPro,
         stripePriceIdEnterprise,
+        stripePriceIdTeam,
         environment,
         nameSuffix,
         secretPrefix,

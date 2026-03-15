@@ -245,6 +245,35 @@ else
 fi
 echo ""
 
+# --- Team tier ---
+TEAM_PRODUCT_ID=$(create_or_find_product "team" \
+  "Swarm Team" \
+  "AI agents as community infrastructure. Unlimited bots/agents per server, shared memory across agents, admin dashboard with usage analytics, priority model access, dedicated onboarding, and custom agent configurations." \
+  --metadata plan_type=team \
+  --metadata daily_message_limit=-1 \
+  --metadata daily_media_credits=-1 \
+  --metadata daily_voice_minutes=-1 \
+  --metadata max_tool_calls_per_message=10 \
+  --metadata max_platforms=-1 \
+  --metadata max_channels=-1 \
+  --metadata memory_enabled=true \
+  --metadata memory_retention_days=365 \
+  --metadata max_memories_per_tier=5000 \
+  --metadata autonomous_posts_enabled=true \
+  --metadata custom_model_enabled=true \
+  --metadata priority_processing=true \
+  --metadata shared_memory=true \
+  --metadata admin_dashboard=true \
+  --metadata dedicated_onboarding=true)
+
+TEAM_PRICE_ID=$(find_existing_price "$TEAM_PRODUCT_ID")
+if [[ -z "$TEAM_PRICE_ID" ]]; then
+  TEAM_PRICE_ID=$(create_price "$TEAM_PRODUCT_ID" 29900 "team")
+else
+  echo -e "  ${YELLOW}Price already exists: ${TEAM_PRICE_ID}${NC}"
+fi
+echo ""
+
 # --- Enterprise tier ---
 ENT_PRODUCT_ID=$(create_or_find_product "enterprise" \
   "Swarm Enterprise" \
@@ -279,9 +308,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 OUTPUT_JSON=$(echo "$OUTPUT_JSON" | jq \
   --arg fp "$FREE_PRODUCT_ID" --arg fpr "$FREE_PRICE_ID" \
   --arg pp "$PRO_PRODUCT_ID" --arg ppr "$PRO_PRICE_ID" \
+  --arg tp "$TEAM_PRODUCT_ID" --arg tpr "$TEAM_PRICE_ID" \
   --arg ep "$ENT_PRODUCT_ID" --arg epr "$ENT_PRICE_ID" \
   '.products.free = { product_id: $fp, price_id: $fpr } |
    .products.pro = { product_id: $pp, price_id: $ppr } |
+   .products.team = { product_id: $tp, price_id: $tpr } |
    .products.enterprise = { product_id: $ep, price_id: $epr }')
 
 echo "$OUTPUT_JSON" | jq '.' > "$OUTPUT_FILE"
@@ -291,6 +322,7 @@ echo -e "${GREEN}Done! Products and prices created.${NC}"
 echo ""
 echo "  Free:       product=$FREE_PRODUCT_ID  price=$FREE_PRICE_ID"
 echo "  Pro:        product=$PRO_PRODUCT_ID  price=$PRO_PRICE_ID"
+echo "  Team:       product=$TEAM_PRODUCT_ID  price=$TEAM_PRICE_ID"
 echo "  Enterprise: product=$ENT_PRODUCT_ID  price=$ENT_PRICE_ID"
 echo ""
 echo -e "Config saved to: ${BLUE}${OUTPUT_FILE}${NC}"

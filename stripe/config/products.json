@@ -36,7 +36,7 @@
       "monthly_price_cents": 900
     },
     "team": {
-      "name": "CosyWorld Team",
+      "name": "Swarm Team",
       "description": "AI agents as community infrastructure. Unlimited bots/agents per server, shared memory across agents, admin dashboard with usage analytics, priority model access, dedicated onboarding, and custom agent configurations.",
       "metadata": {
         "plan_type": "team",
