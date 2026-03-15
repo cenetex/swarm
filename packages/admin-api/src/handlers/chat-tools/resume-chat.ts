@@ -75,10 +75,10 @@ export async function resumeChatAfterToolResult(
   );
   if (!hasMatchingToolCall) {
     // The toolCallId may be missing from history due to TTL expiry or
-    // message sanitization stripping unmatched tool_calls.  If the ID
-    // looks like a valid provider-issued call ID, allow it through —
-    // downstream tool handlers validate the actual payload.  (#1039)
-    const looksValid = /^(call_|chatcmpl-|toolu_)/.test(toolCallId) || toolCallId.length >= 20;
+    // message sanitization stripping unmatched tool_calls.  Only allow
+    // IDs that match known provider prefixes — reject everything else
+    // to prevent fabricated IDs from reaching configureIntegration().  (#1039)
+    const looksValid = /^(call_|chatcmpl-|toolu_)[a-zA-Z0-9_-]+$/.test(toolCallId);
     if (!looksValid) {
       throw new Error(`Unknown or expired toolCallId: ${toolCallId}`);
     }
