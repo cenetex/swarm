@@ -766,6 +766,7 @@ const PLAN_TIER_RANK: Record<PlanType, number> = {
   free: 0,
   pro: 1,
   enterprise: 2,
+  team: 3,
 };
 
 /**

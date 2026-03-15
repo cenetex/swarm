@@ -14,7 +14,7 @@ import { defineTool, type ToolResult } from '../registry.js';
 export interface BillingEntitlement {
   accountId: string;
   avatarId: string;
-  plan: 'free' | 'pro' | 'enterprise';
+  plan: 'free' | 'pro' | 'enterprise' | 'team';
   status: 'active' | 'suspended' | 'cancelled' | 'trial';
   stripeSubscriptionId?: string;
   stripeCustomerId?: string;
@@ -53,7 +53,7 @@ export interface BillingServices {
   createCheckoutSession: (params: {
     accountId: string;
     avatarId: string;
-    plan: 'pro' | 'enterprise';
+    plan: 'pro' | 'enterprise' | 'team';
     successUrl: string;
     cancelUrl: string;
     customerId?: string;
