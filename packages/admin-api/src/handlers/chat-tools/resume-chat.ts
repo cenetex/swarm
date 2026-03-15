@@ -74,7 +74,17 @@ export async function resumeChatAfterToolResult(
     m.tool_calls.some(tc => tc.id === toolCallId)
   );
   if (!hasMatchingToolCall) {
-    throw new Error(`Unknown or expired toolCallId: ${toolCallId}`);
+    // The toolCallId may be missing from history due to TTL expiry or
+    // message sanitization stripping unmatched tool_calls.  If the ID
+    // looks like a valid provider-issued call ID, allow it through —
+    // downstream tool handlers validate the actual payload.  (#1039)
+    const looksValid = /^(call_|chatcmpl-|toolu_)/.test(toolCallId) || toolCallId.length >= 20;
+    if (!looksValid) {
+      throw new Error(`Unknown or expired toolCallId: ${toolCallId}`);
+    }
+    console.warn(
+      `[resumeChatAfterToolResult] toolCallId not found in chat history (may have expired); allowing valid-format ID through: ${toolCallId}`
+    );
   }
 
   // Handle configure_integration results - persist models and settings to DynamoDB
@@ -111,8 +121,31 @@ export async function resumeChatAfterToolResult(
   }
 
   const toolContent = typeof result === 'string' ? result : JSON.stringify(result ?? {});
+
+  // If the matching assistant tool_call was stripped from history (by sanitization
+  // or TTL expiry), inject a synthetic assistant message so the LLM provider
+  // sees a proper assistant→tool message pair.  (#1039)
+  let baseHistory = history;
+  if (!hasMatchingToolCall) {
+    const toolName = (result && typeof result === 'object' && 'integration' in (result as Record<string, unknown>))
+      ? 'configure_integration'
+      : 'pending_tool';
+    baseHistory = [
+      ...history,
+      {
+        role: 'assistant',
+        content: null as unknown as string,
+        tool_calls: [{
+          id: toolCallId,
+          type: 'function' as const,
+          function: { name: toolName, arguments: '{}' },
+        }],
+      },
+    ];
+  }
+
   const nextHistory: AdminChatMessage[] = [
-    ...history,
+    ...baseHistory,
     {
       role: 'tool',
       tool_call_id: toolCallId,
