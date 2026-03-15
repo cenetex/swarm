@@ -13,17 +13,10 @@ export interface PortalResponse {
   url: string;
 }
 
-export interface TeamContactResponse {
-  contactRequired: true;
-  message: string;
-  contactEmail: string;
-  calendlyUrl: string;
-}
-
 export async function createCheckoutSession(
   avatarId: string,
-  plan: 'pro' | 'enterprise' | 'team',
-): Promise<CheckoutResponse | TeamContactResponse> {
+  plan: 'pro' | 'enterprise',
+): Promise<CheckoutResponse> {
   const successUrl = `${window.location.origin}?billing=success&plan=${plan}`;
   const cancelUrl = `${window.location.origin}?billing=cancelled`;
 
