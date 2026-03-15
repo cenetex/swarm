@@ -13,7 +13,7 @@ import {
   isNewIssueRecord,
   buildLabels,
   buildIssueBody,
-  _setSecretsClient,
+  _setTokenProvider,
   type AutoIssueRecord,
 } from './github-issue-sync.js';
 import { _setDynamoClient } from '../services/dynamo-client.js';
@@ -269,7 +269,7 @@ describe('handler (integration)', () => {
 
   beforeEach(() => {
     process.env.ADMIN_TABLE = 'SwarmAdmin-staging';
-    process.env.GITHUB_TOKEN_SECRET_ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:github-token';
+    process.env.GITHUB_APP_CREDENTIALS_ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:github-app';
     process.env.GITHUB_REPO = 'cenetex/aws-swarm';
     process.env.ENVIRONMENT = 'staging';
 
@@ -285,16 +285,15 @@ describe('handler (integration)', () => {
     mockDynamoSend = mock(() => Promise.resolve({ Item: undefined }));
     _setDynamoClient({ send: mockDynamoSend } as any);
 
-    // Mock Secrets Manager client
-    const mockSecretsSend = mock(() => Promise.resolve({ SecretString: 'ghp_test_token_123' }));
-    _setSecretsClient({ send: mockSecretsSend } as any);
+    // Mock token provider
+    _setTokenProvider({ getToken: async () => 'ghs_test_token_123' });
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
     globalThis.fetch = originalFetch;
     _setDynamoClient(null);
-    _setSecretsClient(null);
+    _setTokenProvider(null);
   });
 
   it('skips batch with no ISSUE#/META INSERT records', async () => {

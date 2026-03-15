@@ -8,9 +8,10 @@ import type { AllServices, VoiceServices } from '@swarm/mcp-server';
 import {
   listGitHubAvatarIssues,
   getGitHubDeploymentStatus,
+  GitHubAppTokenProvider,
   type GitHubClientConfig,
+  type GitHubTokenProvider,
 } from '@swarm/core';
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import type { UserSession } from '../../types.js';
 import type { ServiceContainer } from '../service-container.js';
 import { getBotToken } from './helpers.js';
@@ -21,28 +22,26 @@ type AgentServices = Pick<
 >;
 
 // ---------------------------------------------------------------------------
-// GitHub token cache (lazy, 5-min TTL)
+// GitHub App token provider (lazy singleton)
 // ---------------------------------------------------------------------------
-let _ghToken: string | undefined;
-let _ghTokenExpiresAt = 0;
-const GH_TOKEN_TTL_MS = 5 * 60 * 1000;
+let _ghTokenProvider: GitHubTokenProvider | null = null;
 
-async function getGitHubConfig(): Promise<GitHubClientConfig | null> {
-  const secretArn = process.env.GITHUB_TOKEN_SECRET_ARN;
+function getGitHubTokenProvider(): GitHubTokenProvider | null {
+  if (_ghTokenProvider) return _ghTokenProvider;
+
+  const secretArn = process.env.GITHUB_APP_CREDENTIALS_ARN;
   if (!secretArn) return null;
 
-  const now = Date.now();
-  if (_ghToken && now < _ghTokenExpiresAt) {
-    return { token: _ghToken, repo: process.env.GITHUB_REPO || 'cenetex/aws-swarm' };
-  }
+  _ghTokenProvider = new GitHubAppTokenProvider(secretArn);
+  return _ghTokenProvider;
+}
 
-  const client = new SecretsManagerClient({});
-  const result = await client.send(new GetSecretValueCommand({ SecretId: secretArn }));
-  if (!result.SecretString) return null;
+async function getGitHubConfig(): Promise<GitHubClientConfig | null> {
+  const provider = getGitHubTokenProvider();
+  if (!provider) return null;
 
-  _ghToken = result.SecretString.trim();
-  _ghTokenExpiresAt = now + GH_TOKEN_TTL_MS;
-  return { token: _ghToken, repo: process.env.GITHUB_REPO || 'cenetex/aws-swarm' };
+  const token = await provider.getToken();
+  return { token, repo: process.env.GITHUB_REPO || 'cenetex/aws-swarm' };
 }
 
 /**

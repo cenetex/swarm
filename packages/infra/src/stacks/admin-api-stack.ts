@@ -166,10 +166,10 @@ export interface AdminApiStackProps extends cdk.StackProps {
   useExistingResources?: boolean;
 
   /**
-   * Secrets Manager ARN for a GitHub PAT used by the DynamoDB Streams issue sync Lambda.
+   * Secrets Manager ARN for GitHub App credentials (appId, privateKey, installationId).
    * When provided, enables event-driven GitHub issue creation from auto-issue records.
    */
-  githubTokenSecretArn?: string;
+  githubAppCredentialsArn?: string;
 
   /**
    * GitHub repository (owner/name) for issue sync.
@@ -360,7 +360,7 @@ export class AdminApiStack extends cdk.Stack {
         alarmTopic,
         useExistingResources: props.useExistingResources,
         enableDiscordGateway,
-        githubTokenSecretArn: props.githubTokenSecretArn,
+        githubAppCredentialsArn: props.githubAppCredentialsArn,
         githubRepo: props.githubRepo,
       });
 

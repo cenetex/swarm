@@ -120,7 +120,7 @@ const useExistingResources = parseBoolean(getContextValue<unknown>('useExistingR
 const useExistingBuckets = parseBoolean(getContextValue<unknown>('useExistingBuckets', envConfig)) ?? false;
 const skipDomainAliases = parseBoolean(getContextValue<unknown>('skipDomainAliases', envConfig)) ?? false;
 const anthropicApiKeyArn = getContextValue<string>('anthropicApiKeyArn', envConfig);
-const githubTokenSecretArn = getContextValue<string>('githubTokenSecretArn', envConfig);
+const githubAppCredentialsArn = getContextValue<string>('githubAppCredentialsArn', envConfig);
 const githubRepo = getContextValue<string>('githubRepo', envConfig);
 const secretPrefixRaw = getContextValue<string>('secretPrefix', envConfig);
 const stackHashRaw = getContextValue<string>('stackHash', envConfig);
@@ -223,7 +223,7 @@ const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffi
   claudeCodeUseOpenRouter,
   secretPrefix,
   useExistingResources,
-  githubTokenSecretArn,
+  githubAppCredentialsArn,
   githubRepo,
   env: stackEnv,
   description: `Swarm Admin API (${environment})`,
