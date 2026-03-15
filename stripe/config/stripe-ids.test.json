@@ -10,9 +10,14 @@
       "product_id": "prod_U762K5opZwikGf",
       "price_id": "price_1T8rqgC2kFW3ZwsZXa6HUyjV"
     },
+    "team": {
+      "product_id": "prod_TEAM_test_001",
+      "price_id": "price_TEAM_test_29900"
+    },
     "enterprise": {
       "product_id": "prod_U762EkfTR4zOir",
-      "price_id": "price_1T8rqhC2kFW3ZwsZ8PwDjMxZ"
+      "price_id": "price_1T8rqhC2kFW3ZwsZ8PwDjMxZ",
+      "archived": true
     }
   },
   "metered_prices": {}

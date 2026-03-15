@@ -33,7 +33,7 @@ import { syncRuntimeContractForAvatar } from './avatar-routes/runtime-sync.js';
 
 const CheckoutSchema = z.object({
   avatarId: z.string().min(1),
-  plan: z.enum(['pro', 'enterprise']),
+  plan: z.enum(['pro', 'enterprise', 'team']),
   successUrl: z.string().url(),
   cancelUrl: z.string().url(),
 });
@@ -133,6 +133,16 @@ async function handleCheckout(
   const access = await assertAvatarAccess(parsed.data.avatarId, walletSession.walletAddress, effectiveIsAdmin);
   if (!access.ok) {
     return jsonResponse(access.statusCode, { error: access.error }, corsHeaders);
+  }
+
+  // Team tier does not have self-serve checkout — redirect to contact flow
+  if (parsed.data.plan === 'team') {
+    return jsonResponse(200, {
+      contactRequired: true,
+      message: 'The Team plan requires a sales conversation. Please reach out to discuss your needs.',
+      contactEmail: 'sales@rati.chat',
+      calendlyUrl: 'https://calendly.com/cosyworld/team',
+    }, corsHeaders);
   }
 
   // Use account-scoped lookup to prevent cross-account Stripe customer leakage.
@@ -249,7 +259,7 @@ async function resolveEntitlementContext(params: {
 async function upsertStripeEntitlement(params: {
   accountId: string;
   avatarId: string;
-  plan: 'free' | 'pro' | 'enterprise';
+  plan: 'free' | 'pro' | 'enterprise' | 'team';
   status: 'active' | 'suspended' | 'cancelled' | 'trial';
   stripeSubscriptionId?: string;
   stripeCustomerId?: string;
@@ -339,12 +349,12 @@ async function handleWebhook(
       });
       if (!context) break;
 
-      let plan: 'pro' | 'enterprise' | null = null;
+      let plan: 'pro' | 'enterprise' | 'team' | null = null;
       let trialEndsAt: number | undefined;
       if (subscriptionId) {
         const subscription = await retrieveStripeSubscription(subscriptionId);
         const inferredPlan = planFromStripeSubscription(subscription);
-        if (inferredPlan === 'pro' || inferredPlan === 'enterprise') {
+        if (inferredPlan === 'pro' || inferredPlan === 'enterprise' || inferredPlan === 'team') {
           plan = inferredPlan;
         }
         if (typeof subscription.trial_end === 'number') {
@@ -353,7 +363,7 @@ async function handleWebhook(
       }
       if (!plan) {
         const metadataPlan = session.metadata?.plan;
-        if (metadataPlan === 'pro' || metadataPlan === 'enterprise') {
+        if (metadataPlan === 'pro' || metadataPlan === 'enterprise' || metadataPlan === 'team') {
           plan = metadataPlan;
         }
       }
@@ -384,10 +394,10 @@ async function handleWebhook(
 
       const inferredPlan = planFromStripeSubscription(subscription);
       const status = mapStripeSubscriptionStatus(subscription.status);
-      let plan: 'free' | 'pro' | 'enterprise';
+      let plan: 'free' | 'pro' | 'enterprise' | 'team';
       if (status === 'cancelled') {
         plan = 'free';
-      } else if (inferredPlan === 'pro' || inferredPlan === 'enterprise') {
+      } else if (inferredPlan === 'pro' || inferredPlan === 'enterprise' || inferredPlan === 'team') {
         plan = inferredPlan;
       } else {
         const priceId = subscription.items?.data?.[0]?.price?.id ?? 'undefined';

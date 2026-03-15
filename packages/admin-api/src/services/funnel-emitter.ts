@@ -141,3 +141,81 @@ export function emitExpansion(
 ): void {
   void safeEmit('F6', userId, undefined, metadata);
 }
+
+// ============================================================================
+// Sales Funnel Event Helpers (upgrade prompts, contact clicks, churn)
+// ============================================================================
+
+/**
+ * Track when an upgrade prompt is shown to a user.
+ * Logged as F5 metadata with action='upgrade_prompt_shown'.
+ */
+export function emitUpgradePromptShown(
+  userId: string,
+  avatarId: string,
+  metadata: {
+    currentTier: string;
+    targetTier: string;
+    triggerType: string;
+    clicked?: boolean;
+  },
+): void {
+  void safeEmit('F5', userId, avatarId, {
+    action: 'upgrade_prompt_shown',
+    ...metadata,
+  });
+}
+
+/**
+ * Track when a user clicks the upgrade prompt (conversion intent).
+ */
+export function emitUpgradePromptClicked(
+  userId: string,
+  avatarId: string,
+  metadata: {
+    currentTier: string;
+    targetTier: string;
+    triggerType: string;
+  },
+): void {
+  void safeEmit('F5', userId, avatarId, {
+    action: 'upgrade_prompt_clicked',
+    ...metadata,
+  });
+}
+
+/**
+ * Track when a user clicks "Talk to Us" for Team tier.
+ */
+export function emitTeamContactClicked(
+  userId: string,
+  metadata: {
+    currentTier: string;
+    avatarCount?: number;
+    serverInfo?: string;
+    usageStats?: Record<string, unknown>;
+  },
+): void {
+  void safeEmit('F5', userId, undefined, {
+    action: 'team_contact_clicked',
+    ...metadata,
+  });
+}
+
+/**
+ * Track churn — log the tier at time of cancellation.
+ */
+export function emitChurn(
+  userId: string,
+  avatarId: string,
+  metadata: {
+    cancelledTier: string;
+    reason?: string;
+    daysOnPlan?: number;
+  },
+): void {
+  void safeEmit('F5', userId, avatarId, {
+    action: 'churn',
+    ...metadata,
+  });
+}

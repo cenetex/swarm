@@ -78,9 +78,10 @@ export interface BillingServices {
 // ============================================================================
 
 const PLAN_INFO: Record<string, { name: string; price: string; description: string }> = {
-  free: { name: 'Free', price: '$0/mo', description: 'Basic access with limited features' },
-  pro: { name: 'Pro', price: '$9/mo', description: 'Full platform access with memory and autonomy' },
-  enterprise: { name: 'Enterprise', price: '$29/mo', description: 'High-volume usage with priority processing' },
+  free: { name: 'Free', price: '$0/mo', description: 'Build your first AI agent — 1 bot, basic model access' },
+  pro: { name: 'Creator', price: '$9/mo', description: 'For builders who ship — up to 3 bots, full model access, persistent memory' },
+  team: { name: 'Team', price: '$299/mo', description: 'AI agents as community infrastructure — unlimited bots, shared memory, admin dashboard' },
+  enterprise: { name: 'Enterprise (Legacy)', price: '$29/mo', description: 'Legacy tier — being migrated to Creator plan' },
 };
 
 // ============================================================================
@@ -94,12 +95,13 @@ export const createBillingTools = (services: BillingServices) => [
   defineTool({
     name: 'subscribe',
     description:
-      'Create a checkout session for subscribing to a paid plan (Pro or Enterprise). ' +
+      'Create a checkout session for subscribing to a paid plan (Creator at $9/mo). ' +
+      'The Team plan ($299/mo) requires contacting sales. ' +
       'Returns a Stripe Checkout URL the user should open to complete payment. ' +
       'Requires the avatar to have an associated account.',
     category: 'config',
     inputSchema: z.object({
-      plan: z.enum(['pro', 'enterprise']).describe('The plan to subscribe to'),
+      plan: z.enum(['pro', 'enterprise', 'team']).describe('The plan to subscribe to (pro = Creator $9/mo, team = $299/mo contact sales)'),
       success_url: z.string().url().optional().describe('URL to redirect after successful checkout'),
       cancel_url: z.string().url().optional().describe('URL to redirect if checkout is cancelled'),
     }),
@@ -112,6 +114,20 @@ export const createBillingTools = (services: BillingServices) => [
           return {
             success: false,
             error: 'No billing account found for this avatar. Please set up an account first.',
+          };
+        }
+
+        // Team plan requires contacting sales — no self-serve checkout
+        if (input.plan === 'team') {
+          return {
+            success: true,
+            data: {
+              contactRequired: true,
+              message: 'The Team plan ($299/mo) requires a sales conversation. Please reach out to discuss your needs.',
+              contactEmail: 'sales@rati.chat',
+              plan: 'team',
+              price: PLAN_INFO.team.price,
+            },
           };
         }
 
@@ -262,7 +278,7 @@ export const createBillingTools = (services: BillingServices) => [
               },
               upgradePlans: [
                 { plan: 'pro', ...PLAN_INFO.pro },
-                { plan: 'enterprise', ...PLAN_INFO.enterprise },
+                { plan: 'team', ...PLAN_INFO.team },
               ],
             },
           };
@@ -302,11 +318,11 @@ export const createBillingTools = (services: BillingServices) => [
             ...(entitlement.plan === 'free' && {
               upgradePlans: [
                 { plan: 'pro', ...PLAN_INFO.pro },
-                { plan: 'enterprise', ...PLAN_INFO.enterprise },
+                { plan: 'team', ...PLAN_INFO.team },
               ],
             }),
-            ...(entitlement.plan === 'pro' && {
-              upgradePlans: [{ plan: 'enterprise', ...PLAN_INFO.enterprise }],
+            ...((entitlement.plan === 'pro' || entitlement.plan === 'enterprise') && {
+              upgradePlans: [{ plan: 'team', ...PLAN_INFO.team }],
             }),
           },
         };

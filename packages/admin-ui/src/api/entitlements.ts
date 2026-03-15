@@ -1,6 +1,6 @@
 import { API_BASE } from './apiBase';
 
-export type PlanType = 'free' | 'pro' | 'enterprise';
+export type PlanType = 'free' | 'pro' | 'enterprise' | 'team';
 
 export interface EffectiveLimitsResponse {
   avatarId: string;

@@ -129,8 +129,9 @@ export function PlanModal({ avatarId, avatarName, isOpen, canEdit, onClose }: Pl
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-60"
               >
                 <option value="free">free</option>
-                <option value="pro">pro</option>
-                <option value="enterprise">enterprise</option>
+                <option value="pro">pro (Creator $9/mo)</option>
+                <option value="team">team ($299/mo)</option>
+                <option value="enterprise">enterprise (legacy $29/mo)</option>
               </select>
               {!canEdit && (
                 <p className="text-xs text-[var(--color-text-muted)] mt-1">

@@ -64,6 +64,8 @@ function formatLimitValue(value: unknown): string {
 
 function planBadgeColor(plan: string): string {
   switch (plan) {
+    case 'team':
+      return 'bg-purple-500/15 text-purple-600 border-purple-500/30';
     case 'enterprise':
       return 'bg-purple-500/15 text-purple-600 border-purple-500/30';
     case 'pro':
@@ -271,7 +273,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
 
   // ── Billing handlers ───────────────────────────────────────────────────
 
-  const handleUpgrade = async (targetPlan: 'pro' | 'enterprise') => {
+  const handleUpgrade = async (targetPlan: 'pro' | 'enterprise' | 'team') => {
     setUpgrading(true);
     setBillingError(null);
     try {
@@ -499,20 +501,19 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                         <div>3 platforms</div>
                       </div>
                     </button>
-                    <button
-                      onClick={() => handleUpgrade('enterprise')}
-                      disabled={upgrading}
-                      className="px-3 py-3 rounded-lg bg-purple-500/15 border border-purple-500/30 hover:border-purple-500/50 text-left transition-colors disabled:opacity-50"
+                    <a
+                      href="mailto:sales@rati.chat?subject=CosyWorld%20Team%20Plan"
+                      className="px-3 py-3 rounded-lg bg-purple-500/15 border border-purple-500/30 hover:border-purple-500/50 text-left transition-colors block"
                     >
-                      <div className="text-sm font-semibold text-purple-600">Enterprise</div>
-                      <div className="text-lg font-bold text-[var(--color-text)]">$29<span className="text-xs font-normal text-[var(--color-text-secondary)]">/mo</span></div>
+                      <div className="text-sm font-semibold text-purple-600">Team</div>
+                      <div className="text-lg font-bold text-[var(--color-text)]">$299<span className="text-xs font-normal text-[var(--color-text-secondary)]">/mo</span></div>
                       <div className="text-[10px] text-[var(--color-text-secondary)] mt-1 space-y-0.5">
-                        <div>5,000 msgs/day</div>
-                        <div>500 media credits</div>
-                        <div>365-day memory</div>
-                        <div>10 platforms</div>
+                        <div>Unlimited bots/server</div>
+                        <div>Shared memory</div>
+                        <div>Admin dashboard</div>
+                        <div>Priority access</div>
                       </div>
-                    </button>
+                    </a>
                   </div>
                   <button
                     onClick={() => setShowUpgradeOptions(false)}
@@ -523,15 +524,14 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                 </div>
               )}
             </div>
-          ) : plan === 'pro' ? (
+          ) : plan === 'pro' || plan === 'enterprise' ? (
             <div className="flex gap-2">
-              <button
-                onClick={() => handleUpgrade('enterprise')}
-                disabled={upgrading}
-                className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-purple-500/15 border border-purple-500/30 hover:border-purple-500/50 text-purple-600 font-medium transition-colors disabled:opacity-50"
+              <a
+                href="mailto:sales@rati.chat?subject=CosyWorld%20Team%20Plan"
+                className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-purple-500/15 border border-purple-500/30 hover:border-purple-500/50 text-purple-600 font-medium transition-colors text-center"
               >
-                {upgrading ? 'Loading...' : 'Upgrade to Enterprise'}
-              </button>
+                Talk to Us About Team
+              </a>
               <button
                 onClick={handleManageBilling}
                 disabled={upgrading}
@@ -766,8 +766,9 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                 className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-60"
               >
                 <option value="free">free</option>
-                <option value="pro">pro</option>
-                <option value="enterprise">enterprise</option>
+                <option value="pro">pro (Creator $9/mo)</option>
+                <option value="team">team ($299/mo)</option>
+                <option value="enterprise">enterprise (legacy)</option>
               </select>
               <button
                 onClick={handleSave}

@@ -13,6 +13,8 @@ import type { LimitErrorInfo } from '../api/chat';
 interface UpgradeNudgeProps {
   avatarId: string;
   limitInfo: LimitErrorInfo;
+  /** Current plan of the avatar — controls which upgrade path to show */
+  currentPlan?: 'free' | 'pro' | 'enterprise' | 'team';
 }
 
 const LIMIT_LABELS: Record<string, { title: string; description: string }> = {
@@ -34,7 +36,7 @@ const LIMIT_LABELS: Record<string, { title: string; description: string }> = {
   },
 };
 
-export function UpgradeNudge({ avatarId, limitInfo }: UpgradeNudgeProps) {
+export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: UpgradeNudgeProps) {
   const [upgrading, setUpgrading] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
@@ -122,20 +124,31 @@ export function UpgradeNudge({ avatarId, limitInfo }: UpgradeNudgeProps) {
 
       {/* Actions */}
       <div className="flex items-center gap-2">
-        <button
-          onClick={handleUpgrade}
-          disabled={upgrading}
-          className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors disabled:opacity-50"
-        >
-          {upgrading ? 'Loading...' : 'Upgrade to Pro — $9/mo'}
-        </button>
-        {!showInvite && (
-          <button
-            onClick={() => setShowInvite(true)}
-            className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] underline underline-offset-2"
+        {currentPlan === 'free' ? (
+          <>
+            <button
+              onClick={handleUpgrade}
+              disabled={upgrading}
+              className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors disabled:opacity-50"
+            >
+              {upgrading ? 'Loading...' : 'Upgrade to Creator — $9/mo'}
+            </button>
+            {!showInvite && (
+              <button
+                onClick={() => setShowInvite(true)}
+                className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] underline underline-offset-2"
+              >
+                Have an invite code?
+              </button>
+            )}
+          </>
+        ) : (
+          <a
+            href="mailto:sales@rati.chat?subject=CosyWorld%20Team%20Plan%20Inquiry"
+            className="px-4 py-2 text-sm rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium transition-colors inline-block"
           >
-            Have an invite code?
-          </button>
+            Talk to Us About Team — $299/mo
+          </a>
         )}
       </div>
 
@@ -169,12 +182,23 @@ export function UpgradeNudge({ avatarId, limitInfo }: UpgradeNudgeProps) {
         </div>
       )}
 
-      {/* Pro benefits summary */}
+      {/* Upgrade benefits summary */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-[var(--color-text-muted)] pt-1 border-t border-[var(--color-border)]">
-        <span>500 msgs/day</span>
-        <span>30-day memory</span>
-        <span>50 media credits</span>
-        <span>3 platforms</span>
+        {currentPlan === 'free' ? (
+          <>
+            <span>Up to 3 bots</span>
+            <span>Persistent memory</span>
+            <span>300+ models</span>
+            <span>No branding</span>
+          </>
+        ) : (
+          <>
+            <span>Unlimited bots/server</span>
+            <span>Shared memory</span>
+            <span>Admin dashboard</span>
+            <span>Priority access</span>
+          </>
+        )}
       </div>
     </div>
   );

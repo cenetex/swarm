@@ -9,7 +9,7 @@
 /**
  * Available plan types
  */
-export type PlanType = 'free' | 'pro' | 'enterprise';
+export type PlanType = 'free' | 'pro' | 'enterprise' | 'team';
 
 /**
  * Plan limits configuration
@@ -38,6 +38,12 @@ export interface PlanLimits {
 
 /**
  * Default plan configurations
+ *
+ * Tier pricing:
+ *   free     = $0/mo   — 1 bot, basic model access, CosyWorld branding
+ *   pro      = $9/mo   — up to 3 bots, full model access, persistent memory (renamed from "Creator")
+ *   team     = $299/mo — unlimited bots, shared memory, admin dashboard, priority access
+ *   enterprise (legacy $29/mo) — kept for backward compat; migrated subscribers move to pro
  */
 export const PLAN_DEFAULTS: Record<PlanType, PlanLimits> = {
   free: {
@@ -68,6 +74,21 @@ export const PLAN_DEFAULTS: Record<PlanType, PlanLimits> = {
     customModelEnabled: true,
     priorityProcessing: false,
   },
+  team: {
+    memoryEnabled: true,
+    memoryRetentionDays: 365,
+    maxMemoriesPerTier: 5000,
+    dailyMessageLimit: -1,      // unlimited
+    dailyMediaCredits: -1,      // unlimited
+    dailyVoiceMinutes: -1,      // unlimited
+    maxToolCallsPerMessage: 10,
+    maxPlatforms: -1,           // unlimited
+    maxChannels: -1,            // unlimited
+    autonomousPostsEnabled: true,
+    customModelEnabled: true,
+    priorityProcessing: true,
+  },
+  /** @deprecated Legacy $29/mo tier — existing subscribers are migrated to pro */
   enterprise: {
     memoryEnabled: true,
     memoryRetentionDays: 365,

@@ -164,7 +164,7 @@ export async function handleEntitlementRoutes(
     const stripeSubscriptionId =
       typeof body?.stripeSubscriptionId === 'string' ? body.stripeSubscriptionId : undefined;
 
-    if (plan !== 'free' && plan !== 'pro' && plan !== 'enterprise') {
+    if (plan !== 'free' && plan !== 'pro' && plan !== 'enterprise' && plan !== 'team') {
       return jsonResponse(corsHeaders, 400, { error: 'Invalid plan' });
     }
 

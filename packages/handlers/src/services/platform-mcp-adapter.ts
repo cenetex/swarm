@@ -1544,7 +1544,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         return {
           accountId: ent.accountId as string,
           avatarId: ent.avatarId as string,
-          plan: (ent.plan || 'free') as 'free' | 'pro' | 'enterprise',
+          plan: (ent.plan || 'free') as 'free' | 'pro' | 'enterprise' | 'team',
           status: (ent.status || 'active') as 'active' | 'suspended' | 'cancelled' | 'trial',
           stripeSubscriptionId: ent.stripeSubscriptionId as string | undefined,
           stripeCustomerId: ent.stripeCustomerId as string | undefined,

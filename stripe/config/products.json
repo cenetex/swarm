@@ -35,11 +35,38 @@
       },
       "monthly_price_cents": 900
     },
+    "team": {
+      "name": "CosyWorld Team",
+      "description": "AI agents as community infrastructure. Unlimited bots/agents per server, shared memory across agents, admin dashboard with usage analytics, priority model access, dedicated onboarding, and custom agent configurations.",
+      "metadata": {
+        "plan_type": "team",
+        "daily_message_limit": "-1",
+        "daily_media_credits": "-1",
+        "daily_voice_minutes": "-1",
+        "max_tool_calls_per_message": "10",
+        "max_platforms": "-1",
+        "max_channels": "-1",
+        "memory_enabled": "true",
+        "memory_retention_days": "365",
+        "max_memories_per_tier": "5000",
+        "autonomous_posts_enabled": "true",
+        "custom_model_enabled": "true",
+        "priority_processing": "true",
+        "shared_memory": "true",
+        "admin_dashboard": "true",
+        "dedicated_onboarding": "true"
+      },
+      "monthly_price_cents": 29900,
+      "annual_price_cents": 299000,
+      "contact_sales": true
+    },
     "enterprise": {
-      "name": "Swarm Enterprise",
-      "description": "Unlimited messaging, media, and voice for production-grade avatars. Priority processing, unlimited platforms and channels, 365-day memory retention, autonomous posting, custom models, and 10 tool calls per message. Built for teams running avatars at scale.",
+      "name": "Swarm Enterprise (Legacy)",
+      "description": "Legacy $29/mo tier. Existing subscribers are being migrated to the Creator (Pro) plan with all features preserved.",
       "metadata": {
         "plan_type": "enterprise",
+        "legacy": "true",
+        "migrated_to": "pro",
         "daily_message_limit": "-1",
         "daily_media_credits": "-1",
         "daily_voice_minutes": "-1",
@@ -53,7 +80,8 @@
         "custom_model_enabled": "true",
         "priority_processing": "true"
       },
-      "monthly_price_cents": 2900
+      "monthly_price_cents": 2900,
+      "archived": true
     }
   },
   "metered_prices": {

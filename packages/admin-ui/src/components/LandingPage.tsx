@@ -105,33 +105,17 @@ export function LandingPage() {
         </div>
 
         {/* Pricing */}
-        <div className="w-full max-w-lg mb-10">
-          <h3 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider text-center mb-4">
-            Simple pricing
+        <div className="w-full max-w-2xl mb-10">
+          <h3 className="text-lg sm:text-xl font-bold text-[var(--color-text)] text-center mb-1">
+            Persistent AI agents with memory. Pick your scale.
           </h3>
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            <PricingCard
-              name="Free"
-              price="$0"
-              features={['50 msgs/day', '1 platform', 'No memory', '5 media/day']}
-              color="text-[var(--color-text-secondary)]"
-            />
-            <PricingCard
-              name="Pro"
-              price="$9"
-              period="/mo"
-              features={['500 msgs/day', '3 platforms', '30-day memory', '50 media/day']}
-              color="text-blue-400"
-              highlight
-            />
-            <PricingCard
-              name="Enterprise"
-              price="$29"
-              period="/mo"
-              features={['5,000 msgs/day', '10 platforms', '365-day memory', '500 media/day']}
-              color="text-purple-400"
-            />
-          </div>
+          <p className="text-sm text-[var(--color-text-secondary)] text-center mb-5">
+            From solo experiments to full server deployments.
+          </p>
+          <PricingTiers />
+          <p className="text-xs text-[var(--color-text-muted)] text-center mt-4">
+            Already on the $29 plan? You've been upgraded to Creator. Email us about Team.
+          </p>
         </div>
 
         {/* CTA */}
@@ -235,34 +219,92 @@ function FeatureCard({ icon, title, description }: FeatureCardProps) {
   );
 }
 
-/* ---- Pricing Card ---- */
+/* ---- Pricing Tiers ---- */
 
-interface PricingCardProps {
-  name: string;
-  price: string;
-  period?: string;
-  features: string[];
-  color: string;
-  highlight?: boolean;
-}
+const MONTHLY_PRICES = { free: 0, creator: 9, team: 299 };
+const ANNUAL_PRICES = { free: 0, creator: 90, team: 2990 };
 
-function PricingCard({ name, price, period, features, color, highlight }: PricingCardProps) {
+function PricingTiers() {
+  const [annual, setAnnual] = useState(false);
+  const prices = annual ? ANNUAL_PRICES : MONTHLY_PRICES;
+  const period = annual ? '/yr' : '/mo';
+
   return (
-    <div className={`rounded-xl p-3 sm:p-4 border text-center ${
-      highlight
-        ? 'bg-blue-900/20 border-blue-500/30'
-        : 'bg-[var(--color-bg-secondary)]/60 border-[var(--color-border)]'
-    }`}>
-      <div className={`text-xs font-semibold uppercase tracking-wider mb-1 ${color}`}>{name}</div>
-      <div className="text-xl sm:text-2xl font-bold text-[var(--color-text)]">
-        {price}
-        {period && <span className="text-xs font-normal text-[var(--color-text-muted)]">{period}</span>}
+    <div>
+      {/* Annual toggle */}
+      <div className="flex items-center justify-center gap-3 mb-5">
+        <span className={`text-xs font-medium ${!annual ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}`}>Monthly</span>
+        <button
+          onClick={() => setAnnual(!annual)}
+          className={`relative w-11 h-6 rounded-full transition-colors ${annual ? 'bg-brand-600' : 'bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]'}`}
+          aria-label="Toggle annual pricing"
+        >
+          <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${annual ? 'translate-x-5' : ''}`} />
+        </button>
+        <span className={`text-xs font-medium ${annual ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}`}>
+          Annual <span className="text-green-400">(save ~17%)</span>
+        </span>
       </div>
-      <ul className="mt-2 space-y-1">
-        {features.map((f) => (
-          <li key={f} className="text-[10px] sm:text-xs text-[var(--color-text-muted)]">{f}</li>
-        ))}
-      </ul>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Free */}
+        <div className="rounded-xl p-4 border bg-[var(--color-bg-secondary)]/40 border-[var(--color-border)] text-center flex flex-col">
+          <div className="text-xs font-semibold uppercase tracking-wider mb-1 text-[var(--color-text-muted)]">Free</div>
+          <div className="text-sm text-[var(--color-text-secondary)] mb-3">Build your first AI agent</div>
+          <div className="text-2xl font-bold text-[var(--color-text)] mb-3">$0</div>
+          <ul className="space-y-1.5 text-xs text-[var(--color-text-muted)] mb-4 flex-1">
+            <li>1 bot/agent</li>
+            <li>Basic model access</li>
+            <li>Community support</li>
+            <li>CosyWorld branding</li>
+          </ul>
+          <div className="text-xs text-[var(--color-text-muted)] font-medium py-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
+            Get Started
+          </div>
+        </div>
+
+        {/* Creator ($9) */}
+        <div className="rounded-xl p-4 border bg-[var(--color-bg-secondary)]/60 border-blue-500/30 text-center flex flex-col">
+          <div className="text-xs font-semibold uppercase tracking-wider mb-1 text-blue-400">Creator</div>
+          <div className="text-sm text-[var(--color-text-secondary)] mb-3">For builders who ship</div>
+          <div className="text-2xl font-bold text-[var(--color-text)] mb-3">
+            ${prices.creator}<span className="text-xs font-normal text-[var(--color-text-muted)]">{period}</span>
+          </div>
+          <ul className="space-y-1.5 text-xs text-[var(--color-text-secondary)] mb-4 flex-1">
+            <li>Up to 3 bots/agents</li>
+            <li>Full model access (300+)</li>
+            <li>Persistent memory per agent</li>
+            <li>No CosyWorld branding</li>
+          </ul>
+          <div className="text-xs font-medium py-2 rounded-lg bg-blue-600 text-white">
+            Subscribe
+          </div>
+        </div>
+
+        {/* Team ($299) */}
+        <div className="rounded-xl p-4 border-2 bg-purple-900/15 border-purple-500/40 text-center flex flex-col relative">
+          <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-purple-600 text-white text-[10px] font-semibold uppercase tracking-wide">
+            Best for Communities
+          </div>
+          <div className="text-xs font-semibold uppercase tracking-wider mb-1 text-purple-400 mt-1">Team</div>
+          <div className="text-sm text-[var(--color-text-secondary)] mb-3">AI agents as community infrastructure</div>
+          <div className="text-2xl font-bold text-[var(--color-text)] mb-3">
+            ${prices.team.toLocaleString()}<span className="text-xs font-normal text-[var(--color-text-muted)]">{period}</span>
+          </div>
+          <ul className="space-y-1.5 text-xs text-[var(--color-text-secondary)] mb-4 flex-1">
+            <li>Unlimited bots/agents per server</li>
+            <li>Shared memory across agents</li>
+            <li>Admin dashboard &amp; analytics</li>
+            <li>Priority access &amp; onboarding</li>
+          </ul>
+          <a
+            href="mailto:sales@rati.chat?subject=CosyWorld%20Team%20Plan"
+            className="block text-xs font-medium py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-colors"
+          >
+            Talk to Us
+          </a>
+        </div>
+      </div>
     </div>
   );
 }

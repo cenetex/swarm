@@ -59,10 +59,11 @@ export interface StripeWebhookEvent<T = unknown> {
   };
 }
 
-function getPriceIdMap(): Record<'pro' | 'enterprise', string | undefined> {
+function getPriceIdMap(): Record<'pro' | 'enterprise' | 'team', string | undefined> {
   return {
     pro: process.env.STRIPE_PRICE_ID_PRO,
     enterprise: process.env.STRIPE_PRICE_ID_ENTERPRISE,
+    team: process.env.STRIPE_PRICE_ID_TEAM,
   };
 }
 
@@ -162,7 +163,7 @@ export function extractStripeObjectId(value: string | { id?: string } | undefine
   return null;
 }
 
-export function getStripePriceIdForPlan(plan: 'pro' | 'enterprise'): string {
+export function getStripePriceIdForPlan(plan: 'pro' | 'enterprise' | 'team'): string {
   const priceId = getPriceIdMap()[plan];
   if (!priceId) {
     throw new Error(`Missing Stripe price ID for plan: ${plan}`);
@@ -174,6 +175,7 @@ export function planFromStripePriceId(priceId: string): PlanType | null {
   if (!priceId) return null;
   const priceIds = getPriceIdMap();
   if (priceIds.pro && priceId === priceIds.pro) return 'pro';
+  if (priceIds.team && priceId === priceIds.team) return 'team';
   if (priceIds.enterprise && priceId === priceIds.enterprise) return 'enterprise';
   return null;
 }
@@ -206,7 +208,7 @@ export function mapStripeSubscriptionStatus(status: string | undefined): StripeE
 export async function createStripeCheckoutSession(params: {
   accountId: string;
   avatarId: string;
-  plan: 'pro' | 'enterprise';
+  plan: 'pro' | 'enterprise' | 'team';
   successUrl: string;
   cancelUrl: string;
   customerId?: string;
