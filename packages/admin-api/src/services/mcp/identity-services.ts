@@ -98,12 +98,10 @@ export function createIdentityServices(
       },
 
       setCharacterReference: async (avatarId, source, description) => {
-        if (source.type === 'generate') {
-          const result = await media.setCharacterReference(avatarId, source, description);
-          return { url: result.url };
-        }
-
         const result = await media.setCharacterReference(avatarId, source, description);
+        await avatars.updateAvatar(avatarId, {
+          characterReference: { url: result.url, s3Key: result.s3Key, description, updatedAt: Date.now() }
+        }, session);
         return { url: result.url };
       },
 

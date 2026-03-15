@@ -126,6 +126,9 @@ export function extractPendingJobs(
           purpose: parsed._pendingJob.purpose,
         });
       } else if (parsed.jobId && (parsed.status === 'pending' || parsed.status === 'processing')) {
+        // Derive purpose from tool name if not explicitly set
+        const derivedPurpose = parsed.purpose
+          || (toolName === 'set_profile_image' ? 'profile' : undefined);
         pendingJobs.push({
           jobId: parsed.jobId,
           type: toolName === 'generate_video'
@@ -134,6 +137,7 @@ export function extractPendingJobs(
               ? 'sticker'
               : 'image',
           prompt: parsed.prompt,
+          purpose: derivedPurpose,
         });
       }
     } catch {

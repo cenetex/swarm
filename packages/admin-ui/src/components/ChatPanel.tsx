@@ -572,7 +572,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                     });
                     activePollers.delete(jobId);
 
-                    if (jobPurpose === 'profile_image') {
+                    if (jobPurpose === 'profile' || jobPurpose === 'profile_image') {
                       void (async () => {
                         try {
                           const updated = await updateAvatarApi(avatarIdForPolling, {

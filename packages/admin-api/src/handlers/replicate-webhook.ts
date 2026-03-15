@@ -17,6 +17,7 @@ import { parseJsonBody } from '../http/request-body.js';
 import { isRequestValidationError } from '../middleware/validate.js';
 import type { MediaJob } from '../types.js';
 import { buildMediaUrl } from '../utils/media-url.js';
+import { updateAvatar } from '../services/avatars.js';
 
 const s3Client = new S3Client({});
 const sqsClient = new SQSClient({});
@@ -175,6 +176,19 @@ export async function handler(
           predictTime: prediction.metrics?.predict_time,
         },
       });
+
+      // Auto-persist profile image to avatar record when generation completes
+      if (job.purpose === 'profile') {
+        try {
+          const systemSession = { email: 'system@replicate-webhook', userId: 'system', isAdmin: true, accessToken: '' };
+          await updateAvatar(job.avatarId, {
+            profileImage: { url: publicUrl, s3Key, updatedAt: Date.now() },
+          }, systemSession);
+          logger.info('Profile image auto-persisted to avatar', { avatarId: job.avatarId, s3Key });
+        } catch (err) {
+          logger.error('Failed to auto-persist profile image', err, { avatarId: job.avatarId });
+        }
+      }
 
       // Send callback message to response queue if configured
       // Allow sending when we have conversationId (will post to chat) or replyToMessageId (will reply to specific message)
