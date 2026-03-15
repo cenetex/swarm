@@ -15,7 +15,7 @@ export interface PortalResponse {
 
 export async function createCheckoutSession(
   avatarId: string,
-  plan: 'pro' | 'enterprise',
+  plan: 'pro',
 ): Promise<CheckoutResponse> {
   const successUrl = `${window.location.origin}?billing=success&plan=${plan}`;
   const cancelUrl = `${window.location.origin}?billing=cancelled`;

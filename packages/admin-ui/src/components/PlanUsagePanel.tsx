@@ -273,7 +273,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
 
   // ── Billing handlers ───────────────────────────────────────────────────
 
-  const handleUpgrade = async (targetPlan: 'pro' | 'enterprise') => {
+  const handleUpgrade = async (targetPlan: 'pro') => {
     setUpgrading(true);
     setBillingError(null);
     try {
