@@ -411,9 +411,29 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         return avatarConfig.profileImage?.url;
       },
       getReferenceImageUrl: async (_avatarId: string, category?: string) => {
-        // For 'character' category, prefer characterReference
+        // For 'character' category, prefer characterReference from config
         if (category === 'character' && avatarConfig.characterReference?.url) {
           return avatarConfig.characterReference.url;
+        }
+        // Query DynamoDB for uploaded reference images
+        try {
+          const dynamo = getDynamoClient();
+          const table = getAdminTable();
+          const skPrefix = category ? `REFERENCE#${category}#` : 'REFERENCE#';
+          const result = await dynamo.send(new QueryCommand({
+            TableName: table,
+            KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+            ExpressionAttributeValues: {
+              ':pk': `AVATAR#${avatarId}`,
+              ':sk': skPrefix,
+            },
+            Limit: 1,
+          }));
+          if (result.Items && result.Items.length > 0 && result.Items[0].url) {
+            return result.Items[0].url as string;
+          }
+        } catch (err) {
+          logger.warn('Failed to query reference images from DynamoDB', { error: err, avatarId });
         }
         // Fall back to profile image
         return avatarConfig.profileImage?.url;
@@ -427,7 +447,29 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
           return avatarConfig.characterReference.url;
         }
         // Fall back to profile image
-        return avatarConfig.profileImage?.url;
+        if (avatarConfig.profileImage?.url) {
+          return avatarConfig.profileImage.url;
+        }
+        // Query DynamoDB for uploaded 'character' category reference images
+        try {
+          const dynamo = getDynamoClient();
+          const table = getAdminTable();
+          const result = await dynamo.send(new QueryCommand({
+            TableName: table,
+            KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+            ExpressionAttributeValues: {
+              ':pk': `AVATAR#${avatarId}`,
+              ':sk': 'REFERENCE#character#',
+            },
+            Limit: 1,
+          }));
+          if (result.Items && result.Items.length > 0 && result.Items[0].url) {
+            return result.Items[0].url as string;
+          }
+        } catch (err) {
+          logger.warn('Failed to query reference images from DynamoDB', { error: err, avatarId });
+        }
+        return undefined;
       },
     },
 
