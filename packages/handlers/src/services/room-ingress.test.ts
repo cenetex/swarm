@@ -3,6 +3,8 @@ import {
   processSharedRoomMessage,
   isSharedRoom,
   buildRoomKey,
+  registerChannelAvatarResolver,
+  unregisterChannelAvatarResolver,
   _setDeps,
   _resetDeps,
 } from './room-ingress.js';
@@ -98,6 +100,61 @@ describe('room-ingress', () => {
     it('returns false when no avatars are registered', async () => {
       mockGetChannelAvatarIds.mockResolvedValueOnce([]);
       expect(await isSharedRoom('telegram', '-100123')).toBe(false);
+    });
+  });
+
+  describe('platform-agnostic resolver', () => {
+    afterEach(() => {
+      unregisterChannelAvatarResolver('discord');
+    });
+
+    it('uses a registered platform resolver for Discord instead of the default', async () => {
+      const discordResolver = mock(() => Promise.resolve(['avatar-x', 'avatar-y']));
+      registerChannelAvatarResolver('discord', discordResolver as never);
+
+      const result = await isSharedRoom('discord', 'chan-123');
+      expect(result).toBe(true);
+      expect(discordResolver).toHaveBeenCalledWith('chan-123');
+      // The default Telegram resolver should NOT have been called
+      expect(mockGetChannelAvatarIds).not.toHaveBeenCalled();
+    });
+
+    it('falls back to default resolver for platforms without a registered resolver', async () => {
+      // Register Discord resolver but query Telegram
+      const discordResolver = mock(() => Promise.resolve(['avatar-x']));
+      registerChannelAvatarResolver('discord', discordResolver as never);
+
+      mockGetChannelAvatarIds.mockResolvedValueOnce(['avatar-a', 'avatar-b']);
+      const result = await isSharedRoom('telegram', '-100123');
+      expect(result).toBe(true);
+      expect(discordResolver).not.toHaveBeenCalled();
+      expect(mockGetChannelAvatarIds).toHaveBeenCalledWith('-100123');
+    });
+
+    it('Discord and Telegram use the same isSharedRoom interface', async () => {
+      // Register Discord resolver
+      registerChannelAvatarResolver('discord', async () => ['a', 'b', 'c']);
+
+      // Both platforms through the same function
+      mockGetChannelAvatarIds.mockResolvedValueOnce(['x', 'y']);
+
+      const discordShared = await isSharedRoom('discord', 'chan-1');
+      const telegramShared = await isSharedRoom('telegram', '-1001');
+
+      expect(discordShared).toBe(true);
+      expect(telegramShared).toBe(true);
+    });
+
+    it('unregisterChannelAvatarResolver removes the resolver', async () => {
+      const discordResolver = mock(() => Promise.resolve(['avatar-x', 'avatar-y']));
+      registerChannelAvatarResolver('discord', discordResolver as never);
+      unregisterChannelAvatarResolver('discord');
+
+      // Should now fall back to default
+      mockGetChannelAvatarIds.mockResolvedValueOnce([]);
+      const result = await isSharedRoom('discord', 'chan-123');
+      expect(result).toBe(false);
+      expect(discordResolver).not.toHaveBeenCalled();
     });
   });
 });

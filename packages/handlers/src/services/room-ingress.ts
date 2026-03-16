@@ -10,6 +10,10 @@
  *   3. Enqueued once with a room-scoped MessageGroupId
  *
  * Private chats and single-avatar channels continue to use per-avatar enqueue.
+ *
+ * Shared-room detection uses a platform-agnostic ChannelAvatarResolver
+ * abstraction so both Telegram (home-channel registry) and Discord (in-memory
+ * gateway bindings) resolve avatar counts through the same interface.
  */
 import {
   appendMessage as _appendMessage,
@@ -32,11 +36,18 @@ export interface RoomIngressResult {
   rateLimited?: boolean;
 }
 
+/**
+ * Platform-agnostic interface for resolving which avatars are present in a
+ * channel. Implementations can back onto DynamoDB (Telegram home-channel
+ * registry), in-memory gateway bindings (Discord), or any future store.
+ */
+export type ChannelAvatarResolver = (channelId: string) => Promise<string[]>;
+
 /** Overridable dependencies for testing without process-global mock.module. */
 export interface RoomIngressDeps {
   appendMessage: typeof _appendMessage;
   getRecentMessages: typeof _getRecentMessages;
-  getChannelAvatarIds: typeof _getChannelAvatarIds;
+  getChannelAvatarIds: ChannelAvatarResolver;
 }
 
 const defaultDeps: RoomIngressDeps = {
@@ -44,6 +55,33 @@ const defaultDeps: RoomIngressDeps = {
   getRecentMessages: _getRecentMessages,
   getChannelAvatarIds: _getChannelAvatarIds,
 };
+
+/**
+ * Per-platform resolver registry. Callers (e.g. Discord gateway) can register
+ * a platform-specific ChannelAvatarResolver so that isSharedRoom uses the
+ * correct data source for each platform.
+ */
+const platformResolvers = new Map<Platform, ChannelAvatarResolver>();
+
+/**
+ * Register a platform-specific ChannelAvatarResolver.
+ *
+ * Discord registers its in-memory binding lookup here; Telegram falls through
+ * to the default (home-channel registry) if no resolver is registered.
+ */
+export function registerChannelAvatarResolver(
+  platform: Platform,
+  resolver: ChannelAvatarResolver,
+): void {
+  platformResolvers.set(platform, resolver);
+}
+
+/**
+ * Unregister a platform-specific resolver (useful for cleanup/testing).
+ */
+export function unregisterChannelAvatarResolver(platform: Platform): void {
+  platformResolvers.delete(platform);
+}
 
 /** Replace dependencies for testing. */
 export function _setDeps(deps: Partial<RoomIngressDeps>): void {
@@ -55,6 +93,7 @@ export function _resetDeps(): void {
   defaultDeps.appendMessage = _appendMessage;
   defaultDeps.getRecentMessages = _getRecentMessages;
   defaultDeps.getChannelAvatarIds = _getChannelAvatarIds;
+  platformResolvers.clear();
 }
 
 /**
@@ -129,13 +168,18 @@ export async function processSharedRoomMessage(
 /**
  * Check whether a channel is a shared room (has multiple active avatars).
  *
- * Uses the home channel registry from #744 to count registered avatars.
- * Returns true if 2+ avatars are registered in this channel.
+ * Uses the platform-specific resolver if one has been registered via
+ * registerChannelAvatarResolver(), otherwise falls back to the default
+ * home-channel registry lookup. Returns true if 2+ avatars are present.
+ *
+ * This is the single platform-agnostic entry point for shared-room detection
+ * used by both Telegram and Discord ingress paths.
  */
 export async function isSharedRoom(
-  _platform: Platform,
+  platform: Platform,
   channelId: string,
 ): Promise<boolean> {
-  const avatarIds = await defaultDeps.getChannelAvatarIds(channelId);
+  const resolver = platformResolvers.get(platform) ?? defaultDeps.getChannelAvatarIds;
+  const avatarIds = await resolver(channelId);
   return avatarIds.length >= 2;
 }

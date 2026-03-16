@@ -16,7 +16,7 @@
  */
 import WebSocket from 'ws';
 import { sendSqsMessage } from '../services/sqs-send.js';
-import { processSharedRoomMessage, buildRoomKey } from '../services/room-ingress.js';
+import { processSharedRoomMessage, buildRoomKey, isSharedRoom, registerChannelAvatarResolver } from '../services/room-ingress.js';
 import { SQSClient, GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { randomUUID } from 'node:crypto';
@@ -428,33 +428,43 @@ async function handleDiscordMessage(
   } as Parameters<typeof createMessageEvaluator>[2]);
 
   const evaluation = await evaluator.evaluate(envelope);
-  if (!evaluation.shouldRespond) {
-    logger.info('Not responding to Discord message', { reason: evaluation.reason });
-    return;
-  }
 
   envelope.metadata.shouldRespond = evaluation.shouldRespond;
   envelope.metadata.responseReason = evaluation.reason;
   envelope.metadata.priority = evaluation.priority;
 
-  // Store in channel history
-  const meta = envelope.metadata as unknown as Record<string, unknown>;
-  const chatType = meta.chatType as string | undefined;
-  await stateService.addMessageToChannel(
-    avatarId,
-    envelope.conversationId,
-    'discord' as Platform,
-    {
-      messageId: envelope.messageId,
-      sender: envelope.sender.displayName || envelope.sender.username || envelope.sender.id,
-      isBot: envelope.sender.isBot,
-      content: envelope.content.text || '[message]',
-      timestamp: envelope.timestamp,
-    },
-    undefined, // maxMessages - use default
-    chatType === 'dm' ? 'private' : 'group',
-    meta.guildId as string | undefined
-  );
+  // Store in channel history when admitted to context (even without response).
+  // This gives Discord guild messages the same context visibility as Telegram
+  // group messages — the system sees them for shared-room context building.
+  const shouldAdmit = evaluation.shouldRespond || evaluation.admitToContext;
+
+  if (shouldAdmit) {
+    const meta = envelope.metadata as unknown as Record<string, unknown>;
+    const chatType = meta.chatType as string | undefined;
+    await stateService.addMessageToChannel(
+      avatarId,
+      envelope.conversationId,
+      'discord' as Platform,
+      {
+        messageId: envelope.messageId,
+        sender: envelope.sender.displayName || envelope.sender.username || envelope.sender.id,
+        isBot: envelope.sender.isBot,
+        content: envelope.content.text || '[message]',
+        timestamp: envelope.timestamp,
+      },
+      undefined, // maxMessages - use default
+      chatType === 'dm' ? 'private' : 'group',
+      meta.guildId as string | undefined
+    );
+  }
+
+  if (!evaluation.shouldRespond) {
+    logger.info('Not responding to Discord message', {
+      reason: evaluation.reason,
+      admittedToContext: shouldAdmit,
+    });
+    return;
+  }
 
   // Enqueue to shared message queue (with S3 offload for large payloads)
   await sendSqsMessage({
@@ -817,8 +827,11 @@ class GatewayConnection {
         eligible.push(binding);
       }
 
-      // Shared room path: 2+ avatars targeting the same channel
-      if (eligible.length >= 2) {
+      // Shared room path: use platform-agnostic isSharedRoom check.
+      // The Discord resolver is registered at startup (see main()) so
+      // this uses the same abstraction as Telegram's shared-room detection.
+      const shared = await isSharedRoom('discord', message.channel_id);
+      if (shared) {
         const traceId = randomUUID();
         try {
           const ingressResult = await processSharedRoomMessage('discord', message.channel_id, {
@@ -1231,6 +1244,25 @@ async function main(): Promise<void> {
   // This catches stale MESSAGE_QUEUE_URL values early instead of failing
   // silently at runtime with NonExistentQueue errors.
   await verifyQueueReachable(MESSAGE_QUEUE_URL);
+
+  // Register the Discord channel-avatar resolver so isSharedRoom uses
+  // the in-memory gateway bindings rather than the Telegram-specific
+  // home-channel registry. This brings both platforms onto one abstraction.
+  registerChannelAvatarResolver('discord', async (channelId: string) => {
+    const ids: string[] = [];
+    for (const binding of avatarBindings.values()) {
+      const dc = binding.config.platforms?.discord;
+      // An avatar is "in" this channel if it has no channel filter, or the
+      // channel is in its allowedChannels list, and the guild (if any) is
+      // in its allowedGuilds list.
+      const guildOk = !dc?.allowedGuilds?.length || true; // guild check happens at message level
+      const channelOk = !dc?.allowedChannels?.length || dc.allowedChannels.includes(channelId);
+      if (guildOk && channelOk) {
+        ids.push(binding.avatarId);
+      }
+    }
+    return ids;
+  });
 
   // Initial avatar discovery
   await refreshAvatarBindings();

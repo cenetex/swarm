@@ -13,6 +13,17 @@ export interface EvaluationResult {
   reason: string;
   priority: 'high' | 'normal' | 'low';
   skipQueue?: boolean; // For direct responses (e.g., commands)
+  /**
+   * Whether the message should be admitted into channel/shared-room context
+   * even if shouldRespond is false. This separates visibility from response
+   * selection: a message can be visible to the system (for context building)
+   * without forcing any avatar to reply.
+   *
+   * When true AND shouldRespond is false, the message should be appended to
+   * channel history but not trigger a response. This enables Discord guild
+   * messages to have the same context visibility as Telegram group messages.
+   */
+  admitToContext?: boolean;
 }
 
 export interface MessageEvaluatorConfig {
@@ -176,16 +187,37 @@ export class MessageEvaluator {
 
   /**
    * Discord-specific evaluation
+   *
+   * Key design: guild messages in allowed guilds/channels are always admitted
+   * into channel context (admitToContext: true) for parity with Telegram group
+   * visibility. Response selection (shouldRespond) remains gated on mentions,
+   * name hits, or explicit allowed-channel configuration to prevent spam.
    */
   private evaluateDiscord(envelope: SwarmEnvelope): EvaluationResult {
     const config = this.avatarConfig.platforms.discord;
     const chatType = envelope.metadata.chatType;
 
+    // DMs always bypass global mode filters (private chat = direct conversation)
+    if (chatType === 'private') {
+      if (config?.respondInDMs === false) {
+        return {
+          shouldRespond: false,
+          reason: 'Discord DM responses disabled',
+          priority: 'low',
+        };
+      }
+      return {
+        shouldRespond: true,
+        reason: 'Discord DM',
+        priority: 'normal',
+      };
+    }
+
     // Global mode: selective response based on mention/name/channel
     if (config?.mode === 'global') {
       // Always respond if @mentioned
       if (envelope.metadata.isMention) {
-        return { shouldRespond: true, reason: 'Mentioned in global mode', priority: 'high' };
+        return { shouldRespond: true, reason: 'Mentioned in global mode', priority: 'high', admitToContext: true };
       }
       // Respond if avatar's base name appears in the message text.
       // Strip emoji and special chars from avatar name, then match each word
@@ -196,29 +228,14 @@ export class MessageEvaluator {
         .trim()
         .toLowerCase();
       if (baseName && text.includes(baseName)) {
-        return { shouldRespond: true, reason: 'Named in global mode', priority: 'normal' };
+        return { shouldRespond: true, reason: 'Named in global mode', priority: 'normal', admitToContext: true };
       }
       // If in an explicitly allowed channel, respond to all messages
       if (config.allowedChannels?.includes(envelope.conversationId)) {
-        return { shouldRespond: true, reason: 'Allowed channel in global mode', priority: 'normal' };
+        return { shouldRespond: true, reason: 'Allowed channel in global mode', priority: 'normal', admitToContext: true };
       }
-      return { shouldRespond: false, reason: 'Not addressed in global mode', priority: 'low' };
-    }
-
-    if (chatType === 'private') {
-      if (config?.respondInDMs === false) {
-        return {
-          shouldRespond: false,
-          reason: 'Discord DM responses disabled',
-          priority: 'low',
-        };
-      }
-
-      return {
-        shouldRespond: true,
-        reason: 'Discord DM',
-        priority: 'normal',
-      };
+      // Guild message not directly addressed — admit to context but don't respond
+      return { shouldRespond: false, reason: 'Not addressed in global mode', priority: 'low', admitToContext: true };
     }
 
     if (config?.respondToMentions === false) {
@@ -229,10 +246,13 @@ export class MessageEvaluator {
       };
     }
 
+    // Guild message without mention — admit to shared-room context for
+    // visibility parity with Telegram, but don't generate a response.
     return {
       shouldRespond: false,
       reason: 'Discord guild message without mention',
       priority: 'low',
+      admitToContext: true,
     };
   }
 
