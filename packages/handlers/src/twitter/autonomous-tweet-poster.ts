@@ -36,7 +36,14 @@ import {
   generateImagePrompt,
   type AutonomousContentTargetType,
   type CommunityContext,
+  type CrossPlatformContext,
 } from '../services/autonomous-content.js';
+import {
+  getUnpostedGalleryImages,
+  markGalleryImagePosted,
+  getRecentGalleryMetadata,
+} from '../services/gallery-query.js';
+import { getDreamContext } from '../services/dream-context.js';
 
 const STATE_TABLE = process.env.STATE_TABLE!;
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE!;
@@ -167,13 +174,33 @@ async function processAvatar(
     communityContext = { id: community.id, name: community.name };
   }
 
-  // Generate content with memory integration
+  // Gather cross-platform context for richer content generation
+  const crossPlatformContext: CrossPlatformContext = {};
+
+  // Fetch dream context (narrative state)
+  const dreamCtx = await getDreamContext(avatarId);
+  if (dreamCtx) {
+    crossPlatformContext.dreamContext = {
+      dream: dreamCtx.dream,
+      previousDream: dreamCtx.previousDream,
+      iteration: dreamCtx.iteration,
+    };
+  }
+
+  // Fetch recent gallery metadata for creative inspiration
+  const galleryMeta = await getRecentGalleryMetadata(avatarId, { limit: 5 });
+  if (galleryMeta.length > 0) {
+    crossPlatformContext.galleryMetadata = galleryMeta;
+  }
+
+  // Generate content with memory integration and cross-platform context
   const content = await generateAutonomousContent(
     {
       avatarId,
       avatarConfig,
       targetType,
       communityContext,
+      crossPlatformContext,
     },
     brainService,
     llmService
@@ -192,50 +219,86 @@ async function processAvatar(
     }
   }
 
-  // Optionally generate image
+  // Resolve image: try gallery first, fall back to generation
   let mediaUrl: string | undefined;
   let media: PostMedia[] | undefined;
   const imageChance = autoConfig.imageChance ?? 0.3;
 
   if (Math.random() < imageChance) {
-    try {
-      // Unified burst pool: entitlement-first, energy-fallback
-      const usageCheck = await checkMediaWithEnergyFallback(avatarId);
-      if (!usageCheck.allowed) {
-        logger.info('Skipping autonomous image generation due to limits', {
+    // Strategy: check gallery for unposted images first (70% of the time)
+    // Generate fresh images the remaining 30% for variety
+    const useGallery = Math.random() < 0.7;
+    let galleryImageUsed = false;
+
+    if (useGallery) {
+      try {
+        const unpostedImages = await getUnpostedGalleryImages(avatarId, { limit: 5 });
+        if (unpostedImages.length > 0) {
+          // Pick a random unposted image
+          const selected = unpostedImages[Math.floor(Math.random() * unpostedImages.length)];
+          mediaUrl = selected.url;
+          media = [{ type: 'image', url: selected.url, s3Key: selected.s3Key }];
+          galleryImageUsed = true;
+
+          // Mark the gallery image as posted
+          await markGalleryImagePosted(avatarId, selected.sk);
+
+          logger.info('Using gallery image for autonomous post', {
+            event: 'gallery_image_selected',
+            avatarId,
+            galleryImageId: selected.id,
+            prompt: selected.prompt.slice(0, 50),
+          });
+        }
+      } catch (error) {
+        logger.warn('Gallery image selection failed, falling back to generation', {
           avatarId,
-          reason: usageCheck.reason,
-          limit: usageCheck.limit,
-          current: usageCheck.current,
+          error: error instanceof Error ? error.message : String(error),
         });
-        throw new Error(usageCheck.reason || 'Daily media generation limit reached');
       }
+    }
 
-      const mediaDeps = createMediaDependencies({ tableName: STATE_TABLE });
-      const adminTable = process.env.ADMIN_TABLE;
-      if (adminTable) {
-        mediaDeps.saveToGallery = createGallerySaver({ tableName: adminTable });
+    // Fall back to image generation if gallery didn't provide an image
+    if (!galleryImageUsed) {
+      try {
+        // Unified burst pool: entitlement-first, energy-fallback
+        const usageCheck = await checkMediaWithEnergyFallback(avatarId);
+        if (!usageCheck.allowed) {
+          logger.info('Skipping autonomous image generation due to limits', {
+            avatarId,
+            reason: usageCheck.reason,
+            limit: usageCheck.limit,
+            current: usageCheck.current,
+          });
+          throw new Error(usageCheck.reason || 'Daily media generation limit reached');
+        }
+
+        const mediaDeps = createMediaDependencies({ tableName: STATE_TABLE });
+        const adminTable = process.env.ADMIN_TABLE;
+        if (adminTable) {
+          mediaDeps.saveToGallery = createGallerySaver({ tableName: adminTable });
+        }
+        const mediaService = createMediaServiceWithDeps(secrets, MEDIA_BUCKET, CDN_URL, mediaDeps);
+
+        const imagePrompt = await generateImagePrompt(content.text, avatarConfig, llmService);
+
+        const generatedMedia = await mediaService.generateImage(
+          imagePrompt,
+          avatarConfig.media.image,
+          { avatarId, platform: 'twitter', saveToGallery: true, checkCredits: false }
+        );
+        mediaUrl = generatedMedia.url;
+        media = [{ type: 'image', url: generatedMedia.url, s3Key: generatedMedia.s3Key }];
+
+        logger.info('Generated image for autonomous post', {
+          event: 'image_generated',
+          avatarId,
+          imagePrompt: imagePrompt.slice(0, 50),
+        });
+      } catch (error) {
+        logger.warn('Image generation failed for autonomous post', { error, avatarId });
+        // Continue without image
       }
-      const mediaService = createMediaServiceWithDeps(secrets, MEDIA_BUCKET, CDN_URL, mediaDeps);
-
-      const imagePrompt = await generateImagePrompt(content.text, avatarConfig, llmService);
-
-      const generatedMedia = await mediaService.generateImage(
-        imagePrompt,
-        avatarConfig.media.image,
-        { avatarId, platform: 'twitter', saveToGallery: true, checkCredits: false }
-      );
-      mediaUrl = generatedMedia.url;
-      media = [{ type: 'image', url: generatedMedia.url, s3Key: generatedMedia.s3Key }];
-
-      logger.info('Generated image for autonomous post', {
-        event: 'image_generated',
-        avatarId,
-        imagePrompt: imagePrompt.slice(0, 50),
-      });
-    } catch (error) {
-      logger.warn('Image generation failed for autonomous post', { error, avatarId });
-      // Continue without image
     }
   }
 
