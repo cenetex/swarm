@@ -2,8 +2,8 @@
  * Autonomous Content Generator Service
  *
  * Generates memory-integrated content for autonomous tweets.
- * Uses avatar memories, persona, and recent posts to create
- * authentic, contextual content.
+ * Uses avatar memories, persona, dream context, gallery metadata,
+ * and recent posts to create authentic, contextual content.
  */
 import type {
   AvatarConfig,
@@ -24,11 +24,28 @@ export interface CommunityContext {
   };
 }
 
+/** Cross-platform context injected into content generation */
+export interface CrossPlatformContext {
+  /** Current dream/narrative state */
+  dreamContext?: {
+    dream: string;
+    previousDream?: string;
+    iteration: number;
+  };
+  /** Recent gallery image metadata for creative inspiration */
+  galleryMetadata?: Array<{
+    prompt: string;
+    caption?: string;
+    createdAt: number;
+  }>;
+}
+
 export interface AutonomousContentParams {
   avatarId: string;
   avatarConfig: AvatarConfig;
   targetType: AutonomousContentTargetType;
   communityContext?: CommunityContext;
+  crossPlatformContext?: CrossPlatformContext;
 }
 
 export interface GeneratedContent {
@@ -46,7 +63,7 @@ export async function generateAutonomousContent(
   brainService: BrainService,
   llmService: LLMService
 ): Promise<GeneratedContent> {
-  const { avatarId, avatarConfig, targetType, communityContext } = params;
+  const { avatarId, avatarConfig, targetType, communityContext, crossPlatformContext } = params;
 
   // 1. Recall relevant memories
   const recentFactsResult = await brainService.recall(avatarId, 'recent');
@@ -76,6 +93,7 @@ export async function generateAutonomousContent(
     targetType,
     communityContext,
     charLimit,
+    crossPlatformContext,
   });
 
   // 4. Generate content
@@ -96,9 +114,16 @@ export async function generateAutonomousContent(
     'posted_tweet'
   );
 
+  const contextSources = [
+    recentFacts.length > 0 ? `${recentFacts.length} recent memories` : null,
+    topicFacts.length > 0 ? `${topicFacts.length} topic memories` : null,
+    crossPlatformContext?.dreamContext ? 'dream context' : null,
+    crossPlatformContext?.galleryMetadata?.length ? 'gallery metadata' : null,
+  ].filter(Boolean);
+
   return {
     text: response.content.trim().slice(0, charLimit),
-    reasoning: `Generated based on ${recentFacts.length + topicFacts.length} memories`,
+    reasoning: `Generated based on ${contextSources.join(', ') || 'persona only'}`,
   };
 }
 
@@ -109,20 +134,41 @@ interface BuildPromptParams {
   targetType: AutonomousContentTargetType;
   communityContext?: CommunityContext;
   charLimit: number;
+  crossPlatformContext?: CrossPlatformContext;
 }
 
 /**
  * Build the system prompt for autonomous content generation
  */
-function buildAutonomousPrompt(params: BuildPromptParams): string {
-  const { persona, memories, recentPosts, targetType, communityContext, charLimit } = params;
+export function buildAutonomousPrompt(params: BuildPromptParams): string {
+  const { persona, memories, recentPosts, targetType, communityContext, charLimit, crossPlatformContext } = params;
 
   let prompt = `${persona}\n\n`;
+
+  // Add dream context for narrative continuity
+  if (crossPlatformContext?.dreamContext) {
+    const { dream, previousDream } = crossPlatformContext.dreamContext;
+    prompt += `## Current Dream / Narrative State\n`;
+    prompt += `${dream}\n`;
+    if (previousDream) {
+      prompt += `(Previously: ${previousDream.slice(0, 100)}...)\n`;
+    }
+    prompt += `Let this dream subtly influence your tone and themes.\n\n`;
+  }
 
   // Add memory context
   if (memories.length > 0) {
     prompt += `## Recent Thoughts & Memories\n`;
     prompt += memories.map(m => `- ${m.fact}`).join('\n');
+    prompt += '\n\n';
+  }
+
+  // Add gallery metadata for creative inspiration
+  if (crossPlatformContext?.galleryMetadata && crossPlatformContext.galleryMetadata.length > 0) {
+    prompt += `## Recent Visual Creations (for inspiration)\n`;
+    prompt += crossPlatformContext.galleryMetadata
+      .map(g => `- ${g.caption || g.prompt}`)
+      .join('\n');
     prompt += '\n\n';
   }
 
