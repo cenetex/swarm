@@ -366,6 +366,22 @@ export class AdminApiStack extends cdk.Stack {
 
       this.apiEndpoint = this.adminApi.apiEndpoint;
 
+      // ── GitHub App Credentials Guardrail ──────────────────────────────────
+      // Warn when GitHub App credentials are not configured, which disables
+      // auto-issue sync and MCP GitHub tools.
+      if (!props.githubAppCredentialsArn) {
+        const isPersistentEnv = environment === 'prod' || environment === 'staging';
+        const message =
+          'githubAppCredentialsArn is not set. GitHub issue sync and MCP GitHub ' +
+          'tools will be disabled. To enable: (1) register a GitHub App, ' +
+          '(2) store credentials in Secrets Manager as ' +
+          'swarm/<env>/github-app-credentials, (3) add the ARN to ' +
+          'cdk.context.json under githubAppCredentialsArn.';
+        if (isPersistentEnv) {
+          cdk.Annotations.of(this).addWarning(message);
+        }
+      }
+
       // Store API endpoint in SSM so consumer stacks (AdminUiStack) can read it
       // without creating a CloudFormation cross-stack export dependency.
       // This mirrors the pattern used for dependencyLayerArn in SharedInfraStack.
