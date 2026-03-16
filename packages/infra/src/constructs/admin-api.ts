@@ -233,11 +233,11 @@ export interface AdminApiConstructProps {
   enableDiscordGateway?: boolean;
 
   /**
-   * Secrets Manager ARN for a GitHub Personal Access Token (PAT).
+   * Secrets Manager ARN for GitHub App credentials (appId, privateKey, installationId).
    * When provided, enables the DynamoDB Streams-based issue sync Lambda
    * that automatically creates GitHub issues from new ISSUE# records.
    */
-  githubTokenSecretArn?: string;
+  githubAppCredentialsArn?: string;
 
   /**
    * GitHub repository (owner/name) for issue sync (e.g., "cenetex/aws-swarm").
@@ -587,8 +587,8 @@ export class AdminApiConstruct extends Construct {
         // Discord gateway runtime status (so admin API can report accurate health)
         DISCORD_GATEWAY_ENABLED: props.enableDiscordGateway ? 'true' : 'false',
         // GitHub issue tracking (read-only, for MCP tools)
-        ...(props.githubTokenSecretArn ? {
-          GITHUB_TOKEN_SECRET_ARN: props.githubTokenSecretArn,
+        ...(props.githubAppCredentialsArn ? {
+          GITHUB_APP_CREDENTIALS_ARN: props.githubAppCredentialsArn,
           GITHUB_REPO: props.githubRepo || 'cenetex/aws-swarm',
         } : {}),
         ...activeUserLimitEnvVars,
@@ -2978,9 +2978,9 @@ export class AdminApiConstruct extends Construct {
     // Replaces the polling-based sync-runtime-issues.yml cron workflow.
     // When a new ISSUE#<id>/META record is inserted into the admin table,
     // this Lambda creates a corresponding GitHub issue within seconds.
-    if (props.githubTokenSecretArn) {
-      const githubTokenSecret = secretsmanager.Secret.fromSecretCompleteArn(
-        this, 'GitHubTokenSecret', props.githubTokenSecretArn,
+    if (props.githubAppCredentialsArn) {
+      const githubAppCredentialsSecret = secretsmanager.Secret.fromSecretCompleteArn(
+        this, 'GitHubAppCredentialsSecret', props.githubAppCredentialsArn,
       );
 
       const handlersEntry = path.join(__dirname, '../../../handlers/src');
@@ -3001,7 +3001,7 @@ export class AdminApiConstruct extends Construct {
         memorySize: 256,
         environment: {
           ADMIN_TABLE: this.table.tableName,
-          GITHUB_TOKEN_SECRET_ARN: props.githubTokenSecretArn,
+          GITHUB_APP_CREDENTIALS_ARN: props.githubAppCredentialsArn,
           GITHUB_REPO: props.githubRepo || 'cenetex/aws-swarm',
           ENVIRONMENT: environment,
           LOG_LEVEL: logLevel,
@@ -3018,9 +3018,9 @@ export class AdminApiConstruct extends Construct {
 
       // Grant permissions
       this.table.grantReadWriteData(githubIssueSyncFn);
-      githubTokenSecret.grantRead(githubIssueSyncFn);
+      githubAppCredentialsSecret.grantRead(githubIssueSyncFn);
       // Also grant chat handler read access for MCP issue tracking tools
-      githubTokenSecret.grantRead(this.chatHandler);
+      githubAppCredentialsSecret.grantRead(this.chatHandler);
 
       // Wire DynamoDB Streams event source with filter for ISSUE#/META inserts.
       // The filter uses DynamoDB JSON format for stream record matching.

@@ -173,6 +173,13 @@ export {
   DEFAULT_PROACTIVE_CONFIG,
 } from './proactive-scheduler.js';
 export {
+  GitHubAppTokenProvider,
+  createAppJwt,
+  _setSecretsClient as _setGitHubAppSecretsClient,
+  type GitHubTokenProvider,
+  type GitHubAppCredentials,
+} from './github-app-token.js';
+export {
   getIssue as getGitHubIssue,
   listIssues as listGitHubIssues,
   listAvatarIssues as listGitHubAvatarIssues,

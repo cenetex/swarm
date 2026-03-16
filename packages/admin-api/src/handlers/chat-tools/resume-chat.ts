@@ -8,6 +8,7 @@
 import { detectEnabledCategories, type ToolCategory } from '@swarm/core';
 import type { AdminChatMessage, ToolResult, UserSession } from '../../types.js';
 import * as chatHistory from '../../services/chat-history.js';
+import * as pendingTools from '../../services/pending-tools.js';
 import * as avatars from '../../services/avatars.js';
 import { configureIntegration } from '../../services/integrations.js';
 import { syncAvatarConfig } from '../../services/config-sync.js';
@@ -68,12 +69,25 @@ export async function resumeChatAfterToolResult(
 
   const history = await chatHistory.getChatHistory(session, avatarId);
 
+  // Validate toolCallId against the pending tool store (server-issued proof)
+  // and fall back to chat history scan for backward compatibility.
+  const pendingRecord = await pendingTools.getPendingTool(session.email, avatarId);
   const hasMatchingToolCall = history.some(m =>
     m.role === 'assistant' &&
     Array.isArray(m.tool_calls) &&
     m.tool_calls.some(tc => tc.id === toolCallId)
   );
-  if (!hasMatchingToolCall) {
+
+  const validatedViaPendingStore = pendingRecord?.toolCallId === toolCallId;
+
+  if (validatedViaPendingStore) {
+    // Valid — server issued this tool call. Defer consumption until the
+    // resume flow succeeds so the record survives downstream failures.
+    console.log(`[resumeChatAfterToolResult] Validated toolCallId via pending tool store: ${toolCallId}`);
+  } else if (hasMatchingToolCall) {
+    // Valid — still in chat history.
+    console.log(`[resumeChatAfterToolResult] Validated toolCallId via chat history: ${toolCallId}`);
+  } else {
     throw new Error(`Unknown or expired toolCallId: ${toolCallId}`);
   }
 
@@ -111,8 +125,31 @@ export async function resumeChatAfterToolResult(
   }
 
   const toolContent = typeof result === 'string' ? result : JSON.stringify(result ?? {});
+
+  // If the matching assistant tool_call was stripped from history (by sanitization
+  // or TTL expiry), inject a synthetic assistant message so the LLM provider
+  // sees a proper assistant→tool message pair.
+  let baseHistory = history;
+  if (!hasMatchingToolCall && pendingRecord) {
+    baseHistory = [
+      ...history,
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{
+          id: toolCallId,
+          type: 'function' as const,
+          function: {
+            name: pendingRecord.toolName,
+            arguments: JSON.stringify(pendingRecord.arguments),
+          },
+        }],
+      },
+    ];
+  }
+
   const nextHistory: AdminChatMessage[] = [
-    ...history,
+    ...baseHistory,
     {
       role: 'tool',
       tool_call_id: toolCallId,
@@ -132,5 +169,12 @@ export async function resumeChatAfterToolResult(
   });
 
   await chatHistory.saveChatHistory(session, chatResult.history, avatarId);
+
+  // Consume the pending tool record only after the full resume flow succeeds.
+  // This preserves the record as retry proof if any downstream step fails.
+  if (validatedViaPendingStore) {
+    await pendingTools.removePendingTool(session.email, avatarId);
+  }
+
   return chatResult;
 }
