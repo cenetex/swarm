@@ -13,17 +13,16 @@
  *
  * Environment variables:
  * - ADMIN_TABLE: DynamoDB table name (for dedup writeback)
- * - GITHUB_TOKEN_SECRET_ARN: Secrets Manager ARN for the GitHub PAT
+ * - GITHUB_APP_CREDENTIALS_ARN: Secrets Manager ARN for the GitHub App credentials JSON
  * - GITHUB_REPO: Owner/repo (e.g., "cenetex/aws-swarm")
  * - GITHUB_ISSUE_LABEL_PREFIX: Label prefix for auto-created issues (default: "auto-issue")
  * - ENVIRONMENT: Deployment environment name
  */
 import type { DynamoDBStreamEvent, DynamoDBRecord, Context } from 'aws-lambda';
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import type { AttributeValue } from '@aws-sdk/client-dynamodb';
-import { logger } from '@swarm/core';
+import { logger, GitHubAppTokenProvider, type GitHubTokenProvider } from '@swarm/core';
 import { getDynamoClient } from '../services/dynamo-client.js';
 
 // ---------------------------------------------------------------------------
@@ -58,56 +57,25 @@ interface GitHubCreateIssueResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Secrets Manager client (lazy singleton, injectable for tests)
+// Token provider (lazy singleton, injectable for tests)
 // ---------------------------------------------------------------------------
 
-let _secretsClient: SecretsManagerClient | null = null;
+let _tokenProvider: GitHubTokenProvider | null = null;
 
-function getSecretsClient(): SecretsManagerClient {
-  if (!_secretsClient) {
-    _secretsClient = new SecretsManagerClient({});
+function getTokenProvider(): GitHubTokenProvider {
+  if (!_tokenProvider) {
+    const secretArn = process.env.GITHUB_APP_CREDENTIALS_ARN;
+    if (!secretArn) {
+      throw new Error('GITHUB_APP_CREDENTIALS_ARN environment variable is not set');
+    }
+    _tokenProvider = new GitHubAppTokenProvider(secretArn);
   }
-  return _secretsClient;
+  return _tokenProvider;
 }
 
-/** For testing -- inject a mock secrets client */
-export function _setSecretsClient(client: SecretsManagerClient | null): void {
-  _secretsClient = client;
-  // Also clear the cached token so tests get a fresh fetch
-  cachedGitHubToken = undefined;
-  tokenExpiresAt = 0;
-}
-
-let cachedGitHubToken: string | undefined;
-let tokenExpiresAt = 0;
-const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-// ---------------------------------------------------------------------------
-// Helpers (exported for unit tests)
-// ---------------------------------------------------------------------------
-
-async function getGitHubToken(): Promise<string> {
-  const now = Date.now();
-  if (cachedGitHubToken && now < tokenExpiresAt) {
-    return cachedGitHubToken;
-  }
-
-  const secretArn = process.env.GITHUB_TOKEN_SECRET_ARN;
-  if (!secretArn) {
-    throw new Error('GITHUB_TOKEN_SECRET_ARN environment variable is not set');
-  }
-
-  const result = await getSecretsClient().send(
-    new GetSecretValueCommand({ SecretId: secretArn })
-  );
-
-  if (!result.SecretString) {
-    throw new Error('GitHub token secret is empty');
-  }
-
-  cachedGitHubToken = result.SecretString.trim();
-  tokenExpiresAt = now + TOKEN_CACHE_TTL_MS;
-  return cachedGitHubToken;
+/** For testing — inject a mock token provider */
+export function _setTokenProvider(provider: GitHubTokenProvider | null): void {
+  _tokenProvider = provider;
 }
 
 function getRepo(): string {
@@ -354,7 +322,7 @@ export async function handler(
   // Fetch GitHub token once per invocation
   let token: string;
   try {
-    token = await getGitHubToken();
+    token = await getTokenProvider().getToken();
   } catch (err) {
     logger.error('Failed to retrieve GitHub token', {
       subsystem: 'github-issue-sync',

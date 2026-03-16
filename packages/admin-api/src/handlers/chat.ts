@@ -19,6 +19,7 @@ import { authenticateRequest, requireAdmin } from '../auth/request-auth.js';
 import { getCorsHeaders } from '../http/cors.js';
 import { parseJsonBody } from '../http/request-body.js';
 import * as chatHistory from '../services/chat-history.js';
+import { savePendingTool } from '../services/pending-tools.js';
 import { createChatJob, createJobId } from '../services/chat-jobs.js';
 import {
   ChatRequestSchema,
@@ -421,6 +422,24 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       activeTask,
     });
     await chatHistory.saveChatHistory(session, result.history, avatar?.id);
+
+    // Persist pending tool call so resumeChatAfterToolResult can validate
+    // it even after chat history expires or gets sanitized.
+    if (result.pendingToolCall && avatar?.id) {
+      await savePendingTool({
+        email: session.email,
+        avatarId: avatar.id,
+        toolCallId: result.pendingToolCall.id,
+        toolName: result.pendingToolCall.name,
+        arguments: result.pendingToolCall.arguments,
+      }).catch(err => {
+        logger.error('Failed to persist pending tool call', err, {
+          event: 'pending_tool_save_failed',
+          avatarId: avatar.id,
+          toolCallId: result.pendingToolCall!.id,
+        });
+      });
+    }
 
     // Track message usage against entitlement quota
     if (avatar?.id) {

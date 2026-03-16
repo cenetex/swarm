@@ -121,7 +121,9 @@ const useExistingResources = parseBoolean(getContextValue<unknown>('useExistingR
 const useExistingBuckets = parseBoolean(getContextValue<unknown>('useExistingBuckets', envConfig)) ?? false;
 const skipDomainAliases = parseBoolean(getContextValue<unknown>('skipDomainAliases', envConfig)) ?? false;
 const anthropicApiKeyArn = getContextValue<string>('anthropicApiKeyArn', envConfig);
-const githubTokenSecretArn = getContextValue<string>('githubTokenSecretArn', envConfig);
+const githubAppCredentialsArnRaw = getContextValue<string>('githubAppCredentialsArn', envConfig);
+// Treat empty string as unset so placeholder entries in cdk.context.json don't pass through
+const githubAppCredentialsArn = githubAppCredentialsArnRaw?.trim() || undefined;
 const githubRepo = getContextValue<string>('githubRepo', envConfig);
 const secretPrefixRaw = getContextValue<string>('secretPrefix', envConfig);
 const stackHashRaw = getContextValue<string>('stackHash', envConfig);
@@ -225,7 +227,7 @@ const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffi
   claudeCodeUseOpenRouter,
   secretPrefix,
   useExistingResources,
-  githubTokenSecretArn,
+  githubAppCredentialsArn,
   githubRepo,
   env: stackEnv,
   description: `Swarm Admin API (${environment})`,

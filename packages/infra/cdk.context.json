@@ -117,7 +117,9 @@
       "crossmintApiKeyArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:swarm/staging/crossmint-api-key-aAa2s7",
       "privyAppSecretArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:swarm/staging/privy-app-secret-oFyvjH",
       "privyJwtVerificationKeyArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:swarm/staging/privy-jwt-verification-key-ExpprY",
-      "twitterAppCredentialsArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:swarm/global/twitter-app-credentials-TAbnpU"
+      "twitterAppCredentialsArn": "arn:aws:secretsmanager:us-east-1:022118847419:secret:swarm/global/twitter-app-credentials-TAbnpU",
+      "githubAppCredentialsArn": "",
+      "githubRepo": "cenetex/aws-swarm"
     },
     "prod": {
       "useExistingResources": true,
@@ -141,7 +143,9 @@
       "stripeSecretKeyArn": "arn:aws:secretsmanager:us-east-1:332730082708:secret:swarm/staging/stripe-secret-key-jq0rEK",
       "stripeWebhookSecretArn": "arn:aws:secretsmanager:us-east-1:332730082708:secret:swarm/prod/stripe-webhook-secret-NQ2IDP",
       "stripePriceIdPro": "price_1T8sGGFfeGTTyFW4k1VmYJkH",
-      "stripePriceIdEnterprise": "price_1T8sGHFfeGTTyFW4R7QnXlLA"
+      "stripePriceIdEnterprise": "price_1T8sGHFfeGTTyFW4R7QnXlLA",
+      "githubAppCredentialsArn": "",
+      "githubRepo": "cenetex/aws-swarm"
     }
   }
 }
