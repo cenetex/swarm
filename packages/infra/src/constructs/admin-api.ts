@@ -233,9 +233,11 @@ export interface AdminApiConstructProps {
   enableDiscordGateway?: boolean;
 
   /**
-   * Secrets Manager ARN for GitHub App credentials (appId, privateKey, installationId).
+   * Secrets Manager ARN for GitHub App credentials JSON.
+   * Preferred shape: { "clientId": "Iv1...", "privateKey": "-----BEGIN..." }
+   * Legacy shape:    { "appId": "12345", "privateKey": "...", "installationId": "67890" }
    * When provided, enables the DynamoDB Streams-based issue sync Lambda
-   * that automatically creates GitHub issues from new ISSUE# records.
+   * and MCP issue tracking tools.
    */
   githubAppCredentialsArn?: string;
 
@@ -586,7 +588,7 @@ export class AdminApiConstruct extends Construct {
         INTERNAL_TEST_KEY: internalTestKey,
         // Discord gateway runtime status (so admin API can report accurate health)
         DISCORD_GATEWAY_ENABLED: props.enableDiscordGateway ? 'true' : 'false',
-        // GitHub issue tracking (read-only, for MCP tools)
+        // GitHub App integration (issue tracking via MCP tools)
         ...(props.githubAppCredentialsArn ? {
           GITHUB_APP_CREDENTIALS_ARN: props.githubAppCredentialsArn,
           GITHUB_REPO: props.githubRepo || 'cenetex/aws-swarm',

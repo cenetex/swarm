@@ -171,8 +171,10 @@ export interface AdminApiStackProps extends cdk.StackProps {
   useExistingResources?: boolean;
 
   /**
-   * Secrets Manager ARN for GitHub App credentials (appId, privateKey, installationId).
-   * When provided, enables event-driven GitHub issue creation from auto-issue records.
+   * Secrets Manager ARN for GitHub App credentials JSON.
+   * Preferred shape: { "clientId": "Iv1...", "privateKey": "-----BEGIN..." }
+   * Legacy shape:    { "appId": "12345", "privateKey": "...", "installationId": "67890" }
+   * When provided, enables GitHub issue sync and MCP issue tracking tools.
    */
   githubAppCredentialsArn?: string;
 

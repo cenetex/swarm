@@ -13,7 +13,7 @@
  *
  * Environment variables:
  * - ADMIN_TABLE: DynamoDB table name (for dedup writeback)
- * - GITHUB_APP_CREDENTIALS_ARN: Secrets Manager ARN for the GitHub App credentials JSON
+ * - GITHUB_APP_CREDENTIALS_ARN: Secrets Manager ARN for GitHub App credentials JSON
  * - GITHUB_REPO: Owner/repo (e.g., "cenetex/aws-swarm")
  * - GITHUB_ISSUE_LABEL_PREFIX: Label prefix for auto-created issues (default: "auto-issue")
  * - ENVIRONMENT: Deployment environment name
@@ -77,6 +77,10 @@ function getTokenProvider(): GitHubTokenProvider {
 export function _setTokenProvider(provider: GitHubTokenProvider | null): void {
   _tokenProvider = provider;
 }
+
+// ---------------------------------------------------------------------------
+// Helpers (exported for unit tests)
+// ---------------------------------------------------------------------------
 
 function getRepo(): string {
   return process.env.GITHUB_REPO || 'cenetex/aws-swarm';

@@ -269,7 +269,7 @@ describe('handler (integration)', () => {
 
   beforeEach(() => {
     process.env.ADMIN_TABLE = 'SwarmAdmin-staging';
-    process.env.GITHUB_APP_CREDENTIALS_ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:github-app';
+    process.env.GITHUB_APP_CREDENTIALS_ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:github-app-creds';
     process.env.GITHUB_REPO = 'cenetex/aws-swarm';
     process.env.ENVIRONMENT = 'staging';
 
@@ -285,7 +285,7 @@ describe('handler (integration)', () => {
     mockDynamoSend = mock(() => Promise.resolve({ Item: undefined }));
     _setDynamoClient({ send: mockDynamoSend } as any);
 
-    // Mock token provider
+    // Mock token provider (replaces SecretsManager mock)
     _setTokenProvider({ getToken: async () => 'ghs_test_token_123' });
   });
 

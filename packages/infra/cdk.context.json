@@ -144,7 +144,7 @@
       "stripeWebhookSecretArn": "arn:aws:secretsmanager:us-east-1:332730082708:secret:swarm/prod/stripe-webhook-secret-NQ2IDP",
       "stripePriceIdPro": "price_1T8sGGFfeGTTyFW4k1VmYJkH",
       "stripePriceIdEnterprise": "price_1T8sGHFfeGTTyFW4R7QnXlLA",
-      "githubAppCredentialsArn": "",
+      "githubAppCredentialsArn": "arn:aws:secretsmanager:us-east-1:332730082708:secret:swarm/prod/github-app-credentials-LdrmLd",
       "githubRepo": "cenetex/aws-swarm"
     }
   }
