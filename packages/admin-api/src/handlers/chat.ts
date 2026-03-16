@@ -74,6 +74,7 @@ import {
   cleanResponse,
   surfaceModelConfig,
   extractPendingJobs,
+  extractTaskActions,
   detectAvatarUpdates,
   extractMedia,
   resumeChatAfterToolResult as _resumeChatAfterToolResult,
@@ -238,6 +239,7 @@ export async function processChat(
   response = cleaned.response;
 
   const pendingJobs = extractPendingJobs(toolCalls, toolResults);
+  const taskActions = extractTaskActions(toolCalls, toolResults);
   allMedia.push(...extractMedia(toolResults));
   const avatarUpdates = await detectAvatarUpdates(toolCalls, toolResults, avatarId);
 
@@ -260,6 +262,7 @@ export async function processChat(
     media: allMedia.length > 0 ? allMedia : undefined,
     pendingJobs: pendingJobs.length > 0 ? pendingJobs : undefined,
     avatarUpdates: (avatarUpdates.profileImageUrl || avatarUpdates.name) ? avatarUpdates : undefined,
+    taskActions: taskActions.length > 0 ? taskActions : undefined,
   };
 }
 
@@ -432,7 +435,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         response: result.response, history: result.history, media: result.media,
-        pendingJobs: result.pendingJobs, pendingToolCall: result.pendingToolCall, avatarUpdates: result.avatarUpdates,
+        pendingJobs: result.pendingJobs, pendingToolCall: result.pendingToolCall, avatarUpdates: result.avatarUpdates, taskActions: result.taskActions,
         rateLimit: publicRateLimitInfo ? { remaining: publicRateLimitInfo.remaining - 1, limit: publicRateLimitInfo.limit, isOrbHolder: publicRateLimitInfo.isOrbHolder } : undefined,
       }),
     };

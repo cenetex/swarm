@@ -11,6 +11,7 @@
  * - Model config surfacing
  */
 import { logger, extractThinking } from '@swarm/core';
+import { extractTaskAction, type TaskAction } from '@swarm/mcp-server';
 import type { ToolResult } from '../../types.js';
 import { extractMediaFromToolResults, type MediaItem, type SdkToolCall } from '../chat-tool-helpers.js';
 import { redactMediaUrlsFromText } from '../../utils/redact-media-urls.js';
@@ -188,6 +189,33 @@ export async function detectAvatarUpdates(
   }
 
   return updates;
+}
+
+/**
+ * Extract task actions from tool results.
+ * Returns an array of { toolCallId, taskAction } pairs for each tool result
+ * that contains a structured taskAction field.
+ */
+export function extractTaskActions(
+  toolCalls: SdkToolCall[],
+  toolResults: ToolResult[],
+): Array<{ toolCallId: string; toolName: string; taskAction: TaskAction }> {
+  const actions: Array<{ toolCallId: string; toolName: string; taskAction: TaskAction }> = [];
+  const toolCallNames = new Map(toolCalls.map(tc => [String(tc.id), String(tc.name)]));
+
+  for (const result of toolResults) {
+    if (!result.content || typeof result.content !== 'string') continue;
+    const toolCallId = String(result.tool_call_id);
+    const toolName = toolCallNames.get(toolCallId) || 'unknown';
+
+    const taskAction = extractTaskAction(result.content);
+    if (taskAction) {
+      actions.push({ toolCallId, toolName, taskAction });
+      logger.info('Extracted task action from tool result', { toolCallId, toolName, taskType: taskAction.task.type });
+    }
+  }
+
+  return actions;
 }
 
 /**

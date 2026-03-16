@@ -26,6 +26,11 @@ const TOOL_LABELS: Record<string, string> = {
   get_profile_upload_url: 'Image Upload',
   get_reference_image_upload_url: 'Reference Upload',
   set_character_reference: 'Character Reference',
+  get_my_gallery: 'Media Gallery',
+  search_gallery: 'Gallery Search',
+  get_my_wallets: 'Wallet Overview',
+  report_issue: 'Issue Report',
+  report_user_feedback: 'User Feedback',
 };
 
 function getToolLabel(card: TaskCardType): string {

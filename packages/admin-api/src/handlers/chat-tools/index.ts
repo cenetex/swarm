@@ -32,6 +32,7 @@ export {
   cleanResponse,
   surfaceModelConfig,
   extractPendingJobs,
+  extractTaskActions,
   detectAvatarUpdates,
   extractMedia,
 } from './post-processing.js';

@@ -4,7 +4,7 @@
  * Tools for managing Solana wallets.
  */
 import { z } from 'zod';
-import { defineTool, type ToolResult } from '../registry.js';
+import { defineTool, withTaskAction, type ToolResult } from '../registry.js';
 
 // ============================================================================
 // Service Interface
@@ -91,10 +91,26 @@ export const createWalletTools = (services: WalletServices) => [
         })
       );
 
-      return {
-        success: true,
-        data: enriched,
-      };
+      return withTaskAction(
+        {
+          success: true,
+          data: enriched,
+        },
+        {
+          task: {
+            type: 'wallet_link',
+            title: 'Wallet Overview',
+            summary: enriched.length > 0
+              ? `${enriched.length} wallet${enriched.length !== 1 ? 's' : ''}`
+              : 'No wallets found',
+            props: { wallets: enriched },
+          },
+          workspace: {
+            focus: false,
+            surface: 'side_panel',
+          },
+        },
+      );
     },
   }),
 

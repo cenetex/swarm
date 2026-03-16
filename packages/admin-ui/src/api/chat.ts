@@ -68,6 +68,24 @@ interface RateLimitInfo {
   isOrbHolder: boolean;
 }
 
+/** Structured task action from tool results — creates transcript cards and workspace suggestions */
+export interface TaskActionPayload {
+  toolCallId: string;
+  toolName: string;
+  taskAction: {
+    task: {
+      type: 'tool_prompt' | 'gallery' | 'wallet_link' | 'integration_config' | 'document' | 'diagnostics';
+      title: string;
+      summary?: string;
+      props?: Record<string, unknown>;
+    };
+    workspace?: {
+      focus: boolean;
+      surface?: 'side_panel' | 'bottom_drawer';
+    };
+  };
+}
+
 interface ChatResponse {
   response: string;
   history: Array<{
@@ -84,6 +102,7 @@ interface ChatResponse {
     name?: string;
   };
   pendingToolCall?: PendingToolCall;
+  taskActions?: TaskActionPayload[];
   error?: string;
   rateLimit?: RateLimitInfo;
 }
@@ -176,6 +195,7 @@ export async function sendChatMessage(
       pendingJobs: job.pendingJobs,
       pendingToolCall: job.pendingToolCall,
       avatarUpdates: job.avatarUpdates,
+      taskActions: job.taskActions,
     };
   }
 
@@ -378,6 +398,7 @@ export interface JobStatus {
   pendingJobs?: PendingJob[];
   pendingToolCall?: PendingToolCall;
   avatarUpdates?: ChatResponse['avatarUpdates'];
+  taskActions?: TaskActionPayload[];
 }
 
 /**

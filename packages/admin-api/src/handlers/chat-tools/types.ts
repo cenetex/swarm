@@ -2,7 +2,7 @@
  * Shared types for chat-tools modules.
  */
 import type { ToolCategory } from '@swarm/core';
-import type { ToolContext } from '@swarm/mcp-server';
+import type { ToolContext, TaskAction } from '@swarm/mcp-server';
 import type { AdminChatMessage } from '../../types.js';
 import type { MediaItem, SdkToolCall } from '../chat-tool-helpers.js';
 import type { LlmUsage } from '../chat-llm.js';
@@ -37,6 +37,8 @@ export interface ProcessChatResult {
     name: string;
     arguments: Record<string, unknown>;
   };
+  /** Structured task actions extracted from tool results — creates transcript cards and workspace suggestions */
+  taskActions?: Array<{ toolCallId: string; toolName: string; taskAction: TaskAction }>;
 }
 
 /**

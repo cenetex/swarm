@@ -7,7 +7,7 @@
  * DynamoDB via an injected service (for fast queries in the admin UI).
  */
 import { z } from 'zod';
-import { defineTool, type ToolResult } from '../registry.js';
+import { defineTool, withTaskAction, type ToolResult } from '../registry.js';
 
 // ============================================================================
 // Schemas
@@ -127,15 +127,33 @@ This helps developers debug and fix issues faster.`,
         }
       }
 
-      return {
-        success: true,
-        data: {
-          message: 'Issue reported successfully. The development team will investigate.',
-          issueId,
-          category: input.category,
-          severity: input.severity,
+      return withTaskAction(
+        {
+          success: true,
+          data: {
+            message: 'Issue reported successfully. The development team will investigate.',
+            issueId,
+            category: input.category,
+            severity: input.severity,
+          },
         },
-      };
+        {
+          task: {
+            type: 'diagnostics',
+            title: `Issue: ${input.title}`,
+            summary: `${input.severity} ${input.category} issue reported`,
+            props: {
+              issueId,
+              category: input.category,
+              severity: input.severity,
+              description: input.description,
+            },
+          },
+          workspace: {
+            focus: input.severity === 'critical' || input.severity === 'high',
+          },
+        },
+      );
     },
   }),
 

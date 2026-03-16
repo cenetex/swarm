@@ -52,6 +52,23 @@ export interface ToolContext {
 }
 
 /**
+ * Structured task action that tools can return to create transcript
+ * task cards and optionally suggest opening the workspace surface.
+ */
+export interface TaskAction {
+  task: {
+    type: 'tool_prompt' | 'gallery' | 'wallet_link' | 'integration_config' | 'document' | 'diagnostics';
+    title: string;
+    summary?: string;
+    props?: Record<string, unknown>;
+  };
+  workspace?: {
+    focus: boolean;
+    surface?: 'side_panel' | 'bottom_drawer';
+  };
+}
+
+/**
  * Tool execution result
  */
 export interface ToolResult<T = unknown> {
@@ -72,11 +89,13 @@ export interface ToolResult<T = unknown> {
     purpose?: string;
     status?: string;
   };
-  /** UI action (for admin-ui) */
+  /** UI action (for admin-ui) — legacy, prefer taskAction for new tools */
   uiAction?: {
     type: 'upload_widget' | 'secret_request' | 'model_selector' | 'feature_toggle' | 'twitter_connect' | 'property_research';
     payload: Record<string, unknown>;
   };
+  /** Structured task/workspace action — creates transcript task cards and optionally opens workspace */
+  taskAction?: TaskAction;
 }
 
 /**
@@ -489,6 +508,37 @@ export function defineManualTool<TInput extends ZodObject<ZodRawShape>>(
   definition: Omit<Parameters<typeof defineTool<TInput, never>>[0], 'execute' | 'category'>
 ): ToolDefinition<z.infer<TInput>, never> {
   return defineTool({ ...definition, execute: false, category: 'config' });
+}
+
+/**
+ * Helper to attach a TaskAction to a ToolResult.
+ * Keeps the result backward-compatible while enriching it with structured
+ * task/workspace data for frontends that understand the pattern.
+ */
+export function withTaskAction<T>(
+  result: ToolResult<T>,
+  taskAction: TaskAction,
+): ToolResult<T> {
+  return { ...result, taskAction };
+}
+
+/**
+ * Extract a TaskAction from a serialized tool result string (JSON).
+ * Returns undefined if the result doesn't contain a taskAction.
+ */
+export function extractTaskAction(resultContent: string): TaskAction | undefined {
+  try {
+    const parsed = JSON.parse(resultContent);
+    if (parsed?.taskAction && typeof parsed.taskAction === 'object') {
+      const ta = parsed.taskAction;
+      if (ta.task && typeof ta.task.type === 'string' && typeof ta.task.title === 'string') {
+        return ta as TaskAction;
+      }
+    }
+  } catch {
+    // Not JSON or malformed
+  }
+  return undefined;
 }
 
 function sanitizeOpenAiSchema(schema: Record<string, unknown>): Record<string, unknown> {

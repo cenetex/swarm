@@ -475,6 +475,28 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             });
           }
 
+          // Process task actions from tool results — create task cards and apply workspace suggestions
+          if (response.taskActions && response.taskActions.length > 0) {
+            for (const { toolCallId, toolName, taskAction } of response.taskActions) {
+              useTaskCardStore.getState().registerTaskCard({
+                id: toolCallId,
+                avatarId: targetAvatar.id,
+                toolName,
+                arguments: taskAction.task.props || {},
+              });
+              if (taskAction.task.summary) {
+                useTaskCardStore.getState().setSummary(toolCallId, taskAction.task.summary);
+              }
+              // Mark as completed since these come from already-executed tools
+              useTaskCardStore.getState().updateStatus(toolCallId, 'completed', taskAction.task.props);
+              // Apply workspace focus suggestion (advisory — only if workspace is available)
+              if (taskAction.workspace?.focus) {
+                useTaskCardStore.getState().setWorkspaceState(toolCallId, 'available');
+                useWorkspaceStore.getState().openForTask(toolCallId, taskAction.task.title);
+              }
+            }
+          }
+
           if (loadingIndex >= 0) {
             const next = [
               ...current.slice(0, loadingIndex),

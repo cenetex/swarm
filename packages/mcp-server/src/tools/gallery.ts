@@ -4,7 +4,7 @@
  * Tools for managing generated media gallery.
  */
 import { z } from 'zod';
-import { defineTool, type ToolResult } from '../registry.js';
+import { defineTool, withTaskAction, type ToolResult } from '../registry.js';
 
 // ============================================================================
 // Service Interface
@@ -114,15 +114,31 @@ export const createGalleryTools = (services: GalleryServices) => [
         limit: input.limit,
       });
 
-      return {
-        success: true,
-        data: items.map(i => ({
-          id: i.id,
-          type: i.type,
-          url: i.url,
-          prompt: i.prompt,
-        })),
-      };
+      const itemData = items.map(i => ({
+        id: i.id,
+        type: i.type,
+        url: i.url,
+        prompt: i.prompt,
+      }));
+
+      return withTaskAction(
+        {
+          success: true,
+          data: itemData,
+        },
+        {
+          task: {
+            type: 'gallery',
+            title: input.type ? `${input.type} Gallery` : 'Media Gallery',
+            summary: `${items.length} item${items.length !== 1 ? 's' : ''}`,
+            props: { items: itemData, mediaType: input.type },
+          },
+          workspace: {
+            focus: items.length > 0,
+            surface: 'side_panel',
+          },
+        },
+      );
     },
   }),
 

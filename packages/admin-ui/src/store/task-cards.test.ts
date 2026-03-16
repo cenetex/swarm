@@ -506,3 +506,102 @@ describe('Task card cancel status', () => {
   });
 
 });
+
+/* ------------------------------------------------------------------ */
+/* Task action pattern: task cards from tool results                    */
+/* ------------------------------------------------------------------ */
+
+describe('Task action pattern — cards from tool results', () => {
+  it('registers a task card from a gallery task action', () => {
+    const { registerTaskCard, setSummary, updateStatus } = useTaskCardStore.getState();
+
+    // Simulate what ChatPanel does when it receives a taskAction from the API
+    registerTaskCard({
+      id: 'tc-gallery-1',
+      avatarId: 'a1',
+      toolName: 'get_my_gallery',
+      arguments: { items: [], mediaType: 'image' },
+    });
+    setSummary('tc-gallery-1', '3 items');
+    updateStatus('tc-gallery-1', 'completed', { items: [], mediaType: 'image' });
+
+    const card = useTaskCardStore.getState().cards['tc-gallery-1'];
+    expect(card).toBeDefined();
+    expect(card.toolName).toBe('get_my_gallery');
+    expect(card.status).toBe('completed');
+    expect(card.summary).toBe('3 items');
+    expect(card.inlineExpanded).toBe(false); // completed cards collapse
+  });
+
+  it('registers a diagnostics task card with workspace available state', () => {
+    const { registerTaskCard, setSummary, updateStatus, setWorkspaceState } = useTaskCardStore.getState();
+
+    registerTaskCard({
+      id: 'tc-issue-1',
+      avatarId: 'a1',
+      toolName: 'report_issue',
+      arguments: { severity: 'high', category: 'tool_failure' },
+    });
+    setSummary('tc-issue-1', 'high tool_failure issue reported');
+    updateStatus('tc-issue-1', 'completed', { issueId: 'issue-123' });
+    setWorkspaceState('tc-issue-1', 'available');
+
+    const card = useTaskCardStore.getState().cards['tc-issue-1'];
+    expect(card.status).toBe('completed');
+    expect(card.summary).toBe('high tool_failure issue reported');
+    expect(card.workspaceState).toBe('available');
+  });
+
+  it('registers a wallet task card without workspace focus', () => {
+    const { registerTaskCard, setSummary, updateStatus } = useTaskCardStore.getState();
+
+    registerTaskCard({
+      id: 'tc-wallet-1',
+      avatarId: 'a1',
+      toolName: 'get_my_wallets',
+      arguments: { wallets: [] },
+    });
+    setSummary('tc-wallet-1', '2 wallets');
+    updateStatus('tc-wallet-1', 'completed', { wallets: [] });
+
+    const card = useTaskCardStore.getState().cards['tc-wallet-1'];
+    expect(card.status).toBe('completed');
+    expect(card.summary).toBe('2 wallets');
+    expect(card.workspaceState).toBe('hidden'); // no focus means hidden
+  });
+
+  it('task action cards appear in timeline after their originating message', () => {
+    const { registerTaskCard, updateStatus } = useTaskCardStore.getState();
+
+    // Register completed task card from task action
+    registerTaskCard({
+      id: 'tc-action-1',
+      avatarId: 'a1',
+      toolName: 'get_my_gallery',
+      arguments: {},
+    });
+    updateStatus('tc-action-1', 'completed', { items: [] });
+
+    const card = makeCard({
+      id: 'tc-action-1',
+      avatarId: 'a1',
+      toolName: 'get_my_gallery',
+      status: 'completed',
+    });
+
+    const messages = [
+      msg({
+        id: 'm1',
+        serverToolCalls: [{ id: 'tc-action-1', type: 'function', function: { name: 'get_my_gallery', arguments: '{}' } }],
+      }),
+      msg({ id: 'm2', content: 'Here is your gallery' }),
+    ];
+
+    const timeline = composeTimeline(messages, [card]);
+    expect(timeline).toHaveLength(3); // m1, card, m2
+    expect(timeline[0].type).toBe('message');
+    expect(timeline[1].type).toBe('task-card');
+    expect((timeline[1] as { type: 'task-card'; card: TaskCard }).card.id).toBe('tc-action-1');
+    expect(timeline[2].type).toBe('message');
+  });
+});
