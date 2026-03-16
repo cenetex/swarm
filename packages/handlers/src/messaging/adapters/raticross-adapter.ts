@@ -8,22 +8,13 @@ import { randomUUID } from 'crypto';
 import {
   PlatformAdapter,
   logger,
+  RATICROSS_PROTOCOL_VERSION,
   type AvatarConfig,
   type Platform,
   type SwarmEnvelope,
   type ResponseAction,
+  type RaticrossEnvelope,
 } from '@swarm/core';
-
-interface RaticrossEnvelope {
-  id: string;
-  traceId?: string;
-  timestamp: number;
-  from: { system: string; agentId: string };
-  to: { system: string; agentId: string };
-  type: 'message' | 'task' | 'result' | 'status';
-  conversationId: string;
-  content: string;
-}
 
 export class RaticrossAdapter extends PlatformAdapter {
   readonly platform: Platform = 'raticross';
@@ -71,6 +62,7 @@ export class RaticrossAdapter extends PlatformAdapter {
 
     const envelope: RaticrossEnvelope = {
       id: randomUUID(),
+      protocol: RATICROSS_PROTOCOL_VERSION,
       timestamp: Date.now(),
       from: {
         system: 'swarm',

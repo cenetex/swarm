@@ -180,6 +180,10 @@ export {
   type GitHubAppCredentials,
 } from './github-app-token.js';
 export {
+  createRaticrossBridgeClient,
+  type RaticrossBridgeClient,
+} from './raticross-client.js';
+export {
   getIssue as getGitHubIssue,
   listIssues as listGitHubIssues,
   listAvatarIssues as listGitHubAvatarIssues,

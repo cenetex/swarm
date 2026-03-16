@@ -12,6 +12,7 @@ export type {
   Platform,
   AvatarConfig,
   PlatformConfigs,
+  RaticrossConfig,
   TelegramUserRef,
   TelegramChatRef,
   TelegramConfig,
@@ -1025,6 +1026,31 @@ export * from './proactive.js';
 // =============================================================================
 
 export * from './admin-bridge.js';
+
+// =============================================================================
+// IDENTITY LINK TYPES
+// =============================================================================
+
+// =============================================================================
+// RATICROSS PROTOCOL TYPES (inter-agent bridge)
+// =============================================================================
+
+export {
+  RATICROSS_PROTOCOL_VERSION,
+} from './raticross.js';
+
+export type {
+  RaticrossActor,
+  RaticrossEnvelopeType,
+  RaticrossPriority,
+  RaticrossEnvelope,
+  RaticrossContext,
+  RaticrossMeta,
+  RaticrossHealthRequest,
+  RaticrossHealthResponse,
+  RaticrossBridgeConfig,
+  RaticrossSendResult,
+} from './raticross.js';
 
 // =============================================================================
 // IDENTITY LINK TYPES

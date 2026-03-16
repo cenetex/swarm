@@ -12,38 +12,12 @@ import {
   CORRELATION_ID_ATTR,
   createStateService,
   type SwarmEnvelope,
+  type RaticrossEnvelope,
 } from '@swarm/core';
 
 const MESSAGE_QUEUE_URL = process.env.MESSAGE_QUEUE_URL!;
 const STATE_TABLE = process.env.STATE_TABLE!;
 const RATICROSS_INBOUND_KEY = process.env.RATICROSS_INBOUND_KEY;
-
-interface RaticrossActor {
-  system: string;
-  agentId: string;
-  pubkey?: string;
-}
-
-interface RaticrossEnvelope {
-  id: string;
-  traceId?: string;
-  timestamp: number;
-  from: RaticrossActor;
-  to: RaticrossActor;
-  type: 'message' | 'task' | 'result' | 'status';
-  conversationId: string;
-  content: string;
-  context?: {
-    summary?: string;
-    constraints?: string;
-    toolHints?: string[];
-  };
-  meta?: {
-    ttl?: number;
-    priority?: 'low' | 'normal' | 'high';
-    tags?: string[];
-  };
-}
 
 let stateService: ReturnType<typeof createStateService>;
 
