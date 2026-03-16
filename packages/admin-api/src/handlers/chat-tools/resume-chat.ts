@@ -78,9 +78,11 @@ export async function resumeChatAfterToolResult(
     m.tool_calls.some(tc => tc.id === toolCallId)
   );
 
-  if (pendingRecord?.toolCallId === toolCallId) {
-    // Valid — server issued this tool call. Consume it.
-    await pendingTools.removePendingTool(session.email, avatarId);
+  const validatedViaPendingStore = pendingRecord?.toolCallId === toolCallId;
+
+  if (validatedViaPendingStore) {
+    // Valid — server issued this tool call. Defer consumption until the
+    // resume flow succeeds so the record survives downstream failures.
     console.log(`[resumeChatAfterToolResult] Validated toolCallId via pending tool store: ${toolCallId}`);
   } else if (hasMatchingToolCall) {
     // Valid — still in chat history.
@@ -167,5 +169,12 @@ export async function resumeChatAfterToolResult(
   });
 
   await chatHistory.saveChatHistory(session, chatResult.history, avatarId);
+
+  // Consume the pending tool record only after the full resume flow succeeds.
+  // This preserves the record as retry proof if any downstream step fails.
+  if (validatedViaPendingStore) {
+    await pendingTools.removePendingTool(session.email, avatarId);
+  }
+
   return chatResult;
 }
