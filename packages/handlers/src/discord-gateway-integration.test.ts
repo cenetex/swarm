@@ -165,10 +165,6 @@ function sendReady(ws: MockWebSocket, overrides: Record<string, unknown> = {}) {
   });
 }
 
-function sendAck(ws: MockWebSocket) {
-  sendPayload(ws, { op: 11 });
-}
-
 function makeDiscordMessage(overrides: Record<string, unknown> = {}) {
   return {
     id: 'msg-001',
@@ -464,7 +460,7 @@ describe('Multi-tenant avatar binding', () => {
   });
 
   it('reports isConnected correctly', () => {
-    const { conn, ws, internals } = createConnection();
+    const { conn, internals } = createConnection();
     expect(conn.isConnected).toBe(true);
 
     // Simulate close
