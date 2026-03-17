@@ -207,6 +207,8 @@ export interface AutonomousPostsConfig {
   useMemories: boolean;
   /** Optional topic hints for content generation */
   topics?: string[];
+  /** Maximum autonomous posts per avatar per day (default: 6) */
+  dailyBudget?: number;
 }
 
 export interface TwitterConfig {
