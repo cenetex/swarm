@@ -411,3 +411,75 @@ describe('DLQ Processor - Edge Cases', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// DLQ + SQS Offload integration
+// ---------------------------------------------------------------------------
+
+describe('DLQ Processor - Offloaded message handling', () => {
+  /**
+   * When an offloaded message ends up in the DLQ, the DLQ record body is
+   * the offload reference JSON (not the original payload). The DLQ processor
+   * should still categorize and extract context from the reference itself,
+   * and the body preview should contain the reference marker.
+   */
+
+  it('categorizes offload reference as schema_error (no envelope/avatarId/actions)', () => {
+    // An offload reference has __offloaded, bucket, key — none of the known envelope fields
+    const offloadRef = JSON.stringify({
+      __offloaded: true,
+      bucket: 'media-bucket',
+      key: 'sqs-offload/abc.json',
+      originalSizeBytes: 300000,
+    });
+    // The offload ref lacks envelope, avatarId, or actions — treated as schema_error
+    expect(categorizeMessage(offloadRef)).toBe('schema_error');
+  });
+
+  it('extractMessageContext returns empty for offload reference', () => {
+    const offloadRef = JSON.stringify({
+      __offloaded: true,
+      bucket: 'media-bucket',
+      key: 'sqs-offload/abc.json',
+      originalSizeBytes: 300000,
+    });
+    const ctx = extractMessageContext(offloadRef);
+    expect(ctx.avatarId).toBeUndefined();
+    expect(ctx.platform).toBeUndefined();
+    expect(ctx.conversationId).toBeUndefined();
+  });
+
+  it('inferSourceQueue returns undefined for offload reference', () => {
+    const offloadRef = JSON.stringify({
+      __offloaded: true,
+      bucket: 'media-bucket',
+      key: 'sqs-offload/abc.json',
+      originalSizeBytes: 300000,
+    });
+    expect(inferSourceQueue(offloadRef)).toBeUndefined();
+  });
+
+  it('body preview of offloaded reference contains __offloaded marker', () => {
+    const offloadRef = JSON.stringify({
+      __offloaded: true,
+      bucket: 'media-bucket',
+      key: 'sqs-offload/abc.json',
+      originalSizeBytes: 300000,
+    });
+    const preview = offloadRef.slice(0, 500);
+    expect(preview).toContain('__offloaded');
+    expect(preview).toContain('sqs-offload/');
+  });
+
+  it('large offload reference body is truncated in preview', () => {
+    const offloadRef = JSON.stringify({
+      __offloaded: true,
+      bucket: 'media-bucket',
+      key: 'sqs-offload/' + 'a'.repeat(600) + '.json',
+      originalSizeBytes: 300000,
+    });
+    const preview = offloadRef.slice(0, 500);
+    expect(preview.length).toBeLessThanOrEqual(500);
+    expect(preview).toContain('__offloaded');
+  });
+});

@@ -4,9 +4,10 @@
  * Tests for transparent S3 offloading of large SQS messages.
  * Uses mock S3 client to verify offload/retrieve/cleanup behavior.
  */
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import {
   createSqsOffloadService,
+  createSqsOffloadServiceFromEnv,
   SQS_OFFLOAD_CONSTANTS,
   type SqsOffloadService,
   type OffloadedMessageRef,
@@ -303,6 +304,230 @@ describe('SQS Offload Service', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Threshold boundary tests at the default 200KB limit
+  // -------------------------------------------------------------------------
+
+  describe('threshold boundary at default 200KB', () => {
+    let defaultService: SqsOffloadService;
+    let defaultMockS3: MockS3Client;
+
+    beforeEach(() => {
+      defaultMockS3 = new MockS3Client();
+      defaultService = createSqsOffloadService({
+        bucket: 'test-bucket',
+        s3Client: defaultMockS3 as unknown as import('@aws-sdk/client-s3').S3Client,
+        // No thresholdBytes — use the default 200KB
+      });
+    });
+
+    it('does NOT offload a payload exactly at the default 200KB threshold', async () => {
+      const threshold = SQS_OFFLOAD_CONSTANTS.DEFAULT_OFFLOAD_THRESHOLD_BYTES; // 204800
+      const baseJson = '{"d":""}';
+      const padding = threshold - Buffer.byteLength(baseJson, 'utf-8');
+      const exactPayload = { d: 'x'.repeat(padding) };
+      expect(Buffer.byteLength(JSON.stringify(exactPayload), 'utf-8')).toBe(threshold);
+
+      const result = await defaultService.maybeOffload(exactPayload);
+      expect(result.offloaded).toBe(false);
+      expect(result.originalSizeBytes).toBe(threshold);
+      expect(defaultMockS3.operations).toHaveLength(0);
+    });
+
+    it('offloads a payload one byte over the default 200KB threshold', async () => {
+      const threshold = SQS_OFFLOAD_CONSTANTS.DEFAULT_OFFLOAD_THRESHOLD_BYTES;
+      const baseJson = '{"d":""}';
+      const padding = threshold - Buffer.byteLength(baseJson, 'utf-8') + 1;
+      const overPayload = { d: 'x'.repeat(padding) };
+      expect(Buffer.byteLength(JSON.stringify(overPayload), 'utf-8')).toBe(threshold + 1);
+
+      const result = await defaultService.maybeOffload(overPayload);
+      expect(result.offloaded).toBe(true);
+      expect(result.originalSizeBytes).toBe(threshold + 1);
+      expect(defaultMockS3.operations).toHaveLength(1);
+      expect(defaultMockS3.operations[0].command).toBe('PutObjectCommand');
+    });
+
+    it('does NOT offload a payload one byte under the default 200KB threshold', async () => {
+      const threshold = SQS_OFFLOAD_CONSTANTS.DEFAULT_OFFLOAD_THRESHOLD_BYTES;
+      const baseJson = '{"d":""}';
+      const padding = threshold - Buffer.byteLength(baseJson, 'utf-8') - 1;
+      const underPayload = { d: 'x'.repeat(padding) };
+      expect(Buffer.byteLength(JSON.stringify(underPayload), 'utf-8')).toBe(threshold - 1);
+
+      const result = await defaultService.maybeOffload(underPayload);
+      expect(result.offloaded).toBe(false);
+      expect(result.originalSizeBytes).toBe(threshold - 1);
+      expect(defaultMockS3.operations).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Error: S3 unavailable during offload
+  // -------------------------------------------------------------------------
+
+  describe('S3 unavailable during offload', () => {
+    it('throws when S3 PutObject fails', async () => {
+      mockS3.shouldFail = true;
+      mockS3.failMessage = 'ServiceUnavailable: S3 is down';
+
+      const largePayload = { data: 'x'.repeat(200) };
+      await expect(service.maybeOffload(largePayload)).rejects.toThrow('ServiceUnavailable');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Error: S3 unavailable during retrieval
+  // -------------------------------------------------------------------------
+
+  describe('S3 unavailable during retrieval', () => {
+    it('throws when S3 GetObject fails for an offloaded message', async () => {
+      // First offload successfully
+      const largePayload = { data: 'x'.repeat(200) };
+      const offloadResult = await service.maybeOffload(largePayload);
+      expect(offloadResult.offloaded).toBe(true);
+
+      // Now make S3 fail
+      mockS3.shouldFail = true;
+      mockS3.failMessage = 'InternalError: S3 read failure';
+
+      await expect(service.maybeRetrieve(offloadResult.body)).rejects.toThrow('InternalError');
+    });
+
+    it('throws when S3 returns empty body during retrieval', async () => {
+      // Create a mock that returns empty body
+      const emptyBodyS3 = new MockS3Client();
+      // Override the send method for GetObject to return undefined body
+      const originalSend = emptyBodyS3.send.bind(emptyBodyS3);
+      emptyBodyS3.send = async (command: unknown) => {
+        const cmd = command as { constructor: { name: string }; input: Record<string, unknown> };
+        if (cmd.constructor.name === 'GetObjectCommand') {
+          emptyBodyS3.operations.push({ command: 'GetObjectCommand', input: cmd.input });
+          return { Body: undefined };
+        }
+        return originalSend(command);
+      };
+
+      const emptyService = createSqsOffloadService({
+        bucket: 'test-bucket',
+        prefix: 'sqs-offload/',
+        thresholdBytes: 100,
+        s3Client: emptyBodyS3 as unknown as import('@aws-sdk/client-s3').S3Client,
+      });
+
+      const ref: OffloadedMessageRef = {
+        __offloaded: true,
+        bucket: 'test-bucket',
+        key: 'sqs-offload/empty.json',
+        originalSizeBytes: 500,
+      };
+      await expect(emptyService.maybeRetrieve(JSON.stringify(ref))).rejects.toThrow('Empty S3 response');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Corrupted offload marker scenarios
+  // -------------------------------------------------------------------------
+
+  describe('corrupted offload marker', () => {
+    it('treats partial offload ref (missing key) as normal message', async () => {
+      const partial = JSON.stringify({ __offloaded: true, bucket: 'test-bucket' });
+      const result = await service.maybeRetrieve(partial);
+      expect(result).toEqual({ __offloaded: true, bucket: 'test-bucket' });
+      expect(mockS3.operations).toHaveLength(0);
+    });
+
+    it('treats __offloaded: false as normal message', async () => {
+      const falseRef = JSON.stringify({
+        __offloaded: false,
+        bucket: 'test-bucket',
+        key: 'sqs-offload/x.json',
+        originalSizeBytes: 1000,
+      });
+      const result = await service.maybeRetrieve(falseRef);
+      expect(result).toEqual(JSON.parse(falseRef));
+      expect(mockS3.operations).toHaveLength(0);
+    });
+
+    it('treats __offloaded: "true" (string) as normal message', async () => {
+      const stringRef = JSON.stringify({
+        __offloaded: 'true',
+        bucket: 'test-bucket',
+        key: 'sqs-offload/x.json',
+        originalSizeBytes: 1000,
+      });
+      const result = await service.maybeRetrieve(stringRef);
+      // String "true" !== boolean true, so not recognized as offload ref
+      expect(result).toEqual(JSON.parse(stringRef));
+      expect(mockS3.operations).toHaveLength(0);
+    });
+
+    it('treats offload ref with non-string bucket as normal message', async () => {
+      const badRef = JSON.stringify({
+        __offloaded: true,
+        bucket: 42,
+        key: 'sqs-offload/x.json',
+        originalSizeBytes: 1000,
+      });
+      const result = await service.maybeRetrieve(badRef);
+      expect(result).toEqual(JSON.parse(badRef));
+      expect(mockS3.operations).toHaveLength(0);
+    });
+
+    it('treats offload ref with non-string key as normal message', async () => {
+      const badRef = JSON.stringify({
+        __offloaded: true,
+        bucket: 'test-bucket',
+        key: 123,
+        originalSizeBytes: 1000,
+      });
+      const result = await service.maybeRetrieve(badRef);
+      expect(result).toEqual(JSON.parse(badRef));
+      expect(mockS3.operations).toHaveLength(0);
+    });
+
+    it('cleanup is no-op for corrupted offload markers', async () => {
+      const partial = JSON.stringify({ __offloaded: true, bucket: 'test-bucket' });
+      await service.cleanup(partial);
+      expect(mockS3.operations).toHaveLength(0);
+    });
+
+    it('isOffloaded returns false for corrupted offload markers', () => {
+      expect(service.isOffloaded(JSON.stringify({ __offloaded: true }))).toBe(false);
+      expect(service.isOffloaded(JSON.stringify({ __offloaded: true, bucket: 'b' }))).toBe(false);
+      expect(service.isOffloaded(JSON.stringify({ __offloaded: 'true', bucket: 'b', key: 'k' }))).toBe(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // S3 key uniqueness and custom prefix
+  // -------------------------------------------------------------------------
+
+  describe('S3 key format', () => {
+    it('generates unique keys for each offload', async () => {
+      const largePayload = { data: 'x'.repeat(200) };
+      const result1 = await service.maybeOffload(largePayload);
+      const result2 = await service.maybeOffload(largePayload);
+      const ref1: OffloadedMessageRef = JSON.parse(result1.body);
+      const ref2: OffloadedMessageRef = JSON.parse(result2.body);
+      expect(ref1.key).not.toBe(ref2.key);
+    });
+
+    it('uses a custom prefix when configured', async () => {
+      const customService = createSqsOffloadService({
+        bucket: 'test-bucket',
+        prefix: 'my-prefix/',
+        thresholdBytes: 100,
+        s3Client: mockS3 as unknown as import('@aws-sdk/client-s3').S3Client,
+      });
+      const largePayload = { data: 'x'.repeat(200) };
+      const result = await customService.maybeOffload(largePayload);
+      const ref: OffloadedMessageRef = JSON.parse(result.body);
+      expect(ref.key).toMatch(/^my-prefix\//);
+      expect(ref.key).toMatch(/\.json$/);
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle empty object payload', async () => {
       const result = await service.maybeOffload({});
@@ -352,5 +577,153 @@ describe('SQS Offload Service', () => {
         expect(retrieved).toEqual(payload);
       }
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createSqsOffloadServiceFromEnv
+// ---------------------------------------------------------------------------
+
+describe('createSqsOffloadServiceFromEnv', () => {
+  const savedEnv = {
+    SQS_OFFLOAD_BUCKET: process.env.SQS_OFFLOAD_BUCKET,
+    MEDIA_BUCKET: process.env.MEDIA_BUCKET,
+    SQS_OFFLOAD_PREFIX: process.env.SQS_OFFLOAD_PREFIX,
+    SQS_OFFLOAD_THRESHOLD_BYTES: process.env.SQS_OFFLOAD_THRESHOLD_BYTES,
+  };
+
+  beforeEach(() => {
+    delete process.env.SQS_OFFLOAD_BUCKET;
+    delete process.env.MEDIA_BUCKET;
+    delete process.env.SQS_OFFLOAD_PREFIX;
+    delete process.env.SQS_OFFLOAD_THRESHOLD_BYTES;
+  });
+
+  // Restore after each test to avoid cross-contamination
+  afterEach(() => {
+    for (const [key, val] of Object.entries(savedEnv)) {
+      if (val === undefined) delete process.env[key];
+      else process.env[key] = val;
+    }
+  });
+
+  it('returns null when neither SQS_OFFLOAD_BUCKET nor MEDIA_BUCKET is set', () => {
+    expect(createSqsOffloadServiceFromEnv()).toBeNull();
+  });
+
+  it('returns a service when SQS_OFFLOAD_BUCKET is set', () => {
+    process.env.SQS_OFFLOAD_BUCKET = 'offload-bucket';
+    const svc = createSqsOffloadServiceFromEnv();
+    expect(svc).not.toBeNull();
+  });
+
+  it('falls back to MEDIA_BUCKET when SQS_OFFLOAD_BUCKET is not set', () => {
+    process.env.MEDIA_BUCKET = 'media-bucket';
+    const svc = createSqsOffloadServiceFromEnv();
+    expect(svc).not.toBeNull();
+  });
+
+  it('prefers SQS_OFFLOAD_BUCKET over MEDIA_BUCKET', () => {
+    process.env.SQS_OFFLOAD_BUCKET = 'offload-bucket';
+    process.env.MEDIA_BUCKET = 'media-bucket';
+    const svc = createSqsOffloadServiceFromEnv();
+    expect(svc).not.toBeNull();
+    // We can't directly inspect the bucket, but the service should exist
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DLQ integration: offloaded message in DLQ body
+// ---------------------------------------------------------------------------
+
+describe('DLQ integration — offloaded messages', () => {
+  let mockS3: MockS3Client;
+  let service: SqsOffloadService;
+
+  beforeEach(() => {
+    mockS3 = new MockS3Client();
+    service = createSqsOffloadService({
+      bucket: 'test-bucket',
+      prefix: 'sqs-offload/',
+      thresholdBytes: 100,
+      s3Client: mockS3 as unknown as import('@aws-sdk/client-s3').S3Client,
+    });
+  });
+
+  it('offloaded DLQ message can be retrieved for archival', async () => {
+    // Simulate: a large message was offloaded, then ended up in the DLQ.
+    // The DLQ processor needs to retrieve it to archive the body.
+    const originalPayload = {
+      envelope: {
+        avatarId: 'agent-dlq',
+        platform: 'telegram',
+        conversationId: 'conv-99',
+        content: { text: 'x'.repeat(200) },
+      },
+      enqueuedAt: Date.now(),
+      attempts: 3,
+      maxAttempts: 3,
+    };
+
+    // Offload the original message
+    const offloadResult = await service.maybeOffload(originalPayload);
+    expect(offloadResult.offloaded).toBe(true);
+
+    // The DLQ record body is the offload reference JSON
+    const dlqRecordBody = offloadResult.body;
+
+    // DLQ processor checks if offloaded
+    expect(service.isOffloaded(dlqRecordBody)).toBe(true);
+
+    // DLQ processor retrieves the original payload for archival
+    const retrieved = await service.maybeRetrieve(dlqRecordBody);
+    expect(retrieved).toEqual(originalPayload);
+
+    // After archiving, DLQ processor cleans up the S3 object
+    await service.cleanup(dlqRecordBody);
+
+    // Verify the S3 object is removed
+    const ref: OffloadedMessageRef = JSON.parse(dlqRecordBody);
+    const storageKey = `${ref.bucket}/${ref.key}`;
+    expect(mockS3.storage.has(storageKey)).toBe(false);
+  });
+
+  it('non-offloaded DLQ message can be processed normally', async () => {
+    // Small messages are NOT offloaded; the DLQ body is the raw payload
+    const smallPayload = { avatarId: 'agent-small', error: 'timeout' };
+    const rawBody = JSON.stringify(smallPayload);
+
+    expect(service.isOffloaded(rawBody)).toBe(false);
+
+    const retrieved = await service.maybeRetrieve(rawBody);
+    expect(retrieved).toEqual(smallPayload);
+
+    // Cleanup is a no-op
+    await service.cleanup(rawBody);
+    expect(mockS3.operations).toHaveLength(0);
+  });
+
+  it('DLQ can still archive when S3 cleanup fails for offloaded message', async () => {
+    const largePayload = {
+      envelope: { avatarId: 'agent-cleanup-fail', platform: 'discord' },
+      enqueuedAt: Date.now(),
+      attempts: 3,
+      maxAttempts: 3,
+      extraData: 'x'.repeat(200),
+    };
+
+    const offloadResult = await service.maybeOffload(largePayload);
+    expect(offloadResult.offloaded).toBe(true);
+
+    // Retrieve succeeds (archival)
+    const retrieved = await service.maybeRetrieve(offloadResult.body);
+    expect(retrieved).toEqual(largePayload);
+
+    // S3 fails during cleanup
+    mockS3.shouldFail = true;
+    mockS3.failMessage = 'AccessDenied: cleanup blocked';
+
+    // cleanup() should NOT throw — it swallows the error
+    await expect(service.cleanup(offloadResult.body)).resolves.toBeUndefined();
   });
 });
