@@ -34,6 +34,11 @@ import {
   type DiscordMessage,
   type Platform,
 } from '@swarm/core';
+import {
+  isDiscordChatAllowed,
+  logAccessDecision,
+  type DiscordAccessContext,
+} from './discord-chat-access.js';
 
 // ─── Environment ─────────────────────────────────────────────────────────────
 
@@ -397,6 +402,20 @@ async function handleDiscordMessage(
   });
 
   if (!envelope) return;
+
+  // ── Access control (parity with Telegram's isTelegramChatAllowed) ───────
+  const accessCtx: DiscordAccessContext = {
+    channelId: message.channel_id,
+    guildId: message.guild_id,
+    isDm: !message.guild_id,
+    senderId: message.author.id,
+    senderUsername: message.author.username,
+  };
+  const accessResult = isDiscordChatAllowed(accessCtx, discordConfig);
+  logAccessDecision(avatarId, accessCtx, accessResult);
+  if (!accessResult.allowed) {
+    return;
+  }
 
   envelope.traceId = traceId;
 
