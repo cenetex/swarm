@@ -8,31 +8,37 @@
   "exports": {
     ".": {
       "bun": "./src/index.ts",
+      "types": "./src/index.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./types": {
       "bun": "./src/types/index.ts",
+      "types": "./src/types/index.ts",
       "import": "./dist/types/index.js",
       "default": "./dist/types/index.js"
     },
     "./platforms": {
       "bun": "./src/platforms/index.ts",
+      "types": "./src/platforms/index.ts",
       "import": "./dist/platforms/index.js",
       "default": "./dist/platforms/index.js"
     },
     "./processors": {
       "bun": "./src/processors/index.ts",
+      "types": "./src/processors/index.ts",
       "import": "./dist/processors/index.js",
       "default": "./dist/processors/index.js"
     },
     "./services": {
       "bun": "./src/services/index.ts",
+      "types": "./src/services/index.ts",
       "import": "./dist/services/index.js",
       "default": "./dist/services/index.js"
     },
     "./errors": {
       "bun": "./src/errors/index.ts",
+      "types": "./src/errors/index.ts",
       "import": "./dist/errors/index.js",
       "default": "./dist/errors/index.js"
     }

@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc --build && cp package.json dist/",
     "postbuild:ts": "cp package.json dist/",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b",
     "watch": "tsc --build --watch",
     "test": "bun test",
     "lint": "eslint src/"
