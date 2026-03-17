@@ -77,6 +77,14 @@ export function isDiscordChatAllowed(
     }
   }
 
+  // Check role allowlist
+  if (discordCfg.allowedRoleIds && discordCfg.allowedRoleIds.length > 0) {
+    const senderRoleIds = ctx.senderRoleIds || [];
+    if (!senderRoleIds.some(roleId => discordCfg.allowedRoleIds!.includes(roleId))) {
+      return { allowed: false, reason: 'role_not_allowed' };
+    }
+  }
+
   return { allowed: true, reason: 'allowed' };
 }
 

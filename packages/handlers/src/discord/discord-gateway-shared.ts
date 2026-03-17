@@ -398,6 +398,7 @@ async function handleDiscordMessage(
     botUserId: binding.botUserId,
     allowedGuilds: discordConfig.allowedGuilds,
     allowedChannels: discordConfig.allowedChannels,
+    allowedRoleIds: discordConfig.allowedRoleIds,
     ignoreBots: config.behavior?.ignoreBots ?? true,
   });
 
@@ -410,6 +411,7 @@ async function handleDiscordMessage(
     isDm: !message.guild_id,
     senderId: message.author.id,
     senderUsername: message.author.username,
+    senderRoleIds: message.member?.roles,
   };
   const accessResult = isDiscordChatAllowed(accessCtx, discordConfig);
   logAccessDecision(avatarId, accessCtx, accessResult);
@@ -836,11 +838,20 @@ class GatewayConnection {
           if (message.webhook_id) continue;
 
           const dc = binding.config.platforms?.discord;
-          if (dc?.allowedGuilds?.length && message.guild_id) {
-            if (!dc.allowedGuilds.includes(message.guild_id)) continue;
-          }
-          if (dc?.allowedChannels?.length) {
-            if (!dc.allowedChannels.includes(message.channel_id)) continue;
+          if (dc?.enabled) {
+            const accessCtx: DiscordAccessContext = {
+              channelId: message.channel_id,
+              guildId: message.guild_id,
+              isDm: !message.guild_id,
+              senderId: message.author.id,
+              senderUsername: message.author.username,
+              senderRoleIds: message.member?.roles,
+            };
+            const accessResult = isDiscordChatAllowed(accessCtx, dc);
+            if (!accessResult.allowed) {
+              logAccessDecision(binding.avatarId, accessCtx, accessResult);
+              continue;
+            }
           }
         }
         eligible.push(binding);
@@ -870,6 +881,7 @@ class GatewayConnection {
               botUserId: firstBinding.botUserId,
               allowedGuilds: discordConfig.allowedGuilds,
               allowedChannels: discordConfig.allowedChannels,
+              allowedRoleIds: discordConfig.allowedRoleIds,
               ignoreBots: firstBinding.config.behavior?.ignoreBots ?? true,
             });
 

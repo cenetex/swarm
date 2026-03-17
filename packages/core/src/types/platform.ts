@@ -183,6 +183,7 @@ export interface DiscordConfig {
   respondInDMs?: boolean;
   allowedChannels?: string[]; // Channel IDs to operate in (empty = all)
   allowedGuilds?: string[]; // Guild IDs to operate in (empty = all)
+  allowedRoleIds?: string[]; // Role IDs allowed to trigger replies in guilds
 }
 
 export interface TwitterCommunityConfig {

@@ -27,6 +27,9 @@ export interface DiscordMessage {
   id: string;
   channel_id: string;
   guild_id?: string;
+  member?: {
+    roles?: string[];
+  };
   author: {
     id: string;
     username: string;
@@ -283,6 +286,13 @@ export class DiscordAdapter extends PlatformAdapter {
 
     if (this.config.allowedChannels?.length) {
       if (!this.config.allowedChannels.includes(message.channel_id)) {
+        return null;
+      }
+    }
+
+    if (this.config.allowedRoleIds?.length) {
+      const senderRoleIds = message.member?.roles || [];
+      if (!senderRoleIds.some(roleId => this.config.allowedRoleIds!.includes(roleId))) {
         return null;
       }
     }
@@ -768,6 +778,7 @@ export function buildDiscordEnvelope(
     botUserId?: string;
     allowedGuilds?: string[];
     allowedChannels?: string[];
+    allowedRoleIds?: string[];
     ignoreBots?: boolean;
   }
 ): SwarmEnvelope | null {
@@ -785,6 +796,13 @@ export function buildDiscordEnvelope(
 
   if (config.allowedChannels?.length) {
     if (!config.allowedChannels.includes(message.channel_id)) {
+      return null;
+    }
+  }
+
+  if (config.allowedRoleIds?.length) {
+    const senderRoleIds = message.member?.roles || [];
+    if (!senderRoleIds.some(roleId => config.allowedRoleIds!.includes(roleId))) {
       return null;
     }
   }

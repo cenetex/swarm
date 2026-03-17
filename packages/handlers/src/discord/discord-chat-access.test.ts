@@ -94,6 +94,15 @@ describe('discord-chat-access: allow paths', () => {
     expect(result.allowed).toBe(true);
     expect(result.reason).toBe('dm_allowed');
   });
+
+  it('allows guild messages when sender has an allowed role', () => {
+    const result = isDiscordChatAllowed(
+      makeGuildCtx({ senderRoleIds: ['role-2', 'role-3'] }),
+      makeConfig({ allowedRoleIds: ['role-1', 'role-2'] })
+    );
+    expect(result.allowed).toBe(true);
+    expect(result.reason).toBe('allowed');
+  });
 });
 
 // =============================================================================
@@ -170,6 +179,24 @@ describe('discord-chat-access: deny paths', () => {
     expect(result.allowed).toBe(false);
     expect(result.reason).toBe('guild_not_allowed');
   });
+
+  it('denies guild messages when sender lacks an allowed role', () => {
+    const result = isDiscordChatAllowed(
+      makeGuildCtx({ senderRoleIds: ['role-3'] }),
+      makeConfig({ allowedRoleIds: ['role-1', 'role-2'] })
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe('role_not_allowed');
+  });
+
+  it('denies guild messages when role gating is configured but sender roles are missing', () => {
+    const result = isDiscordChatAllowed(
+      makeGuildCtx({ senderRoleIds: undefined }),
+      makeConfig({ allowedRoleIds: ['role-1'] })
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe('role_not_allowed');
+  });
 });
 
 // =============================================================================
@@ -201,6 +228,7 @@ describe('discord-chat-access: misconfiguration paths', () => {
       makeConfig({
         allowedGuilds: undefined,
         allowedChannels: undefined,
+        allowedRoleIds: undefined,
         respondInDMs: undefined,
       })
     );
