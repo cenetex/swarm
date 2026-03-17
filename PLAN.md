@@ -3,9 +3,9 @@
 Goal: deliver a stable post-M1 platform with reliable admin UX, complete account identity
 flows, and production-grade multi-platform parity (Telegram, X, Discord, Web).
 
-**Last reviewed:** 2026-02-23
+**Last reviewed:** 2026-03-16
 
-> **Issue-indexed execution model.** This plan is a directional overlay on top of the GitHub issue queue. The issue queue (`milestone:"Roadmap: Next" is:open`) is the canonical execution backlog. Items in this document that lack issue references are narrative goals -- they describe desired outcomes but are not scheduled until decomposed into issues with acceptance criteria. See [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md) for triage cadence and priority criteria.
+> **Issue-indexed execution model.** This plan is a directional overlay on top of the GitHub issue queue. The issue queue (`milestone:"Roadmap: Next" is:open`) is the canonical execution backlog. Items in this document that lack issue references are narrative goals -- they describe desired outcomes but are not scheduled until decomposed into issues with acceptance criteria. See [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), and [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md) for the current execution rules.
 
 ## Milestone definition
 
@@ -31,26 +31,7 @@ The execution queue is sourced from GitHub issues. Query: `milestone:"Roadmap: N
 
 ### Open issues (Roadmap: Next)
 
-As of 2026-02-23 there are 11 open issues in the `Roadmap: Next` milestone. Grouped by theme:
-
-#### Execution model and governance
-| Issue | Title | Priority |
-|-------|-------|----------|
-| [#249](https://github.com/cenetex/aws-swarm/issues/249) | Convert roadmap/milestone docs to issue-indexed execution model | `priority:medium` |
-| [#246](https://github.com/cenetex/aws-swarm/issues/246) | Issue-only operating model for leadership-directed subagent execution | `priority:medium` |
-| [#247](https://github.com/cenetex/aws-swarm/issues/247) | Codify subagent charter and issue-only execution protocol | `priority:medium` |
-| [#248](https://github.com/cenetex/aws-swarm/issues/248) | Enforce issue intake, scope gating, and DoD for subagents | `priority:medium` |
-| [#263](https://github.com/cenetex/aws-swarm/issues/263) | Operationalize leadership strategy in core execution docs | `priority:medium` |
-| [#264](https://github.com/cenetex/aws-swarm/issues/264) | Codify risk-first sequencing and active P0 WIP cap | `priority:medium` |
-| [#265](https://github.com/cenetex/aws-swarm/issues/265) | Define mandatory release gate and rollback readiness standard | `priority:medium` |
-| [#268](https://github.com/cenetex/aws-swarm/issues/268) | Define weekly leadership operating scorecard and reprioritization triggers | `priority:medium` |
-
-#### Operational hardening
-| Issue | Title | Priority |
-|-------|-------|----------|
-| [#266](https://github.com/cenetex/aws-swarm/issues/266) | Establish vulnerability exception governance (owner + expiry + review) | `priority:medium` |
-| [#267](https://github.com/cenetex/aws-swarm/issues/267) | Codify cost KPI targets and weekly corrective-action cadence | `priority:medium` |
-| [#269](https://github.com/cenetex/aws-swarm/issues/269) | Codify portfolio allocation policy and rebalancing rules | `priority:medium` |
+As of 2026-03-16 there are 0 open issues in the `Roadmap: Next` milestone. Use the milestone query above when it is repopulated; until then, this plan serves as a narrative overlay and the active execution backlog lives in the main issue queue.
 
 ## Workstreams
 
@@ -94,9 +75,7 @@ Prior issues completed: [#184](https://github.com/cenetex/aws-swarm/issues/184),
 
 ### 5) Operational posture
 
-Active issues: [#266](https://github.com/cenetex/aws-swarm/issues/266), [#267](https://github.com/cenetex/aws-swarm/issues/267), [#269](https://github.com/cenetex/aws-swarm/issues/269).
-
-Narrative goals (awaiting issue decomposition):
+*No open issues for this workstream.* Narrative goals awaiting issue decomposition:
 
 - Keep dependency/security baseline green in CI.
 - Maintain issue/PR lifecycle automation and project drift reconciliation.
@@ -104,7 +83,7 @@ Narrative goals (awaiting issue decomposition):
 
 ### 6) Execution model and governance (new)
 
-Active issues: [#246](https://github.com/cenetex/aws-swarm/issues/246), [#247](https://github.com/cenetex/aws-swarm/issues/247), [#248](https://github.com/cenetex/aws-swarm/issues/248), [#249](https://github.com/cenetex/aws-swarm/issues/249), [#263](https://github.com/cenetex/aws-swarm/issues/263), [#264](https://github.com/cenetex/aws-swarm/issues/264), [#265](https://github.com/cenetex/aws-swarm/issues/265), [#268](https://github.com/cenetex/aws-swarm/issues/268).
+*No open issues for this workstream.* Current rules live in [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), and [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md).
 
 This workstream hardens the execution model itself: issue-indexed planning, subagent governance, and leadership operating cadence.
 
@@ -121,21 +100,21 @@ Workstreams are prioritized in this order when resources are constrained:
 3. **Platform parity and feature delivery** (narrative goals) -- P3 work pulled only when P0-P2 queue is clear.
 4. **Admin UX, identity, memory** (narrative goals) -- P4 quality improvements scheduled when capacity allows.
 
-A RED health grade on the [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) blocks starting new feature or governance work until the grade returns to YELLOW or GREEN.
+A RED weekly health review blocks starting new feature or governance work until platform health returns to YELLOW or GREEN.
 
 ### Active WIP cap
 
 A maximum of **8** issues may carry `status:in-progress` at any time across all M2 workstreams. When the cap is reached, items must be completed or returned to backlog before new work begins. See WIP caps in [CLAUDE.md](CLAUDE.md).
 
-When pulling issues from the execution queue into active work, apply the promotion and demotion criteria in [docs/ISSUE-GOVERNANCE.md -- Priority Promotion and Demotion Criteria](docs/ISSUE-GOVERNANCE.md#priority-promotion-and-demotion-criteria).
+When pulling issues from the execution queue into active work, apply the issue-readiness and WIP rules in [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md).
 
 ## Triage and prioritization cadence
 
-This plan is reviewed and updated as part of the triage cadence defined in [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md):
+This plan is reviewed and updated as part of the triage cadence defined in [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), and [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md):
 
 | Cadence | Activity |
 |---------|----------|
-| **Weekly** | Triage new issues, check in-progress work for blockers, apply aging policy, review [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) recommendations. |
+| **Weekly** | Triage new issues, check in-progress work for blockers, apply aging policy, review weekly health signals and open P0/P1 work. |
 | **Biweekly** | Review milestone progress. Promote issues from Next to Now or demote stale items. Decide whether narrative goals in this document should be decomposed into issues. Update the execution queue above. |
 | **Monthly** | Full roadmap review. Update ROADMAP.md. Archive completed milestones. |
 
@@ -156,8 +135,9 @@ These items live in `Roadmap: Later` or have no milestone. They will be schedule
 ## References
 
 - [ROADMAP.md](ROADMAP.md) -- directional roadmap with Now/Next/Later milestone mapping.
-- [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md) -- triage cadence, priority criteria, aging policy.
-- [docs/LEADERSHIP-SCORECARD.md](docs/LEADERSHIP-SCORECARD.md) -- automated weekly scorecard driving reprioritization.
-- [docs/PLAYBOOK-M2-MULTI-PLATFORM.md](docs/PLAYBOOK-M2-MULTI-PLATFORM.md) -- M2 execution playbook.
-- [docs/BILLING-STRATEGY.md](docs/BILLING-STRATEGY.md) -- billing model.
-- [docs/AUTHENTICATION-IMPROVEMENTS.md](docs/AUTHENTICATION-IMPROVEMENTS.md) -- auth improvements reference.
+- [AGENTS.md](AGENTS.md) -- issue intake, scope gates, test expectations, and definition of done.
+- [CLAUDE.md](CLAUDE.md) -- WIP caps, worktree rules, and execution checklist.
+- [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md) -- GitHub Projects planning layer and issue promotion flow.
+- [docs/PORTFOLIO-INSPIRED-ROADMAP.md](docs/PORTFOLIO-INSPIRED-ROADMAP.md) -- portfolio-informed candidate lanes and issue seeds.
+- [docs/RUNBOOK.md](docs/RUNBOOK.md) -- operational playbooks and incident handling.
+- [docs/SECURITY.md](docs/SECURITY.md) -- production and security guardrails.

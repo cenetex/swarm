@@ -52,6 +52,7 @@ logs/
 # Test
 coverage/
 .nyc_output/
+packages/docs-site/.vitepress/cache/
 
 # Stripe (live keys are secret)
 stripe/config/stripe-ids.live.json

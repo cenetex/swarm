@@ -15,8 +15,8 @@ Run persistent AI avatars across Telegram, Discord, and the web — with the gua
 
 - **Ship or debug runtime behavior** → [AGENTS.md](AGENTS.md), then [docs/RUNBOOK.md](docs/RUNBOOK.md)
 - **Understand the architecture** → Component map and diagram below
-- **Pick roadmap work** → [ROADMAP.md](ROADMAP.md), [PLAN.md](PLAN.md)
-- **Operate safely in production** → [docs/SECURITY.md](docs/SECURITY.md), [docs/PRODUCTION-DEPLOYMENT-CHECKLIST.md](docs/PRODUCTION-DEPLOYMENT-CHECKLIST.md)
+- **Pick roadmap work** → [ROADMAP.md](ROADMAP.md), [PLAN.md](PLAN.md), [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md), [docs/PORTFOLIO-INSPIRED-ROADMAP.md](docs/PORTFOLIO-INSPIRED-ROADMAP.md)
+- **Operate safely in production** → [docs/SECURITY.md](docs/SECURITY.md), [docs/RUNBOOK.md](docs/RUNBOOK.md)
 
 ## Architecture
 
