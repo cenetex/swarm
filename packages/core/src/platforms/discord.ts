@@ -399,7 +399,20 @@ export class DiscordAdapter extends PlatformAdapter {
           break;
 
         case 'send_media':
-          await this.sendMedia(conversationId, action.mediaType, action.url, action.caption);
+          await this.sendMedia(conversationId, action.mediaType, action.url, action.caption, replyToMessageId);
+          break;
+
+        case 'send_sticker':
+          // Discord has no native sticker-by-emoji API — downgrade to text
+          logger.info('Discord sticker downgrade: sending emoji as text', {
+            subsystem: 'platform',
+            platform: 'discord',
+            event: 'media_downgrade',
+            mediaType: 'sticker',
+            emoji: action.emoji,
+            channelId: conversationId,
+          });
+          await this.sendMessage(conversationId, action.emoji, undefined, replyToMessageId);
           break;
 
         case 'send_voice': {
@@ -599,16 +612,158 @@ export class DiscordAdapter extends PlatformAdapter {
   }
 
   /**
-   * Send media to a channel
+   * Send media to a channel.
+   *
+   * - **image**: fetches the bytes and uploads as a Discord attachment for
+   *   reliability (signed/redirecting URLs often fail as embeds). Falls back to
+   *   an embed if the byte-upload fails.
+   * - **video**: posted as an embed link — Discord will render a player for
+   *   most common formats. Logged for observability.
+   * - **animation** (sticker/GIF): downgraded to an image embed with a log
+   *   entry because Discord has no first-class animation-upload API outside
+   *   of Nitro stickers.
    */
   private async sendMedia(
     channelId: string,
     mediaType: string,
     url: string,
-    caption?: string
+    caption?: string,
+    replyToMessageId?: string,
   ): Promise<void> {
+    if (mediaType === 'image') {
+      await this.sendImageAttachment(channelId, url, caption, replyToMessageId);
+      return;
+    }
+
+    if (mediaType === 'video') {
+      logger.info('Discord video delivery via embed link', {
+        subsystem: 'platform',
+        platform: 'discord',
+        event: 'media_delivery',
+        mediaType: 'video',
+        channelId,
+      });
+      // Videos are best delivered as a URL — Discord renders an inline player
+      // for supported formats (mp4, webm).
+      await this.sendMessage(channelId, caption ? `${caption}\n${url}` : url, undefined, replyToMessageId);
+      return;
+    }
+
+    if (mediaType === 'animation') {
+      logger.info('Discord animation downgrade: delivering as image embed', {
+        subsystem: 'platform',
+        platform: 'discord',
+        event: 'media_downgrade',
+        mediaType: 'animation',
+        channelId,
+      });
+      // Fall back to image embed — Discord will auto-play GIFs in embeds.
+      const media = [{ type: 'image', url }];
+      await this.sendMessage(channelId, caption || '', media, replyToMessageId);
+      return;
+    }
+
+    // Unknown media type — log and fall through to embed
+    logger.warn('Discord unrecognised media type, attempting embed fallback', {
+      subsystem: 'platform',
+      platform: 'discord',
+      event: 'media_fallback',
+      mediaType,
+      channelId,
+    });
     const media = [{ type: mediaType, url }];
-    await this.sendMessage(channelId, caption || '', media);
+    await this.sendMessage(channelId, caption || '', media, replyToMessageId);
+  }
+
+  /**
+   * Upload an image as a Discord attachment (multipart/form-data).
+   * Falls back to an embed if byte-fetch fails.
+   */
+  private async sendImageAttachment(
+    channelId: string,
+    url: string,
+    caption?: string,
+    replyToMessageId?: string,
+  ): Promise<void> {
+    // Global mode: attachments aren't supported through webhooks in the same
+    // way, so use the embed path (which already works for images).
+    if (this.config.mode === 'global' || this.config.mode === 'webhook' || this.config.mode === 'hybrid') {
+      const media = [{ type: 'image', url }];
+      await this.sendMessage(channelId, caption || '', media, replyToMessageId);
+      return;
+    }
+
+    const token = this.credentials.botToken;
+    if (!token) {
+      // No bot token — fall back to embed
+      const media = [{ type: 'image', url }];
+      await this.sendMessage(channelId, caption || '', media, replyToMessageId);
+      return;
+    }
+
+    try {
+      // Fetch image bytes
+      const imgRes = await fetch(url);
+      if (!imgRes.ok) {
+        throw new Error(`Image fetch failed: ${imgRes.status}`);
+      }
+      const blob = await imgRes.blob();
+
+      // Determine filename from Content-Type or URL
+      const contentType = imgRes.headers.get('content-type') || 'image/png';
+      const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg'
+        : contentType.includes('gif') ? 'gif'
+        : contentType.includes('webp') ? 'webp'
+        : 'png';
+      const filename = `image.${ext}`;
+
+      // Build multipart form
+      const form = new FormData();
+      const payload: Record<string, unknown> = {
+        content: caption || '',
+        attachments: [{ id: 0, filename }],
+      };
+      if (replyToMessageId) {
+        payload.message_reference = { message_id: replyToMessageId };
+      }
+      form.append('payload_json', JSON.stringify(payload));
+      form.append('files[0]', blob, filename);
+
+      const res = await fetchWithRetry(
+        `https://discord.com/api/v10/channels/${channelId}/messages`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bot ${token}` },
+          body: form,
+        },
+        { maxRetries: 2, timeoutMs: 30_000 },
+      );
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Discord attachment upload failed: ${errText}`);
+      }
+
+      logger.info('Discord image delivered via attachment upload', {
+        subsystem: 'platform',
+        platform: 'discord',
+        event: 'media_delivery',
+        mediaType: 'image',
+        channelId,
+      });
+    } catch (err) {
+      logger.warn('Discord image attachment upload failed, falling back to embed', {
+        subsystem: 'platform',
+        platform: 'discord',
+        event: 'media_fallback',
+        mediaType: 'image',
+        channelId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Fall back to embed
+      const media = [{ type: 'image', url }];
+      await this.sendMessage(channelId, caption || '', media, replyToMessageId);
+    }
   }
 
   /**

@@ -989,10 +989,20 @@ describe('DiscordAdapter', () => {
       expect(result).toBe(false);
     });
 
-    it('should handle send_media action', async () => {
-      let capturedBody: Record<string, unknown> = {};
-      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-        capturedBody = JSON.parse(init!.body as string);
+    it('should handle send_media image via attachment upload (bot mode)', async () => {
+      const capturedCalls: Array<{ url: string; contentType?: string; hasFormData: boolean }> = [];
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const hasFormData = init?.body instanceof FormData;
+        const contentType = (init?.headers as Record<string, string>)?.['Content-Type'];
+        capturedCalls.push({ url, contentType, hasFormData });
+
+        // First call = image byte fetch
+        if (url === 'https://img.com/pic.png') {
+          const imgBlob = new Blob([new Uint8Array(8)], { type: 'image/png' });
+          return new Response(imgBlob, { status: 200, headers: { 'content-type': 'image/png' } });
+        }
+        // Second call = Discord attachment upload
         return new Response('{}', { status: 200 });
       }) as typeof fetch;
 
@@ -1003,7 +1013,146 @@ describe('DiscordAdapter', () => {
       );
 
       expect(result).toBe(true);
-      expect(capturedBody.content).toBeDefined();
+      // Should have made two fetch calls: image fetch + attachment upload
+      expect(capturedCalls.length).toBe(2);
+      expect(capturedCalls[0]!.url).toBe('https://img.com/pic.png');
+      expect(capturedCalls[1]!.url).toContain('/channels/chan-1/messages');
+      expect(capturedCalls[1]!.hasFormData).toBe(true);
+    });
+
+    it('should fall back to embed when image byte-fetch fails (bot mode)', async () => {
+      let embedCallBody: Record<string, unknown> | null = null;
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        // First call = image byte fetch — fail it
+        if (url === 'https://img.com/pic.png') {
+          return new Response('not found', { status: 404 });
+        }
+        // Subsequent call = embed fallback via sendViaBot
+        if (init?.body && typeof init.body === 'string') {
+          embedCallBody = JSON.parse(init.body);
+        }
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const result = await adapter.executeAction(
+        { type: 'send_media', mediaType: 'image', url: 'https://img.com/pic.png', caption: 'Fallback test' },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(embedCallBody).not.toBeNull();
+      expect(embedCallBody!.content).toBe('Fallback test');
+      // Should have image embed
+      expect(Array.isArray(embedCallBody!.embeds)).toBe(true);
+    });
+
+    it('should handle send_media image via embed in global mode', async () => {
+      let capturedPayload: Record<string, unknown> | null = null;
+      const mockWm = {
+        send: async (_channelId: string, payload: Record<string, unknown>) => {
+          capturedPayload = payload;
+        },
+        getOrCreate: async () => ({ id: 'wh-1', token: 'tok' }),
+      };
+      const adapter = createDiscordAdapter(
+        { mode: 'global' },
+        { globalBotToken: 'gbt', webhookManager: mockWm as unknown as import('./discord-webhook-manager.js').DiscordWebhookManager },
+      );
+
+      const result = await adapter.executeAction(
+        { type: 'send_media', mediaType: 'image', url: 'https://img.com/pic.png', caption: 'Global img' },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(capturedPayload).not.toBeNull();
+      expect(capturedPayload!.content).toBe('Global img');
+      expect(Array.isArray(capturedPayload!.embeds)).toBe(true);
+    });
+
+    it('should handle send_media video by posting URL as message', async () => {
+      let capturedBody: Record<string, unknown> = {};
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        capturedBody = JSON.parse(init!.body as string);
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const result = await adapter.executeAction(
+        { type: 'send_media', mediaType: 'video', url: 'https://vid.com/clip.mp4', caption: 'Watch this' },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(capturedBody.content).toBe('Watch this\nhttps://vid.com/clip.mp4');
+    });
+
+    it('should handle send_media video without caption', async () => {
+      let capturedBody: Record<string, unknown> = {};
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        capturedBody = JSON.parse(init!.body as string);
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const result = await adapter.executeAction(
+        { type: 'send_media', mediaType: 'video', url: 'https://vid.com/clip.mp4' },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(capturedBody.content).toBe('https://vid.com/clip.mp4');
+    });
+
+    it('should handle send_media animation by downgrading to image embed', async () => {
+      let capturedBody: Record<string, unknown> = {};
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        capturedBody = JSON.parse(init!.body as string);
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const result = await adapter.executeAction(
+        { type: 'send_media', mediaType: 'animation', url: 'https://img.com/anim.gif', caption: 'GIF time' },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(capturedBody.content).toBe('GIF time');
+      expect(Array.isArray(capturedBody.embeds)).toBe(true);
+    });
+
+    it('should handle send_sticker by downgrading to emoji text', async () => {
+      let capturedBody: Record<string, unknown> = {};
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        capturedBody = JSON.parse(init!.body as string);
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const result = await adapter.executeAction(
+        { type: 'send_sticker', emoji: '🐱' },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(capturedBody.content).toBe('🐱');
+    });
+
+    it('should return false when send_media image upload and fallback both fail', async () => {
+      globalThis.fetch = (async () => {
+        throw new Error('Total network failure');
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const result = await adapter.executeAction(
+        { type: 'send_media', mediaType: 'image', url: 'https://img.com/pic.png', caption: 'Fail' },
+        'chan-1',
+      );
+
+      expect(result).toBe(false);
     });
 
     it('should handle send_voice action by sending url as message', async () => {
