@@ -183,6 +183,20 @@ export interface DiscordConfig {
   respondInDMs?: boolean;
   allowedChannels?: string[]; // Channel IDs to operate in (empty = all)
   allowedGuilds?: string[]; // Guild IDs to operate in (empty = all)
+
+  /**
+   * Primary home channel ID for this avatar on Discord.
+   * Persisted after first discovery/creation to avoid duplicate channels.
+   */
+  homeChannelId?: string;
+  /**
+   * Guild ID where the home channel resides.
+   */
+  homeGuildId?: string;
+  /**
+   * Display-friendly channel name (e.g., "kyro-chat").
+   */
+  homeChannelName?: string;
 }
 
 export interface TwitterCommunityConfig {
