@@ -9,7 +9,7 @@
  *
  * @see packages/handlers/src/discord/discord-chat-access.ts
  */
-import { describe, it, expect, beforeEach, mock } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import {
   isDiscordChatAllowed,
   logAccessDecision,
