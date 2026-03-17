@@ -398,7 +398,6 @@ async function processAvatar(
     // If in simulation mode or requires review, don't post to Twitter
     if (isSimulationMode || initialStatus === 'pending_review') {
       await stateService.setLastAutonomousPostTime(avatarId, Date.now());
-      await rateLimitService.recordSuccess(avatarId); // Count toward daily budget
 
       await activityService.log({
         avatarId,
@@ -432,7 +431,6 @@ async function processAvatar(
         });
 
         await stateService.setLastAutonomousPostTime(avatarId, Date.now());
-        await rateLimitService.recordSuccess(avatarId); // Count toward daily budget
 
         await activityService.log({
           avatarId,
