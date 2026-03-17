@@ -5,7 +5,7 @@ flows, and production-grade multi-platform parity (Telegram, X, Discord, Web).
 
 **Last reviewed:** 2026-02-23
 
-> **Issue-indexed execution model.** This plan is a directional overlay on top of the GitHub issue queue. The issue queue (`milestone:"Roadmap: Next" is:open`) is the canonical execution backlog. Items in this document that lack issue references are narrative goals -- they describe desired outcomes but are not scheduled until decomposed into issues with acceptance criteria. See [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md) for triage cadence and priority criteria.
+> **Issue-indexed execution model.** This plan is a directional overlay on top of the GitHub issue queue. The issue queue (`milestone:"Roadmap: Next" is:open`) is the canonical execution backlog. Items in this document that lack issue references are narrative goals -- they describe desired outcomes but are not scheduled until decomposed into issues with acceptance criteria. See [CLAUDE.md](CLAUDE.md) for priority criteria.
 
 ## Milestone definition
 
@@ -121,21 +121,21 @@ Workstreams are prioritized in this order when resources are constrained:
 3. **Platform parity and feature delivery** (narrative goals) -- P3 work pulled only when P0-P2 queue is clear.
 4. **Admin UX, identity, memory** (narrative goals) -- P4 quality improvements scheduled when capacity allows.
 
-A RED health grade on the [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) blocks starting new feature or governance work until the grade returns to YELLOW or GREEN.
+A RED health grade on the leadership scorecard blocks starting new feature or governance work until the grade returns to YELLOW or GREEN.
 
 ### Active WIP cap
 
 A maximum of **8** issues may carry `status:in-progress` at any time across all M2 workstreams. When the cap is reached, items must be completed or returned to backlog before new work begins. See WIP caps in [CLAUDE.md](CLAUDE.md).
 
-When pulling issues from the execution queue into active work, apply the promotion and demotion criteria in [docs/ISSUE-GOVERNANCE.md -- Priority Promotion and Demotion Criteria](docs/ISSUE-GOVERNANCE.md#priority-promotion-and-demotion-criteria).
+When pulling issues from the execution queue into active work, apply the promotion and demotion criteria defined in the governance model.
 
 ## Triage and prioritization cadence
 
-This plan is reviewed and updated as part of the triage cadence defined in [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md):
+This plan is reviewed and updated as part of the triage cadence:
 
 | Cadence | Activity |
 |---------|----------|
-| **Weekly** | Triage new issues, check in-progress work for blockers, apply aging policy, review [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) recommendations. |
+| **Weekly** | Triage new issues, check in-progress work for blockers, apply aging policy, review leadership scorecard recommendations. |
 | **Biweekly** | Review milestone progress. Promote issues from Next to Now or demote stale items. Decide whether narrative goals in this document should be decomposed into issues. Update the execution queue above. |
 | **Monthly** | Full roadmap review. Update ROADMAP.md. Archive completed milestones. |
 
@@ -156,8 +156,6 @@ These items live in `Roadmap: Later` or have no milestone. They will be schedule
 ## References
 
 - [ROADMAP.md](ROADMAP.md) -- directional roadmap with Now/Next/Later milestone mapping.
-- [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md) -- triage cadence, priority criteria, aging policy.
-- [docs/LEADERSHIP-SCORECARD.md](docs/LEADERSHIP-SCORECARD.md) -- automated weekly scorecard driving reprioritization.
-- [docs/PLAYBOOK-M2-MULTI-PLATFORM.md](docs/PLAYBOOK-M2-MULTI-PLATFORM.md) -- M2 execution playbook.
-- [docs/BILLING-STRATEGY.md](docs/BILLING-STRATEGY.md) -- billing model.
-- [docs/AUTHENTICATION-IMPROVEMENTS.md](docs/AUTHENTICATION-IMPROVEMENTS.md) -- auth improvements reference.
+- [CLAUDE.md](CLAUDE.md) -- development guide, commit conventions, governance, and WIP caps.
+- [docs/RUNBOOK.md](docs/RUNBOOK.md) -- operational runbook.
+- [docs/SECURITY.md](docs/SECURITY.md) -- security documentation.

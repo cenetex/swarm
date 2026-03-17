@@ -20,13 +20,12 @@ The issue queue is always more current than this document. When they conflict, t
 
 - **M1 is complete (v1.0.1).** All items shipped: auth/onboarding, entitlements, energy unification, Orb-holder auto-boost, ascension->Pro, memory delete/export/TTL, deploy audit logging, correlation IDs, CloudWatch dashboards/alarms, Telegram canary, smoke tests, operational runbook.
 - Focus shifting to M2 planning and operational hardening.
-- See [docs/BILLING-STRATEGY.md](docs/BILLING-STRATEGY.md) for the unified web3+web2 billing model.
+- The platform uses a unified web3+web2 billing model ("Web2 Floor + Web3 Ceiling").
 
 For the execution-level active plan, see:
 - [PLAN.md](PLAN.md)
 
-Historical M1 execution reference:
-- [docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md](docs/ROADMAP-M1-PAID-TELEGRAM-MVP.md)
+Historical M1 execution reference is available in git history.
 
 ## Now (milestone: `Roadmap: Now`)
 
@@ -72,7 +71,7 @@ The following are directional goals for M2. They are **not executable** until br
 - Usage metering surfaced in admin UI.
 - SQS payload offload for large media and DLQ management.
 
-See [docs/PLAYBOOK-M2-MULTI-PLATFORM.md](docs/PLAYBOOK-M2-MULTI-PLATFORM.md) for the full execution playbook.
+M2 platform objectives are tracked as narrative goals until decomposed into issues.
 
 ## Later (milestone: `Roadmap: Later`)
 
@@ -84,7 +83,7 @@ Query: `milestone:"Roadmap: Later" is:open` (4 open as of 2026-02-23)
 
 - [#208](https://github.com/cenetex/aws-swarm/issues/208) -- Break up admin-api monolith (60K LOC, 50% of codebase).
 - [#270](https://github.com/cenetex/aws-swarm/issues/270) -- M2 GTM execution epic.
-- [#271](https://github.com/cenetex/aws-swarm/issues/271) -- Operationalize ICP positioning and messaging matrix. See [docs/POSITIONING.md](docs/POSITIONING.md).
+- [#271](https://github.com/cenetex/aws-swarm/issues/271) -- Operationalize ICP positioning and messaging matrix.
 - [#274](https://github.com/cenetex/aws-swarm/issues/274) -- Publish ICP launch playbooks and demo checklists.
 - [#276](https://github.com/cenetex/aws-swarm/issues/276) -- Define M2 design-partner program and qualification rubric.
 
@@ -95,13 +94,7 @@ Query: `milestone:"Roadmap: Later" is:open` (4 open as of 2026-02-23)
 - Marketplace-ready templates and persona packs.
 - SaaS reliability and cost optimization for scale.
 
-Strategic PRDs:
-- [docs/PRD-M3-PERSISTENT-SWARM-PLATFORM.md](docs/PRD-M3-PERSISTENT-SWARM-PLATFORM.md)
-- [docs/PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md](docs/PRD-M4-ECOSYSTEM-AUTONOMOUS-OPERATIONS.md)
-
-GTM and positioning:
-- [docs/ICP.md](docs/ICP.md) -- ideal customer profile, buying signals, design partner criteria
-- [docs/POSITIONING.md](docs/POSITIONING.md) -- product positioning, messaging, and channel strategy
+Strategic PRDs and GTM documents are tracked in their respective GitHub issues.
 
 ## Risk-first sequencing
 
@@ -117,7 +110,7 @@ When the backlog has competing priorities, apply this order:
 4. **P3 -- Feature delivery**: Roadmap features for the current milestone.
 5. **P4 -- Tech debt / quality**: Refactoring, test coverage, documentation.
 
-A RED health grade on the [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) blocks promoting any P3/P4 items from Next to Now until the grade returns to YELLOW or GREEN. Active CloudWatch alarms trigger immediate incident response per the [RUNBOOK.md](docs/RUNBOOK.md).
+A RED health grade on the leadership scorecard blocks promoting any P3/P4 items from Next to Now until the grade returns to YELLOW or GREEN. Active CloudWatch alarms trigger immediate incident response per the [RUNBOOK.md](docs/RUNBOOK.md).
 
 The priority order (P0-P4) is defined in [CLAUDE.md](CLAUDE.md).
 
@@ -138,11 +131,11 @@ Engineering effort is allocated across four buckets:
 
 During incidents (scorecard health grade RED), feature delivery capacity is reallocated to reliability until the grade returns to YELLOW or GREEN.
 
-Allocation assumptions are reviewed quarterly alongside the [Leadership Scorecard](docs/LEADERSHIP-SCORECARD.md) threshold tuning (Jan, Apr, Jul, Oct). See [docs/ISSUE-GOVERNANCE.md -- Portfolio Allocation Label Mapping](docs/ISSUE-GOVERNANCE.md#portfolio-allocation-label-mapping) for how issue labels map to allocation buckets during measurement.
+Allocation assumptions are reviewed quarterly (Jan, Apr, Jul, Oct). Issue labels map to allocation buckets during measurement.
 
 ## Triage and review cadence
 
-Issue reprioritization follows the cadence defined in [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md):
+Issue reprioritization follows this cadence:
 
 | Cadence | Activity | Owner |
 |---------|----------|-------|
@@ -155,9 +148,9 @@ Issue reprioritization follows the cadence defined in [docs/ISSUE-GOVERNANCE.md]
 - An issue moves from **Next to Now** when: it has an assigned owner, acceptance criteria are defined, a triage review approves the promotion, AND the active WIP cap (8 in-progress items) is not exceeded.
 - An issue moves from **Later to Next** when: it is decomposed into actionable scope with acceptance criteria and the biweekly review approves it.
 - A **narrative goal** becomes executable when: it is decomposed into one or more issues with acceptance criteria, package labels, and priority labels.
-- An issue is **demoted or closed** per the aging policy in [docs/ISSUE-GOVERNANCE.md](docs/ISSUE-GOVERNANCE.md).
+- An issue is **demoted or closed** per the aging policy.
 - **Risk-first gate**: P3 (feature) and P4 (tech debt) issues cannot be promoted to Now while any P0 or P1 issue is unresolved.
-- **Queue overflow demotion**: When the in-progress count exceeds the WIP cap, the lowest-priority in-progress items are returned to backlog. See [docs/ISSUE-GOVERNANCE.md -- Priority Promotion and Demotion Criteria](docs/ISSUE-GOVERNANCE.md#priority-promotion-and-demotion-criteria) for objective criteria.
+- **Queue overflow demotion**: When the in-progress count exceeds the WIP cap, the lowest-priority in-progress items are returned to backlog.
 
 ## Legacy
 
