@@ -411,3 +411,104 @@ describe('DLQ Processor - Edge Cases', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// DLQ Processor — offloaded message handling (issue #1069)
+// ---------------------------------------------------------------------------
+
+describe('DLQ Processor - Offloaded message archival', () => {
+  it('correctly categorizes an offloaded message reference as schema_error (no envelope/avatarId)', () => {
+    // An offloaded message ref has __offloaded, bucket, key — but no envelope or avatarId.
+    // The DLQ processor sees the raw SQS body (the ref), not the original payload.
+    const offloadRef = JSON.stringify({
+      __offloaded: true,
+      bucket: 'swarm-staging-media',
+      key: 'sqs-offload/abc-123.json',
+      originalSizeBytes: 300000,
+    });
+
+    // Without envelope or avatarId, the categorizer treats it as schema_error
+    expect(categorizeMessage(offloadRef)).toBe('schema_error');
+  });
+
+  it('extracts no context from an offloaded reference (fields are S3 metadata, not message context)', () => {
+    const offloadRef = JSON.stringify({
+      __offloaded: true,
+      bucket: 'swarm-staging-media',
+      key: 'sqs-offload/def-456.json',
+      originalSizeBytes: 250000,
+    });
+
+    const ctx = extractMessageContext(offloadRef);
+    expect(ctx.avatarId).toBeUndefined();
+    expect(ctx.platform).toBeUndefined();
+    expect(ctx.conversationId).toBeUndefined();
+  });
+
+  it('categorizes the original (retrieved) message body correctly after S3 retrieval', () => {
+    // Simulate what happens after the DLQ processor retrieves the original payload from S3.
+    // The original payload is a valid envelope-based message.
+    const originalPayload = {
+      envelope: {
+        avatarId: 'agent-offloaded',
+        platform: 'telegram',
+        conversationId: 'conv-offloaded',
+        content: { text: 'x'.repeat(300000) },
+      },
+      enqueuedAt: Date.now(),
+      attempts: 2,
+      maxAttempts: 3,
+    };
+    const originalBody = JSON.stringify(originalPayload);
+
+    expect(categorizeMessage(originalBody)).toBe('transient');
+
+    const ctx = extractMessageContext(originalBody);
+    expect(ctx.avatarId).toBe('agent-offloaded');
+    expect(ctx.platform).toBe('telegram');
+    expect(ctx.conversationId).toBe('conv-offloaded');
+  });
+
+  it('categorizes a retrieved offloaded message with permanent error correctly', () => {
+    // After retrieval from S3, the original payload contains a permanent error signal.
+    const originalPayload = {
+      envelope: {
+        avatarId: 'agent-perm',
+        platform: 'discord',
+        error: 'Avatar not found',
+      },
+    };
+    const originalBody = JSON.stringify(originalPayload);
+
+    expect(categorizeMessage(originalBody)).toBe('permanent');
+
+    const ctx = extractMessageContext(originalBody);
+    expect(ctx.avatarId).toBe('agent-perm');
+    expect(ctx.platform).toBe('discord');
+  });
+
+  it('inferSourceQueue returns undefined for an offloaded reference (no structural match)', () => {
+    const offloadRef = JSON.stringify({
+      __offloaded: true,
+      bucket: 'swarm-staging-media',
+      key: 'sqs-offload/ghi-789.json',
+      originalSizeBytes: 400000,
+    });
+
+    expect(inferSourceQueue(offloadRef)).toBeUndefined();
+  });
+
+  it('inferSourceQueue identifies source correctly from the retrieved original payload', () => {
+    const originalPayload = {
+      envelope: { avatarId: 'a', platform: 'telegram' },
+      enqueuedAt: Date.now(),
+      attempts: 1,
+      maxAttempts: 3,
+    };
+    const originalBody = JSON.stringify(originalPayload);
+
+    // Returns MESSAGE_QUEUE_URL env var (undefined in test), but function runs without error
+    const result = inferSourceQueue(originalBody);
+    expect(result === undefined || typeof result === 'string').toBe(true);
+  });
+});

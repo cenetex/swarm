@@ -353,4 +353,168 @@ describe('SQS Offload Service', () => {
       }
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // End-to-end / integration tests (issue #1069)
+  // ---------------------------------------------------------------------------
+
+  describe('e2e: oversized message offload → consume → reassemble → cleanup', () => {
+    it('happy path: offload, retrieve original content, then cleanup removes S3 object', async () => {
+      const largePayload = {
+        envelope: {
+          avatarId: 'avatar-e2e',
+          platform: 'telegram',
+          conversationId: 'conv-e2e',
+          content: { text: 'x'.repeat(300) }, // well above 100-byte test threshold
+          metadata: { correlationId: 'corr-001' },
+        },
+        enqueuedAt: Date.now(),
+        attempts: 0,
+        maxAttempts: 3,
+      };
+
+      // 1. Producer: offload
+      const offloadResult = await service.maybeOffload(largePayload);
+      expect(offloadResult.offloaded).toBe(true);
+      expect(offloadResult.originalSizeBytes).toBeGreaterThan(100);
+
+      const ref: OffloadedMessageRef = JSON.parse(offloadResult.body);
+      expect(ref.__offloaded).toBe(true);
+      const storageKey = `${ref.bucket}/${ref.key}`;
+      expect(mockS3.storage.has(storageKey)).toBe(true);
+
+      // 2. Consumer: retrieve — must reconstruct the exact original payload
+      const retrieved = await service.maybeRetrieve(offloadResult.body);
+      expect(retrieved).toEqual(largePayload);
+
+      // 3. Consumer: cleanup — must remove the S3 object
+      await service.cleanup(offloadResult.body);
+      expect(mockS3.storage.has(storageKey)).toBe(false);
+
+      // Verify operation sequence: PutObject, GetObject, DeleteObject
+      const opNames = mockS3.operations.map((op) => op.command);
+      expect(opNames).toEqual(['PutObjectCommand', 'GetObjectCommand', 'DeleteObjectCommand']);
+    });
+  });
+
+  describe('e2e: boundary at exactly 200KB (default production threshold)', () => {
+    let prodService: SqsOffloadService;
+    let prodMockS3: MockS3Client;
+
+    beforeEach(() => {
+      prodMockS3 = new MockS3Client();
+      prodService = createSqsOffloadService({
+        bucket: 'prod-bucket',
+        prefix: 'sqs-offload/',
+        thresholdBytes: SQS_OFFLOAD_CONSTANTS.DEFAULT_OFFLOAD_THRESHOLD_BYTES, // 204800
+        s3Client: prodMockS3 as unknown as import('@aws-sdk/client-s3').S3Client,
+      });
+    });
+
+    it('message at exactly 200KB is NOT offloaded (threshold is <=)', async () => {
+      // Build a payload whose JSON-stringified form is exactly 200 * 1024 bytes
+      const target = SQS_OFFLOAD_CONSTANTS.DEFAULT_OFFLOAD_THRESHOLD_BYTES; // 204800
+      const prefix = '{"d":"';
+      const suffix = '"}';
+      const padding = target - Buffer.byteLength(prefix + suffix, 'utf-8');
+      const payload = { d: 'a'.repeat(padding) };
+
+      // Confirm our size calculation is correct
+      const serialized = JSON.stringify(payload);
+      expect(Buffer.byteLength(serialized, 'utf-8')).toBe(target);
+
+      const result = await prodService.maybeOffload(payload);
+      expect(result.offloaded).toBe(false);
+      expect(prodMockS3.operations).toHaveLength(0);
+    });
+
+    it('message at 200KB + 1 byte IS offloaded', async () => {
+      const target = SQS_OFFLOAD_CONSTANTS.DEFAULT_OFFLOAD_THRESHOLD_BYTES + 1;
+      const prefix = '{"d":"';
+      const suffix = '"}';
+      const padding = target - Buffer.byteLength(prefix + suffix, 'utf-8');
+      const payload = { d: 'a'.repeat(padding) };
+
+      const serialized = JSON.stringify(payload);
+      expect(Buffer.byteLength(serialized, 'utf-8')).toBe(target);
+
+      const result = await prodService.maybeOffload(payload);
+      expect(result.offloaded).toBe(true);
+      expect(prodMockS3.operations).toHaveLength(1);
+      expect(prodMockS3.operations[0].command).toBe('PutObjectCommand');
+
+      // Round-trip: retrieve should match
+      const retrieved = await prodService.maybeRetrieve(result.body);
+      expect(retrieved).toEqual(payload);
+    });
+  });
+
+  describe('e2e: under-threshold passthrough', () => {
+    it('small message passes through without any S3 interaction', async () => {
+      const smallPayload = { msg: 'hello', ts: Date.now() };
+      const result = await service.maybeOffload(smallPayload);
+
+      expect(result.offloaded).toBe(false);
+      expect(result.body).toBe(JSON.stringify(smallPayload));
+      expect(mockS3.operations).toHaveLength(0);
+
+      // Consumer side: retrieve still works (just JSON.parse)
+      const retrieved = await service.maybeRetrieve(result.body);
+      expect(retrieved).toEqual(smallPayload);
+
+      // Cleanup is a no-op
+      await service.cleanup(result.body);
+      expect(mockS3.operations).toHaveLength(0);
+    });
+  });
+
+  describe('e2e: S3 write failure during offload', () => {
+    it('surfaces a clear error when S3 PutObject fails', async () => {
+      mockS3.shouldFail = true;
+      mockS3.failMessage = 'AccessDenied: Insufficient permissions to write to bucket';
+
+      const largePayload = { data: 'x'.repeat(200) };
+
+      await expect(service.maybeOffload(largePayload)).rejects.toThrow(
+        'AccessDenied: Insufficient permissions to write to bucket'
+      );
+
+      // Confirm PutObject was attempted
+      expect(mockS3.operations).toHaveLength(1);
+      expect(mockS3.operations[0].command).toBe('PutObjectCommand');
+    });
+  });
+
+  describe('e2e: S3 read failure during retrieval', () => {
+    it('surfaces a clear error when S3 GetObject fails', async () => {
+      // First, successfully offload
+      const largePayload = { data: 'x'.repeat(200) };
+      const offloadResult = await service.maybeOffload(largePayload);
+      expect(offloadResult.offloaded).toBe(true);
+
+      // Now make S3 fail for reads
+      mockS3.operations = [];
+      mockS3.shouldFail = true;
+      mockS3.failMessage = 'InternalError: S3 is temporarily unavailable';
+
+      await expect(service.maybeRetrieve(offloadResult.body)).rejects.toThrow(
+        'InternalError: S3 is temporarily unavailable'
+      );
+
+      // Confirm GetObject was attempted
+      expect(mockS3.operations).toHaveLength(1);
+      expect(mockS3.operations[0].command).toBe('GetObjectCommand');
+    });
+
+    it('surfaces NoSuchKey when the S3 object has been deleted or expired', async () => {
+      const ref: OffloadedMessageRef = {
+        __offloaded: true,
+        bucket: 'test-bucket',
+        key: 'sqs-offload/expired-object.json',
+        originalSizeBytes: 5000,
+      };
+
+      await expect(service.maybeRetrieve(JSON.stringify(ref))).rejects.toThrow('NoSuchKey');
+    });
+  });
 });
