@@ -7,7 +7,7 @@
  * Mocks WebSocket, AWS SDK clients, and core services to test the
  * gateway logic in isolation without live Discord API calls.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
 
 // ─── Mock Tracking ────────────────────────────────────────────────────────────
 
@@ -913,7 +913,7 @@ describe('Shared room / multi-avatar routing', () => {
     });
 
     try {
-      const { conn, ws, internals } = createConnection();
+      const { conn, ws } = createConnection();
       const binding = makeAvatarBinding({
         avatarId: 'avatar-solo',
         config: {
@@ -934,7 +934,6 @@ describe('Shared room / multi-avatar routing', () => {
       doHandshake(ws);
 
       sqsSentMessages.length = 0;
-      const botUserId = internals.botUserId!;
 
       // DM to ensure shouldRespond=true
       const message = makeDiscordMessage({
