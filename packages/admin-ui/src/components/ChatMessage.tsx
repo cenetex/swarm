@@ -1,5 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { memo, useMemo, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { extractThinkingTags } from '../utils/thinkingTags';
 import type { ChatMessage as ChatMessageType, MessageSender } from '../types';
 import { useTaskCardStore } from '../store/task-cards';
@@ -46,7 +48,13 @@ interface ChatMessageProps {
  * - No sender or no wallet = ghost icon
  * - Has walletAddress = wallet-based display
  */
-const SenderAvatar = memo(function SenderAvatar({ sender }: { sender?: MessageSender }) {
+const SenderAvatar = memo(function SenderAvatar({
+  sender,
+  avatarAltText,
+}: {
+  sender?: MessageSender;
+  avatarAltText: string;
+}) {
   // Ghost icon for anonymous/no wallet users
   if (!sender || !sender.walletAddress) {
     return (
@@ -63,7 +71,7 @@ const SenderAvatar = memo(function SenderAvatar({ sender }: { sender?: MessageSe
     return (
       <img 
         src={sender.avatarUrl} 
-        alt={sender.displayName || 'Avatar'} 
+        alt={sender.displayName || avatarAltText}
         className="w-8 h-8 rounded-full object-cover flex-shrink-0"
       />
     );
@@ -114,7 +122,8 @@ interface ParsedToolResult {
  */
 function processMessageContent(
   content: string,
-  options?: { stripAllJson?: boolean }
+  options?: { stripAllJson?: boolean },
+  t?: TFunction
 ): {
   cleanedContent: string;
   embeddedImages: string[];
@@ -156,7 +165,7 @@ function processMessageContent(
         data: parsed,
         tweetId: parsed.tweetId,
         tweetUrl: tweetUrl,
-        message: typeof parsed.message === 'string' ? parsed.message : 'Tweet posted!',
+        message: typeof parsed.message === 'string' ? parsed.message : (t?.('chat.message.tweetPosted') ?? 'Tweet posted!'),
       };
     }
 
@@ -172,7 +181,9 @@ function processMessageContent(
         discordBotUsername: typeof parsed.botUsername === 'string' ? parsed.botUsername : undefined,
         discordMode: parsed.mode as string,
         message: typeof parsed.message === 'string' ? parsed.message :
-          parsed.connected ? `Discord connected in ${parsed.mode} mode` : 'Discord not connected',
+          parsed.connected
+            ? (t?.('chat.message.discordConnectedInMode', { mode: parsed.mode }) ?? `Discord connected in ${parsed.mode} mode`)
+            : (t?.('chat.message.discordNotConnected') ?? 'Discord not connected'),
       };
     }
 
@@ -185,7 +196,9 @@ function processMessageContent(
         twitterError: parsed.error === true,
         twitterUsername: typeof parsed.username === 'string' ? parsed.username : undefined,
         message: typeof parsed.message === 'string' ? parsed.message :
-          parsed.connected ? `Connected as @${parsed.username}` : 'X not connected',
+          parsed.connected
+            ? (t?.('chat.message.twitterConnectedAs', { username: parsed.username }) ?? `Connected as @${parsed.username}`)
+            : (t?.('chat.message.xNotConnected') ?? 'X not connected'),
       };
     }
 
@@ -195,7 +208,7 @@ function processMessageContent(
         type: 'twitter_status',
         data: parsed,
         twitterConnected: false,
-        message: typeof parsed.message === 'string' ? parsed.message : 'X authorization pending',
+        message: typeof parsed.message === 'string' ? parsed.message : (t?.('chat.message.xAuthorizationPending') ?? 'X authorization pending'),
       };
     }
 
@@ -206,7 +219,7 @@ function processMessageContent(
         data: parsed,
         twitterConnected: true,
         twitterUsername: typeof parsed.username === 'string' ? parsed.username : undefined,
-        message: typeof parsed.message === 'string' ? parsed.message : `Already connected as @${parsed.username}`,
+        message: typeof parsed.message === 'string' ? parsed.message : (t?.('chat.message.alreadyConnectedAs', { username: parsed.username }) ?? `Already connected as @${parsed.username}`),
       };
     }
 
@@ -219,10 +232,10 @@ function processMessageContent(
         type: 'wallet',
         data: parsed,
         publicKey: parsed.publicKey as string,
-        walletName: typeof parsed.message === 'string' 
-          ? parsed.message.match(/wallet "([^"]+)"/)?.[1] || 'Wallet'
-          : 'Wallet',
-        message: typeof parsed.message === 'string' ? parsed.message : 'Wallet created!',
+        walletName: typeof parsed.message === 'string'
+          ? parsed.message.match(/wallet "([^"]+)"/)?.[1] || (t?.('chat.message.wallet') ?? 'Wallet')
+          : (t?.('chat.message.wallet') ?? 'Wallet'),
+        message: typeof parsed.message === 'string' ? parsed.message : (t?.('chat.message.walletCreated') ?? 'Wallet created!'),
         pattern: typeof parsed.pattern === 'string' ? parsed.pattern : undefined,
         attempts: typeof parsed.attempts === 'number' ? parsed.attempts : undefined,
         generationTime: typeof parsed.generationTime === 'string' ? parsed.generationTime : undefined,
@@ -286,14 +299,14 @@ function processMessageContent(
     // Success boolean
     if (parsed.success === true) {
       const msg = typeof parsed.result === 'string' ? parsed.result : 
-                  typeof parsed.data === 'string' ? parsed.data : 'Done!';
+                  typeof parsed.data === 'string' ? parsed.data : (t?.('chat.message.done') ?? 'Done!');
       return { type: 'success', data: parsed, message: msg };
     }
     
     // Error result
     if (parsed.error === true || parsed.success === false) {
       const msg = typeof parsed.message === 'string' ? parsed.message :
-                  typeof parsed.error === 'string' ? parsed.error : 'An error occurred';
+                  typeof parsed.error === 'string' ? parsed.error : (t?.('chat.errors.anErrorOccurred') ?? 'An error occurred');
       return { type: 'error', data: parsed, message: msg };
     }
     
@@ -636,6 +649,7 @@ export const getInteractiveToolCalls = getVisibleToolCalls;
 
 
 function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageProps) {
+  const { t } = useTranslation();
   const isUser = message.role === 'user';
   const hasPendingTools = message.toolCalls?.some(tc => tc.status === 'pending');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -663,9 +677,9 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
   // Process message content to extract embedded JSON, images, and audio
   const { cleanedContent, embeddedImages, embeddedAudios, toolResults } = useMemo(
     () => contentForDisplay
-      ? processMessageContent(contentForDisplay, { stripAllJson: message.isToolResult })
+      ? processMessageContent(contentForDisplay, { stripAllJson: message.isToolResult }, t)
       : { cleanedContent: '', embeddedImages: [], embeddedAudios: [], toolResults: [] },
-    [contentForDisplay, message.isToolResult]
+    [contentForDisplay, message.isToolResult, t]
   );
   
   const imagesFromTools = extractImagesFromToolCalls(message.toolCalls);
@@ -751,7 +765,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3 lg:mb-4`}>
       <div className={`flex items-end gap-2 min-w-0 max-w-[90%] sm:max-w-[85%] lg:max-w-[80%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
         {/* Show avatar for user messages */}
-        {isUser && <SenderAvatar sender={message.sender} />}
+        {isUser && <SenderAvatar sender={message.sender} avatarAltText={t('chat.message.avatarAlt')} />}
         
         <div
           className={`rounded-2xl px-3 lg:px-4 py-2.5 lg:py-3 overflow-hidden min-w-0 break-words ${
@@ -773,13 +787,13 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                 <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)]/40 px-4 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="text-sm font-medium text-[var(--color-text)]">
-                      Tool Result
+                      {t('chat.message.toolResult')}
                     </div>
                     <button
                       type="button"
                       onClick={() => navigator.clipboard.writeText(cleanedContent)}
                       className="flex-shrink-0 p-1.5 rounded hover:bg-[var(--color-bg-secondary)] transition text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                      title="Copy output"
+                      title={t('chat.message.copyOutput')}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -800,7 +814,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
             {!isUser && !message.isToolResult && thoughts.length > 0 && (
               <details className={`${cleanedContent ? 'mt-2' : ''} text-xs ${isUser ? 'text-white/80' : 'text-[var(--color-text-muted)]'}`}>
                 <summary className="cursor-pointer select-none hover:opacity-90">
-                  Thoughts
+                  {t('chat.message.thoughts')}
                 </summary>
                 <div className={`mt-2 whitespace-pre-wrap font-mono rounded-lg border px-3 py-2 ${isUser ? 'border-white/20 bg-white/10 text-white/90' : 'border-[var(--color-border)] bg-[var(--color-bg-tertiary)]/40 text-[var(--color-text-secondary)]'}`}>
                   {thoughts.join('\n\n')}
@@ -836,7 +850,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-sm font-medium text-[var(--color-text)]">
-                            Tool Result
+                            {t('chat.message.toolResult')}
                           </div>
                           {keys.length > 0 && (
                             <div className="mt-1 flex flex-wrap gap-1">
@@ -855,7 +869,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                           type="button"
                           onClick={copy}
                           className="flex-shrink-0 p-1.5 rounded hover:bg-[var(--color-bg-secondary)] transition text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                          title="Copy JSON"
+                          title={t('chat.message.copyJson')}
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -865,7 +879,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
 
                       <details className="mt-2">
                         <summary className="cursor-pointer text-xs text-[var(--color-text-secondary)] select-none">
-                          View details
+                      {t('chat.message.viewDetails')}
                         </summary>
                         <pre className="mt-2 text-xs overflow-auto rounded-md bg-[var(--color-bg-primary)] px-3 py-2 text-[var(--color-text-secondary)]">
                           {pretty}
@@ -905,10 +919,10 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                         </div>
                         <div>
                           <div className="text-sm font-medium text-[var(--color-text)]">
-                            {result.isVanity ? '✨ Vanity Wallet Created' : '💳 Wallet Created'}
+                            {result.isVanity ? t('chat.message.vanityWalletCreated') : t('chat.message.walletCreatedTitle')}
                           </div>
                           <div className="text-xs text-[var(--color-text-muted)]">
-                            {result.walletName || 'Solana'}
+                            {result.walletName || t('chat.message.solana')}
                           </div>
                         </div>
                       </div>
@@ -921,7 +935,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                           <button
                             onClick={copyToClipboard}
                             className="flex-shrink-0 p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] transition text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                            title="Copy address"
+                            title={t('chat.message.copyAddress')}
                           >
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -934,17 +948,17 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                         <div className="flex items-center gap-3 text-xs text-[var(--color-text-muted)]">
                           {result.pattern && (
                             <span className="bg-brand-500/20 text-brand-300 px-2 py-0.5 rounded">
-                              Pattern: {result.pattern}
+                              {t('chat.message.pattern', { pattern: result.pattern })}
                             </span>
                           )}
                           {result.attempts && (
                             <span>
-                              {result.attempts.toLocaleString()} attempts
+                              {t('chat.message.attempts', { count: result.attempts })}
                             </span>
                           )}
                           {result.generationTime && (
                             <span>
-                              ⏱ {result.generationTime}
+                              {t('chat.message.generationTime', { time: result.generationTime })}
                             </span>
                           )}
                         </div>
@@ -971,7 +985,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                       </div>
                       <div className="flex-1">
                         <div className="text-sm font-medium text-[var(--color-text)]">
-                          Tweet Posted! 🎉
+                          {t('chat.message.tweetPostedTitle')}
                         </div>
                       </div>
                       {result.tweetUrl && (
@@ -981,7 +995,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                           rel="noopener noreferrer"
                           className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
                         >
-                          View on X
+                          {t('chat.message.viewOnX')}
                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                           </svg>
@@ -1030,7 +1044,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                         </div>
                         <div className="flex-1">
                           <div className="text-sm font-medium text-[var(--color-text)]">
-                            {result.twitterConnected ? 'Twitter Connected' : isError ? 'Twitter Connection Failed' : 'Twitter Connection'}
+                            {result.twitterConnected ? t('chat.message.twitterConnected') : isError ? t('chat.message.twitterConnectionFailed') : t('chat.message.twitterConnection')}
                             {result.twitterUsername && (
                               <span className="ml-2 text-blue-400">@{result.twitterUsername}</span>
                             )}
@@ -1046,7 +1060,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                             </svg>
-                            Connected
+                            {t('chat.message.connected')}
                           </div>
                         )}
                         {isError && (
@@ -1054,7 +1068,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                             </svg>
-                            Failed
+                            {t('chat.message.failed')}
                           </div>
                         )}
                       </div>
@@ -1095,7 +1109,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                         </div>
                         <div className="flex-1">
                           <div className="text-sm font-medium text-[var(--color-text)]">
-                            {result.discordConnected ? 'Discord Connected' : isError ? 'Discord Not Configured' : 'Discord Connection'}
+                            {result.discordConnected ? t('chat.message.discordConnected') : isError ? t('chat.message.discordNotConfigured') : t('chat.message.discordConnection')}
                             {result.discordBotUsername && (
                               <span className="ml-2 text-indigo-400">{result.discordBotUsername}</span>
                             )}
@@ -1116,7 +1130,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                             </svg>
-                            Connected
+                            {t('chat.message.connected')}
                           </div>
                         )}
                         {isError && (
@@ -1124,7 +1138,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                             </svg>
-                            Disconnected
+                            {t('chat.message.disconnected')}
                           </div>
                         )}
                       </div>
@@ -1161,10 +1175,10 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                         </div>
                         <div className="flex-1">
                           <div className="text-sm font-medium text-[var(--color-text)]">
-                            Available Models
+                            {t('chat.message.availableModels')}
                           </div>
                           <div className="text-xs text-[var(--color-text-muted)]">
-                            {models.length} models from {providers.length} providers
+                            {t('chat.message.modelsFromProviders', { count: models.length, providers: providers.length })}
                           </div>
                         </div>
                       </div>
@@ -1192,7 +1206,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                       
                       <div className="mt-2 pt-2 border-t border-[var(--color-border)]">
                         <p className="text-xs text-[var(--color-text-muted)]">
-                          Ask me to "switch to [model name]" to change models
+                          {t('chat.message.switchModelHint', { modelName: '[model name]' })}
                         </p>
                       </div>
                     </div>
@@ -1223,7 +1237,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     )}
-                    {result.message || (result.type === 'success' ? 'Done!' : 'Completed')}
+                    {result.message || (result.type === 'success' ? t('chat.message.done') : t('chat.message.completed'))}
                   </div>
                 ))}
               </div>
@@ -1242,7 +1256,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                   >
                     <img
                       src={url}
-                      alt={`Generated image ${idx + 1}`}
+                      alt={`${t('chat.message.generatedImageAlt')} ${idx + 1}`}
                       className="w-full h-auto rounded-lg"
                       loading="lazy"
                     />
@@ -1263,7 +1277,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                       playsInline
                     >
                       <source src={url} type={url.includes('.webm') ? 'video/webm' : 'video/mp4'} />
-                      Your browser does not support video playback.
+                      {t('chat.message.browserDoesNotSupportVideo')}
                     </video>
                   </div>
                 ))}
@@ -1294,7 +1308,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                       }}
                     >
                       <source src={url} type={url.includes('.mp3') ? 'audio/mpeg' : url.includes('.wav') ? 'audio/wav' : 'audio/ogg'} />
-                      Your browser does not support audio playback.
+                      {t('chat.message.browserDoesNotSupportAudio')}
                     </audio>
                   </div>
                 ))}
@@ -1305,7 +1319,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
             {selectedImage && (
               <ImageModal
                 imageUrl={selectedImage}
-                alt="Generated image"
+                alt={t('chat.message.generatedImageAlt')}
                 onClose={() => setSelectedImage(null)}
               />
             )}
@@ -1321,7 +1335,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                     <div className="animate-spin w-4 h-4 border-2 border-brand-400 border-t-transparent rounded-full flex-shrink-0" />
                     <div className="min-w-0 flex-1 flex items-center overflow-hidden">
                       <span className="flex-shrink-0 whitespace-nowrap">
-                        {job.status === 'processing' ? 'Generating' : 'Starting'} {job.type}...
+                        {job.status === 'processing' ? t('chat.message.generating') : t('chat.message.starting')} {t(`chat.mediaType.${job.type}`)}...
                       </span>
                       {job.prompt && (
                         job.prompt.length > 50
@@ -1356,7 +1370,10 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
                       <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
                     </svg>
                     <span>
-                      {job.type} generation failed{job.error && `: ${job.error}`}
+                      {t('chat.message.jobGenerationFailed', {
+                        type: t(`chat.mediaType.${job.type}`),
+                        error: job.error ? `: ${job.error}` : '',
+                      })}
                     </span>
                   </div>
                 ))}
@@ -1376,7 +1393,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
               minute: '2-digit',
             })}
             {hasPendingTools && (
-              <span className="ml-2 text-yellow-500 dark:text-yellow-400">• Waiting for input</span>
+              <span className="ml-2 text-yellow-500 dark:text-yellow-400">• {t('chat.message.waitingForInput')}</span>
             )}
           </div>
         )}

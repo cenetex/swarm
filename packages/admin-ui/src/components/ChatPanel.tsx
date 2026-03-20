@@ -7,6 +7,7 @@
  * - Browse mode: Read-only profile view (no wallet connected)
  */
 import { lazy, Suspense, useEffect, useRef, useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAvatarStore, useActiveAvatar, useActiveChat } from '../store';
 import { useTaskCardStore, useTranscriptTimeline } from '../store/task-cards';
 import { useWorkspaceStore } from '../store/workspace';
@@ -37,6 +38,7 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
+  const { t } = useTranslation();
   const activeAvatar = useActiveAvatar();
   const messages = useActiveChat();
   const timeline = useTranscriptTimeline(messages, activeAvatar?.id);
@@ -58,7 +60,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const shownNudgesRef = useRef(new Set<string>());
 
   const formatUserFacingError = useCallback((raw: unknown): string => {
-    const rawMessage = raw instanceof Error ? raw.message : typeof raw === 'string' ? raw : 'Failed to send message';
+    const rawMessage = raw instanceof Error ? raw.message : typeof raw === 'string' ? raw : t('chat.errors.failedToSendMessage');
     const trimmed = rawMessage.trim();
 
     // If the message contains an appended JSON blob, parse and extract a readable message.
@@ -86,7 +88,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           .replace(/\s+-\s+-\s+/g, ' - ')
           .trim();
 
-        return cleaned || prefix || 'Request failed';
+        return cleaned || prefix || t('chat.errors.requestFailed');
       } catch {
         // If parsing fails, fall through to basic cleanup.
       }
@@ -98,7 +100,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       .replace(/\buser_id\b\s*[:=]\s*["']?user_[A-Za-z0-9]+["']?/g, 'user_id:[redacted]')
       .replace(/\s+metadata:\s*\{[\s\S]*\}\s*$/i, '')
       .trim();
-  }, []);
+  }, [t]);
 
   const extractPendingJobsFromText = useCallback((text: string): Array<{ jobId: string; type: 'image' | 'video' | 'sticker' }> => {
     const found: Array<{ jobId: string; type: 'image' | 'video' | 'sticker' }> = [];
@@ -211,14 +213,14 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         updateAvatar(activeAvatar.id, { status: 'active' });
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update avatar status';
+      const message = err instanceof Error ? err.message : t('chat.errors.failedToUpdateAvatarStatus');
       setActivationError(message);
       // Auto-clear error after 5 seconds
       setTimeout(() => setActivationError(null), 5000);
     } finally {
       setActivationLoading(false);
     }
-  }, [activeAvatar, activationLoading, showDeactivateConfirm, updateAvatar]);
+  }, [activeAvatar, activationLoading, showDeactivateConfirm, updateAvatar, t]);
 
   // Cancel deactivation confirmation
   const handleCancelDeactivate = useCallback(() => {
@@ -272,7 +274,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           targetAvatar = await createAvatar();
         } catch (err) {
           console.error('Failed to create avatar:', err);
-          setError('Failed to create avatar');
+          setError(t('chat.errors.failedToCreateAvatar'));
           setIsCreatingAvatar(false);
           return;
         }
@@ -611,7 +613,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                           });
                           addMessage(avatarIdForPolling, {
                             role: 'assistant',
-                            content: '✅ Profile image updated.',
+                            content: t('chat.message.profileImageUpdated'),
                           });
                         } catch (err) {
                           console.error('Failed to save profile image:', err);
@@ -673,9 +675,9 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         let errorContent: string;
         if (recovery) {
           const actionList = recovery.actions.map(a => `- ${a}`).join('\n');
-          errorContent = `**${recovery.title}**\n\n${recovery.explanation}\n\n**What to do:**\n${actionList}`;
+          errorContent = `**${recovery.title}**\n\n${recovery.explanation}\n\n**${t('chat.errors.whatToDo')}**\n${actionList}`;
         } else {
-          errorContent = `**Error:** ${errorMsg}\n\nPlease try again or check the avatar configuration.`;
+          errorContent = `**${t('chat.errors.errorPrefix')}** ${errorMsg}\n\n${t('chat.errors.tryAgainOrCheckAvatarConfiguration')}`;
         }
 
         addMessage(targetAvatar.id, {
@@ -688,7 +690,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         setLoading(false);
       }
     },
-    [activeAvatar, messages, addMessage, updateMessage, removeMessage, setLoading, setError, createAvatar, isCreatingAvatar, accessMode, isAuthenticated, user, updateAvatar, formatUserFacingError, extractPendingJobsFromText]
+    [activeAvatar, messages, addMessage, updateMessage, removeMessage, setLoading, setError, createAvatar, isCreatingAvatar, accessMode, isAuthenticated, user, updateAvatar, formatUserFacingError, extractPendingJobsFromText, t]
   );
 
   // Handle audio message - transcribe and send as text
@@ -715,11 +717,11 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         }
       } catch (error) {
         console.error('Failed to transcribe audio:', error instanceof Error ? error.message : String(error));
-        setError(error instanceof Error ? error.message : 'Failed to transcribe audio');
+        setError(error instanceof Error ? error.message : t('chat.errors.failedToTranscribeAudio'));
         setLoading(false);
       }
     },
-      [activeAvatar, accessMode, createAvatar, handleSendMessage, setLoading, setError]
+      [activeAvatar, accessMode, createAvatar, handleSendMessage, setLoading, setError, t]
   );
 
   // Handle tool submissions (secrets, confirmations, uploads, etc.)
@@ -814,7 +816,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             registerResumedToolCall(resumed.pendingToolCall);
           }
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : 'Failed to save secret';
+          const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToSaveSecret');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
@@ -850,7 +852,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             // Add a simple confirmation message
             addMessage(activeAvatar.id, {
               role: 'assistant',
-              content: '✅ Character reference updated. This will be used for consistent image and video generation.',
+              content: t('chat.message.characterReferenceUpdated'),
             });
           } else if (isProfileUpload) {
             // For profile images, save directly via API - don't rely on LLM
@@ -868,7 +870,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             // Add a simple confirmation message instead of asking LLM
             addMessage(activeAvatar.id, {
               role: 'assistant',
-              content: '✅ Profile image updated.',
+              content: t('chat.message.profileImageUpdated'),
             });
           } else {
             // For reference images, resume the tool loop with a tool result (no synthetic user message)
@@ -909,7 +911,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           updateToolCallStatus();
 
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : 'Failed to process upload';
+          const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToProcessUpload');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
@@ -939,7 +941,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           updateAvatar(activeAvatar.id, { model: resultObj.selectedModel });
           updateToolCallStatus();
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : 'Failed to update model';
+          const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToUpdateModel');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
@@ -968,7 +970,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             const twitterToolCallId = crypto.randomUUID();
             const twitterArgs = {
               type: 'twitter_connect' as const,
-              message: 'Authorize this avatar to post and manage tweets.',
+              message: t('chat.message.authorizeTwitterPosting'),
             };
             addMessage(activeAvatar.id, {
               role: 'assistant',
@@ -985,7 +987,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             );
           }
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : 'Failed to toggle feature';
+          const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToToggleFeature');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
@@ -1021,7 +1023,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             registerResumedToolCall(resumed.pendingToolCall);
           }
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : 'Failed to submit tool result';
+          const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToSubmitToolResult');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
@@ -1057,7 +1059,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             registerResumedToolCall(resumed.pendingToolCall);
           }
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : 'Failed to save integration config';
+          const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToSaveIntegrationConfig');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
@@ -1068,7 +1070,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       // Generic tool result - just update status
       updateToolCallStatus();
     },
-    [activeAvatar, updateMessage, setError, addMessage, updateAvatar]
+    [activeAvatar, updateMessage, setError, addMessage, updateAvatar, t]
   );
 
   if (!activeAvatar) {
@@ -1082,7 +1084,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               <button
                 onClick={onMenuClick}
                 className="w-10 h-10 flex items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors lg:hidden"
-                aria-label="Open menu"
+                aria-label={t('chat.panel.openMenu')}
                 data-testid="menu-button"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
@@ -1096,8 +1098,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               </svg>
             </div>
             <div className="min-w-0">
-              <h1 className="text-base lg:text-lg font-semibold text-[var(--color-text)]">New Avatar</h1>
-              <p className="text-xs text-[var(--color-text-tertiary)]">Start chatting to create</p>
+              <h1 className="text-base lg:text-lg font-semibold text-[var(--color-text)]">{t('chat.panel.newAvatarTitle')}</h1>
+              <p className="text-xs text-[var(--color-text-tertiary)]">{t('chat.panel.newAvatarSubtitle')}</p>
             </div>
           </div>
         </header>
@@ -1113,10 +1115,10 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               </svg>
             </div>
             <p className="text-lg lg:text-xl font-medium text-[var(--color-text-secondary)] mb-2">
-              Chat to create your first avatar
+              {t('chat.panel.chatToCreateAvatar')}
             </p>
             <p className="text-sm text-[var(--color-text-muted)]">
-              Just say hello and we'll get started
+              {t('chat.panel.justSayHelloAndWellGetStarted')}
             </p>
           </div>
         </div>
@@ -1128,7 +1130,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               onSend={handleSendMessage}
               onSendAudio={handleSendAudio}
               disabled={isCreatingAvatar}
-              placeholder={isCreatingAvatar ? "Creating your avatar..." : "Say hello to create your avatar..."}
+              placeholder={isCreatingAvatar ? t('chat.panel.creatingAvatar') : t('chat.panel.sayHelloToCreateAvatar')}
             />
           </div>
         </div>
@@ -1146,12 +1148,12 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           <div className="flex items-center gap-3 lg:gap-4">
             {/* Hamburger menu - mobile only */}
             {onMenuClick && (
-              <button
-                onClick={onMenuClick}
-                className="w-10 h-10 flex items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors lg:hidden"
-                aria-label="Open menu"
-                data-testid="menu-button"
-              >
+                <button
+                  onClick={onMenuClick}
+                  className="w-10 h-10 flex items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors lg:hidden"
+                  aria-label={t('chat.panel.openMenu')}
+                  data-testid="menu-button"
+                >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                   <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10zm0 5.25a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
                 </svg>
@@ -1179,22 +1181,22 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                         ? 'bg-amber-400'
                         : 'bg-gray-400'
                     }`} />
-                    {activeAvatar.status === 'active' ? 'Live' : activeAvatar.status === 'paused' ? 'Paused' : 'Draft'}
+                    {activeAvatar.status === 'active' ? t('chat.panel.liveStatus') : activeAvatar.status === 'paused' ? t('chat.panel.pausedStatus') : t('chat.panel.draftStatus')}
                   </span>
                 )}
               </div>
               <p className="text-xs text-[var(--color-text-tertiary)] truncate hidden sm:block">
                 {accessMode === 'admin' && (
-                  <span className="text-brand-400">Admin access</span>
+                  <span className="text-brand-400">{t('chat.panel.adminAccess')}</span>
                 )}
                 {accessMode === 'chat' && (
-                  <span>Chat mode</span>
+                  <span>{t('chat.panel.chatMode')}</span>
                 )}
                 {accessMode === 'limited' && (
-                  <span className="text-amber-400">Limited access • Get an Orb for full access</span>
+                  <span className="text-amber-400">{t('chat.panel.limitedAccess')}</span>
                 )}
                 {accessMode === 'browse' && (
-                  <span>Connect wallet to chat</span>
+                  <span>{t('chat.panel.connectWalletToChat')}</span>
                 )}
               </p>
             </div>
@@ -1203,7 +1205,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               <button
                 onClick={() => setPlanUsagePanelOpen(true)}
                 className="hidden md:block flex-shrink-0 min-w-[160px] max-w-[200px] hover:opacity-80 transition-opacity"
-                title="Click to view full plan & usage details"
+                title={t('chat.panel.clickToViewPlanUsageDetails')}
               >
                 <Suspense fallback={null}><UsageMeterPanel avatarId={activeAvatar.id} compact /></Suspense>
               </button>
@@ -1222,7 +1224,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                         ? 'opacity-50 cursor-not-allowed text-[var(--color-text-tertiary)]'
                         : 'text-amber-400 hover:bg-amber-900/20 hover:text-amber-300'
                     }`}
-                    title="Pause avatar — platform integrations will stop responding"
+                    title={t('chat.panel.pauseAvatarTitle')}
                   >
                     {activationLoading ? (
                       <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24">
@@ -1234,7 +1236,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                         <path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75A.75.75 0 007.25 3h-1.5zM12.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-1.5z" />
                       </svg>
                     )}
-                    <span className="hidden sm:inline">Pause</span>
+                    <span className="hidden sm:inline">{t('chat.panel.pause')}</span>
                   </button>
                 ) : (
                   <button
@@ -1245,7 +1247,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                         ? 'opacity-50 cursor-not-allowed text-[var(--color-text-tertiary)]'
                         : 'text-green-400 bg-green-500/10 hover:bg-green-500/20 hover:text-green-300 border border-green-500/30'
                     }`}
-                    title="Activate avatar — platform integrations will start responding"
+                    title={t('chat.panel.activateAvatarTitle')}
                   >
                     {activationLoading ? (
                       <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24">
@@ -1257,22 +1259,22 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                         <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
                       </svg>
                     )}
-                    <span className="hidden sm:inline">Activate</span>
+                    <span className="hidden sm:inline">{t('chat.panel.activate')}</span>
                   </button>
                 )}
                 <button
                   onClick={() => setPlanUsagePanelOpen(!planUsagePanelOpen)}
                   className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${planUsagePanelOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
-                  title="View plan and usage"
+                  title={t('chat.panel.viewPlanAndUsage')}
                 >
-                  Plan & Usage
+                  {t('chat.panel.planAndUsage')}
                 </button>
                 <button
                   onClick={() => useWorkspaceStore.getState().openGallery(activeAvatar.id)}
                   className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${galleryOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
-                  title="View gallery"
+                  title={t('chat.panel.viewGallery')}
                 >
-                  <span className="hidden sm:inline">Gallery</span>
+                  <span className="hidden sm:inline">{t('chat.panel.gallery')}</span>
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
                     <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 013.25 3h13.5A2.25 2.25 0 0119 5.25v9.5A2.25 2.25 0 0116.75 17H3.25A2.25 2.25 0 011 14.75v-9.5zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 00.75-.75v-2.69l-2.22-2.219a.75.75 0 00-1.06 0l-1.91 1.909-4.97-4.969a.75.75 0 00-1.06 0L1.5 11.06zm12.22-5.81a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" clipRule="evenodd" />
                   </svg>
@@ -1280,9 +1282,9 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                 <button
                   onClick={() => setPromptPreviewOpen(true)}
                   className="px-2 lg:px-3 py-1.5 text-xs lg:text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
-                  title="Preview prompt sent to LLM"
+                  title={t('chat.panel.previewPrompt')}
                 >
-                  <span className="hidden sm:inline">Preview</span>
+                  <span className="hidden sm:inline">{t('chat.panel.preview')}</span>
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
                     <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
                     <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
@@ -1292,7 +1294,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                   onClick={() => clearChat(activeAvatar.id)}
                   className="px-2 lg:px-3 py-1.5 text-xs lg:text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
                 >
-                  <span className="hidden sm:inline">Clear Chat</span>
+                  <span className="hidden sm:inline">{t('chat.panel.clearChat')}</span>
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
                     <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
                   </svg>
@@ -1312,21 +1314,21 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0">
                 <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
               </svg>
-              <span>Pausing will stop all platform integrations (Discord, Telegram, Twitter) from responding.</span>
+              <span>{t('chat.panel.pauseWarning')}</span>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
                 onClick={handleCancelDeactivate}
                 className="px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] rounded-lg transition-colors"
               >
-                Cancel
+                {t('chat.panel.cancel')}
               </button>
               <button
                 onClick={handleActivationToggle}
                 disabled={activationLoading}
                 className="px-3 py-1.5 text-xs text-amber-100 bg-amber-600 hover:bg-amber-500 rounded-lg transition-colors disabled:opacity-50"
               >
-                {activationLoading ? 'Pausing...' : 'Confirm Pause'}
+                {activationLoading ? t('chat.panel.pausing') : t('chat.panel.confirmPause')}
               </button>
             </div>
           </div>
@@ -1358,7 +1360,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
             </svg>
             <span>
-              Platform integrations are configured but this avatar is not active. Click <strong>Activate</strong> above to go live.
+              {t('chat.panel.platformIntegrationsConfiguredButInactive')}
             </span>
           </div>
         </div>
