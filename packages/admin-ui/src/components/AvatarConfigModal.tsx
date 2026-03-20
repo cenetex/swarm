@@ -1,13 +1,15 @@
 /**
  * Avatar Configuration Modal
  */
-import { useState, useEffect, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { useAvatarStore } from '../store/avatars';
 import { useAuth } from '../store/auth';
 import type { Avatar, AvatarSecret } from '../types';
 import { AvatarDisplay } from './AvatarSidebar';
 import { EnergyPanel } from './EnergyPanel';
-import { UsageMeterPanel } from './UsageMeterPanel';
+
+// Lazy-load UsageMeterPanel — only shown in the config modal's usage tab
+const UsageMeterPanel = lazy(() => import('./UsageMeterPanel').then(m => ({ default: m.UsageMeterPanel })));
 import * as avatarApi from '../api/avatars';
 
 interface AvatarConfigModalProps {
@@ -289,7 +291,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
               <EnergyPanel avatarId={avatar.id} isAdmin={true} />
 
               {/* Usage Metering */}
-              <UsageMeterPanel avatarId={avatar.id} />
+              <Suspense fallback={null}><UsageMeterPanel avatarId={avatar.id} /></Suspense>
             </div>
           )}
 

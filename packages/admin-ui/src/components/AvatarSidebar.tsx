@@ -6,7 +6,7 @@
  * - Authenticated, no Orb: Browse + limited chat/create
  * - Authenticated + Orb: Full create access based on slots
  */
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAvatarStore } from '../store/avatars';
 import { useAuth } from '../store/auth';
@@ -14,7 +14,9 @@ import { ThemeToggle } from './ThemeToggle';
 import { LanguageSelector } from './LanguageSelector';
 import { PrivyLoginButton } from './PrivyLoginButton';
 import { AvatarReassignModal } from './AvatarReassignModal';
-import { HealthDashboard } from './HealthDashboard';
+
+// Lazy-load HealthDashboard — only shown when admin toggles the health panel
+const HealthDashboard = lazy(() => import('./HealthDashboard').then(m => ({ default: m.HealthDashboard })));
 import * as avatarApi from '../api/avatars';
 import type { Avatar } from '../types';
 import type { TFunction } from 'i18next';
@@ -669,7 +671,7 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
           </button>
           {showHealth && (
             <div className="max-h-72 overflow-y-auto">
-              <HealthDashboard onSelectAvatar={(id) => handleSelectAvatar(id)} />
+              <Suspense fallback={null}><HealthDashboard onSelectAvatar={(id) => handleSelectAvatar(id)} /></Suspense>
             </div>
           )}
         </div>

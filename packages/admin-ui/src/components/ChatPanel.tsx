@@ -6,7 +6,7 @@
  * - Chat mode: Simple chat without admin tools (other avatars)
  * - Browse mode: Read-only profile view (no wallet connected)
  */
-import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { useAvatarStore, useActiveAvatar, useActiveChat } from '../store';
 import { useTaskCardStore, useTranscriptTimeline } from '../store/task-cards';
 import { useWorkspaceStore } from '../store/workspace';
@@ -16,14 +16,16 @@ import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion,
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { AvatarDisplay } from './AvatarSidebar';
-import { PromptPreviewPanel } from './PromptPreviewPanel';
-import { PlanUsagePanel } from './PlanUsagePanel';
-import { UsageMeterPanel } from './UsageMeterPanel';
-import { ActivationChecklist } from './ActivationChecklist';
 import { getErrorRecovery } from '../utils/error-recovery';
 import { WelcomeMessage } from './WelcomeMessage';
 import { UpgradeNudge } from './UpgradeNudge';
-import { TaskWorkspace } from './TaskWorkspace';
+
+// Lazy-load heavy panel components that are behind user interactions
+const PromptPreviewPanel = lazy(() => import('./PromptPreviewPanel').then(m => ({ default: m.PromptPreviewPanel })));
+const PlanUsagePanel = lazy(() => import('./PlanUsagePanel').then(m => ({ default: m.PlanUsagePanel })));
+const UsageMeterPanel = lazy(() => import('./UsageMeterPanel').then(m => ({ default: m.UsageMeterPanel })));
+const ActivationChecklist = lazy(() => import('./ActivationChecklist').then(m => ({ default: m.ActivationChecklist })));
+const TaskWorkspace = lazy(() => import('./TaskWorkspace').then(m => ({ default: m.TaskWorkspace })));
 
 // Track active polling jobs to avoid duplicate polling
 const activePollers = new Map<string, { controller: AbortController; avatarId: string }>();
@@ -1203,7 +1205,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                 className="hidden md:block flex-shrink-0 min-w-[160px] max-w-[200px] hover:opacity-80 transition-opacity"
                 title="Click to view full plan & usage details"
               >
-                <UsageMeterPanel avatarId={activeAvatar.id} compact />
+                <Suspense fallback={null}><UsageMeterPanel avatarId={activeAvatar.id} compact /></Suspense>
               </button>
             )}
           </div>
@@ -1366,13 +1368,13 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       {planUsagePanelOpen && activeAvatar && (
         <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 lg:px-6 py-3">
           <div className="max-w-3xl mx-auto">
-            <PlanUsagePanel
+            <Suspense fallback={null}><PlanUsagePanel
               avatarId={activeAvatar.id}
               avatarName={activeAvatar.name}
               canEdit={account?.role === 'admin'}
               onClose={() => setPlanUsagePanelOpen(false)}
               initialInviteCode={initialInviteCode}
-            />
+            /></Suspense>
           </div>
         </div>
       )}
@@ -1382,10 +1384,10 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         <div className="max-w-3xl mx-auto space-y-4 w-full">
           {/* Activation checklist for admin users with newly created avatars */}
           {accessMode === 'admin' && activeAvatar && (
-            <ActivationChecklist
+            <Suspense fallback={null}><ActivationChecklist
               avatar={activeAvatar}
               onSuggest={handleSendMessage}
-            />
+            /></Suspense>
           )}
           {/* Show welcome message with action chips when the only message is the seeded welcome */}
           {messages.length === 1 && messages[0].id === 'welcome' && activeAvatar ? (
@@ -1465,15 +1467,15 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       )}
 
       {/* Prompt Preview Panel */}
-      <PromptPreviewPanel
+      <Suspense fallback={null}><PromptPreviewPanel
         isOpen={promptPreviewOpen}
         onClose={() => setPromptPreviewOpen(false)}
-      />
+      /></Suspense>
 
     </div>
 
     {/* Task Workspace Panel (gallery + task content) */}
-    <TaskWorkspace onToolSubmit={handleToolSubmit} />
+    <Suspense fallback={null}><TaskWorkspace onToolSubmit={handleToolSubmit} /></Suspense>
 
     </div>
   );

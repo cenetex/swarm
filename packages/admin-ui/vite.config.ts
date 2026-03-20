@@ -116,11 +116,27 @@ export default defineConfig({
           // Privy's transitive deps (styled-components, headless UI,
           // jose, etc.) are also left for Rollup to handle.
 
-          // --- Markdown rendering pipeline (react-markdown + remark/rehype).
-          // Note: react-markdown depends on React, so placing it in a
-          // separate chunk from vendor-react creates a circular dependency.
-          // Instead, let these modules stay in the default app chunk since
-          // they are modest in size (~118 kB) and always needed for chat.
+          // --- @swarm/core shared library
+          if (
+            id.includes('@swarm/core') ||
+            id.includes('packages/core')
+          ) {
+            return 'core';
+          }
+
+          // --- Markdown rendering pipeline (react-markdown + remark/rehype/unified).
+          // Separated into its own chunk since it's only used in chat rendering.
+          if (
+            id.includes('react-markdown') ||
+            id.includes('/node_modules/remark') ||
+            id.includes('/node_modules/rehype') ||
+            id.includes('/node_modules/unified') ||
+            id.includes('/node_modules/mdast') ||
+            id.includes('/node_modules/hast') ||
+            id.includes('/node_modules/micromark')
+          ) {
+            return 'vendor-markdown';
+          }
         },
       },
     },
