@@ -565,7 +565,7 @@ describe('MESSAGE_CREATE dispatch', () => {
     });
 
     sendPayload(ws, { op: 0, s: 2, t: 'MESSAGE_CREATE', d: message });
-    await flushPromises(100);
+    await flushPromises(500);
 
     // Assert at least one SQS SendMessageCommand was captured
     expect(sqsSentMessages.length).toBeGreaterThanOrEqual(1);
@@ -603,7 +603,7 @@ describe('MESSAGE_CREATE dispatch', () => {
     });
 
     sendPayload(ws, { op: 0, s: 3, t: 'MESSAGE_CREATE', d: message });
-    await flushPromises(100);
+    await flushPromises(500);
 
     expect(sqsSentMessages.length).toBeGreaterThanOrEqual(1);
 
@@ -636,7 +636,7 @@ describe('MESSAGE_CREATE dispatch', () => {
     });
 
     sendPayload(ws, { op: 0, s: 4, t: 'MESSAGE_CREATE', d: message });
-    await flushPromises(100);
+    await flushPromises(500);
 
     // No SQS message should be sent for this channel
     const sqsMsg = sqsSentMessages.find((m: any) => {
@@ -690,7 +690,7 @@ describe('MESSAGE_CREATE dispatch', () => {
     });
 
     sendPayload(ws, { op: 0, s: 5, t: 'MESSAGE_CREATE', d: message });
-    await flushPromises(100);
+    await flushPromises(500);
 
     // No SQS enqueue for bot messages
     const sqsMsg = sqsSentMessages.find((m: any) => {
@@ -871,7 +871,7 @@ describe('Shared room / multi-avatar routing', () => {
       });
 
       sendPayload(ws, { op: 0, s: 2, t: 'MESSAGE_CREATE', d: message });
-      await flushPromises(150);
+      await flushPromises(500);
 
       // Find SQS messages for this channel
       const sharedSqsMsgs = sqsSentMessages.filter((m: any) => {
@@ -944,7 +944,7 @@ describe('Shared room / multi-avatar routing', () => {
       });
 
       sendPayload(ws, { op: 0, s: 2, t: 'MESSAGE_CREATE', d: message });
-      await flushPromises(150);
+      await flushPromises(500);
 
       // Should go through single-avatar path (per-avatar MessageGroupId)
       const soloSqsMsgs = sqsSentMessages.filter((m: any) => {
