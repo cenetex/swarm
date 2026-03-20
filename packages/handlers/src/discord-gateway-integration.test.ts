@@ -2,12 +2,12 @@
  * Discord Gateway Integration Tests
  *
  * Covers the full connection lifecycle, message routing, error scenarios,
- * and multi-tenant avatar binding. See issue #1066.
+ * and multi-tenant avatar binding. See issue #1066 and #1103.
  *
  * Mocks WebSocket, AWS SDK clients, and core services to test the
  * gateway logic in isolation without live Discord API calls.
  */
-import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
 // ─── Mock Tracking ────────────────────────────────────────────────────────────
 
@@ -16,6 +16,9 @@ const sqsSentMessages: Array<{ input: unknown }> = [];
 
 /** Captured WebSocket sends for assertion */
 const wsSentPayloads: Array<unknown> = [];
+
+/** All MockWebSocket instances created (for resume/reconnect tests) */
+const wsInstances: MockWebSocket[] = [];
 
 // ─── Mock WebSocket ───────────────────────────────────────────────────────────
 
@@ -26,7 +29,7 @@ class MockWebSocket {
   private handlers = new Map<string, Array<(...args: unknown[]) => void>>();
 
   constructor() {
-    wsSentPayloads.length = 0;
+    wsInstances.push(this);
   }
 
   on(event: string, handler: (...args: unknown[]) => void) {
@@ -86,6 +89,57 @@ mock.module('@aws-sdk/client-secrets-manager', () => ({
   PutSecretValueCommand: class { constructor(public input: unknown) {} },
 }));
 
+// ─── Mock DynamoDB (for stateService used in MESSAGE_CREATE path) ────────────
+
+mock.module('@aws-sdk/client-dynamodb', () => ({
+  DynamoDBClient: class {
+    send() { return Promise.resolve({}); }
+    destroy() {}
+  },
+}));
+
+mock.module('@aws-sdk/lib-dynamodb', () => {
+  class StubCommand { constructor(public input: unknown) {} }
+  return {
+    DynamoDBDocumentClient: {
+      from: () => ({
+        send: () => Promise.resolve({ Item: null, Items: [], Attributes: {} }),
+        destroy: () => {},
+      }),
+    },
+    GetCommand: StubCommand,
+    PutCommand: StubCommand,
+    QueryCommand: StubCommand,
+    ScanCommand: StubCommand,
+    UpdateCommand: StubCommand,
+    DeleteCommand: StubCommand,
+    BatchGetCommand: StubCommand,
+    BatchWriteCommand: StubCommand,
+    TransactGetCommand: StubCommand,
+    TransactWriteCommand: StubCommand,
+    ExecuteStatementCommand: StubCommand,
+    ExecuteTransactionCommand: StubCommand,
+    BatchExecuteStatementCommand: StubCommand,
+    DynamoDBDocumentClientCommand: StubCommand,
+  };
+});
+
+// ─── Mock S3 (for sqs-offload) ──────────────────────────────────────────────
+
+mock.module('@aws-sdk/client-s3', () => {
+  class StubS3Command { constructor(public input: unknown) {} }
+  return {
+    S3Client: class {
+      send() { return Promise.resolve({}); }
+      destroy() {}
+    },
+    PutObjectCommand: StubS3Command,
+    GetObjectCommand: StubS3Command,
+    DeleteObjectCommand: StubS3Command,
+    ListObjectsV2Command: StubS3Command,
+  };
+});
+
 // ─── Module Types ─────────────────────────────────────────────────────────────
 
 type GatewayConnectionClass = typeof import('./discord/discord-gateway-shared.js').GatewayConnection;
@@ -134,6 +188,11 @@ afterAll(() => {
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Flush microtask queue to let async handlers resolve */
+function flushPromises(ms = 50): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function createConnection(token = 'fake-bot-token') {
   const conn = new GatewayConnection(token, 0);
@@ -476,20 +535,118 @@ describe('Multi-tenant avatar binding', () => {
 // ===========================================================================
 
 describe('MESSAGE_CREATE dispatch', () => {
-  it('dispatches MESSAGE_CREATE to handlePayload without crashing', async () => {
+  it('enqueues SQS message for a DM from a human user', async () => {
+    const { conn, ws } = createConnection();
+    const binding = makeAvatarBinding({
+      config: {
+        avatarId: 'avatar-test-001',
+        name: 'TestAvatar',
+        platforms: {
+          discord: {
+            enabled: true,
+            respondInDMs: true,
+            allowedGuilds: [],
+            allowedChannels: [],
+          },
+        },
+        behavior: { ignoreBots: true },
+      },
+    });
+    conn.addAvatar(binding as any);
+    doHandshake(ws);
+
+    sqsSentMessages.length = 0;
+
+    // DM message (no guild_id) — evaluateDiscord returns shouldRespond=true for DMs
+    const message = makeDiscordMessage({
+      guild_id: undefined,
+      channel_id: 'dm-ch-42',
+      content: 'Hello bot, this is a DM',
+    });
+
+    sendPayload(ws, { op: 0, s: 2, t: 'MESSAGE_CREATE', d: message });
+    await flushPromises(100);
+
+    // Assert at least one SQS SendMessageCommand was captured
+    expect(sqsSentMessages.length).toBeGreaterThanOrEqual(1);
+
+    // The SQS message should target the test queue
+    const sqsMsg = sqsSentMessages.find(
+      (m: any) => m.input?.QueueUrl === 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue'
+    );
+    expect(sqsMsg).toBeTruthy();
+
+    // The MessageBody should contain the envelope with the correct conversationId
+    const body = JSON.parse((sqsMsg as any).input.MessageBody);
+    expect(body.envelope.conversationId).toBe('dm-ch-42');
+    expect(body.envelope.platform).toBe('discord');
+    expect(body.envelope.avatarId).toBe('avatar-test-001');
+
+    conn.stop();
+  });
+
+  it('enqueues SQS message when bot is mentioned in a guild', async () => {
+    const { conn, ws, internals } = createConnection();
+    const binding = makeAvatarBinding();
+    conn.addAvatar(binding as any);
+    doHandshake(ws);
+
+    sqsSentMessages.length = 0;
+
+    // Guild message with bot mention — evaluateDiscord reaches isBotMentioned
+    const botUserId = internals.botUserId!;
+    const message = makeDiscordMessage({
+      channel_id: 'ch-mention-test',
+      guild_id: 'guild-200',
+      content: `Hey <@${botUserId}> what's up?`,
+      mentions: [{ id: botUserId, username: 'TestBot' }],
+    });
+
+    sendPayload(ws, { op: 0, s: 3, t: 'MESSAGE_CREATE', d: message });
+    await flushPromises(100);
+
+    expect(sqsSentMessages.length).toBeGreaterThanOrEqual(1);
+
+    const sqsMsg = sqsSentMessages.find(
+      (m: any) => m.input?.QueueUrl === 'https://sqs.us-east-1.amazonaws.com/123456789/test-queue'
+    );
+    expect(sqsMsg).toBeTruthy();
+
+    const body = JSON.parse((sqsMsg as any).input.MessageBody);
+    expect(body.envelope.conversationId).toBe('ch-mention-test');
+    expect(body.envelope.metadata.isMention).toBe(true);
+
+    conn.stop();
+  });
+
+  it('does not enqueue when a guild message has no mention (shouldRespond=false)', async () => {
     const { conn, ws } = createConnection();
     const binding = makeAvatarBinding();
     conn.addAvatar(binding as any);
     doHandshake(ws);
 
-    const message = makeDiscordMessage();
+    sqsSentMessages.length = 0;
 
-    // Dispatch MESSAGE_CREATE — this exercises the full handlePayload path
-    // but may not enqueue because of the stateService/evaluator mocks
-    sendPayload(ws, { op: 0, s: 2, t: 'MESSAGE_CREATE', d: message });
+    // Guild message without mention — evaluateDiscord returns shouldRespond=false
+    const message = makeDiscordMessage({
+      channel_id: 'ch-no-mention',
+      guild_id: 'guild-200',
+      content: 'Just chatting among humans',
+      mentions: [],
+    });
 
-    // Give async handlers time to resolve
-    await new Promise(resolve => setTimeout(resolve, 50));
+    sendPayload(ws, { op: 0, s: 4, t: 'MESSAGE_CREATE', d: message });
+    await flushPromises(100);
+
+    // No SQS message should be sent for this channel
+    const sqsMsg = sqsSentMessages.find((m: any) => {
+      const body = m.input?.MessageBody;
+      if (!body) return false;
+      try {
+        return JSON.parse(body).envelope?.conversationId === 'ch-no-mention';
+      } catch { return false; }
+    });
+    expect(sqsMsg).toBeUndefined();
 
     conn.stop();
   });
@@ -501,7 +658,7 @@ describe('MESSAGE_CREATE dispatch', () => {
     // op: 0 with no `t` field — should be silently ignored
     sendPayload(ws, { op: 0, s: 3, d: {} });
 
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await flushPromises();
     conn.stop();
   });
 
@@ -513,6 +670,38 @@ describe('MESSAGE_CREATE dispatch', () => {
     sendPayload(ws, { op: 0, s: 10, t: 'RESUMED', d: {} });
 
     expect(internals.reconnectAttempts).toBe(0);
+    conn.stop();
+  });
+
+  it('skips bot-authored messages when ignoreBots is true', async () => {
+    const { conn, ws } = createConnection();
+    const binding = makeAvatarBinding();
+    conn.addAvatar(binding as any);
+    doHandshake(ws);
+
+    sqsSentMessages.length = 0;
+
+    // DM from a bot — should be filtered by buildDiscordEnvelope or evaluator
+    const message = makeDiscordMessage({
+      guild_id: undefined,
+      channel_id: 'dm-bot-ch',
+      author: { id: 'bot-999', username: 'AnotherBot', bot: true },
+      content: 'I am a bot',
+    });
+
+    sendPayload(ws, { op: 0, s: 5, t: 'MESSAGE_CREATE', d: message });
+    await flushPromises(100);
+
+    // No SQS enqueue for bot messages
+    const sqsMsg = sqsSentMessages.find((m: any) => {
+      const body = m.input?.MessageBody;
+      if (!body) return false;
+      try {
+        return JSON.parse(body).envelope?.conversationId === 'dm-bot-ch';
+      } catch { return false; }
+    });
+    expect(sqsMsg).toBeUndefined();
+
     conn.stop();
   });
 });
@@ -615,4 +804,314 @@ describe('Close code handling', () => {
       conn.stop();
     });
   }
+});
+
+// ===========================================================================
+// Shared Room / Multi-Avatar Routing
+// ===========================================================================
+
+describe('Shared room / multi-avatar routing', () => {
+  it('routes a shared-room message once with a room-scoped key when 2+ avatars share a channel', async () => {
+    // Import room-ingress to register a custom Discord channel resolver
+    const { registerChannelAvatarResolver, unregisterChannelAvatarResolver } = await import(
+      './services/room-ingress.js'
+    );
+
+    const sharedChannelId = 'shared-ch-999';
+
+    // Register a Discord resolver that reports 2 avatars in the shared channel
+    registerChannelAvatarResolver('discord' as any, async (channelId: string) => {
+      if (channelId === sharedChannelId) return ['avatar-A', 'avatar-B'];
+      return [];
+    });
+
+    try {
+      const { conn, ws } = createConnection();
+      const bindingA = makeAvatarBinding({
+        avatarId: 'avatar-A',
+        config: {
+          avatarId: 'avatar-A',
+          name: 'AvatarA',
+          platforms: {
+            discord: {
+              enabled: true,
+              allowedGuilds: [],
+              allowedChannels: [],
+            },
+          },
+          behavior: { ignoreBots: true },
+        },
+      });
+      const bindingB = makeAvatarBinding({
+        avatarId: 'avatar-B',
+        config: {
+          avatarId: 'avatar-B',
+          name: 'AvatarB',
+          platforms: {
+            discord: {
+              enabled: true,
+              allowedGuilds: [],
+              allowedChannels: [],
+            },
+          },
+          behavior: { ignoreBots: true },
+        },
+      });
+      conn.addAvatar(bindingA as any);
+      conn.addAvatar(bindingB as any);
+      doHandshake(ws);
+
+      sqsSentMessages.length = 0;
+
+      const message = makeDiscordMessage({
+        id: 'shared-msg-001',
+        channel_id: sharedChannelId,
+        guild_id: 'guild-shared',
+        content: 'Hello shared room',
+      });
+
+      sendPayload(ws, { op: 0, s: 2, t: 'MESSAGE_CREATE', d: message });
+      await flushPromises(150);
+
+      // Find SQS messages for this channel
+      const sharedSqsMsgs = sqsSentMessages.filter((m: any) => {
+        const body = m.input?.MessageBody;
+        if (!body) return false;
+        try {
+          const parsed = JSON.parse(body);
+          return parsed.roomKey === `discord:${sharedChannelId}`;
+        } catch { return false; }
+      });
+
+      // Exactly one SQS message should be sent for the shared room
+      expect(sharedSqsMsgs.length).toBe(1);
+
+      // The MessageGroupId should be the room-scoped key, not per-avatar
+      const sqsInput = (sharedSqsMsgs[0] as any).input;
+      expect(sqsInput.MessageGroupId).toBe(`discord:${sharedChannelId}`);
+
+      // The MessageDeduplicationId should reference the message ID
+      expect(sqsInput.MessageDeduplicationId).toBe(`discord:shared-msg-001`);
+
+      conn.stop();
+    } finally {
+      unregisterChannelAvatarResolver('discord' as any);
+    }
+  });
+
+  it('uses per-avatar enqueue when only one avatar listens to a channel', async () => {
+    const { registerChannelAvatarResolver, unregisterChannelAvatarResolver } = await import(
+      './services/room-ingress.js'
+    );
+
+    const singleChannelId = 'single-ch-123';
+
+    // Only one avatar in this channel — not a shared room
+    registerChannelAvatarResolver('discord' as any, async (channelId: string) => {
+      if (channelId === singleChannelId) return ['avatar-solo'];
+      return [];
+    });
+
+    try {
+      const { conn, ws, internals } = createConnection();
+      const binding = makeAvatarBinding({
+        avatarId: 'avatar-solo',
+        config: {
+          avatarId: 'avatar-solo',
+          name: 'SoloAvatar',
+          platforms: {
+            discord: {
+              enabled: true,
+              respondInDMs: true,
+              allowedGuilds: [],
+              allowedChannels: [],
+            },
+          },
+          behavior: { ignoreBots: true },
+        },
+      });
+      conn.addAvatar(binding as any);
+      doHandshake(ws);
+
+      sqsSentMessages.length = 0;
+      const botUserId = internals.botUserId!;
+
+      // DM to ensure shouldRespond=true
+      const message = makeDiscordMessage({
+        id: 'solo-msg-001',
+        channel_id: singleChannelId,
+        guild_id: undefined,
+        content: 'Hello solo avatar',
+      });
+
+      sendPayload(ws, { op: 0, s: 2, t: 'MESSAGE_CREATE', d: message });
+      await flushPromises(150);
+
+      // Should go through single-avatar path (per-avatar MessageGroupId)
+      const soloSqsMsgs = sqsSentMessages.filter((m: any) => {
+        const body = m.input?.MessageBody;
+        if (!body) return false;
+        try {
+          const parsed = JSON.parse(body);
+          return parsed.envelope?.conversationId === singleChannelId;
+        } catch { return false; }
+      });
+
+      expect(soloSqsMsgs.length).toBeGreaterThanOrEqual(1);
+
+      // Per-avatar path uses avatarId#channelId as MessageGroupId
+      const sqsInput = (soloSqsMsgs[0] as any).input;
+      expect(sqsInput.MessageGroupId).toBe(`avatar-solo#${singleChannelId}`);
+
+      conn.stop();
+    } finally {
+      unregisterChannelAvatarResolver('discord' as any);
+    }
+  });
+});
+
+// ===========================================================================
+// Resume / Reconnect Flow (real reconnect cycle)
+// ===========================================================================
+
+describe('Resume / reconnect flow', () => {
+  it('creates a new WebSocket and sends RESUME after a recoverable close', async () => {
+    wsInstances.length = 0;
+    wsSentPayloads.length = 0;
+
+    const conn = new GatewayConnection('resume-token', 0);
+    conn.start();
+    const internals = conn as unknown as GatewayInternals;
+
+    // First WebSocket instance (initial connection)
+    const ws1 = internals.ws! as unknown as MockWebSocket;
+    expect(wsInstances.length).toBe(1);
+
+    // Complete handshake on ws1
+    sendHello(ws1);
+    sendReady(ws1, {
+      session_id: 'resume-sess-001',
+      resume_gateway_url: 'wss://resume.discord.gg',
+      user: { id: 'bot-resume-42', username: 'ResumeBot' },
+    });
+
+    expect(internals.sessionId).toBe('resume-sess-001');
+    expect(internals.resumeGatewayUrl).toBe('wss://resume.discord.gg');
+    expect(internals.shouldResume).toBe(true);
+
+    const seqBefore = internals.sequence;
+
+    // Simulate a recoverable close (code 4000 = unknown error, reconnectable)
+    ws1._emit('close', 4000, Buffer.from('Unknown error'));
+
+    // scheduleReconnect sets shouldResume=true, clears ws, increments attempts
+    expect(internals.shouldResume).toBe(true);
+    expect(internals.ws).toBeNull();
+    expect(internals.reconnectAttempts).toBe(1);
+
+    // Wait for the reconnect timer to fire and create a new WebSocket
+    // Reconnect delay for attempt 0 with code 4000 is ~1s, but we wait up to 3s
+    await flushPromises(3000);
+
+    // A new WebSocket instance should have been created
+    expect(wsInstances.length).toBeGreaterThanOrEqual(2);
+
+    // Get the new WebSocket
+    const ws2 = internals.ws as unknown as MockWebSocket;
+    expect(ws2).not.toBeNull();
+    expect(ws2).not.toBe(ws1);
+
+    // Simulate the new connection receiving HELLO
+    wsSentPayloads.length = 0;
+    sendHello(ws2);
+
+    // Since shouldResume=true and sessionId exists, it should send RESUME (op 6)
+    const resumePayload = wsSentPayloads.find((p: any) => p.op === 6) as any;
+    expect(resumePayload).toBeTruthy();
+    expect(resumePayload.d.token).toBe('resume-token');
+    expect(resumePayload.d.session_id).toBe('resume-sess-001');
+    expect(resumePayload.d.seq).toBe(seqBefore);
+
+    // Should NOT have sent IDENTIFY (op 2)
+    const identifyPayload = wsSentPayloads.find((p: any) => p.op === 2);
+    expect(identifyPayload).toBeUndefined();
+
+    conn.stop();
+  });
+
+  it('sends IDENTIFY (not RESUME) after a session-invalidating close', async () => {
+    wsInstances.length = 0;
+    wsSentPayloads.length = 0;
+
+    const conn = new GatewayConnection('identify-token', 0);
+    conn.start();
+    const internals = conn as unknown as GatewayInternals;
+
+    const ws1 = internals.ws! as unknown as MockWebSocket;
+
+    // Complete handshake
+    sendHello(ws1);
+    sendReady(ws1, {
+      session_id: 'doomed-sess',
+      resume_gateway_url: 'wss://resume.discord.gg',
+      user: { id: 'bot-id-7', username: 'IdentifyBot' },
+    });
+
+    expect(internals.sessionId).toBe('doomed-sess');
+
+    // Close code 4007 (invalid sequence) invalidates the session
+    ws1._emit('close', 4007, Buffer.from('Invalid seq'));
+
+    expect(internals.sessionId).toBeNull();
+    expect(internals.sequence).toBeNull();
+    expect(internals.resumeGatewayUrl).toBeNull();
+
+    // Wait for reconnect
+    await flushPromises(3000);
+
+    const ws2 = internals.ws as unknown as MockWebSocket;
+    expect(ws2).not.toBeNull();
+
+    // Simulate HELLO on new connection
+    wsSentPayloads.length = 0;
+    sendHello(ws2);
+
+    // Should send IDENTIFY (op 2), not RESUME
+    const identifyPayload = wsSentPayloads.find((p: any) => p.op === 2) as any;
+    expect(identifyPayload).toBeTruthy();
+    expect(identifyPayload.d.token).toBe('identify-token');
+
+    const resumePayload = wsSentPayloads.find((p: any) => p.op === 6);
+    expect(resumePayload).toBeUndefined();
+
+    conn.stop();
+  });
+
+  it('preserves avatar bindings across reconnect', async () => {
+    wsInstances.length = 0;
+
+    const conn = new GatewayConnection('persist-token', 0);
+    const bindingX = makeAvatarBinding({ avatarId: 'persist-avatar-X' });
+    const bindingY = makeAvatarBinding({ avatarId: 'persist-avatar-Y' });
+    conn.addAvatar(bindingX as any);
+    conn.addAvatar(bindingY as any);
+    conn.start();
+    const internals = conn as unknown as GatewayInternals;
+
+    const ws1 = internals.ws! as unknown as MockWebSocket;
+    doHandshake(ws1);
+
+    expect(conn.avatarBindings.size).toBe(2);
+
+    // Trigger reconnect
+    ws1._emit('close', 4000, Buffer.from('Reconnect'));
+    await flushPromises(3000);
+
+    // Bindings should still be present after reconnect
+    expect(conn.avatarBindings.size).toBe(2);
+    expect(conn.avatarBindings.has('persist-avatar-X')).toBe(true);
+    expect(conn.avatarBindings.has('persist-avatar-Y')).toBe(true);
+
+    conn.stop();
+  });
 });
