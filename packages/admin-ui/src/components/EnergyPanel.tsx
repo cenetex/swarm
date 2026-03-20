@@ -3,6 +3,7 @@
  * Displays avatar energy status with dynamic refill rate based on $RATI token holdings.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as avatarApi from '../api/avatars';
 import type { EnergyStatus, EnergyEvent } from '../api/avatars';
 
@@ -15,16 +16,18 @@ interface EnergyPanelProps {
 /**
  * Format duration in human-readable format
  */
-function formatDuration(ms: number): string {
-  if (ms <= 0) return 'now';
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+
+function formatDuration(ms: number, t: TranslateFn): string {
+  if (ms <= 0) return t('energy.now');
   
   const hours = Math.floor(ms / (1000 * 60 * 60));
   const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
   
   if (hours > 0) {
-    return `${hours}h ${minutes}m`;
+    return t('energy.durationHoursMinutes', { hours, minutes });
   }
-  return `${minutes}m`;
+  return t('energy.durationMinutes', { minutes });
 }
 
 /**
@@ -43,15 +46,16 @@ function formatTokenBalance(balance: number): string {
 /**
  * Format relative time
  */
-function formatRelativeTime(timestamp: number): string {
+function formatRelativeTime(timestamp: number, t: TranslateFn): string {
   const diff = Date.now() - timestamp;
-  if (diff < 60_000) return 'just now';
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
-  return `${Math.floor(diff / 86400_000)}d ago`;
+  if (diff < 60_000) return t('energy.justNow');
+  if (diff < 3600_000) return t('energy.minutesAgo', { minutes: Math.floor(diff / 60_000) });
+  if (diff < 86400_000) return t('energy.hoursAgo', { hours: Math.floor(diff / 3600_000) });
+  return t('energy.daysAgo', { days: Math.floor(diff / 86400_000) });
 }
 
 export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: EnergyPanelProps) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<EnergyStatus | null>(null);
   const [history, setHistory] = useState<EnergyEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,37 +73,37 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
       setStatus(data);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load energy status');
+      setError(e instanceof Error ? e.message : t('energy.loadStatusFailed'));
     } finally {
       setLoading(false);
     }
-  }, [avatarId]);
+  }, [avatarId, t]);
 
   const fetchHistory = useCallback(async () => {
     try {
       const data = await avatarApi.getEnergyHistory(avatarId, 10);
       setHistory(data.events);
     } catch (e) {
-      console.error('Failed to load energy history:', e);
+      console.error(t('energy.loadHistoryFailed'), e);
     }
-  }, [avatarId]);
+  }, [avatarId, t]);
 
   const handleBurn = useCallback(async () => {
     setBurnBusy(true);
     setBurnMessage(null);
     try {
       await avatarApi.burnDepositedTokensForEnergy(avatarId);
-      setBurnMessage('Burn completed. Credits added to bank.');
+      setBurnMessage(t('energy.burnComplete'));
       await fetchStatus();
       if (showHistory) {
         await fetchHistory();
       }
     } catch (e) {
-      setBurnMessage(e instanceof Error ? e.message : 'Burn failed');
+      setBurnMessage(e instanceof Error ? e.message : t('energy.burnFailed'));
     } finally {
       setBurnBusy(false);
     }
-  }, [avatarId, fetchHistory, fetchStatus, showHistory]);
+  }, [avatarId, fetchHistory, fetchStatus, showHistory, t]);
 
   useEffect(() => {
     fetchStatus();
@@ -121,7 +125,7 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
     try {
       const value = parseFloat(adminValue);
       if (isNaN(value) || value < 0) {
-        throw new Error('Invalid value');
+        throw new Error(t('energy.invalidValue'));
       }
 
       if (adminAction === 'set') {
@@ -134,7 +138,7 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
       setAdminAction(null);
       setAdminValue('');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed');
+      setError(e instanceof Error ? e.message : t('energy.actionFailed'));
     } finally {
       setActionBusy(false);
     }
@@ -157,7 +161,7 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
           onClick={fetchStatus}
           className="mt-2 text-xs text-red-400 hover:text-red-300 underline"
         >
-          Retry
+          {t('common.retry')}
         </button>
       </div>
     );
@@ -200,16 +204,16 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-xl">⚡</span>
-          <span className="text-sm font-medium text-[var(--color-text-secondary)]">Energy</span>
+          <span className="text-sm font-medium text-[var(--color-text-secondary)]">{t('energy.title')}</span>
         </div>
         <div className="flex gap-1">
           <button
             onClick={handleBurn}
             disabled={burnBusy}
             className="px-2 py-1 text-xs rounded transition-colors bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] disabled:opacity-50"
-            title="Burn deposited memecoins in this avatar wallet into energy bank credits"
+            title={t('energy.burnDepositsTitle')}
           >
-            {burnBusy ? 'Burning…' : 'Burn deposits'}
+            {burnBusy ? t('energy.burning') : t('energy.burnDeposits')}
           </button>
 
           {isAdmin && (
@@ -221,8 +225,8 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
                     ? 'bg-brand-500 text-white'
                     : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]'
                 }`}
-              >
-                Set
+                >
+                {t('energy.set')}
               </button>
               <button
                 onClick={() => setAdminAction(adminAction === 'add' ? null : 'add')}
@@ -231,8 +235,8 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
                     ? 'bg-brand-500 text-white'
                     : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]'
                 }`}
-              >
-                Add
+                >
+                {t('energy.add')}
               </button>
             </>
           )}
@@ -246,7 +250,7 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
             type="number"
             value={adminValue}
             onChange={(e) => setAdminValue(e.target.value)}
-            placeholder={adminAction === 'set' ? 'Set to...' : 'Add amount...'}
+            placeholder={adminAction === 'set' ? t('energy.setToPlaceholder') : t('energy.addAmountPlaceholder')}
             min="0"
             max={adminAction === 'set' ? status.maxEnergy : undefined}
             step="0.1"
@@ -257,7 +261,7 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
             disabled={actionBusy || !adminValue}
             className="px-3 py-1.5 text-sm bg-brand-500 text-white rounded-lg hover:bg-brand-600 disabled:opacity-50"
           >
-            {actionBusy ? '...' : 'Apply'}
+            {actionBusy ? t('common.loading') : t('energy.apply')}
           </button>
         </div>
       )}
@@ -280,13 +284,13 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
       {/* Refill Rate */}
       <div className="flex items-center justify-between text-xs text-[var(--color-text-tertiary)] mb-2">
         <div className="flex items-center gap-1">
-          <span>Refill:</span>
+          <span>{t('energy.refill')}</span>
           <span className="font-mono text-[var(--color-text-secondary)]">
             +{status.refillPerHour.toFixed(1)}/hr
           </span>
           {hasBonus && (
             <span className="text-green-400 ml-1">
-              (base {status.baseRefillPerHour} + {status.bonusRefillPerHour.toFixed(1)} bonus)
+              {t('energy.bonusRefill', { base: status.baseRefillPerHour, bonus: status.bonusRefillPerHour.toFixed(1) })}
             </span>
           )}
         </div>
@@ -297,12 +301,12 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
         <div className="flex items-center gap-2 text-xs bg-green-900/20 text-green-300 px-2 py-1 rounded-lg mb-2">
           <span>💎</span>
           <span>
-            {formatTokenBalance(status.ownerTokenBalance)} $RATI → +{status.bonusRefillPerHour.toFixed(1)}/hr bonus
+            {t('energy.tokenBonus', { balance: formatTokenBalance(status.ownerTokenBalance), bonus: status.bonusRefillPerHour.toFixed(1) })}
           </span>
         </div>
       ) : (
         <div className="text-xs text-[var(--color-text-muted)] mb-2">
-          💡 Hold $RATI tokens for faster energy recovery!
+          💡 {t('energy.holdTokens')}
         </div>
       )}
 
@@ -310,7 +314,7 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
         <div className="flex items-center gap-2 text-xs bg-blue-900/20 text-blue-300 px-2 py-1 rounded-lg mb-2">
           <span>🏦</span>
           <span>
-            Bank credits: {status.bankCredits}
+            {t('energy.bankCredits')} {status.bankCredits}
           </span>
         </div>
       )}
@@ -320,14 +324,14 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
         {status.currentEnergy < status.maxEnergy ? (
           <>
             <span>
-              Next ⚡: {status.timeToNextEnergy ? formatDuration(status.timeToNextEnergy) : 'calculating...'}
+              {t('energy.nextCharge')}: {status.timeToNextEnergy ? formatDuration(status.timeToNextEnergy, t) : t('energy.calculating')}
             </span>
             <span>
-              Full: {status.timeToFull ? formatDuration(status.timeToFull) : 'calculating...'}
+              {t('energy.full')} {status.timeToFull ? formatDuration(status.timeToFull, t) : t('energy.calculating')}
             </span>
           </>
         ) : (
-          <span className="text-green-400">✓ Fully charged!</span>
+          <span className="text-green-400">✓ {t('energy.fullyCharged')}</span>
         )}
       </div>
 
@@ -353,7 +357,7 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
         >
           <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
         </svg>
-        {showHistory ? 'Hide History' : 'Show History'}
+        {showHistory ? t('energy.hideHistory') : t('energy.showHistory')}
       </button>
 
       {/* History List */}
@@ -361,7 +365,7 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
         <div className="mt-3 space-y-2 border-t border-[var(--color-border)] pt-3">
           {history.length === 0 ? (
             <div className="text-xs text-[var(--color-text-muted)] text-center py-2">
-              No recent energy events
+              {t('energy.noRecentEvents')}
             </div>
           ) : (
             history.map((event) => (
@@ -385,7 +389,7 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
                     {event.energyBefore.toFixed(1)} → {event.energyAfter.toFixed(1)}
                   </span>
                   <span className="text-[var(--color-text-muted)]">
-                    {formatRelativeTime(event.timestamp)}
+                    {formatRelativeTime(event.timestamp, t)}
                   </span>
                 </div>
               </div>

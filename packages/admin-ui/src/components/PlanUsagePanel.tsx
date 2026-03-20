@@ -6,6 +6,7 @@
  * Single fetch lifecycle with clear loading/error states.
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   getAvatarEffectiveLimits,
   setAvatarEntitlement,
@@ -49,17 +50,72 @@ function meterTextColor(pct: number): string {
   return 'text-green-400';
 }
 
-function formatLimit(limit: number): string {
-  if (limit === -1) return 'unlimited';
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+
+function formatLimit(limit: number, t: TranslateFn): string {
+  if (limit === -1) return t('upgrade.unlimited');
   return String(limit);
 }
 
-function formatLimitValue(value: unknown): string {
-  if (value === null || value === undefined) return '-';
-  if (typeof value === 'boolean') return value ? 'yes' : 'no';
+function formatLimitValue(value: unknown, t: TranslateFn): string {
+  if (value === null || value === undefined) return t('upgrade.notAvailable');
+  if (typeof value === 'boolean') return value ? t('upgrade.yes') : t('upgrade.no');
   if (typeof value === 'number') return String(value);
   if (typeof value === 'string') return value;
   return JSON.stringify(value);
+}
+
+function getPlanLabel(plan: PlanType | string, t: TranslateFn): string {
+  switch (plan) {
+    case 'free':
+      return t('upgrade.plans.free');
+    case 'pro':
+      return t('upgrade.plans.pro');
+    case 'team':
+      return t('upgrade.plans.team');
+    case 'enterprise':
+      return t('upgrade.plans.enterprise');
+    default:
+      return plan;
+  }
+}
+
+function getPlanOptionLabel(plan: PlanType | string, t: TranslateFn): string {
+  switch (plan) {
+    case 'free':
+      return t('upgrade.planOptions.free');
+    case 'pro':
+      return t('upgrade.planOptions.pro');
+    case 'team':
+      return t('upgrade.planOptions.team');
+    case 'enterprise':
+      return t('upgrade.planOptions.enterprise');
+    default:
+      return plan;
+  }
+}
+
+function getLimitLabel(key: string, t: TranslateFn): string {
+  switch (key) {
+    case 'memoryEnabled':
+      return t('upgrade.limitLabels.memoryEnabled');
+    case 'memoryRetentionDays':
+      return t('upgrade.limitLabels.memoryRetentionDays');
+    case 'dailyMessageLimit':
+      return t('upgrade.limitLabels.dailyMessageLimit');
+    case 'dailyMediaCredits':
+      return t('upgrade.limitLabels.dailyMediaCredits');
+    case 'dailyVoiceMinutes':
+      return t('upgrade.limitLabels.dailyVoiceMinutes');
+    case 'maxToolCallsPerMessage':
+      return t('upgrade.limitLabels.maxToolCallsPerMessage');
+    case 'autonomousPostsEnabled':
+      return t('upgrade.limitLabels.autonomousPostsEnabled');
+    case 'priorityProcessing':
+      return t('upgrade.limitLabels.priorityProcessing');
+    default:
+      return key;
+  }
 }
 
 function planBadgeColor(plan: string): string {
@@ -128,9 +184,11 @@ function Sparkline({
 function MeterBar({
   meter,
   sparkData,
+  t,
 }: {
   meter: UsageMeter;
   sparkData?: number[];
+  t: TranslateFn;
 }) {
   const isUnlimited = meter.limit === -1;
   const pct = isUnlimited ? 0 : meterPercent(meter);
@@ -152,7 +210,7 @@ function MeterBar({
             />
           )}
           <span className={`font-mono ${isUnlimited ? 'text-brand-400' : meterTextColor(pct)}`}>
-            {meter.used}{isUnlimited ? '' : `/${formatLimit(meter.limit)}`}
+            {meter.used}{isUnlimited ? '' : `/${formatLimit(meter.limit, t)}`}
           </span>
         </div>
       </div>
@@ -169,6 +227,7 @@ function MeterBar({
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initialInviteCode }: PlanUsagePanelProps) {
+  const { t } = useTranslation();
   // Plan/entitlement state
   const [effective, setEffective] = useState<EffectiveLimitsResponse | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlanType>('free');
@@ -217,13 +276,21 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
         setEffective(limitsResult.value);
         setSelectedPlan(limitsResult.value.plan);
       } else {
-        errors.push(`Plan limits: ${limitsResult.reason instanceof Error ? limitsResult.reason.message : 'unavailable'}`);
+      errors.push(
+          t('upgrade.errors.planLimits', {
+            message: limitsResult.reason instanceof Error ? limitsResult.reason.message : t('upgrade.unavailable'),
+          }),
+      );
       }
 
       if (usageResult.status === 'fulfilled') {
         setUsage(usageResult.value);
       } else {
-        errors.push(`Usage data: ${usageResult.reason instanceof Error ? usageResult.reason.message : 'unavailable'}`);
+        errors.push(
+          t('upgrade.errors.usageData', {
+            message: usageResult.reason instanceof Error ? usageResult.reason.message : t('upgrade.unavailable'),
+          }),
+        );
       }
 
       if (historyResult.status === 'fulfilled') {
@@ -236,12 +303,12 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
         setError(errors.join('; '));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load plan & usage data');
+      setError(e instanceof Error ? e.message : t('upgrade.errors.loadPlanUsage'));
     } finally {
       setLoading(false);
       hasFetchedRef.current = true;
     }
-  }, [avatarId]);
+  }, [avatarId, t]);
 
   useEffect(() => {
     fetchData();
@@ -265,7 +332,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
       setEffective(limitsData);
       setUsage(usageData);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update plan');
+      setError(e instanceof Error ? e.message : t('upgrade.errors.updatePlan'));
     } finally {
       setSaving(false);
     }
@@ -280,7 +347,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
       const { url } = await createCheckoutSession(avatarId, targetPlan);
       window.location.href = url;
     } catch (e) {
-      setBillingError(e instanceof Error ? e.message : 'Checkout failed');
+      setBillingError(e instanceof Error ? e.message : t('upgrade.errors.checkoutFailed'));
       setUpgrading(false);
     }
   };
@@ -292,7 +359,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
       const { url } = await createPortalSession(avatarId);
       window.location.href = url;
     } catch (e) {
-      setBillingError(e instanceof Error ? e.message : 'Could not open billing portal');
+      setBillingError(e instanceof Error ? e.message : t('upgrade.errors.billingPortalFailed'));
       setUpgrading(false);
     }
   };
@@ -327,7 +394,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
       setSelectedPlan(limitsData.plan);
       setUsage(usageData);
     } catch (e) {
-      setBillingError(e instanceof Error ? e.message : 'Failed to redeem invite code');
+      setBillingError(e instanceof Error ? e.message : t('upgrade.errors.redeemInviteFailed'));
     } finally {
       setRedeemingInvite(false);
     }
@@ -349,8 +416,8 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
     ];
     return keys
       .filter((k) => Object.prototype.hasOwnProperty.call(limits, k))
-      .map((k) => ({ key: k, value: (limits as Record<string, unknown>)[k] }));
-  }, [effective]);
+      .map((k) => ({ key: k, label: getLimitLabel(k, t), value: (limits as Record<string, unknown>)[k] }));
+  }, [effective, t]);
 
   const msgSpark = history?.map((d) => d.messagesProcessed) ?? [];
   const mediaSpark = history?.map((d) => d.mediaCreditsUsed) ?? [];
@@ -366,7 +433,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
           <button
             onClick={onClose}
             className="p-1 rounded hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
               <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -388,11 +455,11 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
     return (
       <div className="p-4 bg-red-900/20 border border-red-500/30 rounded-xl">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-red-300 text-sm font-medium">Plan & Usage</span>
+          <span className="text-red-300 text-sm font-medium">{t('upgrade.title')}</span>
           <button
             onClick={onClose}
             className="p-1 rounded hover:bg-red-800/30 text-red-400 hover:text-red-300"
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
               <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -404,7 +471,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
           onClick={fetchData}
           className="mt-2 text-xs text-red-400 hover:text-red-300 underline"
         >
-          Retry
+          {t('common.retry')}
         </button>
       </div>
     );
@@ -421,7 +488,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
         <div className="flex items-center gap-2">
           <div>
             <span className="text-sm font-medium text-[var(--color-text)]">
-              Plan & Usage
+              {t('upgrade.title')}
             </span>
             <span className="text-xs text-[var(--color-text-muted)] ml-1.5">
               {avatarName}
@@ -430,7 +497,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
           <span
             className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium uppercase ${planBadgeColor(plan)}`}
           >
-            {plan}
+            {getPlanLabel(plan, t)}
           </span>
           {effective?.source && (
             <span className="text-[10px] text-[var(--color-text-muted)]">
@@ -447,7 +514,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
           <button
             onClick={onClose}
             className="p-1 rounded hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            aria-label="Close panel"
+            aria-label={t('common.close')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
               <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -467,7 +534,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
       {/* Billing success banner (from redirect) */}
       {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('billing') === 'success' && (
         <div className="mb-3 p-2 rounded-lg bg-green-900/20 border border-green-500/30 text-green-400 text-xs">
-          Subscription activated! Your plan will update shortly.
+          {t('upgrade.subscriptionActivated')}
         </div>
       )}
 
@@ -482,7 +549,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                   disabled={upgrading}
                   className="w-full px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors disabled:opacity-50"
                 >
-                  Upgrade Plan
+                  {t('upgrade.upgradePlan')}
                 </button>
               ) : (
                 <div className="space-y-2">
@@ -492,26 +559,26 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                       disabled={upgrading}
                       className="px-3 py-3 rounded-lg bg-blue-500/15 border border-blue-500/30 hover:border-blue-500/50 text-left transition-colors disabled:opacity-50"
                     >
-                      <div className="text-sm font-semibold text-blue-600">Pro</div>
-                      <div className="text-lg font-bold text-[var(--color-text)]">$9<span className="text-xs font-normal text-[var(--color-text-secondary)]">/mo</span></div>
+                      <div className="text-sm font-semibold text-blue-600">{getPlanLabel('pro', t)}</div>
+                      <div className="text-lg font-bold text-[var(--color-text)]">{t('upgrade.creatorMonthlyPrice')}</div>
                       <div className="text-[10px] text-[var(--color-text-secondary)] mt-1 space-y-0.5">
-                        <div>500 msgs/day</div>
-                        <div>50 media credits</div>
-                        <div>30-day memory</div>
-                        <div>3 platforms</div>
+                        <div>{t('upgrade.planCardBullets.pro.messages')}</div>
+                        <div>{t('upgrade.planCardBullets.pro.mediaCredits')}</div>
+                        <div>{t('upgrade.planCardBullets.pro.memory')}</div>
+                        <div>{t('upgrade.planCardBullets.pro.platforms')}</div>
                       </div>
                     </button>
                     <a
                       href="mailto:sales@rati.chat?subject=CosyWorld%20Team%20Plan"
                       className="px-3 py-3 rounded-lg bg-purple-500/15 border border-purple-500/30 hover:border-purple-500/50 text-left transition-colors block"
                     >
-                      <div className="text-sm font-semibold text-purple-600">Team</div>
-                      <div className="text-lg font-bold text-[var(--color-text)]">$299<span className="text-xs font-normal text-[var(--color-text-secondary)]">/mo</span></div>
+                      <div className="text-sm font-semibold text-purple-600">{getPlanLabel('team', t)}</div>
+                      <div className="text-lg font-bold text-[var(--color-text)]">{t('upgrade.teamMonthlyPrice')}</div>
                       <div className="text-[10px] text-[var(--color-text-secondary)] mt-1 space-y-0.5">
-                        <div>Unlimited bots/server</div>
-                        <div>Shared memory</div>
-                        <div>Admin dashboard</div>
-                        <div>Priority access</div>
+                        <div>{t('upgrade.planCardBullets.team.unlimitedBots')}</div>
+                        <div>{t('upgrade.planCardBullets.team.sharedMemory')}</div>
+                        <div>{t('upgrade.planCardBullets.team.adminDashboard')}</div>
+                        <div>{t('upgrade.planCardBullets.team.priorityAccess')}</div>
                       </div>
                     </a>
                   </div>
@@ -519,7 +586,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                     onClick={() => setShowUpgradeOptions(false)}
                     className="w-full text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </button>
                 </div>
               )}
@@ -530,14 +597,14 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                 href="mailto:sales@rati.chat?subject=CosyWorld%20Team%20Plan"
                 className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-purple-500/15 border border-purple-500/30 hover:border-purple-500/50 text-purple-600 font-medium transition-colors text-center"
               >
-                Talk to Us About Team
+                {t('upgrade.talkToUsAboutTeam')}
               </a>
               <button
                 onClick={handleManageBilling}
                 disabled={upgrading}
                 className="px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] hover:border-[var(--color-text-muted)] text-[var(--color-text-secondary)] transition-colors disabled:opacity-50"
               >
-                {upgrading ? '...' : 'Manage Billing'}
+                {upgrading ? t('common.loading') : t('upgrade.manageBilling')}
               </button>
             </div>
           ) : (
@@ -546,7 +613,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
               disabled={upgrading}
               className="w-full px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] hover:border-[var(--color-text-muted)] text-[var(--color-text-secondary)] transition-colors disabled:opacity-50"
             >
-              {upgrading ? 'Loading...' : 'Manage Billing'}
+              {upgrading ? t('common.loading') : t('upgrade.manageBilling')}
             </button>
           )}
         </div>
@@ -568,7 +635,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
               onClick={() => setShowInviteInput(true)}
               className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] underline underline-offset-2"
             >
-              Have an invite code?
+              {t('upgrade.haveInviteCode')}
             </button>
           ) : (
             <div className="flex gap-2">
@@ -577,7 +644,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === 'Enter' && handleRedeemInvite()}
-                placeholder="DP-XXXX-XXXX"
+                placeholder={t('upgrade.invitePlaceholder')}
                 disabled={redeemingInvite}
                 className="flex-1 px-2 py-1.5 text-xs rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] font-mono focus:outline-none focus:border-brand-500 disabled:opacity-50"
                 autoFocus
@@ -587,7 +654,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                 disabled={redeemingInvite || !inviteCode.trim()}
                 className="px-3 py-1.5 text-xs rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-medium transition-colors disabled:opacity-50"
               >
-                {redeemingInvite ? 'Redeeming...' : 'Redeem'}
+                {redeemingInvite ? t('upgrade.redeeming') : t('upgrade.redeem')}
               </button>
               <button
                 onClick={() => { setShowInviteInput(false); setInviteCode(''); }}
@@ -602,7 +669,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
       )}
 
       {/* Inline error banner (partial data loaded) */}
-      {error && (
+          {error && (
         <div className="mb-3 p-2 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 text-xs">
           {error}
         </div>
@@ -610,42 +677,42 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
 
       {/* Tab Switcher */}
       <div className="flex gap-1 mb-3 bg-[var(--color-bg-secondary)] rounded-lg p-0.5">
-        <button
-          onClick={() => setActiveTab('usage')}
-          className={`flex-1 px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-            activeTab === 'usage'
-              ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-text)]'
-              : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
-          }`}
-        >
-          Usage
-        </button>
-        <button
-          onClick={() => setActiveTab('limits')}
-          className={`flex-1 px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-            activeTab === 'limits'
-              ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-text)]'
-              : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
-          }`}
-        >
-          Plan Limits
-        </button>
-      </div>
+          <button
+            onClick={() => setActiveTab('usage')}
+            className={`flex-1 px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              activeTab === 'usage'
+                ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-text)]'
+                : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
+            }`}
+          >
+          {t('upgrade.tabs.usage')}
+          </button>
+          <button
+            onClick={() => setActiveTab('limits')}
+            className={`flex-1 px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              activeTab === 'limits'
+                ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-text)]'
+                : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
+            }`}
+          >
+          {t('upgrade.tabs.limits')}
+          </button>
+        </div>
 
       {/* ── Usage Tab ────────────────────────────────────────────────────── */}
       {activeTab === 'usage' && usage && (
         <>
           {/* Main Meters */}
           <div className="space-y-2.5">
-            <MeterBar meter={usage.meters.messages} sparkData={msgSpark} />
-            <MeterBar meter={usage.meters.media} sparkData={mediaSpark} />
-            <MeterBar meter={usage.meters.voice} sparkData={voiceSpark} />
+            <MeterBar meter={usage.meters.messages} sparkData={msgSpark} t={t} />
+            <MeterBar meter={usage.meters.media} sparkData={mediaSpark} t={t} />
+            <MeterBar meter={usage.meters.voice} sparkData={voiceSpark} t={t} />
           </div>
 
           {/* Energy */}
           {usage.energy && (
             <div className="mt-3 flex items-center gap-2 text-xs bg-[var(--color-bg-secondary)] rounded-lg px-2.5 py-1.5">
-              <span className="text-yellow-400">Energy</span>
+              <span className="text-yellow-400">{t('energy.title')}</span>
               <div className="flex-1 h-1 bg-[var(--color-bg-tertiary)] rounded-full overflow-hidden">
                 <div
                   className="h-full bg-yellow-500 transition-all duration-300 rounded-full"
@@ -656,7 +723,9 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                 {usage.energy.current.toFixed(1)}/{usage.energy.max}
               </span>
               {typeof usage.energy.bankCredits === 'number' && usage.energy.bankCredits > 0 && (
-                <span className="text-blue-400 ml-1">+{usage.energy.bankCredits} bank</span>
+                <span className="text-blue-400 ml-1">
+                  {t('energy.bankCreditsSummary', { credits: usage.energy.bankCredits })}
+                </span>
               )}
             </div>
           )}
@@ -678,7 +747,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                 clipRule="evenodd"
               />
             </svg>
-            {showDetails ? 'Hide Details' : 'Show Details'}
+            {showDetails ? t('upgrade.hideDetails') : t('upgrade.showDetails')}
           </button>
 
           {/* Expanded Details */}
@@ -688,7 +757,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
               {history && history.length > 1 && (
                 <div>
                   <div className="text-xs font-medium text-[var(--color-text-secondary)] mb-2">
-                    7-Day History
+                    {t('upgrade.history7Day')}
                   </div>
                   <div className="grid grid-cols-7 gap-1">
                     {history.map((day) => {
@@ -706,7 +775,11 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                           <div
                             className="w-full bg-brand-500/60 rounded-sm transition-all"
                             style={{ height: `${barHeight}px` }}
-                            title={`${day.date}: ${day.messagesProcessed} msgs, ${day.mediaCreditsUsed} media`}
+                            title={t('upgrade.historyTooltip', {
+                              date: day.date,
+                              messages: day.messagesProcessed,
+                              media: day.mediaCreditsUsed,
+                            })}
                           />
                           <span className="text-[9px] text-[var(--color-text-muted)]">
                             {dayLabel}
@@ -721,9 +794,9 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
               {/* Tool Credit Breakdown */}
               {Object.keys(usage.toolCredits).length > 0 && (
                 <div>
-                  <div className="text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                    Tool Credits
-                  </div>
+              <div className="text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
+                {t('upgrade.toolCredits')}
+              </div>
                   <div className="space-y-1">
                     {Object.entries(usage.toolCredits).map(([tool, credit]) => (
                       <div
@@ -734,9 +807,9 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                           {tool}
                         </span>
                         <span className="text-[var(--color-text-muted)] font-mono">
-                          {credit.remaining}/{credit.limit} credits
+                          {credit.remaining}/{credit.limit} {t('upgrade.credits')}
                           <span className="ml-2 text-[var(--color-text-muted)]">
-                            ({credit.dailyRemaining}/{credit.dailyLimit} daily)
+                            ({credit.dailyRemaining}/{credit.dailyLimit} {t('upgrade.daily')})
                           </span>
                         </span>
                       </div>
@@ -750,7 +823,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
       )}
 
       {activeTab === 'usage' && !usage && (
-        <div className="text-sm text-[var(--color-text-muted)] py-2">No usage data available.</div>
+        <div className="text-sm text-[var(--color-text-muted)] py-2">{t('upgrade.noUsageData')}</div>
       )}
 
       {/* ── Limits Tab ───────────────────────────────────────────────────── */}
@@ -765,17 +838,17 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
                 disabled={loading || saving}
                 className="flex-1 px-3 py-1.5 text-sm rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-60"
               >
-                <option value="free">free</option>
-                <option value="pro">pro (Creator $9/mo)</option>
-                <option value="team">team ($299/mo)</option>
-                <option value="enterprise">enterprise (legacy)</option>
+                <option value="free">{getPlanOptionLabel('free', t)}</option>
+                <option value="pro">{getPlanOptionLabel('pro', t)}</option>
+                <option value="team">{getPlanOptionLabel('team', t)}</option>
+                <option value="enterprise">{getPlanOptionLabel('enterprise', t)}</option>
               </select>
               <button
                 onClick={handleSave}
                 disabled={loading || saving}
                 className="px-3 py-1.5 text-sm rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {saving ? 'Saving...' : 'Save'}
+                {saving ? t('common.loading') : t('common.save')}
               </button>
             </div>
           )}
@@ -784,23 +857,23 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
           {effective ? (
             <div className="space-y-1">
               {limitRows.length > 0 ? (
-                limitRows.map((row) => (
-                  <div key={row.key} className="flex items-center justify-between text-xs py-0.5">
-                    <div className="text-[var(--color-text-secondary)]">{row.key}</div>
-                    <div className="text-[var(--color-text)] font-mono">{formatLimitValue(row.value)}</div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-sm text-[var(--color-text-muted)]">No limits returned.</div>
+                  limitRows.map((row) => (
+                    <div key={row.key} className="flex items-center justify-between text-xs py-0.5">
+                    <div className="text-[var(--color-text-secondary)]">{row.label}</div>
+                    <div className="text-[var(--color-text)] font-mono">{formatLimitValue(row.value, t)}</div>
+                    </div>
+                  ))
+                ) : (
+                <div className="text-sm text-[var(--color-text-muted)]">{t('upgrade.noLimitsReturned')}</div>
               )}
             </div>
           ) : (
-            <div className="text-sm text-[var(--color-text-muted)] py-2">No plan data available.</div>
+            <div className="text-sm text-[var(--color-text-muted)] py-2">{t('upgrade.noPlanData')}</div>
           )}
 
           {!canEdit && (
             <p className="text-xs text-[var(--color-text-muted)] mt-2">
-              Plan editing is admin-only.
+              {t('upgrade.adminOnly')}
             </p>
           )}
         </>
@@ -824,7 +897,7 @@ export function PlanUsagePanel({ avatarId, avatarName, canEdit, onClose, initial
               clipRule="evenodd"
             />
           </svg>
-          Refresh
+          {t('upgrade.refresh')}
         </button>
       </div>
     </div>

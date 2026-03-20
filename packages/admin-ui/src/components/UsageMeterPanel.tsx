@@ -6,6 +6,7 @@
  * inside the chat message stream or sidebar, not as a standalone page.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   getAvatarUsage,
   getAvatarUsageHistory,
@@ -38,9 +39,26 @@ function meterTextColor(pct: number): string {
   return 'text-green-400';
 }
 
-function formatLimit(limit: number): string {
-  if (limit === -1) return 'unlimited';
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+
+function formatLimit(limit: number, t: TranslateFn): string {
+  if (limit === -1) return t('upgrade.unlimitedShort');
   return String(limit);
+}
+
+function getPlanLabel(plan: string, t: TranslateFn): string {
+  switch (plan) {
+    case 'free':
+      return t('upgrade.plans.free');
+    case 'pro':
+      return t('upgrade.plans.pro');
+    case 'team':
+      return t('upgrade.plans.team');
+    case 'enterprise':
+      return t('upgrade.plans.enterprise');
+    default:
+      return plan;
+  }
 }
 
 function planBadgeColor(plan: string): string {
@@ -108,9 +126,11 @@ function Sparkline({
 function MeterBar({
   meter,
   sparkData,
+  t,
 }: {
   meter: UsageMeter;
   sparkData?: number[];
+  t: TranslateFn;
 }) {
   const isUnlimited = meter.limit === -1;
   const pct = isUnlimited ? 0 : meterPercent(meter);
@@ -132,7 +152,7 @@ function MeterBar({
             />
           )}
           <span className={`font-mono ${isUnlimited ? 'text-brand-400' : meterTextColor(pct)}`}>
-            {meter.used}{isUnlimited ? '' : `/${formatLimit(meter.limit)}`}
+            {meter.used}{isUnlimited ? '' : `/${formatLimit(meter.limit, t)}`}
           </span>
         </div>
       </div>
@@ -149,6 +169,7 @@ function MeterBar({
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelProps) {
+  const { t } = useTranslation();
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [history, setHistory] = useState<DailyUsageSummary[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -165,11 +186,11 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
       setHistory(historyData.history);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load usage data');
+      setError(e instanceof Error ? e.message : t('upgrade.errors.loadUsage'));
     } finally {
       setLoading(false);
     }
-  }, [avatarId]);
+  }, [avatarId, t]);
 
   useEffect(() => {
     fetchData();
@@ -184,7 +205,7 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
     if (compact) {
       return (
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[var(--color-text-muted)] text-sm">...</span>
+          <span className="text-[var(--color-text-muted)] text-sm">{t('common.loading')}</span>
           <div className="flex-1 min-w-0 space-y-1">
             <div className="h-1 bg-[var(--color-bg-tertiary)] rounded-full animate-pulse" />
             <div className="h-1 bg-[var(--color-bg-tertiary)] rounded-full animate-pulse w-4/5" />
@@ -212,7 +233,7 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
       return (
         <div className="flex items-center gap-2 text-xs text-amber-400">
           <span>!</span>
-          <span className="truncate">Usage unavailable</span>
+          <span className="truncate">{t('upgrade.usageUnavailableCompact')}</span>
         </div>
       );
     }
@@ -224,7 +245,7 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
           onClick={fetchData}
           className="mt-2 text-xs text-red-400 hover:text-red-300 underline"
         >
-          Retry
+          {t('common.retry')}
         </button>
       </div>
     );
@@ -260,7 +281,7 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
               />
             </div>
             <span className="text-[var(--color-text-muted)] font-mono text-[10px] w-12 text-right">
-              {meters.messages.used}/{meters.messages.limit === -1 ? 'inf' : meters.messages.limit}
+              {meters.messages.used}/{meters.messages.limit === -1 ? t('upgrade.unlimitedShort') : meters.messages.limit}
             </span>
           </div>
           <div className="flex items-center gap-1">
@@ -271,7 +292,7 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
               />
             </div>
             <span className="text-[var(--color-text-muted)] font-mono text-[10px] w-12 text-right">
-              {meters.media.used}/{meters.media.limit === -1 ? 'inf' : meters.media.limit}
+              {meters.media.used}/{meters.media.limit === -1 ? t('upgrade.unlimitedShort') : meters.media.limit}
             </span>
           </div>
         </div>
@@ -287,12 +308,12 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-[var(--color-text-secondary)]">
-            Daily Usage
+            {t('upgrade.dailyUsage')}
           </span>
           <span
             className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium uppercase ${planBadgeColor(usage.plan)}`}
           >
-            {usage.plan}
+            {getPlanLabel(usage.plan, t)}
           </span>
         </div>
         <div className="text-xs text-[var(--color-text-muted)] font-mono">
@@ -302,15 +323,15 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
 
       {/* Main Meters */}
       <div className="space-y-2.5">
-        <MeterBar meter={meters.messages} sparkData={msgSpark} />
-        <MeterBar meter={meters.media} sparkData={mediaSpark} />
-        <MeterBar meter={meters.voice} sparkData={voiceSpark} />
+        <MeterBar meter={meters.messages} sparkData={msgSpark} t={t} />
+        <MeterBar meter={meters.media} sparkData={mediaSpark} t={t} />
+        <MeterBar meter={meters.voice} sparkData={voiceSpark} t={t} />
       </div>
 
       {/* Energy Summary (if available) */}
       {energy && (
         <div className="mt-3 flex items-center gap-2 text-xs bg-[var(--color-bg-secondary)] rounded-lg px-2.5 py-1.5">
-          <span className="text-yellow-400">Energy</span>
+          <span className="text-yellow-400">{t('energy.title')}</span>
           <div className="flex-1 h-1 bg-[var(--color-bg-tertiary)] rounded-full overflow-hidden">
             <div
               className="h-full bg-yellow-500 transition-all duration-300 rounded-full"
@@ -321,7 +342,7 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
             {energy.current.toFixed(1)}/{energy.max}
           </span>
           {typeof energy.bankCredits === 'number' && energy.bankCredits > 0 && (
-            <span className="text-blue-400 ml-1">+{energy.bankCredits} bank</span>
+            <span className="text-blue-400 ml-1">{t('energy.bankCreditsSummary', { credits: energy.bankCredits })}</span>
           )}
         </div>
       )}
@@ -343,7 +364,7 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
             clipRule="evenodd"
           />
         </svg>
-        {showDetails ? 'Hide Details' : 'Show Details'}
+        {showDetails ? t('upgrade.hideDetails') : t('upgrade.showDetails')}
       </button>
 
       {/* Expanded Details */}
@@ -353,7 +374,7 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
           {history && history.length > 1 && (
             <div>
               <div className="text-xs font-medium text-[var(--color-text-secondary)] mb-2">
-                7-Day History
+                {t('upgrade.history7Day')}
               </div>
               <div className="grid grid-cols-7 gap-1">
                 {history.map((day) => {
@@ -372,7 +393,11 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
                       <div
                         className="w-full bg-brand-500/60 rounded-sm transition-all"
                         style={{ height: `${barHeight}px` }}
-                        title={`${day.date}: ${day.messagesProcessed} msgs, ${day.mediaCreditsUsed} media`}
+                        title={t('upgrade.historyTooltip', {
+                          date: day.date,
+                          messages: day.messagesProcessed,
+                          media: day.mediaCreditsUsed,
+                        })}
                       />
                       <span className="text-[9px] text-[var(--color-text-muted)]">
                         {dayLabel}
@@ -388,7 +413,7 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
           {Object.keys(usage.toolCredits).length > 0 && (
             <div>
               <div className="text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                Tool Credits
+                {t('upgrade.toolCredits')}
               </div>
               <div className="space-y-1">
                 {Object.entries(usage.toolCredits).map(([tool, credit]) => (
@@ -400,9 +425,9 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
                       {tool}
                     </span>
                     <span className="text-[var(--color-text-muted)] font-mono">
-                      {credit.remaining}/{credit.limit} credits
+                      {credit.remaining}/{credit.limit} {t('upgrade.credits')}
                       <span className="ml-2 text-[var(--color-text-muted)]">
-                        ({credit.dailyRemaining}/{credit.dailyLimit} daily)
+                        ({credit.dailyRemaining}/{credit.dailyLimit} {t('upgrade.daily')})
                       </span>
                     </span>
                   </div>
@@ -429,7 +454,7 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
                   clipRule="evenodd"
                 />
               </svg>
-              Refresh
+              {t('upgrade.refresh')}
             </button>
           </div>
         </div>

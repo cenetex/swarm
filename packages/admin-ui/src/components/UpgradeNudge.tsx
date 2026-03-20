@@ -7,6 +7,7 @@
  * the `shownNudges` set managed by the parent.
  */
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createCheckoutSession, redeemInviteCode } from '../api/billing';
 import type { LimitErrorInfo } from '../api/chat';
 
@@ -17,26 +18,40 @@ interface UpgradeNudgeProps {
   currentPlan?: 'free' | 'pro' | 'enterprise' | 'team';
 }
 
-const LIMIT_LABELS: Record<string, { title: string; description: string }> = {
-  messages: {
-    title: 'Daily message limit reached',
-    description: 'Free accounts can send up to 50 messages per day.',
-  },
-  media: {
-    title: 'Daily media limit reached',
-    description: 'Free accounts get 5 media credits per day.',
-  },
-  voice: {
-    title: 'Daily voice limit reached',
-    description: 'Free accounts get 2 minutes of voice per day.',
-  },
-  tools: {
-    title: 'Tool call limit reached',
-    description: 'Free accounts can use up to 3 tool calls per message.',
-  },
-};
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+
+function getLimitLabel(limitType: string, t: TranslateFn): { title: string; description: string } {
+  switch (limitType) {
+    case 'messages':
+      return {
+        title: t('upgrade.messages.title'),
+        description: t('upgrade.messages.description'),
+      };
+    case 'media':
+      return {
+        title: t('upgrade.media.title'),
+        description: t('upgrade.media.description'),
+      };
+    case 'voice':
+      return {
+        title: t('upgrade.voice.title'),
+        description: t('upgrade.voice.description'),
+      };
+    case 'tools':
+      return {
+        title: t('upgrade.tools.title'),
+        description: t('upgrade.tools.description'),
+      };
+    default:
+      return {
+        title: t('upgrade.default.title'),
+        description: t('upgrade.default.description'),
+      };
+  }
+}
 
 export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: UpgradeNudgeProps) {
+  const { t } = useTranslation();
   const [upgrading, setUpgrading] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
@@ -44,10 +59,7 @@ export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: Upgr
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const label = LIMIT_LABELS[limitInfo.limitType] ?? {
-    title: 'Usage limit reached',
-    description: 'You have reached your plan limit.',
-  };
+  const label = getLimitLabel(limitInfo.limitType, t);
 
   const handleUpgrade = async () => {
     setUpgrading(true);
@@ -56,7 +68,7 @@ export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: Upgr
       const { url } = await createCheckoutSession(avatarId, 'pro');
       window.location.href = url;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Checkout failed');
+      setError(e instanceof Error ? e.message : t('error.checkoutFailed'));
       setUpgrading(false);
     }
   };
@@ -72,7 +84,7 @@ export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: Upgr
       setInviteCode('');
       setShowInvite(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to redeem code');
+      setError(e instanceof Error ? e.message : t('upgrade.redeemFailed'));
     } finally {
       setRedeeming(false);
     }
@@ -100,7 +112,7 @@ export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: Upgr
             {label.title}
           </div>
           <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
-            {label.description} Upgrade for higher limits, memory, and multi-platform support.
+            {label.description} {t('upgrade.upgradeDescription')}
           </div>
         </div>
       </div>
@@ -131,14 +143,14 @@ export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: Upgr
               disabled={upgrading}
               className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors disabled:opacity-50"
             >
-              {upgrading ? 'Loading...' : 'Upgrade to Creator — $9/mo'}
+              {upgrading ? t('common.loading') : t('upgrade.upgradeToPro')}
             </button>
             {!showInvite && (
               <button
                 onClick={() => setShowInvite(true)}
                 className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] underline underline-offset-2"
               >
-                Have an invite code?
+                {t('upgrade.haveInviteCode')}
               </button>
             )}
           </>
@@ -147,7 +159,7 @@ export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: Upgr
             href="mailto:sales@rati.chat?subject=CosyWorld%20Team%20Plan%20Inquiry"
             className="px-4 py-2 text-sm rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium transition-colors inline-block"
           >
-            Talk to Us About Team — $299/mo
+            {t('upgrade.talkToUs')}
           </a>
         )}
       </div>
@@ -160,7 +172,7 @@ export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: Upgr
             value={inviteCode}
             onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
             onKeyDown={(e) => e.key === 'Enter' && handleRedeem()}
-            placeholder="DP-XXXX-XXXX"
+            placeholder={t('upgrade.invitePlaceholder')}
             disabled={redeeming}
             className="flex-1 px-2 py-1.5 text-xs rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] font-mono focus:outline-none focus:border-brand-500 disabled:opacity-50"
             autoFocus
@@ -170,7 +182,7 @@ export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: Upgr
             disabled={redeeming || !inviteCode.trim()}
             className="px-3 py-1.5 text-xs rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-medium transition-colors disabled:opacity-50"
           >
-            {redeeming ? 'Redeeming...' : 'Redeem'}
+            {redeeming ? t('upgrade.redeeming') : t('upgrade.redeem')}
           </button>
           <button
             onClick={() => { setShowInvite(false); setInviteCode(''); }}
@@ -186,17 +198,17 @@ export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: Upgr
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-[var(--color-text-muted)] pt-1 border-t border-[var(--color-border)]">
         {currentPlan === 'free' ? (
           <>
-            <span>Up to 3 bots</span>
-            <span>Persistent memory</span>
-            <span>300+ models</span>
-            <span>No branding</span>
+            <span>{t('upgrade.benefits.upTo3Bots')}</span>
+            <span>{t('upgrade.benefits.persistentMemory')}</span>
+            <span>{t('upgrade.benefits.models300')}</span>
+            <span>{t('upgrade.benefits.noBranding')}</span>
           </>
         ) : (
           <>
-            <span>Unlimited bots/server</span>
-            <span>Shared memory</span>
-            <span>Admin dashboard</span>
-            <span>Priority access</span>
+            <span>{t('upgrade.benefits.unlimitedBots')}</span>
+            <span>{t('upgrade.benefits.sharedMemory')}</span>
+            <span>{t('upgrade.benefits.adminDashboard')}</span>
+            <span>{t('upgrade.benefits.priorityAccess')}</span>
           </>
         )}
       </div>
