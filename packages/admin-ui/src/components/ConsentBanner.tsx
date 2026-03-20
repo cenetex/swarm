@@ -4,7 +4,7 @@
  * Blocks app usage until consent is given.
  */
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation, Trans } from 'react-i18next';
 import { useConsentStore, CURRENT_POLICY_VERSION } from '../store/consent';
 import { PrivacyPolicy } from './PrivacyPolicy';
 
@@ -24,13 +24,13 @@ export function ConsentBanner() {
               onClick={() => setShowPolicy(false)}
               className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
             >
-              {t('consent.back')}
+              {t('consent.banner.back')}
             </button>
             <button
               onClick={acceptConsent}
               className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-medium transition-colors"
             >
-              {t('consent.iAccept')}
+              {t('consent.banner.accept')}
             </button>
           </div>
         </div>
@@ -45,42 +45,55 @@ export function ConsentBanner() {
         <div className="flex items-center gap-3">
           <span className="text-2xl">🔒</span>
           <h2 className="text-lg font-semibold text-[var(--color-text)]">
-            {t('consent.title')}
+            {t('consent.banner.title')}
           </h2>
         </div>
 
         {/* Summary */}
         <div className="text-sm text-[var(--color-text-secondary)] space-y-3">
           <p>
-            {t('consent.summaryIntro')}{' '}
-            <a href="https://cenetex.com" className="text-brand-400 hover:text-brand-300 underline" target="_blank" rel="noopener noreferrer">Cenetex Inc.</a>
+            <Trans
+              i18nKey="consent.banner.intro"
+              components={{
+                company: (
+                  <a
+                    href="https://cenetex.com"
+                    className="text-brand-400 hover:text-brand-300 underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Cenetex Inc.
+                  </a>
+                ),
+              }}
+            />
           </p>
 
           <div className="space-y-2">
             <ConsentItem
               emoji="👛"
-              title={t('consent.walletIdentity')}
-              desc={t('consent.walletIdentityDesc')}
+              title={t('consent.banner.items.walletIdentity.title')}
+              desc={t('consent.banner.items.walletIdentity.desc')}
             />
             <ConsentItem
               emoji="💬"
-              title={t('consent.aiConversations')}
-              desc={t('consent.aiConversationsDesc')}
+              title={t('consent.banner.items.aiConversations.title')}
+              desc={t('consent.banner.items.aiConversations.desc')}
             />
             <ConsentItem
               emoji="🔗"
-              title={t('consent.blockchainData')}
-              desc={t('consent.blockchainDataDesc')}
+              title={t('consent.banner.items.blockchainData.title')}
+              desc={t('consent.banner.items.blockchainData.desc')}
             />
             <ConsentItem
               emoji="📡"
-              title={t('consent.connectedServices')}
-              desc={t('consent.connectedServicesDesc')}
+              title={t('consent.banner.items.connectedServices.title')}
+              desc={t('consent.banner.items.connectedServices.desc')}
             />
             <ConsentItem
               emoji="🗄️"
-              title={t('consent.storageRetention')}
-              desc={t('consent.storageRetentionDesc')}
+              title={t('consent.banner.items.storageRetention.title')}
+              desc={t('consent.banner.items.storageRetention.desc')}
             />
           </div>
         </div>
@@ -91,22 +104,22 @@ export function ConsentBanner() {
             onClick={() => setShowPolicy(true)}
             className="text-sm text-brand-400 hover:text-brand-300 underline transition-colors order-2 sm:order-1"
           >
-            {t('consent.readFullPolicy', { version: CURRENT_POLICY_VERSION })}
+            {t('consent.banner.readFullPolicy', { version: CURRENT_POLICY_VERSION })}
           </button>
           <div className="flex-1" />
           <button
             onClick={acceptConsent}
             className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-medium transition-colors order-1 sm:order-2"
           >
-            {t('consent.acceptButton')}
+            {t('consent.banner.acceptDetailed')}
           </button>
         </div>
 
         {/* Contact */}
         <p className="text-xs text-[var(--color-text-muted)] text-center">
-          {t('consent.questionsContact')}{' '}
+          {t('consent.banner.questions')}{' '}
           <a href="mailto:privacy@cenetex.com" className="underline hover:text-[var(--color-text-secondary)]">
-            privacy@cenetex.com
+            {t('consent.banner.contactEmail')}
           </a>
         </p>
       </div>
