@@ -361,7 +361,88 @@
     "errorState": "Error",
     "activate": "Activate",
     "planAndUsage": "Plan & Usage",
-    "preview": "Preview"
+    "preview": "Preview",
+    "tabs": {
+      "general": "General",
+      "persona": "Persona",
+      "secrets": "Secrets"
+    },
+    "avatarNameLabel": "Avatar name",
+    "avatarNamePlaceholder": "Avatar name",
+    "unconfiguredAvatarShell": "Unconfigured avatar shell",
+    "configuredAvatar": "Configured avatar",
+    "closeModal": "Close modal",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "What does this avatar do?",
+    "orbSlotTitle": "Orb Slot",
+    "orbSlotDescription": "Slot an Orb NFT into this avatar to explicitly back it.",
+    "unslotOrb": "Unslot",
+    "currentOrb": "Current:",
+    "none": "None",
+    "selectOrbPlaceholder": "Select an Orb…",
+    "slotOrb": "Slot",
+    "noOrbsDetected": "No Orbs detected in your current gate wallet.",
+    "systemPersonaLabel": "System Persona",
+    "systemPersonaDescription": "Define the avatar's personality, expertise, and behavior.",
+    "systemPersonaPlaceholder": "You are a helpful AI assistant that specializes in...\n\nYou have expertise in:\n- Topic 1\n- Topic 2\n\nYour communication style is...",
+    "configuredSecretsLabel": "Configured Secrets",
+    "secretState": {
+      "set": "Set",
+      "notSet": "Not set"
+    },
+    "addSecretLabel": "Add Secret",
+    "quickAdd": "Quick add:",
+    "customSecretPlaceholder": "CUSTOM_SECRET_KEY",
+    "addSecret": "Add",
+    "secretsNote": "Secrets are stored encrypted in AWS Secrets Manager. The values will be set when you deploy the avatar.",
+    "deleteAvatarConfirm": "Click again to confirm",
+    "deleteAvatar": "Delete Avatar",
+    "saveChanges": "Save Changes",
+    "saving": "Saving...",
+    "reassignTitle": "Reassign Avatar",
+    "idLabel": "ID:",
+    "creatorWalletLabel": "Creator Wallet",
+    "creatorWalletPlaceholder": "Enter Solana wallet address",
+    "creatorWalletHelper": "The wallet that created this avatar. Changing this affects slot counting.",
+    "reassignFailed": "Failed to reassign avatar.",
+    "errors": {
+      "slotOrbFailed": "Failed to slot Orb.",
+      "unslotOrbFailed": "Failed to unslot Orb."
+    },
+    "secretTemplates": {
+      "replicate": {
+        "title": "Replicate API Key",
+        "description": "For image and video generation via Replicate"
+      },
+      "telegram": {
+        "title": "Telegram Bot Token",
+        "description": "For Telegram bot integration"
+      },
+      "openrouter": {
+        "title": "OpenRouter API Key",
+        "description": "For LLM access via OpenRouter"
+      },
+      "openai": {
+        "title": "OpenAI API Key",
+        "description": "For OpenAI models"
+      },
+      "anthropic": {
+        "title": "Anthropic API Key",
+        "description": "For Claude models"
+      },
+      "twitter": {
+        "title": "Twitter API Key",
+        "description": "For Twitter/X integration"
+      },
+      "discord": {
+        "title": "Discord Bot Token",
+        "description": "For Discord bot integration"
+      },
+      "solana": {
+        "title": "Solana Private Key",
+        "description": "For Solana wallet access"
+      }
+    }
   },
   "avatarConfig": {
     "namePlaceholder": "Avatar Name",

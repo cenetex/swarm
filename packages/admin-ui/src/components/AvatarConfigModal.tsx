@@ -20,27 +20,23 @@ interface AvatarConfigModalProps {
 }
 
 // Predefined secret templates
-const SECRET_TEMPLATES: { key: string; name: string; description: string }[] = [
-  { key: 'REPLICATE_API_KEY', name: 'Replicate API Key', description: 'For image/video generation via Replicate' },
-  { key: 'TELEGRAM_BOT_TOKEN', name: 'Telegram Bot Token', description: 'For Telegram bot' },
-  { key: 'OPENROUTER_API_KEY', name: 'OpenRouter API Key', description: 'For LLM access via OpenRouter' },
-  { key: 'OPENAI_API_KEY', name: 'OpenAI API Key', description: 'For OpenAI models' },
-  { key: 'ANTHROPIC_API_KEY', name: 'Anthropic API Key', description: 'For Claude models' },
-  { key: 'TWITTER_API_KEY', name: 'Twitter API Key', description: 'For Twitter/X integration' },
-  { key: 'DISCORD_BOT_TOKEN', name: 'Discord Bot Token', description: 'For Discord bot' },
-  { key: 'SOLANA_PRIVATE_KEY', name: 'Solana Private Key', description: 'For Solana wallet' },
+const SECRET_TEMPLATES: { key: string; nameKey: string; descriptionKey: string }[] = [
+  { key: 'REPLICATE_API_KEY', nameKey: 'avatar.secretTemplates.replicate.title', descriptionKey: 'avatar.secretTemplates.replicate.description' },
+  { key: 'TELEGRAM_BOT_TOKEN', nameKey: 'avatar.secretTemplates.telegram.title', descriptionKey: 'avatar.secretTemplates.telegram.description' },
+  { key: 'OPENROUTER_API_KEY', nameKey: 'avatar.secretTemplates.openrouter.title', descriptionKey: 'avatar.secretTemplates.openrouter.description' },
+  { key: 'OPENAI_API_KEY', nameKey: 'avatar.secretTemplates.openai.title', descriptionKey: 'avatar.secretTemplates.openai.description' },
+  { key: 'ANTHROPIC_API_KEY', nameKey: 'avatar.secretTemplates.anthropic.title', descriptionKey: 'avatar.secretTemplates.anthropic.description' },
+  { key: 'TWITTER_API_KEY', nameKey: 'avatar.secretTemplates.twitter.title', descriptionKey: 'avatar.secretTemplates.twitter.description' },
+  { key: 'DISCORD_BOT_TOKEN', nameKey: 'avatar.secretTemplates.discord.title', descriptionKey: 'avatar.secretTemplates.discord.description' },
+  { key: 'SOLANA_PRIVATE_KEY', nameKey: 'avatar.secretTemplates.solana.title', descriptionKey: 'avatar.secretTemplates.solana.description' },
 ];
+
+type SecretTemplate = (typeof SECRET_TEMPLATES)[number];
 
 export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModalProps) {
   const { t } = useTranslation();
   const { updateAvatar, deleteAvatar } = useAvatarStore();
   const { gateStatus } = useAuth();
-
-  const tabLabels: Record<string, string> = {
-    general: t('avatarConfig.tabs.general'),
-    persona: t('avatarConfig.tabs.persona'),
-    secrets: t('avatarConfig.tabs.secrets'),
-  };
 
   const [name, setName] = useState(avatar.name);
   const [description, setDescription] = useState(avatar.description || '');
@@ -81,7 +77,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
     onClose();
   };
 
-  const handleAddSecret = (template?: typeof SECRET_TEMPLATES[0]) => {
+  const handleAddSecret = (template?: SecretTemplate) => {
     const key = template?.key || newSecretKey.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
     if (!key || secrets.some(s => s.key === key)) return;
 
@@ -89,8 +85,8 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
       ...secrets,
       {
         key,
-        name: template?.name || key,
-        description: template?.description,
+        name: template ? t(template.nameKey) : key,
+        description: template ? t(template.descriptionKey) : undefined,
         isSet: false,
       },
     ]);
@@ -130,7 +126,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
       });
       setSelectedOrbMint('');
     } catch (e) {
-      setOrbError(e instanceof Error ? e.message : 'Failed to slot Orb');
+      setOrbError(e instanceof Error ? e.message : t('avatar.errors.slotOrbFailed'));
     } finally {
       setOrbBusy(false);
     }
@@ -147,7 +143,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
         orbSlottedAt: undefined,
       });
     } catch (e) {
-      setOrbError(e instanceof Error ? e.message : 'Failed to unslot Orb');
+      setOrbError(e instanceof Error ? e.message : t('avatar.errors.unslotOrbFailed'));
     } finally {
       setOrbBusy(false);
     }
@@ -172,20 +168,20 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="text-xl font-semibold bg-transparent border-none outline-none text-[var(--color-text)] w-full"
-              placeholder={t('avatarConfig.namePlaceholder')}
+              placeholder={t('avatar.avatarNamePlaceholder')}
               name="avatarName"
               id="avatarName"
               data-testid="avatar-name-input"
-              aria-label={t('avatarConfig.namePlaceholder')}
+              aria-label={t('avatar.avatarNameLabel')}
             />
             <p className="text-sm text-[var(--color-text-tertiary)]">
-              {avatar.status === 'shell' ? t('avatarConfig.unconfiguredShell') : t('avatarConfig.configured')}
+              {avatar.status === 'shell' ? t('avatar.unconfiguredAvatarShell') : t('avatar.configuredAvatar')}
             </p>
           </div>
           <button
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] transition-colors"
-            aria-label={t('common.close')}
+            aria-label={t('avatar.closeModal')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
               <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -205,7 +201,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
                   : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
               }`}
             >
-              {tabLabels[tab]}
+              {tab === 'general' ? t('avatar.tabs.general') : tab === 'persona' ? t('avatar.tabs.persona') : t('avatar.tabs.secrets')}
               {tab === 'secrets' && secrets.length > 0 && (
                 <span className="ml-2 px-1.5 py-0.5 text-xs bg-[var(--color-bg-tertiary)] rounded-full">
                   {secrets.length}
@@ -221,27 +217,27 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
             <div className="space-y-4">
               <div>
                 <label htmlFor="avatarDescription" className="block text-sm font-medium text-[var(--color-text-secondary)] mb-2">
-                  {t('avatarConfig.description')}
+                  {t('avatar.descriptionLabel')}
                 </label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder={t('avatarConfig.descriptionPlaceholder')}
+                  placeholder={t('avatar.descriptionPlaceholder')}
                   rows={3}
                   className="w-full px-4 py-3 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-brand-500"
                   name="avatarDescription"
                   id="avatarDescription"
                   data-testid="avatar-description-input"
-                  aria-label={t('avatarConfig.description')}
+                  aria-label={t('avatar.descriptionLabel')}
                 />
               </div>
 
               <div className="p-4 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-xl">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-medium text-[var(--color-text-secondary)]">{t('avatarConfig.orbSlot.title')}</div>
+                    <div className="text-sm font-medium text-[var(--color-text-secondary)]">{t('avatar.orbSlotTitle')}</div>
                     <div className="text-xs text-[var(--color-text-muted)]">
-                      {t('avatarConfig.orbSlot.description')}
+                      {t('avatar.orbSlotDescription')}
                     </div>
                   </div>
                   {avatar.orbMint ? (
@@ -250,13 +246,13 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
                       disabled={orbBusy}
                       className="px-3 py-2 rounded-lg bg-red-900/30 text-red-300 hover:bg-red-900/40 disabled:opacity-50"
                     >
-                      {t('avatarConfig.orbSlot.unslot')}
+                      {t('avatar.unslotOrb')}
                     </button>
                   ) : null}
                 </div>
 
                 <div className="mt-3 text-xs text-[var(--color-text-tertiary)]">
-                  {t('avatarConfig.orbSlot.current')}{' '}{avatar.orbMint ? <span className="font-mono">{avatar.orbMint}</span> : t('avatarConfig.orbSlot.none')}
+                  {t('avatar.currentOrb')} {avatar.orbMint ? <span className="font-mono">{avatar.orbMint}</span> : t('avatar.none')}
                 </div>
 
                 {!avatar.orbMint && ownedOrbs.length > 0 && (
@@ -267,7 +263,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
                       className="flex-1 px-3 py-2 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]"
                       disabled={orbBusy}
                     >
-                      <option value="">{t('avatarConfig.orbSlot.selectOrb')}</option>
+                      <option value="">{t('avatar.selectOrbPlaceholder')}</option>
                       {ownedOrbs.map((orb) => (
                         <option key={orb.id} value={orb.id}>
                           {orb.name || orb.id.slice(0, 8)}…
@@ -279,14 +275,14 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
                       disabled={orbBusy || !selectedOrbMint}
                       className="px-3 py-2 rounded-lg bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-50"
                     >
-                      {t('avatarConfig.orbSlot.slot')}
+                      {t('avatar.slotOrb')}
                     </button>
                   </div>
                 )}
 
                 {!avatar.orbMint && ownedOrbs.length === 0 && (
                   <div className="mt-3 text-xs text-[var(--color-text-muted)]">
-                    {t('avatarConfig.orbSlot.noOrbs')}
+                    {t('avatar.noOrbsDetected')}
                   </div>
                 )}
 
@@ -307,21 +303,21 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
             <div className="space-y-4">
               <div>
                 <label htmlFor="avatarPersona" className="block text-sm font-medium text-[var(--color-text-secondary)] mb-2">
-                  {t('avatarConfig.systemPersona')}
+                  {t('avatar.systemPersonaLabel')}
                 </label>
                 <p className="text-xs text-[var(--color-text-muted)] mb-2">
-                  {t('avatarConfig.personaHint')}
+                  {t('avatar.systemPersonaDescription')}
                 </p>
                 <textarea
                   value={persona}
                   onChange={(e) => setPersona(e.target.value)}
-                  placeholder={t('avatarConfig.personaPlaceholder')}
+                  placeholder={t('avatar.systemPersonaPlaceholder')}
                   rows={12}
                   className="w-full px-4 py-3 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono text-sm"
                   name="avatarPersona"
                   id="avatarPersona"
                   data-testid="avatar-persona-input"
-                  aria-label={t('avatarConfig.systemPersona')}
+                  aria-label={t('avatar.systemPersonaLabel')}
                 />
               </div>
             </div>
@@ -333,7 +329,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
               {secrets.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-3">
-                    {t('avatarConfig.configuredSecrets')}
+                    {t('avatar.configuredSecretsLabel')}
                   </label>
                   <div className="space-y-2">
                     {secrets.map((secret) => (
@@ -347,7 +343,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
                           <div className="text-xs text-[var(--color-text-muted)] font-mono">{secret.key}</div>
                         </div>
                         <span className={`text-xs px-2 py-1 rounded ${secret.isSet ? 'bg-green-900/50 text-green-400' : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)]'}`}>
-                          {secret.isSet ? t('avatarConfig.secretSet') : t('avatarConfig.secretNotSet')}
+                          {secret.isSet ? t('avatar.secretState.set') : t('avatar.secretState.notSet')}
                         </span>
                         <button
                           onClick={() => handleRemoveSecret(secret.key)}
@@ -366,13 +362,13 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
               {/* Add Secret */}
               <div>
                 <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-3">
-                  {t('avatarConfig.addSecret')}
+                  {t('avatar.addSecretLabel')}
                 </label>
 
                 {/* Quick Add Templates */}
                 {availableTemplates.length > 0 && (
                   <div className="mb-4">
-                    <p className="text-xs text-[var(--color-text-muted)] mb-2">{t('avatarConfig.quickAdd')}</p>
+                    <p className="text-xs text-[var(--color-text-muted)] mb-2">{t('avatar.quickAdd')}</p>
                     <div className="flex flex-wrap gap-2">
                       {availableTemplates.slice(0, 4).map((template) => (
                         <button
@@ -380,7 +376,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
                           onClick={() => handleAddSecret(template)}
                           className="px-3 py-1.5 text-xs bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] rounded-lg transition-colors"
                         >
-                          + {template.name}
+                          + {t(template.nameKey)}
                         </button>
                       ))}
                     </div>
@@ -393,7 +389,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
                     type="text"
                     value={newSecretKey}
                     onChange={(e) => setNewSecretKey(e.target.value)}
-                    placeholder={t('avatarConfig.customSecretPlaceholder')}
+                    placeholder={t('avatar.customSecretPlaceholder')}
                     className="flex-1 px-4 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                     onKeyDown={(e) => e.key === 'Enter' && handleAddSecret()}
                   />
@@ -402,13 +398,13 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
                     disabled={!newSecretKey}
                     className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
                   >
-                    {t('avatarConfig.add')}
+                    {t('avatar.addSecret')}
                   </button>
                 </div>
               </div>
 
               <p className="text-xs text-[var(--color-text-muted)]">
-                {t('avatarConfig.secretsEncryptedNotice')}
+                {t('avatar.secretsNote')}
               </p>
             </div>
           )}
@@ -424,7 +420,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
                 : 'text-red-400 hover:bg-red-900/50'
             }`}
           >
-            {confirmDelete ? t('avatarConfig.clickToConfirm') : t('avatarConfig.deleteAvatar')}
+            {confirmDelete ? t('avatar.deleteAvatarConfirm') : t('avatar.deleteAvatar')}
           </button>
           <div className="flex gap-3">
             <button
@@ -437,9 +433,9 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
               onClick={handleSave}
               className="px-6 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors"
               data-testid="save-avatar-button"
-              aria-label={t('avatarConfig.saveChanges')}
+              aria-label={t('avatar.saveChanges')}
             >
-              {t('avatarConfig.saveChanges')}
+              {t('avatar.saveChanges')}
             </button>
           </div>
         </div>
@@ -449,4 +445,3 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
 }
 
 // Legacy alias
-

@@ -361,7 +361,88 @@
     "errorState": "错误",
     "activate": "激活",
     "planAndUsage": "套餐与用量",
-    "preview": "预览"
+    "preview": "预览",
+    "tabs": {
+      "general": "常规",
+      "persona": "人设",
+      "secrets": "密钥"
+    },
+    "avatarNameLabel": "头像名称",
+    "avatarNamePlaceholder": "头像名称",
+    "unconfiguredAvatarShell": "未配置的头像壳",
+    "configuredAvatar": "已配置的头像",
+    "closeModal": "关闭对话框",
+    "descriptionLabel": "描述",
+    "descriptionPlaceholder": "这个头像是做什么的？",
+    "orbSlotTitle": "Orb 绑定位",
+    "orbSlotDescription": "将一个 Orb NFT 绑定到此头像，以明确为其提供支持。",
+    "unslotOrb": "解除绑定",
+    "currentOrb": "当前：",
+    "none": "无",
+    "selectOrbPlaceholder": "选择一个 Orb…",
+    "slotOrb": "绑定",
+    "noOrbsDetected": "在您当前的 gate 钱包中未检测到 Orb。",
+    "systemPersonaLabel": "系统人设",
+    "systemPersonaDescription": "定义该头像的个性、专长和行为。",
+    "systemPersonaPlaceholder": "你是一个乐于助人的 AI 助手，专注于……\n\n你擅长：\n- 主题 1\n- 主题 2\n\n你的沟通风格是……",
+    "configuredSecretsLabel": "已配置的密钥",
+    "secretState": {
+      "set": "已设置",
+      "notSet": "未设置"
+    },
+    "addSecretLabel": "添加密钥",
+    "quickAdd": "快速添加：",
+    "customSecretPlaceholder": "自定义密钥键名",
+    "addSecret": "添加",
+    "secretsNote": "密钥会加密存储在 AWS Secrets Manager 中。部署头像时会写入这些值。",
+    "deleteAvatarConfirm": "再次点击以确认",
+    "deleteAvatar": "删除头像",
+    "saveChanges": "保存更改",
+    "saving": "保存中...",
+    "reassignTitle": "重新分配头像",
+    "idLabel": "ID：",
+    "creatorWalletLabel": "创建者钱包",
+    "creatorWalletPlaceholder": "输入 Solana 钱包地址",
+    "creatorWalletHelper": "创建此头像的钱包。更改它会影响槽位计数。",
+    "reassignFailed": "重新分配头像失败。",
+    "errors": {
+      "slotOrbFailed": "绑定 Orb 失败。",
+      "unslotOrbFailed": "解除 Orb 绑定失败。"
+    },
+    "secretTemplates": {
+      "replicate": {
+        "title": "Replicate API 密钥",
+        "description": "用于通过 Replicate 生成图片和视频"
+      },
+      "telegram": {
+        "title": "Telegram 机器人令牌",
+        "description": "用于 Telegram 机器人集成"
+      },
+      "openrouter": {
+        "title": "OpenRouter API 密钥",
+        "description": "用于通过 OpenRouter 访问大语言模型"
+      },
+      "openai": {
+        "title": "OpenAI API 密钥",
+        "description": "用于 OpenAI 模型"
+      },
+      "anthropic": {
+        "title": "Anthropic API 密钥",
+        "description": "用于 Claude 模型"
+      },
+      "twitter": {
+        "title": "Twitter API 密钥",
+        "description": "用于 Twitter/X 集成"
+      },
+      "discord": {
+        "title": "Discord 机器人令牌",
+        "description": "用于 Discord 机器人集成"
+      },
+      "solana": {
+        "title": "Solana 私钥",
+        "description": "用于访问 Solana 钱包"
+      }
+    }
   },
   "avatarConfig": {
     "namePlaceholder": "头像名称",

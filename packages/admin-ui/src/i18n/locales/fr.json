@@ -361,7 +361,88 @@
     "errorState": "Erreur",
     "activate": "Activer",
     "planAndUsage": "Forfait et utilisation",
-    "preview": "Aperçu"
+    "preview": "Aperçu",
+    "tabs": {
+      "general": "Général",
+      "persona": "Personnalité",
+      "secrets": "Secrets"
+    },
+    "avatarNameLabel": "Nom de l'avatar",
+    "avatarNamePlaceholder": "Nom de l'avatar",
+    "unconfiguredAvatarShell": "Coque d'avatar non configurée",
+    "configuredAvatar": "Avatar configuré",
+    "closeModal": "Fermer la fenêtre",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Que fait cet avatar ?",
+    "orbSlotTitle": "Emplacement Orb",
+    "orbSlotDescription": "Insérez un NFT Orb dans cet avatar pour le lier explicitement.",
+    "unslotOrb": "Retirer",
+    "currentOrb": "Actuel :",
+    "none": "Aucun",
+    "selectOrbPlaceholder": "Sélectionner un Orb…",
+    "slotOrb": "Lier",
+    "noOrbsDetected": "Aucun Orb détecté dans votre portefeuille de gate actuel.",
+    "systemPersonaLabel": "Persona système",
+    "systemPersonaDescription": "Définissez la personnalité, l'expertise et le comportement de l'avatar.",
+    "systemPersonaPlaceholder": "Vous êtes un assistant IA utile, spécialisé dans...\n\nVous avez de l'expertise dans :\n- Sujet 1\n- Sujet 2\n\nVotre style de communication est...",
+    "configuredSecretsLabel": "Secrets configurés",
+    "secretState": {
+      "set": "Défini",
+      "notSet": "Non défini"
+    },
+    "addSecretLabel": "Ajouter un secret",
+    "quickAdd": "Ajout rapide :",
+    "customSecretPlaceholder": "CLE_SECRETE_PERSONNALISEE",
+    "addSecret": "Ajouter",
+    "secretsNote": "Les secrets sont stockés chiffrés dans AWS Secrets Manager. Les valeurs seront renseignées lors du déploiement de l'avatar.",
+    "deleteAvatarConfirm": "Cliquez à nouveau pour confirmer",
+    "deleteAvatar": "Supprimer l'avatar",
+    "saveChanges": "Enregistrer les modifications",
+    "saving": "Enregistrement...",
+    "reassignTitle": "Réattribuer l'avatar",
+    "idLabel": "ID :",
+    "creatorWalletLabel": "Portefeuille du créateur",
+    "creatorWalletPlaceholder": "Saisissez l'adresse du portefeuille Solana",
+    "creatorWalletHelper": "Le portefeuille qui a créé cet avatar. Le modifier affecte le comptage des emplacements.",
+    "reassignFailed": "Échec de la réattribution de l'avatar.",
+    "errors": {
+      "slotOrbFailed": "Échec du placement de l'Orb.",
+      "unslotOrbFailed": "Échec du retrait de l'Orb."
+    },
+    "secretTemplates": {
+      "replicate": {
+        "title": "Clé API Replicate",
+        "description": "Pour la génération d'images et de vidéos via Replicate"
+      },
+      "telegram": {
+        "title": "Jeton du bot Telegram",
+        "description": "Pour l'intégration du bot Telegram"
+      },
+      "openrouter": {
+        "title": "Clé API OpenRouter",
+        "description": "Pour l'accès aux LLM via OpenRouter"
+      },
+      "openai": {
+        "title": "Clé API OpenAI",
+        "description": "Pour les modèles OpenAI"
+      },
+      "anthropic": {
+        "title": "Clé API Anthropic",
+        "description": "Pour les modèles Claude"
+      },
+      "twitter": {
+        "title": "Clé API Twitter",
+        "description": "Pour l'intégration Twitter/X"
+      },
+      "discord": {
+        "title": "Jeton du bot Discord",
+        "description": "Pour l'intégration du bot Discord"
+      },
+      "solana": {
+        "title": "Clé privée Solana",
+        "description": "Pour l'accès au portefeuille Solana"
+      }
+    }
   },
   "avatarConfig": {
     "namePlaceholder": "Nom de l'avatar",
