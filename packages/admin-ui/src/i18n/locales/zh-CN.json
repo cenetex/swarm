@@ -168,7 +168,7 @@
     "effective": "实际生效限制",
     "upgradePlan": "升级套餐",
     "manageBilling": "管理账单",
-    "subscriptionActivated": "计费更新成功。",
+    "subscriptionActivated": "订阅已激活！您的套餐将很快更新。",
     "talkToUsAboutTeam": "联系我们了解团队方案",
     "invitePlaceholder": "输入邀请码",
     "redeemFailed": "兑换邀请码失败。",
@@ -186,10 +186,10 @@
     },
     "planCardBullets": {
       "pro": {
-        "messages": "每天 50 条消息",
-        "mediaCredits": "每天 5 个媒体额度",
-        "memory": "持久记忆",
-        "platforms": "支持多平台"
+        "messages": "每天 500 条消息",
+        "mediaCredits": "50 个媒体额度",
+        "memory": "30 天记忆",
+        "platforms": "3 个平台"
       },
       "team": {
         "unlimitedBots": "每个服务器无限机器人",

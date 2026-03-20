@@ -68,7 +68,7 @@ export function UpgradeNudge({ avatarId, limitInfo, currentPlan = 'free' }: Upgr
       const { url } = await createCheckoutSession(avatarId, 'pro');
       window.location.href = url;
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('error.checkoutFailed'));
+      setError(e instanceof Error ? e.message : t('upgrade.errors.checkoutFailed'));
       setUpgrading(false);
     }
   };

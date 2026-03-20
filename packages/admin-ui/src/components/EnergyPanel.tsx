@@ -84,7 +84,7 @@ export function EnergyPanel({ avatarId, isAdmin = false, compact = false }: Ener
       const data = await avatarApi.getEnergyHistory(avatarId, 10);
       setHistory(data.events);
     } catch (e) {
-      console.error(t('energy.loadHistoryFailed'), e);
+      console.error('Failed to load energy history', e);
     }
   }, [avatarId, t]);
 

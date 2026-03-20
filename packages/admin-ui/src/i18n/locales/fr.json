@@ -168,7 +168,7 @@
     "effective": "Limites effectives",
     "upgradePlan": "Mettre à niveau le forfait",
     "manageBilling": "Gérer la facturation",
-    "subscriptionActivated": "Facturation mise à jour avec succès.",
+    "subscriptionActivated": "Abonnement activé ! Votre forfait sera mis à jour sous peu.",
     "talkToUsAboutTeam": "Parlez-nous de l'offre Équipe",
     "invitePlaceholder": "Saisissez le code d'invitation",
     "redeemFailed": "Échec de l'utilisation du code d'invitation.",
@@ -186,10 +186,10 @@
     },
     "planCardBullets": {
       "pro": {
-        "messages": "50 messages/jour",
-        "mediaCredits": "5 crédits média/jour",
-        "memory": "Mémoire persistante",
-        "platforms": "Support multi-plateforme"
+        "messages": "500 msgs/jour",
+        "mediaCredits": "50 crédits média",
+        "memory": "Mémoire 30 jours",
+        "platforms": "3 plateformes"
       },
       "team": {
         "unlimitedBots": "Bots illimités/serveur",

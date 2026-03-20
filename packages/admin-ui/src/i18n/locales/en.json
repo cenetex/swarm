@@ -168,7 +168,7 @@
     "effective": "Effective limits",
     "upgradePlan": "Upgrade plan",
     "manageBilling": "Manage billing",
-    "subscriptionActivated": "Billing updated successfully.",
+    "subscriptionActivated": "Subscription activated! Your plan will update shortly.",
     "talkToUsAboutTeam": "Talk to us about Team",
     "invitePlaceholder": "Enter invite code",
     "redeemFailed": "Failed to redeem invite code.",
@@ -186,10 +186,10 @@
     },
     "planCardBullets": {
       "pro": {
-        "messages": "50 messages/day",
-        "mediaCredits": "5 media credits/day",
-        "memory": "Persistent memory",
-        "platforms": "Multi-platform support"
+        "messages": "500 msgs/day",
+        "mediaCredits": "50 media credits",
+        "memory": "30-day memory",
+        "platforms": "3 platforms"
       },
       "team": {
         "unlimitedBots": "Unlimited bots/server",
