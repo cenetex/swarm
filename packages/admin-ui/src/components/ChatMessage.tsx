@@ -879,7 +879,7 @@ function ChatMessageInner({ message, onToolSubmit: _onToolSubmit }: ChatMessageP
 
                       <details className="mt-2">
                         <summary className="cursor-pointer text-xs text-[var(--color-text-secondary)] select-none">
-                      {t('chat.message.viewDetails')}
+                          {t('chat.message.viewDetails')}
                         </summary>
                         <pre className="mt-2 text-xs overflow-auto rounded-md bg-[var(--color-bg-primary)] px-3 py-2 text-[var(--color-text-secondary)]">
                           {pretty}
