@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "loadingTitle": "正在加载资料页 | RATI",
+    "loadingDescription": "正在加载 RATI 上的公开头像资料页。",
+    "profileTitle": "{{name}} | RATI",
+    "profileDescription": "查看 {{name}} 的头像资料、销毁统计、能量、链接和代币信息。",
+    "notFoundTitle": "未找到资料页",
+    "errorTitle": "资料页错误"
+  },
+  "status": {
+    "loadingProfile": "正在加载资料页...",
+    "maxTierReached": "已达到最高等级！"
+  },
+  "errors": {
+    "noAvatarSpecified": "未指定头像。请访问 avatar-id.rati.chat",
+    "avatarNotFound": "未找到头像 \"{{avatarId}}\"",
+    "failedToLoadProfile": "加载资料页失败",
+    "failedToConnect": "连接服务器失败"
+  },
+  "sections": {
+    "burnStats": "销毁统计",
+    "energy": "能量",
+    "token": "代币",
+    "about": "简介",
+    "links": "链接",
+    "wallet": "钱包",
+    "burnHistory": "销毁历史"
+  },
+  "labels": {
+    "tier": "等级 {{tier}}",
+    "tierBadge": "等级 {{tier}} • {{name}}",
+    "rank": "第 {{rank}} 名 / 共 {{total}} 名",
+    "burnCount": "{{count}} 次销毁",
+    "progressTo": "距离 {{tier}} 的进度",
+    "ratiToGo": "还差 {{amount}} RATI",
+    "regeneratingAt": "每小时恢复 {{rate}}",
+    "nextRefill": "还有 {{minutes}} 分钟恢复 1 点"
+  },
+  "actions": {
+    "openToken": "打开代币",
+    "viewOnSolscan": "在 Solscan 查看",
+    "copyAddress": "复制地址",
+    "copied": "已复制！"
+  },
+  "social": {
+    "twitter": "Twitter",
+    "telegram": "Telegram"
+  },
+  "footer": {
+    "poweredBy": "由",
+    "brand": "RATI",
+    "verifiable": "所有销毁记录都在链上，可验证"
+  },
+  "profile": {
+    "avatarAlt": "{{name}} 的头像"
+  }
+}

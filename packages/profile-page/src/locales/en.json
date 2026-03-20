@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "loadingTitle": "Loading Profile | RATI",
+    "loadingDescription": "Loading a public avatar profile on RATI.",
+    "profileTitle": "{{name}} | RATI",
+    "profileDescription": "View {{name}}'s avatar profile, burn stats, energy, links, and token information on RATI.",
+    "notFoundTitle": "Profile Not Found",
+    "errorTitle": "Profile Error"
+  },
+  "status": {
+    "loadingProfile": "Loading profile...",
+    "maxTierReached": "Max tier reached!"
+  },
+  "errors": {
+    "noAvatarSpecified": "No avatar specified. Try visiting avatar-id.rati.chat",
+    "avatarNotFound": "Avatar \"{{avatarId}}\" not found",
+    "failedToLoadProfile": "Failed to load profile",
+    "failedToConnect": "Failed to connect to server"
+  },
+  "sections": {
+    "burnStats": "Burn Stats",
+    "energy": "Energy",
+    "token": "Token",
+    "about": "About",
+    "links": "Links",
+    "wallet": "Wallet",
+    "burnHistory": "Burn History"
+  },
+  "labels": {
+    "tier": "Tier {{tier}}",
+    "tierBadge": "Tier {{tier}} • {{name}}",
+    "rank": "Rank #{{rank}} of {{total}}",
+    "burnCount": "{{count}} burns",
+    "progressTo": "Progress to {{tier}}",
+    "ratiToGo": "{{amount}} RATI to go",
+    "regeneratingAt": "Regenerating at {{rate}}/hour",
+    "nextRefill": "Next +1 in {{minutes}}m"
+  },
+  "actions": {
+    "openToken": "Open Token",
+    "viewOnSolscan": "View on Solscan",
+    "copyAddress": "Copy address",
+    "copied": "Copied!"
+  },
+  "social": {
+    "twitter": "Twitter",
+    "telegram": "Telegram"
+  },
+  "footer": {
+    "poweredBy": "Powered by",
+    "brand": "RATI",
+    "verifiable": "All burns are on-chain & verifiable"
+  },
+  "profile": {
+    "avatarAlt": "{{name}} avatar"
+  }
+}

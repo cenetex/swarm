@@ -26,7 +26,8 @@ It then fetches the profile from the API (`https://api.rati.chat/api/profile/{av
 
 ## Tech Stack
 
-- Vanilla HTML/CSS/JS (no framework)
+- Vanilla HTML/CSS/JS with package-local i18n
+- i18next for language detection and translated strings
 - Vite for dev server and production build
 - Deployed to S3 + CloudFront
 
@@ -42,9 +43,18 @@ pnpm invalidate:staging  # Invalidate staging CloudFront cache
 pnpm invalidate:prod     # Invalidate production CloudFront cache
 ```
 
+## Localization
+
+- Supported languages: `en`, `fr`, `zh-CN`
+- Language preference is detected from browser settings and persisted to localStorage
+- Translations live in `src/locales/`
+
 ## Directory Layout
 
 ```
-index.html     # Single-page app (HTML + inline CSS + JS)
+index.html          # App shell and styles
+src/main.js         # Profile rendering and data loading
+src/i18n.js         # i18next setup and language detection
+src/locales/        # Locale JSON files
 package.json
 ```

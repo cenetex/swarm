@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "loadingTitle": "Chargement du profil | RATI",
+    "loadingDescription": "Chargement d'un profil d'avatar public sur RATI.",
+    "profileTitle": "{{name}} | RATI",
+    "profileDescription": "Consultez le profil d'avatar de {{name}}, ses statistiques de burn, son énergie, ses liens et ses informations de jeton sur RATI.",
+    "notFoundTitle": "Profil introuvable",
+    "errorTitle": "Erreur de profil"
+  },
+  "status": {
+    "loadingProfile": "Chargement du profil...",
+    "maxTierReached": "Niveau maximal atteint !"
+  },
+  "errors": {
+    "noAvatarSpecified": "Aucun avatar indiqué. Essayez de visiter avatar-id.rati.chat",
+    "avatarNotFound": "Avatar \"{{avatarId}}\" introuvable",
+    "failedToLoadProfile": "Impossible de charger le profil",
+    "failedToConnect": "Impossible de se connecter au serveur"
+  },
+  "sections": {
+    "burnStats": "Statistiques de burn",
+    "energy": "Énergie",
+    "token": "Jeton",
+    "about": "À propos",
+    "links": "Liens",
+    "wallet": "Portefeuille",
+    "burnHistory": "Historique des burns"
+  },
+  "labels": {
+    "tier": "Niveau {{tier}}",
+    "tierBadge": "Niveau {{tier}} • {{name}}",
+    "rank": "Classement n°{{rank}} sur {{total}}",
+    "burnCount": "{{count}} burns",
+    "progressTo": "Progression vers {{tier}}",
+    "ratiToGo": "Encore {{amount}} RATI",
+    "regeneratingAt": "Régénération à {{rate}}/heure",
+    "nextRefill": "Prochain +1 dans {{minutes}} min"
+  },
+  "actions": {
+    "openToken": "Ouvrir le jeton",
+    "viewOnSolscan": "Voir sur Solscan",
+    "copyAddress": "Copier l'adresse",
+    "copied": "Copié !"
+  },
+  "social": {
+    "twitter": "Twitter",
+    "telegram": "Telegram"
+  },
+  "footer": {
+    "poweredBy": "Propulsé par",
+    "brand": "RATI",
+    "verifiable": "Tous les burns sont inscrits on-chain et vérifiables"
+  },
+  "profile": {
+    "avatarAlt": "Avatar de {{name}}"
+  }
+}
