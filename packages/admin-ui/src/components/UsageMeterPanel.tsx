@@ -181,6 +181,18 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
   // ── Loading State ──────────────────────────────────────────────────────
 
   if (loading) {
+    if (compact) {
+      return (
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[var(--color-text-muted)] text-sm">...</span>
+          <div className="flex-1 min-w-0 space-y-1">
+            <div className="h-1 bg-[var(--color-bg-tertiary)] rounded-full animate-pulse" />
+            <div className="h-1 bg-[var(--color-bg-tertiary)] rounded-full animate-pulse w-4/5" />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="p-4 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-xl animate-pulse">
         <div className="h-3 bg-[var(--color-bg-secondary)] rounded w-20 mb-3"></div>
@@ -196,6 +208,15 @@ export function UsageMeterPanel({ avatarId, compact = false }: UsageMeterPanelPr
   // ── Error State ────────────────────────────────────────────────────────
 
   if (error && !usage) {
+    if (compact) {
+      return (
+        <div className="flex items-center gap-2 text-xs text-amber-400">
+          <span>!</span>
+          <span className="truncate">Usage unavailable</span>
+        </div>
+      );
+    }
+
     return (
       <div className="p-4 bg-red-900/20 border border-red-500/30 rounded-xl">
         <div className="text-red-300 text-sm">{error}</div>

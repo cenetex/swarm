@@ -18,6 +18,7 @@ import { ChatInput } from './ChatInput';
 import { AvatarDisplay } from './AvatarSidebar';
 import { PromptPreviewPanel } from './PromptPreviewPanel';
 import { PlanUsagePanel } from './PlanUsagePanel';
+import { UsageMeterPanel } from './UsageMeterPanel';
 import { ActivationChecklist } from './ActivationChecklist';
 import { getErrorRecovery } from '../utils/error-recovery';
 import { WelcomeMessage } from './WelcomeMessage';
@@ -1195,6 +1196,16 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                 )}
               </p>
             </div>
+            {/* Compact usage meter — always visible for authenticated users */}
+            {isAuthenticated && activeAvatar && !planUsagePanelOpen && (
+              <button
+                onClick={() => setPlanUsagePanelOpen(true)}
+                className="hidden md:block flex-shrink-0 min-w-[160px] max-w-[200px] hover:opacity-80 transition-opacity"
+                title="Click to view full plan & usage details"
+              >
+                <UsageMeterPanel avatarId={activeAvatar.id} compact />
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {accessMode === 'admin' && (

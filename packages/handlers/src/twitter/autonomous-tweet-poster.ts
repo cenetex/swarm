@@ -44,6 +44,10 @@ import {
   getRecentGalleryMetadata,
 } from '../services/gallery-query.js';
 import { getDreamContext } from '../services/dream-context.js';
+import {
+  createRateLimitService,
+  type RateLimitService,
+} from '../services/twitter-rate-limit.js';
 
 const STATE_TABLE = process.env.STATE_TABLE!;
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE!;
@@ -56,16 +60,32 @@ const POST_QUEUE_URL = process.env.POST_QUEUE_URL || '';
 const ENABLE_CONTENT_STORE = process.env.ENABLE_CONTENT_STORE === 'true';
 const ENABLE_DECOUPLED_POSTING = process.env.ENABLE_DECOUPLED_POSTING === 'true';
 
+// Rate-limit / budget configuration
+const TWITTER_API_TIER = (process.env.TWITTER_API_TIER || 'basic') as 'free' | 'basic';
+const TWITTER_DAILY_RESERVE_PCT = parseInt(process.env.TWITTER_DAILY_RESERVE_PCT || '20', 10);
+const TWITTER_MONTHLY_BUDGET = process.env.TWITTER_MONTHLY_BUDGET
+  ? parseInt(process.env.TWITTER_MONTHLY_BUDGET, 10)
+  : undefined;
+
+/** Default per-avatar daily post budget. Overridden by avatar config autonomousPosts.dailyBudget. */
+export const DEFAULT_DAILY_BUDGET = 6;
+
 let stateService: ReturnType<typeof createStateService>;
 let activityService: ReturnType<typeof createActivityService>;
 let secretsService: ReturnType<typeof createSecretsService>;
 let contentStoreService: ContentStoreService | null = null;
+let rateLimitService: RateLimitService;
 
 async function initialize(): Promise<void> {
   if (stateService) return;
   stateService = createStateService(STATE_TABLE);
   activityService = createActivityService(ACTIVITY_TABLE);
   secretsService = createSecretsService();
+  rateLimitService = createRateLimitService(STATE_TABLE, {
+    tier: TWITTER_API_TIER,
+    dailyReservePct: TWITTER_DAILY_RESERVE_PCT,
+    monthlyBudget: TWITTER_MONTHLY_BUDGET,
+  });
   if (ENABLE_CONTENT_STORE) {
     contentStoreService = createContentStoreService(STATE_TABLE);
   }
@@ -74,7 +94,7 @@ async function initialize(): Promise<void> {
 /**
  * Check if an avatar is ready for an autonomous post based on timing configuration
  */
-function shouldPostNow(
+export function shouldPostNow(
   lastPostTime: number,
   minIntervalHours: number,
   maxIntervalHours: number
@@ -128,6 +148,31 @@ async function processAvatar(
       maxInterval,
     });
     return { posted: false };
+  }
+
+  // ── Per-avatar daily posting budget gate ──
+  const dailyBudget = autoConfig.dailyBudget ?? DEFAULT_DAILY_BUDGET;
+  const avatarRateLimitState = await rateLimitService.getState(avatarId);
+  if (avatarRateLimitState.postsToday >= dailyBudget) {
+    logger.info('Per-avatar daily posting budget exhausted', {
+      event: 'budget_exhausted',
+      avatarId,
+      postsToday: avatarRateLimitState.postsToday,
+      dailyBudget,
+    });
+    return { posted: false, error: 'Daily posting budget exhausted' };
+  }
+
+  // ── Global rate-limit / backoff gate ──
+  const rateLimitCheck = await rateLimitService.canPost(avatarId);
+  if (!rateLimitCheck.allowed) {
+    logger.info('Rate-limited, skipping autonomous post', {
+      event: 'rate_limited',
+      avatarId,
+      reason: rateLimitCheck.reason,
+      retryAfter: rateLimitCheck.retryAfter,
+    });
+    return { posted: false, error: `Rate limited: ${rateLimitCheck.reason}` };
   }
 
   // Check simulation mode
@@ -435,10 +480,39 @@ async function processAvatar(
     if (ENABLE_CONTENT_STORE && contentStoreService && postId) {
       await contentStoreService.markPosted(avatarId, postId, tweetId);
     }
+
+    // Record success with rate-limit service (resets backoff)
+    await rateLimitService.recordSuccess(avatarId);
   } catch (error) {
-    // Update content store with failure
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const is429 = errorMessage.includes('429') || errorMessage.toLowerCase().includes('rate limit');
+
+    if (is429) {
+      // Parse retry-after if available
+      const retryAfterMatch = errorMessage.match(/retry.?after[:\s]+(\d+)/i);
+      const retryAfterSeconds = retryAfterMatch ? parseInt(retryAfterMatch[1], 10) : undefined;
+
+      await rateLimitService.record429(avatarId, retryAfterSeconds);
+
+      logger.warn('Twitter 429 during autonomous post, backing off', {
+        event: 'rate_limited_429',
+        avatarId,
+        retryAfterSeconds,
+      });
+
+      // Update content store with rate limit info
+      if (ENABLE_CONTENT_STORE && contentStoreService && postId) {
+        const delayMs = (retryAfterSeconds || 60) * 1000;
+        await contentStoreService.markRateLimited(avatarId, postId, delayMs);
+      }
+
+      return { posted: false, error: 'Rate limited (429)' };
+    }
+
+    // Non-429 error: record failure and update content store
+    await rateLimitService.recordFailure(avatarId, errorMessage);
+
     if (ENABLE_CONTENT_STORE && contentStoreService && postId) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
       await contentStoreService.markFailed(avatarId, postId, errorMessage);
     }
     throw error;

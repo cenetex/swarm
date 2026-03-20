@@ -7,6 +7,7 @@
  * - Authenticated + Orb: Full create access based on slots
  */
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAvatarStore } from '../store/avatars';
 import { useAuth } from '../store/auth';
 import { ThemeToggle } from './ThemeToggle';
@@ -16,6 +17,7 @@ import { AvatarReassignModal } from './AvatarReassignModal';
 import { HealthDashboard } from './HealthDashboard';
 import * as avatarApi from '../api/avatars';
 import type { Avatar } from '../types';
+import type { TFunction } from 'i18next';
 
 interface AvatarDisplayProps {
   avatar: Avatar;
@@ -27,35 +29,35 @@ interface AvatarDisplayProps {
  * Get the display status color for an avatar based on health and tier
  * Priority: errors first, then activity, then tier
  */
-function getAvatarStatusColor(avatar: Avatar): { color: string; title: string } {
+function getAvatarStatusColor(avatar: Avatar, t: TFunction): { color: string; title: string } {
   // Error states take priority (red)
   if (avatar.healthStatus === 'error' || avatar.healthStatus === 'rate_limited') {
     return {
       color: 'bg-red-500',
-      title: avatar.healthMessage || (avatar.healthStatus === 'rate_limited' ? 'Rate limited' : 'Error'),
+      title: avatar.healthMessage || (avatar.healthStatus === 'rate_limited' ? t('avatar.rateLimited') : t('avatar.errorState')),
     };
   }
 
   // Inactive/paused/draft states (gray)
   if (avatar.healthStatus === 'inactive' || avatar.status === 'shell') {
-    return { color: 'bg-gray-500', title: 'Inactive' };
+    return { color: 'bg-gray-500', title: t('avatar.inactive') };
   }
   if (avatar.status === 'draft') {
-    return { color: 'bg-gray-400', title: 'Draft — not yet activated' };
+    return { color: 'bg-gray-400', title: t('avatar.draft') };
   }
   if (avatar.status === 'paused') {
-    return { color: 'bg-amber-500', title: 'Paused — integrations stopped' };
+    return { color: 'bg-amber-500', title: t('avatar.paused') };
   }
 
   // Active - show tier
   // Green = orb-backed, Yellow = free slot
   if (avatar.slotType === 'orb') {
-    return { color: 'bg-green-500', title: 'Active (Orb-backed)' };
+    return { color: 'bg-green-500', title: t('avatar.activeOrb') };
   }
 
   // Free slot or unknown slot type
   if (avatar.slotType === 'free') {
-    return { color: 'bg-yellow-500', title: 'Active (Free slot)' };
+    return { color: 'bg-yellow-500', title: t('avatar.activeFree') };
   }
 
   // Fallback to legacy status colors for avatars without slotType
@@ -71,13 +73,14 @@ function getAvatarStatusColor(avatar: Avatar): { color: string; title: string } 
 }
 
 function AvatarDisplay({ avatar, size = 'md', showStatus = true }: AvatarDisplayProps) {
+  const { t } = useTranslation();
   const sizeClasses = {
     sm: 'w-8 h-8',
     md: 'w-10 h-10',
     lg: 'w-12 h-12',
   };
 
-  const { color: statusColor, title: statusTitle } = getAvatarStatusColor(avatar);
+  const { color: statusColor, title: statusTitle } = getAvatarStatusColor(avatar, t);
 
   return (
     <div className="relative">
@@ -347,6 +350,7 @@ interface AvatarSidebarProps {
 }
 
 export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSidebarProps) {
+  const { t } = useTranslation();
   const { avatars, activeAvatarId, createAvatar, setActiveAvatar, isLoading, error, fetchAvatars } = useAvatarStore();
   const { isAuthenticated, user, gateStatus, account } = useAuth();
   const [reassignAvatarData, setReassignAvatarData] = React.useState<Avatar | null>(null);
@@ -439,10 +443,9 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src="/swarm.svg" alt="Swarm" className="w-7 h-7" />
-            <h2 className="font-semibold text-[var(--color-text)]">Avatars</h2>
+            <h2 className="font-semibold text-[var(--color-text)]">{t('avatar.sidebarTitle')}</h2>
           </div>
           <div className="flex items-center gap-2">
-            <LanguageSelector />
             <ThemeToggle />
             {showCreateButton && (
               <button
@@ -674,6 +677,9 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
 
       {/* Login Footer */}
       <div className="p-3 border-t border-[var(--color-border)]">
+        <div className="flex items-center justify-between mb-2">
+          <LanguageSelector />
+        </div>
         <PrivyLoginButton />
       </div>
 

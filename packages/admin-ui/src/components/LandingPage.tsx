@@ -3,11 +3,14 @@
  * Explains what the platform does and guides users to sign in.
  */
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PrivyLoginButton } from './PrivyLoginButton';
 import { PrivacyPolicy } from './PrivacyPolicy';
+import { LanguageSelector } from './LanguageSelector';
 
 export function LandingPage() {
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const { t } = useTranslation();
 
   if (showPrivacy) {
     return <PrivacyPolicy onClose={() => setShowPrivacy(false)} />;
@@ -27,6 +30,11 @@ export function LandingPage() {
         style={{ height: 'env(safe-area-inset-top, 0px)' }}
       />
 
+      {/* Language selector — top right */}
+      <div className="absolute top-4 right-4 z-20">
+        <LanguageSelector />
+      </div>
+
       {/* Main content */}
       <div className="flex-1 flex flex-col items-center px-6 py-12 z-10">
         {/* Logo */}
@@ -37,10 +45,10 @@ export function LandingPage() {
 
         {/* Headline */}
         <h2 className="text-xl sm:text-2xl font-semibold text-[var(--color-text)] text-center mb-2 max-w-lg leading-snug">
-          Persistent AI agents that remember, collaborate, and live across your platforms
+          {t('landing.headline')}
         </h2>
         <p className="text-sm text-[var(--color-text-secondary)] text-center mb-10 max-w-md leading-relaxed">
-          Create an AI personality with persistent memory, connect it to Discord, Telegram, or X — it responds 24/7 with the same context everywhere. No servers, no code.
+          {t('landing.subtitle')}
         </p>
 
         {/* How it works — chat demo */}
@@ -48,15 +56,15 @@ export function LandingPage() {
           <div className="rounded-xl bg-[var(--color-bg-secondary)]/60 backdrop-blur-sm border border-[var(--color-border)] overflow-hidden">
             <div className="px-4 py-2.5 border-b border-[var(--color-border)] flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-green-400" />
-              <span className="text-xs font-medium text-[var(--color-text-muted)]">How it works</span>
+              <span className="text-xs font-medium text-[var(--color-text-muted)]">{t('landing.howItWorks')}</span>
             </div>
             <div className="p-4 space-y-3">
-              <ChatBubble role="user" text="Create an avatar called Astra" />
-              <ChatBubble role="assistant" text="Done! Give her a personality?" />
-              <ChatBubble role="user" text="Friendly crypto nerd who explains DeFi simply" />
-              <ChatBubble role="assistant" text="Persona set. Connect her to Telegram?" />
-              <ChatBubble role="user" text="Yes — here's the bot token" />
-              <ChatBubble role="assistant" text="Astra is live on Telegram and responding." check />
+              <ChatBubble role="user" text={t('landing.chat1User')} />
+              <ChatBubble role="assistant" text={t('landing.chat1Assistant')} />
+              <ChatBubble role="user" text={t('landing.chat2User')} />
+              <ChatBubble role="assistant" text={t('landing.chat2Assistant')} />
+              <ChatBubble role="user" text={t('landing.chat3User')} />
+              <ChatBubble role="assistant" text={t('landing.chat3Assistant')} check />
             </div>
           </div>
         </div>
@@ -65,41 +73,40 @@ export function LandingPage() {
         <div className="grid gap-3 mb-10 max-w-lg w-full">
           <FeatureCard
             icon={<BoltIcon />}
-            title="Live in 10 minutes"
-            description="Create an avatar, set its personality, paste your bot token. No servers, no code, no config files."
+            title={t('landing.featureLiveTitle')}
+            description={t('landing.featureLiveDesc')}
           />
           <FeatureCard
             icon={<BrainIcon />}
-            title="Persistent memory"
-            description="Your avatar remembers conversations across sessions. Same personality, same context, every time."
+            title={t('landing.featureMemoryTitle')}
+            description={t('landing.featureMemoryDesc')}
           />
           <FeatureCard
             icon={<MultiPlatformIcon />}
-            title="Multi-platform, one identity"
-            description="Connect Discord, Telegram, and X. One avatar, one personality, shared memory across all platforms."
+            title={t('landing.featureMultiTitle')}
+            description={t('landing.featureMultiDesc')}
           />
           <FeatureCard
             icon={<CollaborateIcon />}
-            title="Multi-agent collaboration"
-            description="Agents interact with each other — not just users. Build teams of specialists that coordinate and share context."
+            title={t('landing.featureCollabTitle')}
+            description={t('landing.featureCollabDesc')}
           />
         </div>
 
         {/* Why Swarm */}
         <div className="w-full max-w-lg mb-10">
           <h3 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider text-center mb-4">
-            Why Swarm?
+            {t('landing.whySwarm')}
           </h3>
           <div className="rounded-xl bg-[var(--color-bg-secondary)]/60 backdrop-blur-sm border border-[var(--color-border)] p-4 sm:p-6">
             <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-4">
-              Most AI agent platforms are single-bot wrappers — one model, one session, no memory.
-              Swarm is different:
+              {t('landing.whySwarmIntro')}
             </p>
             <ul className="space-y-2.5 text-xs text-[var(--color-text-secondary)] leading-relaxed">
-              <ComparisonItem text="Persistent episodic and semantic memory — agents remember who you are and what you've discussed" />
-              <ComparisonItem text="Multi-agent coordination — agents collaborate and share context, not just reply in isolation" />
-              <ComparisonItem text="Cross-platform identity — same persona on Discord, Telegram, X, and the web" />
-              <ComparisonItem text="300+ model support — not locked to a single LLM provider" />
+              <ComparisonItem text={t('landing.comparison1')} />
+              <ComparisonItem text={t('landing.comparison2')} />
+              <ComparisonItem text={t('landing.comparison3')} />
+              <ComparisonItem text={t('landing.comparison4')} />
             </ul>
           </div>
         </div>
@@ -107,14 +114,14 @@ export function LandingPage() {
         {/* Pricing */}
         <div className="w-full max-w-2xl mb-10">
           <h3 className="text-lg sm:text-xl font-bold text-[var(--color-text)] text-center mb-1">
-            Persistent AI agents with memory. Pick your scale.
+            {t('landing.pricingTitle')}
           </h3>
           <p className="text-sm text-[var(--color-text-secondary)] text-center mb-5">
-            From solo experiments to full server deployments.
+            {t('landing.pricingSubtitle')}
           </p>
           <PricingTiers />
           <p className="text-xs text-[var(--color-text-muted)] text-center mt-4">
-            Already on the $29 plan? You've been upgraded to Creator. Email us about Team.
+            {t('landing.pricingLegacy')}
           </p>
         </div>
 
@@ -123,7 +130,7 @@ export function LandingPage() {
 
         {/* Social proof hint */}
         <p className="mt-4 text-xs text-[var(--color-text-muted)] text-center">
-          Free tier included — no credit card required
+          {t('landing.socialProof')}
         </p>
       </div>
 
@@ -133,19 +140,19 @@ export function LandingPage() {
           {/* Ecosystem links */}
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mb-4 text-xs">
             <a href="https://discord.gg/YmPhMtNMxb" className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">
-              Discord
+              {t('landing.footerDiscord')}
             </a>
             <span className="text-[var(--color-border-secondary)]">&middot;</span>
             <a href="https://rati.chat" className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">
-              RATi Foundation
+              {t('landing.footerFoundation')}
             </a>
           </div>
           {/* Operator info */}
           <p className="text-center text-xs text-[var(--color-text-muted)] flex items-center justify-center gap-1.5 flex-wrap mb-1.5">
-            <span>Operated by</span>
+            <span>{t('landing.footerOperatedBy')}</span>
             <a href="https://cenetex.com" className="font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors" target="_blank" rel="noopener noreferrer">Cenetex Inc.</a>
             <span className="text-[var(--color-border-secondary)]">&middot;</span>
-            <span>Powered by</span>
+            <span>{t('landing.footerPoweredBy')}</span>
             <span className="font-medium text-[var(--color-text-tertiary)]">Solana</span>
           </p>
           <div className="text-center">
@@ -153,7 +160,7 @@ export function LandingPage() {
               onClick={() => setShowPrivacy(true)}
               className="text-xs text-[var(--color-text-muted)] underline hover:text-[var(--color-text-secondary)] transition-colors"
             >
-              Privacy Policy
+              {t('landing.footerPrivacy')}
             </button>
           </div>
         </div>
@@ -226,6 +233,7 @@ const ANNUAL_PRICES = { free: 0, creator: 90, team: 2990 };
 
 function PricingTiers() {
   const [annual, setAnnual] = useState(false);
+  const { t } = useTranslation();
   const prices = annual ? ANNUAL_PRICES : MONTHLY_PRICES;
   const period = annual ? '/yr' : '/mo';
 
@@ -233,7 +241,7 @@ function PricingTiers() {
     <div>
       {/* Annual toggle */}
       <div className="flex items-center justify-center gap-3 mb-5">
-        <span className={`text-xs font-medium ${!annual ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}`}>Monthly</span>
+        <span className={`text-xs font-medium ${!annual ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}`}>{t('landing.monthly')}</span>
         <button
           onClick={() => setAnnual(!annual)}
           className={`relative w-11 h-6 rounded-full transition-colors ${annual ? 'bg-brand-600' : 'bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]'}`}
@@ -242,66 +250,66 @@ function PricingTiers() {
           <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${annual ? 'translate-x-5' : ''}`} />
         </button>
         <span className={`text-xs font-medium ${annual ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}`}>
-          Annual <span className="text-green-400">(save ~17%)</span>
+          {t('landing.annual')} <span className="text-green-400">{t('landing.savePercent')}</span>
         </span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {/* Free */}
         <div className="rounded-xl p-4 border bg-[var(--color-bg-secondary)]/40 border-[var(--color-border)] text-center flex flex-col">
-          <div className="text-xs font-semibold uppercase tracking-wider mb-1 text-[var(--color-text-muted)]">Free</div>
-          <div className="text-sm text-[var(--color-text-secondary)] mb-3">Build your first AI agent</div>
+          <div className="text-xs font-semibold uppercase tracking-wider mb-1 text-[var(--color-text-muted)]">{t('landing.tierFreeName')}</div>
+          <div className="text-sm text-[var(--color-text-secondary)] mb-3">{t('landing.tierFreeDesc')}</div>
           <div className="text-2xl font-bold text-[var(--color-text)] mb-3">$0</div>
           <ul className="space-y-1.5 text-xs text-[var(--color-text-muted)] mb-4 flex-1">
-            <li>1 bot/agent</li>
-            <li>Basic model access</li>
-            <li>Community support</li>
-            <li>CosyWorld branding</li>
+            <li>{t('landing.tierFreeFeature1')}</li>
+            <li>{t('landing.tierFreeFeature2')}</li>
+            <li>{t('landing.tierFreeFeature3')}</li>
+            <li>{t('landing.tierFreeFeature4')}</li>
           </ul>
           <div className="text-xs text-[var(--color-text-muted)] font-medium py-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
-            Get Started
+            {t('landing.tierFreeButton')}
           </div>
         </div>
 
         {/* Creator ($9) */}
         <div className="rounded-xl p-4 border bg-[var(--color-bg-secondary)]/60 border-blue-500/30 text-center flex flex-col">
-          <div className="text-xs font-semibold uppercase tracking-wider mb-1 text-blue-400">Creator</div>
-          <div className="text-sm text-[var(--color-text-secondary)] mb-3">For builders who ship</div>
+          <div className="text-xs font-semibold uppercase tracking-wider mb-1 text-blue-400">{t('landing.tierCreatorName')}</div>
+          <div className="text-sm text-[var(--color-text-secondary)] mb-3">{t('landing.tierCreatorDesc')}</div>
           <div className="text-2xl font-bold text-[var(--color-text)] mb-3">
             ${prices.creator}<span className="text-xs font-normal text-[var(--color-text-muted)]">{period}</span>
           </div>
           <ul className="space-y-1.5 text-xs text-[var(--color-text-secondary)] mb-4 flex-1">
-            <li>Up to 3 bots/agents</li>
-            <li>Full model access (300+)</li>
-            <li>Persistent memory per agent</li>
-            <li>No CosyWorld branding</li>
+            <li>{t('landing.tierCreatorFeature1')}</li>
+            <li>{t('landing.tierCreatorFeature2')}</li>
+            <li>{t('landing.tierCreatorFeature3')}</li>
+            <li>{t('landing.tierCreatorFeature4')}</li>
           </ul>
           <div className="text-xs font-medium py-2 rounded-lg bg-blue-600 text-white">
-            Subscribe
+            {t('landing.tierCreatorButton')}
           </div>
         </div>
 
         {/* Team ($299) */}
         <div className="rounded-xl p-4 border-2 bg-purple-900/15 border-purple-500/40 text-center flex flex-col relative">
           <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-purple-600 text-white text-[10px] font-semibold uppercase tracking-wide">
-            Best for Communities
+            {t('landing.tierTeamBadge')}
           </div>
-          <div className="text-xs font-semibold uppercase tracking-wider mb-1 text-purple-400 mt-1">Team</div>
-          <div className="text-sm text-[var(--color-text-secondary)] mb-3">AI agents as community infrastructure</div>
+          <div className="text-xs font-semibold uppercase tracking-wider mb-1 text-purple-400 mt-1">{t('landing.tierTeamName')}</div>
+          <div className="text-sm text-[var(--color-text-secondary)] mb-3">{t('landing.tierTeamDesc')}</div>
           <div className="text-2xl font-bold text-[var(--color-text)] mb-3">
             ${prices.team.toLocaleString()}<span className="text-xs font-normal text-[var(--color-text-muted)]">{period}</span>
           </div>
           <ul className="space-y-1.5 text-xs text-[var(--color-text-secondary)] mb-4 flex-1">
-            <li>Unlimited bots/agents per server</li>
-            <li>Shared memory across agents</li>
-            <li>Admin dashboard &amp; analytics</li>
-            <li>Priority access &amp; onboarding</li>
+            <li>{t('landing.tierTeamFeature1')}</li>
+            <li>{t('landing.tierTeamFeature2')}</li>
+            <li>{t('landing.tierTeamFeature3')}</li>
+            <li>{t('landing.tierTeamFeature4')}</li>
           </ul>
           <a
             href="mailto:sales@rati.chat?subject=CosyWorld%20Team%20Plan"
             className="block text-xs font-medium py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-colors"
           >
-            Talk to Us
+            {t('landing.tierTeamButton')}
           </a>
         </div>
       </div>
