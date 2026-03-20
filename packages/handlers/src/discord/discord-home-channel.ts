@@ -17,10 +17,15 @@ import { getDynamoClient } from '../services/dynamo-client.js';
 
 const dynamoClient = getDynamoClient();
 
-const STATE_TABLE = process.env.STATE_TABLE!;
-const ADMIN_TABLE = process.env.ADMIN_TABLE;
-
 const HOME_CHANNEL_CACHE_TTL_MS = 60_000;
+
+function getStateTable(): string | undefined {
+  return process.env.STATE_TABLE;
+}
+
+function getAdminTable(): string | undefined {
+  return process.env.ADMIN_TABLE;
+}
 
 /**
  * Home channel record shape for Discord (minimal projection).
@@ -106,7 +111,7 @@ export async function resolveDiscordHomeChannel(
   }
 
   // 2. Check ADMIN_TABLE registry for existing Discord home channel
-  if (ADMIN_TABLE) {
+  if (getAdminTable()) {
     try {
       const channelIds = await getDiscordHomeChannelIdsForAvatar(avatarId, deps);
       if (channelIds.size > 0) {
@@ -190,7 +195,7 @@ export async function maybeBootstrapDiscordHomeChannel(
   const { avatarId, avatarConfig, channelId, guildId, channelName, isMention, isReplyToBot } = params;
   const log = deps.logger || logger;
 
-  if (!ADMIN_TABLE || !STATE_TABLE) return false;
+  if (!getAdminTable() || !getStateTable()) return false;
 
   // Only bootstrap from engaged interactions
   const isEngaged = Boolean(isMention || isReplyToBot);
@@ -240,7 +245,8 @@ export async function registerDiscordHomeChannel(
   channelName?: string,
   deps: DiscordHomeChannelDeps = defaultDeps
 ): Promise<void> {
-  if (!ADMIN_TABLE) return;
+  const adminTable = getAdminTable();
+  if (!adminTable) return;
 
   const now = Date.now();
   const newMember = { avatarId, botUsername };
@@ -248,7 +254,7 @@ export async function registerDiscordHomeChannel(
 
   // Check if the home channel record already exists
   const existing = await dynamo.send(new GetCommand({
-    TableName: ADMIN_TABLE,
+    TableName: adminTable,
     Key: { pk: 'DISCORD_HOME_CHANNELS', sk: channelId },
     ProjectionExpression: 'registeredAvatars',
   })) as { Item?: { registeredAvatars?: Array<{ avatarId: string; botUsername: string }> } };
@@ -258,7 +264,7 @@ export async function registerDiscordHomeChannel(
     const alreadyRegistered = registeredAvatars.some((a) => a.avatarId === avatarId);
     if (!alreadyRegistered) {
       await dynamo.send(new UpdateCommand({
-        TableName: ADMIN_TABLE,
+        TableName: adminTable,
         Key: { pk: 'DISCORD_HOME_CHANNELS', sk: channelId },
         UpdateExpression: 'SET registeredAvatars = list_append(if_not_exists(registeredAvatars, :empty), :newMember), updatedAt = :now',
         ExpressionAttributeValues: {
@@ -270,7 +276,7 @@ export async function registerDiscordHomeChannel(
     }
   } else {
     await dynamo.send(new PutCommand({
-      TableName: ADMIN_TABLE,
+      TableName: adminTable,
       Item: {
         pk: 'DISCORD_HOME_CHANNELS',
         sk: channelId,
@@ -301,7 +307,8 @@ export async function updateAvatarDiscordHomeChannel(
   channelName?: string,
   deps: DiscordHomeChannelDeps = defaultDeps
 ): Promise<void> {
-  if (!STATE_TABLE) return;
+  const stateTable = getStateTable();
+  if (!stateTable) return;
 
   const dynamo = deps.getDynamo();
 
@@ -346,7 +353,7 @@ export async function updateAvatarDiscordHomeChannel(
   }
 
   await dynamo.send(new UpdateCommand({
-    TableName: STATE_TABLE,
+    TableName: stateTable,
     Key: {
       pk: `AVATAR#${avatarId}`,
       sk: 'CONFIG',
@@ -357,10 +364,11 @@ export async function updateAvatarDiscordHomeChannel(
   }));
 
   // Propagate to ADMIN_TABLE
-  if (ADMIN_TABLE) {
+  const adminTable = getAdminTable();
+  if (adminTable) {
     try {
       await dynamo.send(new UpdateCommand({
-        TableName: ADMIN_TABLE,
+        TableName: adminTable,
         Key: {
           pk: `AVATAR#${avatarId}`,
           sk: 'CONFIG',
@@ -386,7 +394,8 @@ export async function updateAvatarDiscordHomeChannel(
 async function getDiscordHomeChannelEntries(
   deps: DiscordHomeChannelDeps = defaultDeps
 ): Promise<DiscordHomeChannelEntry[]> {
-  if (!ADMIN_TABLE) return [];
+  const adminTable = getAdminTable();
+  if (!adminTable) return [];
 
   const now = Date.now();
   if (homeChannelCache && homeChannelCache.entries && homeChannelCache.expiresAt > now) {
@@ -396,7 +405,7 @@ async function getDiscordHomeChannelEntries(
   try {
     const dynamo = deps.getDynamo();
     const result = await dynamo.send(new QueryCommand({
-      TableName: ADMIN_TABLE,
+      TableName: adminTable,
       KeyConditionExpression: 'pk = :pk',
       ExpressionAttributeValues: {
         ':pk': 'DISCORD_HOME_CHANNELS',
@@ -456,11 +465,12 @@ export async function removeDiscordHomeChannelMembership(
   channelId: string,
   deps: DiscordHomeChannelDeps = defaultDeps
 ): Promise<void> {
-  if (!ADMIN_TABLE) return;
+  const adminTable = getAdminTable();
+  if (!adminTable) return;
 
   const dynamo = deps.getDynamo();
   const existing = await dynamo.send(new GetCommand({
-    TableName: ADMIN_TABLE,
+    TableName: adminTable,
     Key: { pk: 'DISCORD_HOME_CHANNELS', sk: channelId },
     ProjectionExpression: 'registeredAvatars',
   })) as { Item?: { registeredAvatars?: Array<{ avatarId: string; botUsername: string }> } };
@@ -471,7 +481,7 @@ export async function removeDiscordHomeChannelMembership(
   const filtered = registeredAvatars.filter((a) => a.avatarId !== avatarId);
 
   await dynamo.send(new UpdateCommand({
-    TableName: ADMIN_TABLE,
+    TableName: adminTable,
     Key: { pk: 'DISCORD_HOME_CHANNELS', sk: channelId },
     UpdateExpression: 'SET registeredAvatars = :filtered, updatedAt = :now',
     ExpressionAttributeValues: {
@@ -494,11 +504,13 @@ export async function cleanupDiscordChannelState(
   const dynamo = deps.getDynamo();
   const deletePromises: Promise<unknown>[] = [];
   const log = deps.logger || logger;
+  const stateTable = getStateTable();
+  const adminTable = getAdminTable();
 
-  if (STATE_TABLE) {
+  if (stateTable) {
     deletePromises.push(
       dynamo.send(new DeleteCommand({
-        TableName: STATE_TABLE,
+        TableName: stateTable,
         Key: {
           pk: `AVATAR#${avatarId}`,
           sk: `CHANNEL#${channelId}#STATE`,
@@ -513,10 +525,10 @@ export async function cleanupDiscordChannelState(
     );
   }
 
-  if (ADMIN_TABLE) {
+  if (adminTable) {
     deletePromises.push(
       dynamo.send(new DeleteCommand({
-        TableName: ADMIN_TABLE,
+        TableName: adminTable,
         Key: {
           pk: `CHANNEL#${avatarId}#${channelId}`,
           sk: 'STATE',
