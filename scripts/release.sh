@@ -7,6 +7,8 @@
 #   ./scripts/release.sh minor      # new features, significant refactors
 #   ./scripts/release.sh major      # breaking changes, schema migrations
 #   ./scripts/release.sh v1.0.0     # explicit version
+#   ./scripts/release.sh --dry-run  # run preflight only, skip publish
+#   ./scripts/release.sh --skip-preflight patch  # skip preflight (emergency)
 #
 # Creates a GitHub Release (and tag) on main via the GitHub CLI.
 # The release-notes.yml workflow will fire and overwrite the body
@@ -14,6 +16,119 @@
 #
 
 set -e
+
+# ── Parse flags ──────────────────────────────────────────────────────────────
+
+DRY_RUN=false
+SKIP_PREFLIGHT=false
+VERSION_ARG=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run)        DRY_RUN=true ;;
+    --skip-preflight) SKIP_PREFLIGHT=true ;;
+    *)                VERSION_ARG="$arg" ;;
+  esac
+done
+
+# ── Preflight checks ────────────────────────────────────────────────────────
+
+preflight_pass() {
+  echo "[PREFLIGHT] $1... ✓"
+}
+
+preflight_fail() {
+  echo "[PREFLIGHT] $1... ✗"
+  echo "ERROR: Release gate failed: $2"
+  exit 1
+}
+
+if [ "$SKIP_PREFLIGHT" = true ]; then
+  echo ""
+  echo "WARNING: --skip-preflight specified. Skipping all validation gates."
+  echo "WARNING: Use this only for emergency releases."
+  echo ""
+else
+  echo ""
+  echo "Running preflight checks..."
+  echo ""
+
+  # 1. Clean git state
+  if git diff --quiet && git diff --cached --quiet; then
+    preflight_pass "Checking clean git state"
+  else
+    preflight_fail "Checking clean git state" "working tree has uncommitted changes."
+  fi
+
+  # 2. On main branch
+  current_branch=$(git rev-parse --abbrev-ref HEAD)
+  if [ "$current_branch" = "main" ]; then
+    preflight_pass "Checking branch is main"
+  else
+    preflight_fail "Checking branch is main" "current branch is '$current_branch', expected 'main'."
+  fi
+
+  # 3. Lint
+  echo "[PREFLIGHT] Running lint..."
+  if pnpm lint > /dev/null 2>&1; then
+    preflight_pass "Running lint"
+  else
+    preflight_fail "Running lint" "pnpm lint found errors."
+  fi
+
+  # 4. Typecheck
+  echo "[PREFLIGHT] Running typecheck..."
+  if pnpm typecheck > /dev/null 2>&1; then
+    preflight_pass "Running typecheck"
+  else
+    preflight_fail "Running typecheck" "pnpm typecheck found errors."
+  fi
+
+  # 5. Build
+  echo "[PREFLIGHT] Running build..."
+  if pnpm build > /dev/null 2>&1; then
+    preflight_pass "Running build"
+  else
+    preflight_fail "Running build" "pnpm build failed."
+  fi
+
+  # 6. Test
+  echo "[PREFLIGHT] Running tests..."
+  if bun test > /dev/null 2>&1; then
+    preflight_pass "Running tests"
+  else
+    preflight_fail "Running tests" "bun test had failures."
+  fi
+
+  # 7. Audit
+  echo "[PREFLIGHT] Running audit..."
+  if pnpm audit --audit-level=high > /dev/null 2>&1; then
+    preflight_pass "Running audit"
+  else
+    preflight_fail "Running audit" "pnpm audit found high-severity findings."
+  fi
+
+  # 8. Security exceptions
+  echo "[PREFLIGHT] Validating security exceptions..."
+  if node scripts/validate-security-exceptions.mjs --warn-days 14 > /dev/null 2>&1; then
+    preflight_pass "Validating security exceptions"
+  else
+    preflight_fail "Validating security exceptions" "security exception validation failed."
+  fi
+
+  echo ""
+  echo "All preflight checks passed."
+  echo ""
+fi
+
+# ── Dry-run exit ─────────────────────────────────────────────────────────────
+
+if [ "$DRY_RUN" = true ]; then
+  echo "Dry run complete. Skipping release creation."
+  exit 0
+fi
+
+# ── Release flow ─────────────────────────────────────────────────────────────
 
 # Ensure gh CLI is available
 if ! command -v gh &>/dev/null; then
@@ -35,17 +150,17 @@ current_version="${current_tag#v}"
 IFS='.' read -r major minor patch <<< "$current_version"
 
 # Determine new version
-if [ -z "$1" ] || [ "$1" = "patch" ]; then
+if [ -z "$VERSION_ARG" ] || [ "$VERSION_ARG" = "patch" ]; then
   new_version="v$major.$minor.$((patch + 1))"
-elif [ "$1" = "minor" ]; then
+elif [ "$VERSION_ARG" = "minor" ]; then
   new_version="v$major.$((minor + 1)).0"
-elif [ "$1" = "major" ]; then
+elif [ "$VERSION_ARG" = "major" ]; then
   new_version="v$((major + 1)).0.0"
-elif [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  new_version="$1"
+elif [[ "$VERSION_ARG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  new_version="$VERSION_ARG"
 else
-  echo "Invalid argument: $1"
-  echo "Usage: $0 [patch|minor|major|vX.Y.Z]"
+  echo "Invalid argument: $VERSION_ARG"
+  echo "Usage: $0 [patch|minor|major|vX.Y.Z] [--dry-run] [--skip-preflight]"
   exit 1
 fi
 
