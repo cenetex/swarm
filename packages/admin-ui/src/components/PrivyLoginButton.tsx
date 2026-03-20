@@ -3,8 +3,8 @@
  * For use in public pages like shared chat where we only want Privy auth
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { usePrivy } from '@privy-io/react-auth';
+import { useTranslation } from 'react-i18next';
 import { useAuth, useAuthStore } from '../store/auth';
 
 interface PrivyLoginButtonProps {
@@ -269,6 +269,7 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
           onClick={handleLogout}
           className="p-1.5 rounded-lg hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
           title={t('common.signOut')}
+          aria-label={t('common.signOut')}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

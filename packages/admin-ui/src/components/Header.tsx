@@ -14,7 +14,7 @@ export function Header({ onClear }: HeaderProps) {
           <img src="/swarm.svg" alt="Swarm" className="w-8 h-8" />
           <div>
             <h1 className="text-lg font-semibold text-[var(--color-text)]">Swarm</h1>
-            <p className="text-xs text-[var(--color-text-tertiary)]">{t('header.subtitle')}</p>
+            <p className="text-xs text-[var(--color-text-tertiary)]">{t('activation.headerTitle')}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -22,9 +22,9 @@ export function Header({ onClear }: HeaderProps) {
             onClick={onClear}
             className="px-3 py-1.5 text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
           >
-            {t('header.clearChat')}
+            {t('chat.clearChat')}
           </button>
-          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse-slow" title={t('header.connected')} />
+          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse-slow" title={t('auth.connected')} />
         </div>
       </div>
     </header>

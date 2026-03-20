@@ -16,22 +16,24 @@ interface ActivationChecklistProps {
 
 interface ChecklistItem {
   id: string;
-  labelKey: string;
+  label: string;
   done: boolean;
-  suggestionKey?: string;
+  suggestion?: string;
   priority: 'required' | 'recommended' | 'optional';
 }
 
-function getChecklistItems(avatar: Avatar): ChecklistItem[] {
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+
+function getChecklistItems(avatar: Avatar, t: TranslateFn): ChecklistItem[] {
   const items: ChecklistItem[] = [];
 
   // 1. Persona / description set
   const hasPersona = Boolean(avatar.persona && avatar.persona.trim().length > 10);
   items.push({
     id: 'persona',
-    labelKey: 'activation.setPersonality',
+    label: t('activation.setPersonality'),
     done: hasPersona,
-    suggestionKey: 'activation.personalitySuggestion',
+    suggestion: t('activation.personalitySuggestion'),
     priority: 'recommended',
   });
 
@@ -42,9 +44,9 @@ function getChecklistItems(avatar: Avatar): ChecklistItem[] {
   );
   items.push({
     id: 'profile_image',
-    labelKey: 'activation.setProfileImage',
+    label: t('activation.setProfileImage'),
     done: hasProfileImage,
-    suggestionKey: 'activation.profileImageSuggestion',
+    suggestion: t('activation.profileImageSuggestion'),
     priority: 'recommended',
   });
 
@@ -52,9 +54,9 @@ function getChecklistItems(avatar: Avatar): ChecklistItem[] {
   const telegramEnabled = avatar.platforms?.telegram?.enabled === true;
   items.push({
     id: 'telegram',
-    labelKey: 'activation.connectTelegramItem',
+    label: t('activation.connectTelegramItem'),
     done: telegramEnabled,
-    suggestionKey: 'activation.telegramSuggestion',
+    suggestion: t('activation.telegramSuggestion'),
     priority: 'optional',
   });
 
@@ -62,9 +64,9 @@ function getChecklistItems(avatar: Avatar): ChecklistItem[] {
   const twitterEnabled = avatar.platforms?.twitter?.enabled === true;
   items.push({
     id: 'twitter',
-    labelKey: 'activation.connectTwitterItem',
+    label: t('activation.connectTwitterItem'),
     done: twitterEnabled,
-    suggestionKey: 'activation.twitterSuggestion',
+    suggestion: t('activation.twitterSuggestion'),
     priority: 'optional',
   });
 
@@ -72,9 +74,9 @@ function getChecklistItems(avatar: Avatar): ChecklistItem[] {
   const discordEnabled = avatar.platforms?.discord?.enabled === true;
   items.push({
     id: 'discord',
-    labelKey: 'activation.configureDiscord',
+    label: t('activation.connectDiscordItem'),
     done: discordEnabled,
-    suggestionKey: 'activation.discordSuggestion',
+    suggestion: t('activation.discordSuggestion'),
     priority: 'optional',
   });
 
@@ -82,9 +84,9 @@ function getChecklistItems(avatar: Avatar): ChecklistItem[] {
 }
 
 export function ActivationChecklist({ avatar, onSuggest }: ActivationChecklistProps) {
-  const { t } = useTranslation();
   const [dismissed, setDismissed] = useState(false);
-  const items = useMemo(() => getChecklistItems(avatar), [avatar]);
+  const { t } = useTranslation();
+  const items = useMemo(() => getChecklistItems(avatar, t), [avatar, t]);
   const completedCount = items.filter(i => i.done).length;
   const allDone = completedCount === items.length;
 
@@ -101,13 +103,13 @@ export function ActivationChecklist({ avatar, onSuggest }: ActivationChecklistPr
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span className="text-sm font-medium text-green-300">
-                {t('activation.allSet')}
+                {t('activation.completedMessage')}
               </span>
             </div>
             <button
               onClick={() => setDismissed(true)}
               className="p-1 rounded hover:bg-green-500/20 text-green-400 hover:text-green-300"
-              aria-label={t('activation.dismiss')}
+              aria-label={t('common.close')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                 <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -131,16 +133,16 @@ export function ActivationChecklist({ avatar, onSuggest }: ActivationChecklistPr
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
             <span className="text-sm font-medium text-[var(--color-text)]">
-              {t('activation.activationProgress')}
+              {t('activation.progressTitle')}
             </span>
             <span className="text-xs text-[var(--color-text-muted)]">
-              {completedCount}/{items.length}
+              {t('activation.progressCount', { completed: completedCount, total: items.length })}
             </span>
           </div>
           <button
             onClick={() => setDismissed(true)}
             className="p-1 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            aria-label={t('activation.dismissChecklist')}
+            aria-label={t('common.close')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
               <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -175,19 +177,19 @@ export function ActivationChecklist({ avatar, onSuggest }: ActivationChecklistPr
                   ? 'text-[var(--color-text-muted)] line-through'
                   : 'text-[var(--color-text-secondary)]'
               }`}>
-                {t(item.labelKey)}
+                {item.label}
                 {item.priority === 'optional' && !item.done && (
-                  <span className="ml-1 text-[var(--color-text-muted)]">{t('activation.optional')}</span>
+                  <span className="ml-1 text-[var(--color-text-muted)]">{t('activation.optionalLabel')}</span>
                 )}
               </span>
 
               {/* Quick action button */}
-              {!item.done && item.suggestionKey && (
+              {!item.done && item.suggestion && (
                 <button
-                  onClick={() => onSuggest(t(item.suggestionKey!))}
+                  onClick={() => onSuggest(item.suggestion!)}
                   className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-brand-400 hover:text-brand-300 whitespace-nowrap"
                 >
-                  {t('activation.setUp')}
+                  {t('activation.setupAction')}
                 </button>
               )}
             </div>
@@ -197,7 +199,7 @@ export function ActivationChecklist({ avatar, onSuggest }: ActivationChecklistPr
         {/* Tip */}
         <div className="mt-3 pt-2 border-t border-[var(--color-border)]">
           <p className="text-xs text-[var(--color-text-muted)]">
-            {t('activation.chatTip')}
+            {t('activation.tip')}
           </p>
         </div>
       </div>
