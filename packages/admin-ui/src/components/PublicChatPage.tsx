@@ -86,7 +86,7 @@ function PoweredByFooter() {
         className="inline-flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
       >
         <img src="/swarm.svg" alt="" className="w-3.5 h-3.5 opacity-60" />
-        {t('publicChat.poweredBySwarm')}
+        {t('publicChatPage.footer.poweredBy')}
       </a>
     </footer>
   );
@@ -116,12 +116,12 @@ function AvatarImage({ info, size = 'md' }: { info: ChannelAvatarInfo | null; si
 }
 
 /** Update document meta tags for social link previews */
-function useMetaTags(avatarInfo: ChannelAvatarInfo | null) {
+function useMetaTags(avatarInfo: ChannelAvatarInfo | null, t: (key: string, options?: Record<string, unknown>) => string) {
   useEffect(() => {
     if (!avatarInfo) return;
 
-    const title = `Chat with ${avatarInfo.name} — Swarm`;
-    const desc = avatarInfo.description || `Talk to ${avatarInfo.name} on Swarm`;
+    const title = t('publicChatPage.meta.title', { name: avatarInfo.name });
+    const desc = avatarInfo.description || t('publicChatPage.meta.description', { name: avatarInfo.name });
 
     document.title = title;
 
@@ -148,9 +148,9 @@ function useMetaTags(avatarInfo: ChannelAvatarInfo | null) {
     setMeta('meta[name="description"]', 'content', desc);
 
     return () => {
-      document.title = 'Swarm — AI Avatars on Solana';
+      document.title = t('publicChatPage.meta.defaultTitle');
     };
-  }, [avatarInfo]);
+  }, [avatarInfo, t]);
 }
 
 function DescriptionText({ description }: { description: string }) {
@@ -181,10 +181,11 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
 
   const [avatarInfo, setAvatarInfo] = useState<ChannelAvatarInfo | null>(null);
   const [loadingAvatar, setLoadingAvatar] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [errorKey, setErrorKey] = useState<'avatarNotFound' | 'failedToLoadAvatar' | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
   // Set dynamic meta tags for social link previews
-  useMetaTags(avatarInfo);
+  useMetaTags(avatarInfo, t);
 
   // Bootstrap auth from backend cookie/session on public subdomains.
   // Without this, Privy sessions can exist (cookie) while the UI still thinks
@@ -217,22 +218,26 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
   // Fetch avatar info on mount (public endpoint, no auth required)
   useEffect(() => {
     async function fetchAvatar() {
+      setErrorKey(null);
+      setErrorDetail(null);
       try {
         const result = await getChannelAvatar(botId);
         if (result.avatar) {
           setAvatarInfo(result.avatar);
         } else {
-          setError(t('publicChat.avatarNotFound'));
+          setErrorKey('avatarNotFound');
+          setErrorDetail(null);
         }
       } catch (err) {
         console.error('Failed to load avatar info:', err);
-        setError(err instanceof Error ? err.message : t('publicChat.failedToLoadAvatar'));
+        setErrorKey('failedToLoadAvatar');
+        setErrorDetail(err instanceof Error ? err.message : null);
       } finally {
         setLoadingAvatar(false);
       }
     }
     void fetchAvatar();
-  }, [botId, t]);
+  }, [botId]);
 
   // Display name for header
   const displayName = useMemo(() => {
@@ -258,7 +263,7 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
               <div className="h-full w-full animate-pulse bg-[var(--color-bg-tertiary)]" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">{t('publicChat.chatWith')}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">{t('publicChatPage.header.chatWith')}</p>
               <h1 className="truncate text-lg font-semibold">{t('common.loading')}</h1>
             </div>
           </div>
@@ -272,7 +277,7 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
   }
 
   // Error state
-  if (error) {
+  if (errorKey) {
     return (
       <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text)] flex flex-col">
         <header className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur">
@@ -281,14 +286,17 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
               <span className="text-white text-lg font-bold">?</span>
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">{t('publicChat.chatWith')}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">{t('publicChatPage.header.chatWith')}</p>
               <h1 className="truncate text-lg font-semibold">{botId}</h1>
             </div>
           </div>
         </header>
         <div className="flex-1 flex items-center justify-center">
           <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-6 py-4 text-center">
-            <p className="text-red-200">{error}</p>
+            <p className="text-red-200">
+              {t(`publicChatPage.errors.${errorKey}`)}
+              {errorDetail ? `: ${errorDetail}` : ''}
+            </p>
           </div>
         </div>
         <PoweredByFooter />
@@ -311,7 +319,7 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
           <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3">
             <AvatarImage info={avatarInfo} size="md" />
             <div className="min-w-0 flex-1">
-              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">{t('publicChat.chatWith')}</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">{t('publicChatPage.header.chatWith')}</p>
               <h1 className="truncate text-lg font-semibold">{displayName}</h1>
             </div>
             <div className="ml-auto shrink-0">
@@ -351,7 +359,7 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
               <PrivyLoginButton className="w-full justify-center" />
             </div>
             <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">
-              {t('publicChat.signInToChat')}
+              {t('publicChatPage.auth.signInToStartChatting')}
             </p>
           </div>
         </div>
@@ -364,6 +372,9 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
   // Determine if user is an Orb holder (affects message limits)
   const isOrbHolder = (gateStatus?.nftsHeld ?? 0) > 0;
   const dailyLimit = isOrbHolder ? 100 : 10;
+  const limitedTitle = isOrbHolder
+    ? t('publicChatPage.access.orbHolder', { dailyLimit })
+    : t('publicChatPage.access.limited', { dailyLimit });
 
   // Authenticated - render SharedChatPanel with the public avatar
   return (
@@ -385,9 +396,9 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
                       ? 'bg-brand-500/20 text-brand-400'
                       : 'bg-yellow-500/20 text-yellow-400'
                   }`}
-                  title={isOrbHolder ? t('publicChat.orbHolderTooltip', { limit: dailyLimit }) : t('publicChat.limitedTooltip', { limit: dailyLimit })}
+                  title={limitedTitle}
                 >
-                  {isOrbHolder ? t('publicChat.orbBadge') : t('publicChat.limitedBadge')}
+                  {isOrbHolder ? t('publicChatPage.access.orbBadge') : t('publicChatPage.access.limitedBadge')}
                 </span>
               </div>
               {/* Platform badges + description row */}

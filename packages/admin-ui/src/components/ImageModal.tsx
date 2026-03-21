@@ -11,11 +11,12 @@ interface ImageModalProps {
   onClose: () => void;
 }
 
-export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps) {
+export function ImageModal({ imageUrl, alt, onClose }: ImageModalProps) {
   const { t } = useTranslation();
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'success' | 'error'>('idle');
   const [imageLoaded, setImageLoaded] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resolvedAlt = alt || t('imageModal.alt');
 
   // Clean up copy status timer on unmount
   useEffect(() => {
@@ -117,6 +118,7 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
         onClick={onClose}
         className="absolute top-4 right-4 p-2 text-white/70 hover:text-white transition-colors z-10"
         aria-label={t('common.close')}
+        title={t('common.close')}
       >
         <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -139,7 +141,8 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
               ? 'bg-red-600 text-white'
               : 'bg-white/10 text-white hover:bg-white/20'
           }`}
-          title={t('imageModal.copyImage')}
+          aria-label={t('imageModal.actions.copy')}
+          title={t('imageModal.actions.copy')}
         >
           {copyStatus === 'copying' ? (
             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -153,7 +156,11 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
             </svg>
           )}
           <span className="text-sm font-medium">
-            {copyStatus === 'success' ? t('common.copied') : copyStatus === 'error' ? t('imageModal.failed') : t('common.copy')}
+            {copyStatus === 'success'
+              ? t('imageModal.status.copied')
+              : copyStatus === 'error'
+                ? t('imageModal.status.failed')
+                : t('common.copy')}
           </span>
         </button>
 
@@ -161,7 +168,8 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
         <button
           onClick={handleSaveImage}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
-          title={t('imageModal.saveImage')}
+          aria-label={t('imageModal.actions.save')}
+          title={t('imageModal.actions.save')}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -173,12 +181,13 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
         <button
           onClick={handleOpenInNewTab}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
-          title={t('imageModal.openInNewTab')}
+          aria-label={t('imageModal.actions.open')}
+          title={t('imageModal.actions.open')}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
           </svg>
-          <span className="text-sm font-medium">{t('imageModal.open')}</span>
+          <span className="text-sm font-medium">{t('imageModal.actions.open')}</span>
         </button>
       </div>
 
@@ -194,7 +203,7 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
         )}
         <img
           src={imageUrl}
-          alt={alt}
+          alt={resolvedAlt}
           className={`max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl transition-opacity ${
             imageLoaded ? 'opacity-100' : 'opacity-0'
           }`}
@@ -207,7 +216,7 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
         className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg bg-black/50 text-white/70 text-sm"
         onClick={(e) => e.stopPropagation()}
       >
-        {t('imageModal.clickOutsideHint')}
+        {t('imageModal.hint')}
       </div>
     </div>
   );

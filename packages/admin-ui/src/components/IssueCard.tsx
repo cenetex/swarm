@@ -70,7 +70,7 @@ export function IssueCard({ issue, isExpanded, onToggle, isActive }: IssueCardPr
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium uppercase ${badgeColor}`}>
-              {issue.severity}
+              {t(`issueCard.severity.${issue.severity}`, { defaultValue: issue.severity })}
             </span>
             <span className="text-xs px-2 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]">
               {issue.category}
@@ -97,14 +97,14 @@ export function IssueCard({ issue, isExpanded, onToggle, isActive }: IssueCardPr
         <div className="border-t border-current/20 px-4 py-3 space-y-3 bg-black/20">
           {/* Description */}
           <div>
-            <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">{t('issueCard.description')}</h5>
+            <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">{t('issueCard.fields.description')}</h5>
             <p className="text-sm text-[var(--color-text)]">{issue.description}</p>
           </div>
 
           {/* User message that triggered the issue */}
           {issue.userMessage && (
             <div>
-              <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">{t('issueCard.userMessage')}</h5>
+              <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">{t('issueCard.fields.userMessage')}</h5>
               <p className="text-sm text-[var(--color-text)] bg-[var(--color-bg-tertiary)] rounded px-2 py-1.5 font-mono">
                 "{issue.userMessage}"
               </p>
@@ -114,7 +114,7 @@ export function IssueCard({ issue, isExpanded, onToggle, isActive }: IssueCardPr
           {/* Context details */}
           {issue.context && Object.keys(issue.context).length > 0 && (
             <div>
-              <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">{t('issueCard.context')}</h5>
+              <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">{t('issueCard.fields.context')}</h5>
               <pre className="text-xs text-[var(--color-text)] bg-[var(--color-bg)] rounded p-2 overflow-x-auto max-h-[200px] overflow-y-auto">
                 {JSON.stringify(issue.context, null, 2)}
               </pre>
@@ -123,10 +123,10 @@ export function IssueCard({ issue, isExpanded, onToggle, isActive }: IssueCardPr
 
           {/* Metadata */}
           <div className="flex flex-wrap gap-4 text-xs text-[var(--color-text-muted)]">
-            <span>{t('issueCard.id')} <code className="text-[var(--color-text-secondary)]">{issue.id}</code></span>
+            <span>{t('issueCard.fields.id')} <code className="text-[var(--color-text-secondary)]">{issue.id}</code></span>
             {issue.logStream && (
               <span className="truncate max-w-[300px]" title={issue.logStream}>
-                {t('issueCard.stream')} <code className="text-[var(--color-text-secondary)]">{issue.logStream.split('/').pop()}</code>
+                {t('issueCard.fields.stream')} <code className="text-[var(--color-text-secondary)]">{issue.logStream.split('/').pop()}</code>
               </span>
             )}
           </div>
@@ -158,12 +158,12 @@ export function IssueNavigation({ issues, currentIndex, onNavigate }: IssueNavig
       </svg>
       
       <span className="text-xs text-[var(--color-text-secondary)]">
-        {t('issueCard.issueOf', { current: currentIndex + 1, total: issues.length })}
+        {t('issueCard.navigation.current', { current: currentIndex + 1, total: issues.length })}
       </span>
 
       {currentIssue && (
         <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium uppercase ${getSeverityBadgeColor(currentIssue.severity)}`}>
-          {currentIssue.severity}
+          {t(`issueCard.severity.${currentIssue.severity}`, { defaultValue: currentIssue.severity })}
         </span>
       )}
 
@@ -173,7 +173,8 @@ export function IssueNavigation({ issues, currentIndex, onNavigate }: IssueNavig
         onClick={() => onNavigate(currentIndex - 1)}
         disabled={!hasPrev}
         className="p-1 rounded hover:bg-[var(--color-bg-tertiary)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-        title={t('issueCard.previousIssue')}
+        aria-label={t('issueCard.navigation.previous')}
+        title={t('issueCard.navigation.previous')}
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -184,7 +185,8 @@ export function IssueNavigation({ issues, currentIndex, onNavigate }: IssueNavig
         onClick={() => onNavigate(currentIndex + 1)}
         disabled={!hasNext}
         className="p-1 rounded hover:bg-[var(--color-bg-tertiary)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-        title={t('issueCard.nextIssue')}
+        aria-label={t('issueCard.navigation.next')}
+        title={t('issueCard.navigation.next')}
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

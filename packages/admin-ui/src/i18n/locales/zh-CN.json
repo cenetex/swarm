@@ -363,49 +363,6 @@
     "planAndUsage": "套餐与用量",
     "preview": "预览"
   },
-  "avatarConfig": {
-    "namePlaceholder": "头像名称",
-    "unconfiguredShell": "未配置的头像",
-    "configured": "已配置的头像",
-    "description": "描述",
-    "descriptionPlaceholder": "这个头像是做什么的？",
-    "tabs": {
-      "general": "常规",
-      "persona": "人设",
-      "secrets": "密钥"
-    },
-    "orbSlot": {
-      "title": "Orb 插槽",
-      "description": "将 Orb NFT 插入此头像以明确支持它。",
-      "unslot": "移除",
-      "current": "当前：",
-      "none": "无",
-      "selectOrb": "选择一个 Orb…",
-      "slot": "插入",
-      "noOrbs": "在您当前的钱包中未检测到 Orb。"
-    },
-    "systemPersona": "系统人设",
-    "personaHint": "定义头像的个性、专长和行为",
-    "personaPlaceholder": "你是一个专注于...的有用AI助手\n\n你的专长包括：\n- 主题 1\n- 主题 2\n\n你的沟通风格是...",
-    "configuredSecrets": "已配置的密钥",
-    "secretSet": "已设置",
-    "secretNotSet": "未设置",
-    "addSecret": "添加密钥",
-    "quickAdd": "快速添加：",
-    "customSecretPlaceholder": "自定义密钥名称",
-    "add": "添加",
-    "secretsEncryptedNotice": "密钥以加密方式存储在 AWS Secrets Manager 中。这些值将在您部署头像时设置。",
-    "clickToConfirm": "再次点击以确认",
-    "deleteAvatar": "删除头像",
-    "saveChanges": "保存更改"
-  },
-  "avatarReassign": {
-    "title": "重新分配头像",
-    "creatorWallet": "创建者钱包",
-    "walletPlaceholder": "输入 Solana 钱包地址",
-    "walletHint": "创建此头像的钱包。更改此项会影响插槽计数。",
-    "saving": "保存中..."
-  },
   "landing": {
     "headline": "持久化 AI 代理：记忆、协作，活跃在您的所有平台",
     "subtitle": "创建拥有持久记忆的 AI 个性，连接到 Discord、Telegram 或 X — 全天候以相同上下文响应，无需服务器，无需编程。",
@@ -465,50 +422,19 @@
     "footerPoweredBy": "技术支持",
     "footerPrivacy": "隐私政策"
   },
-  "header": {
-    "subtitle": "头像指挥中心",
-    "clearChat": "清除聊天",
-    "connected": "已连接"
-  },
   "activation": {
     "setPersonality": "设置个性",
     "setProfileImage": "设置头像",
     "connectTelegramItem": "连接 Telegram",
-    "connectTwitterItem": "连接 Twitter / X",
-    "configureDiscord": "配置 Discord 机器人令牌",
-    "personalitySuggestion": "给我一个有趣的个性！我想成为一个友善的科技爱好者，喜欢猫咪。",
-    "profileImageSuggestion": "帮我生成一张头像",
-    "telegramSuggestion": "帮我连接 Telegram",
-    "twitterSuggestion": "帮我连接 Twitter",
-    "discordSuggestion": "帮我连接 Discord",
-    "allSet": "全部完成！您的头像已完全配置。",
-    "dismiss": "关闭",
-    "dismissChecklist": "关闭清单",
-    "activationProgress": "激活进度",
-    "setUp": "设置",
-    "optional": "（可选）",
-    "chatTip": "通过聊天来配置 — 让我设置个性、生成头像或连接平台。"
+    "personalitySuggestion": "给我一个有趣的个性！我想成为一个友善的科技爱好者，喜欢猫咪"
   },
   "consent": {
-    "title": "隐私与数据同意",
-    "summaryIntro": "在使用 RATi OS 之前，请了解我们如何处理您的数据。此服务由以下机构运营：",
     "walletIdentity": "钱包与身份",
-    "walletIdentityDesc": "我们收集您的钱包地址，如果您使用电子邮件登录，还会收集您的电子邮件。会话元数据（IP、User-Agent）保留 24 小时。",
     "aiConversations": "AI 对话",
-    "aiConversationsDesc": "您的聊天消息会发送至第三方 AI 提供商（Anthropic Claude、OpenAI GPT-4，通过 OpenRouter）以生成回复。媒体提示会发送至 Replicate。",
     "blockchainData": "区块链数据",
-    "blockchainDataDesc": "我们使用您的钱包公钥查询 Solana RPC 提供商（Helius）以验证 NFT 所有权。",
     "connectedServices": "已连接的服务",
-    "connectedServicesDesc": "如果您连接了 Telegram、Twitter 或 Discord，消息内容将通过其 API 与这些平台共享。",
     "storageRetention": "存储与保留",
-    "storageRetentionDesc": "聊天记录在 24 小时后自动删除。AI 记忆分为三个层级：临时（1 天）、持久（90 天）和归档（永久保留直至删除头像）。审计日志保留 1 年。账户和身份记录在您删除账户之前一直保留。根据数据类型，保留期限通过 TTL、生命周期规则或删除工作流执行。",
-    "back": "\u2190 返回",
-    "iAccept": "我接受",
-    "readFullPolicy": "阅读完整隐私政策（v{{version}}）",
-    "acceptButton": "我理解并接受",
-    "questionsContact": "有疑问？请联系",
-    "privacyPolicyTitle": "隐私政策",
-    "privacyPolicyFooter": "RATi OS \u2014 隐私政策 v1.3"
+    "acceptButton": "我理解并接受"
   },
   "energy": {
     "title": "能量",
@@ -548,198 +474,105 @@
     "bankCreditsSummary": "银行额度：{{credits}}"
   },
   "imageModal": {
-    "copyImage": "复制图片",
-    "failed": "失败",
-    "saveImage": "保存图片",
-    "openInNewTab": "在新标签页中打开",
-    "open": "打开",
-    "clickOutsideHint": "点击外部或按 Escape 键关闭"
+    "alt": "图片预览",
+    "actions": {
+      "copy": "复制图片",
+      "save": "保存图片",
+      "open": "在新标签页打开"
+    },
+    "status": {
+      "copied": "已复制！",
+      "failed": "失败"
+    },
+    "hint": "点击外部或按 Escape 键关闭"
+  },
+  "issueCard": {
+    "fields": {
+      "description": "描述",
+      "userMessage": "用户消息",
+      "context": "上下文",
+      "id": "ID：",
+      "stream": "流："
+    },
+    "navigation": {
+      "current": "问题 {{current}} / {{total}}",
+      "previous": "上一个问题",
+      "next": "下一个问题"
+    },
+    "severity": {
+      "critical": "严重",
+      "high": "高",
+      "medium": "中",
+      "low": "低"
+    }
   },
   "promptPreview": {
-    "title": "提示词预览",
-    "errorLoadingPreview": "加载预览时出错",
-    "noData": "暂无数据",
-    "refresh": "刷新",
-    "tokenBreakdown": {
+    "title": "提示预览",
+    "parameters": "参数（JSON Schema）",
+    "header": {
+      "empty": "暂无数据",
+      "error": "加载预览时出错",
+      "tokens": "~{{count}} 个 token"
+    },
+    "actions": {
+      "refresh": "刷新"
+    },
+    "tabs": {
+      "prompt": "系统提示词",
+      "tools": "工具（{{count}}）",
+      "messages": "消息（{{count}}）"
+    },
+    "stats": {
       "system": "系统：",
       "tools": "工具：",
       "messages": "消息：",
       "toolsets": "工具集："
     },
-    "tabs": {
-      "systemPrompt": "系统提示词",
-      "tools": "工具 ({{count}})",
-      "messages": "消息 ({{count}})"
+    "empty": {
+      "noAvatar": "未选择头像。请选择一个头像以预览其提示配置。"
     },
-    "filterByToolset": "按工具集筛选：",
-    "allToolsets": "全部 ({{count}})",
-    "parametersJsonSchema": "参数（JSON Schema）",
-    "noAvatarSelected": "未选择头像。请选择一个头像以预览其提示词配置。",
-    "failedToLoad": "加载提示词预览失败",
-    "retrying": "正在重试...",
-    "loadingPreview": "正在加载预览..."
-  },
-  "issueCard": {
-    "description": "描述",
-    "userMessage": "用户消息",
-    "context": "上下文",
-    "id": "ID：",
-    "stream": "流：",
-    "issueOf": "问题 {{current}} / {{total}}",
-    "previousIssue": "上一个问题",
-    "nextIssue": "下一个问题"
-  },
-  "publicChat": {
-    "chatWith": "与...聊天",
-    "avatarNotFound": "未找到头像",
-    "failedToLoadAvatar": "加载头像失败",
-    "signInToChat": "登录即可开始聊天",
-    "poweredBySwarm": "由 Swarm 提供支持",
-    "orbBadge": "Orb",
-    "limitedBadge": "受限",
-    "orbHolderTooltip": "Orb 持有者：{{limit}}/天",
-    "limitedTooltip": "受限：{{limit}}/天。持有 Orb 可获得 100/天。"
-  },
-  "privacy": {
-    "title": "隐私政策",
-    "lastUpdated": "最后更新：2026年3月21日 · 版本 1.4",
-    "footer": "RATi OS — 隐私政策 v1.4",
-    "footerOperator": "由 <cenetex>Cenetex Inc.</cenetex> 运营 · 由 <rati>RATi™ Open Software Foundation</rati> 授权",
-
-    "s1Title": "1. 概述",
-    "s1p1": "<cenetex>Cenetex Inc.</cenetex>（\u201c我们\u201d）运营 RATi 头像系统（\u201cRATi OS\u201d），网址为 swarm.rati.chat，允许用户在 Solana 区块链上创建和使用 AI 头像。本隐私政策说明我们收集哪些数据、如何使用、与谁共享以及您的权利。",
-    "s1p2": "RATi OS 基于 <rati>RATi™ Open Software Foundation</rati>（一个非营利组织）授权的开源软件构建。Cenetex Inc. 是本政策所述个人数据的数据控制者。",
-
-    "s2Title": "2. 我们收集的数据",
-    "s2_1Title": "2.1 身份验证与身份",
-    "s2_1_wallet": "<strong>钱包地址</strong> — 您的 Solana 公钥，每次登录时收集。",
-    "s2_1_email": "<strong>电子邮箱</strong> — 如果您通过 Privy（邮箱/社交账号）登录。",
-    "s2_1_session": "<strong>会话元数据</strong> — IP 地址、User-Agent 和时间戳。",
-    "s2_2Title": "2.2 对话与 AI 交互",
-    "s2_2_chat": "<strong>聊天消息</strong> — 您发送给头像的消息。",
-    "s2_2_memories": "<strong>头像记忆</strong> — AI 生成的交互摘要，存储在三个层级：",
-    "s2_2_ephemeral": "<strong>临时</strong> — 会话范围，自动删除。",
-    "s2_2_durable": "<strong>持久</strong> — 长期存储，自动删除。",
-    "s2_2_archival": "<strong>归档</strong> — 永久保存，仅摘要（保留至头像删除）。",
-    "s2_2_prompts": "<strong>系统提示词与角色数据</strong> — 您创建或编辑的头像配置。",
-    "s2_3Title": "2.3 区块链与 NFT 数据",
-    "s2_3_nft": "<strong>NFT 所有权状态</strong> — 我们检查您的钱包是否持有 Orb 系列 NFT 以确定功能访问权限。",
-    "s2_3_keys": "<strong>生成的钱包密钥对</strong> — 如果头像拥有自动生成的钱包，私钥将加密存储在 AWS Secrets Manager (KMS) 中。",
-    "s2_4Title": "2.4 内容与媒体",
-    "s2_4_media": "<strong>生成的媒体</strong> — 头像创建的图片、视频和音频。",
-    "s2_4_content": "<strong>内容存储</strong> — 草稿、已发布和被拒绝的社交媒体内容。",
-    "s2_5Title": "2.5 审计与运营日志",
-    "s2_5_audit": "<strong>审计日志</strong> — 管理操作记录（头像创建、更新、密钥更改、权限变更）。",
-    "s2_5_app": "<strong>应用日志</strong> — AWS CloudWatch 中的结构化日志。运营日志存储元数据而非消息内容，但您提交的故障排除报告可能包含您提供的文本。",
-    "s2_5_api": "<strong>API 访问日志</strong> — API Gateway 请求日志。",
-    "s2_6Title": "2.6 Cookie 与本地存储",
-    "s2_6_noCookies": "我们不使用第三方跟踪 Cookie。以下客户端存储被使用：",
-    "s2_6_consent": "<strong>swarm-consent</strong> — 您的隐私政策接受状态和版本。",
-    "s2_6_theme": "<strong>swarm-theme</strong> — 界面主题偏好。",
-    "s2_6_auth": "<strong>身份验证状态</strong> — 钱包/Privy 会话令牌和用于跨标签通信的临时 OAuth 流数据。",
-    "s2_6_clear": "您可以通过浏览器设置清除所有 localStorage 数据。清除同意存储将要求您重新接受本政策。",
-
-    "s3Title": "3. 数据使用方式",
-    "s3_auth": "验证您的身份并管理会话。",
-    "s3_chat": "提供 AI 头像对话并维护聊天上下文。",
-    "s3_nft": "检查 NFT 所有权以控制功能访问。",
-    "s3_memories": "在各保留层级生成和存储 AI 记忆。",
-    "s3_media": "通过 AI 模型生成图片、视频和音频内容。",
-    "s3_abuse": "检测滥用行为并执行速率限制。",
-    "s3_audit": "记录管理操作的审计跟踪。",
-    "s3_debug": "调试问题并提高平台可靠性。",
-
-    "s4Title": "4. 第三方数据共享与 AI 处理",
-    "s4Intro": "我们根据平台运营需要与以下第三方服务共享数据：",
-    "thProvider": "提供商",
-    "thData": "共享数据",
-    "thPurpose": "目的",
-    "openrouterNote": "路由至 Anthropic Claude、OpenAI GPT-4 及其他模型",
-    "openrouterData": "对话历史（上下文窗口）、系统提示词、头像角色",
-    "openrouterPurpose": "AI 文本回复生成",
-    "replicateData": "AI 模型提示词、输入媒体",
-    "replicatePurpose": "图片、视频和音频生成",
-    "privyData": "访问令牌、关联账户数据",
-    "privyPurpose": "邮箱/社交账号认证",
-    "heliusData": "钱包公钥",
-    "heliusPurpose": "NFT 所有权验证、链上查询",
-    "platformsData": "消息内容、媒体",
-    "platformsPurpose": "平台集成（仅在您连接时）",
-    "awsData": "所有后端数据",
-    "awsPurpose": "基础设施（DynamoDB、Lambda、S3、CloudWatch、Secrets Manager、SQS）",
-    "s4NoSell": "我们不出售您的数据。我们不使用您的对话来训练我们自己的 AI 模型。第三方 AI 提供商可能根据其自身隐私政策处理您的数据。",
-
-    "s5Title": "5. 数据保留",
-    "s5Intro": "保留期限通过 DynamoDB 中基于 TTL 的自动删除、S3 和 CloudWatch 中的生命周期策略以及显式删除流程来执行。账户记录、身份链接、同意记录和归档记忆将保留到您删除账户或头像，或提交删除请求为止。",
-    "thDataType": "数据类型",
-    "thRetention": "保留期限",
-    "retention": {
-      "sessions": "会话记录",
-      "activity": "活动记录",
-      "adminChat": "管理员聊天消息",
-      "channelState": "频道状态",
-      "memEphemeral": "AI 记忆 — 临时",
-      "memDurable": "AI 记忆 — 持久",
-      "memArchival": "AI 记忆 — 归档",
-      "canonical": "规范记忆",
-      "facts": "提取的事实",
-      "contentPosted": "已发布内容",
-      "contentPending": "待处理内容",
-      "contentRejected": "被拒绝内容",
-      "auditLogs": "审计日志",
-      "appLogsMsgProc": "应用日志（消息处理）",
-      "appLogsOther": "应用日志（管理、Discord 等）",
-      "mediaTemp": "媒体资产（临时）",
-      "mediaGeneral": "媒体资产（常规）",
-      "account": "账户与身份记录",
-      "consentRecords": "同意记录",
-      "secrets": "头像密钥（API 密钥）",
-      "24h": "24 小时（自动删除）",
-      "24hConfigurable": "24 小时（自动删除，可配置）",
-      "90d": "90 天（自动删除）",
-      "1d": "1 天（自动删除）",
-      "30d": "30 天（自动删除）",
-      "7d": "7 天（自动删除）",
-      "365d": "365 天 / 1 年（自动删除）",
-      "30dCW": "30 天（CloudWatch 保留）",
-      "14dCW": "14 天（CloudWatch 保留）",
-      "1dS3": "1 天（S3 生命周期）",
-      "30dTiered": "30 天后转为分级存储",
-      "untilDeletion": "无限期（至头像删除）",
-      "untilAccountDeletion": "至账户删除（无 TTL）",
-      "untilAvatarDeletion": "至头像删除（无 TTL）"
+    "errors": {
+      "fetchFailed": "获取预览失败。",
+      "loadFailed": "加载提示预览失败",
+      "retrying": "重试中…"
     },
-
-    "s6Title": "6. 数据安全",
-    "s6p1": "所有传输中的数据均通过 TLS 加密（强制 HTTPS）。DynamoDB 中的静态数据使用 AES-256 加密（AWS 托管密钥），密钥存储在 AWS Secrets Manager 中并使用 KMS 加密。每个头像的数据通过 DynamoDB 中的分区键隔离进行隔离。",
-    "s6p2": "钱包签名使用 Ed25519（Sign In With Solana）进行验证。依赖项在 CI 中接受已知漏洞审计，高危/严重发现将阻止部署。",
-
-    "s7Title": "7. 您的权利",
-    "s7Intro": "您有权：",
-    "s7_access": "<strong>访问</strong> — 请求我们持有的关于您的数据副本。",
-    "s7_correction": "<strong>更正</strong> — 请求更正不准确的数据。",
-    "s7_deletion": "<strong>删除</strong> — 请求删除您的个人数据。大多数运营数据通过 TTL 自动过期；账户记录在收到请求后 30 天内删除。",
-    "s7_portability": "<strong>可移植性</strong> — 请求以机器可读格式提供您的数据。",
-    "s7_withdraw": "<strong>撤回同意</strong> — 随时撤回您的同意（这不影响先前处理的合法性）。",
-    "s7Contact": "如需行使上述任何权利，请联系 <email>privacy@cenetex.com</email>。",
-    "s7Breach": "如果发生对您的权利和自由构成风险的数据泄露，我们将在发现泄露后 72 小时内通知受影响的用户和相关监管机构。",
-
-    "s8Title": "8. 儿童隐私",
-    "s8p1": "RATi OS 不面向 18 岁以下用户（或您所在司法管辖区的成年年龄，以较大者为准）。我们不会故意收集未成年人的数据。如果您认为未成年人向我们提供了数据，请联系 <email>privacy@cenetex.com</email>。",
-
-    "s9Title": "9. 国际传输与管辖权",
-    "s9p1": "RATi OS 基础设施托管在 AWS 的 US-East-1（北弗吉尼亚）和 CA-Central-1（加拿大）区域。如果您从北美以外访问服务，您的数据将被传输到这些区域并在这些区域进行处理。使用本服务即表示您同意此传输。",
-    "s9p2": "本政策受加拿大不列颠哥伦比亚省法律管辖。Cenetex Inc. 遵守《个人信息保护和电子文件法》（PIPEDA）。在具有额外数据保护法律的司法管辖区（包括欧盟 GDPR 和加州 CCPA）的用户可能享有第 7 节所述的额外权利。",
-
-    "s10Title": "10. 政策变更",
-    "s10p1": "我们可能会不时更新本政策。如果我们进行重大更改，我们将增加政策版本号并在应用内重新请求您的同意。",
-
-    "s11Title": "11. 联系我们",
-    "s11Intro": "如有隐私咨询、数据请求或疑虑：",
-    "s11Controller": "Cenetex Inc.（数据控制者）",
-    "s11Licensor": "RATi™ Open Software Foundation（软件许可方）",
-    "s11Email": "电子邮箱：",
-    "s11Web": "网站："
+    "loadingPreview": "正在加载预览…",
+    "filter": {
+      "label": "按工具集筛选：",
+      "all": "全部（{{count}}）"
+    },
+    "messageRoles": {
+      "system": "系统",
+      "user": "用户",
+      "assistant": "助手",
+      "tool": "工具"
+    }
+  },
+  "publicChatPage": {
+    "meta": {
+      "title": "与 {{name}} 聊天 — Swarm",
+      "description": "在 Swarm 上与 {{name}} 聊天",
+      "defaultTitle": "Swarm — Solana 上的 AI 头像"
+    },
+    "header": {
+      "chatWith": "与此头像聊天"
+    },
+    "errors": {
+      "avatarNotFound": "未找到头像",
+      "failedToLoadAvatar": "加载头像失败"
+    },
+    "auth": {
+      "signInToStartChatting": "登录后开始聊天"
+    },
+    "access": {
+      "orbHolder": "Orb 持有者：{{dailyLimit}}/天",
+      "limited": "受限：{{dailyLimit}}/天。持有 Orb 可提升至 100/天。",
+      "orbBadge": "Orb",
+      "limitedBadge": "受限"
+    },
+    "footer": {
+      "poweredBy": "由 Swarm 提供"
+    }
   },
   "language": {
     "label": "语言",
