@@ -465,11 +465,29 @@
     "footerPoweredBy": "Propulsé par",
     "footerPrivacy": "Politique de confidentialité"
   },
+  "header": {
+    "subtitle": "Centre de commande des avatars",
+    "clearChat": "Effacer le chat",
+    "connected": "Connecté"
+  },
   "activation": {
     "setPersonality": "Définir la personnalité",
     "setProfileImage": "Définir l'image de profil",
     "connectTelegramItem": "Connecter Telegram",
-    "personalitySuggestion": "Donne-moi une personnalité amusante ! Je veux être un passionné de tech sympathique qui adore les chats"
+    "connectTwitterItem": "Connecter Twitter / X",
+    "configureDiscord": "Configurer le token Discord",
+    "personalitySuggestion": "Donne-moi une personnalité amusante ! Je veux être un passionné de tech sympathique qui adore les chats.",
+    "profileImageSuggestion": "Génère une photo de profil pour moi",
+    "telegramSuggestion": "Connecte-moi à Telegram",
+    "twitterSuggestion": "Connecte-moi à Twitter",
+    "discordSuggestion": "Connecte-moi à Discord",
+    "allSet": "C'est bon ! Votre avatar est entièrement configuré.",
+    "dismiss": "Fermer",
+    "dismissChecklist": "Fermer la liste",
+    "activationProgress": "Progression de l'activation",
+    "setUp": "Configurer",
+    "optional": "(facultatif)",
+    "chatTip": "Discutez pour configurer — demandez-moi de définir une personnalité, générer une photo de profil ou connecter une plateforme."
   },
   "consent": {
     "title": "Confidentialité et consentement",

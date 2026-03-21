@@ -3,6 +3,7 @@
  * For use in public pages like shared chat where we only want Privy auth
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth, useAuthStore } from '../store/auth';
 
@@ -80,6 +81,7 @@ function getSolanaWalletAddressFromPrivyUser(user: unknown): string | null {
 }
 
 export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
+  const { t } = useTranslation();
   const { login, logout: privyLogout, ready, authenticated, user: privyUser, getAccessToken } = usePrivy();
   const { isAuthenticated, isLoading, user, logout: authLogout } = useAuth();
   const authStore = useAuthStore();
@@ -223,11 +225,11 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
   if (isLoading || authStore.isLoading || isWaitingForSync) {
     const loadingMessage = isWaitingForWallet
       ? walletWaitTimedOut
-        ? 'Wallet setup blocked'
-        : 'Creating wallet...'
+        ? t('auth.walletSetupBlocked')
+        : t('auth.creatingWallet')
       : isWaitingForSync
-      ? 'Syncing...'
-      : 'Connecting...';
+      ? t('auth.syncing')
+      : t('auth.connecting');
 
     return (
       <button
@@ -266,7 +268,7 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
         <button
           onClick={handleLogout}
           className="p-1.5 rounded-lg hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-          title="Sign out"
+          title={t('common.signOut')}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -285,7 +287,7 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
       </svg>
-      <span>Login with Privy</span>
+      <span>{t('auth.loginWithPrivy')}</span>
     </button>
   );
 }

@@ -465,11 +465,29 @@
     "footerPoweredBy": "Powered by",
     "footerPrivacy": "Privacy Policy"
   },
+  "header": {
+    "subtitle": "Avatar Command Center",
+    "clearChat": "Clear Chat",
+    "connected": "Connected"
+  },
   "activation": {
     "setPersonality": "Set personality",
     "setProfileImage": "Set profile image",
     "connectTelegramItem": "Connect Telegram",
-    "personalitySuggestion": "Give me a fun personality! I want to be a friendly tech nerd who loves cats"
+    "connectTwitterItem": "Connect Twitter / X",
+    "configureDiscord": "Configure Discord bot token",
+    "personalitySuggestion": "Give me a fun personality! I want to be a friendly tech nerd who loves cats.",
+    "profileImageSuggestion": "Generate a profile picture for me",
+    "telegramSuggestion": "Connect me to Telegram",
+    "twitterSuggestion": "Connect me to Twitter",
+    "discordSuggestion": "Connect me to Discord",
+    "allSet": "All set! Your avatar is fully configured.",
+    "dismiss": "Dismiss",
+    "dismissChecklist": "Dismiss checklist",
+    "activationProgress": "Activation Progress",
+    "setUp": "Set up",
+    "optional": "(optional)",
+    "chatTip": "Just chat to configure -- ask me to set a personality, generate a profile picture, or connect a platform."
   },
   "consent": {
     "title": "Privacy & Data Consent",

@@ -465,11 +465,29 @@
     "footerPoweredBy": "技术支持",
     "footerPrivacy": "隐私政策"
   },
+  "header": {
+    "subtitle": "头像指挥中心",
+    "clearChat": "清除聊天",
+    "connected": "已连接"
+  },
   "activation": {
     "setPersonality": "设置个性",
     "setProfileImage": "设置头像",
     "connectTelegramItem": "连接 Telegram",
-    "personalitySuggestion": "给我一个有趣的个性！我想成为一个友善的科技爱好者，喜欢猫咪"
+    "connectTwitterItem": "连接 Twitter / X",
+    "configureDiscord": "配置 Discord 机器人令牌",
+    "personalitySuggestion": "给我一个有趣的个性！我想成为一个友善的科技爱好者，喜欢猫咪。",
+    "profileImageSuggestion": "帮我生成一张头像",
+    "telegramSuggestion": "帮我连接 Telegram",
+    "twitterSuggestion": "帮我连接 Twitter",
+    "discordSuggestion": "帮我连接 Discord",
+    "allSet": "全部完成！您的头像已完全配置。",
+    "dismiss": "关闭",
+    "dismissChecklist": "关闭清单",
+    "activationProgress": "激活进度",
+    "setUp": "设置",
+    "optional": "（可选）",
+    "chatTip": "通过聊天来配置 — 让我设置个性、生成头像或连接平台。"
   },
   "consent": {
     "title": "隐私与数据同意",
