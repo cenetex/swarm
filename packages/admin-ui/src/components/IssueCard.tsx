@@ -2,6 +2,7 @@
  * IssueCard - Expandable issue display component for the logs panel
  */
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { AvatarIssue } from '../api/issues';
 
 interface IssueCardProps {
@@ -36,6 +37,7 @@ function getSeverityBadgeColor(severity: AvatarIssue['severity']): string {
 }
 
 export function IssueCard({ issue, isExpanded, onToggle, isActive }: IssueCardProps) {
+  const { t } = useTranslation();
   const severityColor = useMemo(() => getSeverityColor(issue.severity), [issue.severity]);
   const badgeColor = useMemo(() => getSeverityBadgeColor(issue.severity), [issue.severity]);
 
@@ -95,14 +97,14 @@ export function IssueCard({ issue, isExpanded, onToggle, isActive }: IssueCardPr
         <div className="border-t border-current/20 px-4 py-3 space-y-3 bg-black/20">
           {/* Description */}
           <div>
-            <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">Description</h5>
+            <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">{t('issueCard.description')}</h5>
             <p className="text-sm text-[var(--color-text)]">{issue.description}</p>
           </div>
 
           {/* User message that triggered the issue */}
           {issue.userMessage && (
             <div>
-              <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">User Message</h5>
+              <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">{t('issueCard.userMessage')}</h5>
               <p className="text-sm text-[var(--color-text)] bg-[var(--color-bg-tertiary)] rounded px-2 py-1.5 font-mono">
                 "{issue.userMessage}"
               </p>
@@ -112,7 +114,7 @@ export function IssueCard({ issue, isExpanded, onToggle, isActive }: IssueCardPr
           {/* Context details */}
           {issue.context && Object.keys(issue.context).length > 0 && (
             <div>
-              <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">Context</h5>
+              <h5 className="text-xs font-medium text-[var(--color-text-tertiary)] uppercase mb-1">{t('issueCard.context')}</h5>
               <pre className="text-xs text-[var(--color-text)] bg-[var(--color-bg)] rounded p-2 overflow-x-auto max-h-[200px] overflow-y-auto">
                 {JSON.stringify(issue.context, null, 2)}
               </pre>
@@ -121,10 +123,10 @@ export function IssueCard({ issue, isExpanded, onToggle, isActive }: IssueCardPr
 
           {/* Metadata */}
           <div className="flex flex-wrap gap-4 text-xs text-[var(--color-text-muted)]">
-            <span>ID: <code className="text-[var(--color-text-secondary)]">{issue.id}</code></span>
+            <span>{t('issueCard.id')} <code className="text-[var(--color-text-secondary)]">{issue.id}</code></span>
             {issue.logStream && (
               <span className="truncate max-w-[300px]" title={issue.logStream}>
-                Stream: <code className="text-[var(--color-text-secondary)]">{issue.logStream.split('/').pop()}</code>
+                {t('issueCard.stream')} <code className="text-[var(--color-text-secondary)]">{issue.logStream.split('/').pop()}</code>
               </span>
             )}
           </div>
@@ -141,6 +143,7 @@ interface IssueNavigationProps {
 }
 
 export function IssueNavigation({ issues, currentIndex, onNavigate }: IssueNavigationProps) {
+  const { t } = useTranslation();
   if (issues.length === 0) return null;
 
   const currentIssue = issues[currentIndex];
@@ -155,7 +158,7 @@ export function IssueNavigation({ issues, currentIndex, onNavigate }: IssueNavig
       </svg>
       
       <span className="text-xs text-[var(--color-text-secondary)]">
-        Issue {currentIndex + 1} of {issues.length}
+        {t('issueCard.issueOf', { current: currentIndex + 1, total: issues.length })}
       </span>
 
       {currentIssue && (
@@ -170,7 +173,7 @@ export function IssueNavigation({ issues, currentIndex, onNavigate }: IssueNavig
         onClick={() => onNavigate(currentIndex - 1)}
         disabled={!hasPrev}
         className="p-1 rounded hover:bg-[var(--color-bg-tertiary)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-        title="Previous issue"
+        title={t('issueCard.previousIssue')}
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -181,7 +184,7 @@ export function IssueNavigation({ issues, currentIndex, onNavigate }: IssueNavig
         onClick={() => onNavigate(currentIndex + 1)}
         disabled={!hasNext}
         className="p-1 rounded hover:bg-[var(--color-bg-tertiary)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-        title="Next issue"
+        title={t('issueCard.nextIssue')}
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

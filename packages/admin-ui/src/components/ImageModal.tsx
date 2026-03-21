@@ -3,6 +3,7 @@
  * Full-screen image viewer with copy/save options
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface ImageModalProps {
   imageUrl: string;
@@ -11,6 +12,7 @@ interface ImageModalProps {
 }
 
 export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps) {
+  const { t } = useTranslation();
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'success' | 'error'>('idle');
   const [imageLoaded, setImageLoaded] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -114,7 +116,7 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
       <button
         onClick={onClose}
         className="absolute top-4 right-4 p-2 text-white/70 hover:text-white transition-colors z-10"
-        aria-label="Close"
+        aria-label={t('common.close')}
       >
         <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -137,7 +139,7 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
               ? 'bg-red-600 text-white'
               : 'bg-white/10 text-white hover:bg-white/20'
           }`}
-          title="Copy image"
+          title={t('imageModal.copyImage')}
         >
           {copyStatus === 'copying' ? (
             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -151,7 +153,7 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
             </svg>
           )}
           <span className="text-sm font-medium">
-            {copyStatus === 'success' ? 'Copied!' : copyStatus === 'error' ? 'Failed' : 'Copy'}
+            {copyStatus === 'success' ? t('common.copied') : copyStatus === 'error' ? t('imageModal.failed') : t('common.copy')}
           </span>
         </button>
 
@@ -159,24 +161,24 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
         <button
           onClick={handleSaveImage}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
-          title="Save image"
+          title={t('imageModal.saveImage')}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
           </svg>
-          <span className="text-sm font-medium">Save</span>
+          <span className="text-sm font-medium">{t('common.save')}</span>
         </button>
 
         {/* Open in new tab */}
         <button
           onClick={handleOpenInNewTab}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
-          title="Open in new tab"
+          title={t('imageModal.openInNewTab')}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
           </svg>
-          <span className="text-sm font-medium">Open</span>
+          <span className="text-sm font-medium">{t('imageModal.open')}</span>
         </button>
       </div>
 
@@ -205,7 +207,7 @@ export function ImageModal({ imageUrl, alt = 'Image', onClose }: ImageModalProps
         className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg bg-black/50 text-white/70 text-sm"
         onClick={(e) => e.stopPropagation()}
       >
-        Click outside or press Escape to close
+        {t('imageModal.clickOutsideHint')}
       </div>
     </div>
   );

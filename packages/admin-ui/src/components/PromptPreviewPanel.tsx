@@ -5,6 +5,7 @@
  * and message history that would be sent to the LLM.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { fetchPromptPreview, type PromptPreviewResponse, type ToolPreview } from '../api/prompt-preview';
 import { useActiveAvatar, useActiveChat } from '../store';
 
@@ -27,6 +28,7 @@ function ToolCard({ tool, isExpanded, onToggle }: {
   isExpanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="border border-[var(--color-border)] rounded-lg overflow-hidden bg-[var(--color-bg-secondary)]/50">
       <button
@@ -58,7 +60,7 @@ function ToolCard({ tool, isExpanded, onToggle }: {
           </p>
           <details className="text-xs">
             <summary className="text-[var(--color-text-tertiary)] cursor-pointer hover:text-[var(--color-text-secondary)]">
-              Parameters (JSON Schema)
+              {t('promptPreview.parametersJsonSchema')}
             </summary>
             <pre className="mt-2 p-2 rounded bg-[var(--color-bg)] text-[var(--color-text-secondary)] overflow-x-auto text-[10px]">
               {JSON.stringify(tool.parameters, null, 2)}
@@ -71,6 +73,7 @@ function ToolCard({ tool, isExpanded, onToggle }: {
 }
 
 export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps) {
+  const { t } = useTranslation();
   const activeAgent = useActiveAvatar();
   const messages = useActiveChat();
 
@@ -159,15 +162,15 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
               </svg>
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-[var(--color-text)]">Prompt Preview</h2>
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">{t('promptPreview.title')}</h2>
               <p className="text-xs text-[var(--color-text-tertiary)]">
                 {error
-                  ? 'Error loading preview'
+                  ? t('promptPreview.errorLoadingPreview')
                   : preview
                     ? `~${formatTokenCount(preview.tokenEstimate.total)} tokens`
                     : isLoading
-                      ? 'Loading...'
-                      : 'No data'}
+                      ? t('common.loading')
+                      : t('promptPreview.noData')}
               </p>
             </div>
           </div>
@@ -178,7 +181,7 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
               disabled={isLoading}
               className="px-3 py-1.5 text-xs rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] transition-colors disabled:opacity-50"
             >
-              {isLoading ? 'Loading...' : 'Refresh'}
+              {isLoading ? t('common.loading') : t('promptPreview.refresh')}
             </button>
             <button
               onClick={onClose}
@@ -196,21 +199,21 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
           <div className="px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/50 flex flex-wrap gap-4 text-xs">
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-blue-400"></span>
-              <span className="text-[var(--color-text-tertiary)]">System:</span>
+              <span className="text-[var(--color-text-tertiary)]">{t('promptPreview.tokenBreakdown.system')}</span>
               <span className="text-[var(--color-text-secondary)]">{formatTokenCount(preview.tokenEstimate.systemPrompt)}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-green-400"></span>
-              <span className="text-[var(--color-text-tertiary)]">Tools:</span>
+              <span className="text-[var(--color-text-tertiary)]">{t('promptPreview.tokenBreakdown.tools')}</span>
               <span className="text-[var(--color-text-secondary)]">{formatTokenCount(preview.tokenEstimate.tools)}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-              <span className="text-[var(--color-text-tertiary)]">Messages:</span>
+              <span className="text-[var(--color-text-tertiary)]">{t('promptPreview.tokenBreakdown.messages')}</span>
               <span className="text-[var(--color-text-secondary)]">{formatTokenCount(preview.tokenEstimate.messages)}</span>
             </div>
             <div className="flex items-center gap-1.5 ml-auto">
-              <span className="text-[var(--color-text-tertiary)]">Toolsets:</span>
+              <span className="text-[var(--color-text-tertiary)]">{t('promptPreview.tokenBreakdown.toolsets')}</span>
               <span className="text-brand-400">{preview.enabledToolsets.length}</span>
             </div>
           </div>
@@ -227,7 +230,7 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
                   : 'border-transparent text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
               }`}
             >
-              System Prompt
+              {t('promptPreview.tabs.systemPrompt')}
             </button>
             <button
               onClick={() => setActiveTab('tools')}
@@ -237,7 +240,7 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
                   : 'border-transparent text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
               }`}
             >
-              Tools ({preview?.toolCount || 0})
+              {t('promptPreview.tabs.tools', { count: preview?.toolCount || 0 })}
             </button>
             <button
               onClick={() => setActiveTab('messages')}
@@ -247,7 +250,7 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
                   : 'border-transparent text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
               }`}
             >
-              Messages ({preview?.messages.length || 0})
+              {t('promptPreview.tabs.messages', { count: preview?.messages.length || 0 })}
             </button>
           </div>
         </div>
@@ -257,7 +260,7 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
           {!activeAgent && (
             <div className="m-4 p-4 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-center">
               <p className="text-sm text-[var(--color-text-secondary)]">
-                No avatar selected. Select an avatar to preview its prompt configuration.
+                {t('promptPreview.noAvatarSelected')}
               </p>
             </div>
           )}
@@ -269,14 +272,14 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-red-400">Failed to load prompt preview</p>
+                  <p className="text-sm font-medium text-red-400">{t('promptPreview.failedToLoad')}</p>
                   <p className="text-xs text-red-400/80 mt-1 break-words">{error}</p>
                   <button
                     onClick={loadPreview}
                     disabled={isLoading}
                     className="mt-2 px-3 py-1 text-xs rounded-md bg-red-900/30 hover:bg-red-900/50 text-red-300 transition-colors disabled:opacity-50"
                   >
-                    {isLoading ? 'Retrying...' : 'Retry'}
+                    {isLoading ? t('promptPreview.retrying') : t('common.retry')}
                   </button>
                 </div>
               </div>
@@ -285,7 +288,7 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
 
           {isLoading && !preview && !error && (
             <div className="p-4 text-center text-[var(--color-text-tertiary)]">
-              Loading preview...
+              {t('promptPreview.loadingPreview')}
             </div>
           )}
 
@@ -303,13 +306,13 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
             <div className="p-4 space-y-3">
               {/* Toolset filter */}
               <div className="flex items-center gap-2 text-xs">
-                <span className="text-[var(--color-text-tertiary)]">Filter by toolset:</span>
+                <span className="text-[var(--color-text-tertiary)]">{t('promptPreview.filterByToolset')}</span>
                 <select
                   value={toolsetFilter}
                   onChange={(e) => setToolsetFilter(e.target.value)}
                   className="bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-md px-2 py-1 text-[var(--color-text)]"
                 >
-                  <option value="all">All ({preview.tools.length})</option>
+                  <option value="all">{t('promptPreview.allToolsets', { count: preview.tools.length })}</option>
                   {uniqueToolsets.map(toolset => (
                     <option key={toolset} value={toolset}>
                       {toolset} ({preview.tools.filter(t => t.toolset === toolset).length})

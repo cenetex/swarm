@@ -10,6 +10,7 @@
  * 6. Includes "Powered by Swarm" footer
  */
 import { useEffect, useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../store/auth';
 import { bootstrapAuthFromBackendSession } from '../auth/bootstrap';
 import { PrivyLoginButton } from './PrivyLoginButton';
@@ -75,6 +76,7 @@ function PlatformBadges({ platforms }: { platforms: string[] }) {
 }
 
 function PoweredByFooter() {
+  const { t } = useTranslation();
   return (
     <footer className="shrink-0 py-2 text-center border-t border-[var(--color-border)]">
       <a
@@ -84,7 +86,7 @@ function PoweredByFooter() {
         className="inline-flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
       >
         <img src="/swarm.svg" alt="" className="w-3.5 h-3.5 opacity-60" />
-        Powered by Swarm
+        {t('publicChat.poweredBySwarm')}
       </a>
     </footer>
   );
@@ -172,6 +174,7 @@ function DescriptionText({ description }: { description: string }) {
 }
 
 export function PublicChatPage({ botId }: PublicChatPageProps) {
+  const { t } = useTranslation();
   const { isAuthenticated, isLoading: authLoading, gateStatus } = useAuth();
 
   const [authChecked, setAuthChecked] = useState(false);
@@ -219,23 +222,23 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
         if (result.avatar) {
           setAvatarInfo(result.avatar);
         } else {
-          setError('Avatar not found');
+          setError(t('publicChat.avatarNotFound'));
         }
       } catch (err) {
         console.error('Failed to load avatar info:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load avatar');
+        setError(err instanceof Error ? err.message : t('publicChat.failedToLoadAvatar'));
       } finally {
         setLoadingAvatar(false);
       }
     }
     void fetchAvatar();
-  }, [botId]);
+  }, [botId, t]);
 
   // Display name for header
   const displayName = useMemo(() => {
-    if (loadingAvatar) return 'Loading...';
+    if (loadingAvatar) return t('common.loading');
     return avatarInfo?.name || botId;
-  }, [loadingAvatar, avatarInfo, botId]);
+  }, [loadingAvatar, avatarInfo, botId, t]);
 
   const description = avatarInfo?.description || '';
   const connectedPlatforms = avatarInfo?.connectedPlatforms || [];
@@ -255,8 +258,8 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
               <div className="h-full w-full animate-pulse bg-[var(--color-bg-tertiary)]" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">Chat with</p>
-              <h1 className="truncate text-lg font-semibold">Loading...</h1>
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">{t('publicChat.chatWith')}</p>
+              <h1 className="truncate text-lg font-semibold">{t('common.loading')}</h1>
             </div>
           </div>
         </header>
@@ -278,7 +281,7 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
               <span className="text-white text-lg font-bold">?</span>
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">Chat with</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">{t('publicChat.chatWith')}</p>
               <h1 className="truncate text-lg font-semibold">{botId}</h1>
             </div>
           </div>
@@ -308,7 +311,7 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
           <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3">
             <AvatarImage info={avatarInfo} size="md" />
             <div className="min-w-0 flex-1">
-              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">Chat with</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-text-tertiary)]">{t('publicChat.chatWith')}</p>
               <h1 className="truncate text-lg font-semibold">{displayName}</h1>
             </div>
             <div className="ml-auto shrink-0">
@@ -348,7 +351,7 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
               <PrivyLoginButton className="w-full justify-center" />
             </div>
             <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">
-              Sign in to start chatting
+              {t('publicChat.signInToChat')}
             </p>
           </div>
         </div>
@@ -382,9 +385,9 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
                       ? 'bg-brand-500/20 text-brand-400'
                       : 'bg-yellow-500/20 text-yellow-400'
                   }`}
-                  title={isOrbHolder ? `Orb holder: ${dailyLimit}/day` : `Limited: ${dailyLimit}/day. Hold an Orb for 100/day.`}
+                  title={isOrbHolder ? t('publicChat.orbHolderTooltip', { limit: dailyLimit }) : t('publicChat.limitedTooltip', { limit: dailyLimit })}
                 >
-                  {isOrbHolder ? 'Orb' : 'Limited'}
+                  {isOrbHolder ? t('publicChat.orbBadge') : t('publicChat.limitedBadge')}
                 </span>
               </div>
               {/* Platform badges + description row */}

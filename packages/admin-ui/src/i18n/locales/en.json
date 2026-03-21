@@ -547,6 +547,59 @@
     "tokenBonus": "{{balance}} $RATI boosts bonus refill by {{bonus}}/hr",
     "bankCreditsSummary": "Bank credits: {{credits}}"
   },
+  "imageModal": {
+    "copyImage": "Copy image",
+    "failed": "Failed",
+    "saveImage": "Save image",
+    "openInNewTab": "Open in new tab",
+    "open": "Open",
+    "clickOutsideHint": "Click outside or press Escape to close"
+  },
+  "promptPreview": {
+    "title": "Prompt Preview",
+    "errorLoadingPreview": "Error loading preview",
+    "noData": "No data",
+    "refresh": "Refresh",
+    "tokenBreakdown": {
+      "system": "System:",
+      "tools": "Tools:",
+      "messages": "Messages:",
+      "toolsets": "Toolsets:"
+    },
+    "tabs": {
+      "systemPrompt": "System Prompt",
+      "tools": "Tools ({{count}})",
+      "messages": "Messages ({{count}})"
+    },
+    "filterByToolset": "Filter by toolset:",
+    "allToolsets": "All ({{count}})",
+    "parametersJsonSchema": "Parameters (JSON Schema)",
+    "noAvatarSelected": "No avatar selected. Select an avatar to preview its prompt configuration.",
+    "failedToLoad": "Failed to load prompt preview",
+    "retrying": "Retrying...",
+    "loadingPreview": "Loading preview..."
+  },
+  "issueCard": {
+    "description": "Description",
+    "userMessage": "User Message",
+    "context": "Context",
+    "id": "ID:",
+    "stream": "Stream:",
+    "issueOf": "Issue {{current}} of {{total}}",
+    "previousIssue": "Previous issue",
+    "nextIssue": "Next issue"
+  },
+  "publicChat": {
+    "chatWith": "Chat with",
+    "avatarNotFound": "Avatar not found",
+    "failedToLoadAvatar": "Failed to load avatar",
+    "signInToChat": "Sign in to start chatting",
+    "poweredBySwarm": "Powered by Swarm",
+    "orbBadge": "Orb",
+    "limitedBadge": "Limited",
+    "orbHolderTooltip": "Orb holder: {{limit}}/day",
+    "limitedTooltip": "Limited: {{limit}}/day. Hold an Orb for 100/day."
+  },
   "language": {
     "label": "Language",
     "en": "English",

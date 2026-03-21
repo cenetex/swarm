@@ -547,6 +547,59 @@
     "tokenBonus": "{{balance}} $RATI 可将奖励恢复提升 {{bonus}}/小时",
     "bankCreditsSummary": "银行额度：{{credits}}"
   },
+  "imageModal": {
+    "copyImage": "复制图片",
+    "failed": "失败",
+    "saveImage": "保存图片",
+    "openInNewTab": "在新标签页中打开",
+    "open": "打开",
+    "clickOutsideHint": "点击外部或按 Escape 键关闭"
+  },
+  "promptPreview": {
+    "title": "提示词预览",
+    "errorLoadingPreview": "加载预览时出错",
+    "noData": "暂无数据",
+    "refresh": "刷新",
+    "tokenBreakdown": {
+      "system": "系统：",
+      "tools": "工具：",
+      "messages": "消息：",
+      "toolsets": "工具集："
+    },
+    "tabs": {
+      "systemPrompt": "系统提示词",
+      "tools": "工具 ({{count}})",
+      "messages": "消息 ({{count}})"
+    },
+    "filterByToolset": "按工具集筛选：",
+    "allToolsets": "全部 ({{count}})",
+    "parametersJsonSchema": "参数（JSON Schema）",
+    "noAvatarSelected": "未选择头像。请选择一个头像以预览其提示词配置。",
+    "failedToLoad": "加载提示词预览失败",
+    "retrying": "正在重试...",
+    "loadingPreview": "正在加载预览..."
+  },
+  "issueCard": {
+    "description": "描述",
+    "userMessage": "用户消息",
+    "context": "上下文",
+    "id": "ID：",
+    "stream": "流：",
+    "issueOf": "问题 {{current}} / {{total}}",
+    "previousIssue": "上一个问题",
+    "nextIssue": "下一个问题"
+  },
+  "publicChat": {
+    "chatWith": "与...聊天",
+    "avatarNotFound": "未找到头像",
+    "failedToLoadAvatar": "加载头像失败",
+    "signInToChat": "登录即可开始聊天",
+    "poweredBySwarm": "由 Swarm 提供支持",
+    "orbBadge": "Orb",
+    "limitedBadge": "受限",
+    "orbHolderTooltip": "Orb 持有者：{{limit}}/天",
+    "limitedTooltip": "受限：{{limit}}/天。持有 Orb 可获得 100/天。"
+  },
   "language": {
     "label": "语言",
     "en": "English",

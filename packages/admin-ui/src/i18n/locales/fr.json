@@ -547,6 +547,59 @@
     "tokenBonus": "{{balance}} $RATI augmente le bonus de recharge de {{bonus}}/h",
     "bankCreditsSummary": "Crédits en banque : {{credits}}"
   },
+  "imageModal": {
+    "copyImage": "Copier l'image",
+    "failed": "Échec",
+    "saveImage": "Enregistrer l'image",
+    "openInNewTab": "Ouvrir dans un nouvel onglet",
+    "open": "Ouvrir",
+    "clickOutsideHint": "Cliquez à l'extérieur ou appuyez sur Échap pour fermer"
+  },
+  "promptPreview": {
+    "title": "Aperçu du prompt",
+    "errorLoadingPreview": "Erreur lors du chargement de l'aperçu",
+    "noData": "Aucune donnée",
+    "refresh": "Actualiser",
+    "tokenBreakdown": {
+      "system": "Système :",
+      "tools": "Outils :",
+      "messages": "Messages :",
+      "toolsets": "Ensembles d'outils :"
+    },
+    "tabs": {
+      "systemPrompt": "Prompt système",
+      "tools": "Outils ({{count}})",
+      "messages": "Messages ({{count}})"
+    },
+    "filterByToolset": "Filtrer par ensemble d'outils :",
+    "allToolsets": "Tous ({{count}})",
+    "parametersJsonSchema": "Paramètres (schéma JSON)",
+    "noAvatarSelected": "Aucun avatar sélectionné. Sélectionnez un avatar pour prévisualiser sa configuration de prompt.",
+    "failedToLoad": "Échec du chargement de l'aperçu du prompt",
+    "retrying": "Nouvelle tentative...",
+    "loadingPreview": "Chargement de l'aperçu..."
+  },
+  "issueCard": {
+    "description": "Description",
+    "userMessage": "Message de l'utilisateur",
+    "context": "Contexte",
+    "id": "ID :",
+    "stream": "Flux :",
+    "issueOf": "Problème {{current}} sur {{total}}",
+    "previousIssue": "Problème précédent",
+    "nextIssue": "Problème suivant"
+  },
+  "publicChat": {
+    "chatWith": "Discuter avec",
+    "avatarNotFound": "Avatar introuvable",
+    "failedToLoadAvatar": "Échec du chargement de l'avatar",
+    "signInToChat": "Connectez-vous pour commencer à discuter",
+    "poweredBySwarm": "Propulsé par Swarm",
+    "orbBadge": "Orb",
+    "limitedBadge": "Limité",
+    "orbHolderTooltip": "Détenteur d'Orb : {{limit}}/jour",
+    "limitedTooltip": "Limité : {{limit}}/jour. Détenez un Orb pour 100/jour."
+  },
   "language": {
     "label": "Langue",
     "en": "English",
