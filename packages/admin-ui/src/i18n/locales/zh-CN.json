@@ -363,6 +363,49 @@
     "planAndUsage": "套餐与用量",
     "preview": "预览"
   },
+  "avatarConfig": {
+    "namePlaceholder": "头像名称",
+    "unconfiguredShell": "未配置的头像",
+    "configured": "已配置的头像",
+    "description": "描述",
+    "descriptionPlaceholder": "这个头像是做什么的？",
+    "tabs": {
+      "general": "常规",
+      "persona": "人设",
+      "secrets": "密钥"
+    },
+    "orbSlot": {
+      "title": "Orb 插槽",
+      "description": "将 Orb NFT 插入此头像以明确支持它。",
+      "unslot": "移除",
+      "current": "当前：",
+      "none": "无",
+      "selectOrb": "选择一个 Orb…",
+      "slot": "插入",
+      "noOrbs": "在您当前的钱包中未检测到 Orb。"
+    },
+    "systemPersona": "系统人设",
+    "personaHint": "定义头像的个性、专长和行为",
+    "personaPlaceholder": "你是一个专注于...的有用AI助手\n\n你的专长包括：\n- 主题 1\n- 主题 2\n\n你的沟通风格是...",
+    "configuredSecrets": "已配置的密钥",
+    "secretSet": "已设置",
+    "secretNotSet": "未设置",
+    "addSecret": "添加密钥",
+    "quickAdd": "快速添加：",
+    "customSecretPlaceholder": "自定义密钥名称",
+    "add": "添加",
+    "secretsEncryptedNotice": "密钥以加密方式存储在 AWS Secrets Manager 中。这些值将在您部署头像时设置。",
+    "clickToConfirm": "再次点击以确认",
+    "deleteAvatar": "删除头像",
+    "saveChanges": "保存更改"
+  },
+  "avatarReassign": {
+    "title": "重新分配头像",
+    "creatorWallet": "创建者钱包",
+    "walletPlaceholder": "输入 Solana 钱包地址",
+    "walletHint": "创建此头像的钱包。更改此项会影响插槽计数。",
+    "saving": "保存中..."
+  },
   "landing": {
     "headline": "持久化 AI 代理：记忆、协作，活跃在您的所有平台",
     "subtitle": "创建拥有持久记忆的 AI 个性，连接到 Discord、Telegram 或 X — 全天候以相同上下文响应，无需服务器，无需编程。",

@@ -2,6 +2,7 @@
  * Avatar Reassign Modal - Admin-only modal for reassigning avatar ownership
  */
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Avatar } from '../types';
 import { reassignAvatar } from '../api/avatars';
 
@@ -12,6 +13,7 @@ interface AvatarReassignModalProps {
 }
 
 export function AvatarReassignModal({ avatar, onClose, onSuccess }: AvatarReassignModalProps) {
+  const { t } = useTranslation();
   const [creatorWallet, setCreatorWallet] = useState(avatar.creatorWallet || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +53,7 @@ export function AvatarReassignModal({ avatar, onClose, onSuccess }: AvatarReassi
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
           <h2 className="text-lg font-semibold text-[var(--color-text)]">
-            Reassign Avatar
+            {t('avatarReassign.title')}
           </h2>
           <button
             onClick={onClose}
@@ -78,17 +80,17 @@ export function AvatarReassignModal({ avatar, onClose, onSuccess }: AvatarReassi
           {/* Creator Wallet */}
           <div>
             <label className="block text-sm font-medium text-[var(--color-text)] mb-1">
-              Creator Wallet
+              {t('avatarReassign.creatorWallet')}
             </label>
             <input
               type="text"
               value={creatorWallet}
               onChange={(e) => setCreatorWallet(e.target.value)}
-              placeholder="Enter Solana wallet address"
+              placeholder={t('avatarReassign.walletPlaceholder')}
               className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
             <p className="text-xs text-[var(--color-text-muted)] mt-1">
-              The wallet that created this avatar. Changing this affects slot counting.
+              {t('avatarReassign.walletHint')}
             </p>
           </div>
 
@@ -106,14 +108,14 @@ export function AvatarReassignModal({ avatar, onClose, onSuccess }: AvatarReassi
               onClick={onClose}
               className="px-4 py-2 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
               className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? 'Saving...' : 'Save Changes'}
+              {isSubmitting ? t('avatarReassign.saving') : t('avatarConfig.saveChanges')}
             </button>
           </div>
         </form>

@@ -363,6 +363,49 @@
     "planAndUsage": "Plan & Usage",
     "preview": "Preview"
   },
+  "avatarConfig": {
+    "namePlaceholder": "Avatar Name",
+    "unconfiguredShell": "Unconfigured avatar shell",
+    "configured": "Configured avatar",
+    "description": "Description",
+    "descriptionPlaceholder": "What does this avatar do?",
+    "tabs": {
+      "general": "General",
+      "persona": "Persona",
+      "secrets": "Secrets"
+    },
+    "orbSlot": {
+      "title": "Orb Slot",
+      "description": "Slot an Orb NFT into this avatar to explicitly back it.",
+      "unslot": "Unslot",
+      "current": "Current:",
+      "none": "None",
+      "selectOrb": "Select an Orb…",
+      "slot": "Slot",
+      "noOrbs": "No Orbs detected in your current gate wallet."
+    },
+    "systemPersona": "System Persona",
+    "personaHint": "Define the avatar's personality, expertise, and behavior",
+    "personaPlaceholder": "You are a helpful AI assistant that specializes in...\n\nYou have expertise in:\n- Topic 1\n- Topic 2\n\nYour communication style is...",
+    "configuredSecrets": "Configured Secrets",
+    "secretSet": "Set",
+    "secretNotSet": "Not set",
+    "addSecret": "Add Secret",
+    "quickAdd": "Quick add:",
+    "customSecretPlaceholder": "CUSTOM_SECRET_KEY",
+    "add": "Add",
+    "secretsEncryptedNotice": "Secrets are stored encrypted in AWS Secrets Manager. The values will be set when you deploy the avatar.",
+    "clickToConfirm": "Click again to confirm",
+    "deleteAvatar": "Delete Avatar",
+    "saveChanges": "Save Changes"
+  },
+  "avatarReassign": {
+    "title": "Reassign Avatar",
+    "creatorWallet": "Creator Wallet",
+    "walletPlaceholder": "Enter Solana wallet address",
+    "walletHint": "The wallet that created this avatar. Changing this affects slot counting.",
+    "saving": "Saving..."
+  },
   "landing": {
     "headline": "Persistent AI agents that remember, collaborate, and live across your platforms",
     "subtitle": "Create an AI personality with persistent memory, connect it to Discord, Telegram, or X — it responds 24/7 with the same context everywhere. No servers, no code.",

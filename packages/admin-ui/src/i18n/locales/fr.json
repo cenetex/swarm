@@ -363,6 +363,49 @@
     "planAndUsage": "Forfait et utilisation",
     "preview": "Aperçu"
   },
+  "avatarConfig": {
+    "namePlaceholder": "Nom de l'avatar",
+    "unconfiguredShell": "Avatar non configuré",
+    "configured": "Avatar configuré",
+    "description": "Description",
+    "descriptionPlaceholder": "Que fait cet avatar ?",
+    "tabs": {
+      "general": "Général",
+      "persona": "Persona",
+      "secrets": "Secrets"
+    },
+    "orbSlot": {
+      "title": "Emplacement Orb",
+      "description": "Insérez un NFT Orb dans cet avatar pour le soutenir explicitement.",
+      "unslot": "Retirer",
+      "current": "Actuel :",
+      "none": "Aucun",
+      "selectOrb": "Sélectionner un Orb…",
+      "slot": "Insérer",
+      "noOrbs": "Aucun Orb détecté dans votre portefeuille actuel."
+    },
+    "systemPersona": "Persona système",
+    "personaHint": "Définissez la personnalité, l'expertise et le comportement de l'avatar",
+    "personaPlaceholder": "Vous êtes un assistant IA utile spécialisé dans...\n\nVous avez une expertise en :\n- Sujet 1\n- Sujet 2\n\nVotre style de communication est...",
+    "configuredSecrets": "Secrets configurés",
+    "secretSet": "Défini",
+    "secretNotSet": "Non défini",
+    "addSecret": "Ajouter un secret",
+    "quickAdd": "Ajout rapide :",
+    "customSecretPlaceholder": "CLE_SECRET_PERSONNALISEE",
+    "add": "Ajouter",
+    "secretsEncryptedNotice": "Les secrets sont stockés chiffrés dans AWS Secrets Manager. Les valeurs seront définies lorsque vous déploierez l'avatar.",
+    "clickToConfirm": "Cliquez à nouveau pour confirmer",
+    "deleteAvatar": "Supprimer l'avatar",
+    "saveChanges": "Enregistrer les modifications"
+  },
+  "avatarReassign": {
+    "title": "Réattribuer l'avatar",
+    "creatorWallet": "Portefeuille créateur",
+    "walletPlaceholder": "Entrez l'adresse du portefeuille Solana",
+    "walletHint": "Le portefeuille qui a créé cet avatar. Changer cela affecte le comptage des emplacements.",
+    "saving": "Enregistrement..."
+  },
   "landing": {
     "headline": "Des agents IA persistants qui mémorisent, collaborent et vivent sur toutes vos plateformes",
     "subtitle": "Créez une personnalité IA dotée d'une mémoire persistante, connectez-la à Discord, Telegram ou X — elle répond 24h/24 avec le même contexte partout. Aucun serveur, aucun code.",
