@@ -15,22 +15,25 @@
  *   - packages/admin-ui/src/components/ConsentBanner.tsx  (consent summary)
  */
 
+import { useTranslation } from 'react-i18next';
+
 interface PrivacyPolicyProps {
   onClose?: () => void;
 }
 
 export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
+  const { t } = useTranslation();
   return (
     <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text)] overflow-y-auto">
       <div className="max-w-3xl mx-auto px-6 py-12">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-bold">Privacy Policy</h1>
+          <h1 className="text-3xl font-bold">{t('consent.privacyPolicyTitle')}</h1>
           {onClose && (
             <button
               onClick={onClose}
               className="text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors text-2xl"
-              aria-label="Close"
+              aria-label={t('common.close')}
             >
               ✕
             </button>
@@ -378,7 +381,7 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
 
         {/* Footer */}
         <div className="mt-12 pt-8 border-t border-[var(--color-border)] text-center text-sm text-[var(--color-text-muted)] space-y-1">
-          <p>RATi OS &mdash; Privacy Policy v1.3</p>
+          <p>{t('consent.privacyPolicyFooter')}</p>
           <p>Operated by <a href="https://cenetex.com" className="underline hover:text-[var(--color-text-secondary)]" target="_blank" rel="noopener noreferrer">Cenetex Inc.</a> &middot; Licensed from <a href="https://rati.foundation" className="underline hover:text-[var(--color-text-secondary)]" target="_blank" rel="noopener noreferrer">RATi&#8482; Open Software Foundation</a></p>
         </div>
       </div>

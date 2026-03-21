@@ -429,12 +429,25 @@
     "personalitySuggestion": "Give me a fun personality! I want to be a friendly tech nerd who loves cats"
   },
   "consent": {
+    "title": "Privacy & Data Consent",
+    "summaryIntro": "Before using RATi OS, please review how we handle your data. This service is operated by",
     "walletIdentity": "Wallet & Identity",
+    "walletIdentityDesc": "We collect your wallet address and, if you use email login, your email. Session metadata (IP, User-Agent) is stored for 24 hours.",
     "aiConversations": "AI Conversations",
+    "aiConversationsDesc": "Your chat messages are sent to third-party AI providers (Anthropic Claude, OpenAI GPT-4 via OpenRouter) for response generation. Media prompts are sent to Replicate.",
     "blockchainData": "Blockchain Data",
+    "blockchainDataDesc": "We query Solana RPC providers (Helius) using your wallet public key to verify NFT ownership.",
     "connectedServices": "Connected Services",
+    "connectedServicesDesc": "If you connect Telegram, Twitter, or Discord, message content is shared with those platforms via their APIs.",
     "storageRetention": "Storage & Retention",
-    "acceptButton": "I Understand & Accept"
+    "storageRetentionDesc": "Chat history is auto-deleted after 24 hours. AI memories are tiered: ephemeral (1 day), durable (90 days), and archival (permanent until avatar deletion). Audit logs are kept for 1 year. Account and identity records are retained until you delete your account. Depending on the data type, retention is enforced through TTLs, lifecycle rules, or deletion workflows.",
+    "back": "\u2190 Back",
+    "iAccept": "I Accept",
+    "readFullPolicy": "Read Full Privacy Policy (v{{version}})",
+    "acceptButton": "I Understand & Accept",
+    "questionsContact": "Questions? Contact",
+    "privacyPolicyTitle": "Privacy Policy",
+    "privacyPolicyFooter": "RATi OS \u2014 Privacy Policy v1.3"
   },
   "energy": {
     "title": "Energy",

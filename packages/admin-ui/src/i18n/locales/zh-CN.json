@@ -429,12 +429,25 @@
     "personalitySuggestion": "给我一个有趣的个性！我想成为一个友善的科技爱好者，喜欢猫咪"
   },
   "consent": {
+    "title": "隐私与数据同意",
+    "summaryIntro": "在使用 RATi OS 之前，请了解我们如何处理您的数据。此服务由以下机构运营：",
     "walletIdentity": "钱包与身份",
+    "walletIdentityDesc": "我们收集您的钱包地址，如果您使用电子邮件登录，还会收集您的电子邮件。会话元数据（IP、User-Agent）保留 24 小时。",
     "aiConversations": "AI 对话",
+    "aiConversationsDesc": "您的聊天消息会发送至第三方 AI 提供商（Anthropic Claude、OpenAI GPT-4，通过 OpenRouter）以生成回复。媒体提示会发送至 Replicate。",
     "blockchainData": "区块链数据",
+    "blockchainDataDesc": "我们使用您的钱包公钥查询 Solana RPC 提供商（Helius）以验证 NFT 所有权。",
     "connectedServices": "已连接的服务",
+    "connectedServicesDesc": "如果您连接了 Telegram、Twitter 或 Discord，消息内容将通过其 API 与这些平台共享。",
     "storageRetention": "存储与保留",
-    "acceptButton": "我理解并接受"
+    "storageRetentionDesc": "聊天记录在 24 小时后自动删除。AI 记忆分为三个层级：临时（1 天）、持久（90 天）和归档（永久保留直至删除头像）。审计日志保留 1 年。账户和身份记录在您删除账户之前一直保留。根据数据类型，保留期限通过 TTL、生命周期规则或删除工作流执行。",
+    "back": "\u2190 返回",
+    "iAccept": "我接受",
+    "readFullPolicy": "阅读完整隐私政策（v{{version}}）",
+    "acceptButton": "我理解并接受",
+    "questionsContact": "有疑问？请联系",
+    "privacyPolicyTitle": "隐私政策",
+    "privacyPolicyFooter": "RATi OS \u2014 隐私政策 v1.3"
   },
   "energy": {
     "title": "能量",

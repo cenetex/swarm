@@ -4,10 +4,12 @@
  * Blocks app usage until consent is given.
  */
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useConsentStore, CURRENT_POLICY_VERSION } from '../store/consent';
 import { PrivacyPolicy } from './PrivacyPolicy';
 
 export function ConsentBanner() {
+  const { t } = useTranslation();
   const acceptConsent = useConsentStore((s) => s.acceptConsent);
   const [showPolicy, setShowPolicy] = useState(false);
 
@@ -22,13 +24,13 @@ export function ConsentBanner() {
               onClick={() => setShowPolicy(false)}
               className="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
             >
-              ← Back
+              {t('consent.back')}
             </button>
             <button
               onClick={acceptConsent}
               className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-medium transition-colors"
             >
-              I Accept
+              {t('consent.iAccept')}
             </button>
           </div>
         </div>
@@ -43,43 +45,42 @@ export function ConsentBanner() {
         <div className="flex items-center gap-3">
           <span className="text-2xl">🔒</span>
           <h2 className="text-lg font-semibold text-[var(--color-text)]">
-            Privacy &amp; Data Consent
+            {t('consent.title')}
           </h2>
         </div>
 
         {/* Summary */}
         <div className="text-sm text-[var(--color-text-secondary)] space-y-3">
           <p>
-            Before using RATi OS, please review how we handle your data.
-            This service is operated by{' '}
+            {t('consent.summaryIntro')}{' '}
             <a href="https://cenetex.com" className="text-brand-400 hover:text-brand-300 underline" target="_blank" rel="noopener noreferrer">Cenetex Inc.</a>
           </p>
 
           <div className="space-y-2">
             <ConsentItem
               emoji="👛"
-              title="Wallet &amp; Identity"
-              desc="We collect your wallet address and, if you use email login, your email. Session metadata (IP, User-Agent) is stored for 24 hours."
+              title={t('consent.walletIdentity')}
+              desc={t('consent.walletIdentityDesc')}
             />
             <ConsentItem
               emoji="💬"
-              title="AI Conversations"
-              desc="Your chat messages are sent to third-party AI providers (Anthropic Claude, OpenAI GPT-4 via OpenRouter) for response generation. Media prompts are sent to Replicate."
+              title={t('consent.aiConversations')}
+              desc={t('consent.aiConversationsDesc')}
             />
             <ConsentItem
               emoji="🔗"
-              title="Blockchain Data"
-              desc="We query Solana RPC providers (Helius) using your wallet public key to verify NFT ownership."
+              title={t('consent.blockchainData')}
+              desc={t('consent.blockchainDataDesc')}
             />
             <ConsentItem
               emoji="📡"
-              title="Connected Services"
-              desc="If you connect Telegram, Twitter, or Discord, message content is shared with those platforms via their APIs."
+              title={t('consent.connectedServices')}
+              desc={t('consent.connectedServicesDesc')}
             />
             <ConsentItem
               emoji="🗄️"
-              title="Storage &amp; Retention"
-              desc="Chat history is auto-deleted after 24 hours. AI memories are tiered: ephemeral (1 day), durable (90 days), and archival (permanent until avatar deletion). Audit logs are kept for 1 year. Account and identity records are retained until you delete your account. Depending on the data type, retention is enforced through TTLs, lifecycle rules, or deletion workflows."
+              title={t('consent.storageRetention')}
+              desc={t('consent.storageRetentionDesc')}
             />
           </div>
         </div>
@@ -90,20 +91,20 @@ export function ConsentBanner() {
             onClick={() => setShowPolicy(true)}
             className="text-sm text-brand-400 hover:text-brand-300 underline transition-colors order-2 sm:order-1"
           >
-            Read Full Privacy Policy (v{CURRENT_POLICY_VERSION})
+            {t('consent.readFullPolicy', { version: CURRENT_POLICY_VERSION })}
           </button>
           <div className="flex-1" />
           <button
             onClick={acceptConsent}
             className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-medium transition-colors order-1 sm:order-2"
           >
-            I Understand &amp; Accept
+            {t('consent.acceptButton')}
           </button>
         </div>
 
         {/* Contact */}
         <p className="text-xs text-[var(--color-text-muted)] text-center">
-          Questions? Contact{' '}
+          {t('consent.questionsContact')}{' '}
           <a href="mailto:privacy@cenetex.com" className="underline hover:text-[var(--color-text-secondary)]">
             privacy@cenetex.com
           </a>

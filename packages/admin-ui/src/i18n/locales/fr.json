@@ -429,12 +429,25 @@
     "personalitySuggestion": "Donne-moi une personnalité amusante ! Je veux être un passionné de tech sympathique qui adore les chats"
   },
   "consent": {
+    "title": "Confidentialité et consentement",
+    "summaryIntro": "Avant d'utiliser RATi OS, veuillez consulter la manière dont nous traitons vos données. Ce service est exploité par",
     "walletIdentity": "Portefeuille et identité",
+    "walletIdentityDesc": "Nous collectons votre adresse de portefeuille et, si vous utilisez la connexion par e-mail, votre adresse e-mail. Les métadonnées de session (IP, User-Agent) sont conservées pendant 24 heures.",
     "aiConversations": "Conversations IA",
+    "aiConversationsDesc": "Vos messages de chat sont envoyés à des fournisseurs d'IA tiers (Anthropic Claude, OpenAI GPT-4 via OpenRouter) pour la génération de réponses. Les prompts média sont envoyés à Replicate.",
     "blockchainData": "Données blockchain",
+    "blockchainDataDesc": "Nous interrogeons les fournisseurs Solana RPC (Helius) en utilisant la clé publique de votre portefeuille pour vérifier la possession de NFT.",
     "connectedServices": "Services connectés",
+    "connectedServicesDesc": "Si vous connectez Telegram, Twitter ou Discord, le contenu des messages est partagé avec ces plateformes via leurs API.",
     "storageRetention": "Stockage et conservation",
-    "acceptButton": "Je comprends et j'accepte"
+    "storageRetentionDesc": "L'historique des chats est automatiquement supprimé après 24 heures. Les mémoires IA sont organisées en niveaux : éphémère (1 jour), durable (90 jours) et archivage (permanent jusqu'à la suppression de l'avatar). Les journaux d'audit sont conservés pendant 1 an. Les enregistrements de compte et d'identité sont conservés jusqu'à la suppression de votre compte. Selon le type de données, la conservation est appliquée par des TTL, des règles de cycle de vie ou des flux de suppression.",
+    "back": "\u2190 Retour",
+    "iAccept": "J'accepte",
+    "readFullPolicy": "Lire la politique de confidentialité complète (v{{version}})",
+    "acceptButton": "Je comprends et j'accepte",
+    "questionsContact": "Des questions ? Contactez",
+    "privacyPolicyTitle": "Politique de confidentialité",
+    "privacyPolicyFooter": "RATi OS \u2014 Politique de confidentialité v1.3"
   },
   "energy": {
     "title": "Énergie",
