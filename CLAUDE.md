@@ -4,6 +4,18 @@ Multi-tenant social media avatar platform on AWS serverless. Chat-first — all 
 
 **Packages:** `core/` (types, adapters, services), `handlers/` (Lambda webhooks), `admin-api/` (conversational admin backend), `admin-ui/` (React chat frontend), `infra/` (CDK), `mcp-server/`, `layer/`, `profile-page/`, `claude-code-worker/`, `plan-tests/` (run with `RUN_PLAN_TESTS=1`).
 
+## Quick Start
+
+```bash
+git clone https://github.com/cenetex/aws-swarm.git
+cd aws-swarm
+pnpm install          # IMPORTANT: Use pnpm, not npm
+pnpm build
+bun test
+```
+
+**For TypeScript builds:** Run `pnpm install` first. TypeScript compiler (`tsc`) is installed as a dev dependency and requires pnpm.
+
 ---
 
 ## Agent Execution Checklist
@@ -41,13 +53,16 @@ Every piece of work MUST be tied to a GitHub issue. No exceptions.
 
 ## Development Commands
 
+**This project uses pnpm, not npm.** Install dependencies with `pnpm install`, not `npm install`.
+
 ```bash
-bun test                              # all tests (bun, not vitest)
-bun test packages/core/               # single package
-bun test path/to/file.test.ts         # single file
+pnpm install                          # install dependencies (required for tsc and other tools)
 pnpm build                            # all packages
 pnpm lint                             # all packages
 pnpm typecheck                        # all packages
+bun test                              # all tests (bun, not vitest)
+bun test packages/core/               # single package
+bun test path/to/file.test.ts         # single file
 ```
 
 | Hook | Runs | Skip with |
