@@ -6,6 +6,23 @@ Multi-tenant social media avatar platform on AWS serverless. Chat-first — all 
 
 ---
 
+## Quick Start
+
+This project uses **pnpm** as its package manager (not npm). To set up your development environment:
+
+```bash
+# Quick bootstrap (recommended)
+./scripts/bootstrap.sh
+
+# Or manual setup
+corepack use pnpm@10.19.0
+npx pnpm install
+```
+
+**Important:** Do NOT use `npm install` or `npm run build`. pnpm is required due to workspace dependencies. Using npm will result in `tsc: not found` errors.
+
+---
+
 ## Agent Execution Checklist
 
 Every piece of work MUST be tied to a GitHub issue. No exceptions.
@@ -41,14 +58,18 @@ Every piece of work MUST be tied to a GitHub issue. No exceptions.
 
 ## Development Commands
 
+**Prerequisite:** Run `./scripts/bootstrap.sh` first to install pnpm and dependencies.
+
 ```bash
 bun test                              # all tests (bun, not vitest)
 bun test packages/core/               # single package
 bun test path/to/file.test.ts         # single file
-pnpm build                            # all packages
-pnpm lint                             # all packages
-pnpm typecheck                        # all packages
+npx pnpm build                        # all packages (requires pnpm)
+npx pnpm lint                         # all packages (requires pnpm)
+npx pnpm typecheck                    # all packages (requires pnpm)
 ```
+
+Note: Use `npx pnpm` if pnpm is not in your PATH, or activate it with `corepack use pnpm@10.19.0`.
 
 | Hook | Runs | Skip with |
 |------|------|-----------|
