@@ -11,21 +11,21 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@privy-io/react-auth": "^3.16.0",
+    "@privy-io/react-auth": "^3.18.0",
     "@solana-program/memo": "^0.11.0",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-phantom": "^0.9.28",
     "@solana/wallet-adapter-react": "^0.15.39",
     "@solana/wallet-adapter-react-ui": "^0.9.39",
     "@solana/web3.js": "^1.98.4",
-    "@tailwindcss/postcss": "^4.2.1",
+    "@tailwindcss/postcss": "^4.2.2",
     "bs58": "^6.0.0",
-    "i18next": "^25.8.18",
+    "i18next": "^25.10.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-i18next": "^16.5.8",
+    "react-i18next": "^16.6.2",
     "react-markdown": "^10.1.0",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
@@ -37,9 +37,9 @@
     "autoprefixer": "^10.4.27",
     "jsdom": "^28.1.0",
     "postcss": "^8.5.8",
-    "tailwindcss": "^4.2.1",
+    "tailwindcss": "^4.2.2",
     "typescript": "^5.4.5",
     "vite": "^7.3.1",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.0"
   }
 }
