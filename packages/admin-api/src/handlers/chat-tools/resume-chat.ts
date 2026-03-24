@@ -80,6 +80,16 @@ export async function resumeChatAfterToolResult(
 
   const validatedViaPendingStore = pendingRecord?.toolCallId === toolCallId;
 
+  console.log(`[resumeChatAfterToolResult] Validating toolCallId: ${toolCallId}`, {
+    hasPendingRecord: !!pendingRecord,
+    pendingRecordToolCallId: pendingRecord?.toolCallId,
+    hasMatchingToolCall,
+    validatedViaPendingStore,
+    historyLength: history.length,
+    email: session.email,
+    avatarId,
+  });
+
   if (validatedViaPendingStore) {
     // Valid — server issued this tool call. Defer consumption until the
     // resume flow succeeds so the record survives downstream failures.
@@ -88,6 +98,19 @@ export async function resumeChatAfterToolResult(
     // Valid — still in chat history.
     console.log(`[resumeChatAfterToolResult] Validated toolCallId via chat history: ${toolCallId}`);
   } else {
+    console.error(`[resumeChatAfterToolResult] Failed to validate toolCallId: ${toolCallId}`, {
+      toolCallId,
+      hasPendingRecord: !!pendingRecord,
+      pendingRecordToolCallId: pendingRecord?.toolCallId,
+      hasMatchingToolCall,
+      historyLength: history.length,
+      email: session.email,
+      avatarId,
+      toolCallsInHistory: history
+        .filter(m => m.role === 'assistant' && Array.isArray(m.tool_calls))
+        .flatMap(m => m.tool_calls || [])
+        .map(tc => ({ id: tc.id, name: (tc as any).function?.name })),
+    });
     throw new Error(`Unknown or expired toolCallId: ${toolCallId}`);
   }
 
