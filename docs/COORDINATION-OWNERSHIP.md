@@ -4,7 +4,7 @@ This document defines which package owns live coordination decisions (turn-takin
 
 ## Current Architecture: Room-Scoped Coordination
 
-As of the room-coordination work (see [ARCHITECTURE-ROOM-COORDINATION.md](./ARCHITECTURE-ROOM-COORDINATION.md)), all live multi-avatar coordination uses **room-scoped primitives** in `core` and `handlers`. The unit of coordination is `platform + channelId` (a "room"), not the individual avatar.
+All live multi-avatar coordination uses **room-scoped primitives** in `core` and `handlers`. The unit of coordination is `platform + channelId` (a "room"), not the individual avatar.
 
 ## Ownership Boundaries
 

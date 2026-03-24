@@ -14,7 +14,7 @@ Webhook failures, bot token rotation, secret token mismatch, avatar activation.
 
 - **Webhook diagnostics**: [Section 2 — Telegram Webhook Failures](#2-telegram-webhook-failures)
 - **Bot token rotation**: [Section 7 — Preventive Measures > Secret Rotation](#secret-rotation)
-- **Quick setup/repair**: [PLAYBOOK-TELEGRAM-QUICKSTART.md](./PLAYBOOK-TELEGRAM-QUICKSTART.md)
+- **Quick setup/repair**: [Section 7 — Preventive Measures](#secret-rotation)
 
 ### Discord
 
@@ -54,7 +54,7 @@ Autonomous posting, rate limits, budget gates.
 
 ---
 
-> Need the fast Telegram setup/repair flow? Start with [PLAYBOOK-TELEGRAM-QUICKSTART.md](./PLAYBOOK-TELEGRAM-QUICKSTART.md).
+> Need the fast Telegram setup/repair flow? See [Section 7 — Preventive Measures](#secret-rotation) for webhook health checks and secret rotation procedures.
 
 Replace the following placeholders throughout this document with values for your environment:
 
@@ -168,7 +168,7 @@ Telegram --> API Gateway (HTTP API) --> /webhook/telegram/{avatarId}
             --> Enqueue per-avatar (MessageGroupId: avatarId#conversationId)
 ```
 
-The webhook Lambda is `swarm-ENVIRONMENT-telegram-webhook` (shared multi-tenant handler). For details on room-scoped coordination, see [COORDINATION-OWNERSHIP.md](./COORDINATION-OWNERSHIP.md) and [ARCHITECTURE-ROOM-COORDINATION.md](./ARCHITECTURE-ROOM-COORDINATION.md).
+The webhook Lambda is `swarm-ENVIRONMENT-telegram-webhook` (shared multi-tenant handler). For details on room-scoped coordination, see [COORDINATION-OWNERSHIP.md](./COORDINATION-OWNERSHIP.md).
 
 ### Symptom: Messages Not Being Received
 
