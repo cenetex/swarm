@@ -49,6 +49,29 @@ export async function handlePauseToolCalls(params: {
     return null;
   }
 
+  const pauseToolName = String(pauseToolCall.name);
+
+  // Detect if the same pause tool was just called in the previous assistant message
+  // This can indicate a loop where the user cancelled the dialog or the tool call failed
+  if (messages.length >= 1) {
+    const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant');
+    if (lastAssistantMsg && Array.isArray(lastAssistantMsg.tool_calls)) {
+      const lastPauseToolCall = lastAssistantMsg.tool_calls.find(tc =>
+        typeof tc === 'object' && tc !== null && 'function' in tc &&
+        isPauseForInputTool(tc.function?.name || '', {})
+      );
+      if (lastPauseToolCall && lastPauseToolCall.function?.name === pauseToolName) {
+        logger.warn('Pause tool called again consecutively', {
+          event: 'pause_tool_repeat_detected',
+          pauseToolName,
+          messageHistoryLength: messages.length,
+        });
+        // Don't immediately return error; let the fallback loop handle it
+        // This allows detection of true loops (multiple repeated attempts)
+      }
+    }
+  }
+
   let pendingArgs = getToolArgs(pauseToolCall);
   const toolName = String(pauseToolCall.name);
   let uiToolName = toolName;

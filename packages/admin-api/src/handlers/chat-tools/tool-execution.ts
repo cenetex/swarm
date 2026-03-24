@@ -81,6 +81,8 @@ export async function executeFallbackToolLoop(params: {
   let currentAssistantContent = params.fallbackResponse;
   let response = '';
   const toolResults: ToolResult[] = [];
+  let lastPauseToolName: string | null = null;
+  let pauseToolRepeatCount = 0;
 
   // Build base API messages for the fallback calls
   const baseApiMessages: Array<Record<string, unknown>> = [{ role: 'system', content: systemPrompt }];
@@ -224,9 +226,41 @@ export async function executeFallbackToolLoop(params: {
     // Check for pause tools in the next round
     const nextPauseTool = currentToolCalls.find(tc => isPauseForInputTool(String(tc.name), getToolArgs(tc)));
     if (nextPauseTool && mcpServices && avatarId) {
+      const pauseToolName = String(nextPauseTool.name);
+
+      // Detect looping: if the same pause tool is being called repeatedly, break the loop
+      if (pauseToolName === lastPauseToolName) {
+        pauseToolRepeatCount++;
+        if (pauseToolRepeatCount >= 2) {
+          logger.warn('Pause tool loop detected', {
+            event: 'pause_tool_loop_detected',
+            pauseToolName,
+            repeatCount: pauseToolRepeatCount,
+            fallbackStep,
+            avatarId,
+          });
+          // Break the loop by returning an error response
+          response = `I encountered an issue while trying to access the ${pauseToolName.replace(/_/g, ' ')} interface. This might be due to a network error or misconfiguration. Please try refreshing the page or starting a new conversation.`;
+          // Add the loop-breaking response to history
+          const earlyMessages = [...messages];
+          earlyMessages.push({
+            role: 'assistant',
+            content: response,
+          });
+          return {
+            response,
+            toolResults,
+            earlyReturnHistory: earlyMessages,
+          };
+        }
+      } else {
+        lastPauseToolName = pauseToolName;
+        pauseToolRepeatCount = 1;
+      }
+
       const pendingToolCall = {
         id: String(nextPauseTool.id),
-        name: String(nextPauseTool.name),
+        name: pauseToolName,
         arguments: getToolArgs(nextPauseTool),
       };
 
@@ -244,6 +278,12 @@ export async function executeFallbackToolLoop(params: {
         pendingToolCall,
         earlyReturnHistory: earlyMessages,
       };
+    }
+
+    // Reset pause tool tracking when a non-pause tool is called
+    if (currentToolCalls.length > 0 && !isPauseForInputTool(String(currentToolCalls[0].name), getToolArgs(currentToolCalls[0]))) {
+      lastPauseToolName = null;
+      pauseToolRepeatCount = 0;
     }
 
     // No more tool calls -> final response
