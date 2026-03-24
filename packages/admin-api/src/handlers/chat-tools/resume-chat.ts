@@ -72,11 +72,10 @@ export async function resumeChatAfterToolResult(
   // Validate toolCallId against the pending tool store (server-issued proof)
   // and fall back to chat history scan for backward compatibility.
   const pendingRecord = await pendingTools.getPendingTool(session.email, avatarId);
-  const hasMatchingToolCall = history.some(m =>
-    m.role === 'assistant' &&
-    Array.isArray(m.tool_calls) &&
-    m.tool_calls.some(tc => tc.id === toolCallId)
-  );
+  const historyToolCalls = history
+    .filter(m => m.role === 'assistant' && Array.isArray(m.tool_calls))
+    .flatMap(m => m.tool_calls || []);
+  const hasMatchingToolCall = historyToolCalls.some(tc => tc.id === toolCallId);
 
   const validatedViaPendingStore = pendingRecord?.toolCallId === toolCallId;
 
@@ -98,18 +97,23 @@ export async function resumeChatAfterToolResult(
     // Valid — still in chat history.
     console.log(`[resumeChatAfterToolResult] Validated toolCallId via chat history: ${toolCallId}`);
   } else {
+    // If validation fails, log detailed info including all tool calls in history
+    const toolCallsInHistory = historyToolCalls.map(tc => ({
+      id: tc.id,
+      name: (tc as any).function?.name || (tc as any).name,
+      type: (tc as any).type,
+    }));
+
     console.error(`[resumeChatAfterToolResult] Failed to validate toolCallId: ${toolCallId}`, {
       toolCallId,
       hasPendingRecord: !!pendingRecord,
       pendingRecordToolCallId: pendingRecord?.toolCallId,
+      pendingRecordToolName: pendingRecord?.toolName,
       hasMatchingToolCall,
       historyLength: history.length,
       email: session.email,
       avatarId,
-      toolCallsInHistory: history
-        .filter(m => m.role === 'assistant' && Array.isArray(m.tool_calls))
-        .flatMap(m => m.tool_calls || [])
-        .map(tc => ({ id: tc.id, name: (tc as any).function?.name })),
+      toolCallsInHistory,
     });
     throw new Error(`Unknown or expired toolCallId: ${toolCallId}`);
   }
