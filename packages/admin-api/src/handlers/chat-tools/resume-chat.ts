@@ -42,6 +42,17 @@ export async function resumeChatAfterToolResult(
 ): Promise<ProcessChatResult> {
   const { avatarId, toolCallId, result, session } = params;
 
+  // Validate required parameters
+  if (!session.email) {
+    throw new Error('Session email is required to resume tool call');
+  }
+  if (!avatarId) {
+    throw new Error('Avatar ID is required to resume tool call');
+  }
+  if (!toolCallId) {
+    throw new Error('Tool call ID is required to resume tool call');
+  }
+
   const avatarRecord = await avatars.getAvatar(avatarId);
   const voiceEnabled = process.env.ENABLE_VOICE_TOOLS !== 'false';
   const mcpConfig = avatarRecord?.mcpConfig;

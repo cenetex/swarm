@@ -35,9 +35,12 @@ export interface PendingToolStoreDeps {
 }
 
 function buildKey(email: string, avatarId: string) {
+  // Normalize inputs to prevent whitespace-related mismatches
+  const normalizedEmail = (email || '').trim();
+  const normalizedAvatarId = (avatarId || '').trim();
   return {
-    pk: `PENDING_TOOL#${email}`,
-    sk: `AVATAR#${avatarId}`,
+    pk: `PENDING_TOOL#${normalizedEmail}`,
+    sk: `AVATAR#${normalizedAvatarId}`,
   };
 }
 

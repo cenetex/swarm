@@ -429,29 +429,38 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // Persist pending tool call so resumeChatAfterToolResult can validate
     // it even after chat history expires or gets sanitized.
     if (result.pendingToolCall && avatar?.id) {
-      try {
-        await savePendingTool({
-          email: session.email,
+      // Validate that we have an email to use as part of the DynamoDB key
+      if (!session.email) {
+        logger.error('Cannot persist pending tool - session.email is missing', {
+          event: 'pending_tool_save_failed_missing_email',
           avatarId: avatar.id,
           toolCallId: result.pendingToolCall.id,
-          toolName: result.pendingToolCall.name,
-          arguments: result.pendingToolCall.arguments,
         });
-        logger.info('Persisted pending tool call', {
-          event: 'pending_tool_saved',
-          avatarId: avatar.id,
-          toolCallId: result.pendingToolCall.id,
-          toolName: result.pendingToolCall.name,
-          email: session.email,
-        });
-      } catch (err) {
-        logger.error('Failed to persist pending tool call', err, {
-          event: 'pending_tool_save_failed',
-          avatarId: avatar.id,
-          toolCallId: result.pendingToolCall.id,
-          email: session.email,
-          error: err instanceof Error ? err.message : 'Unknown error',
-        });
+      } else {
+        try {
+          await savePendingTool({
+            email: session.email,
+            avatarId: avatar.id,
+            toolCallId: result.pendingToolCall.id,
+            toolName: result.pendingToolCall.name,
+            arguments: result.pendingToolCall.arguments,
+          });
+          logger.info('Persisted pending tool call', {
+            event: 'pending_tool_saved',
+            avatarId: avatar.id,
+            toolCallId: result.pendingToolCall.id,
+            toolName: result.pendingToolCall.name,
+            email: session.email,
+          });
+        } catch (err) {
+          logger.error('Failed to persist pending tool call', err, {
+            event: 'pending_tool_save_failed',
+            avatarId: avatar.id,
+            toolCallId: result.pendingToolCall.id,
+            email: session.email,
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
+        }
       }
     }
 
