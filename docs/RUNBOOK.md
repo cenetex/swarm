@@ -6,51 +6,54 @@
 
 ## Multi-Platform Operator Index
 
-This runbook covers operational procedures across all supported platforms. Use this index to find the relevant section or resource.
+This runbook covers operational procedures across all supported platforms. Use this index to find the relevant section or resource for your platform.
 
-### Telegram
+### Telegram — ✅ Fully Documented
 
 Webhook failures, bot token rotation, secret token mismatch, avatar activation.
 
-- **Webhook diagnostics**: [Section 2 — Telegram Webhook Failures](#2-telegram-webhook-failures)
-- **Bot token rotation**: [Section 7 — Preventive Measures > Secret Rotation](#secret-rotation)
-- **Quick setup/repair**: [PLAYBOOK-TELEGRAM-QUICKSTART.md](./PLAYBOOK-TELEGRAM-QUICKSTART.md)
+- **Quick setup/repair**: [PLAYBOOK-TELEGRAM-QUICKSTART.md](./PLAYBOOK-TELEGRAM-QUICKSTART.md) (bot token, webhook registration, common fixes)
+- **Webhook diagnostics**: [Section 2 — Telegram Webhook Failures](#2-telegram-webhook-failures) (diagnosis steps, causes, resolutions)
+- **Secret rotation**: [Section 7 — Preventive Measures > Secret Rotation](#secret-rotation)
+- **Reference**: [packages/handlers/src/telegram/telegram-webhook-shared.ts](../packages/handlers/src/telegram/telegram-webhook-shared.ts)
 
-### Discord
+### Discord — 🔶 Partial (Initial Implementation)
 
 Gateway connection health, bot token management, intent validation.
 
 - **Gateway health**: Monitor the Discord Gateway ECS service in CloudWatch. The service runs as a Fargate task (`swarm-ENVIRONMENT-discord-gateway`). Check ECS steady-state status and task logs.
 - **Bot token management**: Discord bot tokens are stored in Secrets Manager (`swarm/AVATAR_ID/discord_bot_token/default`). Rotate via Secrets Manager and restart the ECS task.
 - **Intent validation**: The gateway requires `MESSAGE_CONTENT`, `GUILD_MESSAGES`, and `GUILD_MEMBERS` intents enabled in the Discord Developer Portal. Missing intents cause silent message drops.
-- **Future expansion**: Full Discord troubleshooting playbook to be added as operational experience grows.
+- **Path forward**: Community feedback and operational experience will inform a full Discord troubleshooting playbook (GitHub issue to follow).
 
-### Admin UI / Web
-
-Deployment health, Privy auth, CDN/CloudFront.
-
-- **Deployment health**: The admin UI is deployed as a static site behind CloudFront. Verify via the CloudFront distribution status and S3 bucket sync.
-- **Privy auth**: Authentication uses Privy. If login fails, check the Privy dashboard for service status and verify the app ID in environment config.
-- **CDN/CloudFront**: Cache invalidation after deploy: `aws cloudfront create-invalidation --distribution-id DIST_ID --paths "/*"`. Check CloudFront error rates in CloudWatch.
-- **Future expansion**: Full web operations playbook to be added.
-
-### Queue / Runtime
-
-SQS DLQ, message processor, Lambda errors.
-
-- **DLQ recovery**: [Section 3 — SQS DLQ Recovery](#3-sqs-dlq-recovery)
-- **Message processing failures**: [Section 4 — Message Processing Failures](#4-message-processing-failures)
-- **Common CLI commands**: [Section 5 — Common AWS CLI Commands](#5-common-aws-cli-commands)
-- **Dashboard guide**: [Section 6 — CloudWatch Dashboard Guide](#6-cloudwatch-dashboard-guide)
-
-### X / Twitter
+### X / Twitter — 🔶 Partial (Initial Implementation)
 
 Autonomous posting, rate limits, budget gates.
 
 - **Autonomous posting**: The Twitter handler (`swarm-ENVIRONMENT-twitter-post`) runs on a schedule via the post queue. Check the post queue depth and Lambda logs for failures.
 - **Rate limits**: Twitter API rate limits are enforced per-avatar. The handler tracks remaining quota and backs off automatically. Check for `rate_limit_exceeded` in Lambda logs.
 - **Budget gates**: Autonomous posting is gated by daily budget limits configured per-avatar. When the budget is exhausted, posts are silently skipped until the next reset. Check `budget_exhausted` in logs.
-- **Future expansion**: Full Twitter operations playbook to be added as operational experience grows.
+- **Path forward**: Full Twitter operations playbook to be added as operational experience grows (GitHub issue to follow).
+
+### Admin UI / Web — 🔶 Partial (Initial Implementation)
+
+Deployment health, Privy auth, CDN/CloudFront.
+
+- **Deployment health**: The admin UI is deployed as a static site behind CloudFront. Verify via the CloudFront distribution status and S3 bucket sync.
+- **Privy auth**: Authentication uses Privy. If login fails, check the Privy dashboard for service status and verify the app ID in environment config.
+- **CDN/CloudFront**: Cache invalidation after deploy: `aws cloudfront create-invalidation --distribution-id DIST_ID --paths "/*"`. Check CloudFront error rates in CloudWatch.
+- **Path forward**: Full web operations playbook to be added as operational experience grows (GitHub issue to follow).
+
+### Queue / Runtime — ✅ Fully Documented
+
+SQS DLQ, message processor, Lambda errors.
+
+- **Incident response**: [Section 1 — Incident Response Overview](#1-incident-response-overview) (alarms, severity, escalation)
+- **DLQ recovery**: [Section 3 — SQS DLQ Recovery](#3-sqs-dlq-recovery) (diagnosis, common causes, redrive procedure)
+- **Message processing failures**: [Section 4 — Message Processing Failures](#4-message-processing-failures) (processor, sender, media processor errors)
+- **Common CLI commands**: [Section 5 — Common AWS CLI Commands](#5-common-aws-cli-commands)
+- **Dashboard guide**: [Section 6 — CloudWatch Dashboard Guide](#6-cloudwatch-dashboard-guide)
+- **Preventive measures**: [Section 7 — Preventive Measures](#7-preventive-measures) (health checks, monitoring, capacity planning)
 
 ---
 

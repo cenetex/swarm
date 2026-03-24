@@ -13,10 +13,10 @@ Run persistent AI avatars across Telegram, Discord, and the web — with the gua
 
 ## Start Here
 
-- **Ship or debug runtime behavior** → [AGENTS.md](AGENTS.md), then [docs/RUNBOOK.md](docs/RUNBOOK.md)
+- **Ship or debug runtime behavior** → [AGENTS.md](AGENTS.md), then [docs/RUNBOOK.md](docs/RUNBOOK.md) (multi-platform ops guide)
 - **Understand the architecture** → Component map and diagram below
 - **Pick roadmap work** → [ROADMAP.md](ROADMAP.md), [PLAN.md](PLAN.md), [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md), [docs/PORTFOLIO-INSPIRED-ROADMAP.md](docs/PORTFOLIO-INSPIRED-ROADMAP.md)
-- **Operate safely in production** → [docs/SECURITY.md](docs/SECURITY.md), [docs/RUNBOOK.md](docs/RUNBOOK.md)
+- **Operate safely in production** → [docs/SECURITY.md](docs/SECURITY.md), then [docs/RUNBOOK.md](docs/RUNBOOK.md) (Telegram, Discord, X, web operational paths)
 
 ## Architecture
 
@@ -79,11 +79,11 @@ Run persistent AI avatars across Telegram, Discord, and the web — with the gua
 
 | Symptom | Start Here | Fast Evidence |
 | --- | --- | --- |
-| Telegram webhook rejects or avatar silent | [packages/handlers/src/telegram/telegram-webhook-shared.ts](packages/handlers/src/telegram/telegram-webhook-shared.ts), [docs/RUNBOOK.md](docs/RUNBOOK.md) | `./scripts/avatar-logs.sh staging <avatarId> --since 2h --level ERROR` |
-| Admin chat LLM/tool calls fail | [packages/admin-api/src/handlers/chat.ts](packages/admin-api/src/handlers/chat.ts), [packages/admin-api/src/services/mcp-adapter.ts](packages/admin-api/src/services/mcp-adapter.ts) | `./scripts/test-api.sh staging chat '{"message":"debug","history":[]}'` |
-| Message accepted but no outbound send | [packages/handlers/src/messaging/message-processor.ts](packages/handlers/src/messaging/message-processor.ts), [packages/handlers/src/messaging/response-sender.ts](packages/handlers/src/messaging/response-sender.ts) | `./scripts/avatar-logs.sh staging <avatarId> --since 2h --query timeout` |
+| Telegram webhook rejects or avatar silent | [docs/RUNBOOK.md § Telegram](docs/RUNBOOK.md#telegram), [packages/handlers/src/telegram/telegram-webhook-shared.ts](packages/handlers/src/telegram/telegram-webhook-shared.ts) | `./scripts/avatar-logs.sh staging <avatarId> --since 2h --level ERROR` |
+| Discord gateway connection issues | [docs/RUNBOOK.md § Discord](docs/RUNBOOK.md#discord) | Check ECS task status for `swarm-ENVIRONMENT-discord-gateway` |
+| Message accepted but no outbound send | [docs/RUNBOOK.md § Queue / Runtime](docs/RUNBOOK.md#queue--runtime), [packages/handlers/src/messaging/message-processor.ts](packages/handlers/src/messaging/message-processor.ts) | `./scripts/avatar-logs.sh staging <avatarId> --since 2h --query timeout` |
 | Avatar config/secrets drift | [packages/admin-api/src/services/avatars.ts](packages/admin-api/src/services/avatars.ts), [packages/admin-api/src/services/secrets.ts](packages/admin-api/src/services/secrets.ts) | `./scripts/avatar-inspect.sh staging <avatarId>` |
-| Admin UI 401/403 | [packages/admin-api/src/auth](packages/admin-api/src/auth), [packages/admin-api/src/handlers/wallet-auth.ts](packages/admin-api/src/handlers/wallet-auth.ts) | `./scripts/test-api.sh staging avatars GET` |
+| Admin UI 401/403 | [docs/RUNBOOK.md § Admin UI / Web](docs/RUNBOOK.md#admin-ui--web), [packages/admin-api/src/auth](packages/admin-api/src/auth) | `./scripts/test-api.sh staging avatars GET` |
 
 ## Quick Start
 
