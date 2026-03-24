@@ -91,24 +91,48 @@ Use GitHub Issues to execute the promoted work.
 
 ## CLI Examples
 
-Create an issue and add it to the roadmap project:
+Create a new issue for execution (no milestone; milestones are retired):
 
 ```bash
 gh issue create \
   -R cenetex/aws-swarm \
   -t "feat(core): scoped memory tiers with retrieval policy" \
-  -b "..." \
+  -b "Closes #<parent-issue>" \
   -l type:feature \
-  -l priority:medium \
-  -m "Roadmap: Next" \
-  -p "AWS Swarm Roadmap"
+  -l package:core \
+  -l priority:medium
 ```
 
-Add an existing issue to the roadmap project:
+Create a draft roadmap candidate (stays in Project, does not consume issue slots):
 
 ```bash
 gh project item-add 4 --owner cenetex \
-  --url https://github.com/cenetex/aws-swarm/issues/123
+  --draft \
+  -f "Horizon=Next" \
+  -f "Lane=Core Platform" \
+  -f "Artifact Type=Draft" \
+  "feat: scoped memory tiers with retrieval policy"
+```
+
+Promote a draft item to an issue (after approval):
+
+```bash
+gh issue create \
+  -R cenetex/aws-swarm \
+  -t "[From draft] <title>" \
+  -b "Closes #<parent-issue>" \
+  -l type:feature \
+  -l package:core \
+  -l priority:high
+
+gh project item-add 4 --owner cenetex \
+  --url https://github.com/cenetex/aws-swarm/issues/<new-issue-number>
+```
+
+Pull an issue into active work (if in-progress cap allows):
+
+```bash
+gh issue edit <issue-number> --add-label status:in-progress
 ```
 
 ## Decision Test

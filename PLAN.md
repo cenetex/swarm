@@ -1,45 +1,49 @@
-# AWS Swarm Plan: Next Milestone (M2 Multi-Platform Hardening)
+# AWS Swarm Plan: Active Execution (M2+ Issue-Driven)
 
-Goal: deliver a stable post-M1 platform with reliable admin UX, complete account identity
-flows, and production-grade multi-platform parity (Telegram, X, Discord, Web).
+Goal: deliver a stable platform with reliable admin UX, complete account identity flows, and production-grade multi-platform parity. Execution is entirely issue-driven, not milestone-driven.
 
-**Last reviewed:** 2026-03-16
+**Last reviewed:** 2026-03-24
 
-> **Issue-indexed execution model.** This plan is a directional overlay on top of the GitHub issue queue. The issue queue (`milestone:"Roadmap: Next" is:open`) is the canonical execution backlog. Items in this document that lack issue references are narrative goals -- they describe desired outcomes but are not scheduled until decomposed into issues with acceptance criteria. See [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), and [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md) for the current execution rules.
+> **Issue-indexed execution model.** This plan is a directional overlay on top of the GitHub issue queue. The issue queue (`is:open is:issue` sorted by priority/labels) is the canonical execution backlog. Items in this document that lack issue references are narrative goals -- they describe desired outcomes but are not scheduled until decomposed into issues with acceptance criteria. See [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), and [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md) for the current execution rules.
 
-## Milestone definition
+## Current focus (M2+ post-shipped baseline)
 
 - Critical admin chat surfaces are reliable and test-covered (plan/usage, preview, auth flows).
 - Account identity model is fully usable in UI (including linking additional wallets).
-- Memory retrieval quality improves through semantic retrieval integration.
-- Platform parity gaps are tracked and executed with production hardening criteria.
-- Backlog and execution tracking are GitHub-first (issues, milestones, project statuses).
+- Memory retrieval quality improves through semantic retrieval integration and benchmarks.
+- Platform parity gaps (Discord, X) are tracked with concrete capability matrices.
+- Execution tracking is GitHub-first: issues, labels, status, and in-progress caps.
+- Governance hardening: issue-first intake, WIP enforcement, and regular triage cadence.
 
-## Execution queue
+## Active execution queue
 
-The execution queue is sourced from GitHub issues. Query: `milestone:"Roadmap: Next" is:open`.
+The execution queue is sourced from GitHub issues. Primary query: `is:open is:issue -milestone:*` (issues without `Roadmap:*` milestones).
 
-### Completed (prior M2 issues -- all closed)
+### Filtering for active work
 
-- [x] [#167](https://github.com/cenetex/aws-swarm/issues/167) parent tracker for wallet-link UX completion.
-- [x] [#180](https://github.com/cenetex/aws-swarm/issues/180) fix media URL handling when `CDN_URL` is unset in split stacks.
-- [x] [#181](https://github.com/cenetex/aws-swarm/issues/181) expose wallet-link flow in admin UI.
-- [x] [#182](https://github.com/cenetex/aws-swarm/issues/182) add wallet-link integration/regression coverage.
-- [x] [#183](https://github.com/cenetex/aws-swarm/issues/183) semantic search integration into memory retrieval path.
-- [x] [#184](https://github.com/cenetex/aws-swarm/issues/184) Discord production hardening beyond base adapter coverage.
-- [x] [#185](https://github.com/cenetex/aws-swarm/issues/185) X/Twitter parity hardening for remaining functionality gaps.
+Use labels to identify work state:
 
-### Open issues (Roadmap: Next)
+- **In progress:** `status:in-progress` (max 8 concurrent)
+- **High priority, awaiting capacity:** `priority:high -status:in-progress`
+- **Ready to triage:** `type:feature -priority:* -status:in-progress` or `type:bug` unlabeled
 
-As of 2026-03-16 there are 0 open issues in the `Roadmap: Next` milestone. Use the milestone query above when it is repopulated; until then, this plan serves as a narrative overlay and the active execution backlog lives in the main issue queue.
+### Recent completions (M2 platform foundation)
 
-## Workstreams
+- [x] [#167](https://github.com/cenetex/aws-swarm/issues/167) wallet-link UX completion.
+- [x] [#180](https://github.com/cenetex/aws-swarm/issues/180) media URL handling with split stacks.
+- [x] [#181](https://github.com/cenetex/aws-swarm/issues/181) wallet-link flow in admin UI.
+- [x] [#182](https://github.com/cenetex/aws-swarm/issues/182) wallet-link integration/regression coverage.
+- [x] [#183](https://github.com/cenetex/aws-swarm/issues/183) semantic search integration into memory retrieval.
+- [x] [#184](https://github.com/cenetex/aws-swarm/issues/184) Discord production hardening.
+- [x] [#185](https://github.com/cenetex/aws-swarm/issues/185) X/Twitter parity hardening.
 
-Each workstream describes a theme. Items under each workstream are **narrative goals** unless linked to an issue. Narrative goals must be decomposed into issues before they are scheduled for execution.
+## Workstreams and narrative goals
+
+Each workstream describes a theme. Items under each workstream are **narrative goals** unless linked to an existing issue. Narrative goals must be decomposed into issues before they are scheduled for execution.
 
 ### 1) Admin UX reliability
 
-*No open issues for this workstream.* The following are narrative goals awaiting issue decomposition:
+Goals awaiting issue decomposition:
 
 - Keep chat-first interaction model while removing dead or confusing surfaces.
 - Add component/integration tests for high-traffic UI panels to prevent regressions.
@@ -47,9 +51,9 @@ Each workstream describes a theme. Items under each workstream are **narrative g
 
 ### 2) Identity and account UX
 
-Prior issues completed: [#167](https://github.com/cenetex/aws-swarm/issues/167), [#181](https://github.com/cenetex/aws-swarm/issues/181), [#182](https://github.com/cenetex/aws-swarm/issues/182).
+Completed: [#167](https://github.com/cenetex/aws-swarm/issues/167), [#181](https://github.com/cenetex/aws-swarm/issues/181), [#182](https://github.com/cenetex/aws-swarm/issues/182).
 
-*No open issues for this workstream.* The following are narrative goals awaiting issue decomposition:
+Goals awaiting issue decomposition:
 
 - Expose full link-vs-switch behavior in UI.
 - Surface linked identities and account-level gating state clearly.
@@ -57,87 +61,79 @@ Prior issues completed: [#167](https://github.com/cenetex/aws-swarm/issues/167),
 
 ### 3) Memory relevance
 
-Prior issues completed: [#183](https://github.com/cenetex/aws-swarm/issues/183).
+Completed: [#183](https://github.com/cenetex/aws-swarm/issues/183).
 
-*No open issues for this workstream.* The following are narrative goals awaiting issue decomposition:
+Goals awaiting issue decomposition:
 
 - Add benchmarks and regression tests for retrieval quality and latency.
 
 ### 4) Platform parity and runtime hardening
 
-Prior issues completed: [#184](https://github.com/cenetex/aws-swarm/issues/184), [#185](https://github.com/cenetex/aws-swarm/issues/185).
+Completed: [#184](https://github.com/cenetex/aws-swarm/issues/184), [#185](https://github.com/cenetex/aws-swarm/issues/185).
 
-*No open issues for this workstream.* The following are narrative goals awaiting issue decomposition:
+Goals awaiting issue decomposition:
 
-- Track parity as concrete capability matrix, not a broad theme.
+- Track parity as concrete capability matrix (Discord, X, Telegram baseline comparison).
 - Close remaining reliability/operational gaps per adapter (rate limits, diagnostics, tests).
 - Keep queue-based runtime behavior deterministic and observable.
 
-### 5) Operational posture
+### 5) Operational and execution posture
 
-*No open issues for this workstream.* Narrative goals awaiting issue decomposition:
+Goals awaiting issue decomposition:
 
 - Keep dependency/security baseline green in CI.
 - Maintain issue/PR lifecycle automation and project drift reconciliation.
 - Keep runbooks aligned with currently deployed behavior.
+- Harden execution model: issue-indexed planning, subagent governance, triage enforcement.
 
-### 6) Execution model and governance (new)
+## Priority sequencing and WIP cap
 
-*No open issues for this workstream.* Current rules live in [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), and [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md).
+This plan follows the risk-first sequencing principle: reliability (P0/P1) and security (P2) work is prioritized before features (P3) and tech debt (P4).
 
-This workstream hardens the execution model itself: issue-indexed planning, subagent governance, and leadership operating cadence.
+### How work flows into execution
 
-## Risk-first sequencing and WIP cap
+1. Narrative goals above are decomposed into GitHub issues by the project lead during biweekly review.
+2. New issues enter the backlog with scope, acceptance criteria, priority, package labels, and owner.
+3. Issues are pulled from backlog into `status:in-progress` when: issue-readiness checklist is met, priority allows the pull, and in-progress count < 8.
+4. A RED weekly health review blocks pulling new P3/P4 work when P0/P1 work is unresolved.
 
-This plan follows the risk-first sequencing principle: reliability and security work is scheduled before feature expansion.
+### In-progress cap
 
-### Sequencing within M2
+A maximum of **8** issues may carry `status:in-progress` at any time across all workstreams. When the cap is reached, items must be completed or returned to backlog before new work begins. See WIP caps in [CLAUDE.md](CLAUDE.md).
 
-Workstreams are prioritized in this order when resources are constrained:
+## Triage and execution cadence
 
-1. **Operational hardening** (#266, #267, #269) -- P1/P2 work that protects platform reliability.
-2. **Execution model and governance** (#246-#249, #263-#265, #268) -- P2/P3 work that improves delivery predictability.
-3. **Platform parity and feature delivery** (narrative goals) -- P3 work pulled only when P0-P2 queue is clear.
-4. **Admin UX, identity, memory** (narrative goals) -- P4 quality improvements scheduled when capacity allows.
-
-A RED weekly health review blocks starting new feature or governance work until platform health returns to YELLOW or GREEN.
-
-### Active WIP cap
-
-A maximum of **8** issues may carry `status:in-progress` at any time across all M2 workstreams. When the cap is reached, items must be completed or returned to backlog before new work begins. See WIP caps in [CLAUDE.md](CLAUDE.md).
-
-When pulling issues from the execution queue into active work, apply the issue-readiness and WIP rules in [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md).
-
-## Triage and prioritization cadence
-
-This plan is reviewed and updated as part of the triage cadence defined in [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), and [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md):
+This plan is reviewed as part of the triage cadence defined in [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), and [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md):
 
 | Cadence | Activity |
 |---------|----------|
-| **Weekly** | Triage new issues, check in-progress work for blockers, apply aging policy, review weekly health signals and open P0/P1 work. |
-| **Biweekly** | Review milestone progress. Promote issues from Next to Now or demote stale items. Decide whether narrative goals in this document should be decomposed into issues. Update the execution queue above. |
-| **Monthly** | Full roadmap review. Update ROADMAP.md. Archive completed milestones. |
+| **Weekly** | Triage new issues, check in-progress work for blockers, review health signals and open P0/P1 issues. |
+| **Biweekly** | Decompose narrative goals into issues. Review backlog and demote stale items. Reconcile portfolio candidates with current capacity. |
+| **Monthly** | Full roadmap review. Update ROADMAP.md, PLAN.md. Reconcile Project with issue queue. |
 
 ### Keeping this document current
 
-- After each triage cycle, update the "Open issues" table to reflect the current state of `milestone:"Roadmap: Next" is:open`.
+- After each biweekly triage, add newly decomposed issues to the appropriate workstream.
 - Move newly closed issues to the "Completed" section.
-- Do not add items to the execution queue without a corresponding GitHub issue. If a workstream narrative goal becomes urgent, decompose it into an issue first.
+- Do not add items to the execution queue without a corresponding GitHub issue. If a narrative goal becomes urgent, decompose it into an issue first.
 
-## Not in this milestone
+## Candidate work (not yet issued)
 
-- Marketplace templates and persona packs.
-- Large speculative protocol redesigns.
-- Step Functions runtime re-architecture.
+The following thematic areas are under consideration but have not been decomposed into issues:
 
-These items live in `Roadmap: Later` or have no milestone. They will be scheduled if and when a biweekly review promotes them.
+- Marketplace templates and repeatable tenant launch patterns.
+- Persistent multi-avatar coordination and cross-avatar policies.
+- Step Functions runtime observability and cost optimization.
+- Durable memory tier expansion (ephemeral, durable, archival).
+
+These will be promoted to issues during quarterly roadmap reviews or when capacity becomes available. See [docs/PORTFOLIO-INSPIRED-ROADMAP.md](docs/PORTFOLIO-INSPIRED-ROADMAP.md) for longer-horizon strategic direction.
 
 ## References
 
-- [ROADMAP.md](ROADMAP.md) -- directional roadmap with Now/Next/Later milestone mapping.
+- [ROADMAP.md](ROADMAP.md) -- directional platform roadmap and sequencing principles.
 - [AGENTS.md](AGENTS.md) -- issue intake, scope gates, test expectations, and definition of done.
-- [CLAUDE.md](CLAUDE.md) -- WIP caps, worktree rules, and execution checklist.
-- [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md) -- GitHub Projects planning layer and issue promotion flow.
-- [docs/PORTFOLIO-INSPIRED-ROADMAP.md](docs/PORTFOLIO-INSPIRED-ROADMAP.md) -- portfolio-informed candidate lanes and issue seeds.
+- [CLAUDE.md](CLAUDE.md) -- WIP caps, execution checklists, and branch rules.
+- [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md) -- GitHub Projects planning and issue promotion lifecycle.
+- [docs/PORTFOLIO-INSPIRED-ROADMAP.md](docs/PORTFOLIO-INSPIRED-ROADMAP.md) -- portfolio-informed candidate lanes and long-horizon themes.
 - [docs/RUNBOOK.md](docs/RUNBOOK.md) -- operational playbooks and incident handling.
 - [docs/SECURITY.md](docs/SECURITY.md) -- production and security guardrails.
