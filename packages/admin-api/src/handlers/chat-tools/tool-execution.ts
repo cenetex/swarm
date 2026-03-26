@@ -226,7 +226,7 @@ export async function executeFallbackToolLoop(params: {
     // Check for pause tools in the next round
     const nextPauseTool = currentToolCalls.find(tc => isPauseForInputTool(String(tc.name), getToolArgs(tc)));
     if (nextPauseTool && mcpServices && avatarId) {
-      const pauseToolName = String(nextPauseTool.name);
+      const pauseToolName: string = String(nextPauseTool.name);
 
       // Detect looping: if the same pause tool is being called repeatedly, break the loop
       if (pauseToolName === lastPauseToolName) {
@@ -240,7 +240,8 @@ export async function executeFallbackToolLoop(params: {
             avatarId,
           });
           // Break the loop by returning an error response
-          response = `I encountered an issue while trying to access the ${pauseToolName.replace(/_/g, ' ')} interface. This might be due to a network error or misconfiguration. Please try refreshing the page or starting a new conversation.`;
+          const displayName = (pauseToolName as string).replace(/_/g, ' ');
+          response = `I encountered an issue while trying to access the ${displayName} interface. This might be due to a network error or misconfiguration. Please try refreshing the page or starting a new conversation.`;
           // Add the loop-breaking response to history
           const earlyMessages = [...messages];
           earlyMessages.push({
