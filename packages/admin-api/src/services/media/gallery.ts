@@ -247,6 +247,11 @@ export async function findByDescription(
 }
 
 /**
+ * Alias for findByDescription to match MCP service interface
+ */
+export const searchGallery = findByDescription;
+
+/**
  * Get gallery statistics
  */
 export async function getGalleryStats(avatarId: string): Promise<{
