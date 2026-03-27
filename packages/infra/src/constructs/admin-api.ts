@@ -374,9 +374,9 @@ export class AdminApiConstruct extends Construct {
         },
         timeToLiveAttribute: 'ttl',
         // Enable DynamoDB Streams for event-driven GitHub issue sync.
-        // NEW_IMAGE provides the full item after insert, which is all we need
-        // to create the GitHub issue without a separate GetItem call.
-        stream: dynamodb.StreamViewType.NEW_IMAGE,
+        // NEW_AND_OLD_IMAGES is required by Lambda event source mapping and
+        // provides before/after state for subscribers.
+        stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
       });
 
       // GSI1 for inverted lookups (sk → pk)
