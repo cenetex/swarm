@@ -91,9 +91,9 @@ export class MessageEvaluator {
     // 6. Platform-specific evaluation
     switch (envelope.platform) {
       case 'telegram':
-        return this.evaluateTelegram(envelope);
+        return await this.evaluateTelegram(envelope);
       case 'discord':
-        return this.evaluateDiscord(envelope);
+        return await this.evaluateDiscord(envelope);
       case 'twitter':
         return this.evaluateTwitter(envelope);
       case 'web':
@@ -190,10 +190,11 @@ export class MessageEvaluator {
    *
    * Key design: guild messages in allowed guilds/channels are always admitted
    * into channel context (admitToContext: true) for parity with Telegram group
-   * visibility. Response selection (shouldRespond) remains gated on mentions,
-   * name hits, or explicit allowed-channel configuration to prevent spam.
+   * visibility. Response selection (shouldRespond) now includes conversational
+   * follow-up logic: if recently active in a channel, respond to follow-ups
+   * without requiring mentions (same as Telegram).
    */
-  private evaluateDiscord(envelope: SwarmEnvelope): EvaluationResult {
+  private async evaluateDiscord(envelope: SwarmEnvelope): Promise<EvaluationResult> {
     const config = this.avatarConfig.platforms.discord;
     const chatType = envelope.metadata.chatType;
 
@@ -234,8 +235,13 @@ export class MessageEvaluator {
       if (config.allowedChannels?.includes(envelope.conversationId)) {
         return { shouldRespond: true, reason: 'Allowed channel in global mode', priority: 'normal', admitToContext: true };
       }
-      // Guild message not directly addressed — admit to context but don't respond
-      return { shouldRespond: false, reason: 'Not addressed in global mode', priority: 'low', admitToContext: true };
+      // Guild message not directly addressed — check for conversational follow-up
+      const followUpResult = await this.evaluateDiscordFollowUp(envelope);
+      if (followUpResult) {
+        return followUpResult;
+      }
+      // Otherwise queue at low priority for state machine evaluation (like Telegram)
+      return { shouldRespond: true, reason: 'Global mode, queued for state machine evaluation', priority: 'low', admitToContext: true };
     }
 
     if (config?.respondToMentions === false) {
@@ -246,14 +252,58 @@ export class MessageEvaluator {
       };
     }
 
-    // Guild message without mention — admit to shared-room context for
-    // visibility parity with Telegram, but don't generate a response.
+    // Guild message without mention — check for conversational follow-up
+    const followUpResult = await this.evaluateDiscordFollowUp(envelope);
+    if (followUpResult) {
+      return followUpResult;
+    }
+
+    // Default: queue group messages at low priority so the channel
+    // state machine can accumulate them and decide when to respond
+    // (message threshold / conversation gap triggers) - matching Telegram behavior
     return {
-      shouldRespond: false,
-      reason: 'Discord guild message without mention',
+      shouldRespond: true,
+      reason: 'Discord guild message, queued for state machine evaluation',
       priority: 'low',
       admitToContext: true,
     };
+  }
+
+  /**
+   * Evaluate if Discord message is a conversational follow-up within 5 minutes
+   * of the avatar's last message (matching Telegram behavior)
+   */
+  private async evaluateDiscordFollowUp(envelope: SwarmEnvelope): Promise<EvaluationResult | null> {
+    // Get channel state to check recent activity
+    const channelState = await this.stateService.getChannelState(
+      envelope.avatarId,
+      envelope.conversationId
+    );
+
+    if (!channelState?.lastResponseAt) {
+      return null;
+    }
+
+    // Check if avatar has responded in this channel within the last 5 minutes
+    const timeSinceLastResponse = Date.now() - channelState.lastResponseAt;
+    const recentlyActive = timeSinceLastResponse < 5 * 60 * 1000; // 5 minutes
+
+    if (recentlyActive) {
+      // Check if the message seems conversational
+      const text = envelope.content.text?.toLowerCase() || '';
+      const conversationalIndicators = ['?', 'what', 'why', 'how', 'when', 'who'];
+
+      if (conversationalIndicators.some(ind => text.includes(ind))) {
+        return {
+          shouldRespond: true,
+          reason: 'Recent activity + conversational message (Discord follow-up)',
+          priority: 'normal',
+          admitToContext: true,
+        };
+      }
+    }
+
+    return null;
   }
 
   /**
