@@ -41,7 +41,6 @@ import { createWebSearch } from './web-search.js';
 import { createMcpAdminServices } from './mcp-config.js';
 import { validateReplicateApiKey } from './replicate.js';
 import { getModelsForCapability, AVAILABLE_MODELS } from './models-registry.js';
-import { createMoltbookServices } from './moltbook.js';
 import { createTwitterServices } from './mcp-twitter-adapter.js';
 import {
   createStripeCheckoutSession,
@@ -103,7 +102,6 @@ export interface ServiceContainer {
   // Factory functions that produce per-avatar/session service bundles
   createWebSearch: typeof createWebSearch;
   createMcpAdminServices: typeof createMcpAdminServices;
-  createMoltbookServices: typeof createMoltbookServices;
   createTwitterServices: typeof createTwitterServices;
   createStickerServices: typeof stickersService.createStickerServices;
 }
@@ -175,7 +173,6 @@ export function createServiceContainer(
 
     createWebSearch,
     createMcpAdminServices,
-    createMoltbookServices,
     createTwitterServices,
     createStickerServices: stickersService.createStickerServices,
 

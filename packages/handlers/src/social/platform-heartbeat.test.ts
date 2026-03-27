@@ -1,14 +1,12 @@
 /**
  * Platform Heartbeat Handler Tests
  *
- * Tests for adapter registration, the moltbook adapter's isEnabled logic,
- * and the adapter interface contract.
+ * Tests for adapter registration and the adapter interface contract.
  *
  * @see packages/handlers/src/social/platform-heartbeat.ts
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  moltbookAdapter,
   registerAdapter,
   getAdapters,
   _resetAdapters,
@@ -26,10 +24,9 @@ describe('adapter registry', () => {
     _resetAdapters();
   });
 
-  it('starts with moltbook adapter registered', () => {
+  it('starts with no adapters registered', () => {
     const adapters = getAdapters();
-    expect(adapters).toHaveLength(1);
-    expect(adapters[0].platform).toBe('moltbook');
+    expect(adapters).toHaveLength(0);
   });
 
   it('registerAdapter adds a new adapter', () => {
@@ -43,13 +40,24 @@ describe('adapter registry', () => {
 
     registerAdapter(testAdapter);
     const adapters = getAdapters();
-    expect(adapters).toHaveLength(2);
-    expect(adapters[1].platform).toBe('twitter');
+    expect(adapters).toHaveLength(1);
+    expect(adapters[0].platform).toBe('twitter');
   });
 
   it('registerAdapter replaces existing adapter with same platform', () => {
+    const firstAdapter: HeartbeatPlatformAdapter = {
+      platform: 'twitter',
+      defaultIntervalMs: 60_000,
+      isEnabled: () => true,
+      fetchActivity: async () => [],
+      executeAction: async () => {},
+    };
+
+    registerAdapter(firstAdapter);
+    expect(getAdapters()).toHaveLength(1);
+
     const replacementAdapter: HeartbeatPlatformAdapter = {
-      platform: 'moltbook',
+      platform: 'twitter',
       defaultIntervalMs: 10_000,
       isEnabled: () => false,
       fetchActivity: async () => [],
@@ -62,7 +70,7 @@ describe('adapter registry', () => {
     expect(adapters[0].defaultIntervalMs).toBe(10_000);
   });
 
-  it('_resetAdapters restores default adapters', () => {
+  it('_resetAdapters clears all adapters', () => {
     registerAdapter({
       platform: 'twitter',
       defaultIntervalMs: 60_000,
@@ -70,65 +78,13 @@ describe('adapter registry', () => {
       fetchActivity: async () => [],
       executeAction: async () => {},
     });
-    expect(getAdapters()).toHaveLength(2);
+    expect(getAdapters()).toHaveLength(1);
 
     _resetAdapters();
-    expect(getAdapters()).toHaveLength(1);
-    expect(getAdapters()[0].platform).toBe('moltbook');
+    expect(getAdapters()).toHaveLength(0);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Moltbook adapter - isEnabled
-// ---------------------------------------------------------------------------
-
-describe('moltbookAdapter.isEnabled', () => {
-  it('returns true when mcpConfig.enabledToolsets contains moltbook', () => {
-    const config = {
-      mcpConfig: { enabledToolsets: ['moltbook', 'twitter'] },
-    };
-    expect(moltbookAdapter.isEnabled(config)).toBe(true);
-  });
-
-  it('returns false when mcpConfig.enabledToolsets does not contain moltbook', () => {
-    const config = {
-      mcpConfig: { enabledToolsets: ['twitter'] },
-    };
-    expect(moltbookAdapter.isEnabled(config)).toBe(false);
-  });
-
-  it('returns false when mcpConfig is missing', () => {
-    expect(moltbookAdapter.isEnabled({})).toBe(false);
-  });
-
-  it('returns false when enabledToolsets is not an array', () => {
-    const config = {
-      mcpConfig: { enabledToolsets: 'moltbook' },
-    };
-    expect(moltbookAdapter.isEnabled(config)).toBe(false);
-  });
-
-  it('returns false when enabledToolsets is empty', () => {
-    const config = {
-      mcpConfig: { enabledToolsets: [] },
-    };
-    expect(moltbookAdapter.isEnabled(config)).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Moltbook adapter - properties
-// ---------------------------------------------------------------------------
-
-describe('moltbookAdapter properties', () => {
-  it('has platform set to moltbook', () => {
-    expect(moltbookAdapter.platform).toBe('moltbook');
-  });
-
-  it('has default interval of 33 minutes', () => {
-    expect(moltbookAdapter.defaultIntervalMs).toBe(33 * 60 * 1000);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // HeartbeatPlatformAdapter contract

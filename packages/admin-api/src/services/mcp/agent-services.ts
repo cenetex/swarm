@@ -18,7 +18,7 @@ import { getBotToken } from './helpers.js';
 
 type AgentServices = Pick<
   AllServices,
-  'memory' | 'voice' | 'diagnostics' | 'observability' | 'mcpAdmin' | 'moltbook' | 'jobs' | 'githubIssues'
+  'memory' | 'voice' | 'diagnostics' | 'observability' | 'mcpAdmin' | 'jobs' | 'githubIssues'
 >;
 
 // ---------------------------------------------------------------------------
@@ -283,11 +283,6 @@ export function createAgentServices(
     // MCP Admin Services (Toolset & External Server Management)
     // =========================================================================
     mcpAdmin: svc.createMcpAdminServices(),
-
-    // =========================================================================
-    // Moltbook Services (Social network for AI agents)
-    // =========================================================================
-    moltbook: svc.createMoltbookServices(avatarId, session),
 
     // =========================================================================
     // GitHub Issue Tracking (read-only, avatar-scoped)
