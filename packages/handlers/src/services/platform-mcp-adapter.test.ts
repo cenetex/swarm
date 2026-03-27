@@ -16,7 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
 import { getAdminTable, _resetAdminTableCache } from './platform-mcp-adapter.js';
 import { createPlatformMCPServices } from './platform-mcp-adapter.js';
-import { getDynamoClient } from './dynamo-client.js';
+import { getDynamoClient, _setDynamoClient } from './dynamo-client.js';
 import type { AvatarConfig, StateService } from '@swarm/core';
 
 // =============================================================================
@@ -165,6 +165,13 @@ function buildTestStateService(): StateService {
   } as unknown as StateService;
 }
 
+/**
+ * Create a mock DynamoDB client for testing.
+ */
+function createMockClient(sendFn: (...args: unknown[]) => Promise<unknown>) {
+  return { send: sendFn } as any;
+}
+
 describe('createPlatformMCPServices', () => {
   let originalAdminTable: string | undefined;
 
@@ -172,6 +179,7 @@ describe('createPlatformMCPServices', () => {
     originalAdminTable = process.env.ADMIN_TABLE;
     process.env.ADMIN_TABLE = 'TestTable';
     _resetAdminTableCache();
+    _setDynamoClient(null);  // Reset the DynamoDB client mock
   });
 
   afterEach(() => {
@@ -181,6 +189,7 @@ describe('createPlatformMCPServices', () => {
       delete process.env.ADMIN_TABLE;
     }
     _resetAdminTableCache();
+    _setDynamoClient(null);  // Clean up the mock client
   });
 
   // ---------------------------------------------------------------------------
@@ -766,14 +775,6 @@ describe('createPlatformMCPServices', () => {
 
   describe('gallery service - write-then-read unification', () => {
     it('getGallery reads from ADMIN_TABLE (not STATE_TABLE)', async () => {
-      const services = createPlatformMCPServices({
-        avatarId: 'test-avatar',
-        avatarConfig: buildTestAvatarConfig(),
-        stateService: buildTestStateService(),
-        secrets: {},
-      });
-
-      const client = getDynamoClient();
       const galleryItems = [
         {
           id: 'img_123',
@@ -786,24 +787,17 @@ describe('createPlatformMCPServices', () => {
         },
       ];
 
-      const sendSpy = spyOn(client, 'send').mockImplementation(async (cmd: unknown) => {
+      let tableName: string | undefined;
+      const mockClient = createMockClient(async (cmd: unknown) => {
         // Verify the query targets ADMIN_TABLE (TestTable), not STATE_TABLE
         const input = (cmd as { input?: { TableName?: string } }).input;
-        expect(input?.TableName).toBe('TestTable');
+        tableName = input?.TableName;
+        expect(tableName).toBe('TestTable');
         return { Items: galleryItems };
       });
 
-      try {
-        const result = await services.gallery.getGallery('test-avatar');
-        expect(result).toHaveLength(1);
-        expect(result[0].id).toBe('img_123');
-        expect(result[0].url).toBe('https://cdn.example.com/image1.png');
-      } finally {
-        sendSpy.mockRestore();
-      }
-    });
+      _setDynamoClient(mockClient);
 
-    it('searchGallery reads from ADMIN_TABLE', async () => {
       const services = createPlatformMCPServices({
         avatarId: 'test-avatar',
         avatarConfig: buildTestAvatarConfig(),
@@ -811,10 +805,18 @@ describe('createPlatformMCPServices', () => {
         secrets: {},
       });
 
-      const client = getDynamoClient();
-      const sendSpy = spyOn(client, 'send').mockImplementation(async (cmd: unknown) => {
+      const result = await services.gallery.getGallery('test-avatar');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('img_123');
+      expect(result[0].url).toBe('https://cdn.example.com/image1.png');
+    });
+
+    it('searchGallery reads from ADMIN_TABLE', async () => {
+      let tableName: string | undefined;
+      const mockClient = createMockClient(async (cmd: unknown) => {
         const input = (cmd as { input?: { TableName?: string } }).input;
-        expect(input?.TableName).toBe('TestTable');
+        tableName = input?.TableName;
+        expect(tableName).toBe('TestTable');
         return {
           Items: [
             {
@@ -829,17 +831,8 @@ describe('createPlatformMCPServices', () => {
         };
       });
 
-      try {
-        const result = await services.gallery.searchGallery('test-avatar', 'sunset');
-        expect(result).toHaveLength(1);
-        expect(result[0].id).toBe('img_456');
-        expect(result[0].prompt).toBe('beautiful sunset over ocean');
-      } finally {
-        sendSpy.mockRestore();
-      }
-    });
+      _setDynamoClient(mockClient);
 
-    it('getGalleryItem reads from ADMIN_TABLE', async () => {
       const services = createPlatformMCPServices({
         avatarId: 'test-avatar',
         avatarConfig: buildTestAvatarConfig(),
@@ -847,10 +840,18 @@ describe('createPlatformMCPServices', () => {
         secrets: {},
       });
 
-      const client = getDynamoClient();
-      const sendSpy = spyOn(client, 'send').mockImplementation(async (cmd: unknown) => {
+      const result = await services.gallery.searchGallery('test-avatar', 'sunset');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('img_456');
+      expect(result[0].prompt).toBe('beautiful sunset over ocean');
+    });
+
+    it('getGalleryItem reads from ADMIN_TABLE', async () => {
+      let tableName: string | undefined;
+      const mockClient = createMockClient(async (cmd: unknown) => {
         const input = (cmd as { input?: { TableName?: string } }).input;
-        expect(input?.TableName).toBe('TestTable');
+        tableName = input?.TableName;
+        expect(tableName).toBe('TestTable');
         return {
           Items: [
             {
@@ -865,13 +866,18 @@ describe('createPlatformMCPServices', () => {
         };
       });
 
-      try {
-        const result = await services.gallery.getGalleryItem('test-avatar', 'img_789');
-        expect(result).not.toBeNull();
-        expect(result!.id).toBe('img_789');
-      } finally {
-        sendSpy.mockRestore();
-      }
+      _setDynamoClient(mockClient);
+
+      const services = createPlatformMCPServices({
+        avatarId: 'test-avatar',
+        avatarConfig: buildTestAvatarConfig(),
+        stateService: buildTestStateService(),
+        secrets: {},
+      });
+
+      const result = await services.gallery.getGalleryItem('test-avatar', 'img_789');
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('img_789');
     });
   });
 
@@ -881,17 +887,6 @@ describe('createPlatformMCPServices', () => {
 
   describe('gallery service - getGalleryItem pagination', () => {
     it('finds item beyond first 100 records via pagination', async () => {
-      const services = createPlatformMCPServices({
-        avatarId: 'test-avatar',
-        avatarConfig: buildTestAvatarConfig(),
-        stateService: buildTestStateService(),
-        secrets: {},
-      });
-
-      // The module-level dynamoClient is the same singleton returned by getDynamoClient().
-      // We spy on send() to simulate DynamoDB pagination: first page returns 100
-      // non-matching items with LastEvaluatedKey, second page returns the target item.
-      const client = getDynamoClient();
       const targetItem = {
         id: 'target-item-id',
         url: 'https://cdn.example.com/old-image.png',
@@ -903,7 +898,7 @@ describe('createPlatformMCPServices', () => {
       };
 
       let callCount = 0;
-      const sendSpy = spyOn(client, 'send').mockImplementation(async () => {
+      const mockClient = createMockClient(async () => {
         callCount++;
         if (callCount === 1) {
           // First page: 100 items, none matching the filter; has more pages
@@ -923,24 +918,8 @@ describe('createPlatformMCPServices', () => {
         };
       });
 
-      try {
-        const result = await services.gallery.getGalleryItem('test-avatar', 'target-item-id');
+      _setDynamoClient(mockClient);
 
-        expect(result).not.toBeNull();
-        expect(result!.id).toBe('target-item-id');
-        expect(result!.url).toBe('https://cdn.example.com/old-image.png');
-        expect(result!.type).toBe('image');
-        expect(result!.prompt).toBe('an old image');
-        expect(result!.createdAt).toBe(1000000);
-
-        // Should have made exactly 2 DynamoDB queries (paginated)
-        expect(callCount).toBe(2);
-      } finally {
-        sendSpy.mockRestore();
-      }
-    });
-
-    it('returns null when item does not exist across all pages', async () => {
       const services = createPlatformMCPServices({
         avatarId: 'test-avatar',
         avatarConfig: buildTestAvatarConfig(),
@@ -948,9 +927,22 @@ describe('createPlatformMCPServices', () => {
         secrets: {},
       });
 
-      const client = getDynamoClient();
+      const result = await services.gallery.getGalleryItem('test-avatar', 'target-item-id');
+
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('target-item-id');
+      expect(result!.url).toBe('https://cdn.example.com/old-image.png');
+      expect(result!.type).toBe('image');
+      expect(result!.prompt).toBe('an old image');
+      expect(result!.createdAt).toBe(1000000);
+
+      // Should have made exactly 2 DynamoDB queries (paginated)
+      expect(callCount).toBe(2);
+    });
+
+    it('returns null when item does not exist across all pages', async () => {
       let callCount = 0;
-      const sendSpy = spyOn(client, 'send').mockImplementation(async () => {
+      const mockClient = createMockClient(async () => {
         callCount++;
         if (callCount <= 2) {
           // Two pages of non-matching items
@@ -969,18 +961,8 @@ describe('createPlatformMCPServices', () => {
         };
       });
 
-      try {
-        const result = await services.gallery.getGalleryItem('test-avatar', 'nonexistent-id');
+      _setDynamoClient(mockClient);
 
-        expect(result).toBeNull();
-        // Should have paginated through all 3 pages
-        expect(callCount).toBe(3);
-      } finally {
-        sendSpy.mockRestore();
-      }
-    });
-
-    it('returns item on first page without unnecessary pagination', async () => {
       const services = createPlatformMCPServices({
         avatarId: 'test-avatar',
         avatarConfig: buildTestAvatarConfig(),
@@ -988,9 +970,16 @@ describe('createPlatformMCPServices', () => {
         secrets: {},
       });
 
-      const client = getDynamoClient();
+      const result = await services.gallery.getGalleryItem('test-avatar', 'nonexistent-id');
+
+      expect(result).toBeNull();
+      // Should have paginated through all 3 pages
+      expect(callCount).toBe(3);
+    });
+
+    it('returns item on first page without unnecessary pagination', async () => {
       let callCount = 0;
-      const sendSpy = spyOn(client, 'send').mockImplementation(async () => {
+      const mockClient = createMockClient(async () => {
         callCount++;
         return {
           Items: [{
@@ -1006,16 +995,21 @@ describe('createPlatformMCPServices', () => {
         };
       });
 
-      try {
-        const result = await services.gallery.getGalleryItem('test-avatar', 'first-page-item');
+      _setDynamoClient(mockClient);
 
-        expect(result).not.toBeNull();
-        expect(result!.id).toBe('first-page-item');
-        // Should NOT continue paginating after finding the item
-        expect(callCount).toBe(1);
-      } finally {
-        sendSpy.mockRestore();
-      }
+      const services = createPlatformMCPServices({
+        avatarId: 'test-avatar',
+        avatarConfig: buildTestAvatarConfig(),
+        stateService: buildTestStateService(),
+        secrets: {},
+      });
+
+      const result = await services.gallery.getGalleryItem('test-avatar', 'first-page-item');
+
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('first-page-item');
+      // Should NOT continue paginating after finding the item
+      expect(callCount).toBe(1);
     });
   });
 });
