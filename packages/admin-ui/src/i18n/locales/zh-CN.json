@@ -360,5 +360,91 @@
     "en": "English",
     "fr": "Français",
     "zh-CN": "中文"
+  },
+  "sidebar": {
+    "options": "选项",
+    "viewDetails": "查看详情",
+    "reassignOwner": "重新分配所有者",
+    "creator": "创建者：",
+    "none": "无",
+    "slots": "槽位",
+    "adminAccess": "管理员访问 • 无限槽位",
+    "freeSlots": "1 个免费槽位 • 每个 Orb NFT +1",
+    "loadingAvatars": "加载中...",
+    "noAvatars": "暂无头像",
+    "healthDashboard": "健康仪表板",
+    "createNewAvatar": "创建新头像",
+    "createAvatar": "创建头像",
+    "getOrbToCrate": "获取 Orb 来创建",
+    "oneFreSlot": "1 个免费槽位",
+    "signInToCreate": "登录以创建头像",
+    "needOrbToCreate": "需要 Orb NFT 才能创建更多头像",
+    "noAvailableSlots": "无可用槽位 - 您所有的 Orb 都已绑定到头像",
+    "cannotCreateAvatar": "暂时无法创建头像",
+    "freeSlotUsed": "免费槽位（已使用）",
+    "freeSlotClickToCreate": "免费槽位（点击创建）",
+    "freeSlot": "免费槽位",
+    "orbSlotUsed": "Orb 槽位（已使用）",
+    "orbSlotClickToCreate": "Orb 槽位（点击创建）",
+    "orbSlot": "Orb 槽位",
+    "connectionStatus": "已连接到 {{platforms}}",
+    "noPlatformsConnected": "未连接任何平台",
+    "incompleteSetup": "设置不完整 — 未定义人设",
+    "unconfigured": "未配置",
+    "pausedStatus": "已暂停",
+    "activeStatus": "活跃",
+    "errorStatus": "错误",
+    "inactiveStatus": "不活跃"
+  },
+  "healthDashboard": {
+    "heading": "头像健康（{{count}}）",
+    "loading": "加载健康数据中...",
+    "noAvatars": "未找到任何头像。",
+    "error": "加载健康数据失败",
+    "refresh": "刷新",
+    "refreshing": "刷新中...",
+    "loadMore": "加载更多",
+    "headerAvatar": "头像",
+    "headerStatus": "状态",
+    "headerMemories": "记忆",
+    "headerLastActive": "最后活动",
+    "headerConsolidation": "整合",
+    "headerErrors": "错误（24小时）",
+    "justNow": "刚才",
+    "minutesAgo": "分钟前",
+    "hoursAgo": "小时前",
+    "daysAgo": "天前",
+    "healthy": "健康",
+    "needsConsolidation": "需要整合",
+    "empty": "空",
+    "unknown": "未知"
+  },
+  "gallery": {
+    "uploadPhoto": "上传照片",
+    "closeGallery": "关闭画廊"
+  },
+  "chatInput": {
+    "messageInput": "消息输入"
+  },
+  "sharedChat": {
+    "unknownSender": "未知",
+    "typeAMessage": "输入消息…",
+    "signInToChat": "登录以聊天…"
+  },
+  "walletLinkPrompt": {
+    "connecting": "连接中...",
+    "requestingChallenge": "正在请求验证...",
+    "signingWallet": "请在钱包中签名...",
+    "verifying": "验证中..."
+  },
+  "integrationConfig": {
+    "connected": "已连接",
+    "connectedSuccess": "已连接！",
+    "valid": "有效！",
+    "saving": "保存中...",
+    "validating": "验证中...",
+    "saveAndTest": "保存并测试",
+    "saved": "已保存！",
+    "done": "完成"
   }
 }

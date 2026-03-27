@@ -5,27 +5,29 @@
  * Admin-only component.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getAvatarHealth } from '../api/health';
 import type { AvatarHealthSummary, AvatarHealthResponse } from '../api/health';
+import type { TFunction } from 'i18next';
 
-function formatRelativeTime(timestamp: number): string {
+function formatRelativeTime(timestamp: number, t: TFunction): string {
   const diff = Date.now() - timestamp;
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
+  if (diff < 60_000) return t('healthDashboard.justNow');
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}${t('healthDashboard.minutesAgo')}`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}${t('healthDashboard.hoursAgo')}`;
+  return `${Math.floor(diff / 86_400_000)}${t('healthDashboard.daysAgo')}`;
 }
 
-function consolidationBadge(status: AvatarHealthSummary['consolidationStatus']) {
+function consolidationBadge(status: AvatarHealthSummary['consolidationStatus'], t: TFunction) {
   switch (status) {
     case 'healthy':
-      return <span className="px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400">Healthy</span>;
+      return <span className="px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400">{t('healthDashboard.healthy')}</span>;
     case 'needs_consolidation':
-      return <span className="px-2 py-0.5 text-xs rounded-full bg-amber-500/20 text-amber-400">Needs Consolidation</span>;
+      return <span className="px-2 py-0.5 text-xs rounded-full bg-amber-500/20 text-amber-400">{t('healthDashboard.needsConsolidation')}</span>;
     case 'empty':
-      return <span className="px-2 py-0.5 text-xs rounded-full bg-gray-500/20 text-gray-400">Empty</span>;
+      return <span className="px-2 py-0.5 text-xs rounded-full bg-gray-500/20 text-gray-400">{t('healthDashboard.empty')}</span>;
     default:
-      return <span className="px-2 py-0.5 text-xs rounded-full bg-gray-500/20 text-gray-400">Unknown</span>;
+      return <span className="px-2 py-0.5 text-xs rounded-full bg-gray-500/20 text-gray-400">{t('healthDashboard.unknown')}</span>;
   }
 }
 
@@ -45,6 +47,7 @@ interface HealthDashboardProps {
 }
 
 export function HealthDashboard({ onSelectAvatar }: HealthDashboardProps) {
+  const { t } = useTranslation();
   const [data, setData] = useState<AvatarHealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,11 +59,11 @@ export function HealthDashboard({ onSelectAvatar }: HealthDashboardProps) {
       const result = await getAvatarHealth(20, cursor);
       setData(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load health data');
+      setError(err instanceof Error ? err.message : t('healthDashboard.error'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchHealth();
@@ -69,7 +72,7 @@ export function HealthDashboard({ onSelectAvatar }: HealthDashboardProps) {
   if (loading && !data) {
     return (
       <div className="p-4 text-center text-[var(--color-text-secondary)]">
-        Loading health data...
+        {t('healthDashboard.loading')}
       </div>
     );
   }
@@ -85,7 +88,7 @@ export function HealthDashboard({ onSelectAvatar }: HealthDashboardProps) {
   if (!data || data.avatars.length === 0) {
     return (
       <div className="p-4 text-center text-[var(--color-text-secondary)]">
-        No avatars found.
+        {t('healthDashboard.noAvatars')}
       </div>
     );
   }
@@ -94,14 +97,14 @@ export function HealthDashboard({ onSelectAvatar }: HealthDashboardProps) {
     <div className="flex flex-col gap-3 p-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-[var(--color-text)]">
-          Avatar Health ({data.total})
+          {t('healthDashboard.heading', { count: data.total })}
         </h2>
         <button
           onClick={() => fetchHealth()}
           disabled={loading}
           className="text-xs px-2 py-1 rounded bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] disabled:opacity-50"
         >
-          {loading ? 'Refreshing...' : 'Refresh'}
+          {loading ? t('healthDashboard.refreshing') : t('healthDashboard.refresh')}
         </button>
       </div>
 
@@ -109,12 +112,12 @@ export function HealthDashboard({ onSelectAvatar }: HealthDashboardProps) {
         <table className="w-full text-xs">
           <thead>
             <tr className="text-left text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
-              <th className="pb-2 pr-3 font-medium">Avatar</th>
-              <th className="pb-2 pr-3 font-medium">Status</th>
-              <th className="pb-2 pr-3 font-medium text-right">Memories</th>
-              <th className="pb-2 pr-3 font-medium">Last Active</th>
-              <th className="pb-2 pr-3 font-medium">Consolidation</th>
-              <th className="pb-2 font-medium text-right">Errors (24h)</th>
+              <th className="pb-2 pr-3 font-medium">{t('healthDashboard.headerAvatar')}</th>
+              <th className="pb-2 pr-3 font-medium">{t('healthDashboard.headerStatus')}</th>
+              <th className="pb-2 pr-3 font-medium text-right">{t('healthDashboard.headerMemories')}</th>
+              <th className="pb-2 pr-3 font-medium">{t('healthDashboard.headerLastActive')}</th>
+              <th className="pb-2 pr-3 font-medium">{t('healthDashboard.headerConsolidation')}</th>
+              <th className="pb-2 font-medium text-right">{t('healthDashboard.headerErrors')}</th>
             </tr>
           </thead>
           <tbody>
@@ -134,9 +137,9 @@ export function HealthDashboard({ onSelectAvatar }: HealthDashboardProps) {
                   </span>
                 </td>
                 <td className="py-2 pr-3 text-[var(--color-text-secondary)]">
-                  {formatRelativeTime(avatar.lastActiveAt)}
+                  {formatRelativeTime(avatar.lastActiveAt, t)}
                 </td>
-                <td className="py-2 pr-3">{consolidationBadge(avatar.consolidationStatus)}</td>
+                <td className="py-2 pr-3">{consolidationBadge(avatar.consolidationStatus, t)}</td>
                 <td className="py-2 text-right">
                   {avatar.errorCount > 0 ? (
                     <span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">
@@ -160,7 +163,7 @@ export function HealthDashboard({ onSelectAvatar }: HealthDashboardProps) {
             disabled={loading}
             className="text-xs px-3 py-1 rounded bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] disabled:opacity-50"
           >
-            Load more
+            {t('healthDashboard.loadMore')}
           </button>
         </div>
       )}

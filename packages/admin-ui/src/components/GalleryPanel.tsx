@@ -99,7 +99,7 @@ export function GalleryContent({ avatarId, isOpen, onSelectImage }: GalleryConte
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
           className="px-3 py-1.5 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-colors disabled:opacity-50"
-          title="Upload photo"
+          title={t('gallery.uploadPhoto')}
         >
           {uploading ? t('common.uploading') : t('common.upload')}
         </button>
@@ -245,11 +245,11 @@ export function GalleryPanel({ avatarId, isOpen, onClose, onSelectImage }: Galle
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
-        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Gallery</h3>
+        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{t('gallery.title')}</h3>
         <button
           onClick={onClose}
           className="p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] rounded transition-colors"
-          title="Close gallery"
+          title={t('gallery.closeGallery')}
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
             <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />

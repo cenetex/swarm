@@ -360,5 +360,91 @@
     "en": "English",
     "fr": "Français",
     "zh-CN": "中文"
+  },
+  "sidebar": {
+    "options": "Options",
+    "viewDetails": "Voir les détails",
+    "reassignOwner": "Réattribuer le propriétaire",
+    "creator": "Créateur :",
+    "none": "Aucun",
+    "slots": "Emplacements",
+    "adminAccess": "Accès administrateur • emplacements illimités",
+    "freeSlots": "1 emplacement gratuit • +1 par Orb NFT",
+    "loadingAvatars": "Chargement des avatars...",
+    "noAvatars": "Aucun avatar pour l'instant",
+    "healthDashboard": "Tableau de bord de santé",
+    "createNewAvatar": "Créer un nouvel avatar",
+    "createAvatar": "Créer un avatar",
+    "getOrbToCrate": "Obtenir un Orb pour créer",
+    "oneFreSlot": "1 emplacement gratuit",
+    "signInToCreate": "Connectez-vous pour créer des avatars",
+    "needOrbToCreate": "Vous avez besoin d'un Orb NFT pour créer plus d'avatars",
+    "noAvailableSlots": "Aucun emplacement disponible - tous vos Orbs sont liés à des avatars",
+    "cannotCreateAvatar": "Impossible de créer un avatar pour le moment",
+    "freeSlotUsed": "Emplacement gratuit (utilisé)",
+    "freeSlotClickToCreate": "Emplacement gratuit (cliquez pour créer)",
+    "freeSlot": "Emplacement gratuit",
+    "orbSlotUsed": "Emplacement Orb (utilisé)",
+    "orbSlotClickToCreate": "Emplacement Orb (cliquez pour créer)",
+    "orbSlot": "Emplacement Orb",
+    "connectionStatus": "Connecté à {{platforms}}",
+    "noPlatformsConnected": "Aucune plateforme connectée",
+    "incompleteSetup": "Configuration incomplète — aucune persona définie",
+    "unconfigured": "Non configuré",
+    "pausedStatus": "En pause",
+    "activeStatus": "Actif",
+    "errorStatus": "Erreur",
+    "inactiveStatus": "Inactif"
+  },
+  "healthDashboard": {
+    "heading": "Santé de l'avatar ({{count}})",
+    "loading": "Chargement des données de santé...",
+    "noAvatars": "Aucun avatar trouvé.",
+    "error": "Échec du chargement des données de santé",
+    "refresh": "Actualiser",
+    "refreshing": "Actualisation...",
+    "loadMore": "Charger plus",
+    "headerAvatar": "Avatar",
+    "headerStatus": "Statut",
+    "headerMemories": "Mémoires",
+    "headerLastActive": "Dernière activité",
+    "headerConsolidation": "Consolidation",
+    "headerErrors": "Erreurs (24h)",
+    "justNow": "à l'instant",
+    "minutesAgo": "il y a m",
+    "hoursAgo": "il y a h",
+    "daysAgo": "il y a j",
+    "healthy": "Sain",
+    "needsConsolidation": "Nécessite une consolidation",
+    "empty": "Vide",
+    "unknown": "Inconnu"
+  },
+  "gallery": {
+    "uploadPhoto": "Téléverser une photo",
+    "closeGallery": "Fermer la galerie"
+  },
+  "chatInput": {
+    "messageInput": "Champ de message"
+  },
+  "sharedChat": {
+    "unknownSender": "Inconnu",
+    "typeAMessage": "Écrivez un message…",
+    "signInToChat": "Connectez-vous pour discuter…"
+  },
+  "walletLinkPrompt": {
+    "connecting": "Connexion...",
+    "requestingChallenge": "Demande de défi...",
+    "signingWallet": "Signez dans votre portefeuille...",
+    "verifying": "Vérification..."
+  },
+  "integrationConfig": {
+    "connected": "Connecté",
+    "connectedSuccess": "Connecté !",
+    "valid": "Valide !",
+    "saving": "Enregistrement...",
+    "validating": "Validation...",
+    "saveAndTest": "Enregistrer et tester",
+    "saved": "Enregistré !",
+    "done": "Terminé"
   }
 }

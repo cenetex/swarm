@@ -131,7 +131,7 @@ function truncateWallet(wallet: string | undefined): string {
  * Yellow: persona set but no platform connected
  * Gray: no persona set (incomplete setup)
  */
-function getConnectionHealth(avatar: Avatar): { color: string; label: string } {
+function getConnectionHealth(avatar: Avatar, t: TFunction): { color: string; label: string } {
   const platforms = avatar.platforms ?? {};
   const connectedPlatforms: string[] = [];
 
@@ -157,36 +157,36 @@ function getConnectionHealth(avatar: Avatar): { color: string; label: string } {
   if (connectedPlatforms.length > 0) {
     return {
       color: 'bg-green-400',
-      label: `Connected to ${connectedPlatforms.join(', ')}`,
+      label: t('sidebar.connectionStatus', { platforms: connectedPlatforms.join(', ') }),
     };
   }
 
   if (avatar.persona) {
     return {
       color: 'bg-yellow-400',
-      label: 'No platforms connected',
+      label: t('sidebar.noPlatformsConnected'),
     };
   }
 
   return {
     color: 'bg-gray-400',
-    label: 'Incomplete setup — no persona set',
+    label: t('sidebar.incompleteSetup'),
   };
 }
 
-function getStatusDescription(avatar: Avatar): string {
+function getStatusDescription(avatar: Avatar, t: TFunction): string {
   // Health status takes priority
-  if (avatar.healthStatus === 'error') return avatar.healthMessage || 'Error';
-  if (avatar.healthStatus === 'rate_limited') return avatar.healthMessage || 'Rate limited';
-  if (avatar.healthStatus === 'inactive') return 'Inactive';
+  if (avatar.healthStatus === 'error') return avatar.healthMessage || t('common.error');
+  if (avatar.healthStatus === 'rate_limited') return avatar.healthMessage || t('avatar.rateLimited');
+  if (avatar.healthStatus === 'inactive') return t('sidebar.inactiveStatus');
 
   // Fall back to legacy status
-  if (avatar.status === 'shell') return 'Unconfigured';
-  if (avatar.status === 'draft') return 'Draft';
-  if (avatar.status === 'paused') return 'Paused';
+  if (avatar.status === 'shell') return t('sidebar.unconfigured');
+  if (avatar.status === 'draft') return t('sidebar.unconfigured');
+  if (avatar.status === 'paused') return t('sidebar.pausedStatus');
   if (avatar.status === 'configured') return `${avatar.secrets?.filter(s => s.isSet).length || 0} secrets`;
-  if (avatar.status === 'active') return 'Active';
-  if (avatar.status === 'error') return 'Error';
+  if (avatar.status === 'active') return t('sidebar.activeStatus');
+  if (avatar.status === 'error') return t('common.error');
 
   return avatar.status;
 }
@@ -194,7 +194,7 @@ function getStatusDescription(avatar: Avatar): string {
 /**
  * Compact energy indicator that fetches energy lazily
  */
-function CompactEnergyBar({ avatarId, show }: { avatarId: string; show: boolean }) {
+function CompactEnergyBar({ avatarId, show, t }: { avatarId: string; show: boolean; t: TFunction }) {
   const [energy, setEnergy] = React.useState<{ current: number; max: number } | null>(null);
   const [loading, setLoading] = React.useState(false);
   const hasFetched = React.useRef(false);
@@ -220,7 +220,7 @@ function CompactEnergyBar({ avatarId, show }: { avatarId: string; show: boolean 
   const color = percent > 60 ? 'bg-green-500' : percent > 25 ? 'bg-yellow-500' : 'bg-red-500';
 
   return (
-    <div className="mt-1 flex items-center gap-1.5" title={`Energy: ${energy.current}/${energy.max}`}>
+    <div className="mt-1 flex items-center gap-1.5" title={`${t('energy.title')}: ${energy.current}/${energy.max}`}>
       <div className="flex-1 h-1 bg-[var(--color-bg-tertiary)] rounded-full overflow-hidden">
         <div className={`h-full ${color} transition-all`} style={{ width: `${percent}%` }} />
       </div>
@@ -230,6 +230,7 @@ function CompactEnergyBar({ avatarId, show }: { avatarId: string; show: boolean 
 }
 
 function AvatarListItem({ avatar, isActive, onClick, isAdmin, onReassign }: AvatarListItemProps) {
+  const { t } = useTranslation();
   const [showContextMenu, setShowContextMenu] = React.useState(false);
   const contextMenuRef = React.useRef<HTMLDivElement>(null);
 
@@ -269,13 +270,13 @@ function AvatarListItem({ avatar, isActive, onClick, isAdmin, onReassign }: Avat
           <div className="font-medium truncate">{avatar.name}</div>
           <div className="text-xs text-[var(--color-text-muted)] truncate flex items-center gap-1.5">
             <span
-              className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${getConnectionHealth(avatar).color}`}
-              title={getConnectionHealth(avatar).label}
+              className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${getConnectionHealth(avatar, t).color}`}
+              title={getConnectionHealth(avatar, t).label}
             />
-            {getStatusDescription(avatar)}
+            {getStatusDescription(avatar, t)}
           </div>
           {/* Energy indicator for active avatar */}
-          <CompactEnergyBar avatarId={avatar.id} show={isActive} />
+          <CompactEnergyBar avatarId={avatar.id} show={isActive} t={t} />
           {/* Admin: show owner wallet badge */}
           {isAdmin && avatar.creatorWallet && (
             <div className="text-xs text-[var(--color-text-muted)] truncate mt-0.5 flex items-center gap-1">
@@ -295,7 +296,7 @@ function AvatarListItem({ avatar, isActive, onClick, isAdmin, onReassign }: Avat
               setShowContextMenu(!showContextMenu);
             }}
             className="p-1 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            title="Options"
+            title={t('sidebar.options')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
               <path d="M8 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM8 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM9.5 12.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0Z" />
@@ -321,7 +322,7 @@ function AvatarListItem({ avatar, isActive, onClick, isAdmin, onReassign }: Avat
               <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
               <path fillRule="evenodd" d="M1.38 8.28a.87.87 0 0 1 0-.566 7.003 7.003 0 0 1 13.24.002.87.87 0 0 1 0 .566A7.003 7.003 0 0 1 1.38 8.28ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" clipRule="evenodd" />
             </svg>
-            View Details
+            {t('sidebar.viewDetails')}
           </button>
           <button
             onClick={() => {
@@ -333,11 +334,11 @@ function AvatarListItem({ avatar, isActive, onClick, isAdmin, onReassign }: Avat
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
               <path d="M11 4V3a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1ZM4 6.5a1 1 0 0 1 .872-.995L5 5.5h7a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5H7a1 1 0 0 1-1-1v-5a1 1 0 0 1-.872-.995L5 6.5H4Z" />
             </svg>
-            Reassign Owner
+            {t('sidebar.reassignOwner')}
           </button>
           <div className="border-t border-[var(--color-border)] my-1" />
           <div className="px-3 py-1 text-xs text-[var(--color-text-muted)]">
-            <div>Creator: {truncateWallet(avatar.creatorWallet) || 'None'}</div>
+            <div>{t('sidebar.creator')} {truncateWallet(avatar.creatorWallet) || t('sidebar.none')}</div>
           </div>
         </div>
       )}
@@ -427,14 +428,14 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
 
   // Get reason why creation is disabled (for tooltip)
   const getCreateDisabledReason = (): string | null => {
-    if (!isAuthenticated) return 'Sign in to create avatars';
+    if (!isAuthenticated) return t('sidebar.signInToCreate');
     if (canCreate) return null;
     if ((gateStatus?.availableSlots ?? 0) <= 0) {
       return gateStatus?.nftsHeld === 0
-        ? 'You need an Orb NFT to create more avatars'
-        : 'No available slots - all your Orbs are bound to avatars';
+        ? t('sidebar.needOrbToCreate')
+        : t('sidebar.noAvailableSlots');
     }
-    return 'Cannot create avatar at this time';
+    return t('sidebar.cannotCreateAvatar');
   };
   const createDisabledReason = getCreateDisabledReason();
 
@@ -458,7 +459,7 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
                 }`}
                 title={createDisabledReason || `Create new avatar (${gateStatus?.availableSlots || 0} slots available)`}
                 data-testid="create-avatar-button"
-                aria-label="Create new avatar"
+                aria-label={t('sidebar.createNewAvatar')}
               >
                 {isLoading ? (
                   <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24">
@@ -504,7 +505,7 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
           <div className="px-2 py-2 mb-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wider">
-                Slots
+                {t('sidebar.slots')}
               </div>
               <div className="text-xs text-[var(--color-text-muted)]">
                 {gateStatus.availableSlots} available • {gateAvatarsCreated} used
@@ -535,17 +536,17 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
                     title={
                       isFree
                         ? isUsed
-                          ? 'Free slot (used)'
+                          ? t('sidebar.freeSlotUsed')
                           : clickable
-                          ? 'Free slot (click to create)'
-                          : 'Free slot'
+                          ? t('sidebar.freeSlotClickToCreate')
+                          : t('sidebar.freeSlot')
                         : isUsed
-                        ? 'Orb slot (used)'
+                        ? t('sidebar.orbSlotUsed')
                         : clickable
-                        ? 'Orb slot (click to create)'
-                        : 'Orb slot'
+                        ? t('sidebar.orbSlotClickToCreate')
+                        : t('sidebar.orbSlot')
                     }
-                    aria-label={isFree ? 'Free slot' : 'Orb slot'}
+                    aria-label={isFree ? t('sidebar.freeSlot') : t('sidebar.orbSlot')}
                   >
                     <div
                       className={
@@ -567,9 +568,9 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
 
             <div className="mt-2 text-xs text-[var(--color-text-muted)]">
               {bypassRestrictions ? (
-                <span className="text-brand-400">Admin access • unlimited slots</span>
+                <span className="text-brand-400">{t('sidebar.adminAccess')}</span>
               ) : (
-                '1 free slot • +1 per Orb NFT'
+                t('sidebar.freeSlots')
               )}
             </div>
           </div>
@@ -614,12 +615,12 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
               </svg>
             )}
             <span className="font-medium">
-              {!canCreateAvatar ? 'Get an Orb to Create' : 'Create Avatar'}
+              {!canCreateAvatar ? t('sidebar.getOrbToCrate') : t('sidebar.createAvatar')}
             </span>
             {canCreateAvatar && gateStatus?.availableSlots !== undefined && (
               <span className="ml-auto text-xs text-[var(--color-text-muted)] bg-[var(--color-bg-tertiary)] px-2 py-0.5 rounded-full" aria-hidden="true">
                 {gateStatus.availableSlots === 1 && gateStatus.nftsHeld === 0
-                  ? '1 free slot'
+                  ? t('sidebar.oneFreSlot')
                   : `${gateStatus.availableSlots} slot${gateStatus.availableSlots !== 1 ? 's' : ''}`}
               </span>
             )}
@@ -632,11 +633,11 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
-            <p className="text-sm">Loading avatars...</p>
+            <p className="text-sm">{t('sidebar.loadingAvatars')}</p>
           </div>
         ) : sortedAvatars.length === 0 ? (
           <div className="text-center py-8 text-[var(--color-text-muted)]">
-            <p className="text-sm">No avatars yet</p>
+            <p className="text-sm">{t('sidebar.noAvatars')}</p>
           </div>
         ) : (
           sortedAvatars.map((avatar) => (
@@ -659,7 +660,7 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
             onClick={() => setShowHealth((prev) => !prev)}
             className="w-full px-4 py-2 flex items-center justify-between text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wider hover:text-[var(--color-text)] transition-colors"
           >
-            <span>Health Dashboard</span>
+            <span>{t('sidebar.healthDashboard')}</span>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"

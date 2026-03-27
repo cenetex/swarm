@@ -360,5 +360,91 @@
     "en": "English",
     "fr": "Français",
     "zh-CN": "中文"
+  },
+  "sidebar": {
+    "options": "Options",
+    "viewDetails": "View Details",
+    "reassignOwner": "Reassign Owner",
+    "creator": "Creator:",
+    "none": "None",
+    "slots": "Slots",
+    "adminAccess": "Admin access • unlimited slots",
+    "freeSlots": "1 free slot • +1 per Orb NFT",
+    "loadingAvatars": "Loading avatars...",
+    "noAvatars": "No avatars yet",
+    "healthDashboard": "Health Dashboard",
+    "createNewAvatar": "Create new avatar",
+    "createAvatar": "Create Avatar",
+    "getOrbToCrate": "Get an Orb to Create",
+    "oneFreSlot": "1 free slot",
+    "signInToCreate": "Sign in to create avatars",
+    "needOrbToCreate": "You need an Orb NFT to create more avatars",
+    "noAvailableSlots": "No available slots - all your Orbs are bound to avatars",
+    "cannotCreateAvatar": "Cannot create avatar at this time",
+    "freeSlotUsed": "Free slot (used)",
+    "freeSlotClickToCreate": "Free slot (click to create)",
+    "freeSlot": "Free slot",
+    "orbSlotUsed": "Orb slot (used)",
+    "orbSlotClickToCreate": "Orb slot (click to create)",
+    "orbSlot": "Orb slot",
+    "connectionStatus": "Connected to {{platforms}}",
+    "noPlatformsConnected": "No platforms connected",
+    "incompleteSetup": "Incomplete setup — no persona set",
+    "unconfigured": "Unconfigured",
+    "pausedStatus": "Paused",
+    "activeStatus": "Active",
+    "errorStatus": "Error",
+    "inactiveStatus": "Inactive"
+  },
+  "healthDashboard": {
+    "heading": "Avatar Health ({{count}})",
+    "loading": "Loading health data...",
+    "noAvatars": "No avatars found.",
+    "error": "Failed to load health data",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing...",
+    "loadMore": "Load more",
+    "headerAvatar": "Avatar",
+    "headerStatus": "Status",
+    "headerMemories": "Memories",
+    "headerLastActive": "Last Active",
+    "headerConsolidation": "Consolidation",
+    "headerErrors": "Errors (24h)",
+    "justNow": "just now",
+    "minutesAgo": "m ago",
+    "hoursAgo": "h ago",
+    "daysAgo": "d ago",
+    "healthy": "Healthy",
+    "needsConsolidation": "Needs Consolidation",
+    "empty": "Empty",
+    "unknown": "Unknown"
+  },
+  "gallery": {
+    "uploadPhoto": "Upload photo",
+    "closeGallery": "Close gallery"
+  },
+  "chatInput": {
+    "messageInput": "Message input"
+  },
+  "sharedChat": {
+    "unknownSender": "Unknown",
+    "typeAMessage": "Type a message…",
+    "signInToChat": "Sign in to chat…"
+  },
+  "walletLinkPrompt": {
+    "connecting": "Connecting...",
+    "requestingChallenge": "Requesting challenge...",
+    "signingWallet": "Sign in your wallet...",
+    "verifying": "Verifying..."
+  },
+  "integrationConfig": {
+    "connected": "Connected",
+    "connectedSuccess": "Connected!",
+    "valid": "Valid!",
+    "saving": "Saving...",
+    "validating": "Validating...",
+    "saveAndTest": "Save & Test",
+    "saved": "Saved!",
+    "done": "Done"
   }
 }
