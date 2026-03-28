@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'bun:test';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 
 import { authenticateRequest } from './request-auth.js';
@@ -30,8 +30,10 @@ describe('request auth', () => {
 
   it('allows INTERNAL_TEST_KEY bypass (for local/internal testing)', async () => {
     const prevInternalTestKey = process.env.INTERNAL_TEST_KEY;
+    const prevEnvironment = process.env.ENVIRONMENT;
     try {
       process.env.INTERNAL_TEST_KEY = 'test-key';
+      process.env.ENVIRONMENT = 'staging';
 
       const event = makeEvent({
         headers: {
@@ -44,6 +46,7 @@ describe('request auth', () => {
       expect(session.userId).toBe('internal-test-user');
     } finally {
       process.env.INTERNAL_TEST_KEY = prevInternalTestKey;
+      process.env.ENVIRONMENT = prevEnvironment;
     }
   });
 });
