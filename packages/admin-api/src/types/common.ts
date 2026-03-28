@@ -32,7 +32,6 @@ export const SecretType = z.enum([
   'helius_api_key',
   'solana_wallet_key',
   'ethereum_wallet_key',
-  'moltbook_api_key',
   'token_launch_api_key',
   'token_launch_partner_key',
   'token_launch_referral_code',

@@ -35,6 +35,7 @@
     "issues:sync:internal:files": "INTERNAL_ISSUE_SOURCE=files INTERNAL_ISSUE_SOURCE_DIR=issues/staging node scripts/sync-internal-issues-to-github.mjs --config .github/policy/internal-issue-sync-policy.json --dry-run",
     "issues:sync:internal:apply": "node scripts/sync-internal-issues-to-github.mjs --config .github/policy/internal-issue-sync-policy.json --apply",
     "canary:telegram": "bun run scripts/telegram-canary.ts",
+    "canary:twitter": "ENVIRONMENT=${ENVIRONMENT:-staging} bun run scripts/twitter-canary.ts",
     "prepare": "husky",
     "release": "./scripts/release.sh"
   },
@@ -60,6 +61,7 @@
     "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.1004.0",
     "@aws-sdk/client-dynamodb": "^3.1004.0",
     "@aws-sdk/client-secrets-manager": "^3.1004.0",
     "@aws-sdk/lib-dynamodb": "^3.1004.0",
@@ -82,7 +84,7 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.56.1",
-    "yaml": "^2.6.0"
+    "yaml": "^2.8.3"
   },
   "pnpm": {
     "auditConfig": {

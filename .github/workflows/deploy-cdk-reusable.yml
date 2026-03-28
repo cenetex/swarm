@@ -77,7 +77,7 @@ jobs:
         with:
           driver: docker-container
 
-      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
 
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
@@ -86,7 +86,7 @@ jobs:
 
       - name: Cache Lambda Layer
         id: layer-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: packages/layer/nodejs
           key: layer-${{ hashFiles('packages/layer/package.json', 'packages/layer/node-fetch-shim/**', 'packages/layer/abort-controller-shim/**') }}

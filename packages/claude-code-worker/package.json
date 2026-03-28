@@ -12,10 +12,10 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "^2.1.71",
-    "@aws-sdk/client-dynamodb": "^3.1004.0",
-    "@aws-sdk/client-sqs": "^3.1004.0",
-    "@aws-sdk/lib-dynamodb": "^3.1004.0"
+    "@anthropic-ai/claude-code": "^2.1.81",
+    "@aws-sdk/client-dynamodb": "^3.1014.0",
+    "@aws-sdk/client-sqs": "^3.1014.0",
+    "@aws-sdk/lib-dynamodb": "^3.1014.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

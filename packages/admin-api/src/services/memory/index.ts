@@ -2,7 +2,7 @@
  * Memory Domain
  *
  * Avatar memory system: storage, search, consolidation,
- * migration, embeddings, dreams, and moltbook.
+ * migration, embeddings, and dreams.
  *
  * The core memory service (formerly a single 2,470-LOC file) is split
  * into focused modules under this directory:
@@ -30,4 +30,3 @@ export * from '../memory-migration.js';
 export * from '../embedding.js';
 export * from '../dreams.js';
 export * from '../dream-jobs.js';
-export * from '../moltbook.js';
