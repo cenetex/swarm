@@ -3,7 +3,21 @@
  *
  * These tests validate the alerting script's behavior and output format.
  */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, skip } from "bun:test";
+
+// Helper to check if bun is available in PATH
+async function isBunAvailable(): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(["which", "bun"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const code = await proc.exited;
+    return code === 0;
+  } catch {
+    return false;
+  }
+}
 
 describe("send-canary-alerts", () => {
   describe("alert script syntax validation", () => {
@@ -21,6 +35,12 @@ describe("send-canary-alerts", () => {
   describe("environment handling", () => {
     it("gracefully handles missing alert configuration", async () => {
       // If all alert channels are unconfigured, script should exit 1
+      const bunAvailable = await isBunAvailable();
+      if (!bunAvailable) {
+        // Skip if bun is not available
+        return;
+      }
+
       const proc = Bun.spawn(["bun", "run", "scripts/send-canary-alerts.ts"], {
         cwd: process.cwd(),
         env: {
@@ -44,6 +64,12 @@ describe("send-canary-alerts", () => {
     });
 
     it("requires GitHub Actions environment variables", async () => {
+      const bunAvailable = await isBunAvailable();
+      if (!bunAvailable) {
+        // Skip if bun is not available
+        return;
+      }
+
       const proc = Bun.spawn(["bun", "run", "scripts/send-canary-alerts.ts"], {
         cwd: process.cwd(),
         env: {
@@ -67,6 +93,12 @@ describe("send-canary-alerts", () => {
     it("accepts --health-outcome, --chat-outcome, --is-consecutive-failure flags", async () => {
       // This validates that the script can be invoked with the expected flags
       // (actual alert sending is skipped because channels aren't configured)
+      const bunAvailable = await isBunAvailable();
+      if (!bunAvailable) {
+        // Skip if bun is not available
+        return;
+      }
+
       const proc = Bun.spawn(
         [
           "bun",
@@ -98,6 +130,12 @@ describe("send-canary-alerts", () => {
     });
 
     it("skips alerting on first failure (not consecutive)", async () => {
+      const bunAvailable = await isBunAvailable();
+      if (!bunAvailable) {
+        // Skip if bun is not available
+        return;
+      }
+
       const proc = Bun.spawn(
         [
           "bun",
@@ -134,6 +172,12 @@ describe("send-canary-alerts", () => {
 
   describe("alert channel validation", () => {
     it("reports when Telegram is not configured", async () => {
+      const bunAvailable = await isBunAvailable();
+      if (!bunAvailable) {
+        // Skip if bun is not available
+        return;
+      }
+
       const proc = Bun.spawn(
         [
           "bun",
@@ -175,6 +219,12 @@ describe("send-canary-alerts", () => {
 
   describe("output format", () => {
     it("outputs structured alert results summary", async () => {
+      const bunAvailable = await isBunAvailable();
+      if (!bunAvailable) {
+        // Skip if bun is not available
+        return;
+      }
+
       const proc = Bun.spawn(
         [
           "bun",
