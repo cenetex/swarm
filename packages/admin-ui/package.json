@@ -20,7 +20,7 @@
     "@solana/web3.js": "^1.98.4",
     "@tailwindcss/postcss": "^4.2.2",
     "bs58": "^6.0.0",
-    "i18next": "^25.10.5",
+    "i18next": "^26.0.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-i18next": "^17.0.1",
