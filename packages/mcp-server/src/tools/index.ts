@@ -97,6 +97,7 @@ export {
 export {
   createMoltbookTools,
   type MoltbookServices,
+} from './moltbook.js';
 export {
   createTokenLaunchTools,
   type TokenLaunchServices,
