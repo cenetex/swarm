@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 
 import { getClearSessionCookies, getSessionFromCookie, getSetSessionCookies } from './session-cookie.js';

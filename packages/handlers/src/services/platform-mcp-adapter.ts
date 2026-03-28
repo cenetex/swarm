@@ -545,7 +545,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
           let rowsScanned = 0;
 
           do {
-            const result = await dynamoClient.send(new QueryCommand({
+            const result = await getDynamoClient().send(new QueryCommand({
               TableName: getAdminTable(),
               KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
               ExpressionAttributeValues: {
@@ -601,7 +601,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
           let lastEvaluatedKey: Record<string, unknown> | undefined;
 
           do {
-            const result = await dynamoClient.send(new QueryCommand({
+            const result = await getDynamoClient().send(new QueryCommand({
               TableName: getAdminTable(),
               KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
               FilterExpression: 'id = :id',
@@ -663,7 +663,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
           let rowsScanned = 0;
 
           do {
-            const result = await dynamoClient.send(new QueryCommand({
+            const result = await getDynamoClient().send(new QueryCommand({
               TableName: getAdminTable(),
               KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
               ExpressionAttributeValues: {
