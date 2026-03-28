@@ -95,9 +95,6 @@ export {
   type AvatarActivityResult,
 } from './observability.js';
 export {
-  createMoltbookTools,
-  type MoltbookServices,
-export {
   createTokenLaunchTools,
   type TokenLaunchServices,
   type TokenLaunchInfo,
