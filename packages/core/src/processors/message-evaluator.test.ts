@@ -228,7 +228,7 @@ describe('MessageEvaluator', () => {
       discordEvaluator = new MessageEvaluator(mockAvatarConfig, mockStateService, mockEvaluatorConfig);
     });
 
-    it('should admit non-mention guild messages to context without responding (global mode)', async () => {
+    it('should queue non-mention guild messages at low priority (global mode)', async () => {
       const envelope = {
         avatarId: 'test-avatar',
         platform: 'discord',
@@ -240,9 +240,10 @@ describe('MessageEvaluator', () => {
       } as any;
 
       const result = await discordEvaluator.evaluate(envelope);
-      expect(result.shouldRespond).toBe(false);
+      expect(result.shouldRespond).toBe(true);
+      expect(result.priority).toBe('low');
       expect(result.admitToContext).toBe(true);
-      expect(result.reason).toBe('Not addressed in global mode');
+      expect(result.reason).toBe('Global mode, queued for state machine evaluation');
     });
 
     it('should respond AND admit to context when mentioned in global mode', async () => {
@@ -309,7 +310,7 @@ describe('MessageEvaluator', () => {
       expect(result.reason).toBe('Allowed channel in global mode');
     });
 
-    it('should admit non-mention guild messages to context (non-global mode)', async () => {
+    it('should queue non-mention guild messages at low priority (non-global mode)', async () => {
       mockAvatarConfig.platforms.discord = { enabled: true } as any;
       const nonGlobalEvaluator = new MessageEvaluator(mockAvatarConfig, mockStateService, mockEvaluatorConfig);
 
@@ -324,9 +325,10 @@ describe('MessageEvaluator', () => {
       } as any;
 
       const result = await nonGlobalEvaluator.evaluate(envelope);
-      expect(result.shouldRespond).toBe(false);
+      expect(result.shouldRespond).toBe(true);
+      expect(result.priority).toBe('low');
       expect(result.admitToContext).toBe(true);
-      expect(result.reason).toBe('Discord guild message without mention');
+      expect(result.reason).toBe('Discord guild message, queued for state machine evaluation');
     });
 
     it('should respond in DMs', async () => {
