@@ -67,7 +67,7 @@ burn stats, and usage tracking.
 
 ### `memory/` — Memory System
 Avatar memory storage, search, consolidation, migration, embeddings,
-dreams, and moltbook.
+and dreams.
 
 | Module | Description |
 |--------|-------------|
@@ -77,7 +77,6 @@ dreams, and moltbook.
 | `embedding` | Vector embedding generation |
 | `dreams` | Dream generation and retrieval |
 | `dream-jobs` | Async dream job management |
-| `moltbook` | Moltbook narrative entries |
 
 ### `media/` — Media & Content
 Image/video generation, gallery, stickers, voice synthesis,

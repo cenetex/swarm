@@ -122,6 +122,7 @@
       "githubRepo": "cenetex/aws-swarm"
     },
     "prod": {
+      "stackHash": "prod00",
       "useExistingResources": true,
       "secretPrefix": "swarm",
       "enableSharedHandlers": true,
