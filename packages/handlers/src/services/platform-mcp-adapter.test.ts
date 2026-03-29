@@ -13,10 +13,10 @@
  * @see https://github.com/cenetex/aws-swarm/issues/233
  * @see https://github.com/cenetex/aws-swarm/issues/353
  */
-import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { getAdminTable, _resetAdminTableCache } from './platform-mcp-adapter.js';
 import { createPlatformMCPServices } from './platform-mcp-adapter.js';
-import { getDynamoClient, _setDynamoClient } from './dynamo-client.js';
+import { _setDynamoClient } from './dynamo-client.js';
 import type { AvatarConfig, StateService } from '@swarm/core';
 
 // =============================================================================
