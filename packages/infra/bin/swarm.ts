@@ -124,6 +124,7 @@ const anthropicApiKeyArn = getContextValue<string>('anthropicApiKeyArn', envConf
 const githubAppCredentialsArnRaw = getContextValue<string>('githubAppCredentialsArn', envConfig);
 // Treat empty string as unset so placeholder entries in cdk.context.json don't pass through
 const githubAppCredentialsArn = githubAppCredentialsArnRaw?.trim() || undefined;
+const tableStreamArn = getContextValue<string>('tableStreamArn', envConfig)?.trim() || undefined;
 const githubRepo = getContextValue<string>('githubRepo', envConfig);
 const secretPrefixRaw = getContextValue<string>('secretPrefix', envConfig);
 const stackHashRaw = getContextValue<string>('stackHash', envConfig);
@@ -227,6 +228,7 @@ const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffi
   claudeCodeUseOpenRouter,
   secretPrefix,
   useExistingResources,
+  tableStreamArn,
   githubAppCredentialsArn,
   githubRepo,
   env: stackEnv,
