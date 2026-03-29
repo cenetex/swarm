@@ -353,8 +353,12 @@ export class AdminApiConstruct extends Construct {
     if (props.useExistingResources) {
       // Import from legacy monolith — the AdminTable has no resource suffix
       // because it is a shared resource owned by the old SwarmStack.
-      this.table = dynamodb.Table.fromTableName(
-        this, 'AdminTable', `SwarmAdmin-${environment}`,
+      // Use fromTableAttributes to include stream ARN so DynamoEventSource can access streams.
+      this.table = dynamodb.Table.fromTableAttributes(
+        this, 'AdminTable', {
+          tableName: `SwarmAdmin-${environment}`,
+          tableStreamArn: `arn:aws:dynamodb:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:table/SwarmAdmin-${environment}/stream/*`,
+        },
       );
     } else {
       const adminTable = new dynamodb.Table(this, 'AdminTable', {
