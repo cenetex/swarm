@@ -119,6 +119,10 @@ export {
   type DesignPartnerInfo,
   type DesignPartnerMeta as DesignPartnerMetaInfo,
 } from './design-partner.js';
+export {
+  createBlogTools,
+  type BlogServices,
+} from './blog.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';
 import { createGalleryTools } from './gallery.js';
@@ -147,6 +151,7 @@ import { createTokenLaunchTools } from './token-launch.js';
 import { createBillingTools } from './billing.js';
 import { createGitHubIssueTools } from './github-issues.js';
 import { createDesignPartnerTools } from './design-partner.js';
+import { createBlogTools } from './blog.js';
 import type { ToolRegistry } from '../registry.js';
 
 /**
@@ -191,6 +196,8 @@ export interface AllServices {
   githubIssues?: import('./github-issues.js').GitHubIssueServices;
   // Design partner invite management (admin-only)
   designPartner?: import('./design-partner.js').DesignPartnerServices;
+  // Blog posting
+  blog?: import('./blog.js').BlogServices;
 }
 
 /**
@@ -260,5 +267,11 @@ export function registerAllTools(
   }
   if (services.designPartner) {
     registry.registerAll(createDesignPartnerTools(services.designPartner));
+  }
+  if (services.blog) {
+    registry.registerAll(createBlogTools(services.blog));
+  } else {
+    // Blog tools can run without a service (uses core publishBlogPost directly)
+    registry.registerAll(createBlogTools({}));
   }
 }

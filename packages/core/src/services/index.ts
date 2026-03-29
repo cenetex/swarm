@@ -195,3 +195,8 @@ export {
   type GitHubClientConfig,
   type GitHubIssueFilters,
 } from './github-client.js';
+export {
+  publishBlogPost,
+  type BlogPostContent,
+  type BlogPostResult,
+} from './blog-post.js';
