@@ -50,8 +50,8 @@ export async function handleGalleryRoutes(
     const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
     if (denied) return denied;
 
-    const body = parseJsonBody(ctx.event) as { contentType?: string } | null;
-    const contentType = (body?.contentType as string) || 'image/png';
+    const body = parseJsonBody(ctx.event) as { contentType?: string };
+    const contentType = typeof body?.contentType === 'string' ? body.contentType : 'image/png';
 
     const result = await mediaService.getGalleryUploadUrl(avatarId, contentType);
     return jsonResponse(corsHeaders, 200, result);
@@ -64,19 +64,21 @@ export async function handleGalleryRoutes(
     const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
     if (denied) return denied;
 
-    const body = parseJsonBody(ctx.event) as { s3Key?: string; publicUrl?: string; caption?: string } | null;
+    const body = parseJsonBody(ctx.event) as { s3Key?: string; publicUrl?: string; caption?: string };
     if (!body?.s3Key || !body?.publicUrl) {
       return jsonResponse(corsHeaders, 400, { error: 's3Key and publicUrl are required' });
     }
 
     const id = galleryService.generateGalleryId();
+    const caption = typeof body.caption === 'string' ? body.caption : '';
+
     const item = await galleryService.addToGallery(avatarId, {
       id,
       type: 'image',
-      url: body.publicUrl as string,
-      s3Key: body.s3Key as string,
+      url: body.publicUrl,
+      s3Key: body.s3Key,
       prompt: '',
-      caption: (body.caption as string) || '',
+      caption,
       model: 'upload',
       platform: 'admin-ui',
     });
