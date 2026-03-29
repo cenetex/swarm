@@ -27,6 +27,7 @@ import {
   createActivityService,
   logger,
   DiscordRateLimiter,
+  DiscordAdapter,
   logIntentValidation,
   logGatewayClose,
   computeReconnectDelay,
@@ -563,7 +564,6 @@ async function handleDiscordMessage(
   // (only for guild messages getting a response - typing is expected user feedback)
   if (envelope.metadata.chatType !== 'private') {
     try {
-      const { DiscordAdapter } = await import('@swarm/core');
       const discordAdapter = new DiscordAdapter(config, {
         botToken: binding.botToken,
       });
