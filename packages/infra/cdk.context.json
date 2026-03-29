@@ -1,5 +1,7 @@
 {
-  "acknowledged-issue-numbers": [34892],
+  "acknowledged-issue-numbers": [
+    34892
+  ],
   "vpc-provider:account=022118847419:filter.isDefault=true:region=us-east-1:returnAsymmetricSubnets=true": {
     "vpcId": "vpc-50cd4a29",
     "vpcCidrBlock": "172.31.0.0/16",
@@ -146,7 +148,8 @@
       "stripePriceIdPro": "price_1T8sGGFfeGTTyFW4k1VmYJkH",
       "stripePriceIdEnterprise": "price_1T8sGHFfeGTTyFW4R7QnXlLA",
       "githubAppCredentialsArn": "arn:aws:secretsmanager:us-east-1:332730082708:secret:swarm/prod/github-app-credentials-LdrmLd",
-      "githubRepo": "cenetex/aws-swarm"
+      "githubRepo": "cenetex/aws-swarm",
+      "tableStreamArn": "arn:aws:dynamodb:us-east-1:332730082708:table/SwarmAdmin-prod/stream/2026-03-27T01:51:55.941"
     }
   }
 }
