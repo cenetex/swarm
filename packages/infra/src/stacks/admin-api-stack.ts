@@ -171,6 +171,13 @@ export interface AdminApiStackProps extends cdk.StackProps {
   useExistingResources?: boolean;
 
   /**
+   * DynamoDB stream ARN for the existing AdminTable (required when useExistingResources=true
+   * and GitHub issue sync is enabled). Retrieve via:
+   * aws dynamodb describe-table --table-name SwarmAdmin-<env> --query 'Table.LatestStreamArn'
+   */
+  tableStreamArn?: string;
+
+  /**
    * Secrets Manager ARN for GitHub App credentials JSON.
    * Preferred shape: { "clientId": "Iv1...", "privateKey": "-----BEGIN..." }
    * Legacy shape:    { "appId": "12345", "privateKey": "...", "installationId": "67890" }
@@ -368,6 +375,7 @@ export class AdminApiStack extends cdk.Stack {
         internalTestKey,
         alarmTopic,
         useExistingResources: props.useExistingResources,
+        tableStreamArn: props.tableStreamArn,
         enableDiscordGateway,
         githubAppCredentialsArn: props.githubAppCredentialsArn,
         githubRepo: props.githubRepo,
