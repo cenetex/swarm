@@ -44,7 +44,6 @@ describe('createServiceContainer', () => {
       'stripe',
       'createWebSearch',
       'createMcpAdminServices',
-      'createMoltbookServices',
       'createTwitterServices',
       'createStickerServices',
     ];
