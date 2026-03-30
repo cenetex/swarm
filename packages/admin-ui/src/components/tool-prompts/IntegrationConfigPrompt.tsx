@@ -2211,7 +2211,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
 
                         // Check if input is a t.me/ URL
                         const urlParse = parseTelegramUrl(input);
-                        let usernameToResolve: string | null = null;
+                        let usernameToResolve: string | undefined = undefined;
 
                         if (urlParse.type === 'invite') {
                           setGroupInputError('Invite links can\'t be resolved. Add the bot to the group first, then select it from "Recently active".');
