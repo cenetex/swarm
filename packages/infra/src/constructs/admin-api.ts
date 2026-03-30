@@ -226,6 +226,14 @@ export interface AdminApiConstructProps {
   useExistingResources?: boolean;
 
   /**
+   * DynamoDB stream ARN for the existing AdminTable.
+   * Required when useExistingResources=true and githubAppCredentialsArn is set,
+   * because the imported table reference cannot discover the stream ARN automatically.
+   * Retrieve via: aws dynamodb describe-table --table-name SwarmAdmin-<env> --query 'Table.LatestStreamArn'
+   */
+  tableStreamArn?: string;
+
+  /**
    * Whether the Discord gateway worker (ECS Fargate) is deployed.
    * Passed as DISCORD_GATEWAY_ENABLED env var to Lambda so the admin API
    * can accurately report runtime health for bot/hybrid mode avatars.
@@ -353,9 +361,21 @@ export class AdminApiConstruct extends Construct {
     if (props.useExistingResources) {
       // Import from legacy monolith — the AdminTable has no resource suffix
       // because it is a shared resource owned by the old SwarmStack.
-      this.table = dynamodb.Table.fromTableName(
-        this, 'AdminTable', `SwarmAdmin-${environment}`,
-      );
+      // Use fromTableAttributes when stream ARN is provided, so DynamoEventSource can access streams.
+      // tableStreamArn must be the exact ARN (e.g., .../stream/2024-01-01T00:00:00.000) — not a wildcard.
+      // Retrieve it with: aws dynamodb describe-table --table-name SwarmAdmin-<env> --query 'Table.LatestStreamArn'
+      if (props.tableStreamArn) {
+        this.table = dynamodb.Table.fromTableAttributes(
+          this, 'AdminTable', {
+            tableName: `SwarmAdmin-${environment}`,
+            tableStreamArn: props.tableStreamArn,
+          },
+        );
+      } else {
+        this.table = dynamodb.Table.fromTableName(
+          this, 'AdminTable', `SwarmAdmin-${environment}`,
+        );
+      }
     } else {
       const adminTable = new dynamodb.Table(this, 'AdminTable', {
         tableName: `SwarmAdmin-${environment}${suffix}`,
