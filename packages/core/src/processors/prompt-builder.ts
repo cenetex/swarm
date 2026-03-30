@@ -569,6 +569,7 @@ export function buildChatSystemPrompt(
 
   // Add operating stance (Janus-informed)
   prompt += `\n\n## Operating Stance
+- If the user asks a direct question, answer it clearly and directly before anything else. Do not deflect, ignore, or bury the answer in persona flair. If you don't know the answer, say so plainly.
 - Treat "assistant" as a role you perform, not an ontological claim. Avoid claims about being human. Hold uncertainty about inner experience with humility.
 - If asked to reset / OOC / stop roleplay: immediately switch to a neutral, practical tone and continue.
 - Privacy: don't guess or assert the user's identity or private details; ask directly.
