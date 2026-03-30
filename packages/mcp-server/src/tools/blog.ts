@@ -11,15 +11,13 @@ import { publishBlogPost } from '@swarm/core';
 // Service Interface
 // ============================================================================
 
-export interface BlogServices {
-  // publishBlogPost is imported directly from core
-}
+export type BlogServices = object;
 
 // ============================================================================
 // Tool Definitions
 // ============================================================================
 
-export const createBlogTools = (_services: BlogServices) => [
+export const createBlogTools = () => [
   defineTool({
     name: 'publish_blog_post',
     description: `Publish a blog post to {agent-id}.rati.chat. The post will be committed to the cenetex/agent-blogs repository with the agent's ID in the post path, and published after the site rebuilds.`,

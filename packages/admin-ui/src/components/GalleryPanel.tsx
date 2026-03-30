@@ -237,6 +237,7 @@ interface GalleryPanelProps {
 }
 
 export function GalleryPanel({ avatarId, isOpen, onClose, onSelectImage }: GalleryPanelProps) {
+  const { t } = useTranslation();
   if (!isOpen) return null;
 
   return (

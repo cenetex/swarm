@@ -268,10 +268,6 @@ export function registerAllTools(
   if (services.designPartner) {
     registry.registerAll(createDesignPartnerTools(services.designPartner));
   }
-  if (services.blog) {
-    registry.registerAll(createBlogTools(services.blog));
-  } else {
-    // Blog tools can run without a service (uses core publishBlogPost directly)
-    registry.registerAll(createBlogTools({}));
-  }
+  // Blog tools can run without a service (uses core publishBlogPost directly)
+  registry.registerAll(createBlogTools());
 }

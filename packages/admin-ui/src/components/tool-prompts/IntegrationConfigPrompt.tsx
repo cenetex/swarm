@@ -2217,7 +2217,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                           setGroupInputError('Invite links can\'t be resolved. Add the bot to the group first, then select it from "Recently active".');
                           return;
                         } else if (urlParse.type === 'username') {
-                          usernameToResolve = urlParse.value;
+                          usernameToResolve = urlParse.value ?? null;
                         } else if (input.startsWith('@')) {
                           usernameToResolve = input.slice(1);
                         }
