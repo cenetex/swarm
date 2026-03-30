@@ -885,6 +885,23 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
         traceId,
       });
 
+      // =========================================================
+      // IDEMPOTENCY CHECK
+      // =========================================================
+      // Check if this message has already been processed.
+      // SQS can redeliver messages due to Lambda timeout/crash, so we use
+      // envelope.messageId as the processing key with 1hr TTL.
+      const messageProcessingKey = `msgproc:${avatarId}:${envelope.messageId}`;
+      const isFirstProcessing = await stateService.checkAndSetIdempotency(messageProcessingKey, 3600);
+      if (!isFirstProcessing) {
+        logger.info('Message already processed, skipping', {
+          event: 'message_deduplicated',
+          subsystem: 'chat',
+          messageId: envelope.messageId,
+        });
+        continue;
+      }
+
       logger.info('Processing message', {
         event: 'processing_started',
         subsystem: 'chat',
