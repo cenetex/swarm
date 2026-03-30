@@ -830,6 +830,37 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     );
   }
 
+  // Extract bot token from pasted text (e.g., BotFather message)
+  const extractBotToken = (input: string): { token: string; extracted: boolean } => {
+    const match = input.match(/(\d{8,}:\S{35,})/);
+    if (match) {
+      return { token: match[1], extracted: match[1] !== input.trim() };
+    }
+    return { token: input.trim(), extracted: false };
+  };
+
+  // Parse t.me/ URLs to extract group username
+  const parseTelegramUrl = (input: string): { type: 'username' | 'invite' | 'invalid'; value?: string } => {
+    // Match t.me/groupname or t.me/+inviteHash
+    const urlMatch = input.match(/(?:https?:\/\/)?t\.me\/([+@]?[\w]+)/);
+    if (urlMatch) {
+      const value = urlMatch[1];
+      if (value.startsWith('+')) {
+        return { type: 'invite', value };
+      }
+      return { type: 'username', value };
+    }
+    return { type: 'invalid' };
+  };
+
+  // Generate deep link approval URL for sharing
+  const generateShareLink = (): string | null => {
+    if (!activeAgent?.id) return null;
+    const botStatus = testResult?.botUsername;
+    if (!botStatus) return null;
+    return `https://t.me/${botStatus}?start=approve_${activeAgent.id}`;
+  };
+
   const handleTest = async () => {
     if (!token.trim() || isTesting) return;
 
@@ -2178,9 +2209,21 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                         // Check if already added
                         const existingIds = allowedChats.map(c => c.chatId);
 
-                        // If starts with @, resolve via API
-                        if (input.startsWith('@')) {
-                          const username = input.slice(1);
+                        // Check if input is a t.me/ URL
+                        const urlParse = parseTelegramUrl(input);
+                        let usernameToResolve: string | null = null;
+
+                        if (urlParse.type === 'invite') {
+                          setGroupInputError('Invite links can\'t be resolved. Add the bot to the group first, then select it from "Recently active".');
+                          return;
+                        } else if (urlParse.type === 'username') {
+                          usernameToResolve = urlParse.value;
+                        } else if (input.startsWith('@')) {
+                          usernameToResolve = input.slice(1);
+                        }
+
+                        // If we have a username to resolve, use API
+                        if (usernameToResolve) {
                           setIsResolvingGroup(true);
                           setGroupInputError(null);
                           try {
@@ -2188,7 +2231,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
                               credentials: 'include',
-                              body: JSON.stringify({ username }),
+                              body: JSON.stringify({ username: usernameToResolve }),
                             });
                             const data = await resp.json() as { chatId?: string; title?: string; username?: string; error?: string };
                             if (!resp.ok || !data.chatId) {
@@ -2306,6 +2349,44 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                     Policy changes pending — click Save to apply.
                   </div>
                 )}
+
+                {/* Share link for easy user approval */}
+                {status === 'success' && testResult?.botUsername && (
+                  <div className="space-y-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                    <label className="block text-sm font-medium text-[var(--color-text-secondary)]">
+                      Share link with friends
+                    </label>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      Send this link to anyone you want to chat with your bot. When they tap it and start the bot, they'll be auto-approved.
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={generateShareLink() || ''}
+                        className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] cursor-pointer"
+                        onClick={(e) => {
+                          const input = e.currentTarget;
+                          input.select();
+                          navigator.clipboard.writeText(input.value).catch(() => {});
+                        }}
+                        title="Click to copy"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = generateShareLink();
+                          if (link) {
+                            navigator.clipboard.writeText(link).catch(() => {});
+                          }
+                        }}
+                        className="px-2 py-1 text-xs bg-blue-600/40 hover:bg-blue-600/60 border border-blue-500/30 rounded-lg text-blue-300 transition-colors"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <div>
@@ -2317,10 +2398,28 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                 value={token}
                 onChange={(e) => {
                   setSavedAt(null);
-                  setToken(e.target.value);
+                  let newValue = e.target.value;
+                  let showToast = false;
+
+                  // For Telegram, try to extract bot token if pasting from BotFather
+                  if (integration === 'telegram') {
+                    const { token: extracted, extracted: wasExtracted } = extractBotToken(newValue);
+                    if (wasExtracted) {
+                      newValue = extracted;
+                      showToast = true;
+                    }
+                  }
+
+                  setToken(newValue);
                   setStatus('idle');
                   setTestResult(null);
                   setSaveError(null);
+
+                  if (showToast && newValue) {
+                    // Show toast notification - we'll use testResult as a temporary holder
+                    setTestResult({ message: 'Extracted bot token from pasted text.' });
+                    setTimeout(() => setTestResult(null), 3000);
+                  }
                 }}
                 placeholder={config.tokenPlaceholder}
                 className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500"

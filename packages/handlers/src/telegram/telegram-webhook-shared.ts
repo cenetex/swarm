@@ -303,6 +303,90 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     envelope.traceId = traceId;
 
+    // /start approve_AVATAR_ID flow: deep link approval for adding users to DM allowlist
+    // Format: /start approve_<avatar-id> — add sender to this avatar's allowedDmUsers
+    if (envelope.content.command?.command === 'start' && envelope.content.command?.args?.startsWith('approve_')) {
+      if (envelope.metadata.chatType !== 'private') {
+        return ok();
+      }
+
+      const approveAvatarId = envelope.content.command.args.split('_')[1];
+      if (!approveAvatarId) {
+        return ok();
+      }
+
+      const senderId = String(envelope.sender.platformUserId ?? envelope.sender.id);
+      const senderUsername = envelope.sender.username;
+      const senderDisplayName = envelope.sender.displayName;
+
+      try {
+        // Get the avatar config we're approving for
+        const approveConfig = await getAvatarConfig(approveAvatarId);
+        if (!approveConfig || !approveConfig.platforms.telegram) {
+          logger.warn('Approval avatar not found or not Telegram-enabled', {
+            event: 'approve_avatar_not_found',
+            avatarId: approveAvatarId,
+          });
+          return ok();
+        }
+
+        const approvePolicy = approveConfig.platforms.telegram.allowedDmUsers || [];
+        const isAlreadyAllowed = approvePolicy.some(u => String(u.userId) === senderId);
+
+        if (!isAlreadyAllowed) {
+          // Add to allowedDmUsers
+          const updatedPolicy = [...approvePolicy, { userId: senderId, username: senderUsername, displayName: senderDisplayName }];
+
+          // Update avatar config (fire and forget, non-critical)
+          try {
+            await getStateService().updateAvatarConfig(approveAvatarId, {
+              'platforms.telegram.allowedDmUsers': updatedPolicy,
+            });
+            logger.info('Added user via deep link approval', {
+              event: 'deep_link_approval_added',
+              avatarId: approveAvatarId,
+              userId: senderId,
+              username: senderUsername,
+            });
+          } catch (err) {
+            logger.warn('Failed to update avatar config with approved user', {
+              event: 'deep_link_approval_update_failed',
+              avatarId: approveAvatarId,
+              userId: senderId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+
+        // Send confirmation message to user
+        try {
+          const bot = telegramAdapter.getBot();
+          if (bot) {
+            const avatarName = approveConfig.displayName || 'Avatar';
+            const message = isAlreadyAllowed
+              ? `You're already connected to ${avatarName}!`
+              : `You're now connected to ${avatarName}! Send me a message to get started.`;
+            await bot.api.sendMessage(parseInt(envelope.conversationId), message);
+          }
+        } catch (err) {
+          logger.warn('Failed to send approval confirmation message', {
+            event: 'approve_confirmation_failed',
+            avatarId: approveAvatarId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        return ok();
+      } catch (err) {
+        logger.warn('Deep link approval failed', {
+          event: 'deep_link_approval_failed',
+          avatarId: approveAvatarId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return ok();
+      }
+    }
+
     // /activate command: allow bot owner (and superadmins) to activate this bot in the current chat.
     // This must run BEFORE the chat-allowed gate so activation works in new channels.
     if (envelope.content.command?.command === 'activate') {

@@ -281,9 +281,22 @@ export async function handleTelegramRoutes(
     }
 
     try {
+      // Parse the username - check if it looks like a t.me/ URL or just a username
+      let username = body.username;
+      const urlMatch = username.match(/(?:https?:\/\/)?t\.me\/([+@]?[\w]+)/);
+      if (urlMatch) {
+        username = urlMatch[1];
+        // Check if it's an invite hash (starts with +)
+        if (username.startsWith('+')) {
+          return jsonResponse(corsHeaders, 400, {
+            error: 'Invite links can\'t be resolved. Add the bot to the group first, then select it from "Recently active".',
+          });
+        }
+      }
+
       const result = await telegramService.resolveGroupUsername(
         botToken,
-        body.username,
+        username,
       );
       if (!result) {
         return jsonResponse(corsHeaders, 404, {
