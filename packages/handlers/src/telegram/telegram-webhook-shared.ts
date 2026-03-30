@@ -305,12 +305,12 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // /start approve_AVATAR_ID flow: deep link approval for adding users to DM allowlist
     // Format: /start approve_<avatar-id> — add sender to this avatar's allowedDmUsers
-    if (envelope.content.command?.command === 'start' && envelope.content.command?.args?.startsWith('approve_')) {
+    if (envelope.content.command?.command === 'start' && envelope.content.command?.args?.[0]?.startsWith('approve_')) {
       if (envelope.metadata.chatType !== 'private') {
         return ok();
       }
 
-      const approveAvatarId = envelope.content.command.args.split('_')[1];
+      const approveAvatarId = envelope.content.command.args![0]!.split('_')[1];
       if (!approveAvatarId) {
         return ok();
       }
@@ -339,8 +339,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
           // Update avatar config (fire and forget, non-critical)
           try {
-            await getStateService().updateAvatarConfig(approveAvatarId, {
-              'platforms.telegram.allowedDmUsers': updatedPolicy,
+            await getStateService().saveAvatarConfig({
+              ...approveConfig,
+              platforms: {
+                ...approveConfig.platforms,
+                telegram: {
+                  ...approveConfig.platforms.telegram!,
+                  allowedDmUsers: updatedPolicy,
+                },
+              },
             });
             logger.info('Added user via deep link approval', {
               event: 'deep_link_approval_added',
@@ -362,7 +369,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         try {
           const bot = telegramAdapter.getBot();
           if (bot) {
-            const avatarName = approveConfig.displayName || 'Avatar';
+            const avatarName = approveConfig.name || 'Avatar';
             const message = isAlreadyAllowed
               ? `You're already connected to ${avatarName}!`
               : `You're now connected to ${avatarName}! Send me a message to get started.`;
