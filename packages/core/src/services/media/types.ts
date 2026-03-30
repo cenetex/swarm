@@ -19,7 +19,7 @@ export type AICapability =
  * Default models by capability
  */
 export const DEFAULT_MODELS: Record<AICapability, string> = {
-  image_generation: 'google/nano-banana-pro',
+  image_generation: 'black-forest-labs/flux-1.1-pro',
   video_generation: 'minimax/video-01',
   audio_generation: 'stability-ai/stable-audio-2.5',
   voice_clone: 'lucataco/xtts-v2',

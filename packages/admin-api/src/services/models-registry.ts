@@ -28,10 +28,13 @@ export interface ModelInfo {
  * Models using the /models/{owner}/{name}/predictions endpoint don't need versions
  */
 export const REPLICATE_MODEL_VERSIONS: Record<string, string | undefined> = {
-  // Prefer model endpoint for Nano Banana Pro to avoid stale version hashes.
-  'google/nano-banana-pro': undefined,
-  'black-forest-labs/flux-schnell': 'f2ab8a5bfe79f02f0789a146cf5e73d2a4ff2684a98c2b303d1e1ff3814271db',
-  // Models below use the model API endpoint, not version-based predictions
+  // All featured image models use the model endpoint to avoid stale version hashes
+  'black-forest-labs/flux-1.1-pro': undefined,
+  'black-forest-labs/flux-schnell': undefined,
+  'stability-ai/sdxl': undefined,
+  'ideogram-ai/ideogram-v2': undefined,
+  'recraft-ai/recraft-v3': undefined,
+  // Video, audio, and voice models
   'minimax/video-01': undefined,
   'stability-ai/stable-audio-2.5': undefined,
   'lucataco/xtts-v2': undefined,
@@ -45,13 +48,13 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   // IMAGE GENERATION
   // ==========================================================================
   {
-    id: 'google/nano-banana-pro',
-    name: 'Nano Banana Pro',
+    id: 'black-forest-labs/flux-1.1-pro',
+    name: 'FLUX 1.1 Pro',
     provider: 'replicate',
     capabilities: ['image_generation'],
-    description: 'Fast image generation with character reference support. Great for consistent character images.',
-    version: REPLICATE_MODEL_VERSIONS['google/nano-banana-pro'],
-    tier: 'standard',
+    description: 'Best quality, fast image generation. Latest FLUX model with superior detail.',
+    version: REPLICATE_MODEL_VERSIONS['black-forest-labs/flux-1.1-pro'],
+    tier: 'premium',
     speed: 'fast',
     quality: 'high',
     isDefault: true,
@@ -61,19 +64,42 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     name: 'FLUX Schnell',
     provider: 'replicate',
     capabilities: ['image_generation'],
-    description: 'High-quality, fast image generation. Good general-purpose model.',
+    description: 'Fastest image generation with good quality. Ideal for quick iterations.',
     version: REPLICATE_MODEL_VERSIONS['black-forest-labs/flux-schnell'],
     tier: 'standard',
     speed: 'fast',
+    quality: 'standard',
+  },
+  {
+    id: 'stability-ai/sdxl',
+    name: 'Stable Diffusion XL',
+    provider: 'replicate',
+    capabilities: ['image_generation'],
+    description: 'Widely-used stable diffusion model. Reliable and versatile.',
+    version: REPLICATE_MODEL_VERSIONS['stability-ai/sdxl'],
+    tier: 'standard',
+    speed: 'medium',
+    quality: 'standard',
+  },
+  {
+    id: 'ideogram-ai/ideogram-v2',
+    name: 'Ideogram v2',
+    provider: 'replicate',
+    capabilities: ['image_generation'],
+    description: 'Excellent for text rendering in images and design-focused prompts.',
+    version: REPLICATE_MODEL_VERSIONS['ideogram-ai/ideogram-v2'],
+    tier: 'standard',
+    speed: 'medium',
     quality: 'high',
   },
   {
-    id: 'black-forest-labs/flux-dev',
-    name: 'FLUX Dev',
+    id: 'recraft-ai/recraft-v3',
+    name: 'Recraft v3',
     provider: 'replicate',
     capabilities: ['image_generation'],
-    description: 'Development version of FLUX with more features.',
-    tier: 'premium',
+    description: 'Specialized for vector, design, and illustration styles.',
+    version: REPLICATE_MODEL_VERSIONS['recraft-ai/recraft-v3'],
+    tier: 'standard',
     speed: 'medium',
     quality: 'high',
   },
@@ -262,7 +288,7 @@ export function getReplicateVersion(modelId: string): string | undefined {
  * Default model IDs by capability
  */
 export const DEFAULT_MODELS: Record<AICapability, string> = {
-  image_generation: 'google/nano-banana-pro',
+  image_generation: 'black-forest-labs/flux-1.1-pro',
   video_generation: 'minimax/video-01',
   audio_generation: 'stability-ai/stable-audio-2.5',
   voice_clone: 'lucataco/xtts-v2',
