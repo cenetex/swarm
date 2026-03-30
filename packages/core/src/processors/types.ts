@@ -4,7 +4,7 @@
  * Types for the unified message processing pipeline used across all platforms.
  */
 
-import type { Platform } from '../types/index.js';
+import type { Platform, ResponseStyle } from '../types/index.js';
 
 // =============================================================================
 // TOOL CATEGORIES
@@ -89,6 +89,7 @@ export interface ProcessorAvatarConfig {
   name?: string;
   description?: string;
   persona?: string;
+  responseStyle?: ResponseStyle;
 
   /** Which categories of tools are enabled */
   enabledCategories: ToolCategory[];

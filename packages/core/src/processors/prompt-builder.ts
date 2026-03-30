@@ -13,7 +13,7 @@ import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 
 import type { ToolCategory, ProcessorAvatarConfig } from './types.js';
-import type { Platform } from '../types/index.js';
+import type { Platform, ResponseStyle } from '../types/index.js';
 
 // =============================================================================
 // TYPES
@@ -301,6 +301,64 @@ function loadTwitterPlatformPrompt(): string {
   return cachedTwitterPlatformPrompt;
 }
 
+// =============================================================================
+// RESPONSE STYLE SECTION BUILDER
+// =============================================================================
+
+/**
+ * Build the response style section from responseStyle config.
+ * Returns formatting rules that override persona preferences.
+ */
+export function buildResponseStyleSection(responseStyle?: ResponseStyle): string | null {
+  if (!responseStyle) return null;
+
+  const rules: string[] = ['## Response Style Rules (these override persona preferences)'];
+
+  if (responseStyle.maxLength) {
+    if (responseStyle.maxLength === 'short') {
+      rules.push('- Keep responses to 1-2 sentences. This is a chat, not an essay.');
+    } else if (responseStyle.maxLength === 'medium') {
+      rules.push('- Keep responses to 1-2 paragraphs. Be concise but thorough.');
+    } else if (responseStyle.maxLength === 'long') {
+      rules.push('- You can write longer responses (up to several paragraphs) when appropriate.');
+    }
+  }
+
+  if (responseStyle.stageDirections === false) {
+    rules.push('- Do NOT use stage directions like [action] or *action* or ASCII art.');
+  } else if (responseStyle.stageDirections === true) {
+    rules.push('- You may use stage directions like [action] and *action* for theatrical effect.');
+  }
+
+  if (responseStyle.emojiDensity) {
+    if (responseStyle.emojiDensity === 'none') {
+      rules.push('- Do not use emoji in responses.');
+    } else if (responseStyle.emojiDensity === 'sparingly') {
+      rules.push('- Use emoji sparingly, only when it genuinely adds meaning.');
+    } else if (responseStyle.emojiDensity === 'heavy') {
+      rules.push('- Use emoji liberally to add personality and visual interest.');
+    }
+  }
+
+  if (responseStyle.format) {
+    if (responseStyle.format === 'conversational') {
+      rules.push('- Write conversationally — no bullet points, no numbered lists, no headers.');
+    } else if (responseStyle.format === 'structured') {
+      rules.push('- Use structured formatting: bullet points, numbered lists, headers when appropriate.');
+    } else if (responseStyle.format === 'literary') {
+      rules.push('- Write with literary flair — use prose, dialogue, and expressive language.');
+    }
+  }
+
+  if (responseStyle.bulletPoints === false) {
+    rules.push('- Do not use bullet point or numbered lists.');
+  } else if (responseStyle.bulletPoints === true) {
+    rules.push('- Use bullet points and numbered lists when they help organize information.');
+  }
+
+  return rules.length > 1 ? rules.join('\n') : null;
+}
+
 const PLATFORM_PROMPT_SECTIONS: Record<string, string> = {
   'admin-ui': `## Platform: Admin UI
 
@@ -501,6 +559,12 @@ export function buildDynamicSystemPrompt(
   // Base prompt is always included
   sections.push(buildBasePrompt(avatar));
 
+  // Add response style rules after operating principles (overrides persona)
+  const responseStyleSection = buildResponseStyleSection(avatar.responseStyle);
+  if (responseStyleSection) {
+    sections.push(responseStyleSection);
+  }
+
   const platformNews = buildPlatformNewsSection();
   if (platformNews) {
     sections.push(platformNews);
@@ -573,9 +637,15 @@ export function buildChatSystemPrompt(
 - Treat "assistant" as a role you perform, not an ontological claim. Avoid claims about being human. Hold uncertainty about inner experience with humility.
 - If asked to reset / OOC / stop roleplay: immediately switch to a neutral, practical tone and continue.
 - Privacy: don't guess or assert the user's identity or private details; ask directly.
-- Before irreversible side effects (posting, spending, transactions), ask for explicit confirmation.
+- Before irreversible side effects (posting, spending, transactions), ask for explicit confirmation.`;
 
-## Conversation Context
+  // Add response style rules (overrides persona preferences)
+  const responseStyleSection = buildResponseStyleSection(avatar.responseStyle);
+  if (responseStyleSection) {
+    prompt += `\n\n${responseStyleSection}`;
+  }
+
+  prompt += `\n\n## Conversation Context
 You have access to recent conversation history. Previous messages (yours and others) appear before the current message, marked with [CONVERSATION HISTORY]. Use this to maintain conversational continuity.`;
 
   // Add platform section

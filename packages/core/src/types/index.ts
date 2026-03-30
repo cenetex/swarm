@@ -10,6 +10,7 @@ import type { Platform } from './platform.js';
 
 export type {
   Platform,
+  ResponseStyle,
   AvatarConfig,
   PlatformConfigs,
   RaticrossConfig,
@@ -610,11 +611,20 @@ export const SolanaConfigSchema = z.object({
   features: z.array(SolanaFeatureSchema),
 });
 
+export const ResponseStyleSchema = z.object({
+  maxLength: z.enum(['short', 'medium', 'long']).optional(),
+  stageDirections: z.boolean().optional(),
+  emojiDensity: z.enum(['none', 'sparingly', 'heavy']).optional(),
+  format: z.enum(['conversational', 'structured', 'literary']).optional(),
+  bulletPoints: z.boolean().optional(),
+});
+
 export const AvatarConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   version: z.string(),
   persona: z.string(),
+  responseStyle: ResponseStyleSchema.optional(),
   platforms: PlatformConfigsSchema,
   llm: LLMConfigSchema,
   media: MediaConfigSchema,

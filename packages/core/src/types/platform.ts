@@ -13,6 +13,18 @@
 export type Platform = 'telegram' | 'discord' | 'twitter' | 'web' | 'shared-chat' | 'raticross';
 
 // =============================================================================
+// RESPONSE STYLE CONFIGURATION
+// =============================================================================
+
+export interface ResponseStyle {
+  maxLength?: 'short' | 'medium' | 'long'; // short=1-2 sentences, medium=paragraph, long=essay
+  stageDirections?: boolean; // allow [action] and *action* formatting
+  emojiDensity?: 'none' | 'sparingly' | 'heavy';
+  format?: 'conversational' | 'structured' | 'literary';
+  bulletPoints?: boolean; // allow bullet-point lists
+}
+
+// =============================================================================
 // AGENT CONFIGURATION
 // =============================================================================
 
@@ -21,6 +33,7 @@ export interface AvatarConfig {
   name: string;
   version: string;
   persona: string; // Path or content of persona markdown
+  responseStyle?: ResponseStyle; // Formatting and length preferences (separate from persona)
   brain?: {
     writeMode?: 'legacy' | 'dual' | 'canonical';
     readMode?: 'legacy' | 'hybrid' | 'canonical';
