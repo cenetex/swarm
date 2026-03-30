@@ -11,9 +11,7 @@ import { publishBlogPost } from '@swarm/core';
 // Service Interface
 // ============================================================================
 
-export interface BlogServices {
-  // publishBlogPost is imported directly from core
-}
+export type BlogServices = Record<string, never>;
 
 // ============================================================================
 // Tool Definitions
