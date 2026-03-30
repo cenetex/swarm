@@ -21,7 +21,8 @@ describe("send-canary-alerts", () => {
   describe("environment handling", () => {
     it("gracefully handles missing alert configuration", async () => {
       // If all alert channels are unconfigured, script should exit 1
-      const proc = Bun.spawn([process.execPath, "run", "scripts/send-canary-alerts.ts"], {
+      // Use bun to run the script
+      const proc = Bun.spawn(["bun", "run", "scripts/send-canary-alerts.ts"], {
         cwd: process.cwd(),
         env: {
           // Empty all canary-related vars
@@ -44,7 +45,7 @@ describe("send-canary-alerts", () => {
     });
 
     it("requires GitHub Actions environment variables", async () => {
-      const proc = Bun.spawn([process.execPath, "run", "scripts/send-canary-alerts.ts"], {
+      const proc = Bun.spawn(["bun", "run", "scripts/send-canary-alerts.ts"], {
         cwd: process.cwd(),
         env: {
           // Missing GitHub env vars
@@ -69,7 +70,7 @@ describe("send-canary-alerts", () => {
       // (actual alert sending is skipped because channels aren't configured)
       const proc = Bun.spawn(
         [
-          process.execPath,
+          "bun",
           "run",
           "scripts/send-canary-alerts.ts",
           "--health-outcome",
@@ -100,7 +101,7 @@ describe("send-canary-alerts", () => {
     it("skips alerting on first failure (not consecutive)", async () => {
       const proc = Bun.spawn(
         [
-          process.execPath,
+          "bun",
           "run",
           "scripts/send-canary-alerts.ts",
           "--health-outcome",
@@ -125,10 +126,10 @@ describe("send-canary-alerts", () => {
       );
 
       const exitCode = await proc.exited;
-      const stdout = await new Response(proc.stdout).text();
+      const stderr = await new Response(proc.stderr).text();
 
       expect(exitCode).toBe(0);
-      expect(stdout).toContain("First failure");
+      expect(stderr).toContain("First failure");
     });
   });
 
@@ -136,7 +137,7 @@ describe("send-canary-alerts", () => {
     it("reports when Telegram is not configured", async () => {
       const proc = Bun.spawn(
         [
-          process.execPath,
+          "bun",
           "run",
           "scripts/send-canary-alerts.ts",
           "--health-outcome",
@@ -177,7 +178,7 @@ describe("send-canary-alerts", () => {
     it("outputs structured alert results summary", async () => {
       const proc = Bun.spawn(
         [
-          process.execPath,
+          "bun",
           "run",
           "scripts/send-canary-alerts.ts",
           "--health-outcome",
