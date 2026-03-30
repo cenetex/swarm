@@ -11,7 +11,6 @@ import { useTranslation } from 'react-i18next';
 import { useAvatarStore } from '../store/avatars';
 import { useAuth } from '../store/auth';
 import { ThemeToggle } from './ThemeToggle';
-import { LanguageSelector } from './LanguageSelector';
 import { PrivyLoginButton } from './PrivyLoginButton';
 import { AvatarReassignModal } from './AvatarReassignModal';
 
@@ -680,9 +679,6 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
 
       {/* Login Footer */}
       <div className="p-3 border-t border-[var(--color-border)]">
-        <div className="flex items-center justify-between mb-2">
-          <LanguageSelector />
-        </div>
         <PrivyLoginButton />
       </div>
 

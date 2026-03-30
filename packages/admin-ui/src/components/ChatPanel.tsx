@@ -28,6 +28,8 @@ const UsageMeterPanel = lazy(() => import('./UsageMeterPanel').then(m => ({ defa
 const ActivationChecklist = lazy(() => import('./ActivationChecklist').then(m => ({ default: m.ActivationChecklist })));
 const TaskWorkspace = lazy(() => import('./TaskWorkspace').then(m => ({ default: m.TaskWorkspace })));
 
+import { LanguageSelector } from './LanguageSelector';
+
 // Track active polling jobs to avoid duplicate polling
 const activePollers = new Map<string, { controller: AbortController; avatarId: string }>();
 
@@ -1212,6 +1214,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {/* Language selector - always visible */}
+            <LanguageSelector />
             {accessMode === 'admin' && (
               <>
                 {/* Activation toggle button */}
