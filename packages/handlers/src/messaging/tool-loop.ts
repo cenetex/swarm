@@ -169,12 +169,26 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
 
       allToolResults.push({ name: toolCall.name, result });
 
+      // Check if this is a manual tool (pause tool) with ui action - wrap it with tool call id
+      const toolResultContent = (() => {
+        if (result.success && result.uiAction) {
+          // Include tool call ID in the ui action so it can be tracked by admin-ui
+          return JSON.stringify({
+            data: result.data,
+            uiAction: result.uiAction,
+            toolCallId: toolCall.id,
+            media: result.media,
+          });
+        }
+        return JSON.stringify(result.success
+          ? { data: result.data, media: result.media, pendingJob: result.pendingJob }
+          : { error: result.error });
+      })();
+
       messages.push({
         role: 'tool',
         tool_call_id: toolCall.id,
-        content: JSON.stringify(result.success
-          ? { data: result.data, media: result.media, pendingJob: result.pendingJob }
-          : { error: result.error }),
+        content: toolResultContent,
       });
 
       // Feed generated images back into context for vision models
@@ -188,7 +202,7 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
         });
       }
 
-      logger.info('Tool result', { tool: toolCall.name, success: result.success });
+      logger.info('Tool result', { tool: toolCall.name, success: result.success, hasUiAction: !!result.uiAction });
     }
   }
 

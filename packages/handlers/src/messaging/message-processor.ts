@@ -772,12 +772,27 @@ async function generateResponse(
   // Execute the pending tool calls inline
   for (const toolCall of llmResponse.toolCalls) {
     const result = await toolClient.execute(toolCall.name, toolCall.arguments, toolContext);
+
+    // Check if this is a manual tool (pause tool) with ui action - wrap it with tool call id
+    const toolResultContent = (() => {
+      if (result.success && result.uiAction) {
+        // Include tool call ID in the ui action so it can be tracked by admin-ui
+        return JSON.stringify({
+          data: result.data,
+          uiAction: result.uiAction,
+          toolCallId: toolCall.id,
+          media: result.media,
+        });
+      }
+      return JSON.stringify(result.success
+        ? { data: result.data, media: result.media, pendingJob: result.pendingJob }
+        : { error: result.error });
+    })();
+
     messages.push({
       role: 'tool',
       tool_call_id: toolCall.id,
-      content: JSON.stringify(result.success
-        ? { data: result.data, media: result.media, pendingJob: result.pendingJob }
-        : { error: result.error }),
+      content: toolResultContent,
     });
     if (result.success && result.media?.type === 'image' && result.media.url) {
       messages.push({

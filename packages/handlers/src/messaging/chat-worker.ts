@@ -267,12 +267,26 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           logger.info('Executing tool (from initial LLM call)', { tool: toolCall.name });
           const result = await toolClient.execute(toolCall.name, toolCall.arguments, toolContext);
 
+          // Check if this is a manual tool (pause tool) with ui action - wrap it with tool call id
+          const toolResultContent = (() => {
+            if (result.success && result.uiAction) {
+              // Include tool call ID in the ui action so it can be tracked by admin-ui
+              return JSON.stringify({
+                data: result.data,
+                uiAction: result.uiAction,
+                toolCallId: toolCall.id,
+                media: result.media,
+              });
+            }
+            return JSON.stringify(result.success
+              ? { data: result.data, media: result.media, pendingJob: result.pendingJob }
+              : { error: result.error });
+          })();
+
           messages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
-            content: JSON.stringify(result.success
-              ? { data: result.data, media: result.media, pendingJob: result.pendingJob }
-              : { error: result.error }),
+            content: toolResultContent,
           });
 
           if (result.success && result.media?.type === 'image' && result.media.url) {
@@ -285,7 +299,7 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
             });
           }
 
-          logger.info('Tool result', { tool: toolCall.name, success: result.success });
+          logger.info('Tool result', { tool: toolCall.name, success: result.success, hasUiAction: !!result.uiAction });
         }
 
         // Now run the remaining tool loop iterations (the LLM may request more tools)
