@@ -15,6 +15,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as galleryApi from '../api/gallery';
 import type { GalleryItem } from '../api/gallery';
+import { ImageModal } from './ImageModal';
 
 interface GalleryContentProps {
   avatarId: string;
@@ -205,25 +206,11 @@ export function GalleryContent({ avatarId, isOpen, onSelectImage }: GalleryConte
 
       {/* Full-size image viewer */}
       {selectedImage && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"
-          onClick={() => setSelectedImage(null)}
-        >
-          <img
-            src={selectedImage}
-            alt=""
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <button
-            onClick={() => setSelectedImage(null)}
-            className="absolute top-4 right-4 p-2 text-white/80 hover:text-white bg-black/40 rounded-full"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-            </svg>
-          </button>
-        </div>
+        <ImageModal
+          imageUrl={selectedImage}
+          alt=""
+          onClose={() => setSelectedImage(null)}
+        />
       )}
     </>
   );
