@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleGalleryRoutes } from './gallery.js';
-import { makeCtx, CORS_HEADERS, MOCK_AVATAR } from './test-helpers.js';
+import { makeCtx, MOCK_AVATAR } from './test-helpers.js';
 
 // ── Mock state ─────────────────────────────────────────────────────────────
 let getAvatarResult: unknown = MOCK_AVATAR;
