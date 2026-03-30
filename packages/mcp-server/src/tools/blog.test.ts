@@ -7,12 +7,12 @@ import { createBlogTools } from './blog.js';
 // Mock the blog posting service
 vi.mock('@swarm/core', () => ({
   publishBlogPost: vi.fn(async (post) => {
-    if (!post.title || !post.content || !post.author) {
+    if (!post.title || !post.content || !post.author || !post.agentId) {
       return { success: false, error: 'Missing fields' };
     }
     return {
       success: true,
-      url: 'https://github.com/cenetex/lab/commit/abc123',
+      url: `https://${post.agentId}.rati.chat/posts/test-post`,
       slug: 'test-post',
     };
   }),
@@ -29,8 +29,8 @@ describe('Blog Tools', () => {
     const tools = createBlogTools({});
     const tool = tools[0];
 
-    expect(tool.description).toContain('lab.cenetex.com');
-    expect(tool.toolset).toBe('content');
+    expect(tool.description).toContain('rati.chat');
+    expect(tool.toolset).toBe('github');
     expect(tool.inputSchema).toBeDefined();
   });
 
@@ -43,6 +43,7 @@ describe('Blog Tools', () => {
       title: 'Test Post',
       content: 'This is test content',
       author: 'Test Author',
+      agentId: 'test-agent',
     });
 
     expect(parsed.success).toBe(true);
@@ -56,6 +57,7 @@ describe('Blog Tools', () => {
       title: '',
       content: 'Content',
       author: 'Author',
+      agentId: 'test-agent',
     });
 
     expect(parsed.success).toBe(false);
@@ -69,6 +71,7 @@ describe('Blog Tools', () => {
       title: 'Test',
       content: 'Content',
       author: 'Author',
+      agentId: 'test-agent',
       imageUrl: 'https://example.com/image.jpg',
     });
 

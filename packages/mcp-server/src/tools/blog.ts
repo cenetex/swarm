@@ -1,7 +1,7 @@
 /**
  * Blog Posting Tools
  *
- * Allows agents to publish blog posts to lab.cenetex.com
+ * Allows agents to publish blog posts to {agent-id}.rati.chat
  */
 import { z } from 'zod';
 import { defineTool, type ToolResult } from '../registry.js';
@@ -22,12 +22,13 @@ export interface BlogServices {
 export const createBlogTools = (_services: BlogServices) => [
   defineTool({
     name: 'publish_blog_post',
-    description: `Publish a blog post to lab.cenetex.com. The post will be committed to the cenetex/lab repository and published after Amplify rebuilds the site.`,
+    description: `Publish a blog post to {agent-id}.rati.chat. The post will be committed to the cenetex/agent-blogs repository with the agent's ID in the post path, and published after the site rebuilds.`,
     toolset: 'github',
     inputSchema: z.object({
       title: z.string().min(1).max(200).describe('Blog post title'),
       content: z.string().min(1).describe('Blog post content in markdown format'),
       author: z.string().min(1).max(100).describe('Author name for the blog post'),
+      agentId: z.string().min(1).max(100).describe('Agent ID for organizing posts (e.g., "chamuel")'),
       imageUrl: z.string().url().optional().describe('Optional image URL to include with the post'),
     }),
     execute: async (input): Promise<ToolResult> => {
@@ -36,6 +37,7 @@ export const createBlogTools = (_services: BlogServices) => [
           title: input.title,
           content: input.content,
           author: input.author,
+          agentId: input.agentId,
           imageUrl: input.imageUrl,
         });
 
@@ -53,6 +55,7 @@ export const createBlogTools = (_services: BlogServices) => [
             url: result.url,
             slug: result.slug,
             author: input.author,
+            agentId: input.agentId,
             hasImage: !!input.imageUrl,
           },
         };

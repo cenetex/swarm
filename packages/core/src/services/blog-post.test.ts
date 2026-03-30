@@ -29,6 +29,7 @@ describe('Blog Posting Service', () => {
       title: '',
       content: 'Content',
       author: 'Author',
+      agentId: 'test-agent',
     });
 
     expect(result.success).toBe(false);

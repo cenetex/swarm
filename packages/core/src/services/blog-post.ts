@@ -1,8 +1,9 @@
 /**
  * Blog Posting Service
  *
- * Enables agents to publish blog posts to cenetex/lab repository
+ * Enables agents to publish blog posts to cenetex/agent-blogs repository
  * via GitHub API with markdown + YAML frontmatter support.
+ * Posts are organized by agent ID with per-agent blogs at {agent-id}.rati.chat
  */
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { logger } from '../utils/logger.js';
@@ -15,6 +16,7 @@ export interface BlogPostContent {
   title: string;
   content: string;
   author: string;
+  agentId: string;
   imageUrl?: string;
 }
 
@@ -30,9 +32,9 @@ export interface BlogPostResult {
 // ============================================================================
 
 const GITHUB_API_URL = 'https://api.github.com';
-const TARGET_REPO = 'cenetex/lab';
-const POSTS_PATH = 'site/posts';
-const IMAGES_PATH = 'site/public/images';
+const TARGET_REPO = 'cenetex/agent-blogs';
+const POSTS_PATH = 'posts';
+const IMAGES_PATH = 'posts/{agentId}/images';
 const GITHUB_TOKEN_SECRET = '/lab-cenetex/GITHUB_TOKEN';
 
 // Token cache with TTL
@@ -106,7 +108,8 @@ function generateMarkdown(post: BlogPostContent & { date: string; image?: string
   let frontmatter = `---
 title: "${post.title.replace(/"/g, '\\"')}"
 date: "${post.date}"
-author: "${post.author.replace(/"/g, '\\"')}"`;
+author: "${post.author.replace(/"/g, '\\"')}"
+agentId: "${post.agentId.replace(/"/g, '\\"')}"`;
 
   if (post.image) {
     frontmatter += `\nimage: "${post.image}"`;
@@ -198,24 +201,24 @@ async function commitFileToGitHub(
 // ============================================================================
 
 /**
- * Publish a blog post to cenetex/lab
+ * Publish a blog post to cenetex/agent-blogs
  *
- * @param post Blog post content (title, content, author, optional imageUrl)
- * @returns Result with post URL or error
+ * @param post Blog post content (title, content, author, agentId, optional imageUrl)
+ * @returns Result with post URL at {agentId}.rati.chat or error
  */
 export async function publishBlogPost(post: BlogPostContent): Promise<BlogPostResult> {
   try {
     // Validate input
-    if (!post.title || !post.content || !post.author) {
+    if (!post.title || !post.content || !post.author || !post.agentId) {
       return {
         success: false,
-        error: 'Missing required fields: title, content, author',
+        error: 'Missing required fields: title, content, author, agentId',
       };
     }
 
     // Generate slug and paths
     const slug = generateSlug(post.title);
-    const postPath = `${POSTS_PATH}/${slug}.md`;
+    const postPath = `${POSTS_PATH}/${post.agentId}/${slug}.md`;
     const timestamp = getCurrentTimestamp();
 
     logger.debug('Publishing blog post', {
@@ -223,6 +226,7 @@ export async function publishBlogPost(post: BlogPostContent): Promise<BlogPostRe
       title: post.title,
       slug,
       author: post.author,
+      agentId: post.agentId,
       hasImage: !!post.imageUrl,
     });
 
@@ -234,7 +238,8 @@ export async function publishBlogPost(post: BlogPostContent): Promise<BlogPostRe
     if (post.imageUrl) {
       try {
         const imageData = await downloadImageAsBase64(post.imageUrl);
-        imagePath = `${IMAGES_PATH}/${imageData.filename}`;
+        const agentImagesPath = IMAGES_PATH.replace('{agentId}', post.agentId);
+        imagePath = `${agentImagesPath}/${imageData.filename}`;
 
         logger.debug('Uploading image', {
           subsystem: 'blog-post',
@@ -265,23 +270,27 @@ export async function publishBlogPost(post: BlogPostContent): Promise<BlogPostRe
     });
 
     // Commit post to GitHub
-    const result = await commitFileToGitHub(
+    await commitFileToGitHub(
       token,
       postPath,
       markdownContent,
       `feat(blog): publish "${post.title}" by ${post.author}`
     );
 
+    // Generate per-agent blog URL
+    const postUrl = `https://${post.agentId}.rati.chat/posts/${slug}`;
+
     logger.info('Blog post published successfully', {
       subsystem: 'blog-post',
       slug,
-      url: result.url,
+      url: postUrl,
       author: post.author,
+      agentId: post.agentId,
     });
 
     return {
       success: true,
-      url: result.url,
+      url: postUrl,
       slug,
     };
   } catch (error) {
