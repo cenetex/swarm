@@ -3,7 +3,7 @@
  * Sends generated responses to platforms
  */
 import type { SQSEvent, Context, SQSBatchResponse, Handler } from 'aws-lambda';
-import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
 import {
   TelegramAdapter,
@@ -211,6 +211,24 @@ async function markResponseHandled(avatarId: string, responseKey: string): Promi
       return;
     }
     logger.warn('Failed to record response idempotency', {
+      error: error instanceof Error ? error.message : String(error),
+      avatarId,
+      responseKey,
+    });
+  }
+}
+
+async function clearResponseHandled(avatarId: string, responseKey: string): Promise<void> {
+  try {
+    await dynamo.send(new DeleteCommand({
+      TableName: STATE_TABLE,
+      Key: {
+        pk: `AVATAR#${avatarId}`,
+        sk: `RESPONSE#${responseKey}`,
+      },
+    }));
+  } catch (error) {
+    logger.warn('Failed to clear response idempotency record on send failure', {
       error: error instanceof Error ? error.message : String(error),
       avatarId,
       responseKey,
@@ -442,6 +460,9 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             || DEFAULT_RATICHAT_URL,
         });
 
+        // Mark as handled before sending to prevent triple-send
+        await markResponseHandled(avatarId, responseKey);
+
         try {
           await bot.api.sendMessage(parseInt(response.conversationId), dm.text, {
             reply_markup: dm.replyMarkup,
@@ -453,8 +474,6 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             chatId: response.conversationId,
           });
 
-          // Mark handled so it doesn't retry.
-          await markResponseHandled(avatarId, responseKey);
           try {
             await stateService.markResponseSent(
               avatarId,
@@ -471,6 +490,8 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             event: 'dm_redirect_failed',
             subsystem: 'outbound',
           });
+          // Clear the record so retry can work
+          await clearResponseHandled(avatarId, responseKey);
           batchItemFailures.push({ itemIdentifier: record.messageId });
           continue;
         }
@@ -544,23 +565,41 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
         actionsToSend = response.actions;
       }
 
+      // Mark as handling (optimistic write) BEFORE sending to prevent triple-send bug.
+      // If send fails, we'll clear this record so retry can work.
       if (actionsToSend && actionsToSend.length > 0) {
-        const result = await outboundRuntime.outboundSender.send({ ...response, actions: actionsToSend });
-        sentMessages = result.sentMessages;
-        sendErrors = result.errors;
-        sendSuccess = result.success;
+        await markResponseHandled(avatarId, responseKey);
+      }
 
-        if (sendErrors.length > 0) {
-          logger.warn('Some actions failed during outbound send', {
-            event: 'outbound_action_errors',
+      if (actionsToSend && actionsToSend.length > 0) {
+        try {
+          const result = await outboundRuntime.outboundSender.send({ ...response, actions: actionsToSend });
+          sentMessages = result.sentMessages;
+          sendErrors = result.errors;
+          sendSuccess = result.success;
+
+          if (sendErrors.length > 0) {
+            logger.warn('Some actions failed during outbound send', {
+              event: 'outbound_action_errors',
+              subsystem: 'outbound',
+              platform: response.platform,
+              avatarId,
+              conversationId: response.conversationId,
+              errorCount: sendErrors.length,
+              errors: sendErrors,
+              actionTypes: actionsToSend.map((a: ResponseAction) => a.type),
+            });
+          }
+        } catch (error) {
+          // Send threw an exception - clear the idempotency record so retry can work
+          logger.error('Send operation threw an exception', error, {
+            event: 'send_exception',
             subsystem: 'outbound',
-            platform: response.platform,
             avatarId,
-            conversationId: response.conversationId,
-            errorCount: sendErrors.length,
-            errors: sendErrors,
-            actionTypes: actionsToSend.map((a: ResponseAction) => a.type),
+            responseKey,
           });
+          await clearResponseHandled(avatarId, responseKey);
+          throw error;
         }
       } else {
         sendSuccess = queuedMedia;
@@ -617,10 +656,6 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
         }
       }
 
-      if (sendSuccess) {
-        await markResponseHandled(avatarId, responseKey);
-      }
-
       if (actionsToSend && actionsToSend.length > 0 && !sendSuccess) {
         metrics.trackDuration('SendLatency', recordStartTime);
         metrics.incrementCounter('SendErrors');
@@ -641,9 +676,11 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             conversationId: response.conversationId,
             errors: sendErrors,
           });
-          // Mark as handled so the idempotency guard prevents future processing
-          await markResponseHandled(avatarId, responseKey);
+          // Non-retryable errors: keep the idempotency record so we don't retry forever.
+          // The mark already happened before send, so it's safe.
         } else {
+          // Retryable errors: clear the idempotency record so SQS retry can work.
+          await clearResponseHandled(avatarId, responseKey);
           batchItemFailures.push({ itemIdentifier: record.messageId });
           logger.error('Response actions failed to send', undefined, {
             event: 'send_error',
