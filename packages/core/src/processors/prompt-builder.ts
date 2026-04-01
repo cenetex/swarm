@@ -479,14 +479,14 @@ export function getPlatformPromptSection(platform: string): string {
  * Build runtime context section (current platform/channel/time/sender).
  */
 function buildRuntimeContextSection(
-  platform: string,
+  _platform: string,
   context?: RuntimeContext
 ): string {
   if (!context) return '';
 
   const parts: string[] = ['## Current Context'];
 
-  parts.push(`- Platform: ${platform}`);
+  parts.push(`- Platform: ${_platform}`);
 
   if (context.channelId) {
     parts.push(`- Channel: ${context.channelId}`);
@@ -518,20 +518,20 @@ function buildRuntimeContextSection(
 /**
  * Build tool usage guidance section.
  */
-function buildToolGuidanceSection(categories: ToolCategory[], hasVoice: boolean): string {
+function buildToolGuidanceSection(_categories: ToolCategory[], _hasVoice: boolean): string {
   let guidance = `## Tooling & Response Guidelines
 - Use tools when needed; do not pretend you executed an action.
 - Use send_message to respond with text.
 - Use generate_image to create images when asked.`;
 
-  if (categories.includes('memory')) {
+  if (_categories.includes('memory')) {
     guidance += `\n- Use remember to save stable, user-consented facts; use recall before responding when relevant.`;
   }
 
   guidance += `\n- Use ignore if the message doesn't warrant a response.
 - Keep responses concise and natural.`;
 
-  if (hasVoice) {
+  if (_hasVoice) {
     guidance += `\n- Use send_voice_message to reply with voice when it fits.`;
   }
 
