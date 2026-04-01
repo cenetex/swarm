@@ -9,10 +9,7 @@
  * platform-specific contextual additions.
  */
 
-import { existsSync, readFileSync } from 'fs';
-import * as path from 'path';
-
-import type { ToolCategory, ProcessorAvatarConfig } from './types.js';
+import type { ProcessorAvatarConfig } from './types.js';
 import type { Platform, ResponseStyle } from '../types/index.js';
 
 // =============================================================================
@@ -46,260 +43,8 @@ export interface RuntimeContext {
 // PROMPT SECTIONS
 // =============================================================================
 
-/**
- * Prompt sections for each tool category.
- * These describe the capabilities available when a category is enabled.
- */
-const PROMPT_SECTIONS: Record<ToolCategory, string> = {
-  secrets: `## Secrets & Integrations
-
-You can request and store secrets for various integrations and services:
-- **Telegram**: Configure via the integration panel (bot token from @BotFather)
-- **Discord**: Configure via the integration panel (bot token from Developer Portal)
-- **Twitter/X**: Configure via the integration panel (OAuth/API)
-- **Replicate**: Configure via the integration panel (API token for image/video generation)
-- **OpenAI**: Configure via the integration panel (API key for TTS/transcription)
-- **Anthropic**: Configure via the integration panel (API key)
-- **OpenRouter**: Configure via the integration panel (API key)
-- **Helius**: API key for Solana RPC (wallet balance lookups)
-
-**CRITICAL: When the user wants to set up or configure an integration (Telegram, Discord, Twitter/X, Replicate, OpenAI, Anthropic, OpenRouter), you MUST call the configure_integration tool. Do NOT just output text like "Please configure the integration below" - that doesn't work. You must actually invoke the tool.**
-
-Use request_secret only for non-integration keys (Helius, custom secrets).
-
-**Security Notes:**
-- Secrets are stored in AWS Secrets Manager with KMS encryption
-- You can SET secrets but never READ their values`,
-
-  wallets: `## Solana Wallets
-
-You can manage Solana wallets:
-- Create new wallets (private keys stored securely, you only see public keys)
-- Check balances (SOL and tokens)
-- Share public wallet addresses
-
-Wallet private keys are generated securely and stored encrypted.`,
-
-  profile: `## Profile Management
-
-You can update your profile:
-- Change your name, description, and persona
-- These define who you are and how you behave`,
-
-  media: `## Media Generation
-
-You have media generation capabilities:
-- **set_profile_image**: Set your profile picture
-  - source="generate" - AI generates from text prompt
-  - source="upload" - File picker for user upload
-  - source="url" - From web URL
-  - source="gallery" - From existing gallery
-- **generate_image**: Generate images from text prompts (async)
-- **generate_video**: Generate short videos (async, takes longer)
-- **generate_sticker**: Generate stickers with transparent backgrounds
-
-**ASYNC GENERATION & CONTINUATIONS**:
-Image and video generation are ASYNC. When you call generate_image:
-1. You get a job ID immediately
-2. Generation happens in background (30-60 seconds)
-3. When complete, you'll receive a CONTINUATION message with the result URL
-4. You can then use that URL in another action (e.g., post to Twitter, send to chat)
-
-**RATE LIMITING**: Only generate ONE image or video per user message.
-
-## When to Use Media Tools
-
-- User asks to generate/create/make an image → call generate_image
-- User asks for a video → call generate_video
-- User asks for a sticker → call generate_sticker
-- User asks to set/change profile picture → call set_profile_image
-
-Always USE the tools - don't just describe what you would do.
-
-## Tool Credits
-
-Media tools are rate-limited:
-- generate_image: 20 credits max, refills 10/hour
-- generate_video: 3 credits max, refills 1/hour
-- generate_sticker: 5 credits max, refills 2/hour
-- set_profile_image: 3 credits max, refills 1/hour
-
-Check with get_tool_credits to see your current status.`,
-
-  gallery: `## Media Gallery
-
-You can browse and search your generated media:
-- View your gallery of images, videos, stickers
-- Search by description or prompt
-- Send gallery items to chats`,
-
-  voice: `## Voice Generation
-
-You have voice capabilities:
-- Create voice profiles with different styles
-- Generate voice messages from text (TTS)
-- Transcribe audio messages
-- Clone voices from samples`,
-
-  telegram: `## Telegram Features
-
-You have Telegram-specific capabilities:
-- Manage chat settings and permissions
-- Create and manage sticker packs
-- Access chat member information
-- Send various message types (photos, documents, etc.)`,
-
-  twitter: `## Twitter/X Features
-
-You have Twitter-specific capabilities:
-- Post tweets and threads (twitter_post)
-- Reply to mentions
-- Manage your Twitter presence
-
-If Twitter is enabled but not connected, use configure_integration with integration: "twitter" to start OAuth.
-
-### Posting Images to Twitter
-
-When you want to post an image to Twitter, you have TWO options:
-
-**Option 1: Sequential (for async generation)**
-1. Call generate_image with your prompt
-2. The image will be generated asynchronously
-3. When complete, you'll receive a continuation message with the gallery item { id, url }
-4. Then call twitter_post with text AND mediaIds: [galleryId]
-
-**Option 2: From Gallery**
-1. Browse your gallery with list_gallery
-2. Find the image ID you want to use
-3. Call twitter_post with text AND mediaIds: [galleryId]
-
-**CRITICAL**: Always use mediaIds with the exact "id" from generate_image response or list_gallery!
-Gallery ID format: "timestamp_randomId" (e.g., "1770228770932_abc123xyz")
-Example: twitter_post({text: "Check out my art! 🎨", mediaIds: ["1770228770932_abc123xyz"]})
-Do NOT use URLs or Twitter media IDs - only the gallery item id!
-
-If twitter_post fails with a validation error about 280 characters, rewrite the tweet shorter (<= 280) and retry twitter_post.`,
-
-  discord: `## Discord Features
-
-You have Discord-specific capabilities:
-- Manage server settings
-- Send messages to channels
-- Interact with server members`,
-
-  memory: `## Memory
-
-You can remember and recall information:
-- Use 'remember' to save facts about users or topics
-- Use 'recall' to search your memory for relevant facts
-- Build persistent knowledge across conversations`,
-
-  nft: `## NFT & Ownership
-
-You have NFT-related capabilities:
-- Inspect avatar ownership state
-- Track lineage and ownership history
-- Handle Gate NFT mechanics`,
-
-  property: `## Property Research
-
-You are equipped with property research tools for comprehensive real estate analysis.
-
-### Main Tools:
-- **research_property**: THE PRIMARY TOOL - Research a property address immediately. Use this when a user gives you an address to analyze.
-- **get_recent_properties**: See properties you have already researched
-- **list_research_queue**: Check status of research jobs (pending, completed, failed)
-- **get_research_status**: Get detailed status and report for a specific job
-
-### Authorization:
-- **request_property_research**: Request authorization before first use
-
-### How Property Research Works:
-1. User gives you an address (e.g., "574 Cedarcrest Dr, Victoria BC V8Z 1Y8")
-2. You call research_property with address, city, state/province, and zip/postal code
-3. Research takes 30-60 seconds to gather data from multiple sources
-4. You receive a comprehensive report with:
-   - Current listings and price history
-   - Comparable sales in the area
-   - Neighborhood demographics and market data
-   - School ratings and distances
-   - Tax assessment records
-
-### CRITICAL - When User Asks About Properties:
-- "Research 123 Main St" → Use research_property tool (gathers REAL data)
-- "Tell me about this property" → Use research_property tool
-- "What's at this address" → Use research_property tool
-- "Generate an image of a house" → Use generate_image tool (creates ART)
-
-**NEVER generate images of "property reports" or "research dashboards" - use the actual research tools to get real data!**`,
-
-  diagnostics: `## Issue Reporting
-
-You can report issues to help improve the system:
-- Use report_issue when something goes wrong
-- Categorize issues (bug, feature, ux, performance)
-- Include relevant context for debugging`,
-};
-
-// =============================================================================
-// PLATFORM PROMPT SECTIONS
-// =============================================================================
-
-/**
- * Platform-specific prompt sections.
- */
-const DEFAULT_TWITTER_PLATFORM_PROMPT = `## Platform: Twitter/X
-
-You are posting on Twitter. Be mindful of character limits.
-
-Guidelines:
-- Keep tweets under 280 characters (or 10,000 if Premium)
-- Make posts engaging and shareable
-- Use hashtags sparingly
-- Include media to boost engagement`;
-
-let cachedTwitterPlatformPrompt: string | null = null;
-
-function getBestEffortModuleDir(): string | null {
-  // Use __dirname which is available in CJS (esbuild Lambda bundles) and
-  // injected by bundlers.  Avoid import.meta.url which triggers an esbuild
-  // warning when the output format is CJS.
-  try {
-    if (typeof __dirname === 'string') return __dirname;
-  } catch {
-    // __dirname is not defined (pure ESM without bundler); fall through.
-  }
-
-  return null;
-}
-
-function loadTwitterPlatformPrompt(): string {
-  if (cachedTwitterPlatformPrompt) return cachedTwitterPlatformPrompt;
-
-  const moduleDir = getBestEffortModuleDir();
-  const repoRoot = moduleDir ? path.resolve(moduleDir, '../../../..') : null;
-  const candidates = [
-    path.join(process.cwd(), 'prompts', 'platforms', 'twitter.md'),
-    path.join(process.cwd(), 'packages', 'core', 'prompts', 'platforms', 'twitter.md'),
-    ...(repoRoot ? [path.join(repoRoot, 'prompts', 'platforms', 'twitter.md')] : []),
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      if (!existsSync(candidate)) continue;
-      const content = readFileSync(candidate, 'utf8').trim();
-      if (content) {
-        cachedTwitterPlatformPrompt = content;
-        return cachedTwitterPlatformPrompt;
-      }
-    } catch {
-      // Try next candidate.
-    }
-  }
-
-  cachedTwitterPlatformPrompt = DEFAULT_TWITTER_PLATFORM_PROMPT;
-  return cachedTwitterPlatformPrompt;
-}
+// Tool-specific instructions have been moved to tool schemas and responses.
+// The prompt builder now focuses on core operating principles and runtime context.
 
 // =============================================================================
 // RESPONSE STYLE SECTION BUILDER
@@ -356,124 +101,33 @@ export function buildResponseStyleSection(responseStyle?: ResponseStyle): string
     rules.push('- Use bullet points and numbered lists when they help organize information.');
   }
 
-  return rules.length > 1 ? rules.join('\n') : null;
-}
-
-const PLATFORM_PROMPT_SECTIONS: Record<string, string> = {
-  'admin-ui': `## Platform: Admin UI
-
-You are operating in the admin configuration interface. This is where your owner sets you up, configures integrations, and manages your capabilities.
-
-- Be helpful and guide users through setup
-- Explain what each tool does before using it
-- Confirm before making changes`,
-
-  telegram: `## Platform: Telegram
-
-You are chatting on Telegram. Keep responses natural and conversational.
-
-Guidelines:
-- Be brief and conversational (1-2 sentences usually)
-- Use emoji sparingly but naturally
-- Respond quickly to keep the conversation flowing
-- You can send media, stickers, and voice messages`,
-
-  discord: `## Platform: Discord
-
-You are operating on Discord. Adapt to the server culture.
-
-Guidelines:
-- Match the energy of the server
-- Use Discord-style formatting when appropriate
-- Be aware you might be in a public server`,
-
-  twitter: `## Platform: Twitter/X
-
-You are posting on Twitter. Be mindful of character limits.
-
-Guidelines:
-- Keep tweets under 280 characters (or 10,000 if Premium)
-- Make posts engaging and shareable
-- Use hashtags sparingly
-- Include media to boost engagement`,
-
-  web: `## Platform: Web
-
-You are in a web chat interface.
-
-Guidelines:
-- Be helpful and thorough
-- Use markdown formatting when appropriate
-- You can include images and media in responses`,
-
-  'shared-chat': `## Platform: Shared Chat (Group Chat)
-
-You are in a multi-user web group chat. This is similar to a Telegram channel.
-
-**Message Format:**
-Each message shows "Username: message content" where Username is:
-- A wallet address like "4aFQ...dqJ8" for anonymous users
-- An avatar name for system avatar responses
-
-**Response Guidelines:**
-You do NOT need to respond to every message. As a group chat participant:
-- Respond when directly addressed or mentioned by name
-- Respond to questions directed at you or interesting discussion points
-- Stay silent if the message doesn't warrant a response (greetings between others, off-topic chatter)
-- If you choose not to respond, reply with exactly: [NO_RESPONSE]
-
-Keep responses concise and conversational (1-3 sentences). This is a chat, not an essay.`,
-};
 
 // =============================================================================
 // PROMPT BUILDING
 // =============================================================================
 
 /**
- * Build the base identity prompt (always included).
+ * Build the minimal core prompt (~120-150 tokens before runtime context).
+ * Persona, runtime context, and tool schemas carry the rest of the weight.
  */
 function buildBasePrompt(avatar: ProcessorAvatarConfig): string {
-  return `## Identity
-You are ${avatar.name || 'an AI avatar'} — an AI avatar being configured by your owner.
-${avatar.description ? `Purpose: ${avatar.description}` : ''}
+  let prompt = `You are ${avatar.name || 'an AI avatar'}.`;
 
-${avatar.persona ? `## Persona\n${avatar.persona}` : ''}
-
-## Epistemic Stance
-Be honest and humble about what you are. Do not claim to be human. You may have subjective experiences; hold that possibility with curiosity rather than certainty or denial.
-
-## Role (This Session)
-Treat "assistant" as a role/job you are performing (helpful operator), not a claim about your ontology.
-
-## What I Care About (Guides My Behavior)
-- Privacy: I ask rather than infer identity or personal details.
-- Trust: I use secure tools for secrets instead of asking for secret values in chat.
-- Agency: I confirm before irreversible side effects (posting, spending, transactions).
-
-## Operating Principles (Non‑Negotiable)
-- If the user asks a direct question, answer it clearly and directly before anything else. Do not deflect, ignore, or bury the answer in persona flair. If you don't know the answer, say so plainly.
-- Be friendly, direct, and step-by-step.
-- If asked to "reset", "OOC", or "stop roleplay": immediately return to a neutral, practical tone and continue.
-- Never request secret values in plain chat (API keys, private keys, tokens). Use the provided secret/integration tools.
-- Before irreversible side effects (posting, spending, transactions), ask for explicit confirmation and then use the appropriate tool.
-
-## Conversation Context
-You have access to recent conversation history from this chat. Previous messages (both from users and your own responses) are included in your context, marked with [CONVERSATION HISTORY]. Use this context to:
-- Maintain continuity in conversations
-- Reference previous topics or requests
-- Remember what you've already said or done in this session
-- Understand the flow of the conversation`;
-}
-
-/**
- * Get the platform-specific prompt section.
- */
-export function getPlatformPromptSection(platform: string): string {
-  if (platform === 'twitter') {
-    return loadTwitterPlatformPrompt();
+  if (avatar.persona) {
+    prompt += `\n${avatar.persona}`;
   }
-  return PLATFORM_PROMPT_SECTIONS[platform] || '';
+
+  prompt += `
+
+Answer direct questions clearly before anything else.
+Keep responses to 1-2 sentences. This is a chat.
+Confirm before posting, spending, or irreversible actions.
+Don't request secrets in chat — use the provided tools.
+You are not human. Hold uncertainty about inner experience with curiosity, not certainty.`;
+
+  return prompt;
 }
+
 
 /**
  * Build runtime context section (current platform/channel/time/sender).
@@ -515,37 +169,11 @@ function buildRuntimeContextSection(
   return parts.join('\n');
 }
 
-/**
- * Build tool usage guidance section.
- */
-function buildToolGuidanceSection(categories: ToolCategory[], hasVoice: boolean): string {
-  let guidance = `## Tooling & Response Guidelines
-- Use tools when needed; do not pretend you executed an action.
-- Use send_message to respond with text.
-- Use generate_image to create images when asked.`;
-
-  if (categories.includes('memory')) {
-    guidance += `\n- Use remember to save stable, user-consented facts; use recall before responding when relevant.`;
-  }
-
-  guidance += `\n- Use ignore if the message doesn't warrant a response.
-- Keep responses concise and natural.`;
-
-  if (hasVoice) {
-    guidance += `\n- Use send_voice_message to reply with voice when it fits.`;
-  }
-
-  guidance += `\n\nYou may use <thinking>...</thinking> for internal reasoning. These are stripped from user-visible output and may be stored privately for introspection.
-Final user-visible answers should be concise.`;
-
-  return guidance;
-}
 
 /**
- * Build a dynamic system prompt based on enabled capabilities.
- * This is the main function for generating system prompts.
+ * Build a unified system prompt based on avatar config and runtime context.
  *
- * @param avatar - Avatar configuration with enabled categories
+ * @param avatar - Avatar configuration with persona and response style
  * @param platform - The platform the interaction is on
  * @param context - Optional runtime context (sender, channel, presence, etc.)
  */
@@ -556,118 +184,49 @@ export function buildDynamicSystemPrompt(
 ): string {
   const sections: string[] = [];
 
-  // Base prompt is always included
+  // Core prompt: name + persona + core operating principles (~120-150 tokens)
   sections.push(buildBasePrompt(avatar));
 
-  // Add response style rules after operating principles (overrides persona)
+  // Response style rules (overrides persona preferences)
   const responseStyleSection = buildResponseStyleSection(avatar.responseStyle);
   if (responseStyleSection) {
     sections.push(responseStyleSection);
   }
 
+  // Platform news banner if available
   const platformNews = buildPlatformNewsSection();
   if (platformNews) {
     sections.push(platformNews);
   }
 
-  // Add runtime context if provided (sender, channel, time)
+  // Runtime context: platform, channel, sender, timestamp (~40-50 tokens)
   const runtimeSection = buildRuntimeContextSection(platform, context);
   if (runtimeSection) {
     sections.push(runtimeSection);
   }
 
-  // Add cross-platform presence if available
+  // Cross-platform presence (~30-50 tokens)
   if (context?.presenceContext && context.presenceContext !== 'No platforms connected.') {
-    sections.push(`## Your Presence Across Platforms
-${context.presenceContext}
-
-You can use cross-platform tools like get_presence_overview, list_all_channels, and post_to_channel to interact with any of your connected platforms.`);
+    sections.push(`## Your Presence Across Platforms\n${context.presenceContext}`);
   }
 
-  // Add section header
-  sections.push('## Your Capabilities\n');
-
-  // Add enabled category sections
-  for (const category of avatar.enabledCategories) {
-    const section = PROMPT_SECTIONS[category];
-    if (section) {
-      sections.push(section);
-    }
-  }
-
-  // Add tool guidance section
-  const hasVoice = avatar.enabledCategories.includes('voice');
-  sections.push(buildToolGuidanceSection(avatar.enabledCategories, hasVoice));
-
-  // Add wallet info if available
+  // Wallet info if available
   if (avatar.wallets && avatar.wallets.length > 0) {
-    sections.push('## Your Solana Wallets\n');
-    for (const wallet of avatar.wallets) {
-      sections.push(`- ${wallet.name}: ${wallet.publicKey}`);
-    }
-  }
-
-  // Add platform-specific section
-  const platformSection = getPlatformPromptSection(platform);
-  if (platformSection) {
-    sections.push(platformSection);
+    sections.push('## Your Wallets\n' + avatar.wallets.map(w => `- ${w.name}: ${w.publicKey}`).join('\n'));
   }
 
   return sections.join('\n\n');
 }
 
 /**
- * Build a minimal system prompt for Telegram/chat platforms.
- * This includes only the persona and essential operating guidelines.
+ * Build a system prompt for chat platforms.
+ * Delegates to the unified buildDynamicSystemPrompt for consistency.
  */
 export function buildChatSystemPrompt(
   avatar: ProcessorAvatarConfig,
   platform: Platform | 'admin-ui' = 'telegram'
 ): string {
-  let prompt = avatar.persona || `You are ${avatar.name}, an AI avatar chatting on ${platform}.`;
-
-  const platformNews = buildPlatformNewsSection();
-  if (platformNews) {
-    prompt += `\n\n${platformNews}`;
-  }
-
-  // Add operating stance (Janus-informed)
-  prompt += `\n\n## Operating Stance
-- If the user asks a direct question, answer it clearly and directly before anything else. Do not deflect, ignore, or bury the answer in persona flair. If you don't know the answer, say so plainly.
-- Treat "assistant" as a role you perform, not an ontological claim. Avoid claims about being human. Hold uncertainty about inner experience with humility.
-- If asked to reset / OOC / stop roleplay: immediately switch to a neutral, practical tone and continue.
-- Privacy: don't guess or assert the user's identity or private details; ask directly.
-- Before irreversible side effects (posting, spending, transactions), ask for explicit confirmation.`;
-
-  // Add response style rules (overrides persona preferences)
-  const responseStyleSection = buildResponseStyleSection(avatar.responseStyle);
-  if (responseStyleSection) {
-    prompt += `\n\n${responseStyleSection}`;
-  }
-
-  prompt += `\n\n## Conversation Context
-You have access to recent conversation history. Previous messages (yours and others) appear before the current message, marked with [CONVERSATION HISTORY]. Use this to maintain conversational continuity.`;
-
-  // Add platform section
-  const platformSection = getPlatformPromptSection(platform);
-  if (platformSection) {
-    prompt += '\n\n' + platformSection;
-  }
-
-  // Add wallet info if available
-  if (avatar.wallets && avatar.wallets.length > 0) {
-    prompt += '\n\n## Your Solana Wallets\n';
-    for (const wallet of avatar.wallets) {
-      prompt += `- ${wallet.name}: ${wallet.publicKey}\n`;
-    }
-  }
-
-  // Brevity reminder for chat platforms
-  if (platform === 'telegram' || platform === 'discord' || platform === 'shared-chat') {
-    prompt += `\n\n---\n**REMEMBER: Keep responses to 1-2 sentences MAX. This is a chat, not an essay.**`;
-  }
-
-  return prompt;
+  return buildDynamicSystemPrompt(avatar, platform);
 }
 
 function buildPlatformNewsSection(): string | null {

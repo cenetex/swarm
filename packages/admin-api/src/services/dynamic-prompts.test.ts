@@ -2,34 +2,46 @@ import { describe, it, expect } from 'vitest';
 import { buildDynamicSystemPrompt, type ProcessorAvatarConfig } from '@swarm/core';
 
 describe('dynamic prompts', () => {
-  it('includes role-as-job + reset + privacy guidance in base prompt', () => {
+  it('includes core operating principles in base prompt', () => {
     const avatar: ProcessorAvatarConfig = {
       avatarId: 'ava_1',
       name: 'TestAvatar',
       description: 'Helps configure integrations.',
       persona: 'Be warm and concise.',
-      enabledCategories: ['secrets'],
+      enabledCategories: [],
     };
     const prompt = buildDynamicSystemPrompt(avatar, 'admin-ui');
 
-    expect(prompt).toContain('## Identity');
-    expect(prompt).toContain('## Epistemic Stance');
-    expect(prompt).toContain('## Role (This Session)');
-    expect(prompt).toContain('Treat "assistant" as a role/job');
-    expect(prompt).toContain('If asked to "reset", "OOC", or "stop roleplay"');
-    expect(prompt).toContain('Privacy: I ask rather than infer identity');
-    expect(prompt).toContain('Never request secret values in plain chat');
+    expect(prompt).toContain('You are TestAvatar');
+    expect(prompt).toContain('Be warm and concise');
+    expect(prompt).toContain('Answer direct questions clearly before anything else');
+    expect(prompt).toContain('Keep responses to 1-2 sentences');
+    expect(prompt).toContain('Confirm before posting, spending, or irreversible actions');
+    expect(prompt).toContain("Don't request secrets in chat");
+    expect(prompt).toContain('You are not human');
   });
 
-  it('preserves the critical integration tool instruction', () => {
+  it('includes runtime context when provided', () => {
     const avatar: ProcessorAvatarConfig = {
       avatarId: 'ava_2',
       name: 'TestAvatar',
-      enabledCategories: ['secrets'],
+      enabledCategories: [],
     };
-    const prompt = buildDynamicSystemPrompt(avatar, 'admin-ui');
+    const prompt = buildDynamicSystemPrompt(avatar, 'telegram', {
+      channelId: 'test-channel',
+      timestamp: new Date('2026-04-01T12:00:00Z'),
+      sender: {
+        id: 'user-123',
+        username: 'testuser',
+        displayName: 'Test User',
+      },
+    });
 
-    expect(prompt).toContain('CRITICAL: When the user wants to set up or configure an integration');
-    expect(prompt).toContain('configure_integration');
+    expect(prompt).toContain('## Current Context');
+    expect(prompt).toContain('Platform: telegram');
+    expect(prompt).toContain('Channel: test-channel');
+    expect(prompt).toContain('## User');
+    expect(prompt).toContain('Username: testuser');
+    expect(prompt).toContain('Display Name: Test User');
   });
 });
