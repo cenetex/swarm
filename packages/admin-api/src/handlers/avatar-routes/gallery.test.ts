@@ -7,7 +7,6 @@
  *   POST   /avatars/{id}/gallery/save
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleGalleryRoutes } from './gallery.js';
 import { makeCtx, MOCK_AVATAR } from './test-helpers.js';
 
 // ── Mock state ─────────────────────────────────────────────────────────────

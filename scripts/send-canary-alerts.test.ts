@@ -21,7 +21,7 @@ describe("send-canary-alerts", () => {
   describe("environment handling", () => {
     it("gracefully handles missing alert configuration", async () => {
       // If all alert channels are unconfigured, script should exit 1
-      const proc = Bun.spawn([process.execPath, "run", "scripts/send-canary-alerts.ts"], {
+      const proc = Bun.spawn([process.execPath, "run", "scripts/send-canary-alerts.ts", "--health-outcome", "failure", "--chat-outcome", "failure", "--is-consecutive-failure", "true"], {
         cwd: process.cwd(),
         env: {
           // Empty all canary-related vars
@@ -44,7 +44,7 @@ describe("send-canary-alerts", () => {
     });
 
     it("requires GitHub Actions environment variables", async () => {
-      const proc = Bun.spawn([process.execPath, "run", "scripts/send-canary-alerts.ts"], {
+      const proc = Bun.spawn([process.execPath, "run", "scripts/send-canary-alerts.ts", "--health-outcome", "failure", "--chat-outcome", "failure", "--is-consecutive-failure", "true"], {
         cwd: process.cwd(),
         env: {
           // Missing GitHub env vars
