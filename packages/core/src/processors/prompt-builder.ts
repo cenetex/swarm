@@ -9,7 +9,7 @@
  * platform-specific contextual additions.
  */
 
-import type { ProcessorAvatarConfig } from './types.js';
+import type { ProcessorAvatarConfig, ToolCategory } from './types.js';
 import type { Platform, ResponseStyle } from '../types/index.js';
 
 // =============================================================================
@@ -101,6 +101,8 @@ export function buildResponseStyleSection(responseStyle?: ResponseStyle): string
     rules.push('- Use bullet points and numbered lists when they help organize information.');
   }
 
+  return rules.length > 1 ? rules.join('\n') : null;
+}
 
 // =============================================================================
 // PROMPT BUILDING
