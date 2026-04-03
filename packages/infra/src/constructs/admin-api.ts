@@ -193,6 +193,11 @@ export interface AdminApiConstructProps {
   raticrossRelayFunction?: lambda.IFunction;
 
   /**
+   * Raticross health Lambda from @swarm/handlers SharedHandlers construct.
+   */
+  raticrossHealthFunction?: lambda.IFunction;
+
+  /**
    * Internal test key for bypassing auth in E2E tests.
    * Should be shared across all constructs in the stack.
    */
@@ -2336,6 +2341,20 @@ export class AdminApiConstruct extends Construct {
         path: '/relay/inbound',
         methods: [apigateway.HttpMethod.POST],
         integration: raticrossIntegration,
+      });
+    }
+
+    // Raticross health route: /relay/health
+    if (props.raticrossHealthFunction) {
+      const raticrossHealthIntegration = new integrations.HttpLambdaIntegration(
+        'RaticrossHealthIntegration',
+        props.raticrossHealthFunction,
+      );
+
+      this.api.addRoutes({
+        path: '/relay/health',
+        methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.GET],
+        integration: raticrossHealthIntegration,
       });
     }
 

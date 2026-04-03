@@ -82,6 +82,12 @@ export interface SharedHandlersProps {
    * When provided, all alarms in this construct will send notifications to this topic.
    */
   alarmTopic?: sns.ITopic;
+  /**
+   * Raticross relay inbound authentication key.
+   * The relay will use this key to authenticate when sending messages to aws-swarm.
+   * Should be stored in AWS Secrets Manager in production.
+   */
+  raticrossInboundKey?: string;
 }
 
 export class SharedHandlers extends Construct {
@@ -92,6 +98,7 @@ export class SharedHandlers extends Construct {
   public readonly chatWorkerQueue: sqs.Queue;
   public readonly telegramWebhook: lambda.Function;
   public readonly raticrossRelay: nodejs.NodejsFunction;
+  public readonly raticrossHealth: nodejs.NodejsFunction;
   public readonly messageProcessor: nodejs.NodejsFunction;
   public readonly chatWorker: nodejs.NodejsFunction;
   public readonly responseSender: nodejs.NodejsFunction;
@@ -119,6 +126,7 @@ export class SharedHandlers extends Construct {
       twitterMonthlyBudget,
       twitterDailyReservePct = 20,
       internalTestKey,
+      raticrossInboundKey,
     } = props;
     const suffix = props.nameSuffix ?? '';
 
@@ -292,6 +300,9 @@ export class SharedHandlers extends Construct {
       USE_UNIFIED_PROCESSOR: 'true',
       // Internal test key for bypassing webhook auth in E2E tests
       ...(effectiveInternalTestKey ? { INTERNAL_TEST_KEY: effectiveInternalTestKey } : {}),
+      // Raticross relay inbound authentication key (for inbound and health handlers)
+      // The relay will use this key to authenticate when sending messages to aws-swarm
+      ...(raticrossInboundKey ? { RATICROSS_INBOUND_KEY: raticrossInboundKey } : {}),
     };
 
     if (replicateApiKeySecret) {
@@ -425,6 +436,28 @@ export class SharedHandlers extends Construct {
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
       logGroup: raticrossRelayLogGroup.logGroup,
+    });
+
+    // Raticross health handler - responds to health probes from the relay
+    const raticrossHealthLogGroup = new LogGroupWithRetention(this, 'RaticrossHealthLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-raticross-health`,
+      retention: logRetention,
+      removalPolicy: logRemovalPolicy,
+    });
+
+    this.raticrossHealth = new nodejs.NodejsFunction(this, 'RaticrossHealth', {
+      functionName: `swarm-${environment}${suffix}-raticross-health`,
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(handlersEntry, 'relay/raticross-health.ts'),
+      handler: 'handler',
+      layers: dependencyLayer ? [dependencyLayer] : undefined,
+      role: lambdaRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
+      environment: commonEnv,
+      bundling: bundlingOptions,
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: raticrossHealthLogGroup.logGroup,
     });
 
     this.messageProcessor.addEventSource(new lambdaEventSources.SqsEventSource(this.messageQueue, {

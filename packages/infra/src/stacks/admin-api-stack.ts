@@ -190,6 +190,12 @@ export interface AdminApiStackProps extends cdk.StackProps {
    * @default "cenetex/aws-swarm"
    */
   githubRepo?: string;
+
+  /**
+   * Raticross relay inbound authentication key.
+   * The relay will use this key to authenticate when sending messages to aws-swarm.
+   */
+  raticrossInboundKey?: string;
 }
 
 export class AdminApiStack extends cdk.Stack {
@@ -236,6 +242,7 @@ export class AdminApiStack extends cdk.Stack {
       secretPrefix,
       nameSuffix,
       enableDiscordGateway = false,
+      raticrossInboundKey,
     } = props;
 
     // SSM parameter name for the API endpoint URL — used by AdminUiStack
@@ -334,6 +341,7 @@ export class AdminApiStack extends cdk.Stack {
       secretPrefix,
       internalTestKey,
       alarmTopic,
+      raticrossInboundKey,
     });
 
     // Create Admin API if configured
@@ -366,6 +374,7 @@ export class AdminApiStack extends cdk.Stack {
         dependencyLayer,
         telegramWebhookFunction: this.sharedHandlers.telegramWebhook,
         raticrossRelayFunction: this.sharedHandlers.raticrossRelay,
+        raticrossHealthFunction: this.sharedHandlers.raticrossHealth,
         postQueue: this.sharedHandlers?.postQueue,
         sharedMessageQueue: this.sharedHandlers?.messageQueue,
         sharedResponseQueue: this.sharedHandlers?.responseQueue,
