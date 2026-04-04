@@ -239,6 +239,8 @@ vi.mock('@swarm/core', () => ({
   createOutboundSender: () => ({
     send: vi.fn(() => Promise.resolve({ success: true, sentMessages: [], errors: [] })),
   }),
+  // sqs-send.ts needs this from @swarm/core
+  createSqsOffloadServiceFromEnv: () => null,
 }));
 
 vi.mock('@swarm/mcp-server', () => ({

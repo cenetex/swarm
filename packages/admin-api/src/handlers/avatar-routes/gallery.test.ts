@@ -6,7 +6,7 @@
  *   POST   /avatars/{id}/gallery/upload-url
  *   POST   /avatars/{id}/gallery/save
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { makeCtx, MOCK_AVATAR } from './test-helpers.js';
 
 // ── Mock state ─────────────────────────────────────────────────────────────
@@ -15,21 +15,21 @@ let getGalleryResult: unknown[] = [];
 let getGalleryUploadUrlResult: unknown = { uploadUrl: 'https://s3.example.com/upload' };
 let addToGalleryResult: unknown = { id: 'item-1', url: 'https://cdn/img.jpg', createdAt: Date.now() };
 
-vi.mock('../../services/avatars.js', () => ({
+mock.module('../../services/avatars.js', () => ({
   getAvatar: async () => getAvatarResult,
 }));
 
-vi.mock('../../services/gallery.js', () => ({
+mock.module('../../services/gallery.js', () => ({
   getGallery: async () => getGalleryResult,
   generateGalleryId: () => 'generated-id',
   addToGallery: async (..._args: unknown[]) => addToGalleryResult,
 }));
 
-vi.mock('../../services/media.js', () => ({
+mock.module('../../services/media.js', () => ({
   getGalleryUploadUrl: async (..._args: unknown[]) => getGalleryUploadUrlResult,
 }));
 
-vi.mock('@swarm/core', () => ({
+mock.module('@swarm/core', () => ({
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
 }));
 
