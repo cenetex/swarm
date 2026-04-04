@@ -162,7 +162,7 @@ vi.mock('@swarm/core', () => ({
       temperature: 0.8,
       maxTokens: 1024,
     },
-    media: { image: { provider: 'replicate', model: 'flux' } },
+    media: { image: { provider: 'replicate', model: 'black-forest-labs/flux-schnell' } },
     scheduling: {},
     behavior: {
       responseDelayMs: [0, 0],

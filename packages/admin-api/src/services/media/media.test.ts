@@ -426,20 +426,20 @@ describe('Integration Config Model Selection', () => {
   });
 
   describe('Replicate API endpoint selection', () => {
-    it('should use version-based endpoint for models with version hash', () => {
+    it('should use model-based endpoint when no version hash exists', () => {
       const modelId = 'black-forest-labs/flux-schnell';
       const version = getReplicateVersion(modelId);
 
-      expect(version).toBeTruthy();
+      expect(version).toBeUndefined();
 
       const endpoint = version
         ? 'https://api.replicate.com/v1/predictions'
         : `https://api.replicate.com/v1/models/${modelId}/predictions`;
 
-      expect(endpoint).toBe('https://api.replicate.com/v1/predictions');
+      expect(endpoint).toBe('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions');
     });
 
-    it('should use model-based endpoint for models without version hash', () => {
+    it('should use model-based endpoint for all current models', () => {
       const modelId = 'minimax/video-01';
       const version = getReplicateVersion(modelId);
 
@@ -452,27 +452,17 @@ describe('Integration Config Model Selection', () => {
       expect(endpoint).toBe('https://api.replicate.com/v1/models/minimax/video-01/predictions');
     });
 
-    it('should construct correct auth header based on endpoint type', () => {
-      const versionedModel = 'black-forest-labs/flux-schnell';
-      const modelApiModel = 'minimax/video-01';
+    it('should construct correct auth header', () => {
       const apiKey = 'test-api-key';
 
-      const versionedVersion = getReplicateVersion(versionedModel);
-      getReplicateVersion(modelApiModel);
-
-      expect(versionedVersion).toBeTruthy();
-
-      const versionedAuth = `Token ${apiKey}`;
-      expect(versionedAuth).toBe('Token test-api-key');
-
-      const modelApiAuth = `Token ${apiKey}`;
-      expect(modelApiAuth).toBe('Token test-api-key');
+      const auth = `Token ${apiKey}`;
+      expect(auth).toBe('Token test-api-key');
     });
   });
 
   describe('Request body construction', () => {
-    it('should include version in body for version-based models', () => {
-      const modelId = 'google/nano-banana-pro';
+    it('should omit version in body when no version hash exists', () => {
+      const modelId = 'black-forest-labs/flux-schnell';
       const version = getReplicateVersion(modelId);
       const input = { prompt: 'test' };
 

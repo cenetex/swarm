@@ -70,12 +70,13 @@ describe('Models Registry', () => {
   });
 
   describe('REPLICATE_MODEL_VERSIONS', () => {
-    it('should contain version hashes for version-based models', () => {
-      expect(REPLICATE_MODEL_VERSIONS['black-forest-labs/flux-schnell']).toBeTruthy();
+    it('should have all featured models in the versions map', () => {
+      expect('black-forest-labs/flux-schnell' in REPLICATE_MODEL_VERSIONS).toBe(true);
+      expect('black-forest-labs/flux-1.1-pro' in REPLICATE_MODEL_VERSIONS).toBe(true);
     });
 
     it('should have undefined for models using /models API', () => {
-      expect(REPLICATE_MODEL_VERSIONS['google/nano-banana-pro']).toBeUndefined();
+      expect(REPLICATE_MODEL_VERSIONS['black-forest-labs/flux-1.1-pro']).toBeUndefined();
       expect(REPLICATE_MODEL_VERSIONS['minimax/video-01']).toBeUndefined();
       expect(REPLICATE_MODEL_VERSIONS['stability-ai/stable-audio-2.5']).toBeUndefined();
     });
@@ -197,9 +198,9 @@ describe('Models Registry', () => {
 
   describe('getModelById', () => {
     it('should find model by exact ID', () => {
-      const model = getModelById('google/nano-banana-pro');
+      const model = getModelById('black-forest-labs/flux-1.1-pro');
       expect(model).toBeTruthy();
-      expect(model?.name).toBe('Nano Banana Pro');
+      expect(model?.name).toBe('FLUX 1.1 Pro');
       expect(model?.provider).toBe('replicate');
     });
 
@@ -242,14 +243,8 @@ describe('Models Registry', () => {
   });
 
   describe('getReplicateVersion', () => {
-    it('should return version for version-based models', () => {
-      const version = getReplicateVersion('black-forest-labs/flux-schnell');
-      expect(version).toBeTruthy();
-      expect(version).toMatch(/^[a-f0-9]{64}$/);
-    });
-
     it('should return undefined for models using /models API', () => {
-      const version = getReplicateVersion('google/nano-banana-pro');
+      const version = getReplicateVersion('black-forest-labs/flux-schnell');
       expect(version).toBeUndefined();
     });
 
@@ -292,7 +287,7 @@ describe('Model Selection Logic', () => {
     });
 
     it('should have standard tier for common models', () => {
-      const imageModel = getModelById('google/nano-banana-pro');
+      const imageModel = getModelById('black-forest-labs/flux-schnell');
       expect(imageModel?.tier).toBe('standard');
       expect(imageModel?.speed).toBe('fast');
     });
