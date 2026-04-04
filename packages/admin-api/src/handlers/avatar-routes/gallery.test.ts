@@ -31,6 +31,19 @@ mock.module('../../services/media.js', () => ({
 
 mock.module('@swarm/core', () => ({
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
+  createSqsOffloadServiceFromEnv: () => null,
+  LLMError: class LLMError extends Error {
+    constructor(public message: string, public code?: string) { super(message); }
+  },
+  SwarmErrorCode: {
+    LLM_MISSING_API_KEY: 'LLM_MISSING_API_KEY',
+    LLM_CIRCUIT_OPEN: 'LLM_CIRCUIT_OPEN',
+    LLM_API_ERROR: 'LLM_API_ERROR',
+    LLM_EMPTY_RESPONSE: 'LLM_EMPTY_RESPONSE',
+    PLATFORM_NOT_INITIALIZED: 'PLATFORM_NOT_INITIALIZED',
+    PLATFORM_API_ERROR: 'PLATFORM_API_ERROR',
+    PLATFORM_MEDIA_UPLOAD_ERROR: 'PLATFORM_MEDIA_UPLOAD_ERROR',
+  },
 }));
 
 // ── Import handler AFTER mocks ─────────────────────────────────────────────

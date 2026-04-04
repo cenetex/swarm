@@ -197,6 +197,7 @@ vi.mock('@swarm/core', () => ({
     recordFailure: () => {},
     state: () => 'closed',
   }),
+  createSqsOffloadServiceFromEnv: () => null,
   logger: {
     info: () => {},
     warn: () => {},
@@ -220,6 +221,18 @@ vi.mock('@swarm/core', () => ({
   extractCorrelationIdFromSqsRecord: () => 'corr-1',
   buildDynamicSystemPrompt: () => 'You are a test assistant.',
   toolsToCategories: () => ['messaging'],
+  LLMError: class LLMError extends Error {
+    constructor(public message: string, public code?: string) { super(message); }
+  },
+  SwarmErrorCode: {
+    LLM_MISSING_API_KEY: 'LLM_MISSING_API_KEY',
+    LLM_CIRCUIT_OPEN: 'LLM_CIRCUIT_OPEN',
+    LLM_API_ERROR: 'LLM_API_ERROR',
+    LLM_EMPTY_RESPONSE: 'LLM_EMPTY_RESPONSE',
+    PLATFORM_NOT_INITIALIZED: 'PLATFORM_NOT_INITIALIZED',
+    PLATFORM_API_ERROR: 'PLATFORM_API_ERROR',
+    PLATFORM_MEDIA_UPLOAD_ERROR: 'PLATFORM_MEDIA_UPLOAD_ERROR',
+  },
 
   // --- response-sender also needs these ---
   TelegramAdapter: class {
