@@ -56,6 +56,14 @@ vi.mock('../../services/avatars.js', () => ({
 
 vi.mock('../../services/gallery.js', () => ({
   getLatestProfileImageFromGallery: async () => galleryProfileResult,
+  generateGalleryId: () => `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
+  getGallery: async () => [],
+  addToGallery: async () => ({}),
+  getGalleryItem: async () => null,
+  markPostedToTwitter: async () => {},
+  markConvertedToSticker: async () => {},
+  findByDescription: async () => [],
+  getGalleryStats: async () => ({ total: 0 }),
 }));
 
 vi.mock('../../services/integrations.js', () => ({
