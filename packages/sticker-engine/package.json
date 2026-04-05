@@ -1,0 +1,34 @@
+{
+  "name": "@swarm/sticker-engine",
+  "version": "1.0.0",
+  "description": "Sticker processing engine for Telegram and web formats",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./formats/web": "./dist/formats/web.js",
+    "./formats/telegram": "./dist/formats/telegram.js",
+    "./core/*": "./dist/core/*"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc -b",
+    "watch": "tsc --build --watch",
+    "test": "bun test",
+    "lint": "eslint src/",
+    "dev": "tsc --build --watch"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1014.0",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.9",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "optionalDependencies": {
+    "@img/sharp-darwin-arm64": "^0.34.5",
+    "@img/sharp-linux-x64": "^0.34.5"
+  }
+}
