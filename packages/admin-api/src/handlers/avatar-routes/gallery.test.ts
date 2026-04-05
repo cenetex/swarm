@@ -21,8 +21,14 @@ mock.module('../../services/avatars.js', () => ({
 
 mock.module('../../services/gallery.js', () => ({
   getGallery: async () => getGalleryResult,
-  generateGalleryId: () => 'generated-id',
+  generateGalleryId: () => `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
   addToGallery: async (..._args: unknown[]) => addToGalleryResult,
+  getLatestProfileImageFromGallery: async () => null,
+  getGalleryItem: async () => null,
+  markPostedToTwitter: async () => {},
+  markConvertedToSticker: async () => {},
+  findByDescription: async () => [],
+  getGalleryStats: async () => ({ total: 0 }),
 }));
 
 mock.module('../../services/media.js', () => ({
