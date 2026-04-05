@@ -1,16 +1,21 @@
 /**
  * Substack Publisher Tests
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { markdownToSubstackHtml, type SubstackPublishConfig } from './substack-publisher.js';
 
-// Mock the AWS SDK and fetch
-vi.mock('@aws-sdk/client-secrets-manager');
-vi.stubGlobal('fetch', vi.fn());
+// Mock the AWS SDK (factory required by bun) and fetch
+mock.module('@aws-sdk/client-secrets-manager', () => ({
+  SecretsManagerClient: class { send = () => Promise.resolve({}); },
+  GetSecretValueCommand: class { constructor(public input: unknown) {} },
+}));
+
+const mockFetch = mock(() => Promise.resolve(new Response('{}', { status: 200 })));
+globalThis.fetch = mockFetch as unknown as typeof fetch;
 
 describe('Substack Publisher', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockFetch.mockClear();
   });
 
   describe('markdownToSubstackHtml', () => {

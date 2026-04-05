@@ -54,6 +54,8 @@ const mockGetChannelState = vi.fn(() => Promise.resolve(null));
 const mockBrainRemember = vi.fn(() => Promise.resolve({ saved: true, source: 'legacy' as const }));
 const mockBrainRecall = vi.fn(() => Promise.resolve({ facts: [], source: 'legacy' as const }));
 
+const mockCheckAndSetIdempotency = vi.fn(() => Promise.resolve(true));
+
 const mockStateService = {
   getAvatarConfig: mockGetAvatarConfig,
   getOrCreateChannelState: mockGetOrCreateChannelState,
@@ -64,6 +66,7 @@ const mockStateService = {
   setUserCooldown: mockSetUserCooldown,
   saveFact: mockSaveFact,
   getChannelState: mockGetChannelState,
+  checkAndSetIdempotency: mockCheckAndSetIdempotency,
 };
 
 const mockBuildPresenceContext = vi.fn(() => Promise.resolve(''));
@@ -241,6 +244,59 @@ vi.mock('@swarm/core', () => ({
   }),
   // sqs-send.ts needs this from @swarm/core
   createSqsOffloadServiceFromEnv: () => null,
+
+  // --- llm-client.ts needs these from @swarm/core ---
+  SwarmErrorCode: {
+    UNKNOWN: 'UNKNOWN',
+    PLATFORM_NOT_INITIALIZED: 'PLATFORM_NOT_INITIALIZED',
+    PLATFORM_RATE_LIMITED: 'PLATFORM_RATE_LIMITED',
+    PLATFORM_API_ERROR: 'PLATFORM_API_ERROR',
+    PLATFORM_WEBHOOK_ERROR: 'PLATFORM_WEBHOOK_ERROR',
+    PLATFORM_MEDIA_UPLOAD_ERROR: 'PLATFORM_MEDIA_UPLOAD_ERROR',
+    PLATFORM_UNSUPPORTED_MEDIA: 'PLATFORM_UNSUPPORTED_MEDIA',
+    LLM_MISSING_API_KEY: 'LLM_MISSING_API_KEY',
+    LLM_CIRCUIT_OPEN: 'LLM_CIRCUIT_OPEN',
+    LLM_API_ERROR: 'LLM_API_ERROR',
+    LLM_EMPTY_RESPONSE: 'LLM_EMPTY_RESPONSE',
+    LLM_TIMEOUT: 'LLM_TIMEOUT',
+    CONFIG_NOT_FOUND: 'CONFIG_NOT_FOUND',
+    CONFIG_VALIDATION_ERROR: 'CONFIG_VALIDATION_ERROR',
+    CONFIG_MISSING_SECRET: 'CONFIG_MISSING_SECRET',
+    STATE_READ_ERROR: 'STATE_READ_ERROR',
+    STATE_WRITE_ERROR: 'STATE_WRITE_ERROR',
+    MEDIA_GENERATION_ERROR: 'MEDIA_GENERATION_ERROR',
+    MEDIA_FETCH_ERROR: 'MEDIA_FETCH_ERROR',
+    MEDIA_LIMIT_REACHED: 'MEDIA_LIMIT_REACHED',
+    AUTH_INVALID_TOKEN: 'AUTH_INVALID_TOKEN',
+    AUTH_FORBIDDEN: 'AUTH_FORBIDDEN',
+    AUTH_ACCESS_DENIED: 'AUTH_ACCESS_DENIED',
+    QUEUE_SEND_ERROR: 'QUEUE_SEND_ERROR',
+    QUEUE_PARSE_ERROR: 'QUEUE_PARSE_ERROR',
+    NETWORK_FETCH_ERROR: 'NETWORK_FETCH_ERROR',
+    NETWORK_TIMEOUT: 'NETWORK_TIMEOUT',
+  },
+  LLMError: class LLMError extends Error {
+    code: string;
+    retryable: boolean;
+    constructor(message: string, options?: { code?: string; retryable?: boolean }) {
+      super(message);
+      this.name = 'LLMError';
+      this.code = options?.code ?? 'LLM_API_ERROR';
+      this.retryable = options?.retryable ?? false;
+    }
+  },
+
+  // --- message-processor.ts needs these ---
+  createGallerySaver: () => ({
+    save: vi.fn(() => Promise.resolve({ id: 'gallery-1' })),
+  }),
+  createRuntimeMetricsLogger: () => ({
+    putMetric: vi.fn(),
+    trackDuration: vi.fn(),
+    incrementCounter: vi.fn(),
+    setProperty: vi.fn(),
+    flush: vi.fn(),
+  }),
 }));
 
 vi.mock('@swarm/mcp-server', () => ({
@@ -387,6 +443,7 @@ describe('Message Processor Smoke Tests', () => {
     mockToolExecute.mockClear();
     mockRegisterChannel.mockClear();
     mockFetchJson.mockClear();
+    mockCheckAndSetIdempotency.mockClear();
 
     // Restore default return values
     mockCheckAndIncrementMessageUsage.mockImplementation(() =>
