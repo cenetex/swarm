@@ -31,6 +31,7 @@
     "@solana/web3.js": "^1.98.0",
     "@swarm/core": "workspace:*",
     "@swarm/mcp-server": "workspace:*",
+    "@swarm/sticker-engine": "workspace:*",
     "bs58": "^6.0.0",
     "ethers": "^6.16.0",
     "ffmpeg-static": "^5.2.0",

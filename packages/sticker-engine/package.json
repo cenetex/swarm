@@ -1,0 +1,48 @@
+{
+  "name": "@swarm/sticker-engine",
+  "version": "1.0.0",
+  "description": "Unified sticker processing engine for Telegram and web formats",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./core": {
+      "bun": "./src/core/index.ts",
+      "types": "./src/core/index.ts",
+      "import": "./dist/core/index.js",
+      "default": "./dist/core/index.js"
+    },
+    "./formats": {
+      "bun": "./src/formats/index.ts",
+      "types": "./src/formats/index.ts",
+      "import": "./dist/formats/index.js",
+      "default": "./dist/formats/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "watch": "tsc --build --watch",
+    "test": "bun test",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1014.0",
+    "sharp": "^0.34.5",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "optionalDependencies": {
+    "@img/sharp-darwin-arm64": "^0.34.5",
+    "@img/sharp-linux-x64": "^0.34.5"
+  }
+}
