@@ -31,7 +31,7 @@ const MAX_CONTEXT_MESSAGES = parseIntEnv('MAX_CONTEXT_MESSAGES', 20);
 /**
  * Build system prompt dynamically based on enabled tool categories
  */
-export function buildSystemPrompt(avatar?: AvatarContext): string {
+export function buildSystemPrompt(avatar?: AvatarContext, platform: 'admin-ui' | 'api' = 'admin-ui'): string {
   if (avatar) {
     const categories: ToolCategory[] = avatar.enabledCategories || [
       'secrets', 'profile', 'media', 'gallery', 'wallets', 'diagnostics',
@@ -45,7 +45,7 @@ export function buildSystemPrompt(avatar?: AvatarContext): string {
       enabledCategories: categories,
     };
 
-    return buildDynamicSystemPrompt(avatarConfig, 'admin-ui');
+    return buildDynamicSystemPrompt(avatarConfig, platform);
   }
 
   return `You are a Swarm avatar assistant. Please select an avatar to chat with.`;
@@ -265,7 +265,7 @@ export async function buildEnrichedSystemPrompt(
   userMessage: string | null,
   options?: ProcessChatOptions
 ): Promise<string> {
-  let systemPrompt = options?.customSystemPrompt || buildSystemPrompt(avatar);
+  let systemPrompt = options?.customSystemPrompt || buildSystemPrompt(avatar, options?.platform);
 
   // Inject dream context
   if (!options?.customSystemPrompt && avatar?.id && avatar?.persona) {

@@ -786,12 +786,18 @@ async function handleChatCompletions(
       avatarContext,
       {
         maxTokens: request.max_tokens,
+        platform: 'api',
       }
     );
 
     // Build OpenAI-compatible response
     const completionId = `chatcmpl-${requestId}`;
     const created = Math.floor(Date.now() / 1000);
+
+    // Clean response: strip <thinking> tags and other artifacts (matches chat-stream behavior)
+    const { cleanResponse } = await import('./chat-tools/post-processing.js');
+    const cleaned = cleanResponse(result.response);
+    result.response = cleaned.response;
 
     // Resolve token usage: use model-aware estimation (provider-reported usage
     // will be preferred automatically when processChat returns it in the future).

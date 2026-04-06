@@ -432,9 +432,13 @@ Keep responses concise and conversational (1-3 sentences). This is a chat, not a
 /**
  * Build the base identity prompt (always included).
  */
-function buildBasePrompt(avatar: ProcessorAvatarConfig): string {
+function buildBasePrompt(avatar: ProcessorAvatarConfig, platform?: string): string {
+  const identityLine = platform === 'api'
+    ? `You are ${avatar.name || 'an AI avatar'}.`
+    : `You are ${avatar.name || 'an AI avatar'} — an AI avatar being configured by your owner.`;
+
   return `## Identity
-You are ${avatar.name || 'an AI avatar'} — an AI avatar being configured by your owner.
+${identityLine}
 ${avatar.description ? `Purpose: ${avatar.description}` : ''}
 
 ${avatar.persona ? `## Persona\n${avatar.persona}` : ''}
@@ -557,7 +561,7 @@ export function buildDynamicSystemPrompt(
   const sections: string[] = [];
 
   // Base prompt is always included
-  sections.push(buildBasePrompt(avatar));
+  sections.push(buildBasePrompt(avatar, platform));
 
   // Add response style rules after operating principles (overrides persona)
   const responseStyleSection = buildResponseStyleSection(avatar.responseStyle);

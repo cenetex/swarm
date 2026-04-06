@@ -24,6 +24,8 @@ export interface ProcessChatOptions {
   userAccountId?: string;
   /** Active task context from the admin UI (for system prompt enrichment). */
   activeTask?: { taskId: string; toolName: string; status: string; surface: 'inline' | 'workspace' };
+  /** Platform context for system prompt building. Defaults to admin-ui. */
+  platform?: 'admin-ui' | 'api';
 }
 
 export interface ProcessChatResult {
