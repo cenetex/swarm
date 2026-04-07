@@ -40,6 +40,38 @@ vi.mock('../../services/usage-history.js', () => ({
 
 vi.mock('@swarm/core', () => ({
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
+  createSqsOffloadServiceFromEnv: () => null,
+  createCircuitBreaker: () => ({ canExecute: () => true, recordSuccess: () => {}, recordFailure: () => {}, state: () => 'closed' }),
+  LLMError: class LLMError extends Error { constructor(message: string) { super(message); this.name = 'LLMError'; } },
+  SwarmErrorCode: {
+    UNKNOWN: 'UNKNOWN',
+    PLATFORM_NOT_INITIALIZED: 'PLATFORM_NOT_INITIALIZED',
+    PLATFORM_RATE_LIMITED: 'PLATFORM_RATE_LIMITED',
+    PLATFORM_API_ERROR: 'PLATFORM_API_ERROR',
+    PLATFORM_WEBHOOK_ERROR: 'PLATFORM_WEBHOOK_ERROR',
+    PLATFORM_MEDIA_UPLOAD_ERROR: 'PLATFORM_MEDIA_UPLOAD_ERROR',
+    PLATFORM_UNSUPPORTED_MEDIA: 'PLATFORM_UNSUPPORTED_MEDIA',
+    LLM_MISSING_API_KEY: 'LLM_MISSING_API_KEY',
+    LLM_CIRCUIT_OPEN: 'LLM_CIRCUIT_OPEN',
+    LLM_API_ERROR: 'LLM_API_ERROR',
+    LLM_EMPTY_RESPONSE: 'LLM_EMPTY_RESPONSE',
+    LLM_TIMEOUT: 'LLM_TIMEOUT',
+    CONFIG_NOT_FOUND: 'CONFIG_NOT_FOUND',
+    CONFIG_VALIDATION_ERROR: 'CONFIG_VALIDATION_ERROR',
+    CONFIG_MISSING_SECRET: 'CONFIG_MISSING_SECRET',
+    STATE_READ_ERROR: 'STATE_READ_ERROR',
+    STATE_WRITE_ERROR: 'STATE_WRITE_ERROR',
+    MEDIA_GENERATION_ERROR: 'MEDIA_GENERATION_ERROR',
+    MEDIA_FETCH_ERROR: 'MEDIA_FETCH_ERROR',
+    MEDIA_LIMIT_REACHED: 'MEDIA_LIMIT_REACHED',
+    AUTH_INVALID_TOKEN: 'AUTH_INVALID_TOKEN',
+    AUTH_FORBIDDEN: 'AUTH_FORBIDDEN',
+    AUTH_ACCESS_DENIED: 'AUTH_ACCESS_DENIED',
+    QUEUE_SEND_ERROR: 'QUEUE_SEND_ERROR',
+    QUEUE_PARSE_ERROR: 'QUEUE_PARSE_ERROR',
+    NETWORK_FETCH_ERROR: 'NETWORK_FETCH_ERROR',
+    NETWORK_TIMEOUT: 'NETWORK_TIMEOUT',
+  },
 }));
 
 // ── Import AFTER mocks ────────────────────────────────────────────────────
