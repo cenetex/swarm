@@ -199,4 +199,15 @@ export {
   publishBlogPost,
   type BlogPostContent,
   type BlogPostResult,
+  type PublishTarget,
+  type PublishTargetResult,
+  type PublishBlogPostOptions,
 } from './blog-post.js';
+export {
+  publishToSubstack,
+  markdownToSubstackHtml,
+  type SubstackCredentials,
+  type SubstackPublishConfig,
+  type SubstackPostContent,
+  type SubstackPublishResult,
+} from './publishers/substack-publisher.js';

@@ -7,7 +7,7 @@
     "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.smoke.ts"],
   "references": [
     { "path": "../core" },
     { "path": "../mcp-server" }

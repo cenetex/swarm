@@ -70,6 +70,7 @@ vi.mock('./runtime-sync.js', () => ({
 }));
 
 vi.mock('@swarm/core', () => ({
+  ...RealSwarmCore,
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
 }));
 
@@ -77,6 +78,9 @@ vi.mock('@swarm/core', () => ({
 import { handleEntitlementRoutes } from './entitlements.js';
 import { makeCtx, parseBody, MOCK_AVATAR } from './test-helpers.js';
 import * as activationReadinessModule from '../../services/activation-readiness.js';
+
+// Bypass mocks below to access real @swarm/core for spreading into the factory.
+import * as RealSwarmCore from '../../../../core/src/index.js';
 
 beforeEach(() => {
   getAvatarResult = null;

@@ -54,12 +54,16 @@ vi.mock('../../services/audit-log.js', () => ({
 }));
 
 vi.mock('@swarm/core', () => ({
+  ...RealSwarmCore,
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
 }));
 
 // ── Import handler AFTER mocks ──────────────────────────────────────────────
 import { handleCrudRoutes } from './crud.js';
 import { makeCtx, MOCK_AVATAR } from './test-helpers.js';
+
+// Bypass mocks below to access real @swarm/core for spreading into the factory.
+import * as RealSwarmCore from '../../../../core/src/index.js';
 
 const NFT_BACKED_AVATAR = {
   ...MOCK_AVATAR,

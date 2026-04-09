@@ -37,6 +37,7 @@ vi.mock('../../services/discord.js', () => ({
 }));
 
 vi.mock('@swarm/core', () => ({
+  ...RealSwarmCore,
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
 }));
 
@@ -46,6 +47,9 @@ import { makeCtx, MOCK_AVATAR } from './test-helpers.js';
 import * as telegramService from '../../services/telegram.js';
 import * as telegramAdminService from '../../services/telegram-admin.js';
 import * as replicateService from '../../services/replicate.js';
+
+// Bypass mocks below to access real @swarm/core for spreading into the factory.
+import * as RealSwarmCore from '../../../../core/src/index.js';
 
 beforeEach(() => {
   getAvatarResult = null;

@@ -41,11 +41,15 @@ vi.mock('./runtime-sync.js', () => ({
 }));
 
 vi.mock('@swarm/core', () => ({
+  ...RealSwarmCore,
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
 }));
 
 import { handleEnergyRoutes } from './energy.js';
 import { makeCtx, parseBody, MOCK_AVATAR } from './test-helpers.js';
+
+// Bypass mocks below to access real @swarm/core for spreading into the factory.
+import * as RealSwarmCore from '../../../../core/src/index.js';
 
 beforeEach(() => {
   getAvatarResult = null;

@@ -14,6 +14,7 @@ export type {
   AvatarConfig,
   PlatformConfigs,
   RaticrossConfig,
+  SubstackConfig,
   TelegramUserRef,
   TelegramChatRef,
   TelegramConfig,
@@ -538,11 +539,19 @@ export const WebConfigSchema = z.object({
   }).optional(),
 });
 
+export const SubstackConfigSchema = z.object({
+  enabled: z.boolean(),
+  subdomain: z.string().min(1).describe('Substack subdomain (e.g., "myagent")'),
+  sendEmail: z.boolean().optional().describe('Whether to email subscribers'),
+  publishImmediately: z.boolean().optional().describe('Whether to publish immediately or as draft'),
+});
+
 export const PlatformConfigsSchema = z.object({
   telegram: TelegramConfigSchema.optional(),
   discord: DiscordConfigSchema.optional(),
   twitter: TwitterConfigSchema.optional(),
   web: WebConfigSchema.optional(),
+  substack: SubstackConfigSchema.optional(),
 });
 
 export const LLMConfigSchema = z.object({

@@ -4,8 +4,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createBlogTools } from './blog.js';
 
+// Bypass mocks below to access real @swarm/core for spreading into the factory.
+import * as RealSwarmCore from '../../../core/src/index.js';
+
 // Mock the blog posting service
 vi.mock('@swarm/core', () => ({
+  ...RealSwarmCore,
   publishBlogPost: vi.fn(async (post) => {
     if (!post.title || !post.content || !post.author || !post.agentId) {
       return { success: false, error: 'Missing fields' };

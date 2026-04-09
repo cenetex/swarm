@@ -16,11 +16,15 @@ vi.mock('../../services/avatar-health.js', () => ({
 }));
 
 vi.mock('@swarm/core', () => ({
+  ...RealSwarmCore,
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
 }));
 
 import { handleHealthRoutes } from './health.js';
 import { makeCtx, parseBody } from './test-helpers.js';
+
+// Bypass mocks below to access real @swarm/core for spreading into the factory.
+import * as RealSwarmCore from '../../../../core/src/index.js';
 
 beforeEach(() => {
   healthResult = { avatars: [], total: 0 };

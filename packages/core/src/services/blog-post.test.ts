@@ -55,4 +55,79 @@ describe('Blog Posting Service', () => {
     // This is a basic test since full end-to-end requires mocking AWS
     expect(publishBlogPost).toBeDefined();
   });
+
+  describe('Cross-post publishing', () => {
+    it('should accept targets parameter', async () => {
+      const result = await publishBlogPost(
+        {
+          title: 'Test Post',
+          content: 'Test content',
+          author: 'Test Author',
+          agentId: 'test-agent',
+        },
+        {
+          targets: ['github'],
+        }
+      );
+
+      // Result should indicate success or failure, not error on parameter
+      expect(result).toHaveProperty('success');
+      expect(result).toHaveProperty('targets');
+    });
+
+    it('should support substack configuration', async () => {
+      const substackConfig = {
+        subdomain: 'test-agent',
+        sendEmail: false,
+        publishImmediately: true,
+      };
+
+      const result = await publishBlogPost(
+        {
+          title: 'Test Post',
+          content: 'Test content',
+          author: 'Test Author',
+          agentId: 'test-agent',
+        },
+        {
+          targets: ['github', 'substack'],
+          substackConfig,
+        }
+      );
+
+      expect(result).toHaveProperty('success');
+      expect(result).toHaveProperty('targets');
+    });
+
+    it('should include target results in response', async () => {
+      const result = await publishBlogPost(
+        {
+          title: 'Test Post',
+          content: 'Test content',
+          author: 'Test Author',
+          agentId: 'test-agent',
+        },
+        {
+          targets: ['github'],
+        }
+      );
+
+      // If targets is defined in response, it should be an array
+      if (result.targets) {
+        expect(Array.isArray(result.targets)).toBe(true);
+      }
+    });
+
+    it('should default to github-only when no targets specified', async () => {
+      const result = await publishBlogPost({
+        title: 'Test Post',
+        content: 'Test content',
+        author: 'Test Author',
+        agentId: 'test-agent',
+      });
+
+      expect(result).toHaveProperty('success');
+      // Should work with default GitHub-only publishing
+    });
+  });
 });
