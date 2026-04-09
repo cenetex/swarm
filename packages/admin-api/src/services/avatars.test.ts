@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, describe, expect, it, spyOn, mock } from 'bun:test';
+import { beforeEach, afterEach, describe, expect, it, spyOn, mock, afterAll } from 'bun:test';
 import { DeleteCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { AvatarRecord, UserSession } from '../types.js';
@@ -109,3 +109,5 @@ describe('avatars deleteAvatar', () => {
     });
   });
 });
+
+afterAll(() => { mock.restore(); });

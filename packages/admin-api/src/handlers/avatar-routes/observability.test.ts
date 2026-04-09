@@ -45,11 +45,15 @@ vi.mock('../../services/auto-issues.js', () => ({
 }));
 
 vi.mock('@swarm/core', () => ({
+  ...RealSwarmCore,
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
 }));
 
 import { handleObservabilityRoutes } from './observability.js';
 import { makeCtx, parseBody } from './test-helpers.js';
+
+// Bypass mocks below to access real @swarm/core for spreading into the factory.
+import * as RealSwarmCore from '../../../../core/src/index.js';
 
 beforeEach(() => {
   getAvatarResult = null;

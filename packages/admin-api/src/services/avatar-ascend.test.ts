@@ -7,7 +7,7 @@
  * NOTE: This test uses spyOn + DI instead of vi.mock() to avoid
  * bun:test's process-global mock bleed (see issue #876).
  */
-import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach, spyOn, afterAll, mock } from 'bun:test';
 import { PLAN_DEFAULTS, type EntitlementRecord } from '../types.js';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import * as entitlements from './billing/entitlements.js';
@@ -316,3 +316,5 @@ process.on('exit', () => {
     process.env.HELIUS_API_KEY = prevHeliusApiKey;
   }
 });
+
+afterAll(() => { mock.restore(); });

@@ -1,16 +1,26 @@
 /**
  * Substack Publisher Tests
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, mock, afterAll } from 'bun:test';
 import { markdownToSubstackHtml, type SubstackPublishConfig } from './substack-publisher.js';
 
 // Mock the AWS SDK and fetch
-vi.mock('@aws-sdk/client-secrets-manager');
-vi.stubGlobal('fetch', vi.fn());
+mock.module('@aws-sdk/client-secrets-manager', () => ({
+  SecretsManagerClient: class {
+    send = mock(async () => ({ SecretString: '{}' }));
+  },
+  GetSecretValueCommand: class {
+    constructor(public input: unknown) {}
+  },
+}));
+
+// Stub global fetch for tests in this file
+const fetchMock = mock(async () => new Response('{}', { status: 200 }));
+(globalThis as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
 
 describe('Substack Publisher', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    fetchMock.mockClear();
   });
 
   describe('markdownToSubstackHtml', () => {
@@ -130,3 +140,5 @@ A paragraph with **bold** and *italic* text.
     });
   });
 });
+
+afterAll(() => { mock.restore(); });
