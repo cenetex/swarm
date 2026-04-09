@@ -113,7 +113,7 @@ jobs:
         run: rm -rf packages/infra/cdk.out
 
       - name: Test
-        run: bun test
+        run: pnpm test
 
   smoke:
     name: Smoke Test (Admin UI)
