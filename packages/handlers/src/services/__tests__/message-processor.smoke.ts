@@ -13,6 +13,10 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createCanonicalMemoryClient as createCanonicalMemoryClientActual } from '../../../../core/src/services/brain/canonical-memory.js';
+// Real @swarm/core imported via relative path to bypass the '@swarm/core' mock below.
+// This lets us spread the real module into the mock factory and only override
+// the specific functions the test needs to stub.
+import * as RealSwarmCore from '../../../../core/src/index.js';
 
 // ---------------------------------------------------------------------------
 // Shared mock primitives (declared BEFORE mock.module so they are captured)
@@ -149,6 +153,10 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
 // smoke tests, the last definition wins. We include all exports needed by
 // BOTH handlers to avoid "export not found" errors.
 vi.mock('@swarm/core', () => ({
+  // Spread real module first so all enums, error classes, schemas, and pure
+  // helpers (SwarmErrorCode, LLMError, etc.) are available to production code.
+  // Function/service factories below override the real ones with stubs.
+  ...RealSwarmCore,
   // --- shared config ---
   DEFAULT_AVATAR_CONFIG: {
     id: 'unknown',

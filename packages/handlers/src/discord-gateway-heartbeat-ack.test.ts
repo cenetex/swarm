@@ -267,3 +267,5 @@ describe('GatewayConnection heartbeat ACK timeout', () => {
     conn.stop();
   });
 });
+
+afterAll(() => { mock.restore(); });

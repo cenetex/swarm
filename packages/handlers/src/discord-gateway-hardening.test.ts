@@ -7,6 +7,9 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, it, expect, mock } from 'bun:test';
 
+// Bypass mocks below to access real @swarm/core for spreading into the factory.
+import * as RealSwarmCore from '../../core/src/index.js';
+
 // Track logger.warn calls for assertion
 const loggerWarnCalls: Array<{ message: string; meta: Record<string, unknown> }> = [];
 
@@ -74,6 +77,7 @@ mock.module('@aws-sdk/client-secrets-manager', () => ({
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- mock.module requires synchronous module object; dynamic import() is async
 const realCore = require('@swarm/core');
 mock.module('@swarm/core', () => ({
+  ...RealSwarmCore,
   ...realCore,
   // Override only what this test needs to control; keep all other exports real
   // to avoid polluting other test files (bun's mock.module is process-global).
@@ -362,3 +366,5 @@ describe('GatewayConnection session reset on resume failure codes (#831)', () =>
     conn.stop();
   });
 });
+
+afterAll(() => { mock.restore(); });

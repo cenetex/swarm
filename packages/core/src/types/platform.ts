@@ -72,12 +72,20 @@ export interface RaticrossConfig {
   agentId?: string;
 }
 
+export interface SubstackConfig {
+  enabled: boolean;
+  subdomain: string; // e.g., "myagent" for myagent.substack.com
+  sendEmail?: boolean; // Whether to email subscribers (default: false)
+  publishImmediately?: boolean; // Whether to publish immediately or as draft (default: true)
+}
+
 export interface PlatformConfigs {
   telegram?: TelegramConfig;
   discord?: DiscordConfig;
   twitter?: TwitterConfig;
   web?: WebConfig;
   raticross?: RaticrossConfig;
+  substack?: SubstackConfig;
 }
 
 /**

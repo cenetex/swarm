@@ -19,6 +19,7 @@ vi.mock('../auth/request-auth.js', () => ({
 }));
 
 vi.mock('@swarm/core', () => ({
+  ...RealSwarmCore,
   hasValidInternalTestKey: ({
     headers,
     internalTestKey,
@@ -48,6 +49,9 @@ vi.mock('@swarm/core', () => ({
 import { handler } from './issues.js';
 import * as autoIssues from '../services/auto-issues.js';
 import * as requestAuth from '../auth/request-auth.js';
+
+// Bypass mocks below to access real @swarm/core for spreading into the factory.
+import * as RealSwarmCore from '../../../core/src/index.js';
 
 // Get references to the mocked functions (cast instead of vi.mocked for bun compat)
 const listIssuesMock = autoIssues.listIssues as unknown as ReturnType<typeof vi.fn>;

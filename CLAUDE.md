@@ -60,10 +60,16 @@ pnpm install                          # install dependencies (required for tsc a
 pnpm build                            # all packages
 pnpm lint                             # all packages
 pnpm typecheck                        # all packages
-bun test                              # all tests (bun, not vitest)
-bun test packages/core/               # single package
-bun test path/to/file.test.ts         # single file
+pnpm test                             # all tests via isolated runner (handles mock pollution)
+bun test packages/core/               # single package (direct, no isolation)
+bun test path/to/file.test.ts         # single file (direct, no isolation)
+pnpm test:smoke                       # opt-in smoke tests (currently has known failures, see #1311)
 ```
+
+**Test runner notes**: Tests run via `./scripts/test-isolated.sh` which puts mock-using files in
+their own bun processes. This is required because bun's `mock.module()` is process-global and
+cannot be undone — without isolation, one file's mocks pollute every subsequent file. New test
+files that call `mock.module(` or `vi.mock(` are picked up automatically by the script.
 
 | Hook | Runs | Skip with |
 |------|------|-----------|

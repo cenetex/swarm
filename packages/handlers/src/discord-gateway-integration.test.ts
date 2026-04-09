@@ -939,3 +939,5 @@ describe('Resume / reconnect flow', () => {
     conn.stop();
   });
 });
+
+afterAll(() => { mock.restore(); });

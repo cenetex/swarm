@@ -4,9 +4,12 @@
  * Enables agents to publish blog posts to cenetex/agent-blogs repository
  * via GitHub API with markdown + YAML frontmatter support.
  * Posts are organized by agent ID with per-agent blogs at {agent-id}.rati.chat
+ *
+ * Supports cross-posting to multiple platforms including Substack.
  */
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { logger } from '../utils/logger.js';
+import { publishToSubstack, markdownToSubstackHtml, type SubstackPublishConfig } from './publishers/substack-publisher.js';
 
 // ============================================================================
 // Types
@@ -24,6 +27,16 @@ export interface BlogPostResult {
   success: boolean;
   url?: string;
   slug?: string;
+  targets?: PublishTargetResult[];
+  error?: string;
+}
+
+export type PublishTarget = 'github' | 'substack';
+
+export interface PublishTargetResult {
+  target: PublishTarget;
+  success: boolean;
+  url?: string;
   error?: string;
 }
 
@@ -201,12 +214,21 @@ async function commitFileToGitHub(
 // ============================================================================
 
 /**
- * Publish a blog post to cenetex/agent-blogs
+ * Publish a blog post to one or more platforms
  *
  * @param post Blog post content (title, content, author, agentId, optional imageUrl)
- * @returns Result with post URL at {agentId}.rati.chat or error
+ * @param options Optional configuration for publishing targets
+ * @returns Result with post URL and platform-specific results
  */
-export async function publishBlogPost(post: BlogPostContent): Promise<BlogPostResult> {
+export interface PublishBlogPostOptions {
+  targets?: PublishTarget[]; // Platforms to publish to (default: ['github'])
+  substackConfig?: SubstackPublishConfig; // Config for Substack target
+}
+
+export async function publishBlogPost(
+  post: BlogPostContent,
+  options?: PublishBlogPostOptions
+): Promise<BlogPostResult> {
   try {
     // Validate input
     if (!post.title || !post.content || !post.author || !post.agentId) {
@@ -215,6 +237,10 @@ export async function publishBlogPost(post: BlogPostContent): Promise<BlogPostRe
         error: 'Missing required fields: title, content, author, agentId',
       };
     }
+
+    // Determine targets (default: github only)
+    const targets: PublishTarget[] = options?.targets || ['github'];
+    const targetResults: PublishTargetResult[] = [];
 
     // Generate slug and paths
     const slug = generateSlug(post.title);
@@ -228,70 +254,189 @@ export async function publishBlogPost(post: BlogPostContent): Promise<BlogPostRe
       author: post.author,
       agentId: post.agentId,
       hasImage: !!post.imageUrl,
+      targets,
     });
 
-    // Get GitHub token
-    const token = await getGitHubToken();
+    let primaryUrl: string | undefined;
 
-    // Handle image upload if provided
-    let imagePath: string | undefined;
-    if (post.imageUrl) {
+    // GitHub publication (always included for backward compatibility, but respects targets)
+    if (targets.includes('github')) {
       try {
-        const imageData = await downloadImageAsBase64(post.imageUrl);
-        const agentImagesPath = IMAGES_PATH.replace('{agentId}', post.agentId);
-        imagePath = `${agentImagesPath}/${imageData.filename}`;
+        // Get GitHub token
+        const token = await getGitHubToken();
 
-        logger.debug('Uploading image', {
-          subsystem: 'blog-post',
-          path: imagePath,
+        // Handle image upload if provided
+        let imagePath: string | undefined;
+        if (post.imageUrl) {
+          try {
+            const imageData = await downloadImageAsBase64(post.imageUrl);
+            const agentImagesPath = IMAGES_PATH.replace('{agentId}', post.agentId);
+            imagePath = `${agentImagesPath}/${imageData.filename}`;
+
+            logger.debug('Uploading image to GitHub', {
+              subsystem: 'blog-post',
+              path: imagePath,
+            });
+
+            await commitFileToGitHub(
+              token,
+              imagePath,
+              Buffer.from(imageData.data, 'base64'),
+              `Blog post image: ${slug}`
+            );
+          } catch (error) {
+            logger.warn('Image upload to GitHub failed (continuing without image)', {
+              subsystem: 'blog-post',
+              slug,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            // Continue without image rather than failing the entire post
+          }
+        }
+
+        // Generate markdown content
+        const markdownContent = generateMarkdown({
+          ...post,
+          date: timestamp,
+          image: imagePath ? `/${imagePath}` : undefined,
         });
 
+        // Commit post to GitHub
         await commitFileToGitHub(
           token,
-          imagePath,
-          Buffer.from(imageData.data, 'base64'),
-          `Blog post image: ${slug}`
+          postPath,
+          markdownContent,
+          `feat(blog): publish "${post.title}" by ${post.author}`
         );
-      } catch (error) {
-        logger.warn('Image upload failed (continuing without image)', {
+
+        // Generate per-agent blog URL
+        primaryUrl = `https://${post.agentId}.rati.chat/posts/${slug}`;
+
+        targetResults.push({
+          target: 'github',
+          success: true,
+          url: primaryUrl,
+        });
+
+        logger.info('Blog post published to GitHub', {
           subsystem: 'blog-post',
           slug,
-          error: error instanceof Error ? error.message : String(error),
+          url: primaryUrl,
         });
-        // Continue without image rather than failing the entire post
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        targetResults.push({
+          target: 'github',
+          success: false,
+          error: errorMessage,
+        });
+        logger.error('Failed to publish blog post to GitHub', {
+          subsystem: 'blog-post',
+          slug,
+          error: errorMessage,
+        });
+
+        // If GitHub fails and it's the primary target, fail the entire operation
+        if (targets.length === 1) {
+          return {
+            success: false,
+            error: errorMessage,
+            targets: targetResults,
+          };
+        }
       }
     }
 
-    // Generate markdown content
-    const markdownContent = generateMarkdown({
-      ...post,
-      date: timestamp,
-      image: imagePath ? `/${imagePath}` : undefined,
-    });
+    // Substack publication (if enabled)
+    if (targets.includes('substack') && options?.substackConfig) {
+      try {
+        logger.debug('Publishing to Substack', {
+          subsystem: 'blog-post',
+          subdomain: options.substackConfig.subdomain,
+          slug,
+        });
 
-    // Commit post to GitHub
-    await commitFileToGitHub(
-      token,
-      postPath,
-      markdownContent,
-      `feat(blog): publish "${post.title}" by ${post.author}`
-    );
+        // Convert markdown to HTML
+        const htmlContent = markdownToSubstackHtml(post.content);
 
-    // Generate per-agent blog URL
-    const postUrl = `https://${post.agentId}.rati.chat/posts/${slug}`;
+        // Publish to Substack
+        const result = await publishToSubstack(
+          {
+            title: post.title,
+            content: htmlContent,
+            imageUrl: post.imageUrl,
+            subtitle: `By ${post.author}`,
+          },
+          options.substackConfig
+        );
+
+        if (result.success) {
+          targetResults.push({
+            target: 'substack',
+            success: true,
+            url: result.url,
+          });
+
+          logger.info('Blog post published to Substack', {
+            subsystem: 'blog-post',
+            slug,
+            url: result.url,
+            subdomain: options.substackConfig.subdomain,
+          });
+        } else {
+          targetResults.push({
+            target: 'substack',
+            success: false,
+            error: result.error,
+          });
+
+          logger.warn('Failed to publish blog post to Substack', {
+            subsystem: 'blog-post',
+            slug,
+            error: result.error,
+            subdomain: options.substackConfig.subdomain,
+          });
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        targetResults.push({
+          target: 'substack',
+          success: false,
+          error: errorMessage,
+        });
+        logger.error('Failed to publish blog post to Substack', {
+          subsystem: 'blog-post',
+          slug,
+          error: errorMessage,
+          subdomain: options?.substackConfig?.subdomain,
+        });
+      }
+    }
+
+    // Determine overall success
+    const anySuccess = targetResults.some(r => r.success);
+    if (!anySuccess) {
+      return {
+        success: false,
+        error: 'Failed to publish to all targets',
+        targets: targetResults,
+      };
+    }
 
     logger.info('Blog post published successfully', {
       subsystem: 'blog-post',
       slug,
-      url: postUrl,
+      url: primaryUrl,
       author: post.author,
       agentId: post.agentId,
+      targets: targetResults.map(r => ({ target: r.target, success: r.success })),
     });
 
     return {
       success: true,
-      url: postUrl,
+      url: primaryUrl,
       slug,
+      targets: targetResults,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
