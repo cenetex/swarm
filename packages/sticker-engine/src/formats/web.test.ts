@@ -15,7 +15,9 @@ import sharp from 'sharp';
 import { processForWeb, generateSrcset, buildPictureElement } from './web.js';
 
 // Create a minimal test image (256x256 solid red PNG)
-function createTestImage(): Buffer {
+// Underscore prefix marks this as intentionally unused — kept as a reference
+// fixture for tests that may need a literal PNG buffer instead of a sharp-generated one.
+function _createTestImage(): Buffer {
   return Buffer.from([
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
     0x00, 0x00, 0x00, 0x0d, // IHDR chunk length
@@ -205,7 +207,7 @@ describe('Web Sticker Format Processor', () => {
   });
 
   describe('generateSrcset()', () => {
-    let variants = [
+    const variants = [
       {
         format: 'png',
         scale: 1,
@@ -242,7 +244,7 @@ describe('Web Sticker Format Processor', () => {
   });
 
   describe('buildPictureElement()', () => {
-    let variants = [
+    const variants = [
       {
         format: 'webp',
         scale: 1,

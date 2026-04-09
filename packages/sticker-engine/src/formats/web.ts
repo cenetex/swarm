@@ -89,7 +89,10 @@ export async function processForWeb(
     try {
       workingBuffer = await removeCheckerboardBackground(buffer);
     } catch (error) {
-      console.warn('Background removal failed, continuing with original image', error);
+      console.warn(
+        'Background removal failed, continuing with original image:',
+        error instanceof Error ? error.message : String(error),
+      );
       // Continue with original buffer if background removal fails
     }
   }
