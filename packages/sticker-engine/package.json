@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.1.9",
-    "@types/node": "^22.0.0",
+    "@types/node": "^25.5.2",
     "typescript": "^5.7.0"
   },
   "optionalDependencies": {
