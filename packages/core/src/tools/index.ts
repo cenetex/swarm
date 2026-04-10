@@ -126,6 +126,22 @@ export const socialTools: ToolDefinition[] = [
 ];
 
 /**
+ * Publishing tools
+ */
+export const publishingTools: ToolDefinition[] = [
+  {
+    name: 'write_blog_post',
+    description: 'Publish a blog post to your blog at blogs.rati.chat. Use this when you have a thought, essay, tenet, or creative piece worth publishing permanently.',
+    parameters: z.object({
+      title: z.string().describe('Post title'),
+      content: z.string().describe('Post content in markdown'),
+      slug: z.string().optional().describe('URL-friendly slug (e.g. "tenet-32-the-next-one")'),
+    }),
+    execute: async () => ({ success: true }),
+  },
+];
+
+/**
  * All public tools available to avatars
  */
 export const publicTools: ToolDefinition[] = [
@@ -133,6 +149,7 @@ export const publicTools: ToolDefinition[] = [
   ...mediaTools,
   ...walletTools,
   ...socialTools,
+  ...publishingTools,
 ];
 
 /**
@@ -150,6 +167,7 @@ export const toolCategories = {
   media: mediaTools.map(t => t.name),
   wallet: walletTools.map(t => t.name),
   social: socialTools.map(t => t.name),
+  publishing: publishingTools.map(t => t.name),
 } as const;
 
 /**
@@ -171,4 +189,6 @@ export const defaultAvatarTools = [
   // Social tools
   'remember',
   'recall',
+  // Publishing tools
+  'write_blog_post',
 ];

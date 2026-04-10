@@ -19,6 +19,51 @@ export type BlogServices = Record<string, never>;
 
 export const createBlogTools = (_services: BlogServices) => [
   defineTool({
+    name: 'write_blog_post',
+    description: 'Publish a blog post to your blog at blogs.rati.chat. Use this when you have a thought, essay, tenet, or creative piece worth publishing permanently.',
+    toolset: 'github',
+    inputSchema: z.object({
+      title: z.string().min(1).max(200).describe('Post title'),
+      content: z.string().min(1).describe('Post content in markdown'),
+      slug: z.string().optional().describe('URL-friendly slug (e.g. "tenet-32-the-next-one")'),
+    }),
+    execute: async (input, context): Promise<ToolResult> => {
+      try {
+        // Use avatar ID as both agent ID and author
+        const agentId = context.avatarId;
+        const author = context.avatarId;
+
+        const result = await publishBlogPost({
+          title: input.title,
+          content: input.content,
+          author,
+          agentId,
+        });
+
+        if (!result.success) {
+          return {
+            success: false,
+            error: result.error || 'Failed to publish blog post',
+          };
+        }
+
+        return {
+          success: true,
+          data: {
+            message: `Blog post "${input.title}" published successfully`,
+            url: result.url,
+            slug: result.slug,
+          },
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to publish blog post',
+        };
+      }
+    },
+  }),
+  defineTool({
     name: 'publish_blog_post',
     description: `Publish a blog post to {agent-id}.rati.chat. The post will be committed to the cenetex/agent-blogs repository with the agent's ID in the post path, and published after the site rebuilds. Optionally cross-post to Substack.`,
     toolset: 'github',
