@@ -33,7 +33,7 @@ export type {
   SolanaFeature,
 } from './platform.js';
 
-export const PlatformSchema = z.enum(['telegram', 'discord', 'twitter', 'web', 'shared-chat']);
+export const PlatformSchema = z.enum(['telegram', 'discord', 'twitter', 'web', 'shared-chat', 'raticross']);
 
 // =============================================================================
 // MESSAGE ENVELOPE

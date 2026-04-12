@@ -507,6 +507,32 @@ importers:
         specifier: ^8.0.3
         version: 8.0.3(@emnapi/core@1.8.1)(@emnapi/runtime@1.8.1)(@types/node@25.5.0)(esbuild@0.27.4)(jiti@2.6.1)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3)
 
+  packages/sticker-engine:
+    dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1014.0
+        version: 3.1019.0
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
+    devDependencies:
+      '@types/bun':
+        specifier: ^1.1.9
+        version: 1.3.11
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.3
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+    optionalDependencies:
+      '@img/sharp-darwin-arm64':
+        specifier: ^0.34.5
+        version: 0.34.5
+      '@img/sharp-linux-x64':
+        specifier: ^0.34.5
+        version: 0.34.5
+
 packages:
 
   '@acemir/cssom@0.9.31':
@@ -3836,6 +3862,9 @@ packages:
   '@types/babel__traverse@7.28.0':
     resolution: {integrity: sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q==}
 
+  '@types/bun@1.3.11':
+    resolution: {integrity: sha512-5vPne5QvtpjGpsGYXiFyycfpDF2ECyPcTSsFBMa0fraoxiQyMJ3SmuQIGhzPg2WJuWxVBoxWJ2kClYTcw/4fAg==}
+
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
@@ -4829,6 +4858,9 @@ packages:
   bufferutil@4.1.0:
     resolution: {integrity: sha512-ZMANVnAixE6AWWnPzlW2KpUrxhm9woycYvPOo67jWHyFowASTEd9s+QN1EIMsSDtwhIxN4sWE1jotpuDUIgyIw==}
     engines: {node: '>=6.14.2'}
+
+  bun-types@1.3.11:
+    resolution: {integrity: sha512-1KGPpoxQWl9f6wcZh57LvrPIInQMn2TQ7jsgxqpRzg+l0QPOFvJVH7HmvHo/AiPgwXy+/Thf6Ov3EdVn1vOabg==}
 
   bytes@3.1.2:
     resolution: {integrity: sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==}
@@ -7869,11 +7901,6 @@ packages:
 
   semver@7.7.2:
     resolution: {integrity: sha512-RF0Fw+rO5AMf9MAyaRXI4AV0Ulj5lMHqVxxdSgiVbixSCXoEmmX/jk0CuJw4+3SqroYO9VoUh+HcuJivvtJemA==}
-    engines: {node: '>=10'}
-    hasBin: true
-
-  semver@7.7.3:
-    resolution: {integrity: sha512-SdsKMrI9TdgjdweUSR9MweHA4EJ8YxHn8DFaDisvhVlUOe4BF1tLD7GAj0lIqWVl+dPb/rExr0Btby5loQm20Q==}
     engines: {node: '>=10'}
     hasBin: true
 
@@ -14448,6 +14475,10 @@ snapshots:
     dependencies:
       '@babel/types': 7.29.0
 
+  '@types/bun@1.3.11':
+    dependencies:
+      bun-types: 1.3.11
+
   '@types/chai@5.2.3':
     dependencies:
       '@types/deep-eql': 4.0.2
@@ -16423,6 +16454,10 @@ snapshots:
     dependencies:
       node-gyp-build: 4.8.4
 
+  bun-types@1.3.11:
+    dependencies:
+      '@types/node': 22.19.3
+
   bytes@3.1.2: {}
 
   call-bind-apply-helpers@1.0.2:
@@ -17976,7 +18011,7 @@ snapshots:
 
   is-bun-module@2.0.0:
     dependencies:
-      semver: 7.7.3
+      semver: 7.7.4
 
   is-callable@1.2.7: {}
 
@@ -20101,8 +20136,6 @@ snapshots:
   semver@6.3.1: {}
 
   semver@7.7.2: {}
-
-  semver@7.7.3: {}
 
   semver@7.7.4: {}
 
