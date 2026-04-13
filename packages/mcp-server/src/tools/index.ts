@@ -123,6 +123,12 @@ export {
   createBlogTools,
   type BlogServices,
 } from './blog.js';
+export {
+  createSignalStationTools,
+  type SignalStationServices,
+  type StationState,
+  type CommandResult,
+} from './signal-station.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';
 import { createGalleryTools } from './gallery.js';
@@ -152,6 +158,7 @@ import { createBillingTools } from './billing.js';
 import { createGitHubIssueTools } from './github-issues.js';
 import { createDesignPartnerTools } from './design-partner.js';
 import { createBlogTools } from './blog.js';
+import { createSignalStationTools } from './signal-station.js';
 import type { ToolRegistry } from '../registry.js';
 
 /**
@@ -198,6 +205,8 @@ export interface AllServices {
   designPartner?: import('./design-partner.js').DesignPartnerServices;
   // Blog posting
   blog?: import('./blog.js').BlogServices;
+  // Signal space mining station governance
+  signalStation?: import('./signal-station.js').SignalStationServices;
 }
 
 /**
@@ -273,5 +282,8 @@ export function registerAllTools(
   } else {
     // Blog tools can run without a service (uses core publishBlogPost directly)
     registry.registerAll(createBlogTools({}));
+  }
+  if (services.signalStation) {
+    registry.registerAll(createSignalStationTools(services.signalStation));
   }
 }
