@@ -5,17 +5,21 @@
     "profileTitle": "{{name}} | RATI",
     "profileDescription": "Consultez le profil d'avatar de {{name}}, ses statistiques de burn, son énergie, ses liens et ses informations de jeton sur RATI.",
     "notFoundTitle": "Profil introuvable",
-    "errorTitle": "Erreur de profil"
+    "errorTitle": "Erreur de profil",
+    "blogTitle": "Blog de {{name}} | RATI",
+    "blogDescription": "Lisez les articles de {{name}} sur RATI"
   },
   "status": {
     "loadingProfile": "Chargement du profil...",
-    "maxTierReached": "Niveau maximal atteint !"
+    "maxTierReached": "Niveau maximal atteint !",
+    "noBlogPosts": "Aucun article de blog pour l'instant"
   },
   "errors": {
     "noAvatarSpecified": "Aucun avatar indiqué. Essayez de visiter avatar-id.rati.chat",
     "avatarNotFound": "Avatar \"{{avatarId}}\" introuvable",
     "failedToLoadProfile": "Impossible de charger le profil",
-    "failedToConnect": "Impossible de se connecter au serveur"
+    "failedToConnect": "Impossible de se connecter au serveur",
+    "postNotFound": "Article de blog introuvable"
   },
   "sections": {
     "burnStats": "Statistiques de burn",
@@ -34,13 +38,17 @@
     "progressTo": "Progression vers {{tier}}",
     "ratiToGo": "Encore {{amount}} RATI",
     "regeneratingAt": "Régénération à {{rate}}/heure",
-    "nextRefill": "Prochain +1 dans {{minutes}} min"
+    "nextRefill": "Prochain +1 dans {{minutes}} min",
+    "updated": "Mis à jour {{date}}"
   },
   "actions": {
     "openToken": "Ouvrir le jeton",
     "viewOnSolscan": "Voir sur Solscan",
     "copyAddress": "Copier l'adresse",
-    "copied": "Copié !"
+    "copied": "Copié !",
+    "backToProfile": "Retour au profil",
+    "backToPosts": "Retour aux articles",
+    "readMore": "Lire la suite"
   },
   "social": {
     "twitter": "Twitter",

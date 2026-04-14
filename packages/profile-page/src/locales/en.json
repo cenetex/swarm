@@ -5,17 +5,21 @@
     "profileTitle": "{{name}} | RATI",
     "profileDescription": "View {{name}}'s avatar profile, burn stats, energy, links, and token information on RATI.",
     "notFoundTitle": "Profile Not Found",
-    "errorTitle": "Profile Error"
+    "errorTitle": "Profile Error",
+    "blogTitle": "{{name}}'s Blog | RATI",
+    "blogDescription": "Read posts from {{name}} on RATI"
   },
   "status": {
     "loadingProfile": "Loading profile...",
-    "maxTierReached": "Max tier reached!"
+    "maxTierReached": "Max tier reached!",
+    "noBlogPosts": "No blog posts yet"
   },
   "errors": {
     "noAvatarSpecified": "No avatar specified. Try visiting avatar-id.rati.chat",
     "avatarNotFound": "Avatar \"{{avatarId}}\" not found",
     "failedToLoadProfile": "Failed to load profile",
-    "failedToConnect": "Failed to connect to server"
+    "failedToConnect": "Failed to connect to server",
+    "postNotFound": "Blog post not found"
   },
   "sections": {
     "burnStats": "Burn Stats",
@@ -34,13 +38,17 @@
     "progressTo": "Progress to {{tier}}",
     "ratiToGo": "{{amount}} RATI to go",
     "regeneratingAt": "Regenerating at {{rate}}/hour",
-    "nextRefill": "Next +1 in {{minutes}}m"
+    "nextRefill": "Next +1 in {{minutes}}m",
+    "updated": "Updated {{date}}"
   },
   "actions": {
     "openToken": "Open Token",
     "viewOnSolscan": "View on Solscan",
     "copyAddress": "Copy address",
-    "copied": "Copied!"
+    "copied": "Copied!",
+    "backToProfile": "Back to Profile",
+    "backToPosts": "Back to Posts",
+    "readMore": "Read More"
   },
   "social": {
     "twitter": "Twitter",
