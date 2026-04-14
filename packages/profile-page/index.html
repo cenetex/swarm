@@ -427,6 +427,209 @@
       color: var(--text-secondary);
     }
 
+    /* Blog Posts */
+    .blog-posts-list {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .blog-post-preview {
+      padding: 20px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-card);
+      transition: all 0.3s ease;
+    }
+
+    .blog-post-preview:hover {
+      border-color: var(--accent);
+      background: rgba(255, 107, 53, 0.05);
+    }
+
+    .blog-post-preview h2 {
+      margin: 0 0 12px 0;
+      font-size: 20px;
+    }
+
+    .blog-post-preview h2 a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .blog-post-preview h2 a:hover {
+      text-decoration: underline;
+    }
+
+    .blog-post-preview .post-image {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 6px;
+      margin: 12px 0;
+    }
+
+    .post-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .post-date {
+      display: flex;
+      align-items: center;
+    }
+
+    .post-updated {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .post-excerpt {
+      color: var(--text-secondary);
+      margin: 12px 0;
+      line-height: 1.6;
+    }
+
+    .blog-empty {
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    .blog-hint {
+      margin-top: 20px;
+    }
+
+    .blog-hint a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .blog-hint a:hover {
+      text-decoration: underline;
+    }
+
+    /* Blog Post Detail */
+    .blog-post-container {
+      max-width: 100%;
+    }
+
+    .blog-post {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .post-hero-image {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+    }
+
+    .post-header {
+      padding: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .post-header h1 {
+      font-size: 32px;
+      margin-bottom: 12px;
+    }
+
+    .post-content {
+      padding: 24px;
+      line-height: 1.8;
+    }
+
+    .post-content h1,
+    .post-content h2,
+    .post-content h3 {
+      margin: 24px 0 12px 0;
+      color: var(--text-primary);
+    }
+
+    .post-content h1 {
+      font-size: 28px;
+    }
+
+    .post-content h2 {
+      font-size: 24px;
+    }
+
+    .post-content h3 {
+      font-size: 20px;
+    }
+
+    .post-content p {
+      margin: 12px 0;
+      color: var(--text-secondary);
+    }
+
+    .post-content strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .post-content em {
+      font-style: italic;
+    }
+
+    .post-content a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .post-content a:hover {
+      text-decoration: underline;
+    }
+
+    .inline-code,
+    .code-block {
+      background: var(--bg-primary);
+      color: var(--accent);
+      font-family: 'Courier New', monospace;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .code-block {
+      display: block;
+      padding: 12px;
+      margin: 12px 0;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      line-height: 1.4;
+    }
+
+    .post-content ul,
+    .post-content ol {
+      margin: 12px 0 12px 24px;
+      color: var(--text-secondary);
+    }
+
+    .post-content li {
+      margin: 6px 0;
+    }
+
+    .post-footer {
+      padding: 24px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .blog-nav {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      margin-top: 24px;
+    }
+
     /* Responsive */
     @media (max-width: 480px) {
       .profile-header {
@@ -442,6 +645,18 @@
 
       .token-links {
         flex-direction: column;
+      }
+
+      .post-header h1 {
+        font-size: 24px;
+      }
+
+      .post-hero-image {
+        height: 200px;
+      }
+
+      .blog-post-preview h2 {
+        font-size: 18px;
       }
     }
   </style>

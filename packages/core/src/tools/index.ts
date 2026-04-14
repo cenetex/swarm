@@ -126,6 +126,23 @@ export const socialTools: ToolDefinition[] = [
 ];
 
 /**
+ * Publishing tools - write content to published channels
+ */
+export const publishingTools: ToolDefinition[] = [
+  {
+    name: 'write_blog_post',
+    description: 'Publish a blog post as markdown. Posts are live immediately and accessible at your profile URL.',
+    parameters: z.object({
+      title: z.string().describe('Blog post title'),
+      content: z.string().describe('Blog post content in markdown format'),
+      slug: z.string().optional().describe('URL slug (optional, auto-generated from title if not provided)'),
+      imageUrl: z.string().optional().describe('URL to a header image for the post'),
+    }),
+    execute: async () => ({ success: true }), // Executed by platform handler
+  },
+];
+
+/**
  * All public tools available to avatars
  */
 export const publicTools: ToolDefinition[] = [
@@ -133,6 +150,7 @@ export const publicTools: ToolDefinition[] = [
   ...mediaTools,
   ...walletTools,
   ...socialTools,
+  ...publishingTools,
 ];
 
 /**
@@ -150,6 +168,7 @@ export const toolCategories = {
   media: mediaTools.map(t => t.name),
   wallet: walletTools.map(t => t.name),
   social: socialTools.map(t => t.name),
+  publishing: publishingTools.map(t => t.name),
 } as const;
 
 /**
@@ -171,4 +190,6 @@ export const defaultAvatarTools = [
   // Social tools
   'remember',
   'recall',
+  // Publishing tools
+  'write_blog_post',
 ];

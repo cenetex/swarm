@@ -79,6 +79,24 @@ function getAvatarId() {
   return urlParams.get('avatar');
 }
 
+function getCurrentRoute() {
+  const pathname = window.location.pathname;
+  const pathParts = pathname.split('/').filter(Boolean);
+
+  // Remove index.html if present
+  if (pathParts[0] === 'index.html') {
+    pathParts.shift();
+  }
+
+  // Skip avatar ID for subdomain-based URLs
+  if (window.location.hostname.endsWith('.rati.chat')) {
+    return { page: pathParts[0] || 'profile', slug: pathParts[1] };
+  }
+
+  // For query string based URLs
+  return { page: pathParts[1] || 'profile', slug: pathParts[2] };
+}
+
 function setMeta(selector, attr, content) {
   const meta = document.querySelector(`meta[${attr}="${selector}"]`);
   if (meta) {
@@ -338,6 +356,106 @@ function renderBurnHistory(profile) {
   );
 }
 
+function markdownToHtml(markdown) {
+  let html = escapeHtml(markdown);
+
+  // Headers
+  html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+
+  // Bold
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/__( .*?)__/g, '<strong>$1</strong>');
+
+  // Italics
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  html = html.replace(/_(.*?)_/g, '<em>$1</em>');
+
+  // Inline code
+  html = html.replace(/`(.*?)`/g, '<code class="inline-code">$1</code>');
+
+  // Code blocks
+  html = html.replace(/```(.*?)\n([\s\S]*?)```/g, '<pre><code class="code-block">$2</code></pre>');
+
+  // Links
+  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
+
+  // Line breaks
+  html = html.replace(/\n\n/g, '</p><p>');
+  html = '<p>' + html + '</p>';
+
+  return html;
+}
+
+function renderBlogPostList(posts, avatarId) {
+  if (!posts || posts.length === 0) {
+    return `
+      <div class="blog-empty">
+        <p>${escapeHtml(t('status.noBlogPosts'))}</p>
+        <p class="blog-hint"><a href="/">${escapeHtml(t('actions.backToProfile'))}</a></p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="blog-posts-list">
+      ${posts
+        .map(
+          (post) => `
+            <article class="blog-post-preview">
+              <h2><a href="/posts/${escapeHtml(post.slug)}">${escapeHtml(post.title)}</a></h2>
+              ${post.imageUrl ? `<img src="${safeUrl(post.imageUrl)}" alt="${escapeHtml(post.title)}" class="post-image">` : ''}
+              <div class="post-meta">
+                <span class="post-date">${escapeHtml(formatDate(post.publishedAt))}</span>
+              </div>
+              <p class="post-excerpt">${escapeHtml((post.content || '').slice(0, 200)).replace(/\n/g, ' ')}...</p>
+              <a href="/posts/${escapeHtml(post.slug)}" class="btn btn-primary">${escapeHtml(t('actions.readMore'))}</a>
+            </article>
+          `
+        )
+        .join('')}
+      <div class="blog-nav">
+        <a href="/" class="btn">${escapeHtml(t('actions.backToProfile'))}</a>
+      </div>
+    </div>
+  `;
+}
+
+function renderBlogPost(post, avatarId) {
+  if (!post) {
+    return `
+      <div class="blog-post-container">
+        <div class="error">
+          <h2>${escapeHtml(t('errors.postNotFound'))}</h2>
+          <p><a href="/posts">${escapeHtml(t('actions.backToPosts'))}</a></p>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="blog-post-container">
+      <article class="blog-post">
+        ${post.imageUrl ? `<img src="${safeUrl(post.imageUrl)}" alt="${escapeHtml(post.title)}" class="post-hero-image">` : ''}
+        <header class="post-header">
+          <h1>${escapeHtml(post.title)}</h1>
+          <div class="post-meta">
+            <span class="post-date">${escapeHtml(formatDate(post.publishedAt))}</span>
+            ${post.updatedAt && post.updatedAt !== post.publishedAt ? `<span class="post-updated">${escapeHtml(t('labels.updated', { date: formatDate(post.updatedAt) }))}</span>` : ''}
+          </div>
+        </header>
+        <div class="post-content">
+          ${markdownToHtml(post.content)}
+        </div>
+        <footer class="post-footer">
+          <p><a href="/posts" class="btn">${escapeHtml(t('actions.backToPosts'))}</a></p>
+        </footer>
+      </article>
+    </div>
+  `;
+}
+
 function bindCopyButtons() {
   app.querySelectorAll('[data-copy-address]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -375,17 +493,44 @@ function renderProfile(profile) {
   bindCopyButtons();
 }
 
-async function fetchProfile(avatarId) {
-  const isLocalhost = window.location.hostname.includes('localhost');
-  const apiUrl = isLocalhost
-    ? `http://localhost:3001/api/profile/${encodeURIComponent(avatarId)}`
-    : `https://api.rati.chat/api/profile/${encodeURIComponent(avatarId)}`;
+function getApiUrl() {
+  return window.location.hostname.includes('localhost') ? 'http://localhost:3001' : 'https://api.rati.chat';
+}
 
+async function fetchProfile(avatarId) {
+  const apiUrl = `${getApiUrl()}/api/profile/${encodeURIComponent(avatarId)}`;
   const response = await fetch(apiUrl);
 
   if (!response.ok) {
     if (response.status === 404) {
       throw new Error('not-found');
+    }
+
+    throw new Error('load-failed');
+  }
+
+  return response.json();
+}
+
+async function fetchBlogPosts(avatarId) {
+  const apiUrl = `${getApiUrl()}/api/profile/${encodeURIComponent(avatarId)}/posts`;
+  const response = await fetch(apiUrl);
+
+  if (!response.ok) {
+    throw new Error('load-failed');
+  }
+
+  const data = await response.json();
+  return data.posts || [];
+}
+
+async function fetchBlogPost(avatarId, slug) {
+  const apiUrl = `${getApiUrl()}/api/profile/${encodeURIComponent(avatarId)}/posts/${encodeURIComponent(slug)}`;
+  const response = await fetch(apiUrl);
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      return null;
     }
 
     throw new Error('load-failed');
@@ -406,9 +551,38 @@ async function main() {
     return;
   }
 
+  const route = getCurrentRoute();
+
   try {
-    const profile = await fetchProfile(avatarId);
-    renderProfile(profile);
+    if (route.page === 'posts') {
+      // Blog posts route
+      if (route.slug) {
+        // Single blog post
+        const post = await fetchBlogPost(avatarId, route.slug);
+        if (!post) {
+          renderError(t('errors.postNotFound'), t('errors.postNotFound'));
+          return;
+        }
+
+        setPageMetadata(
+          post.title,
+          post.content.slice(0, 160)
+        );
+        app.innerHTML = renderBlogPost(post, avatarId);
+      } else {
+        // Blog posts list
+        const posts = await fetchBlogPosts(avatarId);
+        setPageMetadata(
+          t('meta.blogTitle', { name: avatarId }),
+          t('meta.blogDescription', { name: avatarId })
+        );
+        app.innerHTML = renderBlogPostList(posts, avatarId);
+      }
+    } else {
+      // Profile route (default)
+      const profile = await fetchProfile(avatarId);
+      renderProfile(profile);
+    }
   } catch (error) {
     if (error instanceof Error && error.message === 'not-found') {
       renderError(t('meta.notFoundTitle'), t('errors.avatarNotFound', { avatarId }));
