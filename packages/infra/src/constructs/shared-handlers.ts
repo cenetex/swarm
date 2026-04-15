@@ -372,6 +372,12 @@ export class SharedHandlers extends Construct {
       removalPolicy: logRemovalPolicy,
     });
 
+    const stationAgentRunnerLogGroup = new LogGroupWithRetention(this, 'StationAgentRunnerLogGroup', {
+      logGroupName: `/aws/lambda/swarm-${environment}${suffix}-station-agent-runner`,
+      retention: logRetention,
+      removalPolicy: logRemovalPolicy,
+    });
+
     const tweetSenderLogGroup = new LogGroupWithRetention(this, 'TweetSenderLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-tweet-sender`,
       retention: logRetention,
@@ -604,6 +610,32 @@ export class SharedHandlers extends Construct {
     const platformHeartbeatRule = new events.Rule(this, 'PlatformHeartbeatSchedule', {
       schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
       targets: [new targets.LambdaFunction(this.platformHeartbeat, {
+        deadLetterQueue: this.schedulerDlq,
+        retryAttempts: 2,
+        maxEventAge: cdk.Duration.hours(2),
+      })],
+    });
+
+    // Station Agent Runner - runs hourly, manages daily per-avatar timing internally
+    // Each avatar observes its Signal station and issues commands (prices, hails, builds)
+    const stationAgentRunner = new nodejs.NodejsFunction(this, 'StationAgentRunner', {
+      functionName: `swarm-${environment}${suffix}-station-agent-runner`,
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: path.join(handlersEntry, 'station/station-agent-runner.ts'),
+      handler: 'handler',
+      layers: dependencyLayer ? [dependencyLayer] : undefined,
+      role: lambdaRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 1024,
+      environment: commonEnv,
+      bundling: bundlingOptions,
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: stationAgentRunnerLogGroup.logGroup,
+    });
+
+    new events.Rule(this, 'StationAgentSchedule', {
+      schedule: events.Schedule.rate(cdk.Duration.hours(1)),
+      targets: [new targets.LambdaFunction(stationAgentRunner, {
         deadLetterQueue: this.schedulerDlq,
         retryAttempts: 2,
         maxEventAge: cdk.Duration.hours(2),
