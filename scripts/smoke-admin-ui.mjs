@@ -59,10 +59,12 @@ async function runSmoke() {
         return true;
       }
 
-      // API backend is not running during local/CI preview — proxy returns 500.
+      // API backend is not running during local/CI preview — proxy returns
+      // 500 (no target) or 502 (ECONNREFUSED from vite's proxy middleware).
+      // Both are expected when no admin-api lambda is up.
       if (
-        /Failed to load resource: the server responded with a status of 500/i.test(message) &&
-        /\/api\//i.test(locationUrl)
+        /Failed to load resource: the server responded with a status of 5\d{2}/i.test(message) &&
+        /\/(api|auth)\//i.test(locationUrl)
       ) {
         return true;
       }
