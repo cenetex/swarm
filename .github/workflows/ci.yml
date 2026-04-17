@@ -20,10 +20,17 @@ on:
       - 'scripts/generate-gtm-kpi-report.mjs'
       - 'LICENSE'
       - '.editorconfig'
+  # Required for GitHub's merge queue to validate PRs against main + prior
+  # queued PRs before they land, preventing the "each PR passes alone but
+  # breaks in combination" failure class (see #1223).
+  merge_group:
+    branches: [main]
 
 concurrency:
-  group: ci-${{ github.head_ref }}
-  cancel-in-progress: true
+  # PR runs cancel each other (latest push wins). Merge-queue runs must not
+  # cancel — each queued head commit has to finish for the queue to progress.
+  group: ci-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   NODE_VERSION: '20'
