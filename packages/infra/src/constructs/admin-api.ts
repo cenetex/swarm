@@ -1129,6 +1129,8 @@ export class AdminApiConstruct extends Construct {
         // Discord gateway runtime status (so admin API can report accurate health)
         DISCORD_GATEWAY_ENABLED: props.enableDiscordGateway ? 'true' : 'false',
         CDN_URL: cdnUrl || '',
+        // Gallery upload / media routes use S3 presigned URLs
+        MEDIA_BUCKET: mediaBucket?.bucketName || '',
         ...activeUserLimitEnvVars,
       },
       bundling: {
@@ -1143,6 +1145,9 @@ export class AdminApiConstruct extends Construct {
     // Grant permissions to avatars handler
     llmApiKey.grantRead(avatarsHandler);
     this.table.grantReadWriteData(avatarsHandler);
+    if (mediaBucket) {
+      mediaBucket.grantReadWrite(avatarsHandler);
+    }
     avatarsHandler.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['dynamodb:Query'],
@@ -1988,61 +1993,23 @@ export class AdminApiConstruct extends Construct {
       walletAuthHandler
     );
 
-    // Wallet auth routes
+    // Auth routes — single {proxy+} catch-all. The walletAuth Lambda already
+    // dispatches internally on event.rawPath (see wallet-auth.ts), so we
+    // collapse the nine explicit /auth/* routes into one. Saves 8 routes +
+    // 8 permissions vs. the per-endpoint pattern.
+    //
+    // Covered paths (internal dispatch in wallet-auth.ts / privy-auth.ts):
+    //   POST /auth/challenge, /auth/verify, /auth/logout
+    //   GET  /auth/me, /auth/gate-status
+    //   POST /auth/link/wallet/{challenge,verify}
+    //   POST /auth/privy/verify, /auth/link/privy/verify
+    //
+    // Per the Phase 0 ADR kill-switch list, Privy verification is slated to
+    // move to a standalone Lambda in a later phase; for now it shares the
+    // dispatch with wallet auth as it does today.
     this.api.addRoutes({
-      path: '/auth/challenge',
-      methods: [apigateway.HttpMethod.POST],
-      integration: walletAuthIntegration,
-    });
-
-    this.api.addRoutes({
-      path: '/auth/verify',
-      methods: [apigateway.HttpMethod.POST],
-      integration: walletAuthIntegration,
-    });
-
-    this.api.addRoutes({
-      path: '/auth/me',
-      methods: [apigateway.HttpMethod.GET],
-      integration: walletAuthIntegration,
-    });
-
-    this.api.addRoutes({
-      path: '/auth/logout',
-      methods: [apigateway.HttpMethod.POST],
-      integration: walletAuthIntegration,
-    });
-
-    // Wallet-link routes - link additional wallet identities to the current account
-    this.api.addRoutes({
-      path: '/auth/link/wallet/challenge',
-      methods: [apigateway.HttpMethod.POST],
-      integration: walletAuthIntegration,
-    });
-
-    this.api.addRoutes({
-      path: '/auth/link/wallet/verify',
-      methods: [apigateway.HttpMethod.POST],
-      integration: walletAuthIntegration,
-    });
-
-    // Privy auth routes - for email/social login via Privy
-    this.api.addRoutes({
-      path: '/auth/privy/verify',
-      methods: [apigateway.HttpMethod.POST],
-      integration: walletAuthIntegration,
-    });
-
-    this.api.addRoutes({
-      path: '/auth/link/privy/verify',
-      methods: [apigateway.HttpMethod.POST],
-      integration: walletAuthIntegration,
-    });
-
-    // Auth utility routes
-    this.api.addRoutes({
-      path: '/auth/gate-status',
-      methods: [apigateway.HttpMethod.GET],
+      path: '/auth/{proxy+}',
+      methods: [apigateway.HttpMethod.ANY],
       integration: walletAuthIntegration,
     });
 
