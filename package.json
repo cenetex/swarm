@@ -33,7 +33,6 @@
     "test:browser": "node scripts/test-browser.mjs",
     "issues:mirror": "node scripts/sync-issues-mirror.mjs",
     "issues:sync:internal": "node scripts/sync-internal-issues-to-github.mjs --config .github/policy/internal-issue-sync-policy.json --dry-run",
-    "issues:sync:internal:files": "INTERNAL_ISSUE_SOURCE=files INTERNAL_ISSUE_SOURCE_DIR=issues/staging node scripts/sync-internal-issues-to-github.mjs --config .github/policy/internal-issue-sync-policy.json --dry-run",
     "issues:sync:internal:apply": "node scripts/sync-internal-issues-to-github.mjs --config .github/policy/internal-issue-sync-policy.json --apply",
     "canary:telegram": "bun run scripts/telegram-canary.ts",
     "canary:twitter": "ENVIRONMENT=${ENVIRONMENT:-staging} bun run scripts/twitter-canary.ts",

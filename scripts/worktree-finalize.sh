@@ -59,12 +59,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Build list of issue numbers to process (empty = all)
-declare -A FILTER_SET
+# Build list of issue numbers to process (empty = all).
+# Uses a space-delimited string for bash-3 compatibility: macOS's /bin/bash
+# is 3.2 and does not support associative arrays (`declare -A`).
+FILTER_SET=""
 if [ -n "$ISSUE_FILTER" ]; then
   IFS=',' read -ra NUMS <<< "$ISSUE_FILTER"
   for n in "${NUMS[@]}"; do
-    FILTER_SET["$n"]=1
+    FILTER_SET="${FILTER_SET} ${n} "
   done
 fi
 
@@ -74,7 +76,7 @@ for dir in "${WORKTREE_DIR}/${WORKTREE_PREFIX}"*; do
   [ -d "$dir" ] || continue
   # Extract issue number from directory name (e.g., aws-swarm-310 → 310)
   num=$(basename "$dir" | sed "s/^${WORKTREE_PREFIX}//")
-  if [ -n "$ISSUE_FILTER" ] && [ -z "${FILTER_SET[$num]:-}" ]; then
+  if [ -n "$ISSUE_FILTER" ] && [[ "$FILTER_SET" != *" ${num} "* ]]; then
     continue
   fi
   WORKTREES+=("$dir")

@@ -74,3 +74,7 @@ packages/infra/cdk.out.prod/*
 packages/infra/prod-resource-mapping.json
 migrations/
 .claude/
+
+# Ephemeral issue-harvest outputs from scripts/download-issues.sh
+issues/staging/
+issues/prod/

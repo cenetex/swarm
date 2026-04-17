@@ -17,3 +17,7 @@ GitHub Issues is the **only** source of truth for issue lifecycle (open/close/st
 This directory previously held hand-maintained JSON/YAML mirror files (`features/`, `bugs/`, `staging/`, `tech-debt/`, `docs/`, `closed/`). None carried a `githubIssue` pointer and they drifted from GitHub. They were retired on 2026-04-17 (see PR for #1380). `issues/archive/` preserves the 2026-03-08 snapshot for history.
 
 Do not repopulate by hand. Any future local mirror must be a read-only snapshot generated from GitHub (e.g., `node scripts/sync-issues-mirror.mjs` → `issues/GITHUB-OPEN-ISSUES.md`).
+
+## Ephemeral harvest directories
+
+`issues/staging/` and `issues/prod/` are created on demand by `scripts/download-issues.sh`, which pulls avatar-reported issues (via `report_issue`) and user feedback (via `report_user_feedback`) out of CloudWatch Logs. These directories are gitignored and should never be committed — they're ephemeral local state, not source of truth. If you need to examine a harvested issue, run the script locally and read the output from your working copy.
