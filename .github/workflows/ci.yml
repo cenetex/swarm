@@ -146,7 +146,14 @@ jobs:
       - name: Build (TypeScript + Admin UI)
         env:
           VITE_API_URL: /api
-          VITE_PRIVY_APP_ID: ${{ secrets.VITE_PRIVY_APP_ID }}
+          # Fall back to a committed mock ID when the secret isn't available
+          # (dependabot PRs don't receive repo/environment secrets). The mock
+          # is not a valid Privy app ID — the smoke test only verifies the
+          # UI shell boots and doesn't render the "Privy is not configured"
+          # banner. Privy auth calls will fail, but the smoke script's
+          # allowed-errors list (scripts/smoke-admin-ui.mjs) already tolerates
+          # the resulting analytics/iframe errors. See #1394.
+          VITE_PRIVY_APP_ID: ${{ secrets.VITE_PRIVY_APP_ID || 'clsmoketest0000000000000' }}
         run: pnpm build
 
       - name: Install Playwright Chromium
