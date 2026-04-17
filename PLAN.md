@@ -2,7 +2,7 @@
 
 Goal: deliver a stable platform with reliable admin UX, complete account identity flows, and production-grade multi-platform parity. Execution is entirely issue-driven, not milestone-driven.
 
-**Last reviewed:** 2026-03-24
+**Last reviewed:** 2026-04-17
 
 > **Issue-indexed execution model.** This plan is a directional overlay on top of the GitHub issue queue. The issue queue (`is:open is:issue` sorted by priority/labels) is the canonical execution backlog. Items in this document that lack issue references are narrative goals -- they describe desired outcomes but are not scheduled until decomposed into issues with acceptance criteria. See [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), and [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md) for the current execution rules.
 

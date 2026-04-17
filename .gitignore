@@ -45,6 +45,9 @@ packages/infra/cdk.context.local.json
 .DS_Store
 Thumbs.db
 
+# Stale issue-mirror state files (retired 2026-04-17)
+.issues-downloaded-*.json
+
 # Logs
 *.log
 logs/

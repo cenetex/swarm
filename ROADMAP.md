@@ -2,7 +2,7 @@
 
 This roadmap focuses on product and platform direction. It is a **directional overlay** on top of the GitHub issue queue, which is the canonical execution backlog.
 
-**Last reviewed:** 2026-03-24
+**Last reviewed:** 2026-04-17
 
 > **Issue-indexed execution model.** Every actionable item starts as a GitHub issue. Execution is pull-driven from the open issue queue, not push-driven by milestones. Active work is identified by labels (`type:*`, `priority:*`), not milestone assignment. See [CLAUDE.md](CLAUDE.md) for WIP caps, execution rules, and the issue-readiness checklist. When the issue queue and this document conflict, the issue queue wins.
 
@@ -15,7 +15,7 @@ The GitHub issue queue is the authoritative execution backlog. This roadmap desc
 - See [PLAN.md](PLAN.md) and [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md) for execution rules and workflows
 - Portfolio-informed candidate lanes: [docs/PORTFOLIO-INSPIRED-ROADMAP.md](docs/PORTFOLIO-INSPIRED-ROADMAP.md)
 
-## Current state (as of 2026-03-24)
+## Current state (as of 2026-04-17)
 
 - **M1 shipped (v1.0.1) and verified in staging.** All platform foundations complete: auth/onboarding, entitlements, Telegram full parity, memory management, audit logging, operational infrastructure.
 - **M2+ work is issue-driven, not milestone-driven.** Milestones (`Roadmap: Now`, `Roadmap: Next`, `Roadmap: Later`) are no longer the execution queue. Active work lives as labeled, open GitHub issues.
