@@ -16,8 +16,8 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1014.0",
     "@aws-sdk/client-cloudwatch-logs": "^3.1014.0",
-    "@aws-sdk/client-ecs": "^3.1014.0",
     "@aws-sdk/client-dynamodb": "^3.1019.0",
+    "@aws-sdk/client-ecs": "^3.1014.0",
     "@aws-sdk/client-kms": "^3.1014.0",
     "@aws-sdk/client-lambda": "^3.1014.0",
     "@aws-sdk/client-s3": "^3.1014.0",
@@ -35,7 +35,7 @@
     "ethers": "^6.16.0",
     "ffmpeg-static": "^5.2.0",
     "form-data": "^4.0.1",
-    "jimp": "^1.6.0",
+    "jimp": "^1.6.1",
     "sharp": "^0.34.5",
     "tweetnacl": "^1.0.3",
     "twitter-api-v2": "^1.29.0",
