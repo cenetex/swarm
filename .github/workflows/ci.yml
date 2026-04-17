@@ -155,6 +155,54 @@ jobs:
       - name: Run Admin UI smoke test
         run: node scripts/smoke-admin-ui.mjs
 
+  # Observe-only: catches the "each PR passes alone but breaks in combination"
+  # lockfile flood by re-merging origin/main into the PR head before frozen
+  # install. Not in the required-checks gate (see ci: below) — if it flakes,
+  # PRs aren't blocked. Promote to required after one stable week. See #1389.
+  lockfile-composes-with-main:
+    name: Lockfile composes with main
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Configure merge identity
+        run: |
+          git config user.email "ci-lockfile-check@local"
+          git config user.name "ci-lockfile-check"
+
+      - name: Merge origin/main into PR head
+        id: merge
+        run: |
+          git fetch origin main
+          if git merge origin/main --no-edit; then
+            echo "merged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Merge conflict with origin/main — skipping lockfile composition check (PR needs manual rebase anyway)"
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+            git merge --abort
+            exit 0
+          fi
+
+      - name: Setup pnpm
+        if: steps.merge.outputs.merged == 'true'
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+
+      - name: Setup Node.js
+        if: steps.merge.outputs.merged == 'true'
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install with frozen lockfile against merged tree
+        if: steps.merge.outputs.merged == 'true'
+        run: pnpm install --frozen-lockfile
+
   # Unified gate: configure this as the single required status check.
   #
   # Safety net: lint catches code quality issues, smoke test catches UI

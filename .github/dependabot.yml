@@ -13,7 +13,10 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    # Serialize dependabot: one open PR per ecosystem at a time. See #1389.
+    # Prevents the "each PR passes alone but breaks in combination" lockfile
+    # flood observed on 2026-03-27. Tune up once merge queue is available.
+    open-pull-requests-limit: 1
     groups:
       minor-and-patch:
         update-types:
@@ -29,7 +32,10 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    # Serialize dependabot: one open PR per ecosystem at a time. See #1389.
+    # Prevents the "each PR passes alone but breaks in combination" lockfile
+    # flood observed on 2026-03-27. Tune up once merge queue is available.
+    open-pull-requests-limit: 1
     groups:
       actions-minor-and-patch:
         update-types:
