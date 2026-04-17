@@ -1,5 +1,5 @@
 /**
- * Signal Station Tools
+ * Signal Station Tools.
  *
  * MCP tools for governing stations in the Signal space mining game.
  * An avatar can observe station state (inventory, asteroids, players,
