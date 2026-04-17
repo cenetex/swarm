@@ -1,12 +1,11 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Entitlements Service
- * 
+ *
  * Manages plan-based entitlements for avatars including:
  * - Plan assignment and limits
  * - Usage tracking and enforcement
  * - Memory configuration based on plan
- * 
+ *
  * M1 Implementation: Manual entitlements first, Stripe integration later.
  */
 import {
@@ -24,6 +23,7 @@ import {
   PLAN_DEFAULTS,
 } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createAvatarLogger } from '../structured-logger.js';
 import { emitMetric } from '@swarm/core';
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
@@ -370,7 +370,9 @@ export async function clearStripeDataForAvatar(
   }
 
   if (clearedCount > 0) {
-    console.log(`[Entitlements] Cleared Stripe data from ${clearedCount} entitlement(s) for avatar=${avatarId}`);
+    createAvatarLogger(avatarId, 'billing').info('stripe', 'stripe_data_cleared', {
+      clearedCount,
+    });
   }
 
   return clearedCount;
@@ -476,8 +478,8 @@ export async function checkLimit(
   try {
     entitlement = await getEntitlement(avatarId);
   } catch (err) {
-    console.error('[Entitlements] getEntitlement failed, falling back to free tier', {
-      avatarId,
+    createAvatarLogger(avatarId, 'billing').error('entitlement', 'entitlement_lookup_failed', {
+      message: 'getEntitlement failed, falling back to free tier',
       error: err instanceof Error ? err.message : String(err),
     });
     // Emit EMF metric so CloudWatch can alarm on sustained fallback rate

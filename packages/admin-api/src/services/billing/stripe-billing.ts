@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Stripe Billing Service
  *
@@ -8,6 +7,9 @@
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { createHmac, timingSafeEqual } from 'crypto';
 import type { EntitlementRecord, PlanType } from '../../types.js';
+import { createSystemLogger } from '../structured-logger.js';
+
+const log = createSystemLogger('stripe-billing');
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const WEBHOOK_TOLERANCE_SECONDS = 300;
@@ -76,7 +78,9 @@ async function getSecretValue(secretArn: string): Promise<string | null> {
     );
     return response.SecretString || null;
   } catch (error) {
-    console.error('[StripeBilling] Failed to fetch secret from Secrets Manager:', error instanceof Error ? error.message : String(error));
+    log.error('secrets', 'secret_fetch_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
