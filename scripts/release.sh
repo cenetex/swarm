@@ -94,10 +94,10 @@ else
 
   # 6. Test
   echo "[PREFLIGHT] Running tests..."
-  if bun test > /dev/null 2>&1; then
+  if pnpm test > /dev/null 2>&1; then
     preflight_pass "Running tests"
   else
-    preflight_fail "Running tests" "bun test had failures."
+    preflight_fail "Running tests" "pnpm test had failures."
   fi
 
   # 7. Audit
