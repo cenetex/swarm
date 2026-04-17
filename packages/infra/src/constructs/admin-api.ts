@@ -1032,7 +1032,7 @@ export class AdminApiConstruct extends Construct {
 
     this.api.addRoutes({
       path: '/transcribe',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: transcribeIntegration,
     });
 
@@ -1076,7 +1076,7 @@ export class AdminApiConstruct extends Construct {
 
     this.api.addRoutes({
       path: '/shared-chat/{proxy+}',
-      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.POST],
       integration: sharedChatIntegration,
     });
 
@@ -1644,7 +1644,7 @@ export class AdminApiConstruct extends Construct {
     // Public profile route: GET /api/profile/{avatarId}
     this.api.addRoutes({
       path: '/api/profile/{avatarId}',
-      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.GET],
       integration: publicProfileIntegration,
     });
 
@@ -1681,7 +1681,7 @@ export class AdminApiConstruct extends Construct {
     // Leaderboard route: GET /api/leaderboard
     this.api.addRoutes({
       path: '/api/leaderboard',
-      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.GET],
       integration: leaderboardIntegration,
     });
 
@@ -1807,13 +1807,13 @@ export class AdminApiConstruct extends Construct {
     // OpenAI-compatible routes
     this.api.addRoutes({
       path: '/v1/chat/completions',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: openaiCompatIntegration,
     });
 
     this.api.addRoutes({
       path: '/v1/models',
-      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.GET],
       integration: openaiCompatIntegration,
     });
 
@@ -1928,7 +1928,7 @@ export class AdminApiConstruct extends Construct {
 
     this.api.addRoutes({
       path: '/prompt-preview',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: promptPreviewIntegration,
     });
 
@@ -1991,58 +1991,58 @@ export class AdminApiConstruct extends Construct {
     // Wallet auth routes
     this.api.addRoutes({
       path: '/auth/challenge',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: walletAuthIntegration,
     });
 
     this.api.addRoutes({
       path: '/auth/verify',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: walletAuthIntegration,
     });
 
     this.api.addRoutes({
       path: '/auth/me',
-      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.GET],
       integration: walletAuthIntegration,
     });
 
     this.api.addRoutes({
       path: '/auth/logout',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: walletAuthIntegration,
     });
 
     // Wallet-link routes - link additional wallet identities to the current account
     this.api.addRoutes({
       path: '/auth/link/wallet/challenge',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: walletAuthIntegration,
     });
 
     this.api.addRoutes({
       path: '/auth/link/wallet/verify',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: walletAuthIntegration,
     });
 
     // Privy auth routes - for email/social login via Privy
     this.api.addRoutes({
       path: '/auth/privy/verify',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: walletAuthIntegration,
     });
 
     this.api.addRoutes({
       path: '/auth/link/privy/verify',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: walletAuthIntegration,
     });
 
     // Auth utility routes
     this.api.addRoutes({
       path: '/auth/gate-status',
-      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.GET],
       integration: walletAuthIntegration,
     });
 
@@ -2092,20 +2092,20 @@ export class AdminApiConstruct extends Construct {
 
     this.api.addRoutes({
       path: '/billing/checkout',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: billingIntegration,
     });
 
     this.api.addRoutes({
       path: '/billing/portal',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: billingIntegration,
     });
 
     // Public webhook endpoint (signature-verified in handler)
     this.api.addRoutes({
       path: '/webhook/stripe',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: billingIntegration,
     });
 
@@ -2142,13 +2142,13 @@ export class AdminApiConstruct extends Construct {
 
     this.api.addRoutes({
       path: '/consent',
-      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.POST],
       integration: consentIntegration,
     });
 
     this.api.addRoutes({
       path: '/consent/revoke',
-      methods: [apigateway.HttpMethod.POST, apigateway.HttpMethod.OPTIONS],
+      methods: [apigateway.HttpMethod.POST],
       integration: consentIntegration,
     });
 
