@@ -498,6 +498,9 @@ async function handleListModels(
   try {
     // If API key is scoped to a specific avatar, only return that one
     if (validation.avatarId) {
+      // NOTE (#1385): metadata-only listing, not a chat/tool invocation.
+      // Ownership enforcement lives at `handleChatCompletions` below where
+      // the avatar record is actually used to serve a completion.
       const avatar = await avatars.getAvatar(validation.avatarId);
       if (!avatar) {
         return jsonResponse(200, { object: 'list', data: [] }, corsHeaders);
@@ -620,6 +623,9 @@ async function handleGetModel(
       return errorResponse(403, 'API key does not have access to this avatar', 'permission_error', 'access_denied', corsHeaders);
     }
 
+    // NOTE (#1385): metadata-only model lookup, not a chat/tool invocation.
+    // Ownership enforcement lives at `handleChatCompletions` below where
+    // the avatar record is actually used to serve a completion.
     const avatar = await avatars.getAvatar(avatarId);
     if (!avatar) {
       return errorResponse(404, `Model not found: ${modelId}`, 'not_found', 'model_not_found', corsHeaders);
@@ -734,8 +740,35 @@ async function handleChatCompletions(
     return errorResponse(403, `API key not authorized for avatar: ${avatarId}`, 'permission_error', 'unauthorized_avatar', corsHeaders);
   }
 
-  // Get avatar record
-  const avatarRecord = await avatars.getAvatar(avatarId);
+  // #1385: enforce current NFT ownership before serving a completion.
+  // Admin bypass is not used on this endpoint — API keys carry their own
+  // scope (see `validation.avatarId` check above).
+  let avatarRecord: Awaited<ReturnType<typeof avatars.getAvatar>>;
+  try {
+    avatarRecord = await avatars.assertAvatarOwnership(avatarId, validation.session.userId, {
+      isAdmin: false,
+    });
+  } catch (err) {
+    if (err instanceof avatars.AvatarOwnershipError) {
+      if (err.code === 'verification_unavailable') {
+        return errorResponse(
+          503,
+          'Ownership verification temporarily unavailable',
+          'server_error',
+          'ownership_verification_unavailable',
+          corsHeaders,
+        );
+      }
+      return errorResponse(
+        404,
+        `Avatar not found: ${avatarId}`,
+        'not_found',
+        'avatar_not_found',
+        corsHeaders,
+      );
+    }
+    throw err;
+  }
   if (!avatarRecord) {
     return errorResponse(404, `Avatar not found: ${avatarId}`, 'not_found', 'avatar_not_found', corsHeaders);
   }

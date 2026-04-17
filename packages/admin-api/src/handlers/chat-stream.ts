@@ -275,6 +275,9 @@ export async function handler(
       getAvatar: avatars.getAvatar,
       corsHeaders,
       publicAvatarId,
+      // #1385 — gate owner access on current NFT ownership, not stale creatorWallet.
+      assertOwnership: (avatarId, walletAddress) =>
+        avatars.assertAvatarOwnership(avatarId, walletAddress, { isAdmin: false }),
     });
 
     // Parse request

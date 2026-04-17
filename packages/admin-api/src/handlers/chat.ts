@@ -295,7 +295,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     const publicAvatarId = resolvePublicAvatarIdFromRequest(event);
     const publicAccess = Boolean(publicAvatarId);
     const ensureAvatarAccess = createAvatarAccessChecker({
-      isAdmin, session, getAvatar: avatars.getAvatar, corsHeaders, publicAvatarId,
+      isAdmin,
+      session,
+      getAvatar: avatars.getAvatar,
+      corsHeaders,
+      publicAvatarId,
+      // #1385 — gate owner access on current NFT ownership, not stale creatorWallet.
+      assertOwnership: (avatarId, walletAddress) =>
+        avatars.assertAvatarOwnership(avatarId, walletAddress, { isAdmin: false }),
     });
 
     if (method === 'GET') return handleGetHistory(event, session, ensureAvatarAccess, corsHeaders);

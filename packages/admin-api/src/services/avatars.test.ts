@@ -6,8 +6,17 @@ import { _setDynamoClient } from './dynamo-client.js';
 import * as configSync from './config-sync.js';
 
 // Dynamic import with query param to bypass vi.mock() from handler tests
-const { deleteAvatar } = await import('./avatars.js?test');
+const {
+  deleteAvatar,
+  assertAvatarOwnership,
+  AvatarOwnershipError,
+} = await import('./avatars.js?test');
 type DeleteAvatarDeps = import('./avatars.js').DeleteAvatarDeps;
+
+// Cache-layer mock lives in a separate module — mock it directly so the
+// avatars.ts code under test calls our stub rather than Helius.
+import * as nftOwnershipCache from './nft-ownership-cache.js';
+import * as auditLog from './audit-log.js';
 
 const session = {
   email: 'test@example.com',
@@ -107,6 +116,116 @@ describe('avatars deleteAvatar', () => {
         sk: 'AVATAR',
       },
     });
+  });
+});
+
+// ── assertAvatarOwnership (#1385) ───────────────────────────────────────────
+describe('avatars assertAvatarOwnership', () => {
+  let sendMock: ReturnType<typeof spyOn>;
+  let getCachedNFTOwnerSpy: ReturnType<typeof spyOn>;
+  let recordAuditEventSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    process.env.ADMIN_TABLE = 'test-admin-table';
+    const mockClient = { send: async () => ({}) };
+    sendMock = spyOn(mockClient, 'send');
+    _setDynamoClient(mockClient as unknown as DynamoDBDocumentClient);
+
+    getCachedNFTOwnerSpy = spyOn(nftOwnershipCache, 'getCachedNFTOwner');
+    recordAuditEventSpy = spyOn(auditLog, 'recordAuditEvent').mockResolvedValue({
+      id: 'audit-1',
+      avatarId: 'avatar-1',
+      eventType: 'avatar_ownership_denied',
+      actorId: 'x',
+      actorType: 'owner',
+      details: {},
+      timestamp: Date.now(),
+    });
+  });
+
+  afterEach(() => {
+    _setDynamoClient(null);
+    getCachedNFTOwnerSpy.mockRestore();
+    recordAuditEventSpy.mockRestore();
+  });
+
+  function mockAvatarFound(avatar: AvatarRecord): void {
+    sendMock.mockImplementation(async (command: unknown) => {
+      if (command instanceof GetCommand) {
+        return { Item: avatar };
+      }
+      return {};
+    });
+  }
+
+  it('throws not_found when avatar does not exist', async () => {
+    sendMock.mockImplementation(async () => ({}));
+    const promise = assertAvatarOwnership('missing', 'wallet-1');
+    await expect(promise).rejects.toBeInstanceOf(AvatarOwnershipError);
+    await expect(promise).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('non-NFT avatar: returns record when creatorWallet matches', async () => {
+    const avatar = makeAvatar({ creatorWallet: 'wallet-match' });
+    mockAvatarFound(avatar);
+    const result = await assertAvatarOwnership('nft-avatar', 'wallet-match');
+    expect(result.avatarId).toBe('nft-avatar');
+    expect(getCachedNFTOwnerSpy).not.toHaveBeenCalled();
+  });
+
+  it('non-NFT avatar: throws not_owner on wallet mismatch', async () => {
+    const avatar = makeAvatar({ creatorWallet: 'wallet-other' });
+    mockAvatarFound(avatar);
+    await expect(assertAvatarOwnership('nft-avatar', 'wallet-me')).rejects.toMatchObject({
+      code: 'not_owner',
+    });
+    expect(getCachedNFTOwnerSpy).not.toHaveBeenCalled();
+  });
+
+  it('NFT avatar: returns record when cached owner matches caller', async () => {
+    const avatar = makeAvatar({ creatorWallet: 'original', nftMint: 'mint-1' });
+    mockAvatarFound(avatar);
+    getCachedNFTOwnerSpy.mockResolvedValue('current-holder' as never);
+
+    const result = await assertAvatarOwnership('nft-avatar', 'current-holder');
+    expect(result.nftMint).toBe('mint-1');
+    expect(getCachedNFTOwnerSpy).toHaveBeenCalledWith('mint-1');
+  });
+
+  it('NFT avatar: throws nft_revoked when current owner differs', async () => {
+    const avatar = makeAvatar({ creatorWallet: 'original', nftMint: 'mint-1' });
+    mockAvatarFound(avatar);
+    getCachedNFTOwnerSpy.mockResolvedValue('new-holder' as never);
+
+    await expect(assertAvatarOwnership('nft-avatar', 'original')).rejects.toMatchObject({
+      code: 'nft_revoked',
+    });
+    expect(recordAuditEventSpy).toHaveBeenCalled();
+  });
+
+  it('NFT avatar: throws verification_unavailable when cache throws', async () => {
+    const avatar = makeAvatar({ creatorWallet: 'original', nftMint: 'mint-1' });
+    mockAvatarFound(avatar);
+    getCachedNFTOwnerSpy.mockRejectedValue(new Error('helius down'));
+
+    await expect(assertAvatarOwnership('nft-avatar', 'original')).rejects.toMatchObject({
+      code: 'verification_unavailable',
+    });
+  });
+
+  it('admin bypass: returns record even when wallet would not match', async () => {
+    const avatar = makeAvatar({ creatorWallet: 'other', nftMint: 'mint-1' });
+    mockAvatarFound(avatar);
+    // Helius would normally be called — prove it isn't under admin bypass.
+    getCachedNFTOwnerSpy.mockImplementation(() => {
+      throw new Error('admin bypass should short-circuit before Helius');
+    });
+
+    const result = await assertAvatarOwnership('nft-avatar', 'unrelated-admin-wallet', {
+      isAdmin: true,
+    });
+    expect(result.avatarId).toBe('nft-avatar');
+    expect(getCachedNFTOwnerSpy).not.toHaveBeenCalled();
   });
 });
 

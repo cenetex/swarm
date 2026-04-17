@@ -67,7 +67,7 @@ async function getHeliusApiKey(): Promise<string | null> {
   return null;
 }
 
-async function getHeliusRpcUrl(): Promise<string | null> {
+export async function getHeliusRpcUrl(): Promise<string | null> {
   const apiKey = await getHeliusApiKey();
   // DAS API methods like getAssetsByOwner only work with Helius, not public RPC
   return apiKey
@@ -627,8 +627,15 @@ async function getClaimedNFTMints(): Promise<Set<string>> {
 }
 
 /**
- * Verify that a wallet currently owns a specific NFT
- * Used to check ownership before allowing access to NFT-backed avatars
+ * Verify that a wallet currently owns a specific NFT.
+ * Used to check ownership before allowing access to NFT-backed avatars.
+ *
+ * NOTE: This performs an unconditional Helius RPC call. For request-path
+ * checks (chat, avatar GET/PUT, OpenAI-compat completions) use
+ * `services/nft-ownership-cache.ts::getCachedNFTOwner` instead — it adds a
+ * short-TTL cache so we don't hit Helius on every access. This raw helper
+ * is retained for claim-time verification, where a cold check is required.
+ * See #1385 for the enforcement wiring.
  */
 export async function verifyNFTOwnership(
   walletAddress: string,

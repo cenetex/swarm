@@ -26,6 +26,11 @@ import {
   type ClaimableNFT,
 } from './web3/nft-gate.js';
 import { storeSecret, deleteAllAvatarSecrets } from './secrets.js';
+import {
+  getCachedNFTOwner,
+  invalidateNFTOwnerCache,
+} from './nft-ownership-cache.js';
+import { recordAuditEvent } from './audit-log.js';
 import { registerTelegramWebhook, generateWebhookSecret } from './telegram.js';
 import {
   registerHomeChannel,
@@ -871,6 +876,17 @@ export async function createAvatarFromNFT(
   // Sync to state table
   await syncAvatarConfig(avatar);
 
+  // #1385: a fresh claim guarantees the NFT just moved — bust any cached
+  // owner row so the first access goes to Helius instead of serving stale.
+  try {
+    await invalidateNFTOwnerCache(nft.mint);
+  } catch (err) {
+    console.warn(
+      `[Avatars] Failed to invalidate NFT owner cache after claim (mint=${nft.mint.slice(0, 8)}...):`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
   console.log(`[Avatars] Created NFT avatar=${avatarId} from mint=${nft.mint.slice(0, 8)}... by wallet=${creatorWallet.slice(0, 8)}...`);
 
   // GTM funnel: F2 — avatar created from NFT
@@ -884,40 +900,152 @@ export async function createAvatarFromNFT(
 }
 
 /**
- * Get an avatar with NFT ownership verification
- * For NFT-backed avatars, verifies the wallet still owns the NFT
- * Returns null if the avatar is inaccessible (NFT sold)
+ * Error thrown by `assertAvatarOwnership` when a caller cannot be granted
+ * access to an avatar. The `code` field disambiguates the failure so the
+ * caller can map it to an HTTP status:
  *
- * TODO(#857): This function exists but is NOT wired into the normal avatar
- * access path (e.g. GET /avatars/:id, chat routes, tool execution). NFT-backed
- * avatars remain accessible after the backing NFT is transferred. To enforce
- * revocation, call this instead of getAvatar() in the request middleware —
- * but be aware it adds a Helius RPC call per request for NFT-backed avatars.
+ *   - `not_found`                 → 404 (avatar does not exist)
+ *   - `not_owner`                 → 404 (non-NFT avatar, creatorWallet mismatch)
+ *   - `nft_revoked`               → 404 (NFT was transferred away from caller)
+ *   - `verification_unavailable`  → 503 (Helius unreachable, fail-closed)
+ *
+ * Using 404 for both `not_owner` and `nft_revoked` preserves the existing
+ * "don't leak existence to unauthorized callers" semantics of crud.ts.
+ */
+export type AvatarOwnershipErrorCode =
+  | 'not_found'
+  | 'not_owner'
+  | 'nft_revoked'
+  | 'verification_unavailable';
+
+export class AvatarOwnershipError extends Error {
+  readonly code: AvatarOwnershipErrorCode;
+
+  constructor(params: { code: AvatarOwnershipErrorCode; message?: string }) {
+    super(params.message ?? params.code);
+    this.name = 'AvatarOwnershipError';
+    this.code = params.code;
+  }
+}
+
+/**
+ * Best-effort audit event for an ownership-denial branch. We extend the
+ * existing AuditEventType union with `avatar_ownership_denied` elsewhere
+ * (see audit-log.ts). Failures to record are swallowed — audit logging
+ * must never take the request path down.
+ */
+async function recordOwnershipAudit(
+  avatarId: string,
+  actorId: string,
+  code: AvatarOwnershipErrorCode,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    await recordAuditEvent({
+      avatarId,
+      eventType: 'avatar_ownership_denied',
+      actorId: actorId || 'unknown',
+      actorType: 'owner',
+      details: { code, ...extra },
+    });
+  } catch (err) {
+    console.warn(
+      `[Avatars] Failed to record ownership audit event for avatar=${avatarId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
+/**
+ * Unified avatar-access gate.
+ *
+ * This is the ONE entry point that every admin-api request path should use
+ * to resolve an avatar on behalf of a caller. It handles:
+ *
+ *   - admin bypass (when `opts.isAdmin === true`)
+ *   - non-NFT avatars — straight `creatorWallet === walletAddress` check
+ *   - NFT-backed avatars — current on-chain owner compared against the
+ *     caller, via the cached Helius lookup in `nft-ownership-cache.ts`.
+ *     This re-verifies on every access (subject to the cache TTL) so that
+ *     transferring the backing NFT revokes access within ~1 minute.
+ *
+ * Throws `AvatarOwnershipError` on any failure path so callers can map the
+ * `code` to an HTTP status (see `AvatarOwnershipErrorCode`).
+ */
+export async function assertAvatarOwnership(
+  avatarId: string,
+  walletAddress: string,
+  opts?: { isAdmin?: boolean },
+): Promise<AvatarRecord> {
+  const avatar = await getAvatar(avatarId);
+  if (!avatar) {
+    throw new AvatarOwnershipError({ code: 'not_found' });
+  }
+
+  // Admin bypass — same semantics as today's handler-level admin check.
+  if (opts?.isAdmin === true) {
+    return avatar;
+  }
+
+  // Non-NFT avatars: legacy creatorWallet-equality gate.
+  if (!avatar.nftMint) {
+    if (!walletAddress || avatar.creatorWallet !== walletAddress) {
+      await recordOwnershipAudit(avatarId, walletAddress, 'not_owner');
+      throw new AvatarOwnershipError({ code: 'not_owner' });
+    }
+    return avatar;
+  }
+
+  // NFT-backed avatars: re-verify current ownership via cached Helius.
+  let currentOwner: string | null;
+  try {
+    currentOwner = await getCachedNFTOwner(avatar.nftMint);
+  } catch (err) {
+    await recordOwnershipAudit(avatarId, walletAddress, 'verification_unavailable', {
+      mintPrefix: avatar.nftMint.slice(0, 8),
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw new AvatarOwnershipError({ code: 'verification_unavailable' });
+  }
+
+  if (!walletAddress || currentOwner !== walletAddress) {
+    await recordOwnershipAudit(avatarId, walletAddress, 'nft_revoked', {
+      mintPrefix: avatar.nftMint.slice(0, 8),
+      expectedWalletPrefix: walletAddress ? walletAddress.slice(0, 8) : null,
+      actualOwnerPrefix: currentOwner ? currentOwner.slice(0, 8) : null,
+    });
+    throw new AvatarOwnershipError({ code: 'nft_revoked' });
+  }
+
+  return avatar;
+}
+
+/**
+ * Get an avatar with NFT ownership verification.
+ *
+ * Now wired through `assertAvatarOwnership` (#1385). For NFT-backed avatars
+ * this re-verifies ownership against Helius on every access (cached 60s).
+ * Returns `null` when the caller does not currently have access; throws
+ * only if the Helius lookup fails with no cached fallback.
+ *
+ * Prefer `assertAvatarOwnership` directly in new code — it surfaces the
+ * specific failure (`not_found` vs `not_owner` vs `nft_revoked` vs
+ * `verification_unavailable`) via `AvatarOwnershipError.code`. This helper
+ * is kept for back-compat with earlier callers.
  */
 export async function getAvatarWithOwnershipCheck(
   avatarId: string,
   walletAddress: string
 ): Promise<AvatarRecord | null> {
-  const avatar = await getAvatar(avatarId);
-  if (!avatar) {
-    return null;
+  try {
+    return await assertAvatarOwnership(avatarId, walletAddress);
+  } catch (err) {
+    if (err instanceof AvatarOwnershipError) {
+      if (err.code === 'verification_unavailable') throw err;
+      return null;
+    }
+    throw err;
   }
-
-  // If not NFT-backed, standard access rules apply
-  if (!avatar.nftMint) {
-    return avatar;
-  }
-
-  // For NFT-backed avatars, verify current ownership
-  const stillOwns = await verifyNFTOwnership(walletAddress, avatar.nftMint);
-  if (!stillOwns) {
-    console.log(
-      `[Avatars] NFT ownership lost: avatar=${avatarId}, nft=${avatar.nftMint.slice(0, 8)}..., wallet=${walletAddress.slice(0, 8)}...`
-    );
-    return null; // Avatar inaccessible - NFT was sold
-  }
-
-  return avatar;
 }
 
 /**
