@@ -1129,6 +1129,8 @@ export class AdminApiConstruct extends Construct {
         // Discord gateway runtime status (so admin API can report accurate health)
         DISCORD_GATEWAY_ENABLED: props.enableDiscordGateway ? 'true' : 'false',
         CDN_URL: cdnUrl || '',
+        // Gallery upload / media routes use S3 presigned URLs
+        MEDIA_BUCKET: mediaBucket?.bucketName || '',
         ...activeUserLimitEnvVars,
       },
       bundling: {
@@ -1143,6 +1145,9 @@ export class AdminApiConstruct extends Construct {
     // Grant permissions to avatars handler
     llmApiKey.grantRead(avatarsHandler);
     this.table.grantReadWriteData(avatarsHandler);
+    if (mediaBucket) {
+      mediaBucket.grantReadWrite(avatarsHandler);
+    }
     avatarsHandler.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['dynamodb:Query'],
