@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Energy Service
  *
@@ -17,6 +16,7 @@ import {
 import { BURN_TIERS, ASCENSION_ENERGY_BOOST } from '@swarm/core';
 import type { CreditBucket, AvatarRecord } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createAvatarLogger } from '../structured-logger.js';
 
 // Default DynamoDB clients
 const dynamoClient = getDynamoClient();
@@ -281,7 +281,10 @@ export async function getAvatarEnergyConfig(
   try {
     burnStats = await d.getBurnStatsForEnergy(avatarId);
   } catch (error) {
-    console.warn(`[Energy] Failed to get burn stats for ${avatarId}, using tier 0 defaults:`, error instanceof Error ? error.message : String(error));
+    createAvatarLogger(avatarId, 'billing').warn('burn_stats', 'burn_stats_fetch_failed', {
+      message: 'Failed to get burn stats, using tier 0 defaults',
+      error: error instanceof Error ? error.message : String(error),
+    });
     burnStats = {
       maxEnergy: TIER_0_DEFAULTS.maxEnergy,
       regenPerHour: TIER_0_DEFAULTS.regenPerHour,
@@ -294,7 +297,9 @@ export async function getAvatarEnergyConfig(
     const avatar = await d.getAvatar(avatarId);
     isAscended = avatar?.isAscended === true;
   } catch (error) {
-    console.warn(`[Energy] Failed to check ascension status for ${avatarId}:`, error instanceof Error ? error.message : String(error));
+    createAvatarLogger(avatarId, 'billing').warn('ascension', 'ascension_status_check_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   // Apply ascension boost if applicable (+50% max energy, +50% regen)
@@ -359,7 +364,10 @@ export async function calculateRefillRate(
     return { refillPerHour, bonusPerHour, tokenBalance };
   } catch (error) {
     // On error, fall back to base rate
-    console.warn(`[Energy] Failed to get token balance for ${avatarId}, using base rate:`, error instanceof Error ? error.message : String(error));
+    createAvatarLogger(avatarId, 'billing').warn('refill_rate', 'token_balance_fetch_failed', {
+      message: 'Failed to get token balance, using base rate',
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       refillPerHour: config.baseRefillPerHour,
       bonusPerHour: 0,
@@ -773,7 +781,9 @@ async function logEnergyEvent(
     }));
   } catch (error) {
     // Don't fail the operation if logging fails
-    console.error('[Energy] Failed to log energy event:', error instanceof Error ? error.message : String(error));
+    createAvatarLogger(event.avatarId, 'billing').error('energy_event', 'log_write_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 

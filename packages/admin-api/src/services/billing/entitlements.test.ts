@@ -280,7 +280,7 @@ describe('checkLimit - graceful error handling (issue #168)', () => {
     const fnMatch = src.match(/export async function checkLimit[\s\S]*?^}/m);
     const fnBody = fnMatch![0];
 
-    expect(fnBody).toContain('console.error');
+    expect(fnBody).toContain("createAvatarLogger(avatarId, 'billing').error");
     expect(fnBody).toContain('falling back to free tier');
   });
 

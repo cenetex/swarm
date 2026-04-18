@@ -41,6 +41,17 @@ let onboardingRoutingDecision: unknown = {
   },
 };
 
+// Minimal replica of the real AvatarOwnershipError so mocked throws can be
+// instance-matched via `err instanceof avatarService.AvatarOwnershipError`.
+class MockAvatarOwnershipError extends Error {
+  code: string;
+  constructor(params: { code: string; message?: string }) {
+    super(params.message ?? params.code);
+    this.name = 'AvatarOwnershipError';
+    this.code = params.code;
+  }
+}
+
 vi.mock('../../services/avatars.js', () => ({
   createAvatar: async (..._args: unknown[]) => createAvatarResult,
   createAvatarWithWallet: async (..._args: unknown[]) => createAvatarWithWalletResult,
@@ -52,6 +63,28 @@ vi.mock('../../services/avatars.js', () => ({
   updateAvatar: async (..._args: unknown[]) => updateAvatarResult,
   deleteAvatar: async (..._args: unknown[]) => { deleteAvatarCalls.push(_args); },
   reassignAvatar: async (..._args: unknown[]) => reassignAvatarResult,
+  AvatarOwnershipError: MockAvatarOwnershipError,
+  // Replay the real logic against the stubbed getAvatar so existing tests
+  // continue to observe 200 on match and 404 on mismatch. NFT-specific
+  // behavior is exercised in nft-ownership-access.test.ts.
+  assertAvatarOwnership: async (
+    _avatarId: string,
+    walletAddress: string,
+    opts?: { isAdmin?: boolean },
+  ) => {
+    const avatar = getAvatarResult as null | Record<string, unknown>;
+    if (!avatar) throw new MockAvatarOwnershipError({ code: 'not_found' });
+    if (opts?.isAdmin === true) return avatar;
+    if (avatar.nftMint) {
+      // Tests that exercise NFT paths set their own assertAvatarOwnership
+      // override — default to "grant if creatorWallet matches" so legacy
+      // non-NFT tests continue to pass untouched.
+    }
+    if (!walletAddress || avatar.creatorWallet !== walletAddress) {
+      throw new MockAvatarOwnershipError({ code: 'not_owner' });
+    }
+    return avatar;
+  },
 }));
 
 vi.mock('../../services/gallery.js', () => ({

@@ -40,6 +40,7 @@ export type AuditEventType =
   | 'avatar_updated'
   | 'avatar_deleted'
   | 'avatar_reassigned'
+  | 'avatar_ownership_denied'
   | 'secret_set'
   | 'wallet_swept'
   | 'wallet_key_deleted';

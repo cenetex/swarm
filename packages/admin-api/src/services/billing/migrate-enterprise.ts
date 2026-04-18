@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- migration script */
 /**
  * Enterprise → Creator Migration
  *
@@ -17,8 +16,10 @@ import { QueryCommand } from '@aws-sdk/lib-dynamodb';
 import type { EntitlementRecord, PlanLimits } from '../../types.js';
 import { PLAN_DEFAULTS } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createAvatarLogger, createSystemLogger } from '../structured-logger.js';
 import { setEntitlement } from './entitlements.js';
 
+const log = createSystemLogger('migrate-enterprise');
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 export interface MigrationResult {
@@ -128,7 +129,9 @@ export async function migrateEnterpriseToCreator(): Promise<MigrationResult> {
   };
 
   const entitlements = await findEnterpriseEntitlements();
-  console.log(`[Migration] Found ${entitlements.length} enterprise entitlement(s) to migrate`);
+  log.info('migration', 'enterprise_entitlements_found', {
+    count: entitlements.length,
+  });
 
   for (const entitlement of entitlements) {
     try {
@@ -168,14 +171,23 @@ export async function migrateEnterpriseToCreator(): Promise<MigrationResult> {
         featuresPreserved: true,
       });
 
-      console.log(`[Migration] Migrated avatar=${entitlement.avatarId} from enterprise to pro (Creator)`);
+      createAvatarLogger(entitlement.avatarId, 'billing').info('migration', 'avatar_migrated', {
+        fromPlan: 'enterprise',
+        toPlan: 'pro',
+      });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       result.errors.push({ avatarId: entitlement.avatarId, error: errorMsg });
-      console.error(`[Migration] Failed to migrate avatar=${entitlement.avatarId}: ${errorMsg}`);
+      createAvatarLogger(entitlement.avatarId, 'billing').error('migration', 'avatar_migration_failed', {
+        error: errorMsg,
+      });
     }
   }
 
-  console.log(`[Migration] Complete: migrated=${result.migrated}, skipped=${result.skipped}, errors=${result.errors.length}`);
+  log.info('migration', 'migration_complete', {
+    migrated: result.migrated,
+    skipped: result.skipped,
+    errors: result.errors.length,
+  });
   return result;
 }

@@ -309,21 +309,46 @@ export async function handleCrudRoutes(
 
     // GET /avatars/{id} - Get single avatar
     if (method === 'GET') {
-      const avatarRaw = await avatarService.getAvatar(avatarId);
-      const avatar = avatarRaw ? await hydrateAvatarProfileImage(avatarRaw) : null;
-
-      if (!avatar) {
+      // Admin branch: unchanged — admins may read any avatar even when no
+      // on-chain ownership exists (e.g., a claimed NFT's current holder
+      // could have transferred it away).
+      if (effectiveIsAdmin) {
+        const avatarRaw = await avatarService.getAvatar(avatarId);
+        const avatar = avatarRaw ? await hydrateAvatarProfileImage(avatarRaw) : null;
+        if (!avatar) {
+          return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
+        }
         return {
-          statusCode: 404,
+          statusCode: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: 'Avatar not found' }),
+          body: JSON.stringify(avatar),
         };
       }
 
-      if (!effectiveIsAdmin) {
-        if (!walletAddress || avatar.creatorWallet !== walletAddress) {
+      // #1385: non-admin branch enforces current on-chain ownership for
+      // NFT-backed avatars via `assertAvatarOwnership`.
+      let avatarRaw: Awaited<ReturnType<typeof avatarService.getAvatar>> | null;
+      try {
+        avatarRaw = await avatarService.assertAvatarOwnership(avatarId, walletAddress ?? '', {
+          isAdmin: false,
+        });
+      } catch (err) {
+        if (err instanceof avatarService.AvatarOwnershipError) {
+          if (err.code === 'verification_unavailable') {
+            return jsonResponse(corsHeaders, 503, {
+              error: 'Ownership verification temporarily unavailable',
+              code: err.code,
+            });
+          }
+          // not_found | not_owner | nft_revoked — deny without leaking existence.
           return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
         }
+        throw err;
+      }
+
+      const avatar = avatarRaw ? await hydrateAvatarProfileImage(avatarRaw) : null;
+      if (!avatar) {
+        return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
       }
 
       return {
@@ -337,13 +362,26 @@ export async function handleCrudRoutes(
     if (method === 'PUT') {
       const body = parseJsonBody<Record<string, unknown>>(event);
 
+      // Non-admin branch: #1385 enforce current on-chain ownership.
       if (!effectiveIsAdmin) {
         if (!walletAddress) {
           return jsonResponse(corsHeaders, 403, { error: 'Authentication required' });
         }
-        const existing = await avatarService.getAvatar(avatarId);
-        if (!existing || existing.creatorWallet !== walletAddress) {
-          return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
+        try {
+          await avatarService.assertAvatarOwnership(avatarId, walletAddress, {
+            isAdmin: false,
+          });
+        } catch (err) {
+          if (err instanceof avatarService.AvatarOwnershipError) {
+            if (err.code === 'verification_unavailable') {
+              return jsonResponse(corsHeaders, 503, {
+                error: 'Ownership verification temporarily unavailable',
+                code: err.code,
+              });
+            }
+            return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
+          }
+          throw err;
         }
       }
 

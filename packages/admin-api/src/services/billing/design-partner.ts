@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Design Partner Beta Service
  *
@@ -23,7 +22,9 @@ import {
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createSystemLogger } from '../structured-logger.js';
 
+const log = createSystemLogger('design-partner');
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 /** Maximum concurrent design partners per charter */
@@ -147,7 +148,11 @@ export async function createInviteCode(params: {
   // Update meta counter
   await incrementMetaCounter('totalCodesIssued');
 
-  console.log(`[DesignPartner] Created invite code=${code} plan=${params.plan} by=${params.createdBy}`);
+  log.info('invite', 'invite_created', {
+    code,
+    plan: params.plan,
+    createdBy: params.createdBy,
+  });
 
   return invite;
 }
@@ -208,7 +213,7 @@ export async function revokeInviteCode(
     },
   }));
 
-  console.log(`[DesignPartner] Revoked invite code=${code} by=${actorId}`);
+  log.info('invite', 'invite_revoked', { code, actorId });
   return true;
 }
 
@@ -312,9 +317,12 @@ export async function redeemInviteCode(params: {
   // 6. Update meta counters
   await updateMetaCounters({ activePartnerDelta: 1, totalRedeemedDelta: 1 });
 
-  console.log(
-    `[DesignPartner] Redeemed code=${code} accountId=${accountId} avatarId=${avatarId} plan=${invite.plan}`,
-  );
+  log.info('invite', 'invite_redeemed', {
+    code,
+    accountId,
+    avatarId,
+    plan: invite.plan,
+  });
 
   return { success: true, partner };
 }
@@ -398,9 +406,11 @@ export async function cancelPartner(params: {
   // Decrement active partner count
   await updateMetaCounters({ activePartnerDelta: -1, totalRedeemedDelta: 0 });
 
-  console.log(
-    `[DesignPartner] Cancelled partner accountId=${accountId} status=${newStatus} by=${actorId}`,
-  );
+  log.info('partner', 'partner_cancelled', {
+    accountId,
+    status: newStatus,
+    actorId,
+  });
 
   return { ...partner, status: newStatus, cancelledAt: now, cancelledBy: actorId };
 }
