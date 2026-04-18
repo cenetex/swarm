@@ -2045,6 +2045,15 @@ export class AdminApiConstruct extends Construct {
     });
 
     this.table.grantReadWriteData(billingHandler);
+    billingHandler.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['dynamodb:Query'],
+        resources: [
+          `${this.table.tableArn}/index/GSI1`,
+          `${this.table.tableArn}/index/StripeSubscriptionIndex`,
+        ],
+      })
+    );
     if (stripeSecretKey) {
       stripeSecretKey.grantRead(billingHandler);
     }
