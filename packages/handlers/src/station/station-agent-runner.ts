@@ -9,6 +9,8 @@
  * update hail messages, build modules) based on the avatar's persona.
  */
 import type { ScheduledHandler, Context } from 'aws-lambda';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import {
   createStateService,
   createSecretsService,
@@ -27,12 +29,15 @@ import {
 } from '@swarm/mcp-server';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { createRuntimeBrainService } from '../services/brain.js';
-import { executeToolLoop } from '../messaging/tool-loop.js';
+import { executeToolLoop, type ToolLoopResult } from '../messaging/tool-loop.js';
+import { createVoiceServices } from '../services/voice.js';
 
 const SIGNAL_API_BASE = process.env.SIGNAL_API_URL || 'https://signal-ws.ratimics.com';
 const STATE_TABLE = process.env.STATE_TABLE!;
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE!;
 const SECRET_PREFIX = process.env.SECRET_PREFIX || 'swarm';
+const MEDIA_BUCKET = process.env.MEDIA_BUCKET;
+const CDN_URL = process.env.CDN_URL;
 
 /** Minimum hours between station agent runs for a single avatar. */
 const DEFAULT_MIN_INTERVAL_HOURS = 20;
@@ -85,12 +90,100 @@ If nothing needs changing, just observe and report briefly.`;
 let stateService: ReturnType<typeof createStateService>;
 let activityService: ReturnType<typeof createActivityService>;
 let secretsService: ReturnType<typeof createSecretsService>;
+let hailCacheDocClient: DynamoDBDocumentClient;
 
 async function initialize(): Promise<void> {
   if (stateService) return;
   stateService = createStateService(STATE_TABLE);
   activityService = createActivityService(ACTIVITY_TABLE);
   secretsService = createSecretsService();
+  hailCacheDocClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+}
+
+/**
+ * Read the last hail text we generated audio for (if any), from the state table.
+ * Used to skip Replicate calls when the LLM picks the same hail two ticks in a row.
+ */
+async function getLastHailText(avatarId: string): Promise<string | undefined> {
+  const result = await hailCacheDocClient.send(new GetCommand({
+    TableName: STATE_TABLE,
+    Key: { pk: `STATION_HAIL#${avatarId}`, sk: 'LATEST' },
+  }));
+  return typeof result.Item?.text === 'string' ? result.Item.text : undefined;
+}
+
+async function setLastHailText(avatarId: string, text: string, audioUrl?: string): Promise<void> {
+  await hailCacheDocClient.send(new PutCommand({
+    TableName: STATE_TABLE,
+    Item: {
+      pk: `STATION_HAIL#${avatarId}`,
+      sk: 'LATEST',
+      text,
+      audioUrl,
+      updatedAt: Date.now(),
+    },
+  }));
+}
+
+/**
+ * Scan tool-loop results for a successful signal_set_hail call and return the hail text.
+ * The tool's success payload is `{ hail: <message> }`.
+ */
+export function extractHailText(results: ToolLoopResult['allToolResults']): string | undefined {
+  for (const entry of results) {
+    if (entry.name !== 'signal_set_hail' || !entry.result.success) continue;
+    const data = entry.result.data;
+    if (data && typeof data === 'object' && 'hail' in data) {
+      const hail = (data as { hail?: unknown }).hail;
+      if (typeof hail === 'string' && hail.trim().length > 0) return hail;
+    }
+  }
+  return undefined;
+}
+
+export interface HailAudioOutcome {
+  url?: string;
+  skipped?: 'unchanged' | 'voice-disabled' | 'no-reference' | 'no-media-bucket';
+  error?: string;
+}
+
+export interface HailAudioDeps {
+  getLastHailText: (avatarId: string) => Promise<string | undefined>;
+  setLastHailText: (avatarId: string, text: string, audioUrl?: string) => Promise<void>;
+  generateVoiceMessage: (params: { avatarId: string; text: string }) => Promise<{ url: string }>;
+  mediaBucket?: string;
+}
+
+/**
+ * Generate a voice audio clip for the given hail text if the avatar has voice cloning
+ * configured, the text changed vs. the last-generated hail, and the media bucket is wired.
+ *
+ * Non-fatal: every failure mode returns a HailAudioOutcome rather than throwing, so the
+ * caller can log the outcome and continue the tick.
+ */
+export async function maybeGenerateHailAudio(
+  avatarId: string,
+  hailText: string,
+  avatarConfig: AvatarConfig,
+  deps: HailAudioDeps,
+): Promise<HailAudioOutcome> {
+  const voice = avatarConfig.voice;
+  if (!voice?.enabled || voice.ttsProvider !== 'voice-clone') {
+    return { skipped: 'voice-disabled' };
+  }
+  if (!voice.referenceUrl) return { skipped: 'no-reference' };
+  if (!deps.mediaBucket) return { skipped: 'no-media-bucket' };
+
+  const lastText = await deps.getLastHailText(avatarId);
+  if (lastText === hailText) return { skipped: 'unchanged' };
+
+  try {
+    const asset = await deps.generateVoiceMessage({ avatarId, text: hailText });
+    await deps.setLastHailText(avatarId, hailText, asset.url);
+    return { url: asset.url };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /**
@@ -240,10 +333,57 @@ async function processStationAvatar(
   // Record timing
   await stateService.setLastHeartbeat(avatarId, 'signal-station', Date.now());
 
-  // Log activity
   const actionNames = result.allToolResults
     .filter(r => r.name !== 'signal_station_state')
     .map(r => r.name);
+
+  // If the avatar set a new hail this tick, produce a voice clip from it.
+  const hailText = extractHailText(result.allToolResults);
+  let hailAudio: HailAudioOutcome | undefined;
+  if (hailText) {
+    const voice = avatarConfig.voice;
+    const voiceServices = voice?.enabled && voice.ttsProvider === 'voice-clone' && voice.referenceUrl && MEDIA_BUCKET
+      ? createVoiceServices({
+          avatarId,
+          secrets,
+          voiceConfig: { ttsProvider: voice.ttsProvider, referenceUrl: voice.referenceUrl },
+          mediaBucket: MEDIA_BUCKET,
+          cdnUrl: CDN_URL,
+        })
+      : undefined;
+
+    hailAudio = await maybeGenerateHailAudio(avatarId, hailText, avatarConfig, {
+      getLastHailText,
+      setLastHailText,
+      generateVoiceMessage: voiceServices
+        ? (params) => voiceServices.generateVoiceMessage(params).then(a => ({ url: a.url }))
+        : () => Promise.reject(new Error('voice services unavailable')),
+      mediaBucket: MEDIA_BUCKET,
+    });
+    if (hailAudio.error) {
+      logger.warn('Station hail voice generation failed', {
+        avatarId,
+        stationId,
+        error: hailAudio.error,
+      });
+    } else if (hailAudio.url) {
+      logger.info('Station hail audio generated', {
+        avatarId,
+        stationId,
+        audioUrl: hailAudio.url,
+      });
+    }
+  }
+
+  const activityDetails: Record<string, unknown> = {
+    stationId,
+    toolCalls: result.allToolResults.map(r => r.name),
+    response: result.cleanFinalContent?.slice(0, 200),
+  };
+  if (hailText) activityDetails.hailText = hailText;
+  if (hailAudio?.url) activityDetails.hailAudio = hailAudio.url;
+  if (hailAudio?.error) activityDetails.hailVoiceError = hailAudio.error;
+  if (hailAudio?.skipped) activityDetails.hailVoiceSkipped = hailAudio.skipped;
 
   await activityService.log({
     avatarId,
@@ -253,11 +393,7 @@ async function processStationAvatar(
     summary: actionNames.length > 0
       ? `Station ${stationId} governance: ${actionNames.join(', ')}`
       : `Station ${stationId} observation (no changes)`,
-    details: {
-      stationId,
-      toolCalls: result.allToolResults.map(r => r.name),
-      response: result.cleanFinalContent?.slice(0, 200),
-    },
+    details: activityDetails,
   });
 
   logger.info('Station avatar processed', {
