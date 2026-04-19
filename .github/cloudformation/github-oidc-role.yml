@@ -122,6 +122,10 @@ Resources:
                 Action:
                   - ssm:GetParameter
                   - ssm:GetParameters
+                  # CDK context providers (hostedZoneFromContext, vpcFromLookup, etc.)
+                  # call GetParametersByPath / DescribeParameters during synth; see #1420 audit.
+                  - ssm:GetParametersByPath
+                  - ssm:DescribeParameters
                 Resource:
                   - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cdk-bootstrap/*'
               - Sid: SSMSwarmParams
@@ -163,6 +167,19 @@ Resources:
                 Resource:
                   - 'arn:aws:s3:::swarm-admin-ui-*'
                   - 'arn:aws:s3:::swarm-admin-ui-*/*'
+              - Sid: SwarmContextBucket
+                # CDK context cache bucket used by `useExistingBuckets` / cdk.context.json.
+                # Pre-existed in staging as a stand-alone inline policy; see #1420 audit.
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub 'arn:aws:s3:::swarm-cdk-context-${AWS::AccountId}-${AWS::Region}'
+                  - !Sub 'arn:aws:s3:::swarm-cdk-context-${AWS::AccountId}-${AWS::Region}/*'
               - Sid: ECRAuth
                 Effect: Allow
                 Action:
@@ -251,6 +268,16 @@ Resources:
                   - secretsmanager:DeleteResourcePolicy
                 Resource:
                   - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:swarm/*'
+              - Sid: SecretsManagerKyroRead
+                # Kyro persona secrets. CDK synth reads these for Secret.fromSecretAttributes;
+                # the role does NOT need to mutate them (kyro secrets are provisioned by that
+                # project's own tooling, not this repo's deploy). See #1420 audit.
+                Effect: Allow
+                Action:
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:GetResourcePolicy
+                Resource:
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:kyro/*'
               - Sid: KMSKeyManagement
                 Effect: Allow
                 Action:
@@ -278,6 +305,22 @@ Resources:
                 Condition:
                   StringLike:
                     'kms:RequestAlias': 'alias/swarm/*'
+              - Sid: KMSGrantOperations
+                # CDK emits KMS grants whenever a Lambda/SQS/Dynamo resource needs envelope
+                # encryption access to a swarm CMK. The kms:RequestAlias condition does NOT
+                # apply to grant operations (grants have no alias context), so grants must use
+                # kms:GrantIsForAWSResource to restrict to service-initiated grants — which is
+                # the only shape CDK emits. See #1420 audit.
+                Effect: Allow
+                Action:
+                  - kms:CreateGrant
+                  - kms:RevokeGrant
+                  - kms:RetireGrant
+                  - kms:ListGrants
+                Resource: '*'
+                Condition:
+                  Bool:
+                    'kms:GrantIsForAWSResource': 'true'
 
         # ── IAM: CDK-managed Lambda/ECS execution roles ──
         - PolicyName: IAMAccess
