@@ -27,8 +27,7 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 import { z } from 'zod';
 import { createHash, randomBytes } from 'crypto';
 import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { logger } from '@swarm/core';
-import type { ToolCategory } from '@swarm/core';
+import { logger, detectEnabledCategories } from '@swarm/core';
 import { processChat } from './chat.js';
 import type { UserSession } from '../types.js';
 import * as avatars from '../services/avatars.js';
@@ -793,14 +792,27 @@ async function handleChatCompletions(
   const lastMessage = request.messages[request.messages.length - 1];
   const userMessage = lastMessage.role === 'user' ? lastMessage.content : null;
 
-  // Build avatar context
+  // Build avatar context with enabled categories detected from avatar configuration
+  const voiceEnabled = process.env.ENABLE_VOICE_TOOLS !== 'false';
+  const enabledToolsets = avatarRecord.mcpConfig?.enabledToolsets || [];
+  const enabledCategories = detectEnabledCategories({
+    voice: voiceEnabled,
+    memory: enabledToolsets.includes('memory'),
+    telegram: Boolean(avatarRecord.platforms?.telegram?.enabled),
+    twitter: Boolean(avatarRecord.platforms?.twitter?.enabled),
+    discord: Boolean(avatarRecord.platforms?.discord?.enabled),
+  });
+
   const avatarContext = {
     id: avatarRecord.avatarId,
     name: avatarRecord.name,
     description: avatarRecord.description || '',
     persona: avatarRecord.persona || '',
-    enabledCategories: [] as ToolCategory[], // API users don't get tool access by default
+    enabledCategories,
   };
+
+  // Resolve model for logging
+  const llmModel = avatarRecord.llmConfig?.model || 'anthropic/claude-3-5-sonnet-latest';
 
   logger.info('Processing chat completion', {
     event: 'chat_completion_start',
@@ -808,6 +820,8 @@ async function handleChatCompletions(
     avatarId,
     messageCount: request.messages.length,
     requestId,
+    model: llmModel,
+    enabledCategoryCount: enabledCategories.length,
   });
 
   try {
@@ -828,7 +842,6 @@ async function handleChatCompletions(
 
     // Resolve token usage: use model-aware estimation (provider-reported usage
     // will be preferred automatically when processChat returns it in the future).
-    const llmModel = avatarRecord.llmConfig?.model || 'anthropic/claude-3-5-sonnet-latest';
     const promptText = request.messages.map(m => m.content).join('\n');
     const tokenUsage = resolveTokenUsage(
       undefined, // provider usage not yet surfaced from processChat
@@ -941,6 +954,7 @@ async function handleChatCompletions(
       event: 'chat_completion_success',
       subsystem: 'openai-compat',
       avatarId,
+      model: llmModel,
       responseLength: result.response.length,
       totalTokens: tokenUsage.totalTokens,
       usageSource: tokenUsage.usageSource,
@@ -953,6 +967,7 @@ async function handleChatCompletions(
     logger.error('Chat completion failed', err, {
       subsystem: 'openai-compat',
       avatarId,
+      model: llmModel,
       requestId,
     });
 
