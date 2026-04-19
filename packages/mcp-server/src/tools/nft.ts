@@ -10,6 +10,17 @@
  * Avatars CAN:
  * - Inspect ownership-related status
  * - Know their own lineage/era history
+ *
+ * NFT-ownership re-verification is intentionally NOT performed per tool invocation.
+ * Every MCP tool runs inside a session authenticated by an upstream entry point
+ * (admin-api chat, webhook handlers, or autonomous avatar tick); that entry point
+ * is the gate. See docs/security/nft-ownership-audit-2026-04-17.md §Remediation
+ * (PR 2) for the full justification. Any new MCP transport that bypasses those
+ * entry points must either run its own `assertAvatarOwnership` or be documented
+ * as exempt in the same doc.
+ *
+ * The one exception is `claim_nft_as_avatar`, which performs claim-time
+ * verification via `services.claimNFTAsAvatar` → `verifyNFTOwnership`.
  */
 import { z } from 'zod';
 import { defineReadonlyTool, type ToolResult } from '../registry.js';
@@ -477,9 +488,7 @@ export const createNFTTools = (services: NFTServices) => [
             avatarName: result.avatarName,
             avatarImage: result.avatarImage,
             nftMint: input.mint,
-            // TODO(#857): Wire getAvatarWithOwnershipCheck() into avatar access path to enforce
-            // ownership revocation on NFT transfer. Until then, messaging reflects current behavior.
-            note: 'This avatar is linked to your NFT. Ownership was recorded at claim time.',
+            note: 'This avatar is linked to your NFT. Access stays with the current on-chain holder — transferring the NFT revokes your access within ~60 seconds.',
           },
         };
       } catch (error) {
