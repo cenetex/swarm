@@ -74,7 +74,77 @@ function createSignalStationServices(apiToken: string): SignalStationServices {
       }
       return res.json() as Promise<CommandResult>;
     },
+    readChannelMessages: async (since, limit) => {
+      const params = new URLSearchParams();
+      if (limit !== undefined) params.append('limit', String(limit));
+      if (since !== undefined) params.append('since', String(since));
+      const queryString = params.toString();
+      const url = `${SIGNAL_API_BASE}/api/signal_channel/messages${queryString ? '?' + queryString : ''}`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Channel read failed (${res.status}): ${body}`);
+      }
+      return res.json() as Promise<any>;
+    },
+    postChannelMessage: async (stationId, text, audioUrl) => {
+      const res = await fetch(`${SIGNAL_API_BASE}/api/station/${stationId}/signal_channel`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ text, audio_url: audioUrl }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Channel post failed (${res.status}): ${body}`);
+      }
+      return res.json() as Promise<any>;
+    },
   };
+}
+
+/**
+ * Fetch recent channel messages and return a formatted context block for the system prompt.
+ * Limits to 10 messages, 200 chars each. Returns a note if the fetch fails.
+ * Updates the per-avatar "last seen" ID to support incremental fetches next tick.
+ */
+async function fetchChannelContext(
+  avatarId: string,
+  stationServices: SignalStationServices,
+): Promise<{ block: string; lastMessageId?: number; channelContextCount?: number; error?: string }> {
+  try {
+    const lastSeen = await getLastChannelMessageId(avatarId);
+    const response = await stationServices.readChannelMessages(lastSeen, 10);
+
+    if (!response.messages || response.messages.length === 0) {
+      return { block: '(no new station-band chatter)', lastMessageId: lastSeen };
+    }
+
+    const formatted = response.messages
+      .map((msg: any) => {
+        const senderName = ['Prospect', 'Kepler', 'Helios'][msg.sender_station_id] || `Station${msg.sender_station_id}`;
+        const text = msg.text.slice(0, 200);
+        return `${senderName} [${msg.timestamp}]: ${text}`;
+      })
+      .join('\n');
+
+    const newLastId = response.messages[response.messages.length - 1]?.id;
+    if (newLastId !== undefined) {
+      await setLastChannelMessageId(avatarId, newLastId);
+    }
+
+    return {
+      block: `Recent station-band chatter:\n${formatted}`,
+      lastMessageId: newLastId,
+      channelContextCount: response.messages.length,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to fetch channel context', { avatarId, error: errorMsg });
+    return {
+      block: '(station-band channel fetch failed)',
+      error: errorMsg,
+    };
+  }
 }
 
 const GOVERNANCE_PROMPT = `\
@@ -83,6 +153,8 @@ Based on what you observe:
 - Update your hail message if conditions have changed (signal_set_hail)
 - Adjust commodity prices if inventory levels warrant it (signal_set_price)
 - Consider building a module if resources allow (signal_build_module)
+
+Reference the recent station-band chatter to stay in character with the ensemble.
 
 Only take actions that make sense given current conditions.
 If nothing needs changing, just observe and report briefly.`;
@@ -120,6 +192,52 @@ async function setLastHailText(avatarId: string, text: string, audioUrl?: string
       sk: 'LATEST',
       text,
       audioUrl,
+      updatedAt: Date.now(),
+    },
+  }));
+}
+
+/**
+ * Get the last message ID we read from the channel for incremental fetches.
+ */
+async function getLastChannelMessageId(avatarId: string): Promise<number | undefined> {
+  const result = await hailCacheDocClient.send(new GetCommand({
+    TableName: STATE_TABLE,
+    Key: { pk: `SIGNAL_CHANNEL_READ#${avatarId}`, sk: 'LATEST' },
+  }));
+  return typeof result.Item?.lastMessageId === 'number' ? result.Item.lastMessageId : undefined;
+}
+
+async function setLastChannelMessageId(avatarId: string, messageId: number): Promise<void> {
+  await hailCacheDocClient.send(new PutCommand({
+    TableName: STATE_TABLE,
+    Item: {
+      pk: `SIGNAL_CHANNEL_READ#${avatarId}`,
+      sk: 'LATEST',
+      lastMessageId: messageId,
+      updatedAt: Date.now(),
+    },
+  }));
+}
+
+/**
+ * Get the last hail text we posted to the channel (for deduplication).
+ */
+async function getLastChannelHailText(avatarId: string): Promise<string | undefined> {
+  const result = await hailCacheDocClient.send(new GetCommand({
+    TableName: STATE_TABLE,
+    Key: { pk: `STATION_CHANNEL_HAIL#${avatarId}`, sk: 'LATEST' },
+  }));
+  return typeof result.Item?.text === 'string' ? result.Item.text : undefined;
+}
+
+async function setLastChannelHailText(avatarId: string, text: string): Promise<void> {
+  await hailCacheDocClient.send(new PutCommand({
+    TableName: STATE_TABLE,
+    Item: {
+      pk: `STATION_CHANNEL_HAIL#${avatarId}`,
+      sk: 'LATEST',
+      text,
       updatedAt: Date.now(),
     },
   }));
@@ -294,12 +412,23 @@ async function processStationAvatar(
   const toolClient = createToolClient(registry, 'api');
   const enabledTools = registry.toOpenAIFormat('api');
 
-  // Build messages
+  // Fetch channel context before the tool loop (non-fatal on failure)
+  let channelContext: Awaited<ReturnType<typeof fetchChannelContext>> = { block: '' };
+  try {
+    channelContext = await fetchChannelContext(avatarId, stationServices);
+  } catch (error) {
+    logger.warn('Unexpected error fetching channel context', { avatarId, error });
+    channelContext = { block: '(station-band channel unavailable)', error: String(error) };
+  }
+
+  // Build messages with channel context
   const systemPrompt = [
     avatarConfig.persona || '',
     '',
     `You are governing station ${stationId}. You have tools to observe and command it.`,
     'Keep actions purposeful and in character. Be concise.',
+    '',
+    channelContext.block,
   ].join('\n');
 
   const messages = [
@@ -340,6 +469,7 @@ async function processStationAvatar(
   // If the avatar set a new hail this tick, produce a voice clip from it.
   const hailText = extractHailText(result.allToolResults);
   let hailAudio: HailAudioOutcome | undefined;
+  let channelPostError: string | undefined;
   if (hailText) {
     const voice = avatarConfig.voice;
     const voiceServices = voice?.enabled && voice.ttsProvider === 'voice-clone' && voice.referenceUrl && MEDIA_BUCKET
@@ -373,6 +503,31 @@ async function processStationAvatar(
         audioUrl: hailAudio.url,
       });
     }
+
+    // Auto-post hail + audio to channel if not a re-post of the same hail
+    if (!hailAudio?.skipped) {
+      const lastChannelHail = await getLastChannelHailText(avatarId);
+      if (lastChannelHail !== hailText) {
+        try {
+          await stationServices.postChannelMessage(stationId, hailText, hailAudio?.url);
+          await setLastChannelHailText(avatarId, hailText);
+          logger.info('Hail auto-posted to station-band channel', {
+            avatarId,
+            stationId,
+            hailText: hailText.slice(0, 100),
+            audioUrl: hailAudio?.url,
+          });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          channelPostError = msg;
+          logger.warn('Failed to auto-post hail to channel', {
+            avatarId,
+            stationId,
+            error: msg,
+          });
+        }
+      }
+    }
   }
 
   const activityDetails: Record<string, unknown> = {
@@ -384,6 +539,9 @@ async function processStationAvatar(
   if (hailAudio?.url) activityDetails.hailAudio = hailAudio.url;
   if (hailAudio?.error) activityDetails.hailVoiceError = hailAudio.error;
   if (hailAudio?.skipped) activityDetails.hailVoiceSkipped = hailAudio.skipped;
+  if (channelContext.channelContextCount) activityDetails.channelContextCount = channelContext.channelContextCount;
+  if (channelContext.error) activityDetails.channelFetchError = channelContext.error;
+  if (channelPostError) activityDetails.channelPostError = channelPostError;
 
   await activityService.log({
     avatarId,
