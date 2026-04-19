@@ -9,7 +9,9 @@ import type { AvatarConfig } from '@swarm/core';
 import {
   extractHailText,
   maybeGenerateHailAudio,
+  fetchChannelChatContext,
   type HailAudioDeps,
+  type ChannelChatDeps,
 } from './station-agent-runner.js';
 
 const VOICE_CONFIG = {
@@ -119,5 +121,82 @@ describe('maybeGenerateHailAudio', () => {
     expect(result.error).toContain('replicate: 502 upstream');
     expect(result.url).toBeUndefined();
     expect(deps.calls.put).toBe(0);
+  });
+});
+
+function makeChannelDeps(partial: Partial<ChannelChatDeps> = {}): ChannelChatDeps {
+  return {
+    readChannelMessages: async (limit, since) => ({
+      messages: [
+        { id: 1, text: 'Prospect online.' },
+        { id: 2, text: 'All stations nominal.' },
+      ],
+    }),
+    getLastChannelMessageId: async () => undefined,
+    ...partial,
+  };
+}
+
+describe('fetchChannelChatContext', () => {
+  it('formats recent channel messages for the system prompt', async () => {
+    const deps = makeChannelDeps();
+    const context = await fetchChannelChatContext('signal-helios', deps);
+    expect(context.count).toBe(2);
+    expect(context.maxId).toBe(2);
+    expect(context.text).toContain('Recent station-band chatter:');
+    expect(context.text).toContain('Prospect online.');
+    expect(context.text).toContain('All stations nominal.');
+    expect(context.error).toBeUndefined();
+  });
+
+  it('returns a graceful fallback when channel read fails', async () => {
+    const deps = makeChannelDeps({
+      readChannelMessages: async () => {
+        throw new Error('Network timeout');
+      },
+    });
+    const context = await fetchChannelChatContext('signal-helios', deps);
+    expect(context.count).toBe(0);
+    expect(context.maxId).toBeUndefined();
+    expect(context.text).toContain('fetch failed');
+    expect(context.error).toContain('Network timeout');
+  });
+
+  it('handles empty channel messages gracefully', async () => {
+    const deps = makeChannelDeps({
+      readChannelMessages: async () => ({ messages: [] }),
+    });
+    const context = await fetchChannelChatContext('signal-helios', deps);
+    expect(context.count).toBe(0);
+    expect(context.maxId).toBeUndefined();
+    expect(context.text).toContain('(none)');
+    expect(context.error).toBeUndefined();
+  });
+
+  it('caps message text at 200 characters', async () => {
+    const longText = 'a'.repeat(300);
+    const deps = makeChannelDeps({
+      readChannelMessages: async () => ({
+        messages: [{ id: 1, text: longText }],
+      }),
+    });
+    const context = await fetchChannelChatContext('signal-helios', deps);
+    expect(context.count).toBe(1);
+    expect(context.text).not.toContain(longText);
+    expect(context.text).toContain('a'.repeat(200));
+  });
+
+  it('requests only new messages using since parameter', async () => {
+    let capturedSince: number | undefined;
+    const deps = makeChannelDeps({
+      readChannelMessages: async (limit, since) => {
+        capturedSince = since;
+        return { messages: [{ id: 5, text: 'New message' }] };
+      },
+      getLastChannelMessageId: async () => 4,
+    });
+    const context = await fetchChannelChatContext('signal-helios', deps);
+    expect(capturedSince).toBe(4);
+    expect(context.maxId).toBe(5);
   });
 });

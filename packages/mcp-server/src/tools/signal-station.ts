@@ -66,9 +66,29 @@ export interface CommandResult {
   [key: string]: unknown;
 }
 
+export interface SignalChannelMessage {
+  id: number;
+  timestamp: number;
+  sender_station_id: number;
+  text: string;
+  audio_url?: string;
+}
+
+export interface SignalChannelPostResponse {
+  ok: boolean;
+  id: number;
+  timestamp: number;
+}
+
+export interface SignalChannelReadResponse {
+  messages: SignalChannelMessage[];
+}
+
 export interface SignalStationServices {
   getStationState: (stationId: number) => Promise<StationState>;
   sendCommand: (stationId: number, command: Record<string, unknown>) => Promise<CommandResult>;
+  postChannelMessage: (stationId: number, text: string, audio_url?: string) => Promise<SignalChannelPostResponse>;
+  readChannelMessages: (limit?: number, since?: number) => Promise<SignalChannelReadResponse>;
 }
 
 // =============================================================================
@@ -222,6 +242,61 @@ export const createSignalStationTools = (services: SignalStationServices) => [
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to set hail',
+        };
+      }
+    },
+  }),
+
+  defineReadonlyTool({
+    name: 'signal_channel_read',
+    description:
+      'Read recent messages from the station broadcast channel. Each station can see and respond to ' +
+      'messages posted by other governed stations. Useful for coordinating multi-station activities or ' +
+      'responding to events in the ensemble.',
+    inputSchema: z.object({
+      limit: z.number().int().min(1).max(50).default(10).describe('Maximum number of messages to return (default 10)'),
+      since: z.number().int().min(0).optional().describe('Only return messages with id greater than this value'),
+    }),
+    execute: async (input, _context): Promise<ToolResult> => {
+      try {
+        const response = await services.readChannelMessages(input.limit, input.since);
+        return { success: true, data: response };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to read channel messages',
+        };
+      }
+    },
+  }),
+
+  defineTool({
+    name: 'signal_channel_post',
+    description:
+      'Post a message to the station broadcast channel. This message will be visible to other governed stations ' +
+      'and can include an audio URL if available. Use this to share station hail updates, trade announcements, ' +
+      'or coordinate with other ensemble members.',
+    category: 'config',
+    inputSchema: z.object({
+      station_id: z.number().int().min(0).max(7).describe('Station index (0-7)'),
+      text: z.string().min(1).max(200).describe('Message text (max 200 chars)'),
+      audio_url: z.string().url().optional().describe('Optional URL to an audio clip for this message'),
+    }),
+    execute: async (input, _context): Promise<ToolResult> => {
+      try {
+        const result = await services.postChannelMessage(
+          input.station_id,
+          input.text,
+          input.audio_url,
+        );
+        if (!result.ok) {
+          return { success: false, error: 'Channel post failed' };
+        }
+        return { success: true, data: { id: result.id, timestamp: result.timestamp } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to post to channel',
         };
       }
     },
