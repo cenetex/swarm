@@ -259,6 +259,18 @@ export interface AdminApiConstructProps {
    * @default "cenetex/aws-swarm"
    */
   githubRepo?: string;
+
+  /**
+   * Secrets Manager ARN holding the bearer token for the Signal space mining
+   * game station REST API. When provided, admin chat exposes the
+   * `signal_*` MCP tools to avatars that opt in via the `signal-station`
+   * toolset. Stored as either the raw token string or a JSON object with key
+   * `SIGNAL_API_TOKEN` / `signal_api_token` / `token`.
+   *
+   * Independent of the per-avatar token used by the scheduled
+   * `station-agent-runner`.
+   */
+  signalApiTokenSecretArn?: string;
 }
 
 export class AdminApiConstruct extends Construct {
@@ -542,6 +554,10 @@ export class AdminApiConstruct extends Construct {
       ? secretsmanager.Secret.fromSecretCompleteArn(this, 'StripeWebhookSecret', props.stripeWebhookSecretArn)
       : undefined;
 
+    const signalApiTokenSecret = props.signalApiTokenSecretArn
+      ? secretsmanager.Secret.fromSecretCompleteArn(this, 'SignalApiToken', props.signalApiTokenSecretArn)
+      : undefined;
+
     // Twitter App credentials for OAuth flow (needed by both Chat and Twitter OAuth handlers)
     const twitterAppCredentialsSecret = secretsmanager.Secret.fromSecretNameV2(
       this, 'TwitterAppCredentials', 'swarm/global/twitter-app-credentials'
@@ -618,6 +634,9 @@ export class AdminApiConstruct extends Construct {
           GITHUB_APP_CREDENTIALS_ARN: props.githubAppCredentialsArn,
           GITHUB_REPO: props.githubRepo || 'cenetex/aws-swarm',
         } : {}),
+        ...(signalApiTokenSecret ? {
+          SIGNAL_API_TOKEN_SECRET_ARN: signalApiTokenSecret.secretArn,
+        } : {}),
         ...activeUserLimitEnvVars,
       },
       bundling: {
@@ -662,6 +681,10 @@ export class AdminApiConstruct extends Construct {
 
     // Grant Twitter OAuth credentials access
     twitterAppCredentialsSecret.grantRead(this.chatHandler);
+
+    if (signalApiTokenSecret) {
+      signalApiTokenSecret.grantRead(this.chatHandler);
+    }
 
     // Grant SQS permissions for async callbacks
     responseQueue.grantSendMessages(this.chatHandler);
@@ -833,6 +856,9 @@ export class AdminApiConstruct extends Construct {
         // Twitter OAuth (for twitter_request_integration tool)
         TWITTER_APP_CREDENTIALS_ARN: twitterAppCredentialsSecret.secretArn,
         TWITTER_OAUTH_CALLBACK_URL: twitterOAuthCallbackUrl,
+        ...(signalApiTokenSecret ? {
+          SIGNAL_API_TOKEN_SECRET_ARN: signalApiTokenSecret.secretArn,
+        } : {}),
         ...activeUserLimitEnvVars,
       },
       bundling: {
@@ -876,6 +902,9 @@ export class AdminApiConstruct extends Construct {
       mediaBucket.grantReadWrite(this.chatWorkerHandler);
     }
     twitterAppCredentialsSecret.grantRead(this.chatWorkerHandler);
+    if (signalApiTokenSecret) {
+      signalApiTokenSecret.grantRead(this.chatWorkerHandler);
+    }
     responseQueue.grantSendMessages(this.chatWorkerHandler);
 
     // Secrets Manager permissions (same as chat handler)

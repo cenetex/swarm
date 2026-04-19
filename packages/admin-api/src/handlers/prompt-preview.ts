@@ -79,6 +79,7 @@ const CATEGORY_TOOLSETS: Record<ToolCategory, ToolsetId[]> = {
   nft: ['nft'],
   property: ['property'],
   diagnostics: ['diagnostics'],
+  'signal-station': ['signal-station'],
 };
 
 function resolveAllowedToolsets(categories?: ToolCategory[]): ToolsetId[] {
@@ -156,6 +157,7 @@ export async function handler(
     // Memory and property require explicit opt-in via mcpConfig
     if (enabledToolsets.includes('memory')) enabledCategories.push('memory');
     if (enabledToolsets.includes('property')) enabledCategories.push('property');
+    if (enabledToolsets.includes('signal-station')) enabledCategories.push('signal-station');
 
     // Build system prompt using unified prompt builder
     const avatarConfig: ProcessorAvatarConfig = {

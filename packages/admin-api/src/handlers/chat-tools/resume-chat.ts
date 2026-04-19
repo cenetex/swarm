@@ -66,6 +66,7 @@ export async function resumeChatAfterToolResult(
         discord: Boolean(avatarRecord.platforms?.discord?.enabled),
         nft: true,
         property: enabledToolsets.includes('property'),
+        signalStation: enabledToolsets.includes('signal-station'),
       })
     : undefined;
   const avatarContext: AvatarContext | undefined = avatarRecord

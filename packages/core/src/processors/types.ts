@@ -27,6 +27,7 @@ export type ToolCategory =
   | 'nft'          // NFT and ownership tools
   | 'property'     // Property research tools
   | 'diagnostics'  // Issue reporting
+  | 'signal-station' // Signal space mining station governance
   | (string & {}); // Allow arbitrary categories from MCP toolsets
 
 /**
@@ -54,6 +55,7 @@ export type ToolsetId =
   | 'diagnostics'
   | 'reference'    // Reference images
   | 'claude-code'  // Claude Code automation
+  | 'signal-station' // Signal space mining station governance
   | (string & {}); // Allow arbitrary toolset IDs from MCP plugins
 
 // =============================================================================
@@ -233,6 +235,7 @@ export interface CategoryDetectionInput {
   discord?: boolean;
   nft?: boolean;
   property?: boolean;
+  signalStation?: boolean;
 }
 
 // =============================================================================

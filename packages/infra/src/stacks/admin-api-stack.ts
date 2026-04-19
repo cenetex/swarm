@@ -196,6 +196,13 @@ export interface AdminApiStackProps extends cdk.StackProps {
    * The relay will use this key to authenticate when sending messages to aws-swarm.
    */
   raticrossInboundKey?: string;
+
+  /**
+   * Secrets Manager ARN holding the bearer token for the Signal space mining
+   * game station REST API. When set, admin chat exposes the `signal_*` MCP
+   * tools to avatars that opt into the `signal-station` toolset.
+   */
+  signalApiTokenSecretArn?: string;
 }
 
 export class AdminApiStack extends cdk.Stack {
@@ -234,6 +241,7 @@ export class AdminApiStack extends cdk.Stack {
       stripePriceIdPro,
       stripePriceIdEnterprise,
       stripePriceIdTeam,
+      signalApiTokenSecretArn,
       anthropicApiKeyArn,
       enableClaudeCode = false,
       claudeCodeMinCapacity = 0,
@@ -362,6 +370,7 @@ export class AdminApiStack extends cdk.Stack {
         stripePriceIdPro,
         stripePriceIdEnterprise,
         stripePriceIdTeam,
+        signalApiTokenSecretArn,
         environment,
         nameSuffix,
         secretPrefix,

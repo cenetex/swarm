@@ -98,6 +98,7 @@ export const createSignalStationTools = (services: SignalStationServices) => [
       'Get the current state of a Signal space mining station. Returns inventory levels, ' +
       'installed modules, visible asteroids and players within signal range, active contracts, ' +
       'and the hail message. Use this to observe the world before making decisions.',
+    toolset: 'signal-station',
     inputSchema: z.object({
       station_id: z.number().int().min(0).max(7).describe('Station index (0-7)'),
     }),
@@ -121,7 +122,7 @@ export const createSignalStationTools = (services: SignalStationServices) => [
       'the default base price. Use this to attract players to sell ore you need or to ' +
       'discourage selling commodities you have excess of. Commodities: ' +
       COMMODITY_NAMES.join(', '),
-    category: 'config',
+    category: 'signal-station',
     inputSchema: z.object({
       station_id: z.number().int().min(0).max(7).describe('Station index (0-7)'),
       commodity: z.number().int().min(0).max(8).describe(
@@ -164,7 +165,7 @@ export const createSignalStationTools = (services: SignalStationServices) => [
       'automatically. Modules expand station capabilities: furnaces smelt ore into ingots, ' +
       'fabs produce ship components, docks allow player docking, etc. Module types: ' +
       MODULE_TYPES.map((name, i) => `${i}=${name}`).join(', '),
-    category: 'config',
+    category: 'signal-station',
     inputSchema: z.object({
       station_id: z.number().int().min(0).max(7).describe('Station index (0-7)'),
       module_type: z.number().int().min(0).max(12).describe(
@@ -203,7 +204,7 @@ export const createSignalStationTools = (services: SignalStationServices) => [
       'Set the hail message broadcast by a station. This is visible to players approaching ' +
       'the station. Use it to communicate station status, welcome messages, trade offers, ' +
       'or roleplay as the station governor.',
-    category: 'config',
+    category: 'signal-station',
     inputSchema: z.object({
       station_id: z.number().int().min(0).max(7).describe('Station index (0-7)'),
       message: z.string().min(1).max(200).describe('Hail message (max 200 chars)'),

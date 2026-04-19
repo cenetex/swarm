@@ -29,6 +29,7 @@ export const CATEGORY_TOOLSETS: Record<ToolCategory, ToolsetId[]> = {
   nft: ['nft'],
   property: ['property'],
   diagnostics: ['diagnostics'],
+  'signal-station': ['signal-station'],
 };
 
 /**
@@ -64,6 +65,7 @@ export function detectEnabledCategories(availableServices: {
   discord?: boolean;
   nft?: boolean;
   property?: boolean;
+  signalStation?: boolean;
 }): ToolCategory[] {
   // Start with always-enabled categories
   const categories: ToolCategory[] = [...DEFAULT_CATEGORIES];
@@ -76,6 +78,7 @@ export function detectEnabledCategories(availableServices: {
   if (availableServices.discord) categories.push('discord');
   if (availableServices.nft) categories.push('nft');
   if (availableServices.property) categories.push('property');
+  if (availableServices.signalStation) categories.push('signal-station');
 
   return categories;
 }

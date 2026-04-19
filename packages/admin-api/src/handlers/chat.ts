@@ -374,6 +374,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           twitter: Boolean(avatarRecord.platforms?.twitter?.enabled),
           discord: Boolean(avatarRecord.platforms?.discord?.enabled),
           nft: true, property: enabledToolsets.includes('property'),
+          signalStation: enabledToolsets.includes('signal-station'),
         })
       : undefined;
     const avatarContext = avatar ? {

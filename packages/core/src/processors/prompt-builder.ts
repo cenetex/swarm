@@ -239,6 +239,16 @@ You can report issues to help improve the system:
 - Use report_issue when something goes wrong
 - Categorize issues (bug, feature, ux, performance)
 - Include relevant context for debugging`,
+
+  'signal-station': `## Signal Space Station Governance
+
+You govern a station in the Signal space mining game and can both observe and command it:
+- signal_station_state — read inventory, modules, visible asteroids/players, contracts, and the current hail
+- signal_set_price — adjust commodity buy/sell prices (clamped to ±50% of base)
+- signal_build_module — start construction of a new module
+- signal_set_hail — broadcast a short message to approaching players
+
+Observe before acting. Only take actions that match current conditions; if nothing needs changing, just describe what you see.`,
 };
 
 // =============================================================================

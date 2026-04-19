@@ -65,6 +65,16 @@ describe('detectEnabledCategories', () => {
     expect(categories).toContain('nft');
     expect(categories).toContain('property');
   });
+
+  it('should include signal-station when signalStation is true', () => {
+    const categories = detectEnabledCategories({ signalStation: true });
+    expect(categories).toContain('signal-station');
+  });
+
+  it('should not include signal-station when signalStation is omitted', () => {
+    const categories = detectEnabledCategories({});
+    expect(categories).not.toContain('signal-station');
+  });
 });
 
 describe('resolveAllowedToolsets', () => {
