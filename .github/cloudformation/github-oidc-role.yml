@@ -52,7 +52,7 @@ Resources:
     Properties:
       # Keep original logical ID + physical name for backward compatibility
       RoleName: !Sub '${GitHubRepo}-github-actions'
-      Description: !Sub 'Deploy role for ${GitHubOrg}/${GitHubRepo} — CDK + Admin UI'
+      Description: !Sub 'Deploy role for ${GitHubOrg}/${GitHubRepo} - CDK + Admin UI'
       MaxSessionDuration: 3600
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -630,7 +630,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub '${GitHubRepo}-github-hotpatch'
-      Description: !Sub 'Hotpatch role for ${GitHubOrg}/${GitHubRepo} — Lambda code updates only'
+      Description: !Sub 'Hotpatch role for ${GitHubOrg}/${GitHubRepo} - Lambda code updates only'
       MaxSessionDuration: 3600
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -780,7 +780,7 @@ Outputs:
 
   # Alias for backward compatibility
   RoleArn:
-    Description: (Deprecated) Alias for DeployRoleArn — use DeployRoleArn instead
+    Description: (Deprecated) Alias for DeployRoleArn - use DeployRoleArn instead
     Value: !GetAtt GitHubActionsRole.Arn
     Export:
       Name: !Sub '${AWS::StackName}-RoleArn'
