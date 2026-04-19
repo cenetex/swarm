@@ -28,7 +28,6 @@ import { z } from 'zod';
 import { createHash, randomBytes } from 'crypto';
 import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { logger, detectEnabledCategories } from '@swarm/core';
-import type { ToolCategory } from '@swarm/core';
 import { processChat } from './chat.js';
 import type { UserSession } from '../types.js';
 import * as avatars from '../services/avatars.js';
@@ -834,7 +833,6 @@ async function handleChatCompletions(
       avatarContext,
       {
         maxTokens: request.max_tokens,
-        temperature: request.temperature,
       }
     );
 
