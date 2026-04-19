@@ -1053,6 +1053,59 @@ echo "OK: ${AVATAR_ID} webhook healthy (pending: ${PENDING})"
 exit 0
 ```
 
+### Staging Canary Workflow
+
+The `.github/workflows/telegram-canary.yml` workflow runs every 30 minutes against staging. It exercises two endpoints against the `STAGING_API_URL` (currently `https://staging-swarm.rati.chat`):
+
+1. `GET /api/v1/models` — overall API health.
+2. `POST /api/v1/chat/completions` against a designated canary avatar — end-to-end chat path.
+
+The chat request targets the model slug stored in the `CANARY_MODEL` GitHub Actions secret (scoped to the `staging` environment). If that secret is missing, the step fails fast with a pointer back to this runbook so the canary does not silently probe a wrong avatar.
+
+**Alerting.** The workflow only notifies Telegram on 2+ consecutive failures; a single bad run is suppressed. Suppression logic lives in the `Notify failure via Telegram` step and must not be removed without updating `docs/CANARY-ALERTING.md`.
+
+#### Seeding a canary avatar (one-time)
+
+Pick a stable slug that will not be claimed or churned. The current convention is `canary-probe`. The avatar must:
+
+- Be owned by an ops wallet (not a user / not tied to a claimable NFT).
+- Have a minimal persona and low `max_tokens` budget — every canary run burns a little inference spend.
+- Never be enrolled in any public directory / discovery surface.
+
+Create it via the staging admin UI or admin API against account `022118847419`:
+
+```bash
+# Example — exact fields depend on the avatar creation payload in current admin-api.
+# Consult packages/admin-api README for the current shape if the API has changed.
+aws --profile staging ssm get-parameter --name /swarm/staging/admin-api-url --query Parameter.Value --output text
+# … create avatar with slug=canary-probe via admin UI or API …
+```
+
+Then register the slug as a GitHub Actions secret on the `staging` environment:
+
+```bash
+gh secret set CANARY_MODEL --env staging --body "canary-probe"
+```
+
+Trigger one manual canary run to confirm:
+
+```bash
+gh workflow run telegram-canary.yml
+```
+
+If the run is green, close the seeding task. If the run is red, fix before merging any other changes — the canary gates every downstream deploy alert.
+
+#### Rotating the canary avatar
+
+If the avatar is compromised, deleted, or its slug changes:
+
+1. Stand up the replacement avatar (same ownership / persona rules as seeding).
+2. `gh secret set CANARY_MODEL --env staging --body "<new-slug>"` — the next scheduled run will pick it up.
+3. Delete or disable the old avatar once a canary run against the new slug has passed.
+4. If rotating due to incident, append a one-line entry to the incident log in this file.
+
+No workflow YAML change is required for rotation — the slug lives entirely in secret storage.
+
 ### DLQ Monitoring Schedule
 
 - **Automated:** CloudWatch alarms fire on DLQ depth >= 1 (configured in CDK).

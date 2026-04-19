@@ -43,23 +43,29 @@ jobs:
 
       - name: Chat completions canary
         id: chat
+        env:
+          CANARY_MODEL: ${{ secrets.CANARY_MODEL }}
         run: |
           set -euo pipefail
 
+          if [ -z "${CANARY_MODEL}" ]; then
+            echo "::error::CANARY_MODEL secret is not set. Seed a durable canary avatar in staging and configure the secret — see docs/RUNBOOK.md section 'Staging Canary Workflow'."
+            exit 1
+          fi
+
           CANARY_MSG="canary-smoke-test-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_RUN_ID}"
+
+          BODY=$(jq -n \
+            --arg model "${CANARY_MODEL}" \
+            --arg content "${CANARY_MSG}" \
+            '{model: $model, messages: [{role: "user", content: $content}], max_tokens: 50}')
 
           HTTP_CODE=$(curl -sS -o /tmp/chat-response.json -w "%{http_code}" \
             --max-time 60 \
             -X POST \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.CANARY_API_KEY }}" \
-            -d "{
-              \"model\": \"agent-1-kt7l\",
-              \"messages\": [
-                {\"role\": \"user\", \"content\": \"${CANARY_MSG}\"}
-              ],
-              \"max_tokens\": 50
-            }" \
+            -d "${BODY}" \
             "${STAGING_API_URL}/api/v1/chat/completions" || echo "000")
 
           echo "http_code=${HTTP_CODE}" >> "$GITHUB_OUTPUT"
