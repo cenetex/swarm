@@ -128,6 +128,9 @@ export {
   type SignalStationServices,
   type StationState,
   type CommandResult,
+  type SignalChannelMessage,
+  type SignalChannelPostResponse,
+  type SignalChannelReadResponse,
 } from './signal-station.js';
 
 import { createMediaTools, type CreditServices as MediaCreditServices } from './media.js';

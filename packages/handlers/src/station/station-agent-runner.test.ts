@@ -126,7 +126,7 @@ describe('maybeGenerateHailAudio', () => {
 
 function makeChannelDeps(partial: Partial<ChannelChatDeps> = {}): ChannelChatDeps {
   return {
-    readChannelMessages: async (limit, since) => ({
+    readChannelMessages: async (_limit, _since) => ({
       messages: [
         { id: 1, text: 'Prospect online.' },
         { id: 2, text: 'All stations nominal.' },

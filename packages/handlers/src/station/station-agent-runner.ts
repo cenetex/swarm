@@ -441,7 +441,7 @@ async function processStationAvatar(
       getLastChannelMessageId: (id) => getLastChannelMessageId(id),
     });
   } catch (error) {
-    logger.warn('Failed to fetch channel context', error, { avatarId });
+    logger.error('Failed to fetch channel context', error, { avatarId });
   }
 
   // Build messages
@@ -489,7 +489,7 @@ async function processStationAvatar(
     try {
       await setLastChannelMessageId(avatarId, channelContext.maxId);
     } catch (error) {
-      logger.debug('Failed to update channel message ID tracking', error);
+      logger.debug('Failed to update channel message ID tracking', { error: String(error) });
     }
   }
 
@@ -549,7 +549,7 @@ async function processStationAvatar(
           });
         } catch (error) {
           channelPostError = error instanceof Error ? error.message : String(error);
-          logger.warn('Failed to post hail to channel', error, {
+          logger.error('Failed to post hail to channel', error, {
             avatarId,
             stationId,
           });
