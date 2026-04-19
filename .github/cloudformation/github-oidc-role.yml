@@ -392,6 +392,41 @@ Resources:
                 # TODO: scope to specific distribution IDs once stable.
                 Resource: '*'
 
+        # ── CloudWatch Alarms + Dashboards: CDK-managed observability ──
+        # Needed by ops-dashboard + DLQ/error-rate alarms created in
+        # packages/infra/src/constructs/**. Added 2026-04-19 after
+        # SwarmApi-staging deploys began failing on
+        #   cloudwatch:DescribeAlarms on alarm:swarm-staging-shared-dlq-depth.
+        - PolicyName: CloudWatchObservability
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AlarmManagement
+                Effect: Allow
+                Action:
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:DescribeAlarmsForMetric
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:SetAlarmState
+                  - cloudwatch:TagResource
+                  - cloudwatch:UntagResource
+                  - cloudwatch:ListTagsForResource
+                Resource:
+                  - !Sub 'arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:swarm*'
+                  - !Sub 'arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:Swarm*'
+              - Sid: DashboardManagement
+                Effect: Allow
+                Action:
+                  - cloudwatch:PutDashboard
+                  - cloudwatch:DeleteDashboards
+                  - cloudwatch:GetDashboard
+                  - cloudwatch:ListDashboards
+                # CloudWatch dashboard ARNs are region-agnostic.
+                Resource:
+                  - !Sub 'arn:aws:cloudwatch::${AWS::AccountId}:dashboard/swarm*'
+                  - !Sub 'arn:aws:cloudwatch::${AWS::AccountId}:dashboard/Swarm*'
+
       Tags:
         - Key: Project
           Value: aws-swarm
