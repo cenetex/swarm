@@ -211,3 +211,14 @@ export {
   type SubstackPostContent,
   type SubstackPublishResult,
 } from './publishers/substack-publisher.js';
+export {
+  createNFTOwnershipCache,
+  nftOwnerCacheKey,
+  IN_MEMORY_TTL_MS,
+  DYNAMO_TTL_SECONDS,
+  NFT_OWNER_PK_PREFIX,
+  NFT_OWNER_SK,
+  type NFTOwnershipCache,
+  type NFTOwnershipCacheDeps,
+  type CachedNFTOwnerItem,
+} from './nft-ownership-cache.js';

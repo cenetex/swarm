@@ -1,36 +1,23 @@
 /**
- * NFT Ownership Cache (admin-api binding)
+ * NFT Ownership Cache (handlers binding)
  *
  * Thin wrapper around `@swarm/core`'s `createNFTOwnershipCache` factory that
- * binds admin-api's DynamoDB client + Helius helper. The shared cache layer
- * lives in core so webhook handlers can read/write the same row (see #1385
- * PR 3).
+ * binds handler-side dependencies. Reads and writes the same DynamoDB row
+ * (`NFT_OWNER#<mint>/CURRENT` in `SwarmAdminTable`) that admin-api writes,
+ * so both packages share the cross-Lambda cache layer transparently.
  *
- * The public API here (function names, signatures, return semantics) is
- * unchanged from the original implementation so existing admin-api callers
- * and tests do not need to be touched.
+ * See #1385 PR 3 for the design rationale.
  */
 import { type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createNFTOwnershipCache } from '@swarm/core/services';
 import { getDynamoClient } from './dynamo-client.js';
-import { getHeliusRpcUrl } from './web3/nft-gate.js';
-
-export {
-  IN_MEMORY_TTL_MS,
-  DYNAMO_TTL_SECONDS,
-  NFT_OWNER_PK_PREFIX,
-  NFT_OWNER_SK,
-  nftOwnerCacheKey,
-  type CachedNFTOwnerItem,
-} from '@swarm/core/services';
+import { getHeliusRpcUrl } from './helius-rpc.js';
 
 const cache = createNFTOwnershipCache({
   dynamoClient: getDynamoClient(),
   getAdminTable: () => process.env.ADMIN_TABLE!,
-  // Lazy re-lookup so `mock.module('./web3/nft-gate.js', ...)` in tests
-  // reaches this call path after the wrapper has already been loaded.
   getHeliusRpcUrl: () => getHeliusRpcUrl(),
-  metricNamespace: 'Swarm/AdminApi',
+  metricNamespace: 'Swarm/Handlers',
 });
 
 export async function getCachedNFTOwner(mint: string): Promise<string | null> {

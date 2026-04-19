@@ -83,30 +83,40 @@ Landing across three PRs against #1385. Design principle: **verify at message en
 - Wired into 6 admin-api entry points: `GET/PUT /avatars/{id}`, `POST /chat` + stream, `POST /v1/chat/completions` + stream.
 - Product-level outcome: NFT transfer revokes access **within ~60 seconds** on admin-api paths. Admins still bypass (unchanged admin semantics).
 
-### PR 2 — MCP slice (exempt, this PR)
+### PR 2 — MCP slice (exempt, shipped #1414)
 
 **Determination: option (b) exempt with justification.**
 
-The MCP tool package does not introduce a new entry point for callers; every MCP tool invocation happens **inside a session already authenticated by an upstream layer** — admin-api (PR 1), webhook handlers (PR 3), or an autonomous avatar tick (no caller to gate). Every tool in `packages/mcp-server/src/tools/nft.ts` that takes `context.avatarId` is a `defineReadonlyTool` self-awareness tool (`get_my_inhabitation_status`, `get_my_lineage`, `get_my_ascension_status`, `get_inhabitation_link`). Adding a per-tool `assertAvatarOwnership` call would:
+The MCP tool package does not introduce a new entry point for callers; every MCP tool invocation happens **inside a session already authenticated by an upstream layer** — admin-api (PR 1), webhook handlers (PR 3), or an autonomous avatar tick (no caller to gate). Every tool in `packages/mcp-server/src/tools/nft.ts` that takes `context.avatarId` is a `defineReadonlyTool` self-awareness tool (`get_my_inhabitation_status`, `get_my_lineage`, `get_my_ascension_status`, `get_inhabitation_link`). Adding a per-tool `assertAvatarOwnership` call would duplicate the upstream gate, multiply Helius / cache cost linearly in tools-per-turn (3-10 tools per typical turn), and create a drift vector.
 
-1. **Duplicate the upstream gate** — the same caller / avatar pair has already been checked milliseconds earlier at the chat entry.
-2. **Multiply Helius / cache cost linearly in tools-per-turn** — a typical chat turn fires 3-10 tools. With a 60s DynamoDB TTL this is mostly cache hits, but the added cost buys no additional security.
-3. **Create a drift vector** — every new MCP tool author would have to remember to wire the gate manually; the centralized upstream gate is harder to forget.
+The single MCP write-tool, `claim_nft_as_avatar`, still verifies ownership at claim time via `verifyNFTOwnership` (unchanged).
 
-The single MCP write-tool, `claim_nft_as_avatar`, still verifies ownership **at claim time** via `verifyNFTOwnership` (unchanged, correctly enforced — see claim-time column at the top of this document). No other MCP tool mutates avatar ownership state.
+### PR 3 — webhook infrastructure (this PR)
 
-Operationally this means: if a caller somehow reached an MCP tool without passing through an upstream gate (a future misuse, e.g. a new MCP transport that bypasses admin-api), **the gap reopens silently**. The mitigation is architectural — gates live on entry points, and new entry points must call `assertAvatarOwnership` themselves. PR 3 (webhook slice) is an example of that discipline.
+PR 3 is landing in **two stages**. This PR ships the cache + helper infrastructure so the handlers package has everything it needs to gate webhooks; a follow-up issue tracks the actual wiring into `telegram-webhook-shared.ts` / `discord-gateway-shared.ts` + the supporting data-plumbing work.
 
-### PR 3 — webhook slice (pending)
+**Stage A (this PR) — infrastructure only:**
 
-Remaining access paths from the inventory above:
+1. **Cache promoted to `@swarm/core`**: `packages/core/src/services/nft-ownership-cache.ts` exposes a `createNFTOwnershipCache(deps)` factory. Behavior is byte-for-byte identical to the admin-api implementation, parameterized over `dynamoClient`, `getAdminTable`, `getHeliusRpcUrl`, and an optional `emitCacheMissMetric`. The DynamoDB row schema (`pk: NFT_OWNER#<mint>`, `sk: CURRENT`) is now a shared contract; both packages read and write the same row.
+2. **Admin-api wrapper preserved**: `packages/admin-api/src/services/nft-ownership-cache.ts` collapses to a thin adapter around the core factory. Public API (`getCachedNFTOwner`, `invalidateNFTOwnerCache`, `_setNFTOwnershipDynamoClient`, `_resetNFTOwnershipMemoryCache`, the constants) is unchanged — PR 1's callers and tests require no code change.
+3. **Handler-side binding**: `packages/handlers/src/services/nft-ownership-cache.ts` instantiates the same factory with the handler dynamo client, a handler-local Helius URL resolver (`helius-rpc.ts`), and the `Swarm/Handlers` metric namespace.
+4. **Handler-side gate helper**: `packages/handlers/src/services/assert-avatar-ownership.ts` exposes `assertAvatarStillOwnedByClaimer(avatar)`. Semantics are deliberately different from admin-api's gate: webhook handlers do not have a caller wallet to compare against (Telegram callers are Telegram user ids, not wallets), so the handler gate enforces the **weaker but applicable** invariant that the wallet that claimed the avatar (`creatorWallet`) is still the current on-chain holder of `nftMint`. Non-NFT avatars pass through untouched. Fail-closed on Helius unavailability.
 
-- `packages/handlers/src/telegram/telegram-webhook-shared.ts`
-- `packages/handlers/src/discord/discord-gateway-shared.ts`
-- `packages/handlers/src/twitter/autonomous-tweet-poster.ts` (autonomous — may be exempt like MCP)
-- `packages/handlers/src/messaging/message-processor.ts`
+**Stage B (follow-up issue) — wiring:**
 
-Webhook handlers read from the state-service cache, not admin-api, so the caching layer must either be extended or a thin handler-side equivalent of `assertAvatarOwnership` added. PR 3 will also reconcile whether twitter autonomous posting and message-processor fall under the same exemption rationale as MCP (no caller wallet in context) or need their own gate.
+Webhook handlers currently read an `AvatarConfig` (core type) that does NOT include `nftMint` / `creatorWallet` — those fields live on admin-api's `AvatarRecord` and are stored in a separate DynamoDB table. Wiring the gate therefore requires additional data-plumbing work that belongs in its own PR:
+
+1. Either promote `nftMint` + `creatorWallet` onto `AvatarConfig` in `packages/core/src/types/platform.ts` and update the admin-api → state-service sync path to copy the fields, OR add a targeted `getAvatarOwnershipFields(avatarId)` query in handlers that reads the admin table directly.
+2. Update `packages/infra/src/constructs/shared-handlers.ts` `commonEnv` to inject `HELIUS_API_KEY` + `HELIUS_API_KEY_ARN` into handler Lambdas, and grant the Helius secret to `lambdaRole` so the handler-side cache can actually resolve an owner on a cache miss.
+3. Call `assertAvatarStillOwnedByClaimer(avatar)` in `telegram-webhook-shared.ts` and `discord-gateway-shared.ts` immediately after the existing `getAvatarConfig` + status checks. Translate `HandlerOwnershipError` into a silent `200 OK` drop for the webhook caller (Telegram/Discord retry logic does not need to know ownership was revoked) and log the event.
+4. Add one end-to-end "post-transfer access is revoked" test per gated webhook.
+
+**Message-processor and twitter-autonomous exemption**
+
+Of the remaining audit paths:
+
+- `packages/handlers/src/messaging/message-processor.ts` is **exempt**. It reads from the SQS message queue, whose producers (webhook handlers + admin-api) are now all gated. A message that reaches the processor has already passed an upstream check. Processing must not double-gate because by the time a message is dequeued, the caller context (wallet, session) is gone.
+- `packages/handlers/src/twitter/autonomous-tweet-poster.ts` is a scheduled autonomous poster with no caller. **Not exempt.** The avatar identity is tied to the NFT; autonomous posts should stop when the NFT transfers so the new holder isn't speaking through the original claimer's Twitter account. This is tracked in the same follow-up issue as the webhook wiring — the gate call is a one-liner but belongs with the Helius-env plumbing.
 
 ## Cross-references
 
@@ -114,7 +124,11 @@ Webhook handlers read from the state-service cache, not admin-api, so the cachin
 - Issue #1361 — verification task that triggered this audit.
 - Issue #1385 — remediation.
 - PR #1397 — remediation PR 1 (admin-api, shipped 2026-04-17).
+- PR #1414 — remediation PR 2 (MCP exemption, 2026-04-19).
+- Code: `packages/core/src/services/nft-ownership-cache.ts` — shared factory (PR 3 infrastructure).
+- Code: `packages/admin-api/src/services/nft-ownership-cache.ts` — admin-api binding (PR 3 infrastructure).
+- Code: `packages/handlers/src/services/nft-ownership-cache.ts` — handler binding (PR 3 infrastructure).
+- Code: `packages/handlers/src/services/assert-avatar-ownership.ts` — handler gate helper (PR 3 infrastructure).
 - Code: `packages/admin-api/src/services/avatars.ts` — `assertAvatarOwnership()` (PR 1), `:716` (claim-time verify).
-- Code: `packages/admin-api/src/services/nft-ownership-cache.ts` — two-tier cache (PR 1).
-- Code: `packages/mcp-server/src/tools/nft.ts` — claim-time verify at `claimNFTAsAvatar`; MCP-exempt comment documents PR 2.
+- Code: `packages/mcp-server/src/tools/nft.ts` — claim-time verify at `claimNFTAsAvatar`; MCP-exempt top-of-file comment (PR 2).
 - Test: `packages/admin-api/src/handlers/avatar-routes/nft-ownership-access.test.ts` — asserts post-transfer revocation end-to-end (PR 1).
