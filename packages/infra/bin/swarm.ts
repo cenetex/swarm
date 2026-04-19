@@ -101,6 +101,7 @@ const stripeWebhookSecretArn = getContextValue<string>('stripeWebhookSecretArn',
 const stripePriceIdPro = getContextValue<string>('stripePriceIdPro', envConfig);
 const stripePriceIdEnterprise = getContextValue<string>('stripePriceIdEnterprise', envConfig);
 const stripePriceIdTeam = getContextValue<string>('stripePriceIdTeam', envConfig);
+const signalApiTokenSecretArn = getContextValue<string>('signalApiTokenSecretArn', envConfig);
 const galleryDomain = getContextValue<string>('galleryDomain', envConfig);
 const galleryCertificateArn = getContextValue<string>('galleryCertificateArn', envConfig);
 const mediaCdnUrl = getContextValue<string>('mediaCdnUrl', envConfig);
@@ -222,6 +223,7 @@ const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffi
   stripePriceIdPro,
   stripePriceIdEnterprise,
   stripePriceIdTeam,
+  signalApiTokenSecretArn,
   anthropicApiKeyArn,
   enableClaudeCode,
   enableDiscordGateway,

@@ -23,6 +23,7 @@ export const TOOLSETS = [
   'nft',
   'claude-code',
   'github',
+  'signal-station',
 ] as const;
 
 export type ToolsetId = typeof TOOLSETS[number];
@@ -73,6 +74,8 @@ export const TOOL_TAGS = [
   'github',
   'issue-tracking',
   'deployed',
+  'signal',
+  'station',
 ] as const;
 
 export type ToolTag = typeof TOOL_TAGS[number];
@@ -90,6 +93,7 @@ export const CATEGORY_TOOLSET_MAP: Record<string, ToolsetId> = {
   property: 'property',
   nft: 'nft',
   github: 'github',
+  'signal-station': 'signal-station',
 };
 
 export const TOOLSET_DEFAULT_TAGS: Record<ToolsetId, ToolTag[]> = {
@@ -114,4 +118,5 @@ export const TOOLSET_DEFAULT_TAGS: Record<ToolsetId, ToolTag[]> = {
   nft: ['nft', 'ownership'],
   'claude-code': ['claude-code', 'coding', 'avatar'],
   github: ['github', 'issue-tracking', 'deployed'],
+  'signal-station': ['signal', 'station'],
 };

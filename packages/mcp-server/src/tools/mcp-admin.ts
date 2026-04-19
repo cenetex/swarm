@@ -31,6 +31,7 @@ const TOOLSET_INFO: Record<ToolsetId, { name: string; description: string }> = {
   nft: { name: 'NFT', description: 'NFT ownership and lineage' },
   'claude-code': { name: 'Claude Code', description: 'Claude Code avatar for coding tasks' },
   github: { name: 'GitHub Issues', description: 'Track and query reported GitHub issues' },
+  'signal-station': { name: 'Signal Station', description: 'Govern a Signal space mining station (observe, set prices, build modules, set hail)' },
 };
 
 export interface McpConfig {

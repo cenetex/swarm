@@ -39,6 +39,7 @@ const TOOLSET_KEYWORDS: Record<ToolsetId, string[]> = {
   nft: ['nft', 'ownership', 'claim', 'lineage'],
   'claude-code': ['code', 'coding', 'implement', 'refactor', 'debug', 'fix bug', 'write code', 'programming'],
   github: ['github', 'issue', 'bug report', 'reported', 'tracking', 'deployed', 'fixed', 'status'],
+  'signal-station': ['station', 'signal', 'hail', 'commodity', 'asteroid', 'mining', 'module'],
 };
 
 const TOOLSET_PRIORITY: ToolsetId[] = [

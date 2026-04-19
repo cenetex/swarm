@@ -137,6 +137,7 @@ async function loadAvatarConfig(avatarId: string): Promise<ProcessorAvatarConfig
     discord: Boolean(avatar.platforms?.discord?.enabled),
     nft: true,
     property: enabledToolsets.includes('property'),
+    signalStation: enabledToolsets.includes('signal-station'),
   });
 
   // Get wallets for context

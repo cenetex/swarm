@@ -310,6 +310,7 @@ export async function handler(
           discord: Boolean(avatarRecord.platforms?.discord?.enabled),
           nft: true,
           property: (avatarRecord.mcpConfig?.enabledToolsets || []).includes('property'),
+          signalStation: (avatarRecord.mcpConfig?.enabledToolsets || []).includes('signal-station'),
         })
       : undefined;
 
