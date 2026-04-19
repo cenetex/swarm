@@ -94,6 +94,35 @@ export function createSignalStationServices(): SignalStationServices {
       }
       return res.json() as Promise<CommandResult>;
     },
+
+    readChannelMessages: async (since, limit) => {
+      const headers = await authHeaders();
+      const params = new URLSearchParams();
+      if (limit !== undefined) params.append('limit', String(limit));
+      if (since !== undefined) params.append('since', String(since));
+      const queryString = params.toString();
+      const url = `${SIGNAL_API_BASE}/api/signal_channel/messages${queryString ? '?' + queryString : ''}`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Channel read failed (${res.status}): ${body}`);
+      }
+      return res.json() as Promise<any>;
+    },
+
+    postChannelMessage: async (stationId, text, audioUrl) => {
+      const headers = await authHeaders();
+      const res = await fetch(`${SIGNAL_API_BASE}/api/station/${stationId}/signal_channel`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ text, audio_url: audioUrl }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Channel post failed (${res.status}): ${body}`);
+      }
+      return res.json() as Promise<any>;
+    },
   };
 }
 

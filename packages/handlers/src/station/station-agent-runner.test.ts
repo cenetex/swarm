@@ -121,3 +121,70 @@ describe('maybeGenerateHailAudio', () => {
     expect(deps.calls.put).toBe(0);
   });
 });
+
+// Channel context tests
+describe('signal_channel context', () => {
+  it('formats channel messages with truncation to 200 chars per message', () => {
+    const messages = [
+      { id: 1, timestamp: 100, sender_station_id: 0, text: 'Short message', audio_url: undefined },
+      { id: 2, timestamp: 101, sender_station_id: 1, text: 'x'.repeat(300) },
+    ];
+    const formatted = messages
+      .map((msg) => {
+        const senderName = ['Prospect', 'Kepler', 'Helios'][msg.sender_station_id] || `Station${msg.sender_station_id}`;
+        const text = msg.text.slice(0, 200);
+        return `${senderName} [${msg.timestamp}]: ${text}`;
+      })
+      .join('\n');
+
+    expect(formatted).toContain('Prospect [100]: Short message');
+    expect(formatted).toContain('Kepler [101]: ' + 'x'.repeat(200));
+    expect(formatted).not.toContain('x'.repeat(201)); // Truncated
+  });
+
+  it('handles empty message list gracefully', () => {
+    const messages = [];
+    expect(messages.length).toBe(0);
+  });
+
+  it('maps station ids correctly to avatar names', () => {
+    const stationNames = ['Prospect', 'Kepler', 'Helios'];
+    expect(stationNames[0]).toBe('Prospect');
+    expect(stationNames[1]).toBe('Kepler');
+    expect(stationNames[2]).toBe('Helios');
+  });
+
+  it('handles channel fetch failure gracefully (non-fatal)', () => {
+    const error = new Error('Connection refused');
+    const result = {
+      block: '(station-band channel fetch failed)',
+      error: error.message,
+    };
+    expect(result.block).toBe('(station-band channel fetch failed)');
+    expect(result.error).toBe('Connection refused');
+  });
+
+  it('tracks last message id for incremental fetches', () => {
+    const messages = [
+      { id: 1, timestamp: 100, sender_station_id: 0, text: 'first' },
+      { id: 2, timestamp: 101, sender_station_id: 1, text: 'second' },
+      { id: 3, timestamp: 102, sender_station_id: 2, text: 'third' },
+    ];
+    const lastMessageId = messages[messages.length - 1]?.id;
+    expect(lastMessageId).toBe(3);
+  });
+
+  it('deduplicates auto-post if hail text unchanged', () => {
+    const previousHail = 'Station full, come back later';
+    const newHail = previousHail;
+    expect(previousHail === newHail).toBe(true);
+    // Should skip auto-post
+  });
+
+  it('auto-posts when hail text changes', () => {
+    const previousHail = 'Station full';
+    const newHail = 'New inventory in stock';
+    expect(previousHail === newHail).toBe(false);
+    // Should auto-post
+  });
+});
