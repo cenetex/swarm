@@ -48,6 +48,12 @@ jobs:
 
       - name: Chat completions canary
         id: chat
+        # Soft-fail until a dedicated canary-probe avatar is seeded and owned
+        # by the CANARY_API_KEY's session. Today the gate introduced by #1397
+        # blocks every API-key holder that is not the avatar's current owner,
+        # so chat completions return 404. Tracked on #1422 follow-ups; the
+        # health step above is still required (Cloudflare/API Gateway up).
+        continue-on-error: true
         env:
           CANARY_MODEL: ${{ secrets.CANARY_MODEL }}
         run: |
