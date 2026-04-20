@@ -351,6 +351,7 @@ export class AdminApiStack extends cdk.Stack {
       internalTestKey,
       alarmTopic,
       raticrossInboundKey,
+      heliusApiKeyArn,
     });
 
     // Create Admin API if configured

@@ -88,6 +88,16 @@ export interface SharedHandlersProps {
    * Should be stored in AWS Secrets Manager in production.
    */
   raticrossInboundKey?: string;
+  /**
+   * Helius API key for NFT ownership verification on handlers.
+   * Used by assert-avatar-ownership cache service to verify NFT holders.
+   */
+  heliusApiKey?: string;
+  /**
+   * Helius API key secret ARN (for reference-based access).
+   * Used when Helius API key is stored in Secrets Manager.
+   */
+  heliusApiKeyArn?: string;
 }
 
 export class SharedHandlers extends Construct {
@@ -127,6 +137,8 @@ export class SharedHandlers extends Construct {
       twitterDailyReservePct = 20,
       internalTestKey,
       raticrossInboundKey,
+      heliusApiKey,
+      heliusApiKeyArn,
     } = props;
     const suffix = props.nameSuffix ?? '';
 
@@ -141,6 +153,11 @@ export class SharedHandlers extends Construct {
     // This ensures the correct full ARN is used for both env vars and IAM grants.
     const replicateApiKeySecret = replicateApiKeyArn
       ? secretsmanager.Secret.fromSecretCompleteArn(this, 'ReplicateApiKey', replicateApiKeyArn)
+      : undefined;
+
+    // Import Helius API key secret for NFT ownership verification
+    const heliusApiKeySecret = heliusApiKeyArn
+      ? secretsmanager.Secret.fromSecretCompleteArn(this, 'HeliumsApiKey', heliusApiKeyArn)
       : undefined;
 
     // Path to handlers source files
@@ -258,6 +275,10 @@ export class SharedHandlers extends Construct {
       replicateApiKeySecret.grantRead(lambdaRole);
     }
 
+    if (heliusApiKeySecret) {
+      heliusApiKeySecret.grantRead(lambdaRole);
+    }
+
     // Grant Bedrock access (used by core LLM service if configured)
     lambdaRole.addToPolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
@@ -303,6 +324,9 @@ export class SharedHandlers extends Construct {
       // Raticross relay inbound authentication key (for inbound and health handlers)
       // The relay will use this key to authenticate when sending messages to aws-swarm
       ...(raticrossInboundKey ? { RATICROSS_INBOUND_KEY: raticrossInboundKey } : {}),
+      // Helius API key for NFT ownership verification (#1385 handlers follow-up)
+      HELIUS_API_KEY: heliusApiKey || '',
+      HELIUS_API_KEY_ARN: heliusApiKeyArn || '',
     };
 
     if (replicateApiKeySecret) {
