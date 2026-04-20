@@ -11,7 +11,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  STAGING_API_URL: https://staging-swarm.rati.chat
+  # Direct API Gateway execute-api URL for SwarmAdminApi-staging.
+  # staging-swarm.rati.chat (previously used) resolves through Cloudflare to a
+  # dead origin (error 1016). No current API Gateway custom-domain maps there.
+  # If the staging stack is re-created with a new API ID, update this URL.
+  # See #1422 for the longer-term plan to move it into a secret.
+  STAGING_API_URL: https://hs38po7mq0.execute-api.us-east-1.amazonaws.com
 
 jobs:
   canary:
@@ -28,7 +33,7 @@ jobs:
           HTTP_CODE=$(curl -sS -o /tmp/models-response.json -w "%{http_code}" \
             --max-time 15 \
             -H "Authorization: Bearer ${{ secrets.CANARY_API_KEY }}" \
-            "${STAGING_API_URL}/api/v1/models" || echo "000")
+            "${STAGING_API_URL}/v1/models" || echo "000")
 
           echo "http_code=${HTTP_CODE}" >> "$GITHUB_OUTPUT"
 
@@ -66,7 +71,7 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.CANARY_API_KEY }}" \
             -d "${BODY}" \
-            "${STAGING_API_URL}/api/v1/chat/completions" || echo "000")
+            "${STAGING_API_URL}/v1/chat/completions" || echo "000")
 
           echo "http_code=${HTTP_CODE}" >> "$GITHUB_OUTPUT"
 
