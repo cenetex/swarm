@@ -16,7 +16,7 @@
     "invalidate:prod": "PROFILE_PAGE_DISTRIBUTION_ID=$(aws cloudformation describe-stacks --stack-name SwarmProfilePage-prod --query 'Stacks[0].Outputs[?OutputKey==`ProfilePageDistributionId`].OutputValue' --output text) pnpm run invalidate"
   },
   "devDependencies": {
-    "vite": "^8.0.8"
+    "vite": "^8.0.9"
   },
   "dependencies": {
     "i18next": "^26.0.1"
