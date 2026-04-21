@@ -39,6 +39,12 @@ interface AvatarConfig {
     updatedAt?: number;
   };
 
+  // NFT ownership fields — consumed by handler-side ownership gate
+  // (#1416: assertAvatarStillOwnedByClaimer). Both must be present and
+  // non-empty for the gate to run; otherwise avatars are treated as non-NFT.
+  nftMint?: string;
+  creatorWallet?: string;
+
   platforms: {
     telegram?: {
       enabled: boolean;
@@ -175,6 +181,9 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
       generatedPrompt: record.characterReference.generatedPrompt,
       updatedAt: record.characterReference.updatedAt,
     } : undefined,
+
+    nftMint: record.nftMint,
+    creatorWallet: record.creatorWallet,
 
     platforms: {},
     llm: {
