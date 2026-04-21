@@ -1,16 +1,11 @@
 /**
  * Tests for avatar-scoped key model defaulting.
  *
- * Covers:
- * - Avatar-scoped key + no model → defaults to avatar:${avatarId}
- * - Avatar-scoped key + matching model → works (regression check)
- * - Avatar-scoped key + mismatched model → 403
- * - Wildcard key + no model → 400 with clear message
- * - Streaming schema accepts optional model
+ * Exercises the real `resolveModel` + `parseAvatarId` helpers from
+ * `openai-compat.ts` so schema drift or behavior regressions are caught.
  */
 import { describe, test, expect } from 'bun:test';
-import { z } from 'zod';
-import { parseAvatarId } from './openai-compat.js';
+import { parseAvatarId, resolveModel } from './openai-compat.js';
 
 describe('parseAvatarId', () => {
   test('extracts avatar ID from avatar: format', () => {
@@ -24,117 +19,43 @@ describe('parseAvatarId', () => {
   });
 });
 
-describe('Schema validation for optional model', () => {
-  const ChatCompletionRequestSchema = z.object({
-    model: z.string().optional(),
-    messages: z.array(z.object({
-      role: z.enum(['system', 'user', 'assistant']),
-      content: z.string(),
-    })).min(1),
-    temperature: z.number().min(0).max(2).optional(),
-    max_tokens: z.number().int().positive().optional(),
-    stream: z.boolean().optional().default(false),
-    include_audio: z.boolean().optional().default(false),
+describe('resolveModel', () => {
+  test('scoped key + no model → defaults to avatar:{avatarId}', () => {
+    const result = resolveModel(undefined, { avatarId: 'chamuel' });
+    expect(result).toEqual({ model: 'avatar:chamuel' });
   });
 
-  test('accepts request without model field', () => {
-    const request = {
-      messages: [{ role: 'user' as const, content: 'Hello' }],
-    };
-    const result = ChatCompletionRequestSchema.safeParse(request);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.model).toBeUndefined();
+  test('scoped key + empty string model → defaults to avatar:{avatarId}', () => {
+    // Empty string is falsy — treat the same as missing so callers don't
+    // accidentally parse an empty avatarId.
+    const result = resolveModel('', { avatarId: 'chamuel' });
+    expect(result).toEqual({ model: 'avatar:chamuel' });
+  });
+
+  test('scoped key + matching explicit model → preserves the request model', () => {
+    const result = resolveModel('avatar:chamuel', { avatarId: 'chamuel' });
+    expect(result).toEqual({ model: 'avatar:chamuel' });
+  });
+
+  test('scoped key + mismatched model → preserves caller model (mismatch enforced downstream)', () => {
+    // resolveModel does not enforce scope; the handler compares
+    // parseAvatarId(resolved.model) against validation.avatarId and returns 403.
+    const resolved = resolveModel('avatar:other', { avatarId: 'chamuel' });
+    expect(resolved).toEqual({ model: 'avatar:other' });
+    if (!('error' in resolved)) {
+      expect(parseAvatarId(resolved.model)).toBe('other');
     }
   });
 
-  test('accepts request with model field', () => {
-    const request = {
-      model: 'avatar:test-bot',
-      messages: [{ role: 'user' as const, content: 'Hello' }],
-    };
-    const result = ChatCompletionRequestSchema.safeParse(request);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.model).toBe('avatar:test-bot');
-    }
+  test('wildcard key + no model → error', () => {
+    const result = resolveModel(undefined, {});
+    expect(result).toEqual({
+      error: 'model parameter is required for wildcard API keys',
+    });
   });
 
-  test('still rejects invalid messages', () => {
-    const request = {
-      messages: [],
-    };
-    const result = ChatCompletionRequestSchema.safeParse(request);
-    expect(result.success).toBe(false);
-  });
-});
-
-describe('Model defaulting logic', () => {
-  test('scoped key with undefined model defaults to avatar URL', () => {
-    const validation = {
-      valid: true,
-      avatarId: 'test-avatar',
-      session: { email: 'api', userId: 'user', isAdmin: false, accessToken: '' },
-    };
-
-    let model: string | undefined;
-    if (validation.avatarId) {
-      model = `avatar:${validation.avatarId}`;
-    }
-
-    expect(model).toBe('avatar:test-avatar');
-  });
-
-  test('wildcard key with undefined model should error', () => {
-    const validation = {
-      valid: true,
-      avatarId: undefined,
-      session: { email: 'api', userId: 'user', isAdmin: false, accessToken: '' },
-    };
-
-    let hasError = false;
-    let model: string | undefined;
-    if (!model) {
-      if (validation.avatarId) {
-        model = `avatar:${validation.avatarId}`;
-      } else {
-        hasError = true;
-      }
-    }
-
-    expect(hasError).toBe(true);
-    expect(model).toBeUndefined();
-  });
-
-  test('scoped key with explicit model preserves it', () => {
-    let model = 'avatar:test-avatar';
-
-    expect(model).toBe('avatar:test-avatar');
-  });
-
-  test('mismatched avatar between key and model is detectable', () => {
-    const validation = {
-      valid: true,
-      avatarId: 'test-avatar',
-      session: { email: 'api', userId: 'user', isAdmin: false, accessToken: '' },
-    };
-    const requestModel = 'avatar:other-avatar';
-    const requestAvatarId = parseAvatarId(requestModel);
-
-    const isMismatch = validation.avatarId !== requestAvatarId;
-    expect(isMismatch).toBe(true);
-  });
-
-  test('matching avatar between key and model is detectable', () => {
-    const validation = {
-      valid: true,
-      avatarId: 'test-avatar',
-      session: { email: 'api', userId: 'user', isAdmin: false, accessToken: '' },
-    };
-    const requestModel = 'avatar:test-avatar';
-    const requestAvatarId = parseAvatarId(requestModel);
-
-    const isMatching = validation.avatarId === requestAvatarId;
-    expect(isMatching).toBe(true);
+  test('wildcard key + explicit model → preserves the request model', () => {
+    const result = resolveModel('avatar:anything', {});
+    expect(result).toEqual({ model: 'avatar:anything' });
   });
 });

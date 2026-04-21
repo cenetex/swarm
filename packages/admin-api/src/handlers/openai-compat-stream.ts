@@ -15,6 +15,7 @@ import {
   extractApiKey,
   validateApiKey,
   parseAvatarId,
+  resolveModel,
   hashApiKey,
 } from './openai-compat.js';
 import * as avatars from '../services/avatars.js';
@@ -144,17 +145,12 @@ async function handleStreamingRequest(
     return;
   }
 
-  // Default model for avatar-scoped keys if not provided
-  let model = request.model;
-  if (!model) {
-    if (validation.avatarId) {
-      model = `avatar:${validation.avatarId}`;
-    } else {
-      writeErrorAndEnd(stream, requestId, 'model parameter is required for wildcard API keys');
-      return;
-    }
+  const resolved = resolveModel(request.model, validation);
+  if ('error' in resolved) {
+    writeErrorAndEnd(stream, requestId, resolved.error);
+    return;
   }
-
+  const model = resolved.model;
   const avatarId = parseAvatarId(model);
 
   // Verify avatar access

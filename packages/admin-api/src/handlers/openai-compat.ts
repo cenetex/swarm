@@ -364,6 +364,22 @@ export function parseAvatarId(model: string): string {
   return model;
 }
 
+/**
+ * Resolve the effective model for a chat completion request.
+ *
+ * - If the request supplied a model, use it as-is.
+ * - If it didn't and the API key is avatar-scoped, default to `avatar:{avatarId}`.
+ * - Otherwise (wildcard key + no model), return an error.
+ */
+export function resolveModel(
+  requestModel: string | undefined,
+  validation: { avatarId?: string },
+): { model: string } | { error: string } {
+  if (requestModel) return { model: requestModel };
+  if (validation.avatarId) return { model: `avatar:${validation.avatarId}` };
+  return { error: 'model parameter is required for wildcard API keys' };
+}
+
 // =============================================================================
 // Response Helpers
 // =============================================================================
@@ -731,17 +747,11 @@ async function handleChatCompletions(
     return errorResponse(400, 'Invalid JSON body', 'invalid_request_error', undefined, corsHeaders);
   }
 
-  // Default model for avatar-scoped keys if not provided
-  let model = request.model;
-  if (!model) {
-    if (validation.avatarId) {
-      model = `avatar:${validation.avatarId}`;
-    } else {
-      return errorResponse(400, 'model parameter is required for wildcard API keys', 'invalid_request_error', undefined, corsHeaders);
-    }
+  const resolved = resolveModel(request.model, validation);
+  if ('error' in resolved) {
+    return errorResponse(400, resolved.error, 'invalid_request_error', undefined, corsHeaders);
   }
-
-  // Parse avatar ID from model
+  const model = resolved.model;
   const avatarId = parseAvatarId(model);
 
   // Check if API key is authorized for this avatar
