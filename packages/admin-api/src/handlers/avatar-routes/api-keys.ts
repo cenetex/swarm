@@ -138,6 +138,124 @@ export async function handleApiKeyRoutes(
     });
   }
 
+  // ── GET /avatars/{id}/api-keys — List API keys for an avatar ──────────────
+  const listApiKeysMatch = path.match(/^\/avatars\/([^/]+)\/api-keys$/);
+  if (method === 'GET' && listApiKeysMatch) {
+    const avatarId = listApiKeysMatch[1];
+
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
+
+    try {
+      const { QueryCommand } = await import('@aws-sdk/lib-dynamodb');
+      const { docClient, ADMIN_TABLE } = await import('../../services/dynamodb.js');
+
+      // Query index for this avatar's keys
+      const result = await docClient.send(new QueryCommand({
+        TableName: ADMIN_TABLE,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+        ExpressionAttributeValues: {
+          ':pk': `AVATAR#${avatarId}`,
+          ':sk': 'API_KEY#',
+        },
+      }));
+
+      const keys = (result.Items || []).map(item => ({
+        keyPrefix: item.keyPrefix as string,
+        name: item.name as string,
+        createdAt: item.createdAt as number,
+        createdBy: item.createdBy as string,
+        lastUsedAt: item.lastUsedAt as number | undefined,
+        enabled: item.enabled !== false,
+      }));
+
+      return jsonResponse(corsHeaders, 200, { keys });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to list API keys';
+      logger.error('Failed to list API keys', {
+        event: 'api_key_list_failed',
+        avatarId,
+        error: err,
+      });
+      return jsonResponse(corsHeaders, 500, { error: msg });
+    }
+  }
+
+  // ── DELETE /avatars/{id}/api-keys/{keyPrefix} — Revoke an API key ────────
+  const deleteApiKeyMatch = path.match(/^\/avatars\/([^/]+)\/api-keys\/([^/]+)$/);
+  if (method === 'DELETE' && deleteApiKeyMatch) {
+    const avatarId = deleteApiKeyMatch[1];
+    const keyPrefix = deleteApiKeyMatch[2];
+
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
+
+    try {
+      const { QueryCommand, UpdateCommand } = await import('@aws-sdk/lib-dynamodb');
+      const { docClient, ADMIN_TABLE } = await import('../../services/dynamodb.js');
+
+      // Find the key by prefix (search through avatar's keys)
+      const listResult = await docClient.send(new QueryCommand({
+        TableName: ADMIN_TABLE,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+        ExpressionAttributeValues: {
+          ':pk': `AVATAR#${avatarId}`,
+          ':sk': 'API_KEY#',
+        },
+      }));
+
+      const keyItem = (listResult.Items || []).find(item => item.keyPrefix === keyPrefix);
+      if (!keyItem) {
+        return jsonResponse(corsHeaders, 404, { error: 'API key not found' });
+      }
+
+      // Mark as disabled instead of deleting (soft delete for audit trail)
+      await docClient.send(new UpdateCommand({
+        TableName: ADMIN_TABLE,
+        Key: {
+          pk: `API_KEY#${keyItem.keyHash}`,
+          sk: 'META',
+        },
+        UpdateExpression: 'SET enabled = :enabled, revokedAt = :revokedAt',
+        ExpressionAttributeValues: {
+          ':enabled': false,
+          ':revokedAt': Date.now(),
+        },
+      }));
+
+      // Also disable in the avatar index
+      await docClient.send(new UpdateCommand({
+        TableName: ADMIN_TABLE,
+        Key: {
+          pk: `AVATAR#${avatarId}`,
+          sk: `API_KEY#${keyItem.keyHash.slice(0, 16)}`,
+        },
+        UpdateExpression: 'SET enabled = :enabled, revokedAt = :revokedAt',
+        ExpressionAttributeValues: {
+          ':enabled': false,
+          ':revokedAt': Date.now(),
+        },
+      }));
+
+      logger.info('API key revoked', {
+        event: 'api_key_revoked',
+        avatarId,
+        keyPrefix,
+      });
+
+      return jsonResponse(corsHeaders, 204, {});
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to revoke API key';
+      logger.error('Failed to revoke API key', {
+        event: 'api_key_revoke_failed',
+        avatarId,
+        keyPrefix,
+        error: err,
+      });
+      return jsonResponse(corsHeaders, 500, { error: msg });
+    }
+  }
+
   // ── POST /api-keys — Create wildcard API key (admin-only) ───────────────
   if (method === 'POST' && path === '/api-keys') {
     if (!effectiveIsAdmin) {
