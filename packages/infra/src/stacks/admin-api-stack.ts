@@ -253,6 +253,9 @@ export class AdminApiStack extends cdk.Stack {
       raticrossInboundKey,
     } = props;
 
+    // Read CDK context for NFT ownership enforcement flag
+    const nftOwnershipEnforcement = (this.node.tryGetContext('nftOwnershipEnforcement') || 'off') as 'on' | 'off';
+
     // SSM parameter name for the API endpoint URL — used by AdminUiStack
     // to avoid CloudFormation cross-stack export dependencies.
     this.apiEndpointParamName = apiEndpointParamName(environment, nameSuffix ?? '');
@@ -351,6 +354,7 @@ export class AdminApiStack extends cdk.Stack {
       alarmTopic,
       raticrossInboundKey,
       heliusApiKeyArn,
+      nftOwnershipEnforcement,
     });
 
     // Create Admin API if configured
