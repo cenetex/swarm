@@ -732,16 +732,17 @@ async function handleChatCompletions(
   }
 
   // Default model for avatar-scoped keys if not provided
-  if (!request.model) {
+  let model = request.model;
+  if (!model) {
     if (validation.avatarId) {
-      request.model = `avatar:${validation.avatarId}`;
+      model = `avatar:${validation.avatarId}`;
     } else {
       return errorResponse(400, 'model parameter is required for wildcard API keys', 'invalid_request_error', undefined, corsHeaders);
     }
   }
 
   // Parse avatar ID from model
-  const avatarId = parseAvatarId(request.model);
+  const avatarId = parseAvatarId(model);
 
   // Check if API key is authorized for this avatar
   if (validation.avatarId && validation.avatarId !== avatarId) {
@@ -881,7 +882,7 @@ async function handleChatCompletions(
       return formatStreamingResponse(
         completionId,
         created,
-        request.model,
+        model,
         result.response,
         tokenUsage,
         corsHeaders,
@@ -941,7 +942,7 @@ async function handleChatCompletions(
       id: completionId,
       object: 'chat.completion',
       created,
-      model: request.model,
+      model,
       choices: [{
         index: 0,
         message: {
@@ -986,7 +987,7 @@ async function handleChatCompletions(
     if (request.stream) {
       const completionId = `chatcmpl-${requestId}`;
       const created = Math.floor(Date.now() / 1000);
-      return formatStreamingError(completionId, created, request.model, errorMessage, corsHeaders);
+      return formatStreamingError(completionId, created, model, errorMessage, corsHeaders);
     }
 
     return errorResponse(500, `Chat completion failed: ${errorMessage}`, 'server_error', undefined, corsHeaders);

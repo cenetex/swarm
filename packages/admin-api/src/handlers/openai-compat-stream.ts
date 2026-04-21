@@ -145,16 +145,17 @@ async function handleStreamingRequest(
   }
 
   // Default model for avatar-scoped keys if not provided
-  if (!request.model) {
+  let model = request.model;
+  if (!model) {
     if (validation.avatarId) {
-      request.model = `avatar:${validation.avatarId}`;
+      model = `avatar:${validation.avatarId}`;
     } else {
       writeErrorAndEnd(stream, requestId, 'model parameter is required for wildcard API keys');
       return;
     }
   }
 
-  const avatarId = parseAvatarId(request.model);
+  const avatarId = parseAvatarId(model);
 
   // Verify avatar access
   if (validation.avatarId && validation.avatarId !== avatarId) {
@@ -213,7 +214,7 @@ async function handleStreamingRequest(
     id: completionId,
     object: 'chat.completion.chunk',
     created,
-    model: request.model,
+    model,
     choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }],
   };
   stream.write(`data: ${JSON.stringify(roleChunk)}\n\n`);
@@ -281,7 +282,7 @@ async function handleStreamingRequest(
               id: completionId,
               object: 'chat.completion.chunk',
               created,
-              model: request.model,
+              model,
               choices: [{ index: 0, delta: { content }, finish_reason: null }],
             };
             stream.write(`data: ${JSON.stringify(clientChunk)}\n\n`);
@@ -317,7 +318,7 @@ async function handleStreamingRequest(
     id: completionId,
     object: 'chat.completion.chunk',
     created,
-    model: request.model,
+    model,
     choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
     usage: {
       prompt_tokens: tokenUsage.promptTokens,
