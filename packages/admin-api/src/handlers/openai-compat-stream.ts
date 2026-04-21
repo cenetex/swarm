@@ -31,7 +31,7 @@ const OpenAIMessageSchema = z.object({
 });
 
 const StreamRequestSchema = z.object({
-  model: z.string(),
+  model: z.string().optional(), // Optional for scoped keys
   messages: z.array(OpenAIMessageSchema).min(1),
   temperature: z.number().min(0).max(2).optional(),
   max_tokens: z.number().int().positive().optional(),
@@ -142,6 +142,16 @@ async function handleStreamingRequest(
   } catch {
     writeErrorAndEnd(stream, requestId, 'Invalid JSON body');
     return;
+  }
+
+  // Default model for avatar-scoped keys if not provided
+  if (!request.model) {
+    if (validation.avatarId) {
+      request.model = `avatar:${validation.avatarId}`;
+    } else {
+      writeErrorAndEnd(stream, requestId, 'model parameter is required for wildcard API keys');
+      return;
+    }
   }
 
   const avatarId = parseAvatarId(request.model);

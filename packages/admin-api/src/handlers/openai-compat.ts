@@ -57,7 +57,7 @@ const OpenAIMessageSchema = z.object({
 });
 
 const ChatCompletionRequestSchema = z.object({
-  model: z.string(), // Will be parsed as avatar ID
+  model: z.string().optional(), // Will be parsed as avatar ID, optional for scoped keys
   messages: z.array(OpenAIMessageSchema).min(1),
   temperature: z.number().min(0).max(2).optional(),
   max_tokens: z.number().int().positive().optional(),
@@ -729,6 +729,15 @@ async function handleChatCompletions(
     request = parseResult.data;
   } catch {
     return errorResponse(400, 'Invalid JSON body', 'invalid_request_error', undefined, corsHeaders);
+  }
+
+  // Default model for avatar-scoped keys if not provided
+  if (!request.model) {
+    if (validation.avatarId) {
+      request.model = `avatar:${validation.avatarId}`;
+    } else {
+      return errorResponse(400, 'model parameter is required for wildcard API keys', 'invalid_request_error', undefined, corsHeaders);
+    }
   }
 
   // Parse avatar ID from model
