@@ -78,7 +78,7 @@ describe('Model defaulting logic', () => {
     };
 
     let model: string | undefined;
-    if (!model && validation.avatarId) {
+    if (validation.avatarId) {
       model = `avatar:${validation.avatarId}`;
     }
 
