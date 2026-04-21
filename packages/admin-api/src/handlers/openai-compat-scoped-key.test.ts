@@ -114,9 +114,6 @@ describe('Model defaulting logic', () => {
     };
 
     let model = 'avatar:test-avatar';
-    if (!model && validation.avatarId) {
-      model = `avatar:${validation.avatarId}`;
-    }
 
     expect(model).toBe('avatar:test-avatar');
   });
