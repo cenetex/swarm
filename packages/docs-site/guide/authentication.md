@@ -59,6 +59,23 @@ curl -X DELETE https://swarm.rati.chat/api/avatars/{avatarId}/api-keys/{keyPrefi
   -H "Cookie: swarm_session=..."
 ```
 
+## Using Scoped Keys
+
+When using an avatar-scoped key, you can omit the `model` parameter in chat completion requests. The API will automatically default to the avatar associated with your key:
+
+```bash
+curl -X POST https://swarm.rati.chat/v1/chat/completions \
+  -H "Authorization: Bearer sk-rati-abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+The request will complete against the avatar your key is scoped to. You can still explicitly specify the `model` parameter; if the specified avatar differs from your key's scope, you'll receive a 403 error.
+
+For wildcard keys, you must always specify the `model` parameter.
+
 ## Best Practices
 
 1. **Use avatar-scoped keys** — Only create wildcard keys when absolutely necessary

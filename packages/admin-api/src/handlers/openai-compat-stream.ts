@@ -15,6 +15,7 @@ import {
   extractApiKey,
   validateApiKey,
   parseAvatarId,
+  resolveModel,
   hashApiKey,
 } from './openai-compat.js';
 import * as avatars from '../services/avatars.js';
@@ -31,7 +32,7 @@ const OpenAIMessageSchema = z.object({
 });
 
 const StreamRequestSchema = z.object({
-  model: z.string(),
+  model: z.string().optional(), // Optional for scoped keys
   messages: z.array(OpenAIMessageSchema).min(1),
   temperature: z.number().min(0).max(2).optional(),
   max_tokens: z.number().int().positive().optional(),
@@ -144,7 +145,13 @@ async function handleStreamingRequest(
     return;
   }
 
-  const avatarId = parseAvatarId(request.model);
+  const resolved = resolveModel(request.model, validation);
+  if ('error' in resolved) {
+    writeErrorAndEnd(stream, requestId, resolved.error);
+    return;
+  }
+  const model = resolved.model;
+  const avatarId = parseAvatarId(model);
 
   // Verify avatar access
   if (validation.avatarId && validation.avatarId !== avatarId) {
@@ -203,7 +210,7 @@ async function handleStreamingRequest(
     id: completionId,
     object: 'chat.completion.chunk',
     created,
-    model: request.model,
+    model,
     choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }],
   };
   stream.write(`data: ${JSON.stringify(roleChunk)}\n\n`);
@@ -271,7 +278,7 @@ async function handleStreamingRequest(
               id: completionId,
               object: 'chat.completion.chunk',
               created,
-              model: request.model,
+              model,
               choices: [{ index: 0, delta: { content }, finish_reason: null }],
             };
             stream.write(`data: ${JSON.stringify(clientChunk)}\n\n`);
@@ -307,7 +314,7 @@ async function handleStreamingRequest(
     id: completionId,
     object: 'chat.completion.chunk',
     created,
-    model: request.model,
+    model,
     choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
     usage: {
       prompt_tokens: tokenUsage.promptTokens,

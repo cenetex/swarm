@@ -57,7 +57,7 @@ const OpenAIMessageSchema = z.object({
 });
 
 const ChatCompletionRequestSchema = z.object({
-  model: z.string(), // Will be parsed as avatar ID
+  model: z.string().optional(), // Will be parsed as avatar ID, optional for scoped keys
   messages: z.array(OpenAIMessageSchema).min(1),
   temperature: z.number().min(0).max(2).optional(),
   max_tokens: z.number().int().positive().optional(),
@@ -362,6 +362,22 @@ export function parseAvatarId(model: string): string {
   }
   // Otherwise treat the whole model as the avatar ID
   return model;
+}
+
+/**
+ * Resolve the effective model for a chat completion request.
+ *
+ * - If the request supplied a model, use it as-is.
+ * - If it didn't and the API key is avatar-scoped, default to `avatar:{avatarId}`.
+ * - Otherwise (wildcard key + no model), return an error.
+ */
+export function resolveModel(
+  requestModel: string | undefined,
+  validation: { avatarId?: string },
+): { model: string } | { error: string } {
+  if (requestModel) return { model: requestModel };
+  if (validation.avatarId) return { model: `avatar:${validation.avatarId}` };
+  return { error: 'model parameter is required for wildcard API keys' };
 }
 
 // =============================================================================
@@ -731,8 +747,12 @@ async function handleChatCompletions(
     return errorResponse(400, 'Invalid JSON body', 'invalid_request_error', undefined, corsHeaders);
   }
 
-  // Parse avatar ID from model
-  const avatarId = parseAvatarId(request.model);
+  const resolved = resolveModel(request.model, validation);
+  if ('error' in resolved) {
+    return errorResponse(400, resolved.error, 'invalid_request_error', undefined, corsHeaders);
+  }
+  const model = resolved.model;
+  const avatarId = parseAvatarId(model);
 
   // Check if API key is authorized for this avatar
   if (validation.avatarId && validation.avatarId !== avatarId) {
@@ -872,7 +892,7 @@ async function handleChatCompletions(
       return formatStreamingResponse(
         completionId,
         created,
-        request.model,
+        model,
         result.response,
         tokenUsage,
         corsHeaders,
@@ -932,7 +952,7 @@ async function handleChatCompletions(
       id: completionId,
       object: 'chat.completion',
       created,
-      model: request.model,
+      model,
       choices: [{
         index: 0,
         message: {
@@ -977,7 +997,7 @@ async function handleChatCompletions(
     if (request.stream) {
       const completionId = `chatcmpl-${requestId}`;
       const created = Math.floor(Date.now() / 1000);
-      return formatStreamingError(completionId, created, request.model, errorMessage, corsHeaders);
+      return formatStreamingError(completionId, created, model, errorMessage, corsHeaders);
     }
 
     return errorResponse(500, `Chat completion failed: ${errorMessage}`, 'server_error', undefined, corsHeaders);
