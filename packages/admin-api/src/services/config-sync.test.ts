@@ -218,4 +218,64 @@ describe('config-sync convertToAvatarConfig', () => {
     expect(config.platforms.twitter?.communities?.[0]?.id).toBe('123');
     expect(config.scheduling.tweets).toBeUndefined();
   });
+
+  it('propagates nftMint and creatorWallet so the handler ownership gate (#1416) can see them', () => {
+    const record = {
+      pk: 'AVATAR#nft-avatar',
+      sk: 'CONFIG',
+      avatarId: 'nft-avatar',
+      name: 'NFT Avatar',
+      nftMint: 'MINT_XYZ',
+      creatorWallet: 'WALLET_CLAIMER',
+      platforms: { telegram: { enabled: true, botUsername: 'nftbot' } },
+      voiceConfig: { enabled: true, ttsProvider: 'voice-clone', format: 'ogg' },
+      llmConfig: {
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-4',
+        temperature: 0.8,
+        maxTokens: 1024,
+        useGlobalKey: true,
+      },
+      currentEra: 0,
+      status: 'active',
+      createdAt: Date.now(),
+      createdBy: 'test@example.com',
+      updatedAt: Date.now(),
+      updatedBy: 'test@example.com',
+    } satisfies Partial<AvatarRecord> as AvatarRecord;
+
+    const config = convertToAvatarConfig(record);
+
+    expect(config.nftMint).toBe('MINT_XYZ');
+    expect(config.creatorWallet).toBe('WALLET_CLAIMER');
+  });
+
+  it('leaves NFT fields undefined for non-NFT avatars so the gate is skipped', () => {
+    const record = {
+      pk: 'AVATAR#plain-avatar',
+      sk: 'CONFIG',
+      avatarId: 'plain-avatar',
+      name: 'Plain Avatar',
+      platforms: { telegram: { enabled: true, botUsername: 'plainbot' } },
+      voiceConfig: { enabled: true, ttsProvider: 'voice-clone', format: 'ogg' },
+      llmConfig: {
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-4',
+        temperature: 0.8,
+        maxTokens: 1024,
+        useGlobalKey: true,
+      },
+      currentEra: 0,
+      status: 'active',
+      createdAt: Date.now(),
+      createdBy: 'test@example.com',
+      updatedAt: Date.now(),
+      updatedBy: 'test@example.com',
+    } satisfies Partial<AvatarRecord> as AvatarRecord;
+
+    const config = convertToAvatarConfig(record);
+
+    expect(config.nftMint).toBeUndefined();
+    expect(config.creatorWallet).toBeUndefined();
+  });
 });

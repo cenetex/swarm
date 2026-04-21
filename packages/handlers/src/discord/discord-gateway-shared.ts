@@ -21,6 +21,10 @@ import { SQSClient, GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { randomUUID } from 'node:crypto';
 import {
+  assertAvatarStillOwnedByClaimer,
+  HandlerOwnershipError,
+} from '../services/assert-avatar-ownership.js';
+import {
   buildDiscordEnvelope,
   createStateService,
   createMessageEvaluator,
@@ -58,6 +62,7 @@ const MESSAGE_QUEUE_URL = getRequiredEnv('MESSAGE_QUEUE_URL');
 const SECRET_PREFIX = process.env.SECRET_PREFIX || 'swarm';
 const ACTIVITY_TABLE = process.env.ACTIVITY_TABLE;
 const ENVIRONMENT = process.env.ENVIRONMENT || 'dev';
+const NFT_OWNERSHIP_ENFORCEMENT = process.env.NFT_OWNERSHIP_ENFORCEMENT === 'on';
 
 const DEFAULT_GATEWAY_URL = 'wss://gateway.discord.gg/?v=10&encoding=json';
 
@@ -490,6 +495,27 @@ async function handleDiscordMessage(
   logAccessDecision(avatarId, accessCtx, accessResult);
   if (!accessResult.allowed) {
     return;
+  }
+
+  // Check NFT ownership if enforcement is enabled
+  if (NFT_OWNERSHIP_ENFORCEMENT) {
+    try {
+      await assertAvatarStillOwnedByClaimer({
+        avatarId,
+        nftMint: config.nftMint,
+        creatorWallet: config.creatorWallet,
+      });
+    } catch (err) {
+      if (err instanceof HandlerOwnershipError) {
+        logger.info('NFT ownership check failed', {
+          event: 'nft_revoked',
+          code: err.code,
+          avatarId,
+        });
+        return;
+      }
+      throw err;
+    }
   }
 
   envelope.traceId = traceId;
