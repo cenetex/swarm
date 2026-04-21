@@ -15,10 +15,10 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { AdminApiConstruct } from '../constructs/admin-api.js';
+import { SharedHandlers } from '../constructs/shared-handlers.js';
 import { ClaudeCodeWorker } from '../constructs/claude-code-worker.js';
 import { DiscordGatewayWorker } from '../constructs/discord-gateway-worker.js';
 import { OpsDashboard } from '../constructs/ops-dashboard.js';
-import { SharedHandlersStack } from './shared-handlers-stack.js';
 import type { SharedInfraStack } from './shared-infra-stack.js';
 
 /**
@@ -207,7 +207,7 @@ export interface AdminApiStackProps extends cdk.StackProps {
 
 export class AdminApiStack extends cdk.Stack {
   public readonly adminApi?: AdminApiConstruct;
-  public readonly sharedHandlersStack?: SharedHandlersStack;
+  public readonly sharedHandlers?: SharedHandlers;
   public readonly claudeCodeWorker?: ClaudeCodeWorker;
   public readonly discordGatewayWorker?: DiscordGatewayWorker;
   public readonly apiEndpoint?: string;
@@ -335,9 +335,8 @@ export class AdminApiStack extends cdk.Stack {
         )
       : undefined;
 
-    // Create SharedHandlers nested stack for shared multi-tenant ingress
-    // This reduces the top-level stack resource count to stay under CloudFormation's 500-resource limit
-    this.sharedHandlersStack = new SharedHandlersStack(this, 'SharedHandlersNestedStack', {
+    // Create SharedHandlers for shared multi-tenant ingress
+    this.sharedHandlers = new SharedHandlers(this, 'SharedHandlers', {
       environment,
       nameSuffix,
       dependencyLayer,
@@ -383,15 +382,15 @@ export class AdminApiStack extends cdk.Stack {
         mediaCdn,
         cdnUrl: sharedInfraStack.cdnUrl,
         dependencyLayer,
-        telegramWebhookFunction: this.sharedHandlersStack!.sharedHandlers.telegramWebhook,
-        raticrossRelayFunction: this.sharedHandlersStack!.sharedHandlers.raticrossRelay,
-        raticrossHealthFunction: this.sharedHandlersStack!.sharedHandlers.raticrossHealth,
-        postQueue: this.sharedHandlersStack?.sharedHandlers.postQueue,
-        sharedMessageQueue: this.sharedHandlersStack?.sharedHandlers.messageQueue,
-        sharedResponseQueue: this.sharedHandlersStack?.sharedHandlers.responseQueue,
-        sharedMediaQueue: this.sharedHandlersStack?.sharedHandlers.mediaQueue,
-        sharedDlq: this.sharedHandlersStack?.sharedHandlers.dlq,
-        sharedSchedulerDlq: this.sharedHandlersStack?.sharedHandlers.schedulerDlq,
+        telegramWebhookFunction: this.sharedHandlers.telegramWebhook,
+        raticrossRelayFunction: this.sharedHandlers.raticrossRelay,
+        raticrossHealthFunction: this.sharedHandlers.raticrossHealth,
+        postQueue: this.sharedHandlers?.postQueue,
+        sharedMessageQueue: this.sharedHandlers?.messageQueue,
+        sharedResponseQueue: this.sharedHandlers?.responseQueue,
+        sharedMediaQueue: this.sharedHandlers?.mediaQueue,
+        sharedDlq: this.sharedHandlers?.dlq,
+        sharedSchedulerDlq: this.sharedHandlers?.schedulerDlq,
         internalTestKey,
         alarmTopic,
         useExistingResources: props.useExistingResources,
@@ -455,7 +454,7 @@ export class AdminApiStack extends cdk.Stack {
         cluster: discordCluster,
         stateTable,
         activityTable,
-        messageQueue: this.sharedHandlersStack!.sharedHandlers.messageQueue,
+        messageQueue: this.sharedHandlers.messageQueue,
         secretPrefix,
         desiredCount: isProd ? 1 : 0,
       });
@@ -541,21 +540,21 @@ export class AdminApiStack extends cdk.Stack {
       environment,
       nameSuffix,
       sharedHandlerFunctions: {
-        messageProcessor: this.sharedHandlersStack!.sharedHandlers.messageProcessor,
-        responseSender: this.sharedHandlersStack!.sharedHandlers.responseSender,
-        mediaProcessor: this.sharedHandlersStack!.sharedHandlers.mediaProcessor,
-        tweetSender: this.sharedHandlersStack!.sharedHandlers.tweetSender,
-        telegramWebhook: this.sharedHandlersStack!.sharedHandlers.telegramWebhook,
+        messageProcessor: this.sharedHandlers.messageProcessor,
+        responseSender: this.sharedHandlers.responseSender,
+        mediaProcessor: this.sharedHandlers.mediaProcessor,
+        tweetSender: this.sharedHandlers.tweetSender,
+        telegramWebhook: this.sharedHandlers.telegramWebhook,
       },
       sharedQueues: {
-        messageQueue: this.sharedHandlersStack!.sharedHandlers.messageQueue,
-        responseQueue: this.sharedHandlersStack!.sharedHandlers.responseQueue,
-        mediaQueue: this.sharedHandlersStack!.sharedHandlers.mediaQueue,
-        postQueue: this.sharedHandlersStack!.sharedHandlers.postQueue,
+        messageQueue: this.sharedHandlers.messageQueue,
+        responseQueue: this.sharedHandlers.responseQueue,
+        mediaQueue: this.sharedHandlers.mediaQueue,
+        postQueue: this.sharedHandlers.postQueue,
       },
       sharedDlqs: {
-        dlq: this.sharedHandlersStack!.sharedHandlers.dlq,
-        schedulerDlq: this.sharedHandlersStack!.sharedHandlers.schedulerDlq,
+        dlq: this.sharedHandlers.dlq,
+        schedulerDlq: this.sharedHandlers.schedulerDlq,
       },
       ...(this.adminApi ? {
         adminHandlerFunctions: {
@@ -590,14 +589,5 @@ export class AdminApiStack extends cdk.Stack {
         exportName: `swarm-api-endpoint-${environment}${nameSuffix ?? ''}`,
       });
     }
-  }
-
-  /**
-   * Backward compatibility getter for accessing SharedHandlers from the nested stack.
-   * Prefer using sharedHandlersStack.sharedHandlers directly in new code.
-   * @deprecated Use sharedHandlersStack.sharedHandlers instead
-   */
-  get sharedHandlers() {
-    return this.sharedHandlersStack?.sharedHandlers;
   }
 }
