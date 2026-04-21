@@ -91,6 +91,11 @@ export interface SharedHandlersStackProps extends cdk.NestedStackProps {
    * Raticross relay inbound authentication key
    */
   raticrossInboundKey?: string;
+
+  /**
+   * Helius API key ARN for handler-side NFT ownership verification (#1416)
+   */
+  heliusApiKeyArn?: string;
 }
 
 /**
@@ -120,6 +125,7 @@ export class SharedHandlersStack extends cdk.NestedStack {
       internalTestKey,
       alarmTopic,
       raticrossInboundKey,
+      heliusApiKeyArn,
     } = props;
 
     // Create SharedHandlers construct in the nested stack
@@ -140,6 +146,7 @@ export class SharedHandlersStack extends cdk.NestedStack {
       internalTestKey,
       alarmTopic,
       raticrossInboundKey,
+      heliusApiKeyArn,
     });
   }
 }
