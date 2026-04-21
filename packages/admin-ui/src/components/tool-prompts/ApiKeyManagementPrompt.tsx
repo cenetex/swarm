@@ -31,8 +31,27 @@ export function ApiKeyManagementPrompt({ disabled }: ToolPromptProps) {
   const [revokeConfirm, setRevokeConfirm] = useState<string | null>(null);
   const [isRevoking, setIsRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useState<'url' | 'curl' | null>(null);
 
   const avatarId = activeAvatar?.id;
+  const apiBaseUrl = `${window.location.origin}/api/v1`;
+  const chatCompletionsUrl = `${apiBaseUrl}/chat/completions`;
+  const curlExample = [
+    `curl ${chatCompletionsUrl} \\`,
+    `  -H "Authorization: Bearer sk-rati-..." \\`,
+    `  -H "Content-Type: application/json" \\`,
+    `  -d '{"messages":[{"role":"user","content":"hello"}]}'`,
+  ].join('\n');
+
+  const copyToField = async (field: 'url' | 'curl', text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 1500);
+    } catch {
+      /* clipboard permission denied — silent */
+    }
+  };
 
   const fetchApiKeys = useCallback(async () => {
     if (!avatarId) return;
@@ -322,16 +341,39 @@ export function ApiKeyManagementPrompt({ disabled }: ToolPromptProps) {
 
       <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg space-y-2">
         <h4 className="text-xs font-medium text-blue-400">Usage Example</h4>
-        <div className="bg-[var(--color-bg-tertiary)] rounded p-2 text-xs overflow-x-auto">
-          <code className="text-[var(--color-text)]">
-            {`curl https://swarm.rati.chat/api/v1/chat/completions \\
-  -H "Authorization: Bearer sk-rati-..." \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "messages": [{"role": "user", "content": "hello"}]
-  }'`}
-          </code>
+
+        <div className="space-y-1">
+          <label className="block text-xs text-blue-300/80">Endpoint</label>
+          <div className="flex items-center gap-2 bg-[var(--color-bg-tertiary)] rounded p-2">
+            <code className="flex-1 text-xs font-mono text-[var(--color-text)] break-all select-all">
+              {chatCompletionsUrl}
+            </code>
+            <button
+              type="button"
+              onClick={() => copyToField('url', chatCompletionsUrl)}
+              className="px-2 py-1 text-xs bg-brand-600 hover:bg-brand-700 text-white rounded transition-colors flex-shrink-0"
+            >
+              {copiedField === 'url' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
         </div>
+
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs text-blue-300/80">curl</label>
+            <button
+              type="button"
+              onClick={() => copyToField('curl', curlExample)}
+              className="px-2 py-1 text-xs bg-brand-600 hover:bg-brand-700 text-white rounded transition-colors"
+            >
+              {copiedField === 'curl' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <pre className="bg-[var(--color-bg-tertiary)] rounded p-2 text-xs overflow-x-auto">
+            <code className="text-[var(--color-text)] font-mono whitespace-pre">{curlExample}</code>
+          </pre>
+        </div>
+
         <p className="text-xs text-blue-300">
           Scoped keys target <code className="bg-blue-500/20 px-1 rounded">{avatarId}</code> automatically — no <code className="bg-blue-500/20 px-1 rounded">model</code> field needed.
         </p>

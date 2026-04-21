@@ -1311,7 +1311,13 @@ export class AdminApiConstruct extends Construct {
 
     this.api.addRoutes({
       path: '/avatars/{avatarId}/api-keys',
-      methods: [apigateway.HttpMethod.POST],
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/api-keys/{keyPrefix}',
+      methods: [apigateway.HttpMethod.DELETE],
       integration: avatarsIntegration,
     });
 
@@ -1324,6 +1330,12 @@ export class AdminApiConstruct extends Construct {
     this.api.addRoutes({
       path: '/api-keys',
       methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/api-keys/{keyHash}/usage/tokens',
+      methods: [apigateway.HttpMethod.GET],
       integration: avatarsIntegration,
     });
 
