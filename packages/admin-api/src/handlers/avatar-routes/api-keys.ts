@@ -6,6 +6,7 @@
  * - POST /avatars/{id}/tools/{toolCallId}
  */
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import { QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { logger } from '@swarm/core';
@@ -13,6 +14,22 @@ import * as avatarService from '../../services/avatars.js';
 import { parseJsonBody } from '../../http/request-body.js';
 import { resumeChatAfterToolResult } from '../chat.js';
 import { getKeyUsageRollups } from '../../services/token-accounting.js';
+import { createApiKey } from '../openai-compat.js';
+import { getDynamoClient } from '../../services/dynamo-client.js';
+
+const ADMIN_TABLE = process.env.ADMIN_TABLE!;
+const docClient = getDynamoClient();
+
+interface AvatarApiKeyIndexItem {
+  keyPrefix?: string;
+  name?: string;
+  keyHash?: string;
+  createdAt?: number;
+  createdBy?: string;
+  lastUsedAt?: number;
+  enabled?: boolean;
+  revokedAt?: number;
+}
 
 export async function handleApiKeyRoutes(
   ctx: RouteContext,
@@ -65,7 +82,6 @@ export async function handleApiKeyRoutes(
     if (denied) return denied;
 
     try {
-      const { createApiKey } = await import('../openai-compat.js');
       const result = await createApiKey({
         avatarId,
         name: body.name || 'API Key',
@@ -147,10 +163,6 @@ export async function handleApiKeyRoutes(
     if (denied) return denied;
 
     try {
-      const { QueryCommand } = await import('@aws-sdk/lib-dynamodb');
-      const { docClient, ADMIN_TABLE } = await import('../../services/dynamodb.js');
-
-      // Query index for this avatar's keys
       const result = await docClient.send(new QueryCommand({
         TableName: ADMIN_TABLE,
         KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
@@ -160,12 +172,12 @@ export async function handleApiKeyRoutes(
         },
       }));
 
-      const keys = (result.Items || []).map(item => ({
-        keyPrefix: item.keyPrefix as string,
-        name: item.name as string,
-        createdAt: item.createdAt as number,
-        createdBy: item.createdBy as string,
-        lastUsedAt: item.lastUsedAt as number | undefined,
+      const keys = ((result.Items ?? []) as AvatarApiKeyIndexItem[]).map(item => ({
+        keyPrefix: item.keyPrefix ?? '',
+        name: item.name ?? '',
+        createdAt: item.createdAt ?? 0,
+        createdBy: item.createdBy ?? '',
+        lastUsedAt: item.lastUsedAt,
         enabled: item.enabled !== false,
       }));
 
@@ -191,10 +203,6 @@ export async function handleApiKeyRoutes(
     if (denied) return denied;
 
     try {
-      const { QueryCommand, UpdateCommand } = await import('@aws-sdk/lib-dynamodb');
-      const { docClient, ADMIN_TABLE } = await import('../../services/dynamodb.js');
-
-      // Find the key by prefix (search through avatar's keys)
       const listResult = await docClient.send(new QueryCommand({
         TableName: ADMIN_TABLE,
         KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
@@ -204,12 +212,15 @@ export async function handleApiKeyRoutes(
         },
       }));
 
-      const keyItem = (listResult.Items || []).find(item => item.keyPrefix === keyPrefix);
-      if (!keyItem) {
+      const items = (listResult.Items ?? []) as AvatarApiKeyIndexItem[];
+      const keyItem = items.find(item => item.keyPrefix === keyPrefix);
+      if (!keyItem || !keyItem.keyHash) {
         return jsonResponse(corsHeaders, 404, { error: 'API key not found' });
       }
 
-      // Mark as disabled instead of deleting (soft delete for audit trail)
+      const revokedAt = Date.now();
+
+      // Soft-delete the primary record so auth rejects future use.
       await docClient.send(new UpdateCommand({
         TableName: ADMIN_TABLE,
         Key: {
@@ -219,11 +230,11 @@ export async function handleApiKeyRoutes(
         UpdateExpression: 'SET enabled = :enabled, revokedAt = :revokedAt',
         ExpressionAttributeValues: {
           ':enabled': false,
-          ':revokedAt': Date.now(),
+          ':revokedAt': revokedAt,
         },
       }));
 
-      // Also disable in the avatar index
+      // Mirror the soft-delete on the avatar index so listing reflects it.
       await docClient.send(new UpdateCommand({
         TableName: ADMIN_TABLE,
         Key: {
@@ -233,7 +244,7 @@ export async function handleApiKeyRoutes(
         UpdateExpression: 'SET enabled = :enabled, revokedAt = :revokedAt',
         ExpressionAttributeValues: {
           ':enabled': false,
-          ':revokedAt': Date.now(),
+          ':revokedAt': revokedAt,
         },
       }));
 
@@ -243,7 +254,8 @@ export async function handleApiKeyRoutes(
         keyPrefix,
       });
 
-      return jsonResponse(corsHeaders, 204, {});
+      // 204 must have no body; jsonResponse emits {} which violates spec.
+      return { statusCode: 204, headers: corsHeaders, body: '' };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to revoke API key';
       logger.error('Failed to revoke API key', {
@@ -267,7 +279,6 @@ export async function handleApiKeyRoutes(
     const body = parseJsonBody<{ name?: string }>(event);
 
     try {
-      const { createApiKey } = await import('../openai-compat.js');
       const result = await createApiKey({
         name: body.name || 'Wildcard API Key',
         createdBy: session.email || walletAddress || 'unknown',

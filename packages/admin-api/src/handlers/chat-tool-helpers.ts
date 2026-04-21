@@ -474,6 +474,9 @@ export function buildPendingToolResponse(toolName: string, args: Record<string, 
   if (toolName === 'request_property_research') {
     return 'Please grant property research access:';
   }
+  if (toolName === 'manage_api_keys') {
+    return ''; // ApiKeyManagementPrompt renders its own UI
+  }
   if (
     toolName === 'get_profile_upload_url' ||
     toolName === 'get_reference_image_upload_url' ||

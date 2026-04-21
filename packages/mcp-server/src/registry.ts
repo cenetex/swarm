@@ -575,6 +575,7 @@ export const MANUAL_TOOL_NAMES = [
   'twitter_request_integration', // Actual tool name in MCP registry
   'request_property_research',
   'request_wallet_link',
+  'manage_api_keys',
 ] as const;
 
 /**

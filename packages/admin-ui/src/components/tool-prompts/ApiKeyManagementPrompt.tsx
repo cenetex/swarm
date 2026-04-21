@@ -2,10 +2,10 @@
  * API Key Management Prompt - Manage API keys for avatar owners
  * Allows listing, creating, and revoking API keys for an avatar
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useActiveAvatar } from '../../store';
 import { API_BASE, type ToolPromptProps } from './types';
-import { PromptSuccess, PromptError } from './PromptStatus';
+import { PromptError } from './PromptStatus';
 
 interface ApiKey {
   keyPrefix: string;
@@ -16,7 +16,7 @@ interface ApiKey {
   enabled: boolean;
 }
 
-export function ApiKeyManagementPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
+export function ApiKeyManagementPrompt({ disabled }: ToolPromptProps) {
   const activeAvatar = useActiveAvatar();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,16 +31,10 @@ export function ApiKeyManagementPrompt({ toolCall, onSubmit, disabled }: ToolPro
   const [revokeConfirm, setRevokeConfirm] = useState<string | null>(null);
   const [isRevoking, setIsRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
-  const keyInputRef = useRef<HTMLInputElement>(null);
 
   const avatarId = activeAvatar?.id;
 
-  useEffect(() => {
-    if (!avatarId) return;
-    fetchApiKeys();
-  }, [avatarId]);
-
-  const fetchApiKeys = async () => {
+  const fetchApiKeys = useCallback(async () => {
     if (!avatarId) return;
     setIsLoading(true);
     setError(null);
@@ -62,7 +56,12 @@ export function ApiKeyManagementPrompt({ toolCall, onSubmit, disabled }: ToolPro
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [avatarId]);
+
+  useEffect(() => {
+    if (!avatarId) return;
+    fetchApiKeys();
+  }, [avatarId, fetchApiKeys]);
 
   const handleCreateKey = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -329,12 +328,13 @@ export function ApiKeyManagementPrompt({ toolCall, onSubmit, disabled }: ToolPro
   -H "Authorization: Bearer sk-rati-..." \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "avatar:${avatarId}",
     "messages": [{"role": "user", "content": "hello"}]
   }'`}
           </code>
         </div>
-        <p className="text-xs text-blue-300">Replace <code className="bg-blue-500/20 px-1 rounded">sk-rati-...</code> with your key</p>
+        <p className="text-xs text-blue-300">
+          Scoped keys target <code className="bg-blue-500/20 px-1 rounded">{avatarId}</code> automatically — no <code className="bg-blue-500/20 px-1 rounded">model</code> field needed.
+        </p>
       </div>
     </div>
   );

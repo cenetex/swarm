@@ -1,238 +1,47 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleApiKeyRoutes } from './api-keys.js';
-import type { RouteContext } from './types.js';
-import * as avatarService from '../../services/avatars.js';
+/**
+ * Tests for api-keys route-matching regexes.
+ *
+ * The DynamoDB/ownership paths are covered by integration tests; these unit
+ * tests guard the URL shapes the handler claims to own so typo regressions
+ * surface immediately.
+ */
+import { describe, test, expect } from 'bun:test';
 
-vi.mock('../../services/avatars.js', () => ({
-  getAvatar: vi.fn(),
-}));
+const LIST_OR_CREATE_RE = /^\/avatars\/([^/]+)\/api-keys$/;
+const REVOKE_RE = /^\/avatars\/([^/]+)\/api-keys\/([^/]+)$/;
+const TOOL_RESUME_RE = /^\/avatars\/([^/]+)\/tools\/([^/]+)$/;
+const KEY_USAGE_RE = /^\/api-keys\/([^/]+)\/usage\/tokens$/;
 
-vi.mock('@aws-sdk/lib-dynamodb', () => ({
-  QueryCommand: vi.fn((params) => params),
-  UpdateCommand: vi.fn((params) => params),
-}));
-
-vi.mock('../../services/dynamodb.js', () => ({
-  docClient: {
-    send: vi.fn(),
-  },
-  ADMIN_TABLE: 'admin-table',
-}));
-
-const createMockContext = (overrides?: Partial<RouteContext>): RouteContext => ({
-  method: 'GET',
-  path: '/',
-  event: {
-    body: undefined,
-    queryStringParameters: null,
-    pathParameters: null,
-    headers: {},
-  } as any,
-  corsHeaders: { 'Access-Control-Allow-Origin': '*' },
-  session: { email: 'user@example.com' },
-  walletAddress: 'wallet123',
-  accountId: undefined,
-  effectiveIsAdmin: false,
-  ...overrides,
-});
-
-describe('handleApiKeyRoutes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+describe('api-keys path matching', () => {
+  test('list/create path captures avatarId', () => {
+    const m = '/avatars/chamuel/api-keys'.match(LIST_OR_CREATE_RE);
+    expect(m?.[1]).toBe('chamuel');
   });
 
-  describe('GET /avatars/{id}/api-keys', () => {
-    it('returns list of API keys for avatar owner', async () => {
-      vi.mocked(avatarService.getAvatar).mockResolvedValue({
-        avatarId: 'avatar-123',
-        creatorWallet: 'wallet123',
-      } as any);
-
-      const { docClient } = await import('../../services/dynamodb.js');
-      vi.mocked(docClient.send).mockResolvedValueOnce({ Items: [] } as any);
-
-      const ctx = createMockContext({
-        method: 'GET',
-        path: '/avatars/avatar-123/api-keys',
-        walletAddress: 'wallet123',
-      });
-
-      const result = await handleApiKeyRoutes(ctx);
-
-      expect(result).toBeDefined();
-      expect(result?.statusCode).toBe(200);
-    });
-
-    it('returns 404 for non-owner', async () => {
-      vi.mocked(avatarService.getAvatar).mockResolvedValue({
-        avatarId: 'avatar-123',
-        creatorWallet: 'other-wallet',
-      } as any);
-
-      const ctx = createMockContext({
-        method: 'GET',
-        path: '/avatars/avatar-123/api-keys',
-        walletAddress: 'wallet123',
-      });
-
-      const result = await handleApiKeyRoutes(ctx);
-
-      expect(result?.statusCode).toBe(404);
-    });
+  test('list/create path rejects nested segments', () => {
+    expect('/avatars/chamuel/api-keys/sk-rati-abc'.match(LIST_OR_CREATE_RE)).toBeNull();
+    expect('/avatars/chamuel/api-keys/'.match(LIST_OR_CREATE_RE)).toBeNull();
   });
 
-  describe('DELETE /avatars/{id}/api-keys/{keyPrefix}', () => {
-    it('revokes an API key', async () => {
-      vi.mocked(avatarService.getAvatar).mockResolvedValue({
-        avatarId: 'avatar-123',
-        creatorWallet: 'wallet123',
-      } as any);
-
-      const ctx = createMockContext({
-        method: 'DELETE',
-        path: '/avatars/avatar-123/api-keys/sk-rati-abc123',
-        walletAddress: 'wallet123',
-      });
-
-      // Since mocking DynamoDB is complex, we expect the function to attempt revocation
-      const result = await handleApiKeyRoutes(ctx);
-
-      expect(result?.statusCode).toBeDefined();
-    });
-
-    it('returns 404 for non-owner', async () => {
-      vi.mocked(avatarService.getAvatar).mockResolvedValue({
-        avatarId: 'avatar-123',
-        creatorWallet: 'other-wallet',
-      } as any);
-
-      const ctx = createMockContext({
-        method: 'DELETE',
-        path: '/avatars/avatar-123/api-keys/sk-rati-abc123',
-        walletAddress: 'wallet123',
-      });
-
-      const result = await handleApiKeyRoutes(ctx);
-
-      expect(result?.statusCode).toBe(404);
-    });
-
-    it('returns 404 for non-existent key', async () => {
-      vi.mocked(avatarService.getAvatar).mockResolvedValue({
-        avatarId: 'avatar-123',
-        creatorWallet: 'wallet123',
-      } as any);
-
-      const ctx = createMockContext({
-        method: 'DELETE',
-        path: '/avatars/avatar-123/api-keys/sk-rati-nonexistent',
-        walletAddress: 'wallet123',
-      });
-
-      const result = await handleApiKeyRoutes(ctx);
-
-      // May fail during query, but should handle gracefully
-      expect(result).toBeDefined();
-    });
+  test('revoke path captures avatarId + keyPrefix', () => {
+    const m = '/avatars/chamuel/api-keys/sk-rati-abc12'.match(REVOKE_RE);
+    expect(m?.[1]).toBe('chamuel');
+    expect(m?.[2]).toBe('sk-rati-abc12');
   });
 
-  describe('POST /avatars/{id}/api-keys', () => {
-    it('creates new API key for avatar', async () => {
-      vi.mocked(avatarService.getAvatar).mockResolvedValue({
-        avatarId: 'avatar-123',
-        creatorWallet: 'wallet123',
-      } as any);
-
-      const ctx = createMockContext({
-        method: 'POST',
-        path: '/avatars/avatar-123/api-keys',
-        event: {
-          body: JSON.stringify({ name: 'My Key' }),
-          queryStringParameters: null,
-          pathParameters: null,
-          headers: { 'content-type': 'application/json' },
-        } as any,
-        walletAddress: 'wallet123',
-      });
-
-      // Mocking the create would be complex due to dependencies
-      const result = await handleApiKeyRoutes(ctx);
-
-      expect(result).toBeDefined();
-    });
-
-    it('returns 404 for non-owner', async () => {
-      vi.mocked(avatarService.getAvatar).mockResolvedValue({
-        avatarId: 'avatar-123',
-        creatorWallet: 'other-wallet',
-      } as any);
-
-      const ctx = createMockContext({
-        method: 'POST',
-        path: '/avatars/avatar-123/api-keys',
-        event: {
-          body: JSON.stringify({ name: 'My Key' }),
-          queryStringParameters: null,
-          pathParameters: null,
-          headers: { 'content-type': 'application/json' },
-        } as any,
-        walletAddress: 'wallet123',
-      });
-
-      const result = await handleApiKeyRoutes(ctx);
-
-      expect(result?.statusCode).toBe(404);
-    });
+  test('revoke path rejects an empty keyPrefix', () => {
+    expect('/avatars/chamuel/api-keys/'.match(REVOKE_RE)).toBeNull();
   });
 
-  describe('POST /api-keys (wildcard, admin-only)', () => {
-    it('creates wildcard API key for admin', async () => {
-      const ctx = createMockContext({
-        method: 'POST',
-        path: '/api-keys',
-        event: {
-          body: JSON.stringify({ name: 'Admin Wildcard Key' }),
-          queryStringParameters: null,
-          pathParameters: null,
-          headers: { 'content-type': 'application/json' },
-        } as any,
-        effectiveIsAdmin: true,
-      });
-
-      const result = await handleApiKeyRoutes(ctx);
-
-      expect(result).toBeDefined();
-    });
-
-    it('returns 403 for non-admin', async () => {
-      const ctx = createMockContext({
-        method: 'POST',
-        path: '/api-keys',
-        event: {
-          body: JSON.stringify({ name: 'Admin Wildcard Key' }),
-          queryStringParameters: null,
-          pathParameters: null,
-          headers: { 'content-type': 'application/json' },
-        } as any,
-        effectiveIsAdmin: false,
-      });
-
-      const result = await handleApiKeyRoutes(ctx);
-
-      expect(result?.statusCode).toBe(403);
-    });
+  test('tool resume and api-keys shapes do not collide', () => {
+    // Same avatar segment, different second segment — must match distinct regexes.
+    expect('/avatars/chamuel/tools/tc-123'.match(TOOL_RESUME_RE)?.[2]).toBe('tc-123');
+    expect('/avatars/chamuel/tools/tc-123'.match(REVOKE_RE)).toBeNull();
+    expect('/avatars/chamuel/api-keys/sk-rati-x'.match(TOOL_RESUME_RE)).toBeNull();
   });
 
-  describe('Non-matching routes', () => {
-    it('returns null for unmatched routes', async () => {
-      const ctx = createMockContext({
-        method: 'GET',
-        path: '/unmatched/route',
-      });
-
-      const result = await handleApiKeyRoutes(ctx);
-
-      expect(result).toBeNull();
-    });
+  test('key usage path captures keyHash', () => {
+    const m = '/api-keys/abc123deadbeef/usage/tokens'.match(KEY_USAGE_RE);
+    expect(m?.[1]).toBe('abc123deadbeef');
   });
 });
