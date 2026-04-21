@@ -176,13 +176,8 @@ describe('ApiKeyManagementPrompt', () => {
   });
 
   it('creates a new API key', async () => {
-    global.fetch = vi.fn((url) => {
-      if (url.includes('/api-keys') && url.includes('GET')) {
-        return Promise.resolve(
-          new Response(JSON.stringify({ keys: [] }), { status: 200 })
-        );
-      }
-      if (url.includes('/api-keys') && url.includes('POST')) {
+    global.fetch = vi.fn((url, options) => {
+      if (url.includes('/api-keys') && (options as RequestInit)?.method === 'POST') {
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -191,6 +186,11 @@ describe('ApiKeyManagementPrompt', () => {
             }),
             { status: 201 }
           )
+        );
+      }
+      if (url.includes('/api-keys')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ keys: [] }), { status: 200 })
         );
       }
       return Promise.reject(new Error('Unknown URL'));
@@ -219,13 +219,8 @@ describe('ApiKeyManagementPrompt', () => {
   });
 
   it('shows copy button for newly created key', async () => {
-    global.fetch = vi.fn((url) => {
-      if (url.includes('/api-keys') && url.includes('GET')) {
-        return Promise.resolve(
-          new Response(JSON.stringify({ keys: [] }), { status: 200 })
-        );
-      }
-      if (url.includes('/api-keys') && url.includes('POST')) {
+    global.fetch = vi.fn((url, options) => {
+      if (url.includes('/api-keys') && (options as RequestInit)?.method === 'POST') {
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -234,6 +229,11 @@ describe('ApiKeyManagementPrompt', () => {
             }),
             { status: 201 }
           )
+        );
+      }
+      if (url.includes('/api-keys')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ keys: [] }), { status: 200 })
         );
       }
       return Promise.reject(new Error('Unknown URL'));
@@ -261,14 +261,14 @@ describe('ApiKeyManagementPrompt', () => {
   });
 
   it('revokes an API key with confirmation', async () => {
-    global.fetch = vi.fn((url) => {
-      if (url.includes('/api-keys') && url.includes('GET')) {
+    global.fetch = vi.fn((url, options) => {
+      if (url.includes('/api-keys') && (options as RequestInit)?.method === 'DELETE') {
+        return Promise.resolve(new Response('', { status: 204 }));
+      }
+      if (url.includes('/api-keys')) {
         return Promise.resolve(
           new Response(JSON.stringify({ keys: [mockApiKey] }), { status: 200 })
         );
-      }
-      if (url.includes('/api-keys/') && url.includes('DELETE')) {
-        return Promise.resolve(new Response('', { status: 204 }));
       }
       return Promise.reject(new Error('Unknown URL'));
     });

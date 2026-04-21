@@ -1264,7 +1264,7 @@ export async function createApiKey(params: {
       pk: params.avatarId ? `AVATAR#${params.avatarId}` : 'GLOBAL',
       sk: `API_KEY#${record.keyHash.slice(0, 16)}`,
     },
-    UpdateExpression: 'SET keyPrefix = :keyPrefix, keyHash = :keyHash, #name = :name, createdAt = :createdAt',
+    UpdateExpression: 'SET keyPrefix = :keyPrefix, keyHash = :keyHash, #name = :name, createdAt = :createdAt, createdBy = :createdBy',
     ExpressionAttributeNames: {
       '#name': 'name',
     },
@@ -1273,6 +1273,7 @@ export async function createApiKey(params: {
       ':keyHash': fullRecord.keyHash,
       ':name': fullRecord.name,
       ':createdAt': fullRecord.createdAt,
+      ':createdBy': fullRecord.createdBy,
     },
   }));
 

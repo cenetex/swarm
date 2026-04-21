@@ -31,6 +31,7 @@ const createMockContext = (overrides?: Partial<RouteContext>): RouteContext => (
   corsHeaders: { 'Access-Control-Allow-Origin': '*' },
   session: { email: 'user@example.com' },
   walletAddress: 'wallet123',
+  accountId: undefined,
   effectiveIsAdmin: false,
   ...overrides,
 });
@@ -42,20 +43,13 @@ describe('handleApiKeyRoutes', () => {
 
   describe('GET /avatars/{id}/api-keys', () => {
     it('returns list of API keys for avatar owner', async () => {
-      const mockKeys = [
-        {
-          keyPrefix: 'sk-rati-abc123',
-          name: 'Test Key',
-          createdAt: Date.now(),
-          createdBy: 'user@example.com',
-          enabled: true,
-        },
-      ];
-
       vi.mocked(avatarService.getAvatar).mockResolvedValue({
         avatarId: 'avatar-123',
         creatorWallet: 'wallet123',
       } as any);
+
+      const { docClient } = await import('../../services/dynamodb.js');
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Items: [] } as any);
 
       const ctx = createMockContext({
         method: 'GET',
@@ -69,7 +63,7 @@ describe('handleApiKeyRoutes', () => {
       expect(result?.statusCode).toBe(200);
     });
 
-    it('returns 403 for non-owner', async () => {
+    it('returns 404 for non-owner', async () => {
       vi.mocked(avatarService.getAvatar).mockResolvedValue({
         avatarId: 'avatar-123',
         creatorWallet: 'other-wallet',
@@ -83,7 +77,7 @@ describe('handleApiKeyRoutes', () => {
 
       const result = await handleApiKeyRoutes(ctx);
 
-      expect(result?.statusCode).toBe(403);
+      expect(result?.statusCode).toBe(404);
     });
   });
 
@@ -106,7 +100,7 @@ describe('handleApiKeyRoutes', () => {
       expect(result?.statusCode).toBeDefined();
     });
 
-    it('returns 403 for non-owner', async () => {
+    it('returns 404 for non-owner', async () => {
       vi.mocked(avatarService.getAvatar).mockResolvedValue({
         avatarId: 'avatar-123',
         creatorWallet: 'other-wallet',
@@ -120,7 +114,7 @@ describe('handleApiKeyRoutes', () => {
 
       const result = await handleApiKeyRoutes(ctx);
 
-      expect(result?.statusCode).toBe(403);
+      expect(result?.statusCode).toBe(404);
     });
 
     it('returns 404 for non-existent key', async () => {
@@ -167,7 +161,7 @@ describe('handleApiKeyRoutes', () => {
       expect(result).toBeDefined();
     });
 
-    it('returns 403 for non-owner', async () => {
+    it('returns 404 for non-owner', async () => {
       vi.mocked(avatarService.getAvatar).mockResolvedValue({
         avatarId: 'avatar-123',
         creatorWallet: 'other-wallet',
@@ -187,7 +181,7 @@ describe('handleApiKeyRoutes', () => {
 
       const result = await handleApiKeyRoutes(ctx);
 
-      expect(result?.statusCode).toBe(403);
+      expect(result?.statusCode).toBe(404);
     });
   });
 
