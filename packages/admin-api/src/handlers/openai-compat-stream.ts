@@ -159,23 +159,10 @@ async function handleStreamingRequest(
     return;
   }
 
-  // #1385: enforce current NFT ownership before serving a streaming completion.
-  let avatarRecord: Awaited<ReturnType<typeof avatars.getAvatar>>;
-  try {
-    avatarRecord = await avatars.assertAvatarOwnership(avatarId, validation.session.userId, {
-      isAdmin: false,
-    });
-  } catch (err) {
-    if (err instanceof avatars.AvatarOwnershipError) {
-      if (err.code === 'verification_unavailable') {
-        writeErrorAndEnd(stream, requestId, 'Ownership verification temporarily unavailable');
-        return;
-      }
-      writeErrorAndEnd(stream, requestId, `Avatar not found: ${avatarId}`);
-      return;
-    }
-    throw err;
-  }
+  // See the sibling non-stream handler for why this uses getAvatar directly
+  // instead of assertAvatarOwnership: API-key sessions synthesize a
+  // non-wallet userId so the ownership gate always rejected them.
+  const avatarRecord = await avatars.getAvatar(avatarId);
   if (!avatarRecord) {
     writeErrorAndEnd(stream, requestId, `Avatar not found: ${avatarId}`);
     return;

@@ -759,35 +759,14 @@ async function handleChatCompletions(
     return errorResponse(403, `API key not authorized for avatar: ${avatarId}`, 'permission_error', 'unauthorized_avatar', corsHeaders);
   }
 
-  // #1385: enforce current NFT ownership before serving a completion.
-  // Admin bypass is not used on this endpoint — API keys carry their own
-  // scope (see `validation.avatarId` check above).
-  let avatarRecord: Awaited<ReturnType<typeof avatars.getAvatar>>;
-  try {
-    avatarRecord = await avatars.assertAvatarOwnership(avatarId, validation.session.userId, {
-      isAdmin: false,
-    });
-  } catch (err) {
-    if (err instanceof avatars.AvatarOwnershipError) {
-      if (err.code === 'verification_unavailable') {
-        return errorResponse(
-          503,
-          'Ownership verification temporarily unavailable',
-          'server_error',
-          'ownership_verification_unavailable',
-          corsHeaders,
-        );
-      }
-      return errorResponse(
-        404,
-        `Avatar not found: ${avatarId}`,
-        'not_found',
-        'avatar_not_found',
-        corsHeaders,
-      );
-    }
-    throw err;
-  }
+  // The scoped API key check above (`validation.avatarId !== avatarId`) is
+  // the auth grant for this endpoint. API-key sessions don't carry a wallet
+  // address — `session.userId` is a synthetic `api-key:<hash-prefix>` string
+  // — so calling `assertAvatarOwnership` here always returned not_owner and
+  // collapsed to 404 regardless of the real NFT state. NFT-transfer
+  // revocation on this path should be driven by revoking the API key itself
+  // (UI exposes this), or by a future flag-gated gate analogous to #1416.
+  const avatarRecord = await avatars.getAvatar(avatarId);
   if (!avatarRecord) {
     return errorResponse(404, `Avatar not found: ${avatarId}`, 'not_found', 'avatar_not_found', corsHeaders);
   }
