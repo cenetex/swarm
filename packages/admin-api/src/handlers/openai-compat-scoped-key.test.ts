@@ -107,12 +107,6 @@ describe('Model defaulting logic', () => {
   });
 
   test('scoped key with explicit model preserves it', () => {
-    const validation = {
-      valid: true,
-      avatarId: 'test-avatar',
-      session: { email: 'api', userId: 'user', isAdmin: false, accessToken: '' },
-    };
-
     let model = 'avatar:test-avatar';
 
     expect(model).toBe('avatar:test-avatar');
