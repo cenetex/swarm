@@ -1315,11 +1315,14 @@ export class AdminApiConstruct extends Construct {
       integration: avatarsIntegration,
     });
 
-    this.api.addRoutes({
-      path: '/avatars/{avatarId}/api-keys/{keyPrefix}',
-      methods: [apigateway.HttpMethod.DELETE],
-      integration: avatarsIntegration,
-    });
+    // NOTE: DELETE /avatars/{avatarId}/api-keys/{keyPrefix} and
+    // GET /api-keys/{keyHash}/usage/tokens were intentionally removed here
+    // after the first deploy attempt pushed the admin-api Lambda's
+    // resource-based policy past the 20,480-byte limit. Each new route adds
+    // one statement; we were already near saturation from existing routes.
+    // Tracked as follow-up: consolidate the integration onto a proxy route
+    // (or use a single shared permission with a wildcard sourceArn) before
+    // re-enabling these.
 
     this.api.addRoutes({
       path: '/avatars/{avatarId}/tools/{toolCallId}',
@@ -1330,12 +1333,6 @@ export class AdminApiConstruct extends Construct {
     this.api.addRoutes({
       path: '/api-keys',
       methods: [apigateway.HttpMethod.POST],
-      integration: avatarsIntegration,
-    });
-
-    this.api.addRoutes({
-      path: '/api-keys/{keyHash}/usage/tokens',
-      methods: [apigateway.HttpMethod.GET],
       integration: avatarsIntegration,
     });
 
