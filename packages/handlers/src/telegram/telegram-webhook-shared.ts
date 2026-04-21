@@ -21,6 +21,10 @@ import {
   hasValidInternalTestKey,
 } from '@swarm/core';
 import { getMessageFromUpdate } from '../utils/telegram-type-guards.js';
+import {
+  assertAvatarStillOwnedByClaimer,
+  HandlerOwnershipError,
+} from '../services/assert-avatar-ownership.js';
 
 // --- Extracted modules ---
 import {
@@ -77,6 +81,7 @@ const MESSAGE_QUEUE_URL = process.env.MESSAGE_QUEUE_URL!;
 const ADMIN_TABLE = process.env.ADMIN_TABLE;
 const INTERNAL_TEST_KEY = process.env.INTERNAL_TEST_KEY;
 const RUNTIME_ENV = (process.env.ENVIRONMENT || process.env.NODE_ENV || '').trim().toLowerCase();
+const NFT_OWNERSHIP_ENFORCEMENT = process.env.NFT_OWNERSHIP_ENFORCEMENT === 'on';
 
 function ok(): APIGatewayProxyResultV2 {
   return { statusCode: 200, body: 'OK' };
@@ -127,6 +132,27 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         status: avatarStatus,
       });
       return ok();
+    }
+
+    // Check NFT ownership if enforcement is enabled
+    if (NFT_OWNERSHIP_ENFORCEMENT) {
+      try {
+        await assertAvatarStillOwnedByClaimer({
+          avatarId,
+          nftMint: avatarConfig.nftMint,
+          creatorWallet: avatarConfig.creatorWallet,
+        });
+      } catch (err) {
+        if (err instanceof HandlerOwnershipError) {
+          logger.info('NFT ownership check failed', {
+            event: 'nft_revoked',
+            code: err.code,
+            avatarId,
+          });
+          return ok();
+        }
+        throw err;
+      }
     }
 
     const telegramAdapter = await getTelegramAdapter(avatarId, avatarConfig);

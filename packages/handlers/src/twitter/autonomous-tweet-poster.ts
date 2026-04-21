@@ -32,6 +32,10 @@ import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { checkMediaWithEnergyFallback } from '../services/entitlement-enforcement.js';
 import { createRuntimeBrainService } from '../services/brain.js';
 import {
+  assertAvatarStillOwnedByClaimer,
+  HandlerOwnershipError,
+} from '../services/assert-avatar-ownership.js';
+import {
   generateAutonomousContent,
   generateImagePrompt,
   type AutonomousContentTargetType,
@@ -59,6 +63,7 @@ const POST_QUEUE_URL = process.env.POST_QUEUE_URL || '';
 // Feature flags
 const ENABLE_CONTENT_STORE = process.env.ENABLE_CONTENT_STORE === 'true';
 const ENABLE_DECOUPLED_POSTING = process.env.ENABLE_DECOUPLED_POSTING === 'true';
+const NFT_OWNERSHIP_ENFORCEMENT = process.env.NFT_OWNERSHIP_ENFORCEMENT === 'on';
 
 // Rate-limit / budget configuration
 const TWITTER_API_TIER = (process.env.TWITTER_API_TIER || 'basic') as 'free' | 'basic';
@@ -133,6 +138,27 @@ async function processAvatar(
   const autoConfig = twitterConfig.autonomousPosts;
   if (!autoConfig?.enabled) {
     return { posted: false };
+  }
+
+  // Check NFT ownership if enforcement is enabled
+  if (NFT_OWNERSHIP_ENFORCEMENT) {
+    try {
+      await assertAvatarStillOwnedByClaimer({
+        avatarId,
+        nftMint: avatarConfig.nftMint,
+        creatorWallet: avatarConfig.creatorWallet,
+      });
+    } catch (err) {
+      if (err instanceof HandlerOwnershipError) {
+        logger.info('NFT ownership check failed, aborting autonomous post', {
+          event: 'nft_revoked',
+          code: err.code,
+          avatarId,
+        });
+        return { posted: false, error: err.code };
+      }
+      throw err;
+    }
   }
 
   // Check timing

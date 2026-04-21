@@ -55,6 +55,10 @@ export interface AvatarConfig {
     updatedAt?: number;
   };
 
+  // NFT ownership fields for handler-side access verification (#1385 handlers follow-up)
+  nftMint?: string;
+  creatorWallet?: string;
+
   platforms: PlatformConfigs;
   llm: LLMConfig;
   media: MediaConfig;
