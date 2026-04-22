@@ -9,6 +9,7 @@ import { useTaskCardStore, type TaskCard as TaskCardType } from '../../store/tas
 import { useWorkspaceStore } from '../../store/workspace';
 import { ToolPrompt } from './index';
 import { PromptSuccess, PromptError } from './PromptStatus';
+import type { ToolSubmitResult } from './types';
 import type { ToolCall } from '../../types';
 
 /** Human-readable labels for tool names. */
@@ -111,7 +112,7 @@ const STATUS_COLORS = {
 
 interface TaskCardProps {
   cardId: string;
-  onSubmit: (toolCallId: string, result: unknown) => void;
+  onSubmit: (toolCallId: string, result: unknown) => Promise<ToolSubmitResult>;
   disabled?: boolean;
 }
 

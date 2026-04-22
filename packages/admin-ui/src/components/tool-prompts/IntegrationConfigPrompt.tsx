@@ -1160,7 +1160,14 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         setDiscordSaveComplete(true);
         setSavedAt(Date.now());
       } else {
-        await onSubmit(toolCall.id, result);
+        // Check the ToolSubmitResult — previously we swallowed failures and
+        // set savedAt optimistically, leading to "Saved" banner + separate
+        // "tool call error" toast contradiction.
+        const submitResult = await onSubmit(toolCall.id, result);
+        if (!submitResult.ok) {
+          setSaveError(submitResult.error);
+          return;
+        }
         setSavedAt(Date.now());
       }
       if (token.trim()) {
@@ -1176,7 +1183,11 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
 
   const handleDiscordDone = async () => {
     if (!pendingResultRef.current) return;
-    await onSubmit(toolCall.id, pendingResultRef.current);
+    const submitResult = await onSubmit(toolCall.id, pendingResultRef.current);
+    if (!submitResult.ok) {
+      setSaveError(submitResult.error);
+      return;
+    }
     pendingResultRef.current = null;
   };
 

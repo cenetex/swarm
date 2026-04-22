@@ -20,11 +20,12 @@ import { useWorkspaceStore } from '../store/workspace';
 import { useTaskCardStore } from '../store/task-cards';
 import { ToolPrompt } from './tool-prompts';
 import { PromptSuccess, PromptError } from './tool-prompts/PromptStatus';
+import type { ToolSubmitResult } from './tool-prompts/types';
 import { GalleryContent } from './GalleryPanel';
 
 interface TaskWorkspaceProps {
   /** Callback when a tool prompt is submitted from within the workspace. */
-  onToolSubmit?: (toolCallId: string, result: unknown) => void;
+  onToolSubmit?: (toolCallId: string, result: unknown) => Promise<ToolSubmitResult>;
 }
 
 export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {

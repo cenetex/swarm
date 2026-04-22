@@ -12,6 +12,7 @@ import { useAvatarStore, useActiveAvatar, useActiveChat } from '../store';
 import { useTaskCardStore, useTranscriptTimeline } from '../store/task-cards';
 import { useWorkspaceStore } from '../store/workspace';
 import { TaskCard as TaskCardComponent } from './tool-prompts/TaskCard';
+import type { ToolSubmitResult } from './tool-prompts/types';
 import { useAuth } from '../store/auth';
 import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion, updateAvatar as updateAvatarApi, getAvatar, toggleFeature, transcribeAudio, activateAvatar as apiActivateAvatar, deactivateAvatar as apiDeactivateAvatar, type JobStatus } from '../api';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
@@ -726,10 +727,15 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       [activeAvatar, accessMode, createAvatar, handleSendMessage, setLoading, setError, t]
   );
 
-  // Handle tool submissions (secrets, confirmations, uploads, etc.)
+  // Handle tool submissions (secrets, confirmations, uploads, etc.).
+  //
+  // Returns a ToolSubmitResult so prompt components can render inline
+  // success/failure state. We still fire the existing setError toast +
+  // updateToolCallStatus side effects for backwards compatibility with
+  // message-card rendering; the returned result is additive signal.
   const handleToolSubmit = useCallback(
-    async (toolCallId: string, result: unknown) => {
-      if (!activeAvatar) return;
+    async (toolCallId: string, result: unknown): Promise<ToolSubmitResult> => {
+      if (!activeAvatar) return { ok: false, error: 'No active avatar' };
 
       const resultObj = result as Record<string, unknown>;
       
@@ -817,13 +823,14 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           if (resumed.pendingToolCall) {
             registerResumedToolCall(resumed.pendingToolCall);
           }
+          return { ok: true };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToSaveSecret');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
+          return { ok: false, error: errorMsg };
         }
-        return;
       }
 
       // Handle image upload completion
@@ -911,14 +918,14 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
 
           // Mark complete only after the async branch succeeded
           updateToolCallStatus();
-
+          return { ok: true };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToProcessUpload');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
+          return { ok: false, error: errorMsg };
         }
-        return;
       }
 
       // Handle model selection updates
@@ -942,13 +949,14 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
 
           updateAvatar(activeAvatar.id, { model: resultObj.selectedModel });
           updateToolCallStatus();
+          return { ok: true };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToUpdateModel');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
+          return { ok: false, error: errorMsg };
         }
-        return;
       }
 
       // Handle feature toggle updates
@@ -967,7 +975,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             const hasPendingConnect = existing.some((m) =>
               m.toolCalls?.some((tc) => tc.name === 'request_twitter_connection' && tc.status === 'pending')
             );
-            if (hasPendingConnect) return;
+            if (hasPendingConnect) return { ok: true };
 
             const twitterToolCallId = crypto.randomUUID();
             const twitterArgs = {
@@ -988,13 +996,14 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               { id: twitterToolCallId, name: 'request_twitter_connection', arguments: twitterArgs },
             );
           }
+          return { ok: true };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToToggleFeature');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
+          return { ok: false, error: errorMsg };
         }
-        return;
       }
 
       // Handle confirmation response
@@ -1024,13 +1033,14 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           if (resumed.pendingToolCall) {
             registerResumedToolCall(resumed.pendingToolCall);
           }
+          return { ok: true };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToSubmitToolResult');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
+          return { ok: false, error: errorMsg };
         }
-        return;
       }
 
       // Handle configure_integration results — persist config to backend
@@ -1060,17 +1070,19 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           if (resumed.pendingToolCall) {
             registerResumedToolCall(resumed.pendingToolCall);
           }
+          return { ok: true };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToSaveIntegrationConfig');
           result = { ...(result as Record<string, unknown>), error: errorMsg };
           updateToolCallStatus('failed');
           setError(errorMsg);
+          return { ok: false, error: errorMsg };
         }
-        return;
       }
 
       // Generic tool result - just update status
       updateToolCallStatus();
+      return { ok: true };
     },
     [activeAvatar, updateMessage, setError, addMessage, updateAvatar, t]
   );
