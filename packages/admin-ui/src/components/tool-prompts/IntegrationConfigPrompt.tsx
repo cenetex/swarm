@@ -384,6 +384,20 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
 
     void diagnoseAndRepair();
     void fetchKnownUsers();
+
+    // Poll known-users while the panel is open so groups the owner adds the
+    // bot to while configuring it appear in "Recently active" without a
+    // reload. Cheap DynamoDB read; 10s cadence; tab-visibility-aware to
+    // avoid background-tab cost.
+    const pollIntervalMs = 10_000;
+    const intervalId = window.setInterval(() => {
+      if (document.hidden) return;
+      void fetchKnownUsers();
+    }, pollIntervalMs);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
     // Intentionally omit functions from deps to avoid re-running on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolCall.id, integration, activeAgent?.id]);
@@ -1263,6 +1277,22 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
             <span className="text-xs text-green-300">Saved. You can keep editing and save again.</span>
+          </div>
+        )}
+
+        {/* Telegram auto-detect nudge: shown after a successful save when we
+            know the bot username. Reinforces the "just works" path — adding
+            the bot to a group triggers my_chat_member on the backend and the
+            group appears under "Recently active" via the polling effect. */}
+        {integration === 'telegram' && savedAt && (telegramDiagnosis?.bot?.username || testResult?.botUsername) && (
+          <div className="px-2.5 py-1.5 bg-brand-500/5 border border-brand-500/20 rounded-lg">
+            <p className="text-xs text-[var(--color-text-secondary)]">
+              Tip: add{' '}
+              <code className="text-brand-300">
+                @{telegramDiagnosis?.bot?.username || testResult?.botUsername}
+              </code>{' '}
+              to any Telegram group — it will appear under “Recently active” below within a few seconds.
+            </p>
           </div>
         )}
 
