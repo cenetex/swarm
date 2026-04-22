@@ -11,6 +11,11 @@ import { PlatformError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
 import { logger } from '../utils/logger.js';
 import { markdownToTelegramHtml, stripMarkdown } from '../utils/telegram-html.js';
+import {
+  splitForTelegram,
+  TELEGRAM_MESSAGE_LIMIT,
+  TELEGRAM_CAPTION_LIMIT,
+} from '../utils/telegram-chunk.js';
 import type {
   AvatarConfig,
   SwarmEnvelope,
@@ -907,29 +912,51 @@ export class TelegramAdapter extends PlatformAdapter {
 
     if (media && media.length > 0) {
       const firstMedia = media[0];
-      const htmlCaption = text ? markdownToTelegramHtml(text) : undefined;
+      // Captions cap at 1024. If the text fits, send it as a caption.
+      // Otherwise send the media captionless and deliver the full text as
+      // chunked follow-up messages so nothing is silently dropped.
+      const captionFits = text.length > 0 && text.length <= TELEGRAM_CAPTION_LIMIT;
+      const captionHtml = captionFits ? markdownToTelegramHtml(text) : undefined;
 
       if (firstMedia.type === 'image') {
         await this.bot.api.sendPhoto(chatIdNum, firstMedia.url, {
-          caption: htmlCaption,
-          parse_mode: htmlCaption ? 'HTML' : undefined,
+          caption: captionHtml,
+          parse_mode: captionHtml ? 'HTML' : undefined,
           ...replyParams,
         });
       } else if (firstMedia.type === 'video') {
         await this.bot.api.sendVideo(chatIdNum, firstMedia.url, {
-          caption: htmlCaption,
-          parse_mode: htmlCaption ? 'HTML' : undefined,
+          caption: captionHtml,
+          parse_mode: captionHtml ? 'HTML' : undefined,
           ...replyParams,
         });
       } else if (firstMedia.type === 'sticker') {
         // Send sticker first, then text separately
         await this.bot.api.sendSticker(chatIdNum, firstMedia.url, replyParams);
-        if (text) {
-          await this.sendTextWithFallback(chatIdNum, text);
-        }
+      }
+
+      if (text.length > 0 && !captionFits) {
+        await this.sendChunkedText(chatIdNum, text);
       }
     } else {
-      await this.sendTextWithFallback(chatIdNum, text, replyParams);
+      await this.sendChunkedText(chatIdNum, text, replyParams);
+    }
+  }
+
+  /**
+   * Send text as one or more ≤4096-char chunks. Only the first chunk carries
+   * `reply_to_message_id`; subsequent chunks fall below it in the thread.
+   */
+  private async sendChunkedText(
+    chatIdNum: number,
+    text: string,
+    replyParams?: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.bot) return;
+    const chunks = splitForTelegram(text, TELEGRAM_MESSAGE_LIMIT);
+    for (let i = 0; i < chunks.length; i++) {
+      const extra = i === 0 ? replyParams : undefined;
+      await this.sendTextWithFallback(chatIdNum, chunks[i], extra);
     }
   }
 
