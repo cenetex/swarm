@@ -2046,7 +2046,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                     Users who can DM the bot
                   </label>
                   <p className="text-xs text-[var(--color-text-muted)]">
-                    Enter @username or user ID. Users must have messaged the bot before they can be added by username.
+                    Paste a t.me link, @username, or numeric user ID. Users must have messaged the bot before they can be added by username.
                   </p>
                   <div className="flex gap-2">
                     <input
@@ -2057,7 +2057,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                         setDmInputError(null);
                         setNewDmInput(e.target.value);
                       }}
-                      placeholder="@username or User ID"
+                      placeholder="t.me/username, @username, or User ID"
                       className="flex-1 px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)]"
                       disabled={disabled}
                     />
@@ -2067,14 +2067,26 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                         const input = newDmInput.trim();
                         if (!input) return;
 
-                        // Check if already added
                         const existingIds = allowedDmUsers.map(u => u.userId);
 
-                        // If starts with @, try to find in known users
-                        if (input.startsWith('@')) {
-                          const username = input.slice(1).toLowerCase();
+                        // Accept three input forms: t.me URL, @username, or raw numeric ID.
+                        // Normalize the URL + @username paths to the same "lookup by
+                        // username in knownTelegramUsers" branch.
+                        const urlParse = parseTelegramUrl(input);
+                        let usernameLookup: string | undefined;
+                        if (urlParse.type === 'invite') {
+                          setDmInputError("Invite links can't be used for DMs. Paste the user's @username or t.me/<username> URL.");
+                          return;
+                        }
+                        if (urlParse.type === 'username') {
+                          usernameLookup = urlParse.value?.replace(/^@/, '').toLowerCase();
+                        } else if (input.startsWith('@')) {
+                          usernameLookup = input.slice(1).toLowerCase();
+                        }
+
+                        if (usernameLookup) {
                           const knownUser = knownTelegramUsers.find(
-                            u => u.chatType === 'private' && u.username?.toLowerCase() === username
+                            u => u.chatType === 'private' && u.username?.toLowerCase() === usernameLookup
                           );
                           if (knownUser) {
                             if (existingIds.includes(String(knownUser.userId))) {
@@ -2093,13 +2105,12 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                           } else {
                             setDmInputError('User must DM the bot first before they can be added');
                           }
-                        } else {
-                          // Treat as user ID
+                        } else if (/^\d+$/.test(input)) {
+                          // Numeric user ID.
                           if (existingIds.includes(input)) {
                             setDmInputError('User already added');
                             return;
                           }
-                          // Look up display name from known users if available
                           const knownUser = knownTelegramUsers.find(
                             u => u.chatType === 'private' && String(u.userId) === input
                           );
@@ -2112,6 +2123,8 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                           }]);
                           setNewDmInput('');
                           setDmInputError(null);
+                        } else {
+                          setDmInputError('Paste a t.me link, @username, or numeric user ID.');
                         }
                       }}
                       disabled={disabled || !newDmInput.trim()}
@@ -2196,7 +2209,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                         setGroupInputError(null);
                         setNewGroupInput(e.target.value);
                       }}
-                      placeholder="@groupname or Chat ID"
+                      placeholder="t.me/groupname, @groupname, or Chat ID"
                       className="flex-1 px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)]"
                       disabled={disabled || isResolvingGroup}
                     />

@@ -74,6 +74,18 @@ function getSuccessMessage(card: TaskCardType): string {
   }
 }
 
+/**
+ * Translate raw server errors to plain-English recovery messages. Keeps the
+ * original text as a fallback so we don't hide genuinely new failure modes.
+ */
+function humanizeTaskError(raw: string, toolName: string): string {
+  if (/Unknown or expired toolCallId/i.test(raw)) {
+    const label = TOOL_LABELS[toolName] ?? 'this form';
+    return `${label} expired before you submitted it. Ask again to get a fresh one.`;
+  }
+  return raw;
+}
+
 /** Status-aware summary — returns appropriate text for any resolved status. */
 function getResolvedSummary(card: TaskCardType): string {
   switch (card.status) {
@@ -168,11 +180,12 @@ export function TaskCard({ cardId, onSubmit, disabled }: TaskCardProps) {
             )}
             {card.status === 'failed' && (
               <PromptError
-                message={
+                message={humanizeTaskError(
                   typeof (card.result as Record<string, unknown>)?.error === 'string'
                     ? (card.result as Record<string, unknown>).error as string
-                    : 'Action failed'
-                }
+                    : 'Action failed',
+                  card.toolName,
+                )}
               />
             )}
             {card.status === 'cancelled' && (
