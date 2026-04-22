@@ -73,6 +73,8 @@ describe('avatars deleteAvatar', () => {
       decrementCreatorCount: mock(async () => {}) as DeleteAvatarDeps['decrementCreatorCount'],
       removeAvatarFromAllHomeChannels: mock(async () => {}) as DeleteAvatarDeps['removeAvatarFromAllHomeChannels'],
       deleteAllAvatarSecrets: mock(async () => {}) as DeleteAvatarDeps['deleteAllAvatarSecrets'],
+      getTelegramBotToken: mock(async () => null) as DeleteAvatarDeps['getTelegramBotToken'],
+      deleteTelegramWebhook: mock(async () => true) as DeleteAvatarDeps['deleteTelegramWebhook'],
     };
   });
 
@@ -116,6 +118,75 @@ describe('avatars deleteAvatar', () => {
         sk: 'AVATAR',
       },
     });
+  });
+
+  // #1464 — When Telegram is enabled, deregister the webhook BEFORE wiping
+  // secrets; otherwise the webhook is orphaned and Telegram keeps POSTing.
+  it('deregisters the Telegram webhook before secrets are deleted', async () => {
+    const avatar = makeAvatar({
+      platforms: { telegram: { enabled: true, botUsername: 'testbot' } },
+    });
+
+    sendMock.mockImplementation(async (command: unknown) => {
+      if (command instanceof GetCommand) return { Item: avatar };
+      if (command instanceof PutCommand) return {};
+      if (command instanceof DeleteCommand) return {};
+      throw new Error(`Unexpected command: ${String((command as { constructor?: { name?: string } }).constructor?.name)}`);
+    });
+
+    mockDeps.getTelegramBotToken = mock(async () => 'bot-token-xyz') as DeleteAvatarDeps['getTelegramBotToken'];
+
+    const callOrder: string[] = [];
+    mockDeps.deleteTelegramWebhook = mock(async () => {
+      callOrder.push('deleteTelegramWebhook');
+      return true;
+    }) as DeleteAvatarDeps['deleteTelegramWebhook'];
+    mockDeps.deleteAllAvatarSecrets = mock(async () => {
+      callOrder.push('deleteAllAvatarSecrets');
+    }) as DeleteAvatarDeps['deleteAllAvatarSecrets'];
+
+    await deleteAvatar('nft-avatar', session, mockDeps);
+
+    expect(mockDeps.getTelegramBotToken).toHaveBeenCalledWith('nft-avatar');
+    expect(mockDeps.deleteTelegramWebhook).toHaveBeenCalledWith('bot-token-xyz');
+    expect(callOrder).toEqual(['deleteTelegramWebhook', 'deleteAllAvatarSecrets']);
+  });
+
+  it('skips webhook deregister when Telegram is not enabled', async () => {
+    const avatar = makeAvatar({ platforms: {} });
+
+    sendMock.mockImplementation(async (command: unknown) => {
+      if (command instanceof GetCommand) return { Item: avatar };
+      return {};
+    });
+
+    await deleteAvatar('nft-avatar', session, mockDeps);
+
+    expect(mockDeps.getTelegramBotToken).not.toHaveBeenCalled();
+    expect(mockDeps.deleteTelegramWebhook).not.toHaveBeenCalled();
+  });
+
+  it('does not fail the delete when Telegram deregistration throws', async () => {
+    const avatar = makeAvatar({
+      platforms: { telegram: { enabled: true, botUsername: 'testbot' } },
+    });
+
+    sendMock.mockImplementation(async (command: unknown) => {
+      if (command instanceof GetCommand) return { Item: avatar };
+      return {};
+    });
+
+    mockDeps.getTelegramBotToken = mock(async () => 'bot-token-xyz') as DeleteAvatarDeps['getTelegramBotToken'];
+    mockDeps.deleteTelegramWebhook = mock(async () => {
+      throw new Error('Telegram API unreachable');
+    }) as DeleteAvatarDeps['deleteTelegramWebhook'];
+
+    await deleteAvatar('nft-avatar', session, mockDeps);
+
+    expect(mockDeps.deleteAllAvatarSecrets).toHaveBeenCalled();
+    expect(syncConfigSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ avatarId: 'nft-avatar', status: 'deleted' })
+    );
   });
 });
 
