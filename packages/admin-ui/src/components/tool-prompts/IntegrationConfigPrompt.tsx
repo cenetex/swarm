@@ -830,9 +830,12 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     );
   }
 
-  // Extract bot token from pasted text (e.g., BotFather message)
+  // Extract bot token from pasted text (e.g., BotFather message).
+  // Real format is <bot_id:8-10 digits>:<auth:35 chars in [A-Za-z0-9_-]>.
+  // Constraining to the real charset keeps Markdown backticks, quotes, and
+  // trailing punctuation out of the captured token.
   const extractBotToken = (input: string): { token: string; extracted: boolean } => {
-    const match = input.match(/(\d{8,}:\S{35,})/);
+    const match = input.match(/([0-9]{8,10}:[A-Za-z0-9_-]{35})/);
     if (match) {
       return { token: match[1], extracted: match[1] !== input.trim() };
     }
@@ -960,7 +963,6 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     setSaveError(null);
     try {
       let telegramStatusFromSave: unknown | undefined;
-      let telegramDiagnosisFromSave: TelegramDiagnosis | null = null;
 
       // Store the secret if provided (not using global key or platform integration)
       if (token.trim()) {
@@ -1016,8 +1018,12 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         };
       }
 
+      // Fire-and-forget diagnostics for Telegram. We don't want a slow or
+      // flaky diagnose call to delay onSubmit, and the full diagnosis blob is
+      // not useful to the LLM resume (it's a UI concern). The panel's own
+      // useEffect-driven diagnostics will refresh the health banner.
       if (integration === 'telegram' && (token.trim() || hasTelegramPolicyChanges)) {
-        telegramDiagnosisFromSave = await runTelegramDiagnostics();
+        void runTelegramDiagnostics();
       }
 
       // Re-check Discord status after saving a token
@@ -1119,8 +1125,19 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
       }
 
       if (integration === 'telegram') {
-        if (telegramStatusFromSave) result.telegramStatus = telegramStatusFromSave;
-        if (telegramDiagnosisFromSave) result.telegramDiagnosis = telegramDiagnosisFromSave;
+        // Send only a compact summary to the LLM on resume. The full
+        // telegramStatus / diagnosis objects are UI state and bloat the
+        // tool-result payload — which has contributed to downstream
+        // "tool call error" failures when the resume LLM call chokes on
+        // unexpected nested fields.
+        if (telegramStatusFromSave && typeof telegramStatusFromSave === 'object') {
+          const s = telegramStatusFromSave as { ok?: boolean; botUsername?: string; error?: string };
+          result.telegramStatus = {
+            ok: Boolean(s.ok),
+            botUsername: typeof s.botUsername === 'string' ? s.botUsername : undefined,
+            error: typeof s.error === 'string' ? s.error : undefined,
+          };
+        }
       }
 
       // For Discord, defer onSubmit so the user can see status before panel closes
@@ -2198,7 +2215,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                     Groups the bot can join
                   </label>
                   <p className="text-xs text-[var(--color-text-muted)]">
-                    Enter @groupname (for public groups) or chat ID. The bot must be a member of the group.
+                    Paste a link (<code>https://t.me/name</code>), @name, or chat ID — or just add the bot to the group and it will appear under “Recently active” below.
                   </p>
                   <div className="flex gap-2">
                     <input
@@ -2209,7 +2226,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                         setGroupInputError(null);
                         setNewGroupInput(e.target.value);
                       }}
-                      placeholder="t.me/groupname, @groupname, or Chat ID"
+                      placeholder="https://t.me/name, @name, or Chat ID"
                       className="flex-1 px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)]"
                       disabled={disabled || isResolvingGroup}
                     />
@@ -2227,7 +2244,11 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                         let usernameToResolve: string | undefined = undefined;
 
                         if (urlParse.type === 'invite') {
-                          setGroupInputError('Invite links can\'t be resolved. Add the bot to the group first, then select it from "Recently active".');
+                          setGroupInputError(
+                            'Invite links can\'t be resolved by Telegram\'s API directly. ' +
+                            'Open the link, add this bot to the group as a member (admin if you want full control), ' +
+                            'and it will appear under "Recently active" here automatically.'
+                          );
                           return;
                         } else if (urlParse.type === 'username') {
                           usernameToResolve = urlParse.value;
