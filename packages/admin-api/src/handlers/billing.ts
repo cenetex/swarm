@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
 
@@ -6,6 +5,9 @@ import { getSessionFromCookie, getClearSessionCookies } from '../auth/session-co
 import { getCorsHeaders } from '../http/cors.js';
 import { getAvatar } from '../services/avatars.js';
 import { recordAuditEvent } from '../services/audit-log.js';
+import { createSystemLogger } from '../services/structured-logger.js';
+
+const log = createSystemLogger('billing-handler');
 import {
   findEntitlementByStripeSubscriptionId,
   getEntitlementByAccount,
@@ -250,7 +252,9 @@ async function resolveEntitlementContext(params: {
       };
     }
   } catch (error) {
-    console.error('[Billing] Failed to resolve subscription metadata:', error instanceof Error ? error.message : String(error));
+    log.error('webhook', 'resolve_subscription_metadata_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   return null;
@@ -302,7 +306,7 @@ async function upsertStripeEntitlement(params: {
       },
     });
   } catch {
-    console.warn('[Billing] Failed to record audit event for entitlement change', {
+    log.warn('audit', 'entitlement_change_audit_failed', {
       avatarId: params.avatarId,
       plan: params.plan,
     });
@@ -331,11 +335,14 @@ async function handleWebhook(
 
   const stripeEvent = JSON.parse(rawBody) as StripeWebhookEvent;
 
-  console.log(`[Billing] Stripe webhook received: type=${stripeEvent.type} id=${stripeEvent.id}`);
+  log.info('webhook', 'stripe_event_received', {
+    type: stripeEvent.type,
+    stripeEventId: stripeEvent.id,
+  });
 
   switch (stripeEvent.type) {
     case 'ping': {
-      console.log('[Billing] Stripe ping event — webhook endpoint healthy');
+      log.info('webhook', 'stripe_ping_ok');
       return jsonResponse(200, { received: true, type: 'ping' }, corsHeaders);
     }
     case 'checkout.session.completed': {
@@ -401,10 +408,12 @@ async function handleWebhook(
         plan = inferredPlan;
       } else {
         const priceId = subscription.items?.data?.[0]?.price?.id ?? 'undefined';
-        console.warn(
-          `[Billing] Unknown Stripe price ID "${priceId}" on subscription ${subscriptionId} ` +
-          `for avatar ${context.avatarId} — skipping plan update to preserve current entitlement`,
-        );
+        log.warn('webhook', 'unknown_stripe_price_id', {
+          priceId,
+          subscriptionId,
+          avatarId: context.avatarId,
+          message: 'Skipping plan update to preserve current entitlement',
+        });
         break;
       }
       const trialEndsAt = typeof subscription.trial_end === 'number'
@@ -474,7 +483,7 @@ async function handleWebhook(
           },
         });
       } catch {
-        console.warn('[Billing] Failed to record audit event for payment failure', {
+        log.warn('audit', 'payment_failure_audit_failed', {
           avatarId: entitlement.avatarId,
         });
       }
@@ -511,7 +520,7 @@ async function handleWebhook(
           },
         });
       } catch {
-        console.warn('[Billing] Failed to record audit event for invoice payment', {
+        log.warn('audit', 'invoice_paid_audit_failed', {
           avatarId: entitlement.avatarId,
         });
       }
@@ -519,7 +528,7 @@ async function handleWebhook(
     }
 
     default:
-      console.log(`[Billing] Ignoring unhandled Stripe event type: ${stripeEvent.type}`);
+      log.info('webhook', 'stripe_event_ignored', { type: stripeEvent.type });
       break;
   }
 
@@ -550,7 +559,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     return jsonResponse(404, { error: 'Not found' }, corsHeaders);
   } catch (error) {
-    console.error('[Billing] Handler error:', error instanceof Error ? error.message : String(error));
+    log.error('handler', 'unhandled_exception', {
+      error: error instanceof Error ? error.message : String(error),
+      path: event.rawPath,
+      method: event.requestContext.http.method,
+    });
     return jsonResponse(500, {
       error: 'Internal server error',
       message: error instanceof Error ? error.message : String(error),

@@ -45,8 +45,12 @@ describe('customer.subscription.updated — unknown price ID handling (issue #41
   });
 
   it('should log a warning when the price ID is unmapped', () => {
-    expect(subscriptionUpdatedBody).toContain('console.warn');
-    expect(subscriptionUpdatedBody).toContain('Unknown Stripe price ID');
+    // Updated 2026-04-22: migrated from `console.warn` → structured logger
+    // per issue #1363 (subsystem: billing). The behavioral contract — that
+    // a WARN-level event fires when the price ID is unmapped — is preserved;
+    // only the transport changed.
+    expect(subscriptionUpdatedBody).toContain('log.warn');
+    expect(subscriptionUpdatedBody).toContain('unknown_stripe_price_id');
   });
 
   it('should include the price ID in the warning message', () => {
@@ -63,9 +67,10 @@ describe('customer.subscription.updated — unknown price ID handling (issue #41
   });
 
   it('should break (skip upsert) when the price ID is unknown', () => {
-    // After the console.warn for unknown price, the handler should break
-    // before calling upsertStripeEntitlement
-    const warnIndex = subscriptionUpdatedBody.indexOf('Unknown Stripe price ID');
+    // After the warn event for unknown price, the handler should break
+    // before calling upsertStripeEntitlement. Anchor on the structured
+    // event code (stable across log transport changes).
+    const warnIndex = subscriptionUpdatedBody.indexOf('unknown_stripe_price_id');
     const breakAfterWarn = subscriptionUpdatedBody.indexOf('break;', warnIndex);
     const upsertAfterWarn = subscriptionUpdatedBody.indexOf('upsertStripeEntitlement', warnIndex);
 
