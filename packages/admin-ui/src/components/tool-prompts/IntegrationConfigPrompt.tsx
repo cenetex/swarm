@@ -2285,11 +2285,20 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                         let usernameToResolve: string | undefined = undefined;
 
                         if (urlParse.type === 'invite') {
-                          setGroupInputError(
-                            'Invite links can\'t be resolved by Telegram\'s API directly. ' +
-                            'Open the link, add this bot to the group as a member (admin if you want full control), ' +
-                            'and it will appear under "Recently active" here automatically.'
-                          );
+                          const botUsername = telegramDiagnosis?.bot?.username || testResult?.botUsername;
+                          if (botUsername) {
+                            window.open(`https://t.me/${botUsername}?startgroup=true`, '_blank', 'noopener,noreferrer');
+                            window.open(input, '_blank', 'noopener,noreferrer');
+                            setGroupInputError(
+                              `Opened Telegram: pick the group to add @${botUsername} to. ` +
+                              'Once added, the group appears under "Recently active" below within a few seconds.'
+                            );
+                          } else {
+                            setGroupInputError(
+                              'Invite links can\'t be resolved by Telegram\'s API directly. ' +
+                              'Save a bot token first, then use the "Add bot to a group" button below.'
+                            );
+                          }
                           return;
                         } else if (urlParse.type === 'username') {
                           usernameToResolve = urlParse.value;
@@ -2358,6 +2367,21 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                   </div>
                   {groupInputError && (
                     <p className="text-xs text-red-400">{groupInputError}</p>
+                  )}
+                  {/* One-tap deep link to add the bot to a group via Telegram's
+                      built-in group picker. Telegram's HTTP API can't resolve
+                      invite hashes, so this is the only way the bot can join
+                      groups the user is already a member of. */}
+                  {(telegramDiagnosis?.bot?.username || testResult?.botUsername) && (
+                    <a
+                      href={`https://t.me/${telegramDiagnosis?.bot?.username || testResult?.botUsername}?startgroup=true`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs bg-brand-600/20 hover:bg-brand-600/40 border border-brand-500/30 rounded-lg text-brand-300 transition-colors"
+                    >
+                      <span>+</span>
+                      <span>Add @{telegramDiagnosis?.bot?.username || testResult?.botUsername} to a group on Telegram</span>
+                    </a>
                   )}
                   {/* Known groups suggestions */}
                   {knownTelegramUsers.filter(u => (u.chatType === 'group' || u.chatType === 'supergroup') && !allowedChats.some(c => c.chatId === String(u.chatId))).length > 0 && (
