@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Token Launch Service
  *
@@ -33,6 +32,9 @@ import { canLaunchToken } from './burn-stats.js';
 import { BURN_TIERS } from '@swarm/core';
 import type { AvatarRecord } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createSystemLogger } from '../structured-logger.js';
+
+const log = createSystemLogger('token-launch');
 
 // ---------------------------------------------------------------------------
 // Tier Helper
@@ -884,7 +886,7 @@ export async function launchToken(
   avatarId: string,
   config: TokenLaunchConfig
 ): Promise<TokenLaunchResult> {
-  console.log(`[TokenLaunch] Starting token launch for avatar=${avatarId}`);
+  log.info('launch', 'launch_started', { avatarId });
 
   let vanityConfig: ResolvedVanityMintConfig | null = null;
   try {
@@ -901,7 +903,11 @@ export async function launchToken(
   // Run preflight checks (includes tier requirement check)
   const preflight = await preflightTokenLaunch(avatarId);
   if (!preflight.canLaunch) {
-    console.log(`[TokenLaunch] Preflight failed: ${preflight.error}`);
+    log.info('launch', 'preflight_failed', {
+      avatarId,
+      error: preflight.error,
+      errorCode: preflight.errorCode,
+    });
     return {
       success: false,
       avatarId,
@@ -915,7 +921,7 @@ export async function launchToken(
   }
 
   const twitterUsername = preflight.twitterUsername!;
-  console.log(`[TokenLaunch] Twitter username: @${twitterUsername}`);
+  log.info('launch', 'twitter_username_resolved', { avatarId, twitterUsername });
 
   try {
     // Get credentials
@@ -924,16 +930,30 @@ export async function launchToken(
     const commitment = SOLANA_COMMITMENT;
     const connection = new Connection(SOLANA_RPC_URL);
 
-    console.log(`[TokenLaunch] Avatar wallet: ${keypair.publicKey.toBase58()}`);
+    log.info('launch', 'avatar_wallet_loaded', {
+      avatarId,
+      avatarWallet: keypair.publicKey.toBase58(),
+    });
 
     // Step 1: Look up avatar's Twitter account wallet on Token launch API
-    console.log(`[TokenLaunch] Looking up launch wallet for @${twitterUsername}...`);
+    log.info('launch', 'launch_wallet_lookup_started', {
+      avatarId,
+      twitterUsername,
+    });
     let avatarLaunchWallet: PublicKey;
     try {
       avatarLaunchWallet = await getLaunchWalletV2(apiKey, twitterUsername, 'twitter');
-      console.log(`[TokenLaunch] Found launch wallet: ${avatarLaunchWallet.toBase58()}`);
+      log.info('launch', 'launch_wallet_found', {
+        avatarId,
+        twitterUsername,
+        launchWallet: avatarLaunchWallet.toBase58(),
+      });
     } catch (err) {
-      console.error(`[TokenLaunch] Failed to find launch wallet for @${twitterUsername}:`, err instanceof Error ? err.message : String(err));
+      log.error('launch', 'launch_wallet_lookup_failed', {
+        avatarId,
+        twitterUsername,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return {
         success: false,
         avatarId,
@@ -945,7 +965,7 @@ export async function launchToken(
     }
 
     // Step 2: Create token metadata using Token launch API
-    console.log('[TokenLaunch] Creating token metadata...');
+    log.info('metadata', 'token_metadata_create_started', { avatarId });
     const avatar = (await getAvatar(avatarId))!;
     const profileUrl = typeof avatar.profileImage === 'string'
       ? avatar.profileImage
@@ -997,27 +1017,37 @@ export async function launchToken(
     const tokenInfo = tokenInfoResult.tokenInfo;
 
     const tokenMint = new PublicKey(tokenInfo.tokenMint);
-    console.log(`[TokenLaunch] Token mint: ${tokenMint.toBase58()}`);
-    console.log(`[TokenLaunch] Metadata URL: ${tokenInfo.tokenMetadata}`);
+    log.info('metadata', 'token_metadata_created', {
+      avatarId,
+      tokenMint: tokenMint.toBase58(),
+      metadataUrl: tokenInfo.tokenMetadata,
+    });
     if (vanityConfig) {
-      console.log(
-        `[TokenLaunch] Vanity search completed: attempts=${tokenInfoResult.attempts} ` +
-        `elapsedMs=${tokenInfoResult.elapsedMs} engine=${TOKEN_LAUNCH_ENGINE}`
-      );
+      log.info('vanity', 'vanity_search_complete', {
+        avatarId,
+        attempts: tokenInfoResult.attempts,
+        elapsedMs: tokenInfoResult.elapsedMs,
+        engine: TOKEN_LAUNCH_ENGINE,
+      });
     }
     const vanityMatch = tokenInfoResult.match;
     const vanityNote = tokenInfoResult.note;
     if (vanityNote) {
-      console.log(`[TokenLaunch] ${vanityNote}`);
+      log.info('vanity', 'vanity_note', { avatarId, note: vanityNote });
     }
 
     // Step 3: Create fee share config with proper distribution
     // - Platform wallet: 2000 bps (20%)
     // - Avatar's Twitter launch wallet: 8000 bps (80%)
     // - Partner receives additional fees from Token launch (separate from above)
-    console.log('[TokenLaunch] Creating fee share configuration...');
-    console.log(`  - Platform (${PLATFORM_WALLET}): ${PLATFORM_FEE_BPS / 100}%`);
-    console.log(`  - Avatar @${twitterUsername} (${avatarLaunchWallet.toBase58()}): ${AVATAR_FEE_BPS / 100}%`);
+    log.info('fee_share', 'fee_share_config_started', {
+      avatarId,
+      platformWallet: PLATFORM_WALLET,
+      platformPct: PLATFORM_FEE_BPS / 100,
+      avatarTwitter: twitterUsername,
+      avatarLaunchWallet: avatarLaunchWallet.toBase58(),
+      avatarPct: AVATAR_FEE_BPS / 100,
+    });
 
     const platformWallet = new PublicKey(PLATFORM_WALLET);
     const feeClaimers = [
@@ -1033,8 +1063,11 @@ export async function launchToken(
     if (partnerKeyStr) {
       partner = new PublicKey(partnerKeyStr);
       partnerConfig = deriveFeeShareV2PartnerConfigPda(partner);
-      console.log(`[TokenLaunch] Using partner key: ${partner.toBase58()}`);
-      console.log(`[TokenLaunch] Partner config PDA: ${partnerConfig.toBase58()}`);
+      log.info('fee_share', 'partner_key_resolved', {
+        avatarId,
+        partner: partner.toBase58(),
+        partnerConfig: partnerConfig.toBase58(),
+      });
     }
 
     const configResult = await createFeeShareConfig(apiKey, {
@@ -1052,7 +1085,10 @@ export async function launchToken(
 
     // Handle bundles if present (for large fee claimer sets)
     if (configResult.bundles && configResult.bundles.length > 0) {
-      console.log(`[TokenLaunch] Sending ${configResult.bundles.length} bundle(s)...`);
+      log.info('fee_share', 'fee_share_bundles_sending', {
+        avatarId,
+        bundleCount: configResult.bundles.length,
+      });
       for (const bundle of configResult.bundles) {
         for (const tx of bundle) {
           tx.sign([keypair]);
@@ -1062,10 +1098,13 @@ export async function launchToken(
       }
     }
 
-    console.log(`[TokenLaunch] Config key: ${configResult.meteoraConfigKey.toBase58()}`);
+    log.info('fee_share', 'fee_share_config_key_resolved', {
+      avatarId,
+      configKey: configResult.meteoraConfigKey.toBase58(),
+    });
 
     // Step 4: Create launch transaction using Token launch API
-    console.log('[TokenLaunch] Creating launch transaction...');
+    log.info('launch', 'launch_tx_create_started', { avatarId });
     const initialBuyLamports = Math.floor((config.initialBuySol || 0.01) * LAMPORTS_PER_SOL);
 
     const launchTx = await createLaunchTransaction(apiKey, {
@@ -1077,9 +1116,9 @@ export async function launchToken(
     });
 
     // Step 5: Sign and send launch transaction
-    console.log('[TokenLaunch] Signing and broadcasting transaction...');
+    log.info('launch', 'launch_tx_broadcasting', { avatarId });
     const signature = await signAndSendTransaction(connection, commitment, launchTx, keypair);
-    console.log(`[TokenLaunch] Transaction confirmed: ${signature}`);
+    log.info('launch', 'launch_tx_confirmed', { avatarId, signature });
 
     // Step 6: Store token info on avatar record
     const tokenLaunch: TokenLaunchInfo = {
@@ -1102,8 +1141,12 @@ export async function launchToken(
       },
     }));
 
-    console.log(`[TokenLaunch] ✅ Token launched successfully!`);
-    console.log(`[TokenLaunch] View at: ${tokenLaunch.launchUrl}`);
+    log.info('launch', 'launch_succeeded', {
+      avatarId,
+      launchUrl: tokenLaunch.launchUrl,
+      tokenMint: tokenLaunch.mint,
+      symbol: tokenLaunch.symbol,
+    });
 
     return {
       success: true,
@@ -1121,7 +1164,10 @@ export async function launchToken(
       vanityNote,
     };
   } catch (error) {
-    console.error('[TokenLaunch] Launch failed:', error instanceof Error ? error.message : String(error));
+    log.error('launch', 'launch_failed', {
+      avatarId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       success: false,
       avatarId,

@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Helius DAS API Pagination Helper
  *
@@ -7,6 +6,9 @@
  *
  * Safety cap: max 10 pages (10,000 assets) to prevent runaway loops.
  */
+import { createSystemLogger } from '../structured-logger.js';
+
+const log = createSystemLogger('helius-pagination');
 
 /** Minimal asset shape returned by getAssetsByOwner */
 export interface DasAsset {
@@ -82,7 +84,11 @@ export async function fetchAllAssetsByOwner(
     });
 
     if (!response.ok) {
-      console.error(`[HeliusPagination] API error on page ${page}: ${response.status}`);
+      log.error('pagination', 'api_error', {
+        page,
+        status: response.status,
+        walletAddress,
+      });
       break;
     }
 
@@ -92,7 +98,11 @@ export async function fetchAllAssetsByOwner(
     };
 
     if (data.error) {
-      console.error(`[HeliusPagination] RPC error on page ${page}:`, data.error);
+      log.error('pagination', 'rpc_error', {
+        page,
+        error: data.error,
+        walletAddress,
+      });
       break;
     }
 
