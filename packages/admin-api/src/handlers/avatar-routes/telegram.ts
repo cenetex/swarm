@@ -5,6 +5,8 @@
  * - POST /avatars/{id}/telegram/repair
  * - GET  /avatars/{id}/telegram/known-users
  * - POST /avatars/{id}/telegram/resolve-group
+ * - POST /avatars/{id}/telegram/bind-code   (#1471)
+ * - GET  /avatars/{id}/telegram/binding     (#1471)
  */
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 import type { RouteContext } from './types.js';
@@ -20,6 +22,7 @@ import {
   deriveTelegramOnboardingStepStatus,
 } from '../../services/telegram-onboarding.js';
 import { getKnownTelegramUsers } from '../../services/channel-state.js';
+import * as telegramBindings from '../../services/telegram-bindings.js';
 
 export async function handleTelegramRoutes(
   ctx: RouteContext,
@@ -311,6 +314,105 @@ export async function handleTelegramRoutes(
         error: err,
       });
       return jsonResponse(corsHeaders, 500, { error: 'Failed to resolve group' });
+    }
+  }
+
+  // ── POST /avatars/{id}/telegram/bind-code ────────────────────────────────
+  // #1471: Issue a one-time bind code and return a Telegram deep link that
+  // starts the owner-binding flow. The owner taps the link in their browser,
+  // Telegram opens the bot DM with `/start bind_<code>`, the bot posts an
+  // inline-keyboard confirmation, and the tap writes the binding.
+  const bindCodeMatch = path.match(/^\/avatars\/([^/]+)\/telegram\/bind-code$/);
+  if (method === 'POST' && bindCodeMatch) {
+    const avatarId = bindCodeMatch[1];
+
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
+
+    const avatar = await avatarService.getAvatar(avatarId);
+    if (!avatar) return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
+
+    const botUsername = avatar.platforms?.telegram?.botUsername;
+    if (!botUsername) {
+      return jsonResponse(corsHeaders, 400, {
+        error: 'Configure a bot token first — we need the bot username to build the deep link.',
+      });
+    }
+
+    try {
+      const record = await telegramBindings.issueBindCode(avatarId);
+      const deepLink = `https://t.me/${botUsername}?start=bind_${record.code}`;
+      logger.info('Issued Telegram bind code', {
+        event: 'telegram_bind_code_issued',
+        avatarId,
+        actor: session.email,
+      });
+      return jsonResponse(corsHeaders, 200, {
+        code: record.code,
+        deepLink,
+        expiresAt: record.ttl * 1000,
+      });
+    } catch (err) {
+      logger.error('Failed to issue Telegram bind code', {
+        event: 'telegram_bind_code_failed',
+        avatarId,
+        error: err,
+      });
+      return jsonResponse(corsHeaders, 500, { error: 'Failed to issue bind code' });
+    }
+  }
+
+  // ── GET /avatars/{id}/telegram/binding ───────────────────────────────────
+  // #1471: Return the current owner binding (if any) so the admin UI can
+  // show "Bound as @<username>" instead of the bind CTA.
+  const bindingMatch = path.match(/^\/avatars\/([^/]+)\/telegram\/binding$/);
+  if (method === 'GET' && bindingMatch) {
+    const avatarId = bindingMatch[1];
+
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
+
+    try {
+      const binding = await telegramBindings.getOwnerBinding(avatarId);
+      return jsonResponse(corsHeaders, 200, {
+        bound: Boolean(binding),
+        telegramUserId: binding?.telegramUserId,
+        telegramUsername: binding?.telegramUsername,
+        boundAt: binding?.boundAt,
+      });
+    } catch (err) {
+      logger.error('Failed to fetch Telegram binding', {
+        event: 'telegram_binding_fetch_failed',
+        avatarId,
+        error: err,
+      });
+      return jsonResponse(corsHeaders, 500, { error: 'Failed to fetch binding' });
+    }
+  }
+
+  // ── DELETE /avatars/{id}/telegram/binding ────────────────────────────────
+  // #1471: Unbind so the owner can rebind (e.g., lost phone, moved accounts).
+  if (method === 'DELETE' && bindingMatch) {
+    const avatarId = bindingMatch[1];
+
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
+
+    try {
+      await telegramBindings.deleteOwnerBinding(avatarId);
+      logger.info('Deleted Telegram owner binding', {
+        event: 'telegram_binding_deleted',
+        avatarId,
+        actor: session.email,
+      });
+      return jsonResponse(corsHeaders, 200, { ok: true });
+    } catch (err) {
+      logger.error('Failed to delete Telegram binding', {
+        event: 'telegram_binding_delete_failed',
+        avatarId,
+        error: err,
+      });
+      return jsonResponse(corsHeaders, 500, { error: 'Failed to delete binding' });
     }
   }
 

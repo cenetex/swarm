@@ -63,6 +63,13 @@ import {
   getTelegramAdapter,
 } from './webhook-security.js';
 
+import {
+  createBindHandler,
+  handleBindCallback,
+  handleBindStart,
+} from './webhook-bind.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
+
 // --- Re-exports for external consumers ---
 export {
   getAllowedDmUserIdsForAdmin,
@@ -311,9 +318,43 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     const telegramCfg = avatarConfig.platforms.telegram;
 
-    // Handle callback_query updates (inline button presses) for DM bot creation flow
+    // Handle callback_query updates (inline button presses).
+    //
+    // Order matters: bind-flow callbacks (#1471) are checked first because
+    // they are dispatched via signed callback_data (not the legacy admin-
+    // handler action registry) and have their own authz path.
     if (update.callback_query) {
       logger.info('Callback query received', { event: 'callback_query' });
+
+      // #1471 — owner-binding confirm/cancel.
+      try {
+        const bindSigningKey = await getWebhookSecret(avatarId);
+        if (bindSigningKey && ADMIN_TABLE) {
+          const bot = telegramAdapter.getBot();
+          if (bot) {
+            const bindDeps = createBindHandler({
+              dynamoClient: getDynamoClient(),
+              tableName: ADMIN_TABLE,
+              signingKey: bindSigningKey,
+              botApi: {
+                sendMessage: (chatId, text, extra) => bot.api.sendMessage(chatId, text, extra as Parameters<typeof bot.api.sendMessage>[2]),
+                editMessageText: (chatId, messageId, text, extra) => bot.api.editMessageText(chatId, messageId, text, extra as Parameters<typeof bot.api.editMessageText>[3]),
+                answerCallbackQuery: (id, extra) => bot.api.answerCallbackQuery(id, extra as Parameters<typeof bot.api.answerCallbackQuery>[1]),
+              },
+            });
+            const { handled } = await handleBindCallback({
+              deps: bindDeps,
+              update,
+              avatarId,
+            });
+            if (handled) return ok();
+          }
+        }
+      } catch (err) {
+        logger.error('Bind callback handler error', err, { event: 'bind_callback_error', avatarId });
+        // Fall through to the legacy handler rather than swallow the update.
+      }
+
       try {
         const { processAdminCallbackQuery } = await import('../services/telegram-admin-handler.js');
         await processAdminCallbackQuery(avatarId, avatarConfig, update as unknown);
@@ -328,6 +369,49 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (!envelope) return ok();
 
     envelope.traceId = traceId;
+
+    // /start bind_<code> flow (#1471): the owner tapped the deep link from
+    // the web dashboard. Verify the tap lands in a DM, then post the signed
+    // confirmation keyboard. The binding is not written until the user taps
+    // Confirm on the keyboard.
+    if (envelope.content.command?.command === 'start' && envelope.content.command?.args?.[0]?.startsWith('bind_')) {
+      if (envelope.metadata.chatType !== 'private') {
+        return ok();
+      }
+      const bindCode = envelope.content.command.args![0]!.slice('bind_'.length);
+      if (!bindCode) return ok();
+
+      try {
+        const bindSigningKey = await getWebhookSecret(avatarId);
+        const bot = telegramAdapter.getBot();
+        if (bindSigningKey && ADMIN_TABLE && bot) {
+          const bindDeps = createBindHandler({
+            dynamoClient: getDynamoClient(),
+            tableName: ADMIN_TABLE,
+            signingKey: bindSigningKey,
+            botApi: {
+              sendMessage: (chatId, text, extra) => bot.api.sendMessage(chatId, text, extra as Parameters<typeof bot.api.sendMessage>[2]),
+              editMessageText: (chatId, messageId, text, extra) => bot.api.editMessageText(chatId, messageId, text, extra as Parameters<typeof bot.api.editMessageText>[3]),
+              answerCallbackQuery: (id, extra) => bot.api.answerCallbackQuery(id, extra as Parameters<typeof bot.api.answerCallbackQuery>[1]),
+            },
+          });
+          await handleBindStart({
+            deps: bindDeps,
+            chatId: parseInt(envelope.conversationId),
+            code: bindCode,
+            avatarId,
+          });
+        }
+      } catch (err) {
+        logger.warn('Telegram bind-start handler failed', {
+          event: 'telegram_bind_start_failed',
+          avatarId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      return ok();
+    }
 
     // /start approve_AVATAR_ID flow: deep link approval for adding users to DM allowlist
     // Format: /start approve_<avatar-id> — add sender to this avatar's allowedDmUsers
