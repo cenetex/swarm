@@ -229,3 +229,11 @@ export {
   type OwnerBindingRecord,
   type BindCodeRecord,
 } from './telegram-binding.js';
+export {
+  createTelegramDmApprovalStore,
+  MAX_FIRST_MESSAGE_CHARS,
+  type TelegramDmApprovalStore,
+  type TelegramDmApprovalStoreDeps,
+  type PendingDmRecord,
+  type BlockedRecord,
+} from './telegram-dm-approval.js';

@@ -74,6 +74,11 @@ import {
   postGroupEnablementKeyboard,
   revokeChatFromAllowedList,
 } from './webhook-group-enable.js';
+import {
+  createDmApprovalHandler,
+  handleDmApprovalCallback,
+  handleStrangerDm,
+} from './webhook-dm-approval.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
 
 // --- Re-exports for external consumers ---
@@ -447,6 +452,25 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
             invalidateAvatarConfigCache(avatarId);
             return ok();
           }
+
+          // 3. DM approval (allow / deny / block / revoke / undo / unblock).
+          const dmDeps = createDmApprovalHandler({
+            dynamoClient: getDynamoClient(),
+            tableName: ADMIN_TABLE,
+            signingKey: redesignSigningKey,
+            botApi: sharedBotApi,
+            stateService: getStateService(),
+          });
+          const dmResult = await handleDmApprovalCallback({
+            deps: dmDeps,
+            update,
+            avatarId,
+            avatarConfig,
+          });
+          if (dmResult.handled) {
+            invalidateAvatarConfigCache(avatarId);
+            return ok();
+          }
         }
       } catch (err) {
         logger.error('Signed-callback handler error', err, { event: 'signed_callback_error', avatarId });
@@ -767,26 +791,68 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         return ok();
       }
 
-      // Non-allowed users: redirect to RATi Chat onboarding
+      // Non-allowed users: try the owner-approval flow (#1473). If the
+      // avatar has no owner bound yet (#1471 never ran for this avatar),
+      // fall back to the existing RATi Chat onboarding redirect so
+      // unbound bots remain usable.
       try {
         const bot = telegramAdapter.getBot();
-        if (bot) {
+        const dmSigningKey = await getWebhookSecret(avatarId);
+        if (bot && dmSigningKey && ADMIN_TABLE) {
+          const dmDeps = createDmApprovalHandler({
+            dynamoClient: getDynamoClient(),
+            tableName: ADMIN_TABLE,
+            signingKey: dmSigningKey,
+            botApi: {
+              sendMessage: (cid, text, extra) => bot.api.sendMessage(cid, text, extra as Parameters<typeof bot.api.sendMessage>[2]),
+              editMessageText: (cid, mid, text, extra) => bot.api.editMessageText(cid, mid, text, extra as Parameters<typeof bot.api.editMessageText>[3]),
+              answerCallbackQuery: (id, extra) => bot.api.answerCallbackQuery(id, extra as Parameters<typeof bot.api.answerCallbackQuery>[1]),
+            },
+            stateService: getStateService(),
+          });
+          const dmResult = await handleStrangerDm({
+            deps: dmDeps,
+            input: {
+              avatarId,
+              avatarConfig,
+              requesterId: senderId,
+              requesterUsername: senderUsername,
+              requesterDisplayName: envelope.sender.displayName,
+              requesterChatId: parseInt(envelope.conversationId),
+              firstMessage: envelope.content.text || '[media]',
+            },
+          });
+
+          // If the avatar has no bound owner, fall back to the legacy
+          // redirect so unbound bots still produce a useful reply.
+          if (dmResult.status === 'notified' ||
+              dmResult.status === 'dropped_blocked' ||
+              dmResult.status === 'dropped_pending' ||
+              dmResult.status === 'owner_unreachable') {
+            logger.info('Handled stranger DM via owner approval flow', {
+              event: 'telegram_stranger_dm_handled',
+              avatarId,
+              status: dmResult.status,
+            });
+            return ok();
+          }
+
+          // status === 'unbound_owner' — fall through to redirect.
           const dm = buildDmRedirectMessage(avatarConfig.platforms.telegram);
           await bot.api.sendMessage(
             parseInt(envelope.conversationId),
             dm.text,
             { reply_markup: dm.replyMarkup }
           );
-
-          logger.info('Sent DM redirect message', {
-            event: 'dm_redirect_sent',
-            chatId: envelope.conversationId,
-            messageId: envelope.messageId,
+          logger.info('Sent DM redirect message (unbound owner fallback)', {
+            event: 'dm_redirect_sent_unbound',
+            avatarId,
           });
         }
       } catch (err) {
-        logger.warn('Failed to send DM redirect message', {
-          event: 'dm_redirect_failed',
+        logger.warn('Failed to handle stranger DM', {
+          event: 'dm_stranger_handle_failed',
+          avatarId,
           error: err instanceof Error ? err.message : String(err),
         });
       }
