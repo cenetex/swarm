@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Reactions Service
  *
@@ -19,6 +18,9 @@
  * @see docs/COORDINATION-OWNERSHIP.md for the full ownership model.
  */
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('reactions');
 
 const sqsClient = new SQSClient({});
 const REACTION_QUEUE_URL = process.env.RESPONSE_QUEUE_URL; // Reuse response queue
@@ -165,15 +167,15 @@ export async function sendTelegramReaction(
 
     if (!response.ok) {
       const error = await response.json();
-      console.warn(
-        `[reactions] Failed to send reaction: ${JSON.stringify(error)}`
-      );
+      log.warn('send', 'send_reaction_failed', { error });
       return false;
     }
 
     return true;
   } catch (err) {
-    console.error('[reactions] Error sending reaction:', err instanceof Error ? err.message : String(err));
+    log.error('send', 'send_reaction_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return false;
   }
 }
@@ -228,16 +230,24 @@ export async function handleReaction(
         DelaySeconds: delaySeconds,
       }));
 
-      console.log(`[reactions] Queued reaction ${decision.emoji} for message ${messageId} with ${delaySeconds}s delay`);
+      log.info('queue', 'reaction_queued', {
+        emoji: decision.emoji,
+        messageId,
+        delaySeconds,
+      });
       return;
     } catch (err) {
-      console.warn('[reactions] SQS queue failed, falling back to fire-and-forget:', err instanceof Error ? err.message : String(err));
+      log.warn('queue', 'sqs_queue_failed_fallback_fire_and_forget', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
   // Fallback: Fire-and-forget (best-effort, may not complete if Lambda freezes)
   setTimeout(() => {
     sendTelegramReaction(token, chatId, messageId, decision.emoji!)
-      .catch((err) => console.warn('[reactions] Fire-and-forget reaction failed:', err instanceof Error ? err.message : String(err)));
+      .catch((err) => log.warn('send', 'fire_and_forget_reaction_failed', {
+        error: err instanceof Error ? err.message : String(err),
+      }));
   }, decision.delay);
 }

@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- Intentional: cold-start diagnostics must use console directly (logger may not be initialized yet) */
 /**
  * Runtime Configuration Validation
  *
@@ -12,6 +11,9 @@
  *   const report = validateRuntimeConfig();
  *   if (!report.ok) { /* log / abort / surface in health endpoint * / }
  */
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('runtime-config');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -254,17 +256,18 @@ export function ensureRuntimeConfig(): ConfigReport {
     };
 
     if (grouped.warning.length > 0) {
-      console.warn(
-        '[runtime-config] Configuration warnings:\n' +
-          grouped.warning.map((v) => `  - ${v.message}`).join('\n'),
-      );
+      log.warn('validation', 'configuration_warnings', {
+        warnings: grouped.warning.map((v) => v.message),
+      });
     }
 
     if (grouped.critical.length > 0) {
       const msg =
         '[runtime-config] CRITICAL configuration errors — handler cannot operate correctly:\n' +
         grouped.critical.map((v) => `  - ${v.message}`).join('\n');
-      console.error(msg);
+      log.error('validation', 'critical_configuration_errors', {
+        errors: grouped.critical.map((v) => v.message),
+      });
       // In deployed environments, throw so the Lambda invocation fails fast
       // rather than producing subtle downstream errors.
       if (!isTestOrLocalEnv()) {

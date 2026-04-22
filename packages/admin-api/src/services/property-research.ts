@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Property Research Service
  *
@@ -27,6 +26,9 @@ import type {
   AssessorInfo,
 } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('property-research');
 
 /**
  * Dependencies interface for property research service (for testing)
@@ -111,7 +113,10 @@ export async function grantAuth(
     })
   );
 
-  console.log(`[PropertyResearch] Granted auth for ${walletAddress.slice(0, 8)}... on avatar ${avatarId}`);
+  log.info('auth', 'auth_granted', {
+    avatarId,
+    walletPrefix: walletAddress.slice(0, 8),
+  });
   return auth;
 }
 
@@ -133,7 +138,10 @@ export async function revokeAuth(
     })
   );
 
-  console.log(`[PropertyResearch] Revoked auth for ${walletAddress.slice(0, 8)}... on avatar ${avatarId}`);
+  log.info('auth', 'auth_revoked', {
+    avatarId,
+    walletPrefix: walletAddress.slice(0, 8),
+  });
 }
 
 // =============================================================================
@@ -190,7 +198,11 @@ export async function createJob(
     })
   );
 
-  console.log(`[PropertyResearch] Created job ${jobId} for ${property.address}, ${property.city}`);
+  log.info('job', 'job_created', {
+    jobId,
+    address: property.address,
+    city: property.city,
+  });
   return job;
 }
 
@@ -333,7 +345,7 @@ export async function deleteJob(
     })
   );
 
-  console.log(`[PropertyResearch] Deleted job ${jobId}`);
+  log.info('job', 'job_deleted', { jobId });
 }
 
 // =============================================================================
@@ -418,7 +430,10 @@ export async function searchListings(
         }
       }
     } catch (error) {
-      console.error(`[PropertyResearch] Search error for "${query}":`, error instanceof Error ? error.message : String(error));
+      log.error('search', 'listings_search_error', {
+        query,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -464,7 +479,9 @@ export async function searchComparables(
         });
       }
     } catch (error) {
-      console.error(`[PropertyResearch] Comps search error:`, error instanceof Error ? error.message : String(error));
+      log.error('search', 'comps_search_error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -523,7 +540,9 @@ export async function searchNeighborhood(
         neighborhood.sources.push('web search - walk score');
       }
     } catch (error) {
-      console.error(`[PropertyResearch] Neighborhood search error:`, error instanceof Error ? error.message : String(error));
+      log.error('search', 'neighborhood_search_error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -570,7 +589,9 @@ export async function searchSchools(
       }
     }
   } catch (error) {
-    console.error(`[PropertyResearch] Schools search error:`, error instanceof Error ? error.message : String(error));
+    log.error('search', 'schools_search_error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   return { schools: schools.slice(0, 10), queries: searchQueries };
@@ -622,7 +643,9 @@ export async function searchAssessor(
         break;
       }
     } catch (error) {
-      console.error(`[PropertyResearch] Assessor search error:`, error instanceof Error ? error.message : String(error));
+      log.error('search', 'assessor_search_error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -716,7 +739,7 @@ export async function executeResearch(
       reportMarkdown: report,
     });
 
-    console.log(`[PropertyResearch] Completed research for job ${jobId}`);
+    log.info('job', 'research_completed', { jobId });
     return await getJob(jobId);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -728,7 +751,10 @@ export async function executeResearch(
       error: errorMsg,
     });
 
-    console.error(`[PropertyResearch] Failed job ${jobId}:`, error instanceof Error ? error.message : String(error));
+    log.error('job', 'research_failed', {
+      jobId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return await getJob(jobId);
   }
 }

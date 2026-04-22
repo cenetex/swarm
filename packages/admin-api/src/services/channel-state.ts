@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Channel State Service
  * Kyro-style channel-aware messaging with message buffering and state machine
@@ -35,6 +34,9 @@ import type {
   SharedChannelHistoryRecord,
 } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('channel-state');
 
 const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
@@ -264,7 +266,9 @@ export async function getChannelState(
 
     return record;
   } catch (err) {
-    console.warn('[ChannelState] Failed to get channel state:', err instanceof Error ? err.message : String(err));
+    log.warn('channel', 'get_channel_state_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }
@@ -435,7 +439,9 @@ export async function addMessageToBuffer(
       };
     } catch (err: unknown) {
       if ((err as { name?: string }).name !== 'ConditionalCheckFailedException') {
-        console.warn('[ChannelState] Failed to trim channel buffer:', err instanceof Error ? err.message : String(err));
+        log.warn('channel', 'trim_buffer_failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   }
@@ -455,7 +461,9 @@ export async function saveChannelState(
       Item: state,
     }));
   } catch (err) {
-    console.warn('[ChannelState] Failed to save channel state:', err instanceof Error ? err.message : String(err));
+    log.warn('channel', 'save_channel_state_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw err;
   }
 }
@@ -937,7 +945,9 @@ export async function getSharedHistory(
 
     return record;
   } catch (err) {
-    console.warn('[SharedHistory] Failed to get shared history:', err instanceof Error ? err.message : String(err));
+    log.warn('shared_history', 'get_shared_history_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }
@@ -982,14 +992,16 @@ export async function recordBotMessage(
       Item: record,
     }));
 
-    console.log('[SharedHistory] Recorded bot message:', {
+    log.info('shared_history', 'bot_message_recorded', {
       chatId,
       avatarId: message.avatarId,
       messageId: message.messageId,
       totalMessages: messages.length,
     });
   } catch (err) {
-    console.error('[SharedHistory] Failed to record bot message:', err instanceof Error ? err.message : String(err));
+    log.error('shared_history', 'record_bot_message_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     // Don't throw - this is best-effort
   }
 }
@@ -1159,7 +1171,9 @@ export async function getKnownTelegramUsers(
     // Sort by last seen (most recent first)
     return Array.from(userMap.values()).sort((a, b) => b.lastSeen - a.lastSeen);
   } catch (err) {
-    console.warn('[ChannelState] Failed to get known Telegram users:', err instanceof Error ? err.message : String(err));
+    log.warn('channel', 'get_known_users_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return [];
   }
 }

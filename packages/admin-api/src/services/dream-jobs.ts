@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Dream Jobs Service
  *
@@ -21,6 +20,9 @@ import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { v4 as uuid } from 'uuid';
 import type { DreamJob, DailyCounter } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('dream-jobs');
 
 const dynamoClient = getDynamoClient();
 
@@ -333,14 +335,14 @@ export async function enqueueDreamJob(
 ): Promise<{ jobId: string } | { skipped: true; reason: string }> {
   // Check if queue is configured
   if (!DREAM_QUEUE_URL) {
-    console.warn('[DreamJobs] DREAM_QUEUE_URL not configured, skipping dream enqueue');
+    log.warn('enqueue', 'dream_queue_url_not_configured');
     return { skipped: true, reason: 'queue_not_configured' };
   }
 
   // Check daily limit before creating job
   const { remaining } = await getDailyDreamCount();
   if (remaining <= 0) {
-    console.log(`[DreamJobs] Daily dream limit reached, skipping dream for ${avatarId}`);
+    log.info('enqueue', 'daily_limit_reached', { avatarId });
     return { skipped: true, reason: 'daily_limit_reached' };
   }
 
@@ -364,7 +366,7 @@ export async function enqueueDreamJob(
     MessageDeduplicationId: jobId,
   }));
 
-  console.log(`[DreamJobs] Enqueued dream job ${jobId} for ${avatarId}`);
+  log.info('enqueue', 'job_enqueued', { jobId, avatarId });
   return { jobId };
 }
 
@@ -377,10 +379,10 @@ export async function enqueueDreamJob(
 export async function reserveDreamSlot(): Promise<boolean> {
   const result = await incrementDailyCounter();
   if (result === null) {
-    console.log('[DreamJobs] Failed to reserve dream slot - daily limit reached');
+    log.info('slot', 'reserve_failed_daily_limit_reached');
     return false;
   }
-  console.log(`[DreamJobs] Reserved dream slot, daily count now: ${result.newCount}`);
+  log.info('slot', 'slot_reserved', { dailyCount: result.newCount });
   return true;
 }
 

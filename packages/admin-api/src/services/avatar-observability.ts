@@ -305,7 +305,7 @@ export async function recordLogBatchWith(
 
     if (pending.length > 0) {
       totalDropped += pending.length;
-      // eslint-disable-next-line no-console -- intentional operational warning for CloudWatch
+      // eslint-disable-next-line no-console -- logger fallback: avoid circular dep. This file is imported by structured-logger.ts (recordLog), so using createSystemLogger here would recurse via the same failed DynamoDB path.
       console.warn(
         `[avatar-observability] recordLogBatch: ${pending.length} items dropped after ${MAX_UNPROCESSED_RETRIES} retries`
       );
@@ -332,7 +332,7 @@ export async function recordLogBatch(
   );
 
   if (result.droppedCount > 0) {
-    // eslint-disable-next-line no-console -- intentional operational warning for CloudWatch
+    // eslint-disable-next-line no-console -- logger fallback: avoid circular dep. This file is imported by structured-logger.ts (recordLog), so using createSystemLogger here would recurse via the same failed DynamoDB path.
     console.warn(
       `[avatar-observability] recordLogBatch completed with ${result.droppedCount}/${result.totalEntries} items dropped`
     );

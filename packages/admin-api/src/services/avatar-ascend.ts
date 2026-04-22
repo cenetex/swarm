@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Avatar Ascension Service
  *
@@ -40,6 +39,9 @@ import {
 } from './billing/runtime-limits.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { fetchAllAssetsByOwner } from './web3/helius-pagination.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('avatar-ascend');
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 
@@ -183,7 +185,7 @@ async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusPa
     });
 
     if (!response.ok) {
-      console.warn(`[AvatarAscend] Helius transaction parse failed: ${response.status}`);
+      log.warn('helius', 'transaction_parse_failed', { status: response.status });
       return null;
     }
 
@@ -201,7 +203,9 @@ async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusPa
 
     return null;
   } catch (error) {
-    console.warn('[AvatarAscend] Helius transaction parse error:', error instanceof Error ? error.message : String(error));
+    log.warn('helius', 'transaction_parse_error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -222,7 +226,7 @@ async function getAsset(mint: string): Promise<HeliusAsset | null> {
     });
 
     if (!response.ok) {
-      console.warn(`[AvatarAscend] Helius getAsset failed: ${response.status}`);
+      log.warn('helius', 'get_asset_failed', { status: response.status });
       return null;
     }
 
@@ -232,13 +236,17 @@ async function getAsset(mint: string): Promise<HeliusAsset | null> {
     };
 
     if (data.error) {
-      console.warn('[AvatarAscend] Helius getAsset error:', data.error.message || data.error);
+      log.warn('helius', 'get_asset_error', {
+        error: data.error.message || data.error,
+      });
       return null;
     }
 
     return data.result || null;
   } catch (error) {
-    console.warn('[AvatarAscend] Helius getAsset error:', error instanceof Error ? error.message : String(error));
+    log.warn('helius', 'get_asset_error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -252,7 +260,9 @@ async function getAssetCollection(mint: string): Promise<string | null> {
     const collection = grouping.find((group) => group.group_key === 'collection');
     return collection?.group_value || null;
   } catch (error) {
-    console.warn('[AvatarAscend] Helius getAsset error:', error instanceof Error ? error.message : String(error));
+    log.warn('helius', 'get_asset_error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -281,12 +291,14 @@ async function fetchOffchainAscensionMetadata(jsonUri: string): Promise<Offchain
   try {
     const response = await fetch(jsonUri);
     if (!response.ok) {
-      console.warn(`[AvatarAscend] Failed to fetch off-chain metadata: ${response.status}`);
+      log.warn('metadata', 'fetch_offchain_failed', { status: response.status });
       return null;
     }
     return await response.json() as OffchainAscensionMetadata;
   } catch (error) {
-    console.warn('[AvatarAscend] Failed to fetch off-chain metadata:', error instanceof Error ? error.message : String(error));
+    log.warn('metadata', 'fetch_offchain_error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -432,7 +444,9 @@ async function checkOrbOwnership(walletAddress: string): Promise<{
       })),
     };
   } catch (error) {
-    console.warn('[AvatarAscend] Error checking orb ownership:', error instanceof Error ? error.message : String(error));
+    log.warn('orb', 'check_ownership_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { hasOrb: false, ownedOrbs: [] };
   }
 }
@@ -596,7 +610,9 @@ export async function verifyOrbBurn(
     // Check if any burned mint is from the Gate collection
     const heliusCollection = extractHeliusCollection(heliusParsedTx);
     if (heliusCollection === GATE_COLLECTION) {
-      console.log(`[AvatarAscend] Verified Orb burn (collection match) for ${walletAddress.slice(0, 8)}...`);
+      log.info('burn', 'orb_burn_verified_by_collection', {
+        walletPrefix: walletAddress.slice(0, 8),
+      });
       return {
         verified: true,
         signature,
@@ -608,7 +624,10 @@ export async function verifyOrbBurn(
     for (const mint of burnedMints) {
       const collection = await getAssetCollection(mint);
       if (collection === GATE_COLLECTION) {
-        console.log(`[AvatarAscend] Verified Orb burn mint ${mint} for ${walletAddress.slice(0, 8)}...`);
+        log.info('burn', 'orb_burn_verified_by_mint', {
+          mint,
+          walletPrefix: walletAddress.slice(0, 8),
+        });
         return {
           verified: true,
           signature,
@@ -619,7 +638,9 @@ export async function verifyOrbBurn(
 
     return { verified: false, error: 'Burned NFT is not from the Orb/Gate collection' };
   } catch (error) {
-    console.error('[AvatarAscend] Error verifying orb burn:', error instanceof Error ? error.message : String(error));
+    log.error('burn', 'orb_burn_verification_error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { verified: false, error: 'Failed to verify orb burn transaction' };
   }
 }
@@ -710,7 +731,10 @@ export async function verifyRatiBurn(
       };
     }
 
-    console.log(`[AvatarAscend] Verified RATI burn: ${burnedAmount.toLocaleString()} for ${walletAddress.slice(0, 8)}...`);
+    log.info('burn', 'rati_burn_verified', {
+      burnedAmount,
+      walletPrefix: walletAddress.slice(0, 8),
+    });
     return {
       verified: true,
       signature,
@@ -718,7 +742,9 @@ export async function verifyRatiBurn(
       burnedAmount,
     };
   } catch (error) {
-    console.error('[AvatarAscend] Error verifying RATI burn:', error instanceof Error ? error.message : String(error));
+    log.error('burn', 'rati_burn_verification_error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { verified: false, error: 'Failed to verify RATI burn transaction' };
   }
 }
@@ -793,9 +819,10 @@ export async function grantAscensionEntitlement(
     const proRank = PLAN_TIER_RANK.pro;
 
     if (currentRank >= proRank) {
-      console.log(
-        `[AvatarAscend] Avatar ${avatarId} already has ${existing.plan} entitlement; skipping ascension upgrade`,
-      );
+      log.info('entitlement', 'ascension_upgrade_skipped', {
+        avatarId,
+        plan: existing.plan,
+      });
       return { upgraded: false, plan: existing.plan, reason: `already_${existing.plan}` };
     }
   }
@@ -823,9 +850,11 @@ export async function grantAscensionEntitlement(
     entitlementStatus: effective.entitlementStatus,
   });
 
-  console.log(
-    `[AvatarAscend] Granted Pro entitlement to avatar ${avatarId} via ascension by ${walletAddress.slice(0, 8)}...`,
-  );
+  log.info('entitlement', 'ascension_entitlement_granted', {
+    avatarId,
+    plan: 'pro',
+    walletPrefix: walletAddress.slice(0, 8),
+  });
 
   return { upgraded: true, plan: 'pro', reason: 'ascension_upgrade' };
 }
@@ -905,17 +934,23 @@ export async function executeAscension(
     // Non-fatal: if entitlement grant fails the ascension itself still succeeded.
     try {
       const entitlementResult = await grantAscensionEntitlement(avatarId, walletAddress);
-      console.log(
-        `[AvatarAscend] Entitlement result for ${avatarId}: ${entitlementResult.reason} (plan=${entitlementResult.plan})`,
-      );
+      log.info('ascension', 'entitlement_result', {
+        avatarId,
+        reason: entitlementResult.reason,
+        plan: entitlementResult.plan,
+      });
     } catch (entitlementError) {
-      console.error(
-        '[AvatarAscend] Failed to grant ascension entitlement (ascension still succeeded):',
-        entitlementError,
-      );
+      log.error('ascension', 'entitlement_grant_failed', {
+        avatarId,
+        error: entitlementError instanceof Error ? entitlementError.message : String(entitlementError),
+      });
     }
 
-    console.log(`[AvatarAscend] Avatar ${avatarId} (${avatar.name}) ascended by ${walletAddress.slice(0, 8)}...`);
+    log.info('ascension', 'avatar_ascended', {
+      avatarId,
+      avatarName: avatar.name,
+      walletPrefix: walletAddress.slice(0, 8),
+    });
 
     return {
       success: true,
@@ -932,7 +967,9 @@ export async function executeAscension(
         errorCode: 'ALREADY_ASCENDED',
       };
     }
-    console.error('[AvatarAscend] Error executing ascension:', error instanceof Error ? error.message : String(error));
+    log.error('ascension', 'execution_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       success: false,
       error: 'Failed to execute ascension',

@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Avatar Config Sync Service
  * Syncs avatar configurations from Admin API to the main state table
@@ -11,6 +10,9 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import type { AvatarRecord } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('config-sync');
 
 // Core AvatarConfig type (matches @swarm/core)
 interface AvatarConfig {
@@ -377,7 +379,7 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
  */
 export async function syncAvatarConfig(record: AvatarRecord): Promise<void> {
   if (!STATE_TABLE) {
-    console.warn('STATE_TABLE not configured, skipping config sync');
+    log.warn('sync', 'state_table_not_configured');
     return;
   }
 
@@ -391,7 +393,7 @@ export async function syncAvatarConfig(record: AvatarRecord): Promise<void> {
         sk: 'CONFIG',
       },
     }));
-    console.log(`Removed avatar config from state table: ${record.avatarId}`);
+    log.info('sync', 'avatar_removed', { avatarId: record.avatarId });
     return;
   }
 
@@ -417,11 +419,14 @@ export async function syncAvatarConfig(record: AvatarRecord): Promise<void> {
           config.platforms.twitter.verifiedType = connectionResult.Item.verifiedType;
         }
       } catch (err) {
-        console.warn(`Failed to fetch Twitter connection for ${record.avatarId}:`, err instanceof Error ? err.message : String(err));
+        log.warn('sync', 'twitter_connection_fetch_failed', {
+          avatarId: record.avatarId,
+          error: err instanceof Error ? err.message : String(err),
+        });
         // charLimit remains at default 280
       }
     } else {
-      console.warn('ADMIN_TABLE not configured, using default Twitter charLimit=280');
+      log.warn('sync', 'admin_table_not_configured_default_charlimit');
     }
   }
 
@@ -441,7 +446,7 @@ export async function syncAvatarConfig(record: AvatarRecord): Promise<void> {
     },
   }));
 
-  console.log(`Synced avatar config to state table: ${record.avatarId}`);
+  log.info('sync', 'avatar_synced', { avatarId: record.avatarId });
 }
 
 /**
