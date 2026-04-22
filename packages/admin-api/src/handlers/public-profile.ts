@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Public Profile API Handler
  *
@@ -15,6 +14,9 @@ import {
   getAvatarRank,
 } from '../services/web3/burn-stats.js';
 import { getEnergyStatus } from '../services/billing/energy.js';
+import { createSystemLogger } from '../services/structured-logger.js';
+
+const log = createSystemLogger('public-profile-handler');
 
 // =============================================================================
 // Types
@@ -239,7 +241,9 @@ export const handler: APIGatewayProxyHandler = async (event) => {
 
     return success(profile);
   } catch (error) {
-    console.error('[PublicProfile] Error:', error instanceof Error ? error.message : String(error));
+    log.error('profile', 'fetch_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return serverError('Failed to fetch profile');
   }
 };
@@ -269,7 +273,9 @@ export const leaderboardHandler: APIGatewayProxyHandler = async (event) => {
       totalAvatars: leaderboard.length,
     });
   } catch (error) {
-    console.error('[Leaderboard] Error:', error instanceof Error ? error.message : String(error));
+    log.error('leaderboard', 'fetch_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return serverError('Failed to fetch leaderboard');
   }
 };

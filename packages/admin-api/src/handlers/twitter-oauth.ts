@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Twitter OAuth Handler
  * Handles the OAuth 1.0a 3-legged flow for connecting X/Twitter accounts
@@ -32,6 +31,9 @@ import {
 import type { UserSession, AvatarRecord } from '../types.js';
 import { getCorsHeaders } from '../http/cors.js';
 import { isAuthError } from '../auth/errors.js';
+import { createSystemLogger } from '../services/structured-logger.js';
+
+const log = createSystemLogger('twitter-oauth-handler');
 
 /**
  * Dependencies interface for dependency injection (testing)
@@ -154,15 +156,12 @@ export async function handler(
       ? rawPath.slice('/api'.length)
       : rawPath;
 
-  console.log(JSON.stringify({
-    level: 'INFO',
-    subsystem: 'twitter-oauth',
-    event: 'request_received',
+  log.info('api', 'request_received', {
     method,
     path,
     rawPath,
     query: event.queryStringParameters,
-  }));
+  });
 
   try {
     // GET /oauth/twitter/callback?oauth_token=xxx&oauth_verifier=xxx - OAuth callback
@@ -249,13 +248,10 @@ export async function handler(
         ({ authorizationUrl } = await twitterOAuth.startOAuthFlow(avatarId));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(JSON.stringify({
-          level: 'ERROR',
-          subsystem: 'twitter-oauth',
-          event: 'oauth_start_failed',
+        log.error('oauth', 'oauth_start_failed', {
           avatarId,
           error: message,
-        }));
+        });
         return {
           statusCode: 503,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -416,13 +412,10 @@ export async function handler(
       };
     }
 
-    console.error(JSON.stringify({
-      level: 'ERROR',
-      subsystem: 'twitter-oauth',
-      event: 'handler_error',
+    log.error('handler', 'handler_error', {
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
-    }));
+    });
 
     return {
       statusCode: 500,
@@ -509,7 +502,9 @@ async function handleCallback(
     };
 
   } catch (error) {
-    console.error('OAuth callback error:', error instanceof Error ? error.message : String(error));
+    log.error('oauth', 'callback_error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     return {
       statusCode: 302,
