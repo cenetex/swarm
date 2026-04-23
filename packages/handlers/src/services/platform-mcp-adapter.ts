@@ -373,17 +373,36 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         return { id: galleryItem?.id || result.s3Key || 'generated', url: result.url };
       },
 
-      generateVideo: async (params: { prompt: string }) => {
+      generateVideo: async (params: {
+        prompt: string;
+        platform?: string;
+        conversationId?: string;
+        replyToMessageId?: string;
+      }) => {
         // Unified burst pool: entitlement-first, energy-fallback (video has higher energy cost)
         const usageCheck = await checkVideoWithEnergyFallback(avatarId);
         if (!usageCheck.allowed) {
           throw new Error(buildLimitError(usageCheck.reason));
         }
-        if (!mediaService || !avatarConfig.media.video) {
-          throw new Error('Video generation not configured');
+        if (!avatarConfig.media.video) {
+          throw new Error('Video generation not configured for this avatar');
         }
-        const result = await mediaService.generateVideo(params.prompt, avatarConfig.media.video);
-        return { jobId: result.s3Key || `video-${Date.now()}`, status: 'processing' };
+        if (!useDecoupledMedia || !mediaQueueUrl) {
+          // Video generation MUST run on the media-processor Lambda (5-min timeout +
+          // webhook-friendly). The sync poll path exceeds the message-processor
+          // Lambda timeout (180s) for typical Replicate video models. See #1493.
+          throw new Error('Video generation unavailable: MEDIA_QUEUE is not configured');
+        }
+        const { jobId } = await enqueueMediaJob(mediaQueueUrl, {
+          avatarId,
+          conversationId: params.conversationId || 'unknown',
+          platform: params.platform || 'telegram',
+          replyToMessageId: params.replyToMessageId,
+          prompt: params.prompt,
+          usageAccounted: true,
+          jobType: 'generate_video',
+        });
+        return { jobId, status: 'processing' };
       },
 
       generateSticker: async (params: { prompt?: string; platform?: string }) => {
