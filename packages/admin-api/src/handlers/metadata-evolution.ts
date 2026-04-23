@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Metadata Evolution Scheduled Handler
  *
@@ -12,9 +11,12 @@
 import type { ScheduledEvent } from 'aws-lambda';
 import { evolveAllAscensionMetadata } from '../services/web3/ascension-metadata-evolution.js';
 import type { ArweaveServiceConfig } from '../services/web3/arweave.js';
+import { createSystemLogger } from '../services/structured-logger.js';
+
+const log = createSystemLogger('metadata-evolution-handler');
 
 export async function handler(event: ScheduledEvent): Promise<void> {
-  console.log('[MetadataEvolution] Triggered by EventBridge', {
+  log.info('job', 'triggered', {
     time: event.time,
     source: event.source,
   });
@@ -30,7 +32,7 @@ export async function handler(event: ScheduledEvent): Promise<void> {
 
   const result = await evolveAllAscensionMetadata(arweaveConfig, cooldownMs);
 
-  console.log('[MetadataEvolution] Complete', {
+  log.info('job', 'complete', {
     processed: result.processed,
     succeeded: result.succeeded,
     failed: result.failed,
@@ -40,7 +42,11 @@ export async function handler(event: ScheduledEvent): Promise<void> {
   // Log individual failures for debugging
   for (const r of result.results) {
     if (!r.success && !r.skipped) {
-      console.error(`[MetadataEvolution] FAILED ${r.avatarId} (${r.avatarName}): ${r.error}`);
+      log.error('job', 'avatar_evolution_failed', {
+        avatarId: r.avatarId,
+        avatarName: r.avatarName,
+        error: r.error,
+      });
     }
   }
 }

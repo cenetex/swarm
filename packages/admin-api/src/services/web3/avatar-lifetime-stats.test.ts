@@ -310,7 +310,8 @@ describe('lineage-nft.ts — stats integration source verification', () => {
   });
 
   it('prepareLineageMint wraps stats fetch in try/catch', () => {
-    // The stats fetch should be wrapped so failures don't block abandon
-    expect(src).toContain('Failed to fetch lifetime stats');
+    // The stats fetch should be wrapped so failures don't block abandon.
+    // Anchor on the structured-logger event code introduced in #1363.
+    expect(src).toContain('lifetime_stats_fetch_failed');
   });
 });

@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Avatar Lifetime Stats
  *
@@ -10,9 +9,11 @@
  */
 import { QueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createSystemLogger } from '../structured-logger.js';
 
 const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE || 'SwarmAdminTable';
+const log = createSystemLogger('avatar-lifetime-stats');
 
 export interface AvatarLifetimeStats {
   messagesProcessed: number;
@@ -69,11 +70,10 @@ export async function getAvatarLifetimeStats(avatarId: string): Promise<AvatarLi
       lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
     } while (lastKey);
   } catch (error) {
-    console.warn(
-      '[AvatarLifetimeStats] Failed to aggregate usage records for',
+    log.warn('usage', 'aggregate_usage_failed', {
       avatarId,
-      error instanceof Error ? error.message : String(error),
-    );
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   // --- Fetch burn tier ---
@@ -106,11 +106,10 @@ export async function getAvatarLifetimeStats(avatarId: string): Promise<AvatarLi
       stats.burnTierName = matched.name;
     }
   } catch (error) {
-    console.warn(
-      '[AvatarLifetimeStats] Failed to fetch burn stats for',
+    log.warn('burn', 'fetch_burn_stats_failed', {
       avatarId,
-      error instanceof Error ? error.message : String(error),
-    );
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   return stats;

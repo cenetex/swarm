@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * NFT Gating Service
  * Verifies wallet holds required NFTs for access and creation gating
@@ -13,7 +12,10 @@ import {
   GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createSystemLogger } from '../structured-logger.js';
 import { fetchAllAssetsByOwner } from './helius-pagination.js';
+
+const log = createSystemLogger('nft-gate');
 
 // Required collection for access (Orb/Gate NFTs)
 const GATE_COLLECTION = '8GCAyy5L2o2ZPdQKo3EtYAYNKYT8Y6sqGHweintLTSJ';
@@ -60,7 +62,9 @@ async function getHeliusApiKey(): Promise<string | null> {
       heliusApiKey = response.SecretString || null;
       return heliusApiKey;
     } catch (error) {
-      console.error('[NFTGate] Failed to fetch Helius API key from Secrets Manager:', error instanceof Error ? error.message : String(error));
+      log.error('config', 'helius_key_fetch_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   
@@ -196,9 +200,15 @@ export async function incrementCreatorCount(walletAddress: string): Promise<void
       },
     }));
   } catch (error) {
-    console.warn('[NFTGate] Failed to increment creator count, recalculating', error instanceof Error ? error.message : String(error));
+    log.warn('creator_count', 'increment_failed_recalculating', {
+      walletAddress,
+      error: error instanceof Error ? error.message : String(error),
+    });
     await recalculateCreatorCount(walletAddress).catch((recalcError) => {
-      console.error('[NFTGate] Failed to recalculate creator count', recalcError instanceof Error ? recalcError.message : String(recalcError));
+      log.error('creator_count', 'recalculate_failed', {
+        walletAddress,
+        error: recalcError instanceof Error ? recalcError.message : String(recalcError),
+      });
     });
   }
 }
@@ -230,9 +240,15 @@ export async function decrementCreatorCount(walletAddress: string): Promise<void
       },
     }));
   } catch (error) {
-    console.warn('[NFTGate] Failed to decrement creator count, recalculating', error instanceof Error ? error.message : String(error));
+    log.warn('creator_count', 'decrement_failed_recalculating', {
+      walletAddress,
+      error: error instanceof Error ? error.message : String(error),
+    });
     await recalculateCreatorCount(walletAddress).catch((recalcError) => {
-      console.error('[NFTGate] Failed to recalculate creator count', recalcError instanceof Error ? recalcError.message : String(recalcError));
+      log.error('creator_count', 'recalculate_failed', {
+        walletAddress,
+        error: recalcError instanceof Error ? recalcError.message : String(recalcError),
+      });
     });
   }
 }
@@ -330,13 +346,22 @@ export async function checkNFTGate(walletAddress: string): Promise<NFTGateResult
     // In dev-like environments (or when explicitly disabled), allow all users.
     if (!heliusRpcUrl) {
       if (shouldBypassGate) {
-        console.log('[NFTGate] No Helius API key configured, NFT gating bypassed - allowing access');
+        log.info('gate', 'gate_bypassed_no_helius_key', {
+          walletAddress,
+          environment,
+          gatingDisabled,
+          message: 'No Helius API key configured, NFT gating bypassed - allowing access',
+        });
         result.allowed = true;
         result.ownedCount = 999; // Grant unlimited slots when gating is bypassed
         return result;
       }
 
-      console.error('[NFTGate] No Helius API key configured in a prod-like environment; treating as 0 Orbs');
+      log.error('gate', 'helius_key_missing_in_prod', {
+        walletAddress,
+        environment,
+        message: 'No Helius API key configured in a prod-like environment; treating as 0 Orbs',
+      });
       result.error = 'Helius API key not configured';
       return result;
     }
@@ -361,13 +386,17 @@ export async function checkNFTGate(walletAddress: string): Promise<NFTGateResult
       image: nft.content?.links?.image || nft.content?.files?.[0]?.cdn_uri,
     }));
 
-    console.log(
-      `[NFTGate] Wallet ${walletAddress.slice(0, 8)}... owns ${matchingNFTs.length} Gate NFTs`
-    );
+    log.info('gate', 'gate_check_complete', {
+      walletPrefix: walletAddress.slice(0, 8),
+      ownedCount: matchingNFTs.length,
+    });
 
     return result;
   } catch (error) {
-    console.error('[NFTGate] Error checking NFT ownership:', error instanceof Error ? error.message : String(error));
+    log.error('gate', 'ownership_check_failed', {
+      walletAddress,
+      error: error instanceof Error ? error.message : String(error),
+    });
     result.error = 'Failed to verify NFT ownership';
     return result;
   }
@@ -387,13 +416,19 @@ export async function countAvatarsCreatedBy(walletAddress: string): Promise<numb
       return stats.Item.avatarsCreated as number;
     }
   } catch (error) {
-    console.warn('[NFTGate] Failed to read creator stats, recalculating', error instanceof Error ? error.message : String(error));
+    log.warn('creator_count', 'read_failed_recalculating', {
+      walletAddress,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   try {
     return await recalculateCreatorCount(walletAddress);
   } catch (scanError) {
-    console.error('[NFTGate] Error counting avatars:', scanError);
+    log.error('creator_count', 'count_avatars_failed', {
+      walletAddress,
+      error: scanError instanceof Error ? scanError.message : String(scanError),
+    });
     return 0;
   }
 }
@@ -508,13 +543,13 @@ async function fetchNFTMetadata(jsonUri: string): Promise<NFTMetadata | null> {
 export async function getClaimableNFTs(walletAddress: string): Promise<ClaimableNFT[]> {
   // If no whitelisted collections, return empty
   if (WHITELISTED_NFT_COLLECTIONS.length === 0) {
-    console.log('[NFTGate] No whitelisted collections configured');
+    log.info('claimable', 'no_whitelisted_collections_configured');
     return [];
   }
 
   const heliusRpcUrl = await getHeliusRpcUrl();
   if (!heliusRpcUrl) {
-    console.log('[NFTGate] No Helius API key configured, cannot fetch NFTs');
+    log.info('claimable', 'no_helius_key_for_fetch', { walletAddress });
     return [];
   }
 
@@ -531,7 +566,9 @@ export async function getClaimableNFTs(walletAddress: string): Promise<Claimable
     });
 
     if (whitelistedNFTs.length === 0) {
-      console.log(`[NFTGate] Wallet ${walletAddress.slice(0, 8)}... owns no NFTs from whitelisted collections`);
+      log.info('claimable', 'no_whitelisted_nfts_owned', {
+        walletPrefix: walletAddress.slice(0, 8),
+      });
       return [];
     }
 
@@ -576,7 +613,10 @@ export async function getClaimableNFTs(walletAddress: string): Promise<Claimable
               }
             }
           } catch (err) {
-            console.warn(`[NFTGate] Failed to fetch metadata for ${nft.id}:`, err instanceof Error ? err.message : String(err));
+            log.warn('claimable', 'nft_metadata_fetch_failed', {
+              mint: nft.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
         }
 
@@ -584,13 +624,18 @@ export async function getClaimableNFTs(walletAddress: string): Promise<Claimable
       })
     );
 
-    console.log(
-      `[NFTGate] Wallet ${walletAddress.slice(0, 8)}... has ${claimableNFTs.length} claimable NFTs from ${whitelistedNFTs.length} whitelisted`
-    );
+    log.info('claimable', 'claimable_nfts_computed', {
+      walletPrefix: walletAddress.slice(0, 8),
+      claimableCount: claimableNFTs.length,
+      whitelistedCount: whitelistedNFTs.length,
+    });
 
     return claimableNFTs;
   } catch (error) {
-    console.error('[NFTGate] Error fetching claimable NFTs:', error instanceof Error ? error.message : String(error));
+    log.error('claimable', 'fetch_claimable_failed', {
+      walletAddress,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }
@@ -621,7 +666,9 @@ async function getClaimedNFTMints(): Promise<Set<string>> {
     }
     return mints;
   } catch (error) {
-    console.error('[NFTGate] Error fetching claimed NFT mints:', error instanceof Error ? error.message : String(error));
+    log.error('claimable', 'fetch_claimed_mints_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return new Set();
   }
 }
@@ -643,7 +690,7 @@ export async function verifyNFTOwnership(
 ): Promise<boolean> {
   const heliusRpcUrl = await getHeliusRpcUrl();
   if (!heliusRpcUrl) {
-    console.log('[NFTGate] No Helius API key configured, cannot verify NFT ownership');
+    log.info('ownership', 'no_helius_key_for_verify', { mintAddress });
     return false;
   }
 
@@ -663,7 +710,10 @@ export async function verifyNFTOwnership(
     });
 
     if (!response.ok) {
-      console.error(`[NFTGate] Helius API error verifying NFT ownership: ${response.status}`);
+      log.error('ownership', 'helius_api_error', {
+        mintAddress,
+        status: response.status,
+      });
       return false;
     }
 
@@ -673,26 +723,33 @@ export async function verifyNFTOwnership(
     };
 
     if (data.error) {
-      console.error('[NFTGate] RPC error:', data.error);
+      log.error('ownership', 'rpc_error', { mintAddress, error: data.error });
       return false;
     }
 
     const asset = data.result;
     if (!asset) {
-      console.log(`[NFTGate] NFT ${mintAddress} not found`);
+      log.info('ownership', 'nft_not_found', { mintAddress });
       return false;
     }
 
     const currentOwner = asset.ownership?.owner;
     const isOwner = currentOwner === walletAddress;
 
-    console.log(
-      `[NFTGate] NFT ${mintAddress.slice(0, 8)}... ownership check: expected=${walletAddress.slice(0, 8)}..., actual=${currentOwner?.slice(0, 8)}..., match=${isOwner}`
-    );
+    log.info('ownership', 'ownership_check_complete', {
+      mintPrefix: mintAddress.slice(0, 8),
+      expectedPrefix: walletAddress.slice(0, 8),
+      actualPrefix: currentOwner?.slice(0, 8),
+      match: isOwner,
+    });
 
     return isOwner;
   } catch (error) {
-    console.error('[NFTGate] Error verifying NFT ownership:', error instanceof Error ? error.message : String(error));
+    log.error('ownership', 'verify_failed', {
+      mintAddress,
+      walletAddress,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }
