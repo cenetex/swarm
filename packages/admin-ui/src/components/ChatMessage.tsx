@@ -516,9 +516,18 @@ function extractImagesFromToolCalls(toolCalls?: ChatMessageType['toolCalls']): s
 
   const isAudioUrl = (url: string) => {
     const lowerUrl = url.toLowerCase();
-    return lowerUrl.includes('.ogg') || lowerUrl.includes('.mp3') || 
+    return lowerUrl.includes('.ogg') || lowerUrl.includes('.mp3') ||
            lowerUrl.includes('.wav') || lowerUrl.includes('.opus') ||
            lowerUrl.includes('/audio/') || lowerUrl.includes('/voice/');
+  };
+
+  // Videos hosted on S3/CloudFront used to be misclassified as images here
+  // because the host-based image heuristic matches any S3/CloudFront URL.
+  // Short-circuit on a video extension before the heuristic runs.
+  const isVideoUrl = (url: string) => {
+    const lowerUrl = url.toLowerCase();
+    return lowerUrl.includes('.mp4') || lowerUrl.includes('.webm') ||
+           lowerUrl.includes('.mov') || lowerUrl.includes('/video');
   };
 
   for (const tc of toolCalls) {
@@ -528,7 +537,7 @@ function extractImagesFromToolCalls(toolCalls?: ChatMessageType['toolCalls']): s
       // Support both 'url' and 'resultUrl' fields (from get_job_status)
       const url = (result.url || result.resultUrl) as string | undefined;
       if (url && typeof url === 'string') {
-        if (isAudioUrl(url)) {
+        if (isAudioUrl(url) || isVideoUrl(url)) {
           continue;
         }
         // Include URLs that are images (by extension or by being from our CDN/S3)
@@ -540,10 +549,15 @@ function extractImagesFromToolCalls(toolCalls?: ChatMessageType['toolCalls']): s
           images.push(url);
         }
       }
-      // Check for gallery items
+      // Check for gallery items. Skip explicit non-image types (video/audio)
+      // so they don't end up in the image grid as well as their own slots.
       if (Array.isArray(result.items)) {
         for (const item of result.items) {
           if (item && typeof item === 'object' && 'url' in item && typeof item.url === 'string') {
+            const itemType = typeof (item as { type?: unknown }).type === 'string'
+              ? (item as { type: string }).type
+              : undefined;
+            if (itemType === 'video' || itemType === 'audio') continue;
             images.push(item.url);
           }
         }
