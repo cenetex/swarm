@@ -20,6 +20,9 @@ import {
   getConsentStatus,
   revokeConsent,
 } from '../services/consent.js';
+import { createSystemLogger } from '../services/structured-logger.js';
+
+const log = createSystemLogger('consent-handler');
 
 // ============================================================================
 // Schemas
@@ -210,8 +213,9 @@ export async function handler(
       const authErr = error as { statusCode: number; message: string };
       return jsonResponse(authErr.statusCode, { error: authErr.message }, corsHeaders);
     }
-    // eslint-disable-next-line no-console -- error logging before structured logger is wired
-    console.error('[Consent] Handler error:', error instanceof Error ? error.message : String(error));
+    log.error('handler', 'unhandled_exception', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return jsonResponse(500, {
       error: 'Internal server error',
     }, corsHeaders);

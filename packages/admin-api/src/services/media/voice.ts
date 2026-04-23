@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Voice Service
  * Handles transcription, voice profile creation, and TTS generation.
@@ -18,7 +17,10 @@ import { getAvatar } from '../avatars.js';
 import * as credits from '../billing/credits.js';
 import { DEFAULT_MODELS } from '../models-registry.js';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createSystemLogger } from '../structured-logger.js';
 import { buildMediaUrl, canonicalizeMediaUrl } from '../../utils/media-url.js';
+
+const log = createSystemLogger('voice');
 
 const dynamoClient = getDynamoClient();
 const s3Client = new S3Client({});
@@ -54,11 +56,19 @@ async function getConfiguredVoiceModel(
     const avatar = await getAvatar(avatarId);
     if (avatar?.integrations?.replicate?.models?.[capability]) {
       const configuredModel = avatar.integrations.replicate.models[capability];
-      console.log(`[Voice] Using configured ${capability} model for ${avatarId}: ${configuredModel}`);
+      log.info('config', 'configured_model_used', {
+        avatarId,
+        capability,
+        model: configuredModel,
+      });
       return configuredModel;
     }
   } catch (err) {
-    console.warn(`[Voice] Failed to get avatar config for model preference: ${err}`);
+    log.warn('config', 'avatar_config_fetch_failed', {
+      avatarId,
+      capability,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Fall back to defaults
@@ -450,7 +460,10 @@ export async function createVoiceSeed(params: {
 
   // Get configured audio generation model
   const audioModel = await getConfiguredVoiceModel(params.avatarId, 'audio_generation');
-  console.log(`[Voice] Using audio generation model: ${audioModel}`);
+  log.info('audio_gen', 'audio_gen_model_selected', {
+    avatarId: params.avatarId,
+    model: audioModel,
+  });
 
   // Stable Audio parameters optimized for voice seed generation
   const outputUrl = await runReplicatePrediction(apiKey, audioModel, {
@@ -506,7 +519,10 @@ async function runVoiceClonePass(params: {
 
   // Get configured voice clone model
   const voiceModel = await getConfiguredVoiceModel(params.avatarId, 'voice_clone');
-  console.log(`[Voice] Using voice clone model: ${voiceModel}`);
+  log.info('clone', 'voice_clone_model_selected', {
+    avatarId: params.avatarId,
+    model: voiceModel,
+  });
 
   const outputUrl = await runReplicatePrediction(apiKey, voiceModel, {
     text: params.text,
@@ -669,8 +685,10 @@ export async function createMyVoice(params: {
   // Build an ABSTRACT AUDIO prompt - NOT speech, but tonal qualities
   const abstractAudioPrompt = buildAbstractAudioPrompt(avatarName, avatarDescription);
   
-  console.log(`[createMyVoice] Starting 3-step pipeline for ${params.avatarId}`);
-  console.log(`[createMyVoice] Step 1: Generating abstract audio with prompt: "${abstractAudioPrompt.substring(0, 80)}..."`);
+  log.info('create_voice', 'pipeline_started', {
+    avatarId: params.avatarId,
+    promptPreview: abstractAudioPrompt.substring(0, 80),
+  });
   
   // ============================================================
   // STEP 1: Generate abstract audio seed with Stable Audio 2.5
@@ -686,7 +704,10 @@ export async function createMyVoice(params: {
     });
     seedAssetId = seed.assetId;
     seedUrl = seed.url;
-    console.log(`[createMyVoice] Step 1 complete: seed audio at ${seedUrl}`);
+    log.info('create_voice', 'seed_generated', {
+      avatarId: params.avatarId,
+      seedUrl,
+    });
   } catch (err) {
     throw new Error(`Failed to generate abstract audio: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
@@ -694,7 +715,7 @@ export async function createMyVoice(params: {
   // ============================================================
   // STEP 2: First clone pass (abstract audio → raw voice)
   // ============================================================
-  console.log(`[createMyVoice] Step 2: First clone pass (abstract audio → raw voice)`);
+  log.info('create_voice', 'first_clone_started', { avatarId: params.avatarId });
   
   const firstCloneText = `I am a voice born from pure sound. My tonal character comes from abstract audio frequencies, transformed into speech. This is my unique vocal signature.`;
   
@@ -708,7 +729,10 @@ export async function createMyVoice(params: {
       saveAsAsset: false, // Don't save intermediate step
     });
     firstCloneUrl = firstClone.url;
-    console.log(`[createMyVoice] Step 2 complete: first clone at ${firstCloneUrl}`);
+    log.info('create_voice', 'first_clone_complete', {
+      avatarId: params.avatarId,
+      firstCloneUrl,
+    });
   } catch (err) {
     throw new Error(`Failed first clone pass: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
@@ -716,7 +740,7 @@ export async function createMyVoice(params: {
   // ============================================================
   // STEP 3: Second clone pass (raw voice → smoothed voice)
   // ============================================================
-  console.log(`[createMyVoice] Step 3: Second clone pass (smoothing the voice)`);
+  log.info('create_voice', 'smoothing_pass_started', { avatarId: params.avatarId });
   
   const smoothingText = `Now my voice is refined and polished. The raw frequencies have been smoothed into a clear, distinctive vocal character. I speak with clarity and presence.`;
   
@@ -733,7 +757,10 @@ export async function createMyVoice(params: {
     });
     smoothedUrl = smoothed.url;
     smoothedAssetId = smoothed.assetId!;
-    console.log(`[createMyVoice] Step 3 complete: smoothed voice at ${smoothedUrl}`);
+    log.info('create_voice', 'smoothing_complete', {
+      avatarId: params.avatarId,
+      smoothedUrl,
+    });
   } catch (err) {
     throw new Error(`Failed smoothing pass: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
@@ -762,7 +789,10 @@ export async function createMyVoice(params: {
 
   // Energy was already consumed in burst fallback (if applicable) during the
   // unified checkVoiceWithEnergyFallback call. No separate consumption needed.
-  console.log(`[createMyVoice] Voice profile ${voiceId} created and set as active`);
+  log.info('create_voice', 'voice_profile_activated', {
+    avatarId: params.avatarId,
+    voiceId,
+  });
 
   // ============================================================
   // STEP 5: Generate intro message (optional, non-fatal)
@@ -780,7 +810,10 @@ export async function createMyVoice(params: {
     introAssetId = introMessage.assetId;
     introUrl = introMessage.url;
   } catch (err) {
-    console.warn(`[createMyVoice] Failed to generate intro message: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    log.warn('create_voice', 'intro_message_failed', {
+      avatarId: params.avatarId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   return {
@@ -909,7 +942,10 @@ export async function generateVoiceMessage(params: {
 
   // Get configured TTS model
   const ttsModel = await getConfiguredVoiceModel(params.avatarId, 'text_to_speech');
-  console.log(`[Voice] Using TTS model: ${ttsModel}`);
+  log.info('tts', 'tts_model_selected', {
+    avatarId: params.avatarId,
+    model: ttsModel,
+  });
 
   const apiKey = await getSecret(params.avatarId, 'replicate_api_key');
   if (!apiKey) {
@@ -1008,7 +1044,10 @@ export async function sendVoiceMessage(params: {
         const converted = await convertAudioToOgg({ avatarId: params.avatarId, sourceUrl: voiceUrl });
         if (converted) telegramSourceUrl = converted;
       } catch (err) {
-        console.warn('[Voice] Media convert failed, falling back to original audio:', err instanceof Error ? err.message : String(err));
+        log.warn('tts', 'media_convert_failed_fallback', {
+          avatarId: params.avatarId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 

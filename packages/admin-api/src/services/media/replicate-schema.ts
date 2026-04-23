@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- structured logging TBD */
 /**
  * Replicate Model Schema Service
  *
@@ -10,6 +9,9 @@
  */
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { createSystemLogger } from '../structured-logger.js';
+
+const log = createSystemLogger('replicate-schema');
 
 // ============================================================================
 // Types
@@ -108,7 +110,10 @@ async function getFromDynamoCache(
       fetchedAt,
     };
   } catch (err) {
-    console.warn(`[ReplicateSchema] DynamoDB cache read failed for ${modelId}:`, err);
+    log.warn('cache', 'dynamo_cache_read_failed', {
+      modelId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return undefined;
   }
 }
@@ -132,7 +137,10 @@ async function setDynamoCache(
       },
     }));
   } catch (err) {
-    console.warn(`[ReplicateSchema] DynamoDB cache write failed for ${data.modelId}:`, err);
+    log.warn('cache', 'dynamo_cache_write_failed', {
+      modelId: data.modelId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -158,12 +166,15 @@ export async function fetchReplicateModelSchema(
       headers: { Authorization: `Token ${apiKey}` },
     });
     if (!response.ok) {
-      console.warn(`[ReplicateSchema] Failed to fetch model ${modelId}: ${response.status}`);
+      log.warn('model', 'model_fetch_failed', { modelId, status: response.status });
       return undefined;
     }
     return (await response.json()) as Record<string, unknown>;
   } catch (err) {
-    console.warn(`[ReplicateSchema] Error fetching model ${modelId}:`, err);
+    log.warn('model', 'model_fetch_error', {
+      modelId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return undefined;
   }
 }
@@ -343,7 +354,7 @@ export async function searchReplicateModels(
     });
 
     if (!response.ok) {
-      console.warn(`[ReplicateSchema] Model search failed: ${response.status}`);
+      log.warn('search', 'model_search_failed', { query, status: response.status });
       return { results: [] };
     }
 
@@ -357,7 +368,10 @@ export async function searchReplicateModels(
       next: data.next || undefined,
     };
   } catch (err) {
-    console.warn('[ReplicateSchema] Model search error:', err);
+    log.warn('search', 'model_search_error', {
+      query,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return { results: [] };
   }
 }

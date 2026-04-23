@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Twitter OAuth 1.0a Service
  * Handles 3-legged OAuth flow for connecting X/Twitter accounts to avatars
@@ -22,6 +21,9 @@ import {
 import * as secretsServiceDefault from '../secrets.js';
 import type { UserSession } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createSystemLogger } from '../structured-logger.js';
+
+const log = createSystemLogger('twitter-oauth-service');
 
 /**
  * Dependencies interface for Twitter OAuth service (for testing)
@@ -103,7 +105,7 @@ async function getAppCredentials(deps: TwitterOAuthServiceDeps = defaultDeps): P
   } catch (error) {
     // Don't log the full error object as it may contain sensitive credentials
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`Failed to get Twitter app credentials: ${errorMessage}`);
+    log.error('credentials', 'app_credentials_fetch_failed', { error: errorMessage });
     return null;
   }
 }
@@ -147,13 +149,10 @@ export async function probeOAuthStart(deps: TwitterOAuthServiceDeps = defaultDep
     await client.generateAuthLink(deps.oauthCallbackUrl, { linkMode: 'authorize' });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(JSON.stringify({
-      level: 'ERROR',
-      subsystem: 'twitter-oauth',
-      event: 'oauth_probe_failed',
+    log.error('oauth', 'oauth_probe_failed', {
       oauthCallbackUrl: deps.oauthCallbackUrl,
       error: message,
-    }));
+    });
 
     if (/\b403\b/.test(message) || /code\s*403/i.test(message)) {
       throw new Error(
@@ -195,14 +194,11 @@ export async function startOAuthFlow(avatarId: string, deps: TwitterOAuthService
   } catch (error) {
     // twitter-api-v2 throws rich errors; surface a helpful, non-sensitive message.
     const message = error instanceof Error ? error.message : String(error);
-    console.error(JSON.stringify({
-      level: 'ERROR',
-      subsystem: 'twitter-oauth',
-      event: 'oauth_start_failed',
+    log.error('oauth', 'oauth_start_failed', {
       avatarId,
       oauthCallbackUrl: deps.oauthCallbackUrl,
       error: message,
-    }));
+    });
 
     // Common case: Twitter rejects callback URL or app permissions (often manifests as 403).
     if (/\b403\b/.test(message) || /code\s*403/i.test(message)) {
@@ -233,13 +229,10 @@ export async function startOAuthFlow(avatarId: string, deps: TwitterOAuthService
     Item: record,
   }));
 
-  console.log(JSON.stringify({
-    level: 'INFO',
-    subsystem: 'twitter-oauth',
-    event: 'oauth_flow_started',
+  log.info('oauth', 'oauth_flow_started', {
     avatarId,
     oauthToken: oauth_token,
-  }));
+  });
 
   return {
     authorizationUrl: url,
@@ -329,10 +322,17 @@ export async function completeOAuthFlow(
       if (verifiedType === 'blue' || verifiedType === 'business') {
         charLimit = 10000;
       }
-      console.log(`[TwitterOAuth] User @${username} verified_type=${verifiedType}, charLimit=${charLimit}`);
+      log.info('verified_type', 'verified_type_resolved', {
+        username,
+        verifiedType,
+        charLimit,
+      });
     } catch (verifyError) {
       // Non-fatal: continue with default 280 limit if we can't fetch verified_type
-      console.warn(`[TwitterOAuth] Could not fetch verified_type for @${username}:`, verifyError);
+      log.warn('verified_type', 'verified_type_fetch_failed', {
+        username,
+        error: verifyError instanceof Error ? verifyError.message : String(verifyError),
+      });
     }
 
     // Store the access tokens in Secrets Manager
@@ -369,14 +369,11 @@ export async function completeOAuthFlow(
       },
     }));
 
-    console.log(JSON.stringify({
-      level: 'INFO',
-      subsystem: 'twitter-oauth',
-      event: 'oauth_completed',
+    log.info('oauth', 'oauth_completed', {
       avatarId,
       username,
       userId,
-    }));
+    });
 
     return {
       success: true,
@@ -385,13 +382,10 @@ export async function completeOAuthFlow(
       userId,
     };
   } catch (error) {
-    console.error(JSON.stringify({
-      level: 'ERROR',
-      subsystem: 'twitter-oauth',
-      event: 'oauth_failed',
+    log.error('oauth', 'oauth_failed', {
       avatarId,
       error: error instanceof Error ? error.message : String(error),
-    }));
+    });
 
     return {
       success: false,
@@ -445,13 +439,10 @@ export async function getConnectionStatus(avatarId: string, deps: TwitterOAuthSe
     const accessSecret = await deps.secretsService.getSecretValue(avatarId, 'twitter_access_secret', 'default');
 
     if (accessToken && accessSecret) {
-      console.log(JSON.stringify({
-        level: 'WARN',
-        subsystem: 'twitter-oauth',
-        event: 'connection_record_missing_but_tokens_exist',
+      log.warn('connection', 'connection_record_missing_but_tokens_exist', {
         avatarId,
         message: 'DynamoDB metadata missing but tokens found in Secrets Manager',
-      }));
+      });
 
       // Tokens exist - try to verify and repair the metadata record
       const creds = await getAppCredentials(deps);
@@ -486,16 +477,13 @@ export async function getConnectionStatus(avatarId: string, deps: TwitterOAuthSe
             },
           }));
 
-          console.log(JSON.stringify({
-            level: 'INFO',
-            subsystem: 'twitter-oauth',
-            event: 'connection_record_repaired',
+          log.info('connection', 'connection_record_repaired', {
             avatarId,
             username,
             userId,
             verifiedType,
             charLimit,
-          }));
+          });
 
           return {
             connected: true,
@@ -508,13 +496,10 @@ export async function getConnectionStatus(avatarId: string, deps: TwitterOAuthSe
         } catch (verifyError) {
           // Tokens exist but are invalid - still report as connected
           // Let the actual posting operation handle the invalid token error
-          console.log(JSON.stringify({
-            level: 'WARN',
-            subsystem: 'twitter-oauth',
-            event: 'token_verification_failed',
+          log.warn('connection', 'token_verification_failed', {
             avatarId,
             error: verifyError instanceof Error ? verifyError.message : String(verifyError),
-          }));
+          });
 
           return {
             connected: true,
@@ -565,13 +550,10 @@ export async function disconnectTwitter(
     },
   }));
 
-  console.log(JSON.stringify({
-    level: 'INFO',
-    subsystem: 'twitter-oauth',
-    event: 'twitter_disconnected',
+  log.info('oauth', 'twitter_disconnected', {
     avatarId,
     by: session.email,
-  }));
+  });
 }
 
 /**
@@ -615,7 +597,7 @@ export async function getAvatarTwitterCredentials(avatarId: string, deps: Twitte
   } catch (error) {
     // Don't log the full error object as it may contain sensitive credentials
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`Failed to get Twitter credentials: ${errorMessage}`);
+    log.error('credentials', 'avatar_credentials_fetch_failed', { avatarId, error: errorMessage });
     return { configured: false };
   }
 }

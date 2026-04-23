@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Resume Chat Module
  *
@@ -13,8 +12,11 @@ import * as avatars from '../../services/avatars.js';
 import { configureIntegration } from '../../services/integrations.js';
 import { syncAvatarConfig } from '../../services/config-sync.js';
 import { resolveChatModel } from '../../services/models-registry.js';
+import { createSystemLogger } from '../../services/structured-logger.js';
 import { LLM_MODEL } from '../chat-llm.js';
 import type { AvatarContext, ProcessChatResult } from './types.js';
+
+const log = createSystemLogger('resume-chat');
 
 // Import processChat from chat.ts -- this creates a circular reference that is
 // resolved at runtime because ES modules use live bindings.
@@ -91,7 +93,8 @@ export async function resumeChatAfterToolResult(
 
   const validatedViaPendingStore = pendingRecord?.toolCallId === toolCallId;
 
-  console.log(`[resumeChatAfterToolResult] Validating toolCallId: ${toolCallId}`, {
+  log.info('resume', 'tool_call_validation_started', {
+    toolCallId,
     hasPendingRecord: !!pendingRecord,
     pendingRecordToolCallId: pendingRecord?.toolCallId,
     hasMatchingToolCall,
@@ -104,10 +107,10 @@ export async function resumeChatAfterToolResult(
   if (validatedViaPendingStore) {
     // Valid — server issued this tool call. Defer consumption until the
     // resume flow succeeds so the record survives downstream failures.
-    console.log(`[resumeChatAfterToolResult] Validated toolCallId via pending tool store: ${toolCallId}`);
+    log.info('resume', 'tool_call_validated_via_pending_store', { toolCallId });
   } else if (hasMatchingToolCall) {
     // Valid — still in chat history.
-    console.log(`[resumeChatAfterToolResult] Validated toolCallId via chat history: ${toolCallId}`);
+    log.info('resume', 'tool_call_validated_via_history', { toolCallId });
   } else {
     // If validation fails, log detailed info including all tool calls in history
     const toolCallsInHistory = historyToolCalls.map(tc => ({
@@ -116,7 +119,7 @@ export async function resumeChatAfterToolResult(
       type: (tc as any).type,
     }));
 
-    console.error(`[resumeChatAfterToolResult] Failed to validate toolCallId: ${toolCallId}`, {
+    log.error('resume', 'tool_call_validation_failed', {
       toolCallId,
       hasPendingRecord: !!pendingRecord,
       pendingRecordToolCallId: pendingRecord?.toolCallId,
@@ -149,16 +152,20 @@ export async function resumeChatAfterToolResult(
           models,
           session,
         });
-        console.log(`[resumeChatAfterToolResult] Saved ${integration} config for avatar ${avatarId}`);
+        log.info('integration', 'config_saved', { integration, avatarId });
 
         // Sync to STATE_TABLE so handlers pick up the new config
         const updatedAvatar = await avatars.getAvatar(avatarId);
         if (updatedAvatar) {
           await syncAvatarConfig(updatedAvatar);
-          console.log(`[resumeChatAfterToolResult] Synced config to STATE_TABLE for avatar ${avatarId}`);
+          log.info('integration', 'config_synced_to_state_table', { integration, avatarId });
         }
       } catch (err) {
-        console.error(`[resumeChatAfterToolResult] Failed to save ${integration} config:`, err instanceof Error ? err.message : 'Unknown error');
+        log.error('integration', 'config_save_failed', {
+          integration,
+          avatarId,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
       }
     }
   }

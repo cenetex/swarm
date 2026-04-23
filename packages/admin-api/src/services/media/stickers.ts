@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Sticker Service
  *
@@ -12,6 +11,9 @@ import * as gallery from './gallery.js';
 import * as avatars from '../avatars.js';
 import * as media from './media.js';
 import { _getSecretValueInternal } from '../secrets.js';
+import { createSystemLogger } from '../structured-logger.js';
+
+const log = createSystemLogger('stickers');
 import {
   processImageSourceForSticker,
   uploadStickerToS3,
@@ -329,7 +331,9 @@ export async function generateSticker(
       packUrl: `https://t.me/addstickers/${packName}`,
     };
   } catch (error) {
-    console.error('Failed to generate sticker', { error });
+    log.error('sticker', 'generate_sticker_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
@@ -496,7 +500,9 @@ export async function createStickerFromGallery(
       packUrl: `https://t.me/addstickers/${packName}`,
     };
   } catch (error) {
-    console.error('Failed to create sticker from gallery', { error });
+    log.error('sticker', 'create_sticker_from_gallery_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }

@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Media Jobs Service
  * Tracks async media generation jobs (video, long-running operations)
@@ -15,7 +14,10 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import type { MediaJob } from '../../types.js';
 import * as gallery from './gallery.js';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createSystemLogger } from '../structured-logger.js';
 import { buildMediaUrl } from '../../utils/media-url.js';
+
+const log = createSystemLogger('media-jobs');
 
 const dynamoClient = getDynamoClient();
 const s3Client = new S3Client({});
@@ -279,11 +281,14 @@ export async function pollAndCompleteJob(
   }
 
   if (!job.externalId) {
-    console.warn(`[MediaJobs] No external ID for job ${jobId}`);
+    log.warn('poll', 'no_external_id', { jobId });
     return job;
   }
 
-  console.log(`[MediaJobs] Polling Replicate for job ${jobId} (prediction ${job.externalId})`);
+  log.info('poll', 'polling_started', {
+    jobId,
+    predictionId: job.externalId,
+  });
 
   try {
     const response = await fetch(`${REPLICATE_ENDPOINT}/${job.externalId}`, {
@@ -294,12 +299,12 @@ export async function pollAndCompleteJob(
     });
 
     if (!response.ok) {
-      console.error(`[MediaJobs] Replicate poll failed: ${response.status}`);
+      log.error('poll', 'poll_request_failed', { jobId, status: response.status });
       return job;
     }
 
     const prediction = await response.json() as ReplicatePrediction;
-    console.log(`[MediaJobs] Replicate status for ${jobId}: ${prediction.status}`);
+    log.info('poll', 'poll_status', { jobId, status: prediction.status });
 
     if (prediction.status === 'succeeded' && prediction.output) {
       const outputUrl = extractOutputUrl(prediction.output);
@@ -321,7 +326,11 @@ export async function pollAndCompleteJob(
       const mediaId = gallery.generateGalleryId();
       const s3Key = `avatars/${job.avatarId}/${folder}/${mediaId}.${extension}`;
 
-      console.log(`[MediaJobs] Uploading to S3: ${s3Key} (${mediaBuffer.length} bytes)`);
+      log.info('upload', 's3_upload_started', {
+        jobId,
+        s3Key,
+        bytes: mediaBuffer.length,
+      });
 
       await s3Client.send(new PutObjectCommand({
         Bucket: MEDIA_BUCKET,
@@ -345,7 +354,7 @@ export async function pollAndCompleteJob(
         metadata: { jobId, predictionId: prediction.id, polled: true },
       });
 
-      console.log(`[MediaJobs] Job ${jobId} completed via polling: ${publicUrl}`);
+      log.info('poll', 'job_completed_via_poll', { jobId, publicUrl });
       return await getJob(jobId);
     }
 
@@ -356,7 +365,10 @@ export async function pollAndCompleteJob(
 
     return job;
   } catch (error) {
-    console.error(`[MediaJobs] Poll error for ${jobId}:`, error instanceof Error ? error.message : String(error));
+    log.error('poll', 'poll_error', {
+      jobId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return job;
   }
 }

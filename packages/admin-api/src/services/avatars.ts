@@ -24,7 +24,8 @@ import {
   type GateStatus,
   type ClaimableNFT,
 } from './web3/nft-gate.js';
-import { storeSecret, deleteAllAvatarSecrets } from './secrets.js';
+import { storeSecret, deleteAllAvatarSecrets, _getSecretValueInternal } from './secrets.js';
+import { deleteTelegramWebhook } from './platform/telegram.js';
 import {
   getCachedNFTOwner,
   invalidateNFTOwnerCache,
@@ -515,12 +516,17 @@ export interface DeleteAvatarDeps {
   decrementCreatorCount: typeof decrementCreatorCount;
   removeAvatarFromAllHomeChannels: typeof removeAvatarFromAllHomeChannels;
   deleteAllAvatarSecrets: typeof deleteAllAvatarSecrets;
+  getTelegramBotToken: (avatarId: string) => Promise<string | null>;
+  deleteTelegramWebhook: typeof deleteTelegramWebhook;
 }
 
 const _defaultDeleteDeps: DeleteAvatarDeps = {
   decrementCreatorCount,
   removeAvatarFromAllHomeChannels,
   deleteAllAvatarSecrets,
+  getTelegramBotToken: (avatarId: string) =>
+    _getSecretValueInternal(avatarId, 'telegram_bot_token', 'default'),
+  deleteTelegramWebhook,
 };
 
 /**
@@ -545,6 +551,21 @@ export async function deleteAvatar(
       error: err instanceof Error ? err.message : String(err),
     });
     // Don't fail the delete if home channel unregistration fails
+  }
+
+  // Deregister the Telegram webhook before secrets are wiped — once the
+  // bot token is gone we can't tell Telegram to stop POSTing updates to
+  // the (now-orphaned) webhook URL.
+  if (existing?.platforms?.telegram?.enabled) {
+    try {
+      const token = await deps.getTelegramBotToken(avatarId);
+      if (token) {
+        await deps.deleteTelegramWebhook(token);
+      }
+    } catch (err) {
+      console.warn(`[Avatars] Failed to deregister Telegram webhook for ${avatarId}:`, err instanceof Error ? err.message : String(err));
+      // Don't fail the delete if Telegram is unreachable
+    }
   }
 
   // Clean up Secrets Manager secrets to avoid ongoing per-secret charges

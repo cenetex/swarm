@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Ascension NFT Metadata Evolution
  *
@@ -21,6 +20,7 @@
 import { ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { AvatarRecord } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createSystemLogger } from '../structured-logger.js';
 import { getAvatarLifetimeStats } from './avatar-lifetime-stats.js';
 import { getOrbResonance } from './orb-slots.js';
 import { uploadJsonToArweave, type ArweaveServiceConfig } from './arweave.js';
@@ -31,6 +31,7 @@ import {
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 const dynamoClient = getDynamoClient();
+const log = createSystemLogger('metadata-evolution');
 
 // =============================================================================
 // Types
@@ -177,7 +178,10 @@ export async function evolveAscensionMetadata(
     // Aggregate stats + resonance in parallel
     const [stats, resonance] = await Promise.all([
       getAvatarLifetimeStats(avatarId).catch((err) => {
-        console.warn(`[MetadataEvolution] Stats fetch failed for ${avatarId}:`, err instanceof Error ? err.message : String(err));
+        log.warn('evolution', 'stats_fetch_failed', {
+          avatarId,
+          error: err instanceof Error ? err.message : String(err),
+        });
         return null;
       }),
       getOrbResonance(avatarId).catch(() => null),
@@ -189,9 +193,10 @@ export async function evolveAscensionMetadata(
     // Upload to Arweave
     const uploadResult = await uploadJsonToArweave(metadata, arweaveConfig);
 
-    console.log(
-      `[MetadataEvolution] Uploaded evolved metadata for ${avatarId} → ${uploadResult.arweaveUri}`,
-    );
+    log.info('evolution', 'metadata_uploaded', {
+      avatarId,
+      arweaveUri: uploadResult.arweaveUri,
+    });
 
     // Record the evolution in DynamoDB
     const now = Date.now();
@@ -231,10 +236,10 @@ export async function evolveAscensionMetadata(
       previousUri: (avatar as unknown as Record<string, unknown>).lastMetadataUri as string | undefined,
     };
   } catch (error) {
-    console.error(
-      `[MetadataEvolution] Failed for ${avatarId}:`,
-      error instanceof Error ? error.message : String(error),
-    );
+    log.error('evolution', 'evolve_failed', {
+      avatarId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       avatarId,
       avatarName,
@@ -276,7 +281,7 @@ export async function evolveAllAscensionMetadata(
 
   const avatars = (scanResult.Items || []) as AvatarRecord[];
 
-  console.log(`[MetadataEvolution] Found ${avatars.length} ascended avatar(s)`);
+  log.info('batch', 'ascended_avatars_found', { count: avatars.length });
 
   const results: EvolutionResult[] = [];
   let succeeded = 0;
@@ -311,9 +316,7 @@ export async function evolveAllAscensionMetadata(
     }
   }
 
-  console.log(
-    `[MetadataEvolution] Batch complete: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped`,
-  );
+  log.info('batch', 'batch_complete', { succeeded, failed, skipped });
 
   return {
     processed: avatars.length,
