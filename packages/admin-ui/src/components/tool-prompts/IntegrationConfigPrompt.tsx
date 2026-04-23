@@ -900,6 +900,40 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
       return;
     }
 
+    // For Telegram, pre-validate the token before writing to Secrets Manager
+    // (#1481). Matches the Discord `handleSaveAndTest` pattern so a single
+    // "Save & Enable" button can replace the old Test + Save pair.
+    if (integration === 'telegram' && token.trim()) {
+      setIsTesting(true);
+      setStatus('idle');
+      setTestResult(null);
+      setSaveError(null);
+      try {
+        const valResponse = await fetch(`${API_BASE}/avatars/${activeAgent.id}/validate-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ type: config.secretType, value: token.trim() }),
+        });
+        const valResult = await valResponse.json().catch(() => ({}));
+        if (!valResponse.ok || !valResult.valid) {
+          setStatus('error');
+          setTestResult({
+            error: valResult.error || valResult.message || `Validation failed (HTTP ${valResponse.status})`,
+          });
+          return;
+        }
+        setStatus('success');
+        setTestResult({ botUsername: valResult.botInfo?.username });
+      } catch {
+        setStatus('error');
+        setTestResult({ error: 'Failed to validate token' });
+        return;
+      } finally {
+        setIsTesting(false);
+      }
+    }
+
     setIsSubmitting(true);
     setSaveError(null);
     try {
@@ -2136,22 +2170,25 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
               </div>
             )}
 
-            {/* Actions — Non-Discord: keep existing two-button layout */}
+            {/* Actions — Non-Discord. Telegram: one button (validates server-side
+                before save, #1481). Other token platforms (e.g. Twitter): two-button. */}
             {integration !== 'discord' && (
               <div className="flex gap-2 pt-2">
-                <button
-                  onClick={handleTest}
-                  disabled={!token.trim() || disabled || isTesting}
-                  className="flex-1 px-4 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors"
-                >
-                  {isTesting ? 'Testing...' : 'Test Connection'}
-                </button>
+                {integration !== 'telegram' && (
+                  <button
+                    onClick={handleTest}
+                    disabled={!token.trim() || disabled || isTesting}
+                    className="flex-1 px-4 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors"
+                  >
+                    {isTesting ? 'Testing...' : 'Test Connection'}
+                  </button>
+                )}
                 <button
                   onClick={handleSave}
-                  disabled={!token.trim() || disabled || isSubmitting}
-                  className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                  disabled={!token.trim() || disabled || isSubmitting || isTesting}
+                  className={`${integration === 'telegram' ? 'w-full' : 'flex-1'} px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors`}
                 >
-                  {isSubmitting ? 'Saving...' : 'Save & Enable'}
+                  {isSubmitting ? 'Saving...' : isTesting ? 'Validating...' : 'Save & Enable'}
                 </button>
               </div>
             )}
