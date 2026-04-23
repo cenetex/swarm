@@ -1048,8 +1048,22 @@ export async function generateVideo(options: GenerateVideoOptions): Promise<Medi
   if (!response.ok) {
     const errorText = await response.text();
     const status = response.status;
-    await mediaJobs.updateJobStatus(jobId, 'failed', { error: summarizeReplicateError(errorText, status) });
-    throw new Error(`Video generation failed to start: ${summarizeReplicateError(errorText, status)}`);
+    const summary = summarizeReplicateError(errorText, status);
+    await mediaJobs.updateJobStatus(jobId, 'failed', { error: summary });
+    // Give the LLM enough detail to report *what* went wrong rather than
+    // inventing "not configured". Include the HTTP status, the model the
+    // request was actually made against, and the provider's own error
+    // summary. Historic message was "Video generation failed to start: X"
+    // which the LLM kept mischaracterizing as a client-side config issue.
+    log.error('video_gen', 'video_generation_failed', {
+      avatarId,
+      videoModel,
+      httpStatus: status,
+      error: summary,
+    });
+    throw new Error(
+      `Video generation rejected by provider (HTTP ${status}) for model "${videoModel}": ${summary}`,
+    );
   }
 
   const prediction = await response.json() as { id: string };
