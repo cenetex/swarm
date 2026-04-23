@@ -518,6 +518,7 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       let actionsToSend: ResponseAction[] | null = null;
       let queuedMedia = false;
       let sentMessages: string[] = [];
+      let sentMedia: Array<{ mediaType: 'image' | 'video' | 'animation'; url: string; caption?: string }> = [];
       let sendErrors: ActionError[] = [];
       let sendSuccess = false;
 
@@ -575,6 +576,7 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
         try {
           const result = await outboundRuntime.outboundSender.send({ ...response, actions: actionsToSend });
           sentMessages = result.sentMessages;
+          sentMedia = result.sentMedia;
           sendErrors = result.errors;
           sendSuccess = result.success;
 
@@ -622,6 +624,33 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
           );
         } catch (error) {
           logger.warn('Failed to update channel state for sent message', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      // Record media deliveries in channel history so the LLM sees them on
+      // the next turn (#1487). Without this, the model announces "generating
+      // your image..." then after delivery has no memory of the send and
+      // announces generation again when the user responds.
+      for (const media of sentMedia) {
+        const promptPart = media.caption ? ` (prompt: ${media.caption})` : '';
+        const marker = `[sent ${media.mediaType}${promptPart}]`;
+        try {
+          await stateService.addMessageToChannel(
+            avatarId,
+            response.conversationId,
+            response.platform,
+            {
+              messageId: `bot_${randomUUID()}`,
+              sender: outboundRuntime.avatarConfig.name,
+              isBot: true,
+              content: marker,
+              timestamp: Date.now(),
+            }
+          );
+        } catch (error) {
+          logger.warn('Failed to update channel state for sent media', {
             error: error instanceof Error ? error.message : String(error),
           });
         }

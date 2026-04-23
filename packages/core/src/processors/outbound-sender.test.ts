@@ -204,3 +204,56 @@ describe('OutboundSender - ActionError structure (#368)', () => {
     expect(result.errors[0].message).toContain('No adapter found');
   });
 });
+
+describe('OutboundSender - sentMedia tracking (#1487)', () => {
+  it('records successful send_media deliveries so callers can update chat history', async () => {
+    const registry = new PlatformRegistry();
+    registry.register(createMockAdapter({}) as never);
+
+    const sender = new OutboundSender(registry);
+    const result = await sender.send(
+      makeResponse({
+        actions: [
+          { type: 'send_message', text: 'Here you go!' } as ResponseAction,
+          {
+            type: 'send_media',
+            mediaType: 'image',
+            url: 'https://cdn.example/img.png',
+            caption: 'dive bomb',
+          } as ResponseAction,
+        ],
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.sentMessages).toEqual(['Here you go!']);
+    expect(result.sentMedia).toEqual([
+      { mediaType: 'image', url: 'https://cdn.example/img.png', caption: 'dive bomb' },
+    ]);
+  });
+
+  it('does not record failed send_media deliveries', async () => {
+    const registry = new PlatformRegistry();
+    registry.register(
+      createMockAdapter({
+        executeAction: async () => false,
+      }) as never,
+    );
+
+    const sender = new OutboundSender(registry);
+    const result = await sender.send(
+      makeResponse({
+        actions: [
+          {
+            type: 'send_media',
+            mediaType: 'video',
+            url: 'https://cdn.example/vid.mp4',
+          } as ResponseAction,
+        ],
+      }),
+    );
+
+    expect(result.sentMedia).toHaveLength(0);
+    expect(result.errors).toHaveLength(1);
+  });
+});
