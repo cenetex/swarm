@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * MCP Identity & Configuration Services
  *
@@ -16,7 +15,10 @@ import type { UserSession, SecretType } from '../../types.js';
 import type { TokenLaunchConfig } from '../web3/token-launch.js';
 import type { ServiceContainer } from '../service-container.js';
 import { getValidModelId } from '../models-registry.js';
+import { createSystemLogger } from '../structured-logger.js';
 import { fetchWithTimeout, API_TIMEOUT_MS } from './helpers.js';
+
+const log = createSystemLogger('identity-mcp');
 
 type IdentityServices = Pick<
   AllServices,
@@ -134,13 +136,10 @@ export function createIdentityServices(
 
       storeSecret: async (avatarId, secretType, name, value, description) => {
         if (secretType === 'telegram_bot_token') {
-          console.log(JSON.stringify({
-            level: 'INFO',
-            subsystem: 'telegram',
-            event: 'telegram_token_setup_requested',
+          log.info('telegram', 'telegram_token_setup_requested', {
             avatarId,
             message: 'Telegram bot token received, validating and registering webhook...',
-          }));
+          });
 
           const setupResult = await _setupTelegramIntegration({
             avatarId,
@@ -156,13 +155,10 @@ export function createIdentityServices(
           });
 
           if (!setupResult.success) {
-            console.log(JSON.stringify({
-              level: 'ERROR',
-              subsystem: 'telegram',
-              event: 'telegram_token_setup_failed',
+            log.error('telegram', 'telegram_token_setup_failed', {
               avatarId,
               error: setupResult.error,
-            }));
+            });
             throw new Error(setupResult.error || 'Failed to configure Telegram');
           }
 
@@ -170,13 +166,10 @@ export function createIdentityServices(
         }
 
         if (secretType === 'replicate_api_key') {
-          console.log(JSON.stringify({
-            level: 'INFO',
-            subsystem: 'media',
-            event: 'replicate_key_validation_requested',
+          log.info('media', 'replicate_key_validation_requested', {
             avatarId,
             message: 'Replicate API key received, validating...',
-          }));
+          });
 
           const validation = await _validateReplicateApiKey(value);
           if (!validation.valid) {
