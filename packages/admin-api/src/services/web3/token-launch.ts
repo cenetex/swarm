@@ -114,7 +114,7 @@ export interface TokenLaunchResult {
   metadataUrl?: string;
   launchUrl?: string;
   error?: string;
-  errorCode?: 'NO_TWITTER' | 'ALREADY_LAUNCHED' | 'NO_WALLET' | 'NO_API_KEY' | 'NO_PROFILE_IMAGE' | 'LAUNCH_FAILED' | 'TWITTER_NOT_REGISTERED' | 'INSUFFICIENT_TIER';
+  errorCode?: 'NO_TWITTER' | 'ALREADY_LAUNCHED' | 'NO_WALLET' | 'NO_API_KEY' | 'NO_PROFILE_IMAGE' | 'LAUNCH_FAILED' | 'TWITTER_NOT_REGISTERED' | 'INSUFFICIENT_TIER' | 'PROVIDER_NOT_CONFIGURED';
   /** Current burn tier (0-5) */
   tier?: number;
   /** RATI needed to burn to unlock token launch */
@@ -148,9 +148,29 @@ export interface TokenLaunchPreflightResult {
   hasProfileImage: boolean;
   hasWallet: boolean;
   hasApiKey: boolean;
+  /**
+   * Whether the platform operator has configured a token-launch provider at
+   * all (TOKEN_LAUNCH_API_BASE_URL). When false, token launch is unavailable
+   * for this deployment — asking the user for an API key is meaningless. See
+   * #1486.
+   */
+  platformProviderConfigured: boolean;
+  /**
+   * True when this avatar has no own `token_launch_api_key` but a global
+   * fallback secret exists. Useful for the UI/agent to explain whether the
+   * user needs to provision a key themselves.
+   */
+  usingGlobalFallback?: boolean;
   existingToken?: TokenLaunchInfo;
   error?: string;
-  errorCode?: 'NO_TWITTER' | 'ALREADY_LAUNCHED' | 'NO_WALLET' | 'NO_API_KEY' | 'NO_PROFILE_IMAGE' | 'INSUFFICIENT_TIER';
+  errorCode?:
+    | 'NO_TWITTER'
+    | 'ALREADY_LAUNCHED'
+    | 'NO_WALLET'
+    | 'NO_API_KEY'
+    | 'NO_PROFILE_IMAGE'
+    | 'INSUFFICIENT_TIER'
+    | 'PROVIDER_NOT_CONFIGURED';
   /** Current burn tier (0-5) */
   tier?: number;
   /** Tier name (e.g., 'Spark', 'Ember', 'Inferno') */
@@ -179,6 +199,21 @@ async function getLaunchApiKey(avatarId: string): Promise<string | null> {
     apiKey = await _getSecretValueInternal(null, 'token_launch_api_key', 'default');
   }
   return apiKey;
+}
+
+/**
+ * Resolve the launch API key and report where it came from. Needed so the
+ * preflight can tell an avatar-without-key-but-global-fallback-exists case
+ * apart from the no-provider case. See #1486.
+ */
+async function resolveLaunchApiKey(
+  avatarId: string,
+): Promise<{ apiKey: string | null; source: 'avatar' | 'global' | 'none' }> {
+  const avatarKey = await _getSecretValueInternal(avatarId, 'token_launch_api_key', 'default');
+  if (avatarKey) return { apiKey: avatarKey, source: 'avatar' };
+  const globalKey = await _getSecretValueInternal(null, 'token_launch_api_key', 'default');
+  if (globalKey) return { apiKey: globalKey, source: 'global' };
+  return { apiKey: null, source: 'none' };
 }
 
 async function getLaunchPartnerKey(): Promise<string | null> {
@@ -748,6 +783,8 @@ async function signAndSendTransaction(
  * Check if an avatar can launch a token
  */
 export async function preflightTokenLaunch(avatarId: string): Promise<TokenLaunchPreflightResult> {
+  const platformProviderConfigured = !!TOKEN_LAUNCH_API_BASE_URL;
+
   const avatar = await getAvatar(avatarId);
   if (!avatar) {
     return {
@@ -756,6 +793,7 @@ export async function preflightTokenLaunch(avatarId: string): Promise<TokenLaunc
       hasProfileImage: false,
       hasWallet: false,
       hasApiKey: false,
+      platformProviderConfigured,
       error: 'Avatar not found',
     };
   }
@@ -768,6 +806,7 @@ export async function preflightTokenLaunch(avatarId: string): Promise<TokenLaunc
       hasProfileImage: true,
       hasWallet: true,
       hasApiKey: true,
+      platformProviderConfigured,
       existingToken: avatar.tokenLaunch as TokenLaunchInfo,
       error: 'Avatar has already launched a token',
       errorCode: 'ALREADY_LAUNCHED',
@@ -783,6 +822,7 @@ export async function preflightTokenLaunch(avatarId: string): Promise<TokenLaunc
       hasProfileImage: false,
       hasWallet: false,
       hasApiKey: false,
+      platformProviderConfigured,
       error: 'Avatar must have a Twitter account configured to launch on Token launch',
       errorCode: 'NO_TWITTER',
     };
@@ -800,6 +840,7 @@ export async function preflightTokenLaunch(avatarId: string): Promise<TokenLaunc
       hasProfileImage: false,
       hasWallet: false,
       hasApiKey: false,
+      platformProviderConfigured,
       error: 'Avatar must have a profile image set before launching a token',
       errorCode: 'NO_PROFILE_IMAGE',
     };
@@ -808,9 +849,13 @@ export async function preflightTokenLaunch(avatarId: string): Promise<TokenLaunc
   // Check Solana wallet
   const hasWallet = await secretExists(avatarId, 'solana_wallet_key', 'default');
 
-  // Check Token launch API key
-  const apiKey = await getLaunchApiKey(avatarId);
+  // Check Token launch API key — and distinguish "provider not configured at
+  // the platform level" from "provider exists but this avatar has no key".
+  // Without this split, the model tells the user to configure a key even when
+  // the feature is entirely unavailable on this deployment (#1486).
+  const { apiKey, source: apiKeySource } = await resolveLaunchApiKey(avatarId);
   const hasApiKey = !!apiKey;
+  const usingGlobalFallback = apiKeySource === 'global';
 
   if (!hasWallet) {
     return {
@@ -820,8 +865,24 @@ export async function preflightTokenLaunch(avatarId: string): Promise<TokenLaunc
       hasProfileImage: true,
       hasWallet: false,
       hasApiKey,
+      platformProviderConfigured,
+      usingGlobalFallback,
       error: 'Avatar must have a Solana wallet configured',
       errorCode: 'NO_WALLET',
+    };
+  }
+
+  if (!platformProviderConfigured) {
+    return {
+      canLaunch: false,
+      avatarId,
+      twitterUsername,
+      hasProfileImage: true,
+      hasWallet: true,
+      hasApiKey: false,
+      platformProviderConfigured: false,
+      error: 'Token launch is not available on this deployment — the platform operator has not configured a token-launch provider (TOKEN_LAUNCH_API_BASE_URL).',
+      errorCode: 'PROVIDER_NOT_CONFIGURED',
     };
   }
 
@@ -833,7 +894,9 @@ export async function preflightTokenLaunch(avatarId: string): Promise<TokenLaunc
       hasProfileImage: true,
       hasWallet: true,
       hasApiKey: false,
-      error: 'Token launch API key not configured',
+      platformProviderConfigured: true,
+      usingGlobalFallback: false,
+      error: 'Token launch API key is not configured for this avatar, and no global fallback is set. The platform operator needs to provision a `token_launch_api_key` secret (either per-avatar or global) with credentials from the configured launch provider.',
       errorCode: 'NO_API_KEY',
     };
   }
@@ -848,6 +911,8 @@ export async function preflightTokenLaunch(avatarId: string): Promise<TokenLaunc
       hasProfileImage: true,
       hasWallet: true,
       hasApiKey: true,
+      platformProviderConfigured: true,
+      usingGlobalFallback,
       error: tierCheck.error,
       errorCode: 'INSUFFICIENT_TIER',
       tier: tierCheck.tier,
@@ -863,6 +928,8 @@ export async function preflightTokenLaunch(avatarId: string): Promise<TokenLaunc
     hasProfileImage: true,
     hasWallet: true,
     hasApiKey: true,
+    platformProviderConfigured: true,
+    usingGlobalFallback,
     tier: tierCheck.tier,
     tierName: getTierName(tierCheck.tier),
     burnNeeded: 0,
