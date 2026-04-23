@@ -7,6 +7,10 @@
  * Each avatar with signal-station tools enabled gets one LLM call per tick.
  * The LLM uses MCP tools to read station state and issue commands (set prices,
  * update hail messages, build modules) based on the avatar's persona.
+ *
+ * This is the reference implementation of the autonomous-agent-runner pattern.
+ * See docs/patterns/autonomous-agent-runner.md for the anatomy, checklist, and
+ * guidance on building the next runner.
  */
 import type { ScheduledHandler, Context } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
