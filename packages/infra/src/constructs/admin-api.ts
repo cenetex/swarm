@@ -1311,16 +1311,25 @@ export class AdminApiConstruct extends Construct {
 
     this.api.addRoutes({
       path: '/avatars/{avatarId}/api-keys',
-      methods: [apigateway.HttpMethod.POST],
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.POST],
       integration: avatarsIntegration,
     });
 
-    // GET /avatars/{avatarId}/api-keys, DELETE /avatars/{avatarId}/api-keys/{keyPrefix},
-    // and GET /api-keys/{keyHash}/usage/tokens are intentionally NOT registered here.
-    // Each would add a Lambda::Permission statement, and the admin-api Lambda's
-    // resource-based policy is already 11+ bytes past the 20,480-byte hard limit
-    // without them. See #1443 for the consolidation plan (catchall /{proxy+} or
-    // a single wildcard sourceArn) that unblocks adding new routes.
+    // Re-added after #1443 consolidated per-route Lambda permissions into a
+    // single wildcard statement. Prior to that these were intentionally
+    // omitted because each route added its own Lambda::Permission and the
+    // resource policy was already over the 20,480-byte limit.
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/api-keys/{keyPrefix}',
+      methods: [apigateway.HttpMethod.DELETE],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/api-keys/{keyHash}/usage/tokens',
+      methods: [apigateway.HttpMethod.GET],
+      integration: avatarsIntegration,
+    });
 
     this.api.addRoutes({
       path: '/avatars/{avatarId}/tools/{toolCallId}',
@@ -1553,6 +1562,45 @@ export class AdminApiConstruct extends Construct {
       path: '/onboarding/{avatarId}/steps/{stepId}/skip-optional',
       methods: [apigateway.HttpMethod.POST],
       integration: avatarsIntegration,
+    });
+
+    // Consolidate per-route Lambda permissions (#1443).
+    //
+    // CDK's HttpLambdaIntegration auto-creates a lambda.CfnPermission per
+    // route/method pair. With 40+ avatarsIntegration routes the admin-api
+    // Lambda's resource-based policy blew through the 20,480-byte AWS hard
+    // limit, blocking every new route since #1440. Replace the per-route
+    // permissions with a single wildcard permission that covers all present
+    // + future routes on this HttpApi.
+    //
+    // The integration is named "Avatarsntegration" (typo preserved from
+    // pre-existing code), so the auto-generated permission child nodes are
+    // suffixed "Avatarsntegration-Permission". That's the identifier we
+    // match on to avoid touching other integrations' permissions (chat,
+    // transcribe, shared-chat, telegram-webhook, public-profile, etc.).
+    const perRoutePermissions: lambda.CfnPermission[] = [];
+    for (const descendant of this.api.node.findAll()) {
+      if (
+        descendant instanceof lambda.CfnPermission &&
+        descendant.node.id.includes('Avatarsntegration')
+      ) {
+        perRoutePermissions.push(descendant);
+      }
+    }
+    for (const permission of perRoutePermissions) {
+      const parent = permission.node.scope;
+      parent?.node.tryRemoveChild(permission.node.id);
+    }
+
+    new lambda.CfnPermission(this, 'AvatarsHandlerInvokeAll', {
+      action: 'lambda:InvokeFunction',
+      functionName: avatarsHandler.functionName,
+      principal: 'apigateway.amazonaws.com',
+      sourceArn: cdk.Stack.of(this).formatArn({
+        service: 'execute-api',
+        resource: this.api.apiId,
+        resourceName: '*/*/*',
+      }),
     });
 
     // Issues handler - for auto-issue tracking system (used by CI/CD, browser tests)
