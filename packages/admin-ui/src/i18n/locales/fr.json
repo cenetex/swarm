@@ -100,6 +100,7 @@
     "message": {
       "profileImageUpdated": "Image de profil mise à jour!",
       "characterReferenceUpdated": "Référence de personnage mise à jour!",
+      "modelUpdated": "Basculé vers {{model}}.",
       "authorizeTwitterPosting": "Veuillez autoriser la publication sur Twitter",
       "avatarAlt": "Avatar",
       "toolResult": "Résultat de l'outil",

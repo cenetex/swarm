@@ -949,6 +949,19 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
 
           updateAvatar(activeAvatar.id, { model: resultObj.selectedModel });
           updateToolCallStatus();
+
+          // Post an assistant confirmation so the chat doesn't leave the
+          // pre-submit placeholder ("Please select a model:") as the last
+          // visible assistant message. We don't round-trip through the LLM
+          // here — model switches are a simple local state change.
+          const modelLabel = typeof resultObj.selectedModelLabel === 'string'
+            ? resultObj.selectedModelLabel
+            : resultObj.selectedModel;
+          addMessage(activeAvatar.id, {
+            role: 'assistant',
+            content: t('chat.message.modelUpdated', { model: modelLabel }),
+          });
+
           return { ok: true };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : t('chat.errors.failedToUpdateModel');

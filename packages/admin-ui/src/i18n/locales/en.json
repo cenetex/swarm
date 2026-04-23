@@ -100,6 +100,7 @@
     "message": {
       "profileImageUpdated": "Profile image updated!",
       "characterReferenceUpdated": "Character reference updated!",
+      "modelUpdated": "Switched to {{model}}.",
       "authorizeTwitterPosting": "Please authorize to post on Twitter",
       "avatarAlt": "Avatar",
       "toolResult": "Tool Result",

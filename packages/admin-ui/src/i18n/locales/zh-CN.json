@@ -100,6 +100,7 @@
     "message": {
       "profileImageUpdated": "个人资料图片已更新！",
       "characterReferenceUpdated": "角色参考已更新！",
+      "modelUpdated": "已切换到 {{model}}。",
       "authorizeTwitterPosting": "请授权在 Twitter 上发布",
       "avatarAlt": "头像",
       "toolResult": "工具结果",
