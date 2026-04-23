@@ -1,25 +1,14 @@
 name: CI
 
+# Branch protection requires the `CI` status context on `main`. If we
+# path-ignore docs-only PRs here, the status is never posted and the PR
+# ends up BLOCKED and needs admin-merge. Instead, the workflow runs on
+# every PR and the `changes` job tags docs-only PRs so the expensive
+# lint/build/test/smoke jobs skip. The final `ci` gate treats skipped as
+# passing, so docs-only PRs still post a green `CI` status. See #1387.
 on:
   pull_request:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/workflows/ticket-health.yml'
-      - '.github/workflows/security-exceptions.yml'
-      - '.github/workflows/gtm-kpi-report.yml'
-      - '.github/workflows/leadership-scorecard.yml'
-      - '.github/workflows/access-review.yml'
-      - '.github/workflows/release-notes.yml'
-      - 'issues/**'
-      - 'scripts/ticket-health-report.sh'
-      - 'scripts/leadership-scorecard.sh'
-      - 'scripts/access-review.sh'
-      - 'scripts/generate-gtm-kpi-report.mjs'
-      - 'LICENSE'
-      - '.editorconfig'
   # Required for GitHub's merge queue to validate PRs against main + prior
   # queued PRs before they land, preventing the "each PR passes alone but
   # breaks in combination" failure class (see #1223).
@@ -37,9 +26,60 @@ env:
   NODE_OPTIONS: '--max-old-space-size=4096'
 
 jobs:
+  # Detect whether this PR touches any runtime-relevant file. If every
+  # changed file matches the legacy paths-ignore list (docs, issues, a few
+  # agent-only scripts), the downstream code jobs skip. The single `ci`
+  # gate at the end treats skipped as pass — so docs-only PRs still post a
+  # green `CI` status without burning lint/build/test/smoke minutes. See
+  # #1387.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Determine base/head SHAs
+        id: sha
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=${{ github.event.merge_group.base_sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.event.merge_group.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Classify changed files
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ steps.sha.outputs.base }}"
+          head="${{ steps.sha.outputs.head }}"
+          changed=$(git diff --name-only "$base" "$head")
+          echo "Changed files:"
+          echo "$changed"
+          # Regex matches the historical paths-ignore list. Any file NOT
+          # matching means code jobs must run.
+          ignore_re='^(docs/|[^/]+\.md$|\.github/ISSUE_TEMPLATE/|\.github/workflows/(ticket-health|security-exceptions|gtm-kpi-report|leadership-scorecard|access-review|release-notes)\.yml$|issues/|scripts/(ticket-health-report|leadership-scorecard|access-review)\.sh$|scripts/generate-gtm-kpi-report\.mjs$|LICENSE$|\.editorconfig$)'
+          if [ -z "$changed" ] || echo "$changed" | grep -Evq "$ignore_re"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "Classification: code (at least one runtime-relevant file)"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "Classification: docs-only (all changed files match paths-ignore)"
+          fi
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
 
     steps:
       - name: Checkout
@@ -69,6 +109,8 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
 
     steps:
       - name: Checkout
@@ -92,6 +134,8 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
 
     steps:
       - name: Checkout
@@ -126,6 +170,8 @@ jobs:
     name: Smoke Test (Admin UI)
     runs-on: ubuntu-latest
     environment: staging
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
 
     steps:
       - name: Checkout
@@ -169,7 +215,8 @@ jobs:
   lockfile-composes-with-main:
     name: Lockfile composes with main
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout PR head
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -220,6 +267,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - changes
       - lint
       - build
       - test
@@ -233,6 +281,17 @@ jobs:
           echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
 
           FAILED=0
+
+          # `changes` must succeed. If it fails, downstream jobs skip and
+          # would otherwise silently be treated as passed — defeating the
+          # gate. So fail the gate explicitly on changes != success.
+          CHANGES_RESULT="${{ needs.changes.result }}"
+          if [ "$CHANGES_RESULT" = "success" ]; then
+            echo "| changes | Passed (${{ needs.changes.outputs.code == 'true' && 'code' || 'docs-only' }}) |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| changes | **FAILED** |" >> "$GITHUB_STEP_SUMMARY"
+            FAILED=1
+          fi
 
           for CHECK in lint build test smoke; do
             RESULT=""
