@@ -97,6 +97,12 @@
       "whatToDo": "该怎么办:",
       "tryAgainOrCheckAvatarConfiguration": "重试或检查您的虚拟形象配置。"
     },
+    "mediaType": {
+      "image": "图片",
+      "video": "视频",
+      "sticker": "贴纸",
+      "audio": "音频"
+    },
     "message": {
       "profileImageUpdated": "个人资料图片已更新！",
       "characterReferenceUpdated": "角色参考已更新！",

@@ -97,6 +97,12 @@
       "whatToDo": "What to do:",
       "tryAgainOrCheckAvatarConfiguration": "Try again or check your avatar configuration."
     },
+    "mediaType": {
+      "image": "image",
+      "video": "video",
+      "sticker": "sticker",
+      "audio": "audio"
+    },
     "message": {
       "profileImageUpdated": "Profile image updated!",
       "characterReferenceUpdated": "Character reference updated!",

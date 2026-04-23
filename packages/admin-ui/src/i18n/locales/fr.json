@@ -97,6 +97,12 @@
       "whatToDo": "Que faire:",
       "tryAgainOrCheckAvatarConfiguration": "Réessayez ou vérifiez la configuration de votre avatar."
     },
+    "mediaType": {
+      "image": "image",
+      "video": "vidéo",
+      "sticker": "autocollant",
+      "audio": "audio"
+    },
     "message": {
       "profileImageUpdated": "Image de profil mise à jour!",
       "characterReferenceUpdated": "Référence de personnage mise à jour!",
