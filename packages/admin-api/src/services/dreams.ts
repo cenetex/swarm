@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Dream Service
  *
@@ -22,6 +21,9 @@ import {
 import { searchMemories, reinforceMemory } from './memory.js';
 import { enqueueDreamJob } from './dream-jobs.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('dreams');
 
 const dynamoClient = getDynamoClient();
 
@@ -74,7 +76,9 @@ export async function getDreamState(avatarId: string): Promise<DreamState | null
       reinforcedMemoryIds: result.Item.reinforcedMemoryIds,
     };
   } catch (err) {
-    console.error('[Dreams] Failed to get dream state:', err instanceof Error ? err.message : String(err));
+    log.error('state', 'get_dream_state_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }
@@ -91,7 +95,7 @@ export async function saveDreamState(
 ): Promise<void> {
   const tableName = STATE_TABLE || ADMIN_TABLE;
   if (!tableName) {
-    console.warn('[Dreams] No table configured, skipping dream save');
+    log.warn('state', 'save_skipped_no_table_configured');
     return;
   }
 
@@ -114,10 +118,11 @@ export async function saveDreamState(
     },
   }));
 
-  const memoryInfo = reinforcedMemoryIds?.length
-    ? `, reinforced ${reinforcedMemoryIds.length} memories`
-    : '';
-  console.log(`[Dreams] Saved dream for ${avatarId}, iteration ${iteration}${memoryInfo}`);
+  log.info('state', 'dream_saved', {
+    avatarId,
+    iteration,
+    reinforcedMemoryCount: reinforcedMemoryIds?.length ?? 0,
+  });
 }
 
 /**
@@ -175,7 +180,7 @@ export async function processDreamMemoryResonance(
     );
 
     if (resonantMemories.length === 0) {
-      console.log(`[Dreams] No memories resonated with dream for ${avatarId}`);
+      log.info('resonance', 'no_memories_resonated', { avatarId });
       return [];
     }
 
@@ -188,18 +193,25 @@ export async function processDreamMemoryResonance(
         reinforcedIds.push(memory.id);
       } catch (err) {
         // Log but continue - don't let one failure stop the others
-        console.warn(`[Dreams] Failed to reinforce memory ${memory.id}:`, err instanceof Error ? err.message : String(err));
+        log.warn('resonance', 'reinforce_memory_failed', {
+          memoryId: memory.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
-    console.log(
-      `[Dreams] Dream resonated with ${reinforcedIds.length} memories for ${avatarId}:`,
-      reinforcedIds
-    );
+    log.info('resonance', 'memories_resonated', {
+      avatarId,
+      reinforcedCount: reinforcedIds.length,
+      reinforcedIds,
+    });
 
     return reinforcedIds;
   } catch (err) {
-    console.error(`[Dreams] Memory resonance processing failed for ${avatarId}:`, err instanceof Error ? err.message : String(err));
+    log.error('resonance', 'processing_failed', {
+      avatarId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return [];
   }
 }
@@ -322,14 +334,17 @@ export async function triggerDreamGenerationAsync(
     );
 
     if ('skipped' in result) {
-      console.log(`[Dreams] Dream generation skipped for ${avatarId}: ${result.reason}`);
+      log.info('trigger', 'generation_skipped', { avatarId, reason: result.reason });
       return false;
     }
 
-    console.log(`[Dreams] Enqueued dream generation for ${avatarId}, jobId: ${result.jobId}`);
+    log.info('trigger', 'generation_enqueued', { avatarId, jobId: result.jobId });
     return true;
   } catch (err) {
-    console.error(`[Dreams] Failed to enqueue dream generation for ${avatarId}:`, err instanceof Error ? err.message : String(err));
+    log.error('trigger', 'enqueue_failed', {
+      avatarId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return false;
   }
 }

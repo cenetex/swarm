@@ -57,7 +57,7 @@ const OpenAIMessageSchema = z.object({
 });
 
 const ChatCompletionRequestSchema = z.object({
-  model: z.string(), // Will be parsed as avatar ID
+  model: z.string().optional(), // Will be parsed as avatar ID, optional for scoped keys
   messages: z.array(OpenAIMessageSchema).min(1),
   temperature: z.number().min(0).max(2).optional(),
   max_tokens: z.number().int().positive().optional(),
@@ -362,6 +362,22 @@ export function parseAvatarId(model: string): string {
   }
   // Otherwise treat the whole model as the avatar ID
   return model;
+}
+
+/**
+ * Resolve the effective model for a chat completion request.
+ *
+ * - If the request supplied a model, use it as-is.
+ * - If it didn't and the API key is avatar-scoped, default to `avatar:{avatarId}`.
+ * - Otherwise (wildcard key + no model), return an error.
+ */
+export function resolveModel(
+  requestModel: string | undefined,
+  validation: { avatarId?: string },
+): { model: string } | { error: string } {
+  if (requestModel) return { model: requestModel };
+  if (validation.avatarId) return { model: `avatar:${validation.avatarId}` };
+  return { error: 'model parameter is required for wildcard API keys' };
 }
 
 // =============================================================================
@@ -731,43 +747,26 @@ async function handleChatCompletions(
     return errorResponse(400, 'Invalid JSON body', 'invalid_request_error', undefined, corsHeaders);
   }
 
-  // Parse avatar ID from model
-  const avatarId = parseAvatarId(request.model);
+  const resolved = resolveModel(request.model, validation);
+  if ('error' in resolved) {
+    return errorResponse(400, resolved.error, 'invalid_request_error', undefined, corsHeaders);
+  }
+  const model = resolved.model;
+  const avatarId = parseAvatarId(model);
 
   // Check if API key is authorized for this avatar
   if (validation.avatarId && validation.avatarId !== avatarId) {
     return errorResponse(403, `API key not authorized for avatar: ${avatarId}`, 'permission_error', 'unauthorized_avatar', corsHeaders);
   }
 
-  // #1385: enforce current NFT ownership before serving a completion.
-  // Admin bypass is not used on this endpoint — API keys carry their own
-  // scope (see `validation.avatarId` check above).
-  let avatarRecord: Awaited<ReturnType<typeof avatars.getAvatar>>;
-  try {
-    avatarRecord = await avatars.assertAvatarOwnership(avatarId, validation.session.userId, {
-      isAdmin: false,
-    });
-  } catch (err) {
-    if (err instanceof avatars.AvatarOwnershipError) {
-      if (err.code === 'verification_unavailable') {
-        return errorResponse(
-          503,
-          'Ownership verification temporarily unavailable',
-          'server_error',
-          'ownership_verification_unavailable',
-          corsHeaders,
-        );
-      }
-      return errorResponse(
-        404,
-        `Avatar not found: ${avatarId}`,
-        'not_found',
-        'avatar_not_found',
-        corsHeaders,
-      );
-    }
-    throw err;
-  }
+  // The scoped API key check above (`validation.avatarId !== avatarId`) is
+  // the auth grant for this endpoint. API-key sessions don't carry a wallet
+  // address — `session.userId` is a synthetic `api-key:<hash-prefix>` string
+  // — so calling `assertAvatarOwnership` here always returned not_owner and
+  // collapsed to 404 regardless of the real NFT state. NFT-transfer
+  // revocation on this path should be driven by revoking the API key itself
+  // (UI exposes this), or by a future flag-gated gate analogous to #1416.
+  const avatarRecord = await avatars.getAvatar(avatarId);
   if (!avatarRecord) {
     return errorResponse(404, `Avatar not found: ${avatarId}`, 'not_found', 'avatar_not_found', corsHeaders);
   }
@@ -872,7 +871,7 @@ async function handleChatCompletions(
       return formatStreamingResponse(
         completionId,
         created,
-        request.model,
+        model,
         result.response,
         tokenUsage,
         corsHeaders,
@@ -932,7 +931,7 @@ async function handleChatCompletions(
       id: completionId,
       object: 'chat.completion',
       created,
-      model: request.model,
+      model,
       choices: [{
         index: 0,
         message: {
@@ -977,7 +976,7 @@ async function handleChatCompletions(
     if (request.stream) {
       const completionId = `chatcmpl-${requestId}`;
       const created = Math.floor(Date.now() / 1000);
-      return formatStreamingError(completionId, created, request.model, errorMessage, corsHeaders);
+      return formatStreamingError(completionId, created, model, errorMessage, corsHeaders);
     }
 
     return errorResponse(500, `Chat completion failed: ${errorMessage}`, 'server_error', undefined, corsHeaders);
@@ -1244,7 +1243,7 @@ export async function createApiKey(params: {
       pk: params.avatarId ? `AVATAR#${params.avatarId}` : 'GLOBAL',
       sk: `API_KEY#${record.keyHash.slice(0, 16)}`,
     },
-    UpdateExpression: 'SET keyPrefix = :keyPrefix, keyHash = :keyHash, #name = :name, createdAt = :createdAt',
+    UpdateExpression: 'SET keyPrefix = :keyPrefix, keyHash = :keyHash, #name = :name, createdAt = :createdAt, createdBy = :createdBy',
     ExpressionAttributeNames: {
       '#name': 'name',
     },
@@ -1253,6 +1252,7 @@ export async function createApiKey(params: {
       ':keyHash': fullRecord.keyHash,
       ':name': fullRecord.name,
       ':createdAt': fullRecord.createdAt,
+      ':createdBy': fullRecord.createdBy,
     },
   }));
 

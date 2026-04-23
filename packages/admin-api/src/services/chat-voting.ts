@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Chat Modification Voting Service
  * 
@@ -21,6 +20,9 @@ import type {
 } from '../types.js';
 import * as telegram from './telegram.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('chat-voting');
 
 const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
@@ -442,7 +444,9 @@ export async function executeModification(
 
     return { success: true };
   } catch (err) {
-    console.error('Failed to execute chat modification:', err instanceof Error ? err.message : String(err));
+    log.error('voting', 'chat_modification_execute_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return { success: false, error: String(err) };
   }
 }

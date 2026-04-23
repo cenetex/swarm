@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Initiative Service
  *
@@ -38,6 +37,9 @@ import type {
 export type { InitiativeResult, InterestCheckResult } from '../types.js';
 import { rollD20 } from './avatar-stats.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('initiative');
 
 const dynamoClient = getDynamoClient();
 
@@ -516,10 +518,7 @@ export async function coordinateInitiative(
   const round = await getOrCreateInitiativeRound(chatId, messageId);
   
   // Log round creation/join
-  console.log(JSON.stringify({
-    level: 'INFO',
-    subsystem: 'initiative',
-    event: 'round_joined',
+  log.info('round', 'round_joined', {
     roundId,
     avatarId,
     chatId,
@@ -527,7 +526,7 @@ export async function coordinateInitiative(
     roundPhase: round.phase,
     roundStartedAt: round.startedAt,
     isFromBot: message.isFromBot,
-  }));
+  });
 
   // Step 2: Interest check (now includes bot interaction awareness)
   const interest = checkInterest(
@@ -539,10 +538,7 @@ export async function coordinateInitiative(
   );
   
   // Log interest check result
-  console.log(JSON.stringify({
-    level: 'INFO',
-    subsystem: 'initiative',
-    event: 'interest_check',
+  log.info('round', 'interest_check', {
     roundId,
     avatarId,
     interested: interest.interested,
@@ -554,7 +550,7 @@ export async function coordinateInitiative(
     recentResponseAge,
     lastBotResponseAge,
     isFromBot: message.isFromBot,
-  }));
+  });
 
   // Step 3: Record our roll
   const rollResult = await recordAvatarRoll(
@@ -567,16 +563,13 @@ export async function coordinateInitiative(
 
   if (!interest.interested || !rollResult) {
     // Log skip decision
-    console.log(JSON.stringify({
-      level: 'INFO',
-      subsystem: 'initiative',
-      event: 'avatar_skipped',
+    log.info('round', 'avatar_skipped', {
       roundId,
       avatarId,
       reason: 'not_interested',
       interestRoll: interest.roll,
       interestDC: interest.dc,
-    }));
+    });
     
     return {
       action: 'skip',
@@ -585,16 +578,13 @@ export async function coordinateInitiative(
   }
   
   // Log initiative roll
-  console.log(JSON.stringify({
-    level: 'INFO',
-    subsystem: 'initiative',
-    event: 'initiative_rolled',
+  log.info('round', 'initiative_rolled', {
     roundId,
     avatarId,
     roll: rollResult.roll,
     total: rollResult.total,
     dexModifier: stats.modifiers.DEX,
-  }));
+  });
 
   // Step 4: Attempt to claim winner
   const claimResult = await attemptWinnerClaim(
@@ -606,15 +596,12 @@ export async function coordinateInitiative(
 
   if (claimResult.isWinner) {
     // Log winner
-    console.log(JSON.stringify({
-      level: 'INFO',
-      subsystem: 'initiative',
-      event: 'initiative_won',
+    log.info('round', 'initiative_won', {
       roundId,
       avatarId,
       myRoll: rollResult.total,
       action: 'respond',
-    }));
+    });
     
     return {
       action: 'respond',
@@ -625,17 +612,14 @@ export async function coordinateInitiative(
   }
 
   // Log loss
-  console.log(JSON.stringify({
-    level: 'INFO',
-    subsystem: 'initiative',
-    event: 'initiative_lost',
+  log.info('round', 'initiative_lost', {
     roundId,
     avatarId,
     myRoll: rollResult.total,
     winnerId: claimResult.winnerId,
     winnerRoll: claimResult.winnerRoll,
     action: 'react',
-  }));
+  });
 
   // Not the winner - can react
   return {

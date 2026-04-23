@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Jobs Handler
  * Lightweight endpoint for polling media job status
@@ -14,6 +13,9 @@ import * as mediaJobs from '../services/media-jobs.js';
 import * as chatJobs from '../services/chat-jobs.js';
 import * as avatars from '../services/avatars.js';
 import { getCorsHeaders } from '../http/cors.js';
+import { createSystemLogger } from '../services/structured-logger.js';
+
+const log = createSystemLogger('jobs-handler');
 
 /**
  * Lambda handler for job status API.
@@ -221,7 +223,9 @@ export async function handler(
       };
     }
 
-    console.error('Jobs handler error:', error instanceof Error ? error.message : String(error));
+    log.error('handler', 'unhandled_exception', {
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     return {
       statusCode: 500,

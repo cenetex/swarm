@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Sticker Processor Service
  *
@@ -12,6 +11,9 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import { buildMediaUrl } from '../../utils/media-url.js';
+import { createSystemLogger } from '../structured-logger.js';
+
+const log = createSystemLogger('sticker-processor');
 
 // Lazy load sharp to avoid import failures on platforms without native binaries
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -79,7 +81,7 @@ async function removeCheckerboardBackground(imageBuffer: Buffer): Promise<Buffer
   const { width, height, channels } = info;
   const pixels = new Uint8Array(data);
 
-  console.log('Removing background via edge flood fill (gray + dark)', { width, height, channels });
+  log.info('bg_removal', 'edge_flood_fill_started', { width, height, channels });
 
   const pixelCount = width * height;
   const coloredThreshold = 22; // foreground seed (slightly lower to catch more colors)
@@ -176,7 +178,7 @@ async function removeCheckerboardBackground(imageBuffer: Buffer): Promise<Buffer
   variance /= edgeSamples.length;
   const isUniformEdge = variance < 800; // Low variance = uniform background color
 
-  console.log('Edge color analysis', {
+  log.info('bg_removal', 'edge_color_analysis', {
     avgR: Math.round(avgR), avgG: Math.round(avgG), avgB: Math.round(avgB),
     edgeLuma: Math.round(edgeLuma), variance: Math.round(variance), isUniformEdge
   });
@@ -245,7 +247,7 @@ async function removeCheckerboardBackground(imageBuffer: Buffer): Promise<Buffer
     }
   }
 
-  console.log('Background removal complete', {
+  log.info('bg_removal', 'bg_removal_complete', {
     totalPixels: pixelCount,
     removedPixels: removedCount,
     barrierHits,
@@ -314,7 +316,7 @@ export async function processImageForSticker(
 
     // Step 1: Remove checkerboard background if requested
     if (options.removeBackground) {
-      console.log('Attempting to remove checkerboard background...');
+      log.info('processing', 'bg_removal_attempt_started');
       workingBuffer = await removeCheckerboardBackground(imageBuffer);
     }
 
@@ -323,7 +325,7 @@ export async function processImageForSticker(
     const originalWidth = metadata.width || 512;
     const originalHeight = metadata.height || 512;
 
-    console.log('Processing image for sticker', {
+    log.info('processing', 'sticker_processing_started', {
       originalSize: imageBuffer.length,
       afterBgRemoval: workingBuffer.length,
       originalWidth,
@@ -378,7 +380,7 @@ export async function processImageForSticker(
         .toBuffer();
     }
 
-    console.log('Sticker processed', {
+    log.info('processing', 'sticker_processed', {
       newSize: processedBuffer.length,
       newWidth,
       newHeight,
@@ -391,7 +393,9 @@ export async function processImageForSticker(
       height: newHeight,
     };
   } catch (error) {
-    console.error('Error processing image with sharp', { error });
+    log.error('processing', 'sharp_processing_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     // Fallback: try to detect image dimensions from PNG header
     let width = 512;
@@ -486,7 +490,7 @@ export async function uploadStickerToS3(
     },
   }));
 
-  console.log('Uploaded sticker to S3', { s3Key, id });
+  log.info('upload', 'sticker_uploaded', { s3Key, id });
 
   const url = buildMediaUrl(s3Key, bucketName, process.env.CDN_URL);
 
@@ -543,7 +547,10 @@ export async function saveStickerSetManifest(
     ContentType: 'application/json',
   }));
 
-  console.log('Saved sticker set manifest', { setName: manifest.name, stickerCount: manifest.stickers.length });
+  log.info('manifest', 'manifest_saved', {
+    setName: manifest.name,
+    stickerCount: manifest.stickers.length,
+  });
 }
 
 // ============================================================================

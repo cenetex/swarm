@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Avatar Inhabitation Service
  *
@@ -25,6 +24,9 @@ import { getGateStatus, type GateStatus } from './web3/nft-gate.js';
 import { verifyGateBurn } from './web3/lineage-nft.js';
 import { canInhabitAscendedAvatar } from './avatar-ascend.js';
 import { getDynamoClient } from './dynamo-client.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('avatar-ownership');
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 const GSI1_NAME = 'GSI1';
@@ -110,9 +112,10 @@ export async function getInhabitedAvatar(
     }
 
     if (legacyResult.Items.length > 1) {
-      console.error(
-        `[Inhabit] Data corruption: wallet ${walletAddress.slice(0, 8)}... has ${legacyResult.Items.length} legacy mappings (expected 1). Returning first by pk.`
-      );
+      log.error('inhabit', 'data_corruption_multiple_legacy_mappings', {
+        walletPrefix: walletAddress.slice(0, 8),
+        count: legacyResult.Items.length,
+      });
     }
 
     const pk = legacyResult.Items[0].pk as string;
@@ -256,9 +259,10 @@ export async function inhabitAvatar(
       })
     );
 
-    console.log(
-      `[Inhabit] Wallet ${walletAddress.slice(0, 8)}... inhabited avatar ${avatarId} (atomic)`
-    );
+    log.info('inhabit', 'avatar_inhabited', {
+      walletPrefix: walletAddress.slice(0, 8),
+      avatarId,
+    });
 
     return {
       success: true,
@@ -431,9 +435,12 @@ export async function abandonAvatar(
       })
     );
 
-    console.log(
-      `[Abandon] Wallet ${walletAddress.slice(0, 8)}... abandoned avatar ${avatar.avatarId} (era ${newEra}, burn tx: ${burnTxSignature.slice(0, 16)}...)`
-    );
+    log.info('abandon', 'avatar_abandoned', {
+      walletPrefix: walletAddress.slice(0, 8),
+      avatarId: avatar.avatarId,
+      era: newEra,
+      burnTxPrefix: burnTxSignature.slice(0, 16),
+    });
 
     // Get updated gate status
     const gateStatus = await getGateStatus(walletAddress);
@@ -543,9 +550,11 @@ export async function abandonAvatarLegacy(
     })
   );
 
-  console.log(
-    `[Abandon] LEGACY: Wallet ${walletAddress.slice(0, 8)}... abandoned avatar ${avatar.avatarId} (era ${newEra})`
-  );
+  log.info('abandon', 'avatar_abandoned_legacy', {
+    walletPrefix: walletAddress.slice(0, 8),
+    avatarId: avatar.avatarId,
+    era: newEra,
+  });
 
   return {
     success: true,
@@ -625,7 +634,7 @@ export async function reconcileInhabitantMappings(
     errors: [],
   };
 
-  console.log(`[Reconcile] Starting reconciliation (dryRun=${dryRun})`);
+  log.info('reconcile', 'reconciliation_started', { dryRun });
 
   try {
     // Scan for all INHABITANT# mappings
@@ -686,7 +695,7 @@ export async function reconcileInhabitantMappings(
               })
             );
             result.fixed++;
-            console.log(`[Reconcile] Deleted orphaned mapping for avatar ${avatarId}`);
+            log.info('reconcile', 'orphaned_mapping_deleted', { avatarId });
           }
         } else if (avatar.inhabitantWallet !== walletAddress) {
           // Avatar has different or no inhabitant - delete stale mapping
@@ -707,17 +716,17 @@ export async function reconcileInhabitantMappings(
               })
             );
             result.fixed++;
-            console.log(`[Reconcile] Deleted stale mapping for avatar ${avatarId}`);
+            log.info('reconcile', 'stale_mapping_deleted', { avatarId });
           }
         }
       }
 
       if (mappings.length > 0) {
-        console.log(`[Reconcile] Scanned ${mappingCount} inhabitant mappings so far`);
+        log.info('reconcile', 'mappings_scanned_progress', { mappingCount });
       }
     } while (mappingLastKey);
 
-    console.log(`[Reconcile] Found ${mappingCount} inhabitant mappings`);
+    log.info('reconcile', 'mappings_scan_complete', { mappingCount });
 
     // Also scan for avatars with inhabitantWallet but no mapping
     let avatarCount = 0;
@@ -776,23 +785,27 @@ export async function reconcileInhabitantMappings(
               })
             );
             result.fixed++;
-            console.log(`[Reconcile] Created missing mapping for avatar ${avatarId}`);
+            log.info('reconcile', 'missing_mapping_created', { avatarId });
           }
         }
       }
 
       if (avatars.length > 0) {
-        console.log(`[Reconcile] Scanned ${avatarCount} inhabited avatars so far`);
+        log.info('reconcile', 'avatars_scanned_progress', { avatarCount });
       }
     } while (avatarLastKey);
 
-    console.log(`[Reconcile] Found ${avatarCount} avatars with inhabitantWallet`);
+    log.info('reconcile', 'avatars_scan_complete', { avatarCount });
 
-    console.log(
-      `[Reconcile] Complete: ${result.orphanedMappings} orphaned mappings, ${result.orphanedAgents} orphaned avatars, ${result.fixed} fixed`
-    );
+    log.info('reconcile', 'reconciliation_complete', {
+      orphanedMappings: result.orphanedMappings,
+      orphanedAgents: result.orphanedAgents,
+      fixed: result.fixed,
+    });
   } catch (err) {
-    console.error('[Reconcile] Error:', err instanceof Error ? err.message : String(err));
+    log.error('reconcile', 'reconciliation_error', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     result.errors.push(`Scan error: ${err instanceof Error ? err.message : 'Unknown'}`);
   }
 

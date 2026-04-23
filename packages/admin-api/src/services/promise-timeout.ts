@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Promise.all with timeout protection
  *
@@ -7,6 +6,9 @@
  *
  * @module promise-timeout
  */
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('promise-timeout');
 
 /** Default timeout for DynamoDB operations (10 seconds) */
 export const DEFAULT_TIMEOUT_MS = 10_000;
@@ -75,13 +77,11 @@ export async function promiseAllSettledWithTimeout<T>(
       try {
         const result = await raceWithTimeout(promise, timeoutMs);
         if (result === TIMEOUT_SENTINEL) {
-          console.warn(JSON.stringify({
-            level: 'warn',
-            event: 'promise_timeout',
+          log.warn('timeout', 'promise_timeout', {
             label: label ?? 'unknown',
             index,
             timeoutMs,
-          }));
+          });
           return { status: 'timed_out', index } as SettledTimedOut;
         }
         return { status: 'fulfilled', value: result as T } as SettledFulfilled<T>;

@@ -6,12 +6,13 @@
  * or OAuth flows like TwitterConnectPrompt.
  */
 import { useState, useCallback } from 'react';
+import type { ToolSubmitResult } from './types';
 
 export type PromptPhase = 'idle' | 'processing' | 'success' | 'error';
 
 interface UseToolPromptStateOptions {
   /** Called when `submit` is invoked. Should perform the async work. */
-  onSubmit: (toolCallId: string, result: unknown) => void | Promise<void>;
+  onSubmit: (toolCallId: string, result: unknown) => Promise<ToolSubmitResult>;
   toolCallId: string;
 }
 
@@ -39,9 +40,16 @@ export function useToolPromptState({
       setError(null);
 
       try {
-        await onSubmit(toolCallId, result);
-        setPhase('success');
+        const submitResult = await onSubmit(toolCallId, result);
+        if (submitResult.ok) {
+          setPhase('success');
+        } else {
+          setPhase('error');
+          setError(submitResult.error);
+        }
       } catch (err) {
+        // Defensive catch for onSubmit implementations that predate the
+        // ToolSubmitResult contract and still throw on failure.
         setPhase('error');
         setError(err instanceof Error ? err.message : 'Something went wrong');
       }

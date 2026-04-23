@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Media Generation Service
  * Handles image, video, and sticker generation with multiple providers
@@ -25,7 +24,10 @@ import { getReplicateVersion } from '../models-registry.js';
 import { validateReplicateInputWithSchema } from './replicate-schema.js';
 import type { MediaJob, GalleryItem, SecretType, AICapability } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createSystemLogger } from '../structured-logger.js';
 import { buildMediaUrl, canonicalizeMediaUrl } from '../../utils/media-url.js';
+
+const log = createSystemLogger('media');
 
 const s3Client = new S3Client({});
 const sqsClient = new SQSClient({});
@@ -65,9 +67,11 @@ const coreTrialCreditConsumer = createTrialCreditConsumer(resolverConfig)!;
 
 // Log CDN configuration on cold start
 if (!CDN_URL) {
-  console.warn('[Media] WARNING: CDN_URL is not set! S3 bucket is private, images will not be accessible via direct S3 URLs.');
+  log.warn('config', 'cdn_url_not_set', {
+    message: 'CDN_URL is not set! S3 bucket is private, images will not be accessible via direct S3 URLs.',
+  });
 } else {
-  console.log(`[Media] CDN configured: ${CDN_URL}`);
+  log.info('config', 'cdn_configured', { cdnUrl: CDN_URL });
 }
 
 // Timeout for external fetch operations (10 seconds)
@@ -115,7 +119,7 @@ async function makeUrlAccessible(url: string): Promise<string> {
   }
 
   // No CDN - generate a signed URL for temporary public access
-  console.log(`[Media] No CDN, generating signed URL for: ${url.slice(0, 50)}...`);
+  log.info('url', 'signed_url_requested', { urlPreview: url.slice(0, 50) });
   const s3UrlPattern = /https:\/\/([^.]+)\.s3[^/]*\.amazonaws\.com\/(.+)/;
   const match = url.match(s3UrlPattern);
   if (match) {
@@ -141,7 +145,10 @@ async function makeUrlsAccessible(urls: string[]): Promise<string[]> {
     if (result.status === 'fulfilled') {
       successfulUrls.push(result.value);
     } else {
-      console.warn(`[Media] Failed to make URL accessible: ${urls[i]?.slice(0, 50)}...`, result.reason);
+      log.warn('url', 'url_accessibility_failed', {
+        urlPreview: urls[i]?.slice(0, 50),
+        reason: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
       // Include the original URL as fallback
       successfulUrls.push(urls[i]);
     }
@@ -211,9 +218,15 @@ async function getImageGenerationApiKey(avatarId: string): Promise<ResolvedApiKe
   const resolved = await coreApiKeyResolver(avatarId, 'replicate');
   const isTrialUsage = resolved.source === 'trial';
   if (resolved.source === 'trial' && resolved.trialCreditsAvailable !== undefined) {
-    console.log(`[Media] Using Replicate trial key: avatar=${avatarId}, credits available=${resolved.trialCreditsAvailable}`);
+    log.info('api_key', 'trial_key_used', {
+      avatarId,
+      creditsAvailable: resolved.trialCreditsAvailable,
+    });
   } else {
-    console.log(`[Media] Using Replicate key source: avatar=${avatarId}, source=${resolved.source}`);
+    log.info('api_key', 'key_source_resolved', {
+      avatarId,
+      source: resolved.source,
+    });
   }
   return {
     key: resolved.key,
@@ -439,7 +452,13 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
   const modelId = model || await getConfiguredModel(avatarId, 'image_generation');
   const version = getReplicateVersion(modelId);
 
-  console.log(`[Media] Using image model: ${modelId}${version ? ` (version: ${version.slice(0, 8)}...)` : ' (using /models API)'}; keySource=${apiKeySource}`);
+  log.info('image_gen', 'image_model_selected', {
+    avatarId,
+    modelId,
+    version: version ? version.slice(0, 8) : undefined,
+    endpoint: version ? 'predictions' : 'models',
+    keySource: apiKeySource,
+  });
 
   // Convert reference image URLs to publicly accessible URLs
   // (CDN URLs if available, otherwise signed S3 URLs)
@@ -448,7 +467,10 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     : [];
 
   if (accessibleReferenceUrls.length > 0) {
-    console.log(`[Media] Reference images converted to accessible URLs: ${accessibleReferenceUrls.length}`);
+    log.info('image_gen', 'reference_urls_resolved', {
+      avatarId,
+      count: accessibleReferenceUrls.length,
+    });
   }
 
   // Build generic input — schema validation will strip unsupported params
@@ -481,13 +503,21 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     );
     validatedInput = cleanedInput;
     if (adjustments.length > 0) {
-      console.log(`[Media] Schema validation adjusted input for ${modelId}:`, adjustments);
+      log.info('image_gen', 'schema_adjusted_input', { modelId, adjustments });
     }
   } catch (err) {
-    console.warn(`[Media] Schema validation failed for ${modelId}, sending generic input:`, err);
+    log.warn('image_gen', 'schema_validation_failed', {
+      modelId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
-  console.log(`Generating image with ${modelId}, refs: ${referenceImageUrls.length}, prompt: ${prompt.slice(0, 50)}...`);
+  log.info('image_gen', 'image_gen_started', {
+    avatarId,
+    modelId,
+    refs: referenceImageUrls.length,
+    promptPreview: prompt.slice(0, 50),
+  });
 
   // Start Replicate prediction - use version-based or model-based API
   const endpoint = version
@@ -515,13 +545,21 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
   if (!response.ok) {
     const errorText = await response.text();
     const status = response.status;
-    console.error(`Replicate API error: ${status}`, errorText);
+    log.error('image_gen', 'replicate_api_error', {
+      avatarId,
+      status,
+      errorText: errorText.slice(0, 500),
+    });
 
     // If version-based run fails due to stale/invalid version, retry via /models endpoint.
     if (shouldRetryAsModelEndpoint(status, errorText, Boolean(version))) {
       const fallbackEndpoint = `https://api.replicate.com/v1/models/${modelId}/predictions`;
       const fallbackBody = { input: requestBody.input };
-      console.warn(`[Media] Retrying image generation via model endpoint: ${fallbackEndpoint}`);
+      log.warn('image_gen', 'retrying_via_model_endpoint', {
+        avatarId,
+        modelId,
+        fallbackEndpoint,
+      });
       response = await fetch(fallbackEndpoint, {
         method: 'POST',
         headers: {
@@ -535,7 +573,11 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
       if (!response.ok) {
         const fallbackErrorText = await response.text();
         const fallbackStatus = response.status;
-        console.error(`Replicate API error (fallback): ${fallbackStatus}`, fallbackErrorText);
+        log.error('image_gen', 'replicate_api_error_fallback', {
+          avatarId,
+          status: fallbackStatus,
+          errorText: fallbackErrorText.slice(0, 500),
+        });
         throw new Error(`Image generation failed: ${summarizeReplicateError(fallbackErrorText, fallbackStatus)}`);
       }
     } else {
@@ -551,7 +593,10 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     error?: string;
   };
 
-  console.log(`Prediction started: ${prediction.id}, status: ${prediction.status}`);
+  log.info('image_gen', 'prediction_started', {
+    predictionId: prediction.id,
+    status: prediction.status,
+  });
 
   // Poll for completion
   const maxAttempts = 120; // 120 seconds max for slower models
@@ -559,7 +604,10 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
 
   while (prediction.status === 'starting' || prediction.status === 'processing') {
     if (attempts++ >= maxAttempts) {
-      console.error(`Prediction ${prediction.id} timed out after ${attempts} seconds`);
+      log.error('image_gen', 'prediction_timeout', {
+        predictionId: prediction.id,
+        attempts,
+      });
       throw new Error('Image generation timed out');
     }
 
@@ -571,14 +619,24 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     prediction = await pollResponse.json() as typeof prediction;
 
     if (attempts % 10 === 0) {
-      console.log(`Prediction ${prediction.id} still ${prediction.status} after ${attempts}s`);
+      log.info('image_gen', 'prediction_polling', {
+        predictionId: prediction.id,
+        status: prediction.status,
+        attempts,
+      });
     }
   }
 
-  console.log(`Prediction ${prediction.id} completed with status: ${prediction.status}`);
+  log.info('image_gen', 'prediction_complete', {
+    predictionId: prediction.id,
+    status: prediction.status,
+  });
 
   if (prediction.status === 'failed') {
-    console.error(`Prediction failed:`, prediction.error);
+    log.error('image_gen', 'prediction_failed', {
+      predictionId: prediction.id,
+      error: prediction.error,
+    });
     throw new Error(`Image generation failed: ${prediction.error || 'Unknown error'}`);
   }
 
@@ -597,40 +655,49 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
   }
 
   if (!outputUrl) {
-    console.error('No output URL in prediction:', JSON.stringify(prediction));
+    log.error('image_gen', 'no_output_url', {
+      predictionId: prediction.id,
+      prediction: JSON.stringify(prediction).slice(0, 500),
+    });
     throw new Error('No image returned from Replicate');
   }
 
-  console.log(`Image generated by Replicate: ${outputUrl}`);
+  log.info('image_gen', 'image_generated', { outputUrl });
 
   // Download from Replicate
-  console.log(`Downloading image from Replicate...`);
+  log.info('image_gen', 'download_started');
   const imageResponse = await fetch(outputUrl);
   if (!imageResponse.ok) {
-    console.error(`Failed to download from Replicate: ${imageResponse.status} ${imageResponse.statusText}`);
+    log.error('image_gen', 'download_failed', {
+      status: imageResponse.status,
+      statusText: imageResponse.statusText,
+    });
     throw new Error(`Failed to download generated image: ${imageResponse.status}`);
   }
 
   const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-  console.log(`Downloaded image: ${imageBuffer.length} bytes`);
+  log.info('image_gen', 'download_complete', { bytes: imageBuffer.length });
 
   // Upload to S3
   const imageId = gallery.generateGalleryId();
   const s3Key = `avatars/${avatarId}/images/${imageId}.png`;
 
-  console.log(`Uploading to S3: bucket=${MEDIA_BUCKET}, key=${s3Key}`);
+  log.info('image_gen', 's3_upload_started', { bucket: MEDIA_BUCKET, s3Key });
   await s3Client.send(new PutObjectCommand({
     Bucket: MEDIA_BUCKET,
     Key: s3Key,
     Body: imageBuffer,
     ContentType: 'image/png',
   }));
-  console.log(`S3 upload successful`);
+  log.info('image_gen', 's3_upload_complete', { s3Key });
 
   // Consume trial credit AFTER successful generation (only for trial users)
   if (isTrialUsage) {
     const remaining = await consumeTrialCreditAfterSuccess(avatarId);
-    console.log(`[Media] Trial credit consumed after success: avatar=${avatarId}, remaining=${remaining}`);
+    log.info('credits', 'trial_credit_consumed', {
+      avatarId,
+      remaining,
+    });
   }
 
   // Consume rate-limit credit (for non-trial users only to avoid double-charging)
@@ -645,7 +712,10 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
   // IMPORTANT: CDN_URL should be set to your CloudFront distribution URL
   // If not set, falls back to direct S3 URL (which requires public bucket)
   const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
-  console.log(`Public URL: ${publicUrl} (CDN_URL=${CDN_URL || 'NOT SET'})`);
+  log.info('image_gen', 'public_url_built', {
+    publicUrl,
+    cdnConfigured: Boolean(CDN_URL),
+  });
 
   const galleryItem = await gallery.addToGallery(avatarId, {
     id: imageId,
@@ -657,7 +727,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     platform,
   });
 
-  console.log(`Gallery item created: ${galleryItem.id}`);
+  log.info('image_gen', 'gallery_item_created', { galleryItemId: galleryItem.id });
   return galleryItem;
 }
 
@@ -728,7 +798,12 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
   const modelId = model || await getConfiguredModel(avatarId, 'image_generation');
   const version = getReplicateVersion(modelId);
 
-  console.log(`[Media] Async image gen using model: ${modelId}${version ? ` (version: ${version.slice(0, 8)}...)` : ' (using /models API)'}`);
+  log.info('async_image', 'async_image_model_selected', {
+    avatarId,
+    modelId,
+    version: version ? version.slice(0, 8) : undefined,
+    endpoint: version ? 'predictions' : 'models',
+  });
 
   // Convert reference image URLs to publicly accessible URLs
   const accessibleReferenceUrls = referenceImageUrls.length > 0
@@ -736,7 +811,10 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     : [];
 
   if (accessibleReferenceUrls.length > 0) {
-    console.log(`[Media] Reference images converted to accessible URLs: ${accessibleReferenceUrls.length}`);
+    log.info('async_image', 'reference_urls_resolved', {
+      avatarId,
+      count: accessibleReferenceUrls.length,
+    });
   }
 
   // Build generic input — schema validation will strip unsupported params
@@ -767,10 +845,13 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     );
     asyncValidatedInput = cleanedInput;
     if (adjustments.length > 0) {
-      console.log(`[Media] Async schema validation adjusted input for ${modelId}:`, adjustments);
+      log.info('async_image', 'schema_adjusted_input', { modelId, adjustments });
     }
   } catch (err) {
-    console.warn(`[Media] Async schema validation failed for ${modelId}, sending generic input:`, err);
+    log.warn('async_image', 'schema_validation_failed', {
+      modelId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Create job record
@@ -787,7 +868,12 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     purpose,
   });
 
-  console.log(`[Media] Starting async image generation: job=${jobId}, model=${modelId}, refs=${referenceImageUrls.length}`);
+  log.info('async_image', 'async_job_start', {
+    jobId,
+    avatarId,
+    modelId,
+    refs: referenceImageUrls.length,
+  });
 
   // Start Replicate prediction with webhook (async - don't wait)
   const webhookUrl = process.env.REPLICATE_WEBHOOK_URL;
@@ -833,7 +919,11 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
         fallbackBody.webhook_events_filter = requestBody.webhook_events_filter;
       }
 
-      console.warn(`[Media] Retrying async image generation via model endpoint: ${fallbackEndpoint}`);
+      log.warn('async_image', 'retrying_via_model_endpoint', {
+        jobId,
+        modelId,
+        fallbackEndpoint,
+      });
       response = await fetch(fallbackEndpoint, {
         method: 'POST',
         headers: {
@@ -865,7 +955,11 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
   // would need significant changes to consume on completion)
   if (isTrialUsage) {
     const remaining = await consumeTrialCreditAfterSuccess(avatarId);
-    console.log(`[Media] Trial credit consumed for async job: avatar=${avatarId}, remaining=${remaining}`);
+    log.info('credits', 'async_trial_credit_consumed', {
+      avatarId,
+      jobId,
+      remaining,
+    });
   } else {
     await credits.consumeCredit(avatarId, 'generate_image');
   }
@@ -873,7 +967,10 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
   // Energy was already consumed in burst fallback (if applicable) during the
   // unified checkMediaWithEnergyFallback call. No separate consumption needed.
 
-  console.log(`[Media] Async image job started: job=${jobId}, prediction=${prediction.id}`);
+  log.info('async_image', 'async_job_submitted', {
+    jobId,
+    predictionId: prediction.id,
+  });
 
   return job;
 }
@@ -918,7 +1015,7 @@ export async function generateVideo(options: GenerateVideoOptions): Promise<Medi
 
   // Get model - use provided model, avatar's configured model, or system default
   const videoModel = model || await getConfiguredModel(avatarId, 'video_generation');
-  console.log(`[Media] Using video model: ${videoModel}`);
+  log.info('video_gen', 'video_model_selected', { avatarId, videoModel });
 
   // Use the models API endpoint (video models typically don't use version hashes)
   // Format: https://api.replicate.com/v1/models/{owner}/{name}/predictions
@@ -1111,7 +1208,10 @@ export async function generateProfileImageAsync(
 
   const consumed = await credits.consumeCredit(avatarId, 'set_profile_image');
   if (!consumed) {
-    console.warn(`[Credits] Failed to consume credit for set_profile_image: avatar=${avatarId}`);
+    log.warn('credits', 'credit_consume_failed', {
+      avatarId,
+      action: 'set_profile_image',
+    });
   }
 
   return job;
@@ -1294,15 +1394,21 @@ export async function setCharacterReference(
     }));
   } catch (dbError) {
     // Rollback: delete the orphaned S3 file
-    console.error(`[Media] DynamoDB update failed for character reference, rolling back S3 upload: ${s3Key}`, dbError);
+    log.error('char_reference', 'dynamo_update_failed_rolling_back', {
+      s3Key,
+      error: dbError instanceof Error ? dbError.message : String(dbError),
+    });
     try {
       await s3Client.send(new DeleteObjectCommand({
         Bucket: MEDIA_BUCKET,
         Key: s3Key,
       }));
-      console.log(`[Media] Rollback successful: deleted ${s3Key}`);
+      log.info('char_reference', 'rollback_successful', { s3Key });
     } catch (rollbackError) {
-      console.error(`[Media] Rollback failed: could not delete ${s3Key}`, rollbackError);
+      log.error('char_reference', 'rollback_failed', {
+        s3Key,
+        error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+      });
     }
     throw new Error('Failed to save character reference. Please try again.');
   }
@@ -1488,7 +1594,10 @@ export async function deleteReferenceImage(
       Key: image.s3Key,
     }));
   } catch (err) {
-    console.warn('Failed to delete S3 object:', err instanceof Error ? err.message : String(err));
+    log.warn('s3', 's3_delete_failed', {
+      s3Key: image.s3Key,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Delete from DynamoDB

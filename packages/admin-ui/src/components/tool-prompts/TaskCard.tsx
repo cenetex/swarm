@@ -9,6 +9,7 @@ import { useTaskCardStore, type TaskCard as TaskCardType } from '../../store/tas
 import { useWorkspaceStore } from '../../store/workspace';
 import { ToolPrompt } from './index';
 import { PromptSuccess, PromptError } from './PromptStatus';
+import type { ToolSubmitResult } from './types';
 import type { ToolCall } from '../../types';
 
 /** Human-readable labels for tool names. */
@@ -74,6 +75,18 @@ function getSuccessMessage(card: TaskCardType): string {
   }
 }
 
+/**
+ * Translate raw server errors to plain-English recovery messages. Keeps the
+ * original text as a fallback so we don't hide genuinely new failure modes.
+ */
+function humanizeTaskError(raw: string, toolName: string): string {
+  if (/Unknown or expired toolCallId/i.test(raw)) {
+    const label = TOOL_LABELS[toolName] ?? 'this form';
+    return `${label} expired before you submitted it. Ask again to get a fresh one.`;
+  }
+  return raw;
+}
+
 /** Status-aware summary — returns appropriate text for any resolved status. */
 function getResolvedSummary(card: TaskCardType): string {
   switch (card.status) {
@@ -99,7 +112,7 @@ const STATUS_COLORS = {
 
 interface TaskCardProps {
   cardId: string;
-  onSubmit: (toolCallId: string, result: unknown) => void;
+  onSubmit: (toolCallId: string, result: unknown) => Promise<ToolSubmitResult>;
   disabled?: boolean;
 }
 
@@ -168,11 +181,12 @@ export function TaskCard({ cardId, onSubmit, disabled }: TaskCardProps) {
             )}
             {card.status === 'failed' && (
               <PromptError
-                message={
+                message={humanizeTaskError(
                   typeof (card.result as Record<string, unknown>)?.error === 'string'
                     ? (card.result as Record<string, unknown>).error as string
-                    : 'Action failed'
-                }
+                    : 'Action failed',
+                  card.toolName,
+                )}
               />
             )}
             {card.status === 'cancelled' && (

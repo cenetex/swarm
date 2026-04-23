@@ -119,7 +119,11 @@ describe('Promise Timeout Utilities', () => {
     });
 
     it('should log warnings for timed out promises', async () => {
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      // Migrated 2026-04-22 (issue #1363): the timeout warning now flows through
+      // createSystemLogger('promise-timeout'), which writes its CloudWatch
+      // transport via console.log (NOT console.warn). The log level is still
+      // WARN; only the transport sink changed.
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       await promiseAllSettledWithTimeout(
         [delayed('slow', 500)],
@@ -127,10 +131,18 @@ describe('Promise Timeout Utilities', () => {
         'test-label',
       );
 
-      expect(warnSpy).toHaveBeenCalledTimes(1);
-      const logOutput = warnSpy.mock.calls[0][0];
-      const parsed = JSON.parse(logOutput);
+      const timeoutCall = logSpy.mock.calls.find((call) => {
+        try {
+          const parsed = JSON.parse(call[0]);
+          return parsed.event === 'promise_timeout';
+        } catch {
+          return false;
+        }
+      });
+      expect(timeoutCall).toBeDefined();
+      const parsed = JSON.parse(timeoutCall![0]);
       expect(parsed.event).toBe('promise_timeout');
+      expect(parsed.level).toBe('WARN');
       expect(parsed.label).toBe('test-label');
       expect(parsed.index).toBe(0);
       expect(parsed.timeoutMs).toBe(50);

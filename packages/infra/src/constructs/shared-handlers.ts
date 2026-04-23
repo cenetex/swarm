@@ -98,6 +98,13 @@ export interface SharedHandlersProps {
    * Used when Helius API key is stored in Secrets Manager.
    */
   heliusApiKeyArn?: string;
+  /**
+   * NFT ownership enforcement flag: 'on' or 'off'.
+   * When 'on', the gate validates NFT ownership before processing webhooks.
+   * When 'off' (default), the gate is dormant due to Helius call costs and fail-closed behavior.
+   * @default 'off'
+   */
+  nftOwnershipEnforcement?: 'on' | 'off';
 }
 
 export class SharedHandlers extends Construct {
@@ -139,6 +146,7 @@ export class SharedHandlers extends Construct {
       raticrossInboundKey,
       heliusApiKey,
       heliusApiKeyArn,
+      nftOwnershipEnforcement = 'off',
     } = props;
     const suffix = props.nameSuffix ?? '';
 
@@ -327,6 +335,8 @@ export class SharedHandlers extends Construct {
       // Helius API key for NFT ownership verification (#1385 handlers follow-up)
       HELIUS_API_KEY: heliusApiKey || '',
       HELIUS_API_KEY_ARN: heliusApiKeyArn || '',
+      // NFT ownership enforcement flag: 'on' to enable gate, 'off' to disable (#1436)
+      NFT_OWNERSHIP_ENFORCEMENT: nftOwnershipEnforcement,
     };
 
     if (replicateApiKeySecret) {

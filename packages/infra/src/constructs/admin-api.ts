@@ -1315,6 +1315,13 @@ export class AdminApiConstruct extends Construct {
       integration: avatarsIntegration,
     });
 
+    // GET /avatars/{avatarId}/api-keys, DELETE /avatars/{avatarId}/api-keys/{keyPrefix},
+    // and GET /api-keys/{keyHash}/usage/tokens are intentionally NOT registered here.
+    // Each would add a Lambda::Permission statement, and the admin-api Lambda's
+    // resource-based policy is already 11+ bytes past the 20,480-byte hard limit
+    // without them. See #1443 for the consolidation plan (catchall /{proxy+} or
+    // a single wildcard sourceArn) that unblocks adding new routes.
+
     this.api.addRoutes({
       path: '/avatars/{avatarId}/tools/{toolCallId}',
       methods: [apigateway.HttpMethod.POST],
@@ -1481,9 +1488,14 @@ export class AdminApiConstruct extends Construct {
       integration: avatarsIntegration,
     });
 
-    // Telegram diagnostics and repair routes
+    // Telegram routes — every handler match in
+    // packages/admin-api/src/handlers/avatar-routes/telegram.ts must also
+    // be registered here, otherwise API Gateway returns 404 before the
+    // Lambda is ever invoked. Drift between handler and CDK here has
+    // silently broken features more than once; #1358 (router migration)
+    // replaces this with a {proxy+} pattern to eliminate the class.
     this.api.addRoutes({
-      path: '/avatars/{avatarId}/telegram/diagnostics',
+      path: '/avatars/{avatarId}/telegram/diagnose',
       methods: [apigateway.HttpMethod.GET],
       integration: avatarsIntegration,
     });
@@ -1491,6 +1503,30 @@ export class AdminApiConstruct extends Construct {
     this.api.addRoutes({
       path: '/avatars/{avatarId}/telegram/repair',
       methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/telegram/known-users',
+      methods: [apigateway.HttpMethod.GET],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/telegram/resolve-group',
+      methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/telegram/bind-code',
+      methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/telegram/binding',
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.DELETE],
       integration: avatarsIntegration,
     });
 

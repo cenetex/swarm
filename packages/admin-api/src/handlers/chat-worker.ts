@@ -6,6 +6,7 @@ import type { SQSEvent, SQSRecord } from 'aws-lambda';
 import { logger } from '@swarm/core';
 import * as chatHistory from '../services/chat-history.js';
 import { getChatJob, updateChatJobStatus } from '../services/chat-jobs.js';
+import { savePendingTool } from '../services/pending-tools.js';
 import { processChat } from './chat.js';
 import { LlmCreditsExhaustedError } from './chat-llm.js';
 import { parseOpenRouterStatusFromError } from './chat-error-mapping.js';
@@ -64,6 +65,43 @@ export async function handler(event: SQSEvent): Promise<void> {
       );
 
       await chatHistory.saveChatHistory(session, result.history, job.avatarId);
+
+      // Persist the pending tool call so resumeChatAfterToolResult can validate
+      // the submission. Without this, every async-path tool prompt fails with
+      // "Unknown or expired toolCallId" because chat-history sanitization strips
+      // tool_calls that have no matching tool result yet.
+      if (result.pendingToolCall && job.avatarId) {
+        if (!session.email) {
+          logger.error('Cannot persist pending tool - session.email is missing', {
+            event: 'pending_tool_save_failed_missing_email',
+            avatarId: job.avatarId,
+            toolCallId: result.pendingToolCall.id,
+          });
+        } else {
+          try {
+            await savePendingTool({
+              email: session.email,
+              avatarId: job.avatarId,
+              toolCallId: result.pendingToolCall.id,
+              toolName: result.pendingToolCall.name,
+              arguments: result.pendingToolCall.arguments,
+            });
+            logger.info('Persisted pending tool call', {
+              event: 'pending_tool_saved',
+              avatarId: job.avatarId,
+              toolCallId: result.pendingToolCall.id,
+              toolName: result.pendingToolCall.name,
+            });
+          } catch (err) {
+            logger.error('Failed to persist pending tool call', err, {
+              event: 'pending_tool_save_failed',
+              avatarId: job.avatarId,
+              toolCallId: result.pendingToolCall.id,
+              error: err instanceof Error ? err.message : 'Unknown error',
+            });
+          }
+        }
+      }
 
       // Track message usage against entitlement quota
       if (job.avatarId) {

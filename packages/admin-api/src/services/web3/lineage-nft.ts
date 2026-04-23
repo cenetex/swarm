@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Lineage NFT Service
  *
@@ -17,7 +16,9 @@ import { Connection, type VersionedTransactionResponse } from '@solana/web3.js';
 import { UpdateCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import type { AvatarRecord } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
+import { createSystemLogger } from '../structured-logger.js';
 
+const log = createSystemLogger('lineage-nft');
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
 const HELIUS_RPC_URL = HELIUS_API_KEY
@@ -172,7 +173,7 @@ async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusPa
     });
 
     if (!response.ok) {
-      console.warn(`[LineageNFT] Helius transaction parse failed: ${response.status}`);
+      log.warn('helius', 'transaction_parse_failed', { status: response.status, signature });
       return null;
     }
 
@@ -190,7 +191,10 @@ async function fetchHeliusParsedTransaction(signature: string): Promise<HeliusPa
 
     return null;
   } catch (error) {
-    console.warn('[LineageNFT] Helius transaction parse error:', error instanceof Error ? error.message : String(error));
+    log.warn('helius', 'transaction_parse_error', {
+      signature,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -211,7 +215,7 @@ async function getAssetCollection(mint: string): Promise<string | null> {
     });
 
     if (!response.ok) {
-      console.warn(`[LineageNFT] Helius getAsset failed: ${response.status}`);
+      log.warn('helius', 'get_asset_failed', { status: response.status, mint });
       return null;
     }
 
@@ -221,7 +225,10 @@ async function getAssetCollection(mint: string): Promise<string | null> {
     };
 
     if (data.error) {
-      console.warn('[LineageNFT] Helius getAsset error:', data.error.message || data.error);
+      log.warn('helius', 'get_asset_rpc_error', {
+        mint,
+        error: data.error.message || data.error,
+      });
       return null;
     }
 
@@ -229,7 +236,10 @@ async function getAssetCollection(mint: string): Promise<string | null> {
     const collection = grouping.find((group) => group.group_key === 'collection');
     return collection?.group_value || null;
   } catch (error) {
-    console.warn('[LineageNFT] Helius getAsset error:', error instanceof Error ? error.message : String(error));
+    log.warn('helius', 'get_asset_error', {
+      mint,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -323,7 +333,10 @@ export async function verifyGateBurn(
 
     const heliusCollection = extractHeliusCollection(heliusParsedTx);
     if (heliusCollection === GATE_COLLECTION) {
-      console.log(`[LineageNFT] Verified Gate burn (collection match) for ${walletAddress.slice(0, 8)}...`);
+      log.info('burn', 'gate_burn_verified_by_collection', {
+        walletPrefix: walletAddress.slice(0, 8),
+        signature,
+      });
       return {
         verified: true,
         signature,
@@ -338,7 +351,11 @@ export async function verifyGateBurn(
     for (const mint of candidateMints) {
       const collection = await getAssetCollection(mint);
       if (collection === GATE_COLLECTION) {
-        console.log(`[LineageNFT] Verified Gate burn mint ${mint} for ${walletAddress.slice(0, 8)}...`);
+        log.info('burn', 'gate_burn_verified_by_mint', {
+          walletPrefix: walletAddress.slice(0, 8),
+          mint,
+          signature,
+        });
         return {
           verified: true,
           signature,
@@ -350,7 +367,10 @@ export async function verifyGateBurn(
     return { verified: false, error: 'Burned NFT is not from the Gate collection' };
 
   } catch (error) {
-    console.error('[LineageNFT] Error verifying burn:', error instanceof Error ? error.message : String(error));
+    log.error('burn', 'verify_burn_failed', {
+      signature,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { verified: false, error: 'Failed to verify burn transaction' };
   }
 }
@@ -410,7 +430,7 @@ export async function recordLineageCollection(
     },
   }));
 
-  console.log(`[LineageNFT] Recorded collection ${collectionMint} for avatar ${avatarId}`);
+  log.info('collection', 'collection_recorded', { avatarId, collectionMint });
 }
 
 /**
@@ -473,10 +493,10 @@ export async function prepareLineageMint(
     const { getAvatarLifetimeStats } = await import('./avatar-lifetime-stats.js');
     stats = await getAvatarLifetimeStats(avatarId);
   } catch (error) {
-    console.warn(
-      '[LineageNFT] Failed to fetch lifetime stats for metadata — continuing without stats:',
-      error instanceof Error ? error.message : String(error),
-    );
+    log.warn('metadata', 'lifetime_stats_fetch_failed', {
+      avatarId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   const metadata: LineageMetadata = {
@@ -537,7 +557,7 @@ export async function recordLineageMint(
   // Increment collection count
   await incrementMintedCount(avatarId);
 
-  console.log(`[LineageNFT] Recorded mint for avatar ${avatarId} era ${era}: ${nftMint}`);
+  log.info('mint', 'mint_recorded', { avatarId, era, nftMint });
 }
 
 /**

@@ -14,6 +14,7 @@ export { TwitterConnectPrompt } from './TwitterConnectPrompt';
 export { FeatureTogglePrompt } from './FeatureTogglePrompt';
 export { IntegrationConfigPrompt } from './IntegrationConfigPrompt';
 export { WalletLinkPrompt } from './WalletLinkPrompt';
+export { ApiKeyManagementPrompt } from './ApiKeyManagementPrompt';
 
 // Import for use in router
 import { SecretPrompt } from './SecretPrompt';
@@ -25,6 +26,7 @@ import { TwitterConnectPrompt } from './TwitterConnectPrompt';
 import { FeatureTogglePrompt } from './FeatureTogglePrompt';
 import { IntegrationConfigPrompt } from './IntegrationConfigPrompt';
 import { WalletLinkPrompt } from './WalletLinkPrompt';
+import { ApiKeyManagementPrompt } from './ApiKeyManagementPrompt';
 
 /**
  * Route tool calls to the appropriate prompt component
@@ -82,6 +84,8 @@ export function ToolPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
       return <IntegrationConfigPrompt toolCall={normalizedToolCall} onSubmit={onSubmit} disabled={disabled} />;
     case 'request_wallet_link':
       return <WalletLinkPrompt toolCall={normalizedToolCall} onSubmit={onSubmit} disabled={disabled} />;
+    case 'manage_api_keys':
+      return <ApiKeyManagementPrompt toolCall={normalizedToolCall} onSubmit={onSubmit} disabled={disabled} />;
     default:
       // Unknown tool - show debug info
       return (

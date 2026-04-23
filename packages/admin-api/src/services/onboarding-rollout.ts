@@ -1,7 +1,9 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 import { createHash } from 'node:crypto';
 import { GetCommand } from '@aws-sdk/lib-dynamodb';
 import { getDynamoClient } from './dynamo-client.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('onboarding-rollout');
 
 const dynamoClient = getDynamoClient();
 
@@ -252,7 +254,7 @@ export async function getOnboardingV2FlagsSnapshot(): Promise<OnboardingV2FlagsS
     return merged;
   } catch (error) {
     const safeFallback = forceLegacyFallback();
-    console.warn('[OnboardingRollout] Failed to load onboarding flags, forcing legacy mode.', {
+    log.warn('flags', 'load_failed_legacy_fallback', {
       error: error instanceof Error ? error.message : String(error),
       pk: ONBOARDING_FLAGS_PK,
       sk: ONBOARDING_FLAGS_SK,

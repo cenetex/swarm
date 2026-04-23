@@ -6,6 +6,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useActiveAvatar } from '../../store';
 import { API_BASE, type ToolPromptProps } from './types';
+import { TelegramAccessPanel } from './TelegramAccessPanel';
 
 // Model info for AI provider configuration
 interface ModelOption {
@@ -85,12 +86,9 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
   // New format: store full refs with display info
   const [allowedDmUsers, setAllowedDmUsers] = useState<TelegramUserRef[]>([]);
   const [allowedChats, setAllowedChats] = useState<TelegramChatRef[]>([]);
-  const [newDmInput, setNewDmInput] = useState('');
-  const [newGroupInput, setNewGroupInput] = useState('');
-  const [dmInputError, setDmInputError] = useState<string | null>(null);
-  const [groupInputError, setGroupInputError] = useState<string | null>(null);
-  const [isResolvingGroup, setIsResolvingGroup] = useState(false);
-  const [policyLoadError, setPolicyLoadError] = useState<string | null>(null);
+  // #1474 — Typed inputs for allowedDmUsers / allowedChats are gone. Policy
+  // authoring moved into Telegram itself (inline keyboards from #1472/#1473);
+  // the dashboard is now read-only + revoke (TelegramAccessPanel).
   const initialPolicyRef = useRef<{ allowedDmUsers: TelegramUserRef[]; allowedChats: TelegramChatRef[] } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -119,15 +117,9 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
   const [telegramDiagnosisLoading, setTelegramDiagnosisLoading] = useState(false);
   const [telegramRepairLoading, setTelegramRepairLoading] = useState(false);
   const [telegramRepairError, setTelegramRepairError] = useState<string | null>(null);
-  const [knownTelegramUsers, setKnownTelegramUsers] = useState<Array<{
-    userId: number;
-    username?: string;
-    displayName: string;
-    lastSeen: number;
-    chatId: number;
-    chatTitle?: string;
-    chatType: 'private' | 'group' | 'supergroup' | 'channel';
-  }>>([]);
+  // #1474 — "Recently active" list lived here to feed the typed-input
+  // flows. The new TelegramAccessPanel fetches its own state from
+  // /telegram/state; this state + its polling effect are removed.
 
   // Discord-specific state
   const [discordStatus, setDiscordStatus] = useState<DiscordStatus | null>(null);
@@ -179,21 +171,16 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     setTelegramDiagnosisLoading(false);
     setTelegramRepairLoading(false);
     setTelegramRepairError(null);
-    setKnownTelegramUsers([]);
+    // #1474 — removed setKnownTelegramUsers reset (state deleted).
     // Reset Discord state
     setDiscordStatus(null);
     setDiscordStatusError(null);
     setDiscordStatusLoading(false);
     setDiscordSaveComplete(false);
     pendingResultRef.current = null;
-    // Reset Telegram policy state
+    // Reset Telegram policy state (typed-input state removed in #1474).
     setAllowedDmUsers([]);
     setAllowedChats([]);
-    setNewDmInput('');
-    setNewGroupInput('');
-    setDmInputError(null);
-    setGroupInputError(null);
-    setIsResolvingGroup(false);
     initialPolicyRef.current = null;
     didInitFromStatus.current = null;
     // Reset model search state
@@ -367,23 +354,11 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
       }
     };
 
-    const fetchKnownUsers = async () => {
-      try {
-        const resp = await fetch(`${API_BASE}/avatars/${activeAgent.id}/telegram/known-users`, {
-          method: 'GET',
-          credentials: 'include',
-        });
-        if (resp.ok) {
-          const data = (await resp.json()) as { users: typeof knownTelegramUsers };
-          setKnownTelegramUsers(data.users || []);
-        }
-      } catch {
-        // Silently ignore - known users is a nice-to-have
-      }
-    };
-
     void diagnoseAndRepair();
-    void fetchKnownUsers();
+    // #1474 — known-users polling removed; TelegramAccessPanel fetches
+    // /telegram/state on mount and the redesigned flows write state
+    // directly from Telegram-side taps so the dashboard reflects changes
+    // on next open.
     // Intentionally omit functions from deps to avoid re-running on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolCall.id, integration, activeAgent?.id]);
@@ -619,17 +594,11 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
 
   const stableSorted = (values: string[]) => [...values].map(v => v.trim()).filter(Boolean).sort();
 
-  const hasTelegramPolicyChanges = (() => {
-    if (integration !== 'telegram') return false;
-    if (!initialPolicyRef.current) return false;
-    // Compare by userId/chatId for stable comparison
-    const currentDmIds = allowedDmUsers.map(u => u.userId).sort();
-    const currentChatIds = allowedChats.map(c => c.chatId).sort();
-    const initialDmIds = initialPolicyRef.current.allowedDmUsers.map(u => u.userId).sort();
-    const initialChatIds = initialPolicyRef.current.allowedChats.map(c => c.chatId).sort();
-    return JSON.stringify({ dm: currentDmIds, chat: currentChatIds }) !==
-           JSON.stringify({ dm: initialDmIds, chat: initialChatIds });
-  })();
+  // #1474 — policy authoring moved into Telegram; the dashboard no longer
+  // edits allowedDmUsers/allowedChats locally, so no "policy changes
+  // pending" state exists to drive Save. Save still fires for bot-token
+  // changes (initial setup or rotation).
+  const hasTelegramPolicyChanges = false;
 
   const hasTwitterConfigChanges = (() => {
     if (integration !== 'twitter') return false;
@@ -664,16 +633,12 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     if (!activeAgent?.id) return;
 
     const run = async () => {
-      setPolicyLoadError(null);
       try {
         const response = await fetch(`${API_BASE}/avatars/${activeAgent.id}`, {
           method: 'GET',
           credentials: 'include',
         });
-        if (!response.ok) {
-          setPolicyLoadError(`Failed to load current Telegram settings (HTTP ${response.status})`);
-          return;
-        }
+        if (!response.ok) return;
         const payload = (await response.json().catch(() => ({}))) as {
           platforms?: {
             telegram?: {
@@ -686,14 +651,12 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         };
         const telegram = payload?.platforms?.telegram || {};
 
-        // Handle new format (allowedDmUsers/allowedChats) with fallback to old format
         let dmUsers: TelegramUserRef[];
         let chats: TelegramChatRef[];
 
         if (telegram.allowedDmUsers && telegram.allowedDmUsers.length > 0) {
           dmUsers = telegram.allowedDmUsers;
         } else if (telegram.allowedDmUserIds && telegram.allowedDmUserIds.length > 0) {
-          // Migrate from old format
           dmUsers = normalizeList(telegram.allowedDmUserIds).map(id => ({ userId: id }));
         } else {
           dmUsers = [];
@@ -702,7 +665,6 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         if (telegram.allowedChats && telegram.allowedChats.length > 0) {
           chats = telegram.allowedChats;
         } else if (telegram.allowedChatIds && telegram.allowedChatIds.length > 0) {
-          // Migrate from old format
           chats = normalizeList(telegram.allowedChatIds).map(id => ({ chatId: id }));
         } else {
           chats = [];
@@ -712,13 +674,11 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         setAllowedChats(chats);
         initialPolicyRef.current = { allowedDmUsers: dmUsers, allowedChats: chats };
       } catch {
-        setPolicyLoadError('Failed to load current Telegram settings');
+        // Dashboard is driven by TelegramAccessPanel's own fetch; swallow.
       }
     };
 
     void run();
-    // Only re-run when switching avatars
-
   }, [integration, activeAgent?.id]);
 
   useEffect(() => {
@@ -830,36 +790,20 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     );
   }
 
-  // Extract bot token from pasted text (e.g., BotFather message)
+  // Extract bot token from pasted text (e.g., BotFather message).
+  // Real format is <bot_id:8-10 digits>:<auth:35 chars in [A-Za-z0-9_-]>.
+  // Constraining to the real charset keeps Markdown backticks, quotes, and
+  // trailing punctuation out of the captured token.
   const extractBotToken = (input: string): { token: string; extracted: boolean } => {
-    const match = input.match(/(\d{8,}:\S{35,})/);
+    const match = input.match(/([0-9]{8,10}:[A-Za-z0-9_-]{35})/);
     if (match) {
       return { token: match[1], extracted: match[1] !== input.trim() };
     }
     return { token: input.trim(), extracted: false };
   };
 
-  // Parse t.me/ URLs to extract group username
-  const parseTelegramUrl = (input: string): { type: 'username' | 'invite' | 'invalid'; value?: string } => {
-    // Match t.me/groupname or t.me/+inviteHash
-    const urlMatch = input.match(/(?:https?:\/\/)?t\.me\/([+@]?[\w]+)/);
-    if (urlMatch) {
-      const value = urlMatch[1];
-      if (value.startsWith('+')) {
-        return { type: 'invite', value };
-      }
-      return { type: 'username', value };
-    }
-    return { type: 'invalid' };
-  };
-
-  // Generate deep link approval URL for sharing
-  const generateShareLink = (): string | null => {
-    if (!activeAgent?.id) return null;
-    const botStatus = testResult?.botUsername;
-    if (!botStatus) return null;
-    return `https://t.me/${botStatus}?start=approve_${activeAgent.id}`;
-  };
+  // parseTelegramUrl and generateShareLink used to power the typed-input
+  // flows that #1474 removed — they're now dead code.
 
   const handleTest = async () => {
     if (!token.trim() || isTesting) return;
@@ -960,7 +904,6 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     setSaveError(null);
     try {
       let telegramStatusFromSave: unknown | undefined;
-      let telegramDiagnosisFromSave: TelegramDiagnosis | null = null;
 
       // Store the secret if provided (not using global key or platform integration)
       if (token.trim()) {
@@ -1016,8 +959,12 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         };
       }
 
+      // Fire-and-forget diagnostics for Telegram. We don't want a slow or
+      // flaky diagnose call to delay onSubmit, and the full diagnosis blob is
+      // not useful to the LLM resume (it's a UI concern). The panel's own
+      // useEffect-driven diagnostics will refresh the health banner.
       if (integration === 'telegram' && (token.trim() || hasTelegramPolicyChanges)) {
-        telegramDiagnosisFromSave = await runTelegramDiagnostics();
+        void runTelegramDiagnostics();
       }
 
       // Re-check Discord status after saving a token
@@ -1119,8 +1066,19 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
       }
 
       if (integration === 'telegram') {
-        if (telegramStatusFromSave) result.telegramStatus = telegramStatusFromSave;
-        if (telegramDiagnosisFromSave) result.telegramDiagnosis = telegramDiagnosisFromSave;
+        // Send only a compact summary to the LLM on resume. The full
+        // telegramStatus / diagnosis objects are UI state and bloat the
+        // tool-result payload — which has contributed to downstream
+        // "tool call error" failures when the resume LLM call chokes on
+        // unexpected nested fields.
+        if (telegramStatusFromSave && typeof telegramStatusFromSave === 'object') {
+          const s = telegramStatusFromSave as { ok?: boolean; botUsername?: string; error?: string };
+          result.telegramStatus = {
+            ok: Boolean(s.ok),
+            botUsername: typeof s.botUsername === 'string' ? s.botUsername : undefined,
+            error: typeof s.error === 'string' ? s.error : undefined,
+          };
+        }
       }
 
       // For Discord, defer onSubmit so the user can see status before panel closes
@@ -1129,7 +1087,14 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         setDiscordSaveComplete(true);
         setSavedAt(Date.now());
       } else {
-        await onSubmit(toolCall.id, result);
+        // Check the ToolSubmitResult — previously we swallowed failures and
+        // set savedAt optimistically, leading to "Saved" banner + separate
+        // "tool call error" toast contradiction.
+        const submitResult = await onSubmit(toolCall.id, result);
+        if (!submitResult.ok) {
+          setSaveError(submitResult.error);
+          return;
+        }
         setSavedAt(Date.now());
       }
       if (token.trim()) {
@@ -1145,7 +1110,11 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
 
   const handleDiscordDone = async () => {
     if (!pendingResultRef.current) return;
-    await onSubmit(toolCall.id, pendingResultRef.current);
+    const submitResult = await onSubmit(toolCall.id, pendingResultRef.current);
+    if (!submitResult.ok) {
+      setSaveError(submitResult.error);
+      return;
+    }
     pendingResultRef.current = null;
   };
 
@@ -1249,6 +1218,22 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
           </div>
         )}
 
+        {/* Telegram auto-detect nudge: shown after a successful save when we
+            know the bot username. Reinforces the "just works" path — adding
+            the bot to a group triggers my_chat_member on the backend and the
+            group appears under "Recently active" via the polling effect. */}
+        {integration === 'telegram' && savedAt && (telegramDiagnosis?.bot?.username || testResult?.botUsername) && (
+          <div className="px-2.5 py-1.5 bg-brand-500/5 border border-brand-500/20 rounded-lg">
+            <p className="text-xs text-[var(--color-text-secondary)]">
+              Tip: add{' '}
+              <code className="text-brand-300">
+                @{telegramDiagnosis?.bot?.username || testResult?.botUsername}
+              </code>{' '}
+              to any Telegram group — it will appear under “Recently active” below within a few seconds.
+            </p>
+          </div>
+        )}
+
         {/* Telegram Health Status Indicator */}
         {integration === 'telegram' && (
           <div className="space-y-2">
@@ -1257,7 +1242,11 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                 <div className="w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
                 <span className="text-sm text-[var(--color-text-secondary)]">Checking connection...</span>
               </div>
-            ) : telegramDiagnosisError ? (
+            ) : telegramDiagnosisError && !(telegramDiagnosis?.bot?.username || testResult?.botUsername) ? (
+              // Only show "Not configured" when we truly have no bot identity.
+              // If we know the bot username (from a previous validate or
+              // diagnosis), the diagnose endpoint erroring transiently does
+              // NOT mean "not configured" — the bot is alive in Telegram.
               <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
                 <span className="text-lg">🔴</span>
                 <span className="text-sm text-red-300">Not configured</span>
@@ -2028,366 +2017,15 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         ) : (
           // Token-based platform integration (Telegram, Discord)
           <>
-            {integration === 'telegram' && (
-              <div className="space-y-3">
-                <div className="p-3 bg-[var(--color-bg-tertiary)] rounded-lg border border-[var(--color-border)]">
-                  <p className="text-sm font-medium text-[var(--color-text)]">Telegram DM + Group Policy</p>
-                  <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                    Allow DMs only from specific Telegram user IDs, and restrict group chats by chat ID.
-                  </p>
-                  {policyLoadError && (
-                    <p className="text-xs text-yellow-400 mt-2">{policyLoadError}</p>
-                  )}
-                </div>
-
-                {/* DM allowlist */}
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-[var(--color-text-secondary)]">
-                    Users who can DM the bot
-                  </label>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Enter @username or user ID. Users must have messaged the bot before they can be added by username.
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      value={newDmInput}
-                      onChange={(e) => {
-                        setSavedAt(null);
-                        setSaveError(null);
-                        setDmInputError(null);
-                        setNewDmInput(e.target.value);
-                      }}
-                      placeholder="@username or User ID"
-                      className="flex-1 px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)]"
-                      disabled={disabled}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const input = newDmInput.trim();
-                        if (!input) return;
-
-                        // Check if already added
-                        const existingIds = allowedDmUsers.map(u => u.userId);
-
-                        // If starts with @, try to find in known users
-                        if (input.startsWith('@')) {
-                          const username = input.slice(1).toLowerCase();
-                          const knownUser = knownTelegramUsers.find(
-                            u => u.chatType === 'private' && u.username?.toLowerCase() === username
-                          );
-                          if (knownUser) {
-                            if (existingIds.includes(String(knownUser.userId))) {
-                              setDmInputError('User already added');
-                              return;
-                            }
-                            setSavedAt(null);
-                            setSaveError(null);
-                            setAllowedDmUsers(prev => [...prev, {
-                              userId: String(knownUser.userId),
-                              username: knownUser.username,
-                              displayName: knownUser.displayName,
-                            }]);
-                            setNewDmInput('');
-                            setDmInputError(null);
-                          } else {
-                            setDmInputError('User must DM the bot first before they can be added');
-                          }
-                        } else {
-                          // Treat as user ID
-                          if (existingIds.includes(input)) {
-                            setDmInputError('User already added');
-                            return;
-                          }
-                          // Look up display name from known users if available
-                          const knownUser = knownTelegramUsers.find(
-                            u => u.chatType === 'private' && String(u.userId) === input
-                          );
-                          setSavedAt(null);
-                          setSaveError(null);
-                          setAllowedDmUsers(prev => [...prev, {
-                            userId: input,
-                            username: knownUser?.username,
-                            displayName: knownUser?.displayName,
-                          }]);
-                          setNewDmInput('');
-                          setDmInputError(null);
-                        }
-                      }}
-                      disabled={disabled || !newDmInput.trim()}
-                      className="px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-50"
-                    >
-                      Add
-                    </button>
-                  </div>
-                  {dmInputError && (
-                    <p className="text-xs text-red-400">{dmInputError}</p>
-                  )}
-                  {/* Known users suggestions */}
-                  {knownTelegramUsers.filter(u => u.chatType === 'private' && !allowedDmUsers.some(r => r.userId === String(u.userId))).length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs text-[var(--color-text-muted)] mb-1">Recently active:</p>
-                      <div className="flex flex-wrap gap-1">
-                        {knownTelegramUsers
-                          .filter(u => u.chatType === 'private' && !allowedDmUsers.some(r => r.userId === String(u.userId)))
-                          .slice(0, 10)
-                          .map((u) => (
-                            <button
-                              key={u.userId}
-                              type="button"
-                              onClick={() => {
-                                setSavedAt(null);
-                                setSaveError(null);
-                                setAllowedDmUsers(prev => [...prev, {
-                                  userId: String(u.userId),
-                                  username: u.username,
-                                  displayName: u.displayName,
-                                }]);
-                              }}
-                              disabled={disabled}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-brand-600/20 hover:bg-brand-600/40 border border-brand-500/30 rounded-full text-brand-300 transition-colors"
-                              title={`Add ${u.displayName} (ID: ${u.userId})`}
-                            >
-                              <span>+</span>
-                              <span>{u.username ? `@${u.username}` : u.displayName}</span>
-                            </button>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                  {allowedDmUsers.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {allowedDmUsers.map((user) => (
-                        <span key={user.userId} className="inline-flex items-center gap-2 px-2 py-1 text-xs bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-full text-[var(--color-text-secondary)]">
-                          {user.username ? `@${user.username}` : user.displayName || user.userId}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSavedAt(null);
-                              setSaveError(null);
-                              setAllowedDmUsers(prev => prev.filter(u => u.userId !== user.userId));
-                            }}
-                            className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                            disabled={disabled}
-                            aria-label={`Remove ${user.username || user.displayName || user.userId}`}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Group allowlist */}
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-[var(--color-text-secondary)]">
-                    Groups the bot can join
-                  </label>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Enter @groupname (for public groups) or chat ID. The bot must be a member of the group.
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      value={newGroupInput}
-                      onChange={(e) => {
-                        setSavedAt(null);
-                        setSaveError(null);
-                        setGroupInputError(null);
-                        setNewGroupInput(e.target.value);
-                      }}
-                      placeholder="@groupname or Chat ID"
-                      className="flex-1 px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)]"
-                      disabled={disabled || isResolvingGroup}
-                    />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const input = newGroupInput.trim();
-                        if (!input || !activeAgent?.id) return;
-
-                        // Check if already added
-                        const existingIds = allowedChats.map(c => c.chatId);
-
-                        // Check if input is a t.me/ URL
-                        const urlParse = parseTelegramUrl(input);
-                        let usernameToResolve: string | undefined = undefined;
-
-                        if (urlParse.type === 'invite') {
-                          setGroupInputError('Invite links can\'t be resolved. Add the bot to the group first, then select it from "Recently active".');
-                          return;
-                        } else if (urlParse.type === 'username') {
-                          usernameToResolve = urlParse.value;
-                        } else if (input.startsWith('@')) {
-                          usernameToResolve = input.slice(1);
-                        }
-
-                        // If we have a username to resolve, use API
-                        if (usernameToResolve) {
-                          setIsResolvingGroup(true);
-                          setGroupInputError(null);
-                          try {
-                            const resp = await fetch(`${API_BASE}/avatars/${activeAgent.id}/telegram/resolve-group`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              credentials: 'include',
-                              body: JSON.stringify({ username: usernameToResolve }),
-                            });
-                            const data = await resp.json() as { chatId?: string; title?: string; username?: string; error?: string };
-                            if (!resp.ok || !data.chatId) {
-                              setGroupInputError(data.error || 'Group not found or bot is not a member');
-                              return;
-                            }
-                            if (existingIds.includes(data.chatId)) {
-                              setGroupInputError('Group already added');
-                              return;
-                            }
-                            setSavedAt(null);
-                            setSaveError(null);
-                            setAllowedChats(prev => [...prev, {
-                              chatId: data.chatId!,
-                              username: data.username,
-                              title: data.title,
-                            }]);
-                            setNewGroupInput('');
-                          } catch {
-                            setGroupInputError('Failed to resolve group');
-                          } finally {
-                            setIsResolvingGroup(false);
-                          }
-                        } else {
-                          // Treat as chat ID
-                          if (existingIds.includes(input)) {
-                            setGroupInputError('Group already added');
-                            return;
-                          }
-                          // Look up title from known groups if available
-                          const knownGroup = knownTelegramUsers.find(
-                            u => (u.chatType === 'group' || u.chatType === 'supergroup') && String(u.chatId) === input
-                          );
-                          setSavedAt(null);
-                          setSaveError(null);
-                          setAllowedChats(prev => [...prev, {
-                            chatId: input,
-                            title: knownGroup?.chatTitle,
-                          }]);
-                          setNewGroupInput('');
-                          setGroupInputError(null);
-                        }
-                      }}
-                      disabled={disabled || !newGroupInput.trim() || isResolvingGroup}
-                      className="px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-50"
-                    >
-                      {isResolvingGroup ? '...' : 'Add'}
-                    </button>
-                  </div>
-                  {groupInputError && (
-                    <p className="text-xs text-red-400">{groupInputError}</p>
-                  )}
-                  {/* Known groups suggestions */}
-                  {knownTelegramUsers.filter(u => (u.chatType === 'group' || u.chatType === 'supergroup') && !allowedChats.some(c => c.chatId === String(u.chatId))).length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs text-[var(--color-text-muted)] mb-1">Recently active:</p>
-                      <div className="flex flex-wrap gap-1">
-                        {knownTelegramUsers
-                          .filter(u => (u.chatType === 'group' || u.chatType === 'supergroup') && !allowedChats.some(c => c.chatId === String(u.chatId)))
-                          .reduce((acc, u) => {
-                            // Deduplicate by chatId since multiple users may be from same group
-                            if (!acc.find(x => x.chatId === u.chatId)) acc.push(u);
-                            return acc;
-                          }, [] as typeof knownTelegramUsers)
-                          .slice(0, 10)
-                          .map((u) => (
-                            <button
-                              key={u.chatId}
-                              type="button"
-                              onClick={() => {
-                                setSavedAt(null);
-                                setSaveError(null);
-                                setAllowedChats(prev => [...prev, {
-                                  chatId: String(u.chatId),
-                                  title: u.chatTitle,
-                                }]);
-                              }}
-                              disabled={disabled}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-brand-600/20 hover:bg-brand-600/40 border border-brand-500/30 rounded-full text-brand-300 transition-colors"
-                              title={`Add ${u.chatTitle || 'group'} (ID: ${u.chatId})`}
-                            >
-                              <span>+</span>
-                              <span>{u.chatTitle || String(u.chatId)}</span>
-                            </button>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                  {allowedChats.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {allowedChats.map((chat) => (
-                        <span key={chat.chatId} className="inline-flex items-center gap-2 px-2 py-1 text-xs bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-full text-[var(--color-text-secondary)]">
-                          {chat.title || (chat.username ? `@${chat.username}` : chat.chatId)}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSavedAt(null);
-                              setSaveError(null);
-                              setAllowedChats(prev => prev.filter(c => c.chatId !== chat.chatId));
-                            }}
-                            className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                            disabled={disabled}
-                            aria-label={`Remove ${chat.title || chat.username || chat.chatId}`}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {hasTelegramPolicyChanges && (
-                  <div className="text-xs text-[var(--color-text-muted)]">
-                    Policy changes pending — click Save to apply.
-                  </div>
-                )}
-
-                {/* Share link for easy user approval */}
-                {status === 'success' && testResult?.botUsername && (
-                  <div className="space-y-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                    <label className="block text-sm font-medium text-[var(--color-text-secondary)]">
-                      Share link with friends
-                    </label>
-                    <p className="text-xs text-[var(--color-text-muted)]">
-                      Send this link to anyone you want to chat with your bot. When they tap it and start the bot, they'll be auto-approved.
-                    </p>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={generateShareLink() || ''}
-                        className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] cursor-pointer"
-                        onClick={(e) => {
-                          const input = e.currentTarget;
-                          input.select();
-                          navigator.clipboard.writeText(input.value).catch(() => {});
-                        }}
-                        title="Click to copy"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const link = generateShareLink();
-                          if (link) {
-                            navigator.clipboard.writeText(link).catch(() => {});
-                          }
-                        }}
-                        className="px-2 py-1 text-xs bg-blue-600/40 hover:bg-blue-600/60 border border-blue-500/30 rounded-lg text-blue-300 transition-colors"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+            {integration === 'telegram' && activeAgent?.id && (
+              // Read-only access dashboard (#1474). All policy authoring
+              // happens inside Telegram via inline keyboards (#1471, #1472,
+              // #1473); this panel observes + revokes only.
+              <TelegramAccessPanel
+                avatarId={activeAgent.id}
+                botUsernameHint={telegramDiagnosis?.bot?.username || testResult?.botUsername}
+                disabled={disabled || isSubmitting}
+              />
             )}
             <div>
               <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-2">

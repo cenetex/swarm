@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Avatar Management Service
  */
@@ -25,7 +24,8 @@ import {
   type GateStatus,
   type ClaimableNFT,
 } from './web3/nft-gate.js';
-import { storeSecret, deleteAllAvatarSecrets } from './secrets.js';
+import { storeSecret, deleteAllAvatarSecrets, _getSecretValueInternal } from './secrets.js';
+import { deleteTelegramWebhook } from './platform/telegram.js';
 import {
   getCachedNFTOwner,
   invalidateNFTOwnerCache,
@@ -39,6 +39,9 @@ import {
 import { clearStripeDataForAvatar } from './billing/entitlements.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { emitAvatarCreated, emitAvatarCreationFailed } from './funnel-emitter.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('avatar-service');
 
 function getAdminTable(): string {
   return process.env.ADMIN_TABLE!;
@@ -144,9 +147,11 @@ export async function createAvatarWithWalletLegacy(
   const reservation = await reserveCreatorSlot(creatorWallet, totalSlots);
   if (!reservation.reserved) {
     const gateStatus = await getGateStatus(creatorWallet);
-    console.log(
-      `[Avatars] No gate slot for wallet=${creatorWallet.slice(0, 8)}... (held=${gateStatus.nftsHeld}, created=${gateStatus.avatarsCreated})`
-    );
+    log.info('create', 'no_gate_slot', {
+      walletPrefix: creatorWallet.slice(0, 8),
+      nftsHeld: gateStatus.nftsHeld,
+      avatarsCreated: gateStatus.avatarsCreated,
+    });
     // GTM funnel: F2 failure — no gate slot
     emitAvatarCreationFailed(creatorWallet, 'no_gate_slot', { nftsHeld: gateStatus.nftsHeld, avatarsCreated: gateStatus.avatarsCreated });
     return { success: false, error: 'no_gate_slot', gateStatus };
@@ -209,7 +214,10 @@ export async function createAvatarWithWalletLegacy(
   // Sync to state table so handlers can access it
   await syncAvatarConfig(avatar);
 
-  console.log(`[Avatars] Created avatar=${avatarId} by wallet=${creatorWallet.slice(0, 8)}...`);
+  log.info('create', 'avatar_created', {
+    avatarId,
+    walletPrefix: creatorWallet.slice(0, 8),
+  });
 
   // GTM funnel: F2 — avatar created
   emitAvatarCreated(creatorWallet, avatarId, { creationMethod: 'wallet', slotType });
@@ -295,7 +303,7 @@ export async function updateAvatarProfileImage(
 
   // Do not overwrite profile image on ascended avatars
   if (existing.isAscended) {
-    console.warn(`[Avatars] Skipping profile image update for ascended avatar: ${avatarId}`);
+    log.warn('update', 'profile_image_skipped_ascended', { avatarId });
     return;
   }
 
@@ -407,7 +415,10 @@ export async function updateAvatar(
         telegramConfig.homeChannelUsername
       );
     } catch (err) {
-      console.warn(`[Avatars] Failed to register home channel for ${avatarId}:`, err instanceof Error ? err.message : String(err));
+      log.warn('home_channel', 'register_failed', {
+        avatarId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       // Don't fail the update if home channel registration fails
     }
   }
@@ -425,7 +436,11 @@ export async function updateAvatar(
 
     const failures = results.filter((r) => r.status === 'rejected');
     if (failures.length > 0) {
-      console.warn(`[Avatars] Failed to register some allowedChatIds as home channels for ${avatarId} (${failures.length}/${results.length})`);
+      log.warn('home_channel', 'register_allowed_chat_ids_partial_failure', {
+        avatarId,
+        failed: failures.length,
+        total: results.length,
+      });
     }
   }
 
@@ -501,12 +516,17 @@ export interface DeleteAvatarDeps {
   decrementCreatorCount: typeof decrementCreatorCount;
   removeAvatarFromAllHomeChannels: typeof removeAvatarFromAllHomeChannels;
   deleteAllAvatarSecrets: typeof deleteAllAvatarSecrets;
+  getTelegramBotToken: (avatarId: string) => Promise<string | null>;
+  deleteTelegramWebhook: typeof deleteTelegramWebhook;
 }
 
 const _defaultDeleteDeps: DeleteAvatarDeps = {
   decrementCreatorCount,
   removeAvatarFromAllHomeChannels,
   deleteAllAvatarSecrets,
+  getTelegramBotToken: (avatarId: string) =>
+    _getSecretValueInternal(avatarId, 'telegram_bot_token', 'default'),
+  deleteTelegramWebhook,
 };
 
 /**
@@ -526,15 +546,39 @@ export async function deleteAvatar(
   try {
     await deps.removeAvatarFromAllHomeChannels(avatarId);
   } catch (err) {
-    console.warn(`[Avatars] Failed to unregister home channel for ${avatarId}:`, err instanceof Error ? err.message : String(err));
+    log.warn('home_channel', 'unregister_failed', {
+      avatarId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     // Don't fail the delete if home channel unregistration fails
+  }
+
+  // Deregister the Telegram webhook before secrets are wiped — once the
+  // bot token is gone we can't tell Telegram to stop POSTing updates to
+  // the (now-orphaned) webhook URL.
+  if (existing?.platforms?.telegram?.enabled) {
+    try {
+      const token = await deps.getTelegramBotToken(avatarId);
+      if (token) {
+        await deps.deleteTelegramWebhook(token);
+      }
+    } catch (err) {
+      log.warn('delete', 'telegram_webhook_deregister_failed', {
+        avatarId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Don't fail the delete if Telegram is unreachable
+    }
   }
 
   // Clean up Secrets Manager secrets to avoid ongoing per-secret charges
   try {
     await deps.deleteAllAvatarSecrets(avatarId, session);
   } catch (err) {
-    console.warn(`[Avatars] Failed to clean up secrets for ${avatarId}:`, err instanceof Error ? err.message : String(err));
+    log.warn('secrets', 'cleanup_failed', {
+      avatarId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     // Don't fail the delete if secret cleanup fails
   }
 
@@ -652,10 +696,10 @@ export async function reassignAvatar(
     try {
       await clearStripeDataForAvatar(avatarId, session.email);
     } catch (err) {
-      console.warn(
-        `[Avatars] Failed to clear Stripe data during reassignment for ${avatarId}:`,
-        err instanceof Error ? err.message : String(err)
-      );
+      log.warn('reassign', 'clear_stripe_data_failed', {
+        avatarId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       // Don't fail the reassignment if Stripe cleanup fails
     }
   }
@@ -710,7 +754,9 @@ export async function createAvatarFromNFT(
 ): Promise<CreateAvatarFromNFTResult> {
   // 1. Verify collection is whitelisted
   if (!isCollectionWhitelisted(nft.collection)) {
-    console.log(`[Avatars] Collection ${nft.collection} is not whitelisted`);
+    log.info('create_from_nft', 'collection_not_whitelisted', {
+      collection: nft.collection,
+    });
     return {
       success: false,
       error: 'nft_not_in_collection',
@@ -719,7 +765,10 @@ export async function createAvatarFromNFT(
 
   // 2. Verify wallet owns this NFT
   if (!(await verifyNFTOwnership(creatorWallet, nft.mint))) {
-    console.log(`[Avatars] Wallet ${creatorWallet.slice(0, 8)}... does not own NFT ${nft.mint.slice(0, 8)}...`);
+    log.info('create_from_nft', 'nft_not_owned', {
+      walletPrefix: creatorWallet.slice(0, 8),
+      mintPrefix: nft.mint.slice(0, 8),
+    });
     return {
       success: false,
       error: 'nft_not_owned',
@@ -733,9 +782,11 @@ export async function createAvatarFromNFT(
   const reservation = await reserveCreatorSlot(creatorWallet, totalSlots);
   if (!reservation.reserved) {
     const gateStatus = await getGateStatus(creatorWallet);
-    console.log(
-      `[Avatars] No gate slot for wallet=${creatorWallet.slice(0, 8)}... (held=${gateStatus.nftsHeld}, created=${gateStatus.avatarsCreated})`
-    );
+    log.info('create_from_nft', 'no_gate_slot', {
+      walletPrefix: creatorWallet.slice(0, 8),
+      nftsHeld: gateStatus.nftsHeld,
+      avatarsCreated: gateStatus.avatarsCreated,
+    });
     emitAvatarCreationFailed(creatorWallet, 'no_gate_slot', { nftsHeld: gateStatus.nftsHeld, avatarsCreated: gateStatus.avatarsCreated });
     return {
       success: false,
@@ -853,19 +904,26 @@ export async function createAvatarFromNFT(
       if (cancelReasons && cancelReasons.length >= 2) {
         // Index 1 = CLAIMED_NFT condition
         if (cancelReasons[1]?.Code === 'ConditionalCheckFailed') {
-          console.log(`[Avatars] NFT ${nft.mint.slice(0, 8)}... already claimed as avatar`);
+          log.info('create_from_nft', 'nft_already_claimed', {
+            mintPrefix: nft.mint.slice(0, 8),
+          });
           return { success: false, error: 'nft_already_claimed' };
         }
         // Index 0 = avatar ID condition (collision)
         if (cancelReasons[0]?.Code === 'ConditionalCheckFailed') {
-          console.log(`[Avatars] Avatar ID collision for ${avatarId}, NFT ${nft.mint.slice(0, 8)}...`);
+          log.info('create_from_nft', 'avatar_id_collision', {
+            avatarId,
+            mintPrefix: nft.mint.slice(0, 8),
+          });
           // Avatar ID collision is rare; caller can retry
           return { success: false, error: 'nft_already_claimed' };
         }
       }
 
       // Fallback: could not determine which condition failed
-      console.log(`[Avatars] Transaction cancelled for NFT ${nft.mint.slice(0, 8)}..., treating as already claimed`);
+      log.info('create_from_nft', 'transaction_cancelled_treated_as_claimed', {
+        mintPrefix: nft.mint.slice(0, 8),
+      });
       return { success: false, error: 'nft_already_claimed' };
     }
     // Non-transaction error: roll back slot and re-throw
@@ -881,13 +939,17 @@ export async function createAvatarFromNFT(
   try {
     await invalidateNFTOwnerCache(nft.mint);
   } catch (err) {
-    console.warn(
-      `[Avatars] Failed to invalidate NFT owner cache after claim (mint=${nft.mint.slice(0, 8)}...):`,
-      err instanceof Error ? err.message : String(err),
-    );
+    log.warn('create_from_nft', 'invalidate_nft_owner_cache_failed', {
+      mintPrefix: nft.mint.slice(0, 8),
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
-  console.log(`[Avatars] Created NFT avatar=${avatarId} from mint=${nft.mint.slice(0, 8)}... by wallet=${creatorWallet.slice(0, 8)}...`);
+  log.info('create_from_nft', 'avatar_created', {
+    avatarId,
+    mintPrefix: nft.mint.slice(0, 8),
+    walletPrefix: creatorWallet.slice(0, 8),
+  });
 
   // GTM funnel: F2 — avatar created from NFT
   emitAvatarCreated(creatorWallet, avatarId, { creationMethod: 'nft', slotType, nftCollection: nft.collection });
@@ -949,10 +1011,10 @@ async function recordOwnershipAudit(
       details: { code, ...extra },
     });
   } catch (err) {
-    console.warn(
-      `[Avatars] Failed to record ownership audit event for avatar=${avatarId}:`,
-      err instanceof Error ? err.message : String(err),
-    );
+    log.warn('ownership', 'audit_record_failed', {
+      avatarId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -1072,7 +1134,9 @@ export async function getAvatarByNFTMint(mintAddress: string): Promise<AvatarRec
     }
     return null;
   } catch (error) {
-    console.error('[Avatars] Error finding avatar by NFT mint:', error instanceof Error ? error.message : String(error));
+    log.error('lookup', 'get_by_nft_mint_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -1154,7 +1218,11 @@ export async function createAvatarFromTelegram(
   // 1. Check if bot token is already registered (by checking if avatar with this botId exists)
   const existingByBotId = await findAvatarByTelegramBotId(botId);
   if (existingByBotId) {
-    console.log(`[Avatars] Bot ${botUsername} (ID: ${botId}) already registered as avatar ${existingByBotId.avatarId}`);
+    log.info('create_from_telegram', 'bot_already_registered', {
+      botUsername,
+      botId,
+      existingAvatarId: existingByBotId.avatarId,
+    });
     return {
       success: false,
       error: 'token_already_used',
@@ -1167,7 +1235,10 @@ export async function createAvatarFromTelegram(
   const webhookResult = await registerTelegramWebhook(botToken, avatarId, webhookSecret);
 
   if (!webhookResult.success) {
-    console.error(`[Avatars] Failed to register webhook for ${botUsername}:`, webhookResult.message);
+    log.error('create_from_telegram', 'webhook_registration_failed', {
+      botUsername,
+      message: webhookResult.message,
+    });
     return {
       success: false,
       error: 'webhook_failed',
@@ -1257,7 +1328,10 @@ export async function createAvatarFromTelegram(
   // 5. Sync to state table
   await syncAvatarConfig(avatar);
 
-  console.log(`[Avatars] Created Telegram avatar=${avatarId} by telegram:${telegramUserId}`);
+  log.info('create_from_telegram', 'avatar_created', {
+    avatarId,
+    telegramUserId,
+  });
 
   // GTM funnel: F2 — avatar created from Telegram
   emitAvatarCreated(`telegram:${telegramUserId}`, avatarId, { creationMethod: 'telegram', botUsername });
@@ -1313,7 +1387,9 @@ export async function findAvatarByTelegramBotId(botId: number): Promise<AvatarRe
 
     return null;
   } catch (error) {
-    console.error('[Avatars] Error finding avatar by Telegram bot ID:', error instanceof Error ? error.message : String(error));
+    log.error('lookup', 'get_by_telegram_bot_id_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -1392,7 +1468,9 @@ export async function activateAvatar(
 
     return { success: true };
   } catch (error) {
-    console.error('[Avatars] Failed to activate avatar:', error instanceof Error ? error.message : String(error));
+    log.error('activation', 'activate_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -1441,7 +1519,9 @@ export async function deactivateAvatar(
 
     return { success: true };
   } catch (error) {
-    console.error('[Avatars] Failed to deactivate avatar:', error instanceof Error ? error.message : String(error));
+    log.error('activation', 'deactivate_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

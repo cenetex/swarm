@@ -1,10 +1,9 @@
-/* eslint-disable no-console -- TODO: migrate to structured logger */
 /**
  * Auto-Issue Tracking Service
- * 
+ *
  * Automatically creates and updates issues based on errors encountered.
  * Groups similar errors together to avoid flooding with duplicates.
- * 
+ *
  * Schema:
  * - pk: ISSUE#{issueId}
  * - sk: META
@@ -19,6 +18,9 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { createHash } from 'crypto';
 import { getDynamoClient } from './dynamo-client.js';
+import { createSystemLogger } from './structured-logger.js';
+
+const log = createSystemLogger('auto-issues');
 
 const dynamoClient = getDynamoClient();
 
@@ -227,15 +229,12 @@ export async function recordError(params: {
       Item: issue,
     }));
 
-    console.log(JSON.stringify({
-      level: 'INFO',
-      subsystem: 'auto-issues',
-      event: 'issue_created',
+    log.info('issues', 'issue_created', {
       issueId,
       title: issue.title,
       severity: issue.severity,
       fingerprint,
-    }));
+    });
   } else {
     // Update existing issue
     await dynamoClient.send(new UpdateCommand({
@@ -464,7 +463,9 @@ export function createErrorRecorder(defaultContext: {
       });
     } catch (recordingError) {
       // Don't fail the main flow if issue recording fails
-      console.error('Failed to record error to auto-issues:', recordingError);
+      log.error('issues', 'record_failed', {
+        error: recordingError instanceof Error ? recordingError.message : String(recordingError),
+      });
     }
   };
 }

@@ -278,9 +278,11 @@ describe('customer.subscription.created/updated — entitlement update (issue #5
   });
 
   it('should skip plan update for unknown price IDs (preserve current entitlement)', () => {
-    expect(caseBody).toContain('Unknown Stripe price ID');
-    // After warning, should break before upsert
-    const warnIndex = caseBody.indexOf('Unknown Stripe price ID');
+    // Anchor on the structured event code (stable across transport changes).
+    // Migrated from `console.warn('Unknown Stripe price ID …')` to
+    // `log.warn('webhook', 'unknown_stripe_price_id', …)` per issue #1363.
+    expect(caseBody).toContain('unknown_stripe_price_id');
+    const warnIndex = caseBody.indexOf('unknown_stripe_price_id');
     const breakAfterWarn = caseBody.indexOf('break;', warnIndex);
     expect(breakAfterWarn).toBeGreaterThan(warnIndex);
   });
@@ -483,8 +485,11 @@ describe('resolveEntitlementContext — context resolution (issue #585)', () => 
   });
 
   it('should handle Stripe API errors gracefully', () => {
+    // Migrated from `console.error('[Billing] Failed to resolve subscription metadata:' …)`
+    // to structured `log.error('webhook', 'resolve_subscription_metadata_failed', …)`
+    // per issue #1363. Event code is the stable anchor.
     expect(fnBody).toContain('catch (error)');
-    expect(fnBody).toContain('Failed to resolve subscription metadata');
+    expect(fnBody).toContain('resolve_subscription_metadata_failed');
   });
 });
 

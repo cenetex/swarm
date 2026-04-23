@@ -15,6 +15,7 @@ import {
   extractApiKey,
   validateApiKey,
   parseAvatarId,
+  resolveModel,
   hashApiKey,
 } from './openai-compat.js';
 import * as avatars from '../services/avatars.js';
@@ -31,7 +32,7 @@ const OpenAIMessageSchema = z.object({
 });
 
 const StreamRequestSchema = z.object({
-  model: z.string(),
+  model: z.string().optional(), // Optional for scoped keys
   messages: z.array(OpenAIMessageSchema).min(1),
   temperature: z.number().min(0).max(2).optional(),
   max_tokens: z.number().int().positive().optional(),
@@ -144,7 +145,13 @@ async function handleStreamingRequest(
     return;
   }
 
-  const avatarId = parseAvatarId(request.model);
+  const resolved = resolveModel(request.model, validation);
+  if ('error' in resolved) {
+    writeErrorAndEnd(stream, requestId, resolved.error);
+    return;
+  }
+  const model = resolved.model;
+  const avatarId = parseAvatarId(model);
 
   // Verify avatar access
   if (validation.avatarId && validation.avatarId !== avatarId) {
@@ -152,23 +159,10 @@ async function handleStreamingRequest(
     return;
   }
 
-  // #1385: enforce current NFT ownership before serving a streaming completion.
-  let avatarRecord: Awaited<ReturnType<typeof avatars.getAvatar>>;
-  try {
-    avatarRecord = await avatars.assertAvatarOwnership(avatarId, validation.session.userId, {
-      isAdmin: false,
-    });
-  } catch (err) {
-    if (err instanceof avatars.AvatarOwnershipError) {
-      if (err.code === 'verification_unavailable') {
-        writeErrorAndEnd(stream, requestId, 'Ownership verification temporarily unavailable');
-        return;
-      }
-      writeErrorAndEnd(stream, requestId, `Avatar not found: ${avatarId}`);
-      return;
-    }
-    throw err;
-  }
+  // See the sibling non-stream handler for why this uses getAvatar directly
+  // instead of assertAvatarOwnership: API-key sessions synthesize a
+  // non-wallet userId so the ownership gate always rejected them.
+  const avatarRecord = await avatars.getAvatar(avatarId);
   if (!avatarRecord) {
     writeErrorAndEnd(stream, requestId, `Avatar not found: ${avatarId}`);
     return;
@@ -203,7 +197,7 @@ async function handleStreamingRequest(
     id: completionId,
     object: 'chat.completion.chunk',
     created,
-    model: request.model,
+    model,
     choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }],
   };
   stream.write(`data: ${JSON.stringify(roleChunk)}\n\n`);
@@ -271,7 +265,7 @@ async function handleStreamingRequest(
               id: completionId,
               object: 'chat.completion.chunk',
               created,
-              model: request.model,
+              model,
               choices: [{ index: 0, delta: { content }, finish_reason: null }],
             };
             stream.write(`data: ${JSON.stringify(clientChunk)}\n\n`);
@@ -307,7 +301,7 @@ async function handleStreamingRequest(
     id: completionId,
     object: 'chat.completion.chunk',
     created,
-    model: request.model,
+    model,
     choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
     usage: {
       prompt_tokens: tokenUsage.promptTokens,

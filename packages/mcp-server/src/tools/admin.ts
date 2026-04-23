@@ -461,6 +461,27 @@ The linked wallets appear in the user's account identity and affect NFT gate sta
         reason: z.string().optional().describe('Brief context for why the user wants to link a wallet'),
       }),
     }),
+
+    // =========================================================================
+    // API Key Management Tools
+    // =========================================================================
+
+    defineManualTool({
+      name: 'manage_api_keys',
+      description: `Open the API key management UI so the avatar owner can list, create, or revoke API keys for this avatar.
+
+Use this when the owner asks to:
+- See/list their API keys
+- Create a new API key ("give me an API key", "generate a key for my app")
+- Revoke or rotate an existing key
+
+Keys are scoped to this avatar and work with the OpenAI-compatible chat completions endpoint.`,
+      toolset: 'admin',
+      platforms: ['admin-ui'],
+      inputSchema: z.object({
+        reason: z.string().optional().describe('Brief context for why the user wants to manage API keys'),
+      }),
+    }),
   ];
 }
 
