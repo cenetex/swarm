@@ -8,7 +8,8 @@
     "build": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "test": "vitest run"
   },
   "dependencies": {
     "@privy-io/react-auth": "^3.22.1",
