@@ -563,7 +563,10 @@ export async function deleteAvatar(
         await deps.deleteTelegramWebhook(token);
       }
     } catch (err) {
-      console.warn(`[Avatars] Failed to deregister Telegram webhook for ${avatarId}:`, err instanceof Error ? err.message : String(err));
+      log.warn('delete', 'telegram_webhook_deregister_failed', {
+        avatarId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       // Don't fail the delete if Telegram is unreachable
     }
   }
