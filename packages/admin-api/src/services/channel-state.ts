@@ -1102,62 +1102,105 @@ export interface KnownTelegramUser {
 }
 
 /**
- * Get all known Telegram users who have interacted with this avatar.
- * Queries all active channel states and extracts unique users.
+ * Hard caps for the bounded scan. ADMIN_TABLE is a single-table design
+ * holding billing, entitlements, secrets, sessions, etc., so a full scan is
+ * paid-per-scanned-item on data that has nothing to do with Telegram. Until
+ * a proper GSI exists, bound the cost at call-time.
  *
- * Since channel states have a 1-hour TTL, this returns users from recent activity only.
+ * TODO(#1466 follow-up): replace this with a Query against a GSI keyed
+ * `CHANNEL_AVATAR#{avatarId}` / `CHAT#{chatId}` so the call scales with the
+ * tenant's active chats instead of the whole table.
+ */
+const KNOWN_USERS_MAX_PAGES = 5;
+const KNOWN_USERS_PAGE_LIMIT = 1000;
+const KNOWN_USERS_MAX_RESULTS = 200;
+
+/** Deps exposed so tests can inject a paged-response sequence. */
+export interface KnownTelegramUsersDeps {
+  scan: (params: {
+    exclusiveStartKey?: Record<string, unknown>;
+    pageLimit: number;
+    avatarId: string;
+  }) => Promise<{
+    items: ChannelStateRecord[];
+    lastEvaluatedKey?: Record<string, unknown>;
+  }>;
+}
+
+async function defaultScan(params: {
+  exclusiveStartKey?: Record<string, unknown>;
+  pageLimit: number;
+  avatarId: string;
+}): Promise<{ items: ChannelStateRecord[]; lastEvaluatedKey?: Record<string, unknown> }> {
+  const { ScanCommand } = await import('@aws-sdk/lib-dynamodb');
+  const result = await dynamoClient.send(new ScanCommand({
+    TableName: ADMIN_TABLE,
+    FilterExpression: 'begins_with(pk, :prefix) AND sk = :sk',
+    ExpressionAttributeValues: {
+      ':prefix': `CHANNEL#${params.avatarId}#`,
+      ':sk': 'STATE',
+    },
+    Limit: params.pageLimit,
+    ExclusiveStartKey: params.exclusiveStartKey,
+  }));
+  return {
+    items: (result.Items ?? []) as ChannelStateRecord[],
+    lastEvaluatedKey: result.LastEvaluatedKey,
+  };
+}
+
+/**
+ * Get all known Telegram users who have interacted with this avatar.
+ * Paginates the underlying scan with hard caps so each admin UI poll has
+ * bounded cost, early-exits once enough results are collected. Channel
+ * states have a 1-hour TTL so this reflects recent activity only.
  */
 export async function getKnownTelegramUsers(
-  avatarId: string
+  avatarId: string,
+  deps: KnownTelegramUsersDeps = { scan: defaultScan },
 ): Promise<KnownTelegramUser[]> {
-  const { ScanCommand } = await import('@aws-sdk/lib-dynamodb');
+  const userMap = new Map<number, KnownTelegramUser>();
+  const now = Date.now();
 
   try {
-    // Scan for all channel states for this avatar
-    const result = await dynamoClient.send(new ScanCommand({
-      TableName: ADMIN_TABLE,
-      FilterExpression: 'begins_with(pk, :prefix) AND sk = :sk',
-      ExpressionAttributeValues: {
-        ':prefix': `CHANNEL#${avatarId}#`,
-        ':sk': 'STATE',
-      },
-    }));
+    let exclusiveStartKey: Record<string, unknown> | undefined;
 
-    if (!result.Items || result.Items.length === 0) {
-      return [];
-    }
+    for (let page = 0; page < KNOWN_USERS_MAX_PAGES; page++) {
+      const { items, lastEvaluatedKey } = await deps.scan({
+        exclusiveStartKey,
+        pageLimit: KNOWN_USERS_PAGE_LIMIT,
+        avatarId,
+      });
 
-    // Extract unique users from all channel states
-    const userMap = new Map<number, KnownTelegramUser>();
-    const now = Date.now();
+      for (const state of items) {
+        if (state.ttl && now / 1000 > state.ttl) continue;
 
-    for (const item of result.Items) {
-      const state = item as ChannelStateRecord;
+        for (const msg of state.messageBuffer || []) {
+          if (msg.isFromBot) continue;
 
-      // Skip expired records
-      if (state.ttl && now / 1000 > state.ttl) continue;
-
-      for (const msg of state.messageBuffer || []) {
-        // Skip bot messages
-        if (msg.isFromBot) continue;
-
-        const existing = userMap.get(msg.userId);
-        if (!existing || msg.timestamp > existing.lastSeen) {
-          userMap.set(msg.userId, {
-            userId: msg.userId,
-            username: msg.username,
-            displayName: msg.userName,
-            lastSeen: msg.timestamp,
-            chatId: state.chatId,
-            chatTitle: state.chatTitle,
-            chatType: state.chatType,
-          });
+          const existing = userMap.get(msg.userId);
+          if (!existing || msg.timestamp > existing.lastSeen) {
+            userMap.set(msg.userId, {
+              userId: msg.userId,
+              username: msg.username,
+              displayName: msg.userName,
+              lastSeen: msg.timestamp,
+              chatId: state.chatId,
+              chatTitle: state.chatTitle,
+              chatType: state.chatType,
+            });
+          }
         }
       }
+
+      if (userMap.size >= KNOWN_USERS_MAX_RESULTS) break;
+      if (!lastEvaluatedKey) break;
+      exclusiveStartKey = lastEvaluatedKey;
     }
 
-    // Sort by last seen (most recent first)
-    return Array.from(userMap.values()).sort((a, b) => b.lastSeen - a.lastSeen);
+    return Array.from(userMap.values())
+      .sort((a, b) => b.lastSeen - a.lastSeen)
+      .slice(0, KNOWN_USERS_MAX_RESULTS);
   } catch (err) {
     console.warn('[ChannelState] Failed to get known Telegram users:', err instanceof Error ? err.message : String(err));
     return [];
