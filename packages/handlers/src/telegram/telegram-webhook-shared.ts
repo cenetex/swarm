@@ -63,6 +63,24 @@ import {
   getTelegramAdapter,
 } from './webhook-security.js';
 
+import {
+  createBindHandler,
+  handleBindCallback,
+  handleBindStart,
+} from './webhook-bind.js';
+import {
+  createGroupEnableHandler,
+  handleGroupEnableCallback,
+  postGroupEnablementKeyboard,
+  revokeChatFromAllowedList,
+} from './webhook-group-enable.js';
+import {
+  createDmApprovalHandler,
+  handleDmApprovalCallback,
+  handleStrangerDm,
+} from './webhook-dm-approval.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
+
 // --- Re-exports for external consumers ---
 export {
   getAllowedDmUserIdsForAdmin,
@@ -219,6 +237,47 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         if (chatType === 'group' || chatType === 'supergroup' || chatType === 'channel') {
           const botUsername = avatarConfig.platforms.telegram?.botUsername || '';
 
+          // #1472 — post the signed inline-keyboard enablement prompt for
+          // groups/supergroups (channels use a different moderation model
+          // that's out of scope for this redesign). Until the owner taps
+          // Enable, the chat is not added to allowedChats and the existing
+          // webhook gate silently drops all messages.
+          if (chatType === 'group' || chatType === 'supergroup') {
+            try {
+              const groupSigningKey = await getWebhookSecret(avatarId);
+              const bot = telegramAdapter.getBot();
+              if (groupSigningKey && ADMIN_TABLE && bot) {
+                const groupDeps = createGroupEnableHandler({
+                  dynamoClient: getDynamoClient(),
+                  tableName: ADMIN_TABLE,
+                  signingKey: groupSigningKey,
+                  botApi: {
+                    sendMessage: (cid, text, extra) => bot.api.sendMessage(cid, text, extra as Parameters<typeof bot.api.sendMessage>[2]),
+                    editMessageText: (cid, mid, text, extra) => bot.api.editMessageText(cid, mid, text, extra as Parameters<typeof bot.api.editMessageText>[3]),
+                    answerCallbackQuery: (id, extra) => bot.api.answerCallbackQuery(id, extra as Parameters<typeof bot.api.answerCallbackQuery>[1]),
+                    leaveChat: (cid) => bot.api.leaveChat(cid),
+                    deleteMessage: (cid, mid) => bot.api.deleteMessage(cid, mid),
+                  },
+                  stateService: getStateService(),
+                });
+                await postGroupEnablementKeyboard({
+                  deps: groupDeps,
+                  chatId,
+                  chatTitle,
+                  botUsername,
+                  avatarId,
+                });
+              }
+            } catch (err) {
+              logger.warn('Failed to post Telegram group enablement keyboard', {
+                event: 'telegram_group_enable_prompt_failed',
+                avatarId,
+                chatId: String(chatId),
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+
           // Special-case @ratibots: treat as a global home channel so *all* bots can work there,
           // but do not set it as the bot's own homeChannelId.
           if (chatUsername?.toLowerCase() === 'ratibots') {
@@ -297,7 +356,9 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         return ok();
       }
 
-      // Bot was REMOVED (left or kicked), clean up channel state
+      // Bot was REMOVED (left or kicked), clean up channel state and the
+      // allowlist entry (#1472) so we don't keep routing messages to an
+      // LLM for a chat the bot can no longer reach.
       if (chatId && (newStatus === 'left' || newStatus === 'kicked')) {
         logger.info('Bot removed from channel, cleaning up state', {
           event: 'bot_removed',
@@ -305,15 +366,117 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           newStatus,
         });
         await cleanupChannelState(avatarId, String(chatId));
+        try {
+          const revoked = await revokeChatFromAllowedList({
+            avatarConfig,
+            chatId: String(chatId),
+            stateService: getStateService(),
+          });
+          if (revoked) {
+            invalidateAvatarConfigCache(avatarId);
+            logger.info('Revoked chat from allowedChats after bot removal', {
+              event: 'telegram_allowed_chat_revoked_on_removal',
+              avatarId,
+              chatId: String(chatId),
+            });
+          }
+        } catch (err) {
+          logger.warn('Failed to revoke allowedChats entry on bot removal', {
+            event: 'telegram_allowed_chat_revoke_failed',
+            avatarId,
+            chatId: String(chatId),
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
         return ok();
       }
     }
 
     const telegramCfg = avatarConfig.platforms.telegram;
 
-    // Handle callback_query updates (inline button presses) for DM bot creation flow
+    // Handle callback_query updates (inline button presses).
+    //
+    // Order matters: bind-flow callbacks (#1471) are checked first because
+    // they are dispatched via signed callback_data (not the legacy admin-
+    // handler action registry) and have their own authz path.
     if (update.callback_query) {
       logger.info('Callback query received', { event: 'callback_query' });
+
+      // #1471 / #1472 — signed-callback dispatch for owner binding + group
+      // enablement. Try the redesign handlers before the legacy admin-
+      // handler action registry; if none of them claim the payload we fall
+      // through to the legacy handler.
+      try {
+        const redesignSigningKey = await getWebhookSecret(avatarId);
+        const bot = telegramAdapter.getBot();
+        if (redesignSigningKey && ADMIN_TABLE && bot) {
+          const sharedBotApi = {
+            sendMessage: (chatId: number, text: string, extra?: Record<string, unknown>) => bot.api.sendMessage(chatId, text, extra as Parameters<typeof bot.api.sendMessage>[2]),
+            editMessageText: (chatId: number, messageId: number, text: string, extra?: Record<string, unknown>) => bot.api.editMessageText(chatId, messageId, text, extra as Parameters<typeof bot.api.editMessageText>[3]),
+            answerCallbackQuery: (id: string, extra?: Record<string, unknown>) => bot.api.answerCallbackQuery(id, extra as Parameters<typeof bot.api.answerCallbackQuery>[1]),
+          };
+
+          // 1. Owner-binding confirm/cancel.
+          const bindDeps = createBindHandler({
+            dynamoClient: getDynamoClient(),
+            tableName: ADMIN_TABLE,
+            signingKey: redesignSigningKey,
+            botApi: sharedBotApi,
+          });
+          const bindResult = await handleBindCallback({
+            deps: bindDeps,
+            update,
+            avatarId,
+          });
+          if (bindResult.handled) return ok();
+
+          // 2. Group enablement (enable / disable / leave).
+          const groupDeps = createGroupEnableHandler({
+            dynamoClient: getDynamoClient(),
+            tableName: ADMIN_TABLE,
+            signingKey: redesignSigningKey,
+            botApi: {
+              ...sharedBotApi,
+              leaveChat: (cid: number) => bot.api.leaveChat(cid),
+              deleteMessage: (cid: number, mid: number) => bot.api.deleteMessage(cid, mid),
+            },
+            stateService: getStateService(),
+          });
+          const groupResult = await handleGroupEnableCallback({
+            deps: groupDeps,
+            update,
+            avatarId,
+            avatarConfig,
+          });
+          if (groupResult.handled) {
+            invalidateAvatarConfigCache(avatarId);
+            return ok();
+          }
+
+          // 3. DM approval (allow / deny / block / revoke / undo / unblock).
+          const dmDeps = createDmApprovalHandler({
+            dynamoClient: getDynamoClient(),
+            tableName: ADMIN_TABLE,
+            signingKey: redesignSigningKey,
+            botApi: sharedBotApi,
+            stateService: getStateService(),
+          });
+          const dmResult = await handleDmApprovalCallback({
+            deps: dmDeps,
+            update,
+            avatarId,
+            avatarConfig,
+          });
+          if (dmResult.handled) {
+            invalidateAvatarConfigCache(avatarId);
+            return ok();
+          }
+        }
+      } catch (err) {
+        logger.error('Signed-callback handler error', err, { event: 'signed_callback_error', avatarId });
+        // Fall through to the legacy handler rather than swallow the update.
+      }
+
       try {
         const { processAdminCallbackQuery } = await import('../services/telegram-admin-handler.js');
         await processAdminCallbackQuery(avatarId, avatarConfig, update as unknown);
@@ -328,6 +491,49 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (!envelope) return ok();
 
     envelope.traceId = traceId;
+
+    // /start bind_<code> flow (#1471): the owner tapped the deep link from
+    // the web dashboard. Verify the tap lands in a DM, then post the signed
+    // confirmation keyboard. The binding is not written until the user taps
+    // Confirm on the keyboard.
+    if (envelope.content.command?.command === 'start' && envelope.content.command?.args?.[0]?.startsWith('bind_')) {
+      if (envelope.metadata.chatType !== 'private') {
+        return ok();
+      }
+      const bindCode = envelope.content.command.args![0]!.slice('bind_'.length);
+      if (!bindCode) return ok();
+
+      try {
+        const bindSigningKey = await getWebhookSecret(avatarId);
+        const bot = telegramAdapter.getBot();
+        if (bindSigningKey && ADMIN_TABLE && bot) {
+          const bindDeps = createBindHandler({
+            dynamoClient: getDynamoClient(),
+            tableName: ADMIN_TABLE,
+            signingKey: bindSigningKey,
+            botApi: {
+              sendMessage: (chatId, text, extra) => bot.api.sendMessage(chatId, text, extra as Parameters<typeof bot.api.sendMessage>[2]),
+              editMessageText: (chatId, messageId, text, extra) => bot.api.editMessageText(chatId, messageId, text, extra as Parameters<typeof bot.api.editMessageText>[3]),
+              answerCallbackQuery: (id, extra) => bot.api.answerCallbackQuery(id, extra as Parameters<typeof bot.api.answerCallbackQuery>[1]),
+            },
+          });
+          await handleBindStart({
+            deps: bindDeps,
+            chatId: parseInt(envelope.conversationId),
+            code: bindCode,
+            avatarId,
+          });
+        }
+      } catch (err) {
+        logger.warn('Telegram bind-start handler failed', {
+          event: 'telegram_bind_start_failed',
+          avatarId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      return ok();
+    }
 
     // /start approve_AVATAR_ID flow: deep link approval for adding users to DM allowlist
     // Format: /start approve_<avatar-id> — add sender to this avatar's allowedDmUsers
@@ -585,26 +791,68 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         return ok();
       }
 
-      // Non-allowed users: redirect to RATi Chat onboarding
+      // Non-allowed users: try the owner-approval flow (#1473). If the
+      // avatar has no owner bound yet (#1471 never ran for this avatar),
+      // fall back to the existing RATi Chat onboarding redirect so
+      // unbound bots remain usable.
       try {
         const bot = telegramAdapter.getBot();
-        if (bot) {
+        const dmSigningKey = await getWebhookSecret(avatarId);
+        if (bot && dmSigningKey && ADMIN_TABLE) {
+          const dmDeps = createDmApprovalHandler({
+            dynamoClient: getDynamoClient(),
+            tableName: ADMIN_TABLE,
+            signingKey: dmSigningKey,
+            botApi: {
+              sendMessage: (cid, text, extra) => bot.api.sendMessage(cid, text, extra as Parameters<typeof bot.api.sendMessage>[2]),
+              editMessageText: (cid, mid, text, extra) => bot.api.editMessageText(cid, mid, text, extra as Parameters<typeof bot.api.editMessageText>[3]),
+              answerCallbackQuery: (id, extra) => bot.api.answerCallbackQuery(id, extra as Parameters<typeof bot.api.answerCallbackQuery>[1]),
+            },
+            stateService: getStateService(),
+          });
+          const dmResult = await handleStrangerDm({
+            deps: dmDeps,
+            input: {
+              avatarId,
+              avatarConfig,
+              requesterId: senderId,
+              requesterUsername: senderUsername,
+              requesterDisplayName: envelope.sender.displayName,
+              requesterChatId: parseInt(envelope.conversationId),
+              firstMessage: envelope.content.text || '[media]',
+            },
+          });
+
+          // If the avatar has no bound owner, fall back to the legacy
+          // redirect so unbound bots still produce a useful reply.
+          if (dmResult.status === 'notified' ||
+              dmResult.status === 'dropped_blocked' ||
+              dmResult.status === 'dropped_pending' ||
+              dmResult.status === 'owner_unreachable') {
+            logger.info('Handled stranger DM via owner approval flow', {
+              event: 'telegram_stranger_dm_handled',
+              avatarId,
+              status: dmResult.status,
+            });
+            return ok();
+          }
+
+          // status === 'unbound_owner' — fall through to redirect.
           const dm = buildDmRedirectMessage(avatarConfig.platforms.telegram);
           await bot.api.sendMessage(
             parseInt(envelope.conversationId),
             dm.text,
             { reply_markup: dm.replyMarkup }
           );
-
-          logger.info('Sent DM redirect message', {
-            event: 'dm_redirect_sent',
-            chatId: envelope.conversationId,
-            messageId: envelope.messageId,
+          logger.info('Sent DM redirect message (unbound owner fallback)', {
+            event: 'dm_redirect_sent_unbound',
+            avatarId,
           });
         }
       } catch (err) {
-        logger.warn('Failed to send DM redirect message', {
-          event: 'dm_redirect_failed',
+        logger.warn('Failed to handle stranger DM', {
+          event: 'dm_stranger_handle_failed',
+          avatarId,
           error: err instanceof Error ? err.message : String(err),
         });
       }

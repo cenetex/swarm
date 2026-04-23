@@ -85,6 +85,20 @@ export {
   stripMarkdown,
 } from './telegram-html.js';
 
+// Telegram message chunking (≤4096 / ≤1024 Telegram caps)
+export {
+  splitForTelegram,
+  TELEGRAM_MESSAGE_LIMIT,
+  TELEGRAM_CAPTION_LIMIT,
+} from './telegram-chunk.js';
+
+// Telegram callback-data signing (inline keyboards)
+export {
+  signCallbackData,
+  verifyCallbackData,
+  type VerifyResult as VerifyCallbackDataResult,
+} from './telegram-callback-data.js';
+
 // PII redaction
 export {
   redactString,
