@@ -1488,9 +1488,14 @@ export class AdminApiConstruct extends Construct {
       integration: avatarsIntegration,
     });
 
-    // Telegram diagnostics and repair routes
+    // Telegram routes — every handler match in
+    // packages/admin-api/src/handlers/avatar-routes/telegram.ts must also
+    // be registered here, otherwise API Gateway returns 404 before the
+    // Lambda is ever invoked. Drift between handler and CDK here has
+    // silently broken features more than once; #1358 (router migration)
+    // replaces this with a {proxy+} pattern to eliminate the class.
     this.api.addRoutes({
-      path: '/avatars/{avatarId}/telegram/diagnostics',
+      path: '/avatars/{avatarId}/telegram/diagnose',
       methods: [apigateway.HttpMethod.GET],
       integration: avatarsIntegration,
     });
@@ -1498,6 +1503,30 @@ export class AdminApiConstruct extends Construct {
     this.api.addRoutes({
       path: '/avatars/{avatarId}/telegram/repair',
       methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/telegram/known-users',
+      methods: [apigateway.HttpMethod.GET],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/telegram/resolve-group',
+      methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/telegram/bind-code',
+      methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/telegram/binding',
+      methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.DELETE],
       integration: avatarsIntegration,
     });
 
