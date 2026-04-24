@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { fetchPromptPreview, type PromptPreviewResponse, type ToolPreview } from '../api/prompt-preview';
+import { updateAvatar, type SystemPromptOverride } from '../api/avatars';
 import { useActiveAvatar, useActiveChat } from '../store';
 
 interface PromptPreviewPanelProps {
@@ -83,6 +84,12 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
   const [activeTab, setActiveTab] = useState<TabId>('prompt');
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [toolsetFilter, setToolsetFilter] = useState<string>('all');
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [overrideMode, setOverrideMode] = useState<'none' | 'inline' | 'url'>('none');
+  const [inlineText, setInlineText] = useState('');
+  const [urlValue, setUrlValue] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const loadPreview = useCallback(async () => {
     if (!activeAgent) return;
@@ -119,6 +126,72 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
       loadPreview();
     }
   }, [isOpen, activeAgent, loadPreview]);
+
+  const openEditMode = useCallback(() => {
+    if (!activeAgent) return;
+    setIsEditMode(true);
+    setSaveError(null);
+    if (activeAgent.systemPromptOverride) {
+      const override = activeAgent.systemPromptOverride;
+      if (override.kind === 'inline') {
+        setOverrideMode('inline');
+        setInlineText(override.text);
+      } else if (override.kind === 'url') {
+        setOverrideMode('url');
+        setUrlValue(override.url);
+      }
+    } else {
+      setOverrideMode('none');
+      setInlineText(preview?.systemPrompt || '');
+    }
+  }, [activeAgent, preview?.systemPrompt]);
+
+  const handleSave = useCallback(async () => {
+    if (!activeAgent) return;
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      let override: SystemPromptOverride | null = null;
+      if (overrideMode === 'inline') {
+        override = { kind: 'inline', text: inlineText };
+      } else if (overrideMode === 'url') {
+        override = { kind: 'url', url: urlValue };
+      }
+
+      await updateAvatar(activeAgent.id, { systemPromptOverride: override || undefined });
+      setIsEditMode(false);
+      await loadPreview();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save prompt override';
+      setSaveError(message);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [activeAgent, overrideMode, inlineText, urlValue, loadPreview]);
+
+  const handleCancel = useCallback(() => {
+    setIsEditMode(false);
+    setSaveError(null);
+  }, []);
+
+  const handleClear = useCallback(async () => {
+    if (!activeAgent) return;
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      const updates: any = { systemPromptOverride: undefined };
+      await updateAvatar(activeAgent.id, updates);
+      setIsEditMode(false);
+      await loadPreview();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to clear prompt override';
+      setSaveError(message);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [activeAgent, loadPreview]);
 
   const toggleTool = useCallback((toolName: string) => {
     setExpandedTools(prev => {
@@ -221,17 +294,18 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
 
         {/* Tabs */}
         <div className="border-b border-[var(--color-border)] px-4 bg-[var(--color-bg-secondary)]">
-          <div className="flex gap-4">
-            <button
-              onClick={() => setActiveTab('prompt')}
-              className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'prompt'
-                  ? 'border-brand-500 text-brand-400'
-                  : 'border-transparent text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
-              }`}
-            >
-              {t('promptPreview.tabs.systemPrompt')}
-            </button>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex gap-4">
+              <button
+                onClick={() => setActiveTab('prompt')}
+                className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'prompt'
+                    ? 'border-brand-500 text-brand-400'
+                    : 'border-transparent text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
+                }`}
+              >
+                {t('promptPreview.tabs.systemPrompt')}
+              </button>
             <button
               onClick={() => setActiveTab('tools')}
               className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
@@ -252,6 +326,24 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
             >
               {t('promptPreview.tabs.messages', { count: preview?.messages.length || 0 })}
             </button>
+            </div>
+            <div className="flex items-center gap-2">
+              {activeTab === 'prompt' && activeAgent?.systemPromptOverride && (
+                <span className="text-xs px-2 py-1 rounded-full bg-brand-900/50 text-brand-300">
+                  {activeAgent.systemPromptOverride.kind === 'inline'
+                    ? 'Using override: inline'
+                    : 'Using override: URL'}
+                </span>
+              )}
+              {activeTab === 'prompt' && !isEditMode && (
+                <button
+                  onClick={openEditMode}
+                  className="px-3 py-1 text-xs rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] transition-colors"
+                >
+                  {t('common.edit')}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -295,9 +387,115 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
           {/* System Prompt Tab */}
           {activeTab === 'prompt' && preview && (
             <div className="p-4">
-              <pre className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap font-mono bg-[var(--color-bg-secondary)] rounded-lg p-4 overflow-x-auto">
-                {preview.systemPrompt}
-              </pre>
+              {isEditMode ? (
+                <div className="space-y-4">
+                  {saveError && (
+                    <div className="p-3 rounded-lg bg-red-900/20 border border-red-900/40">
+                      <p className="text-xs text-red-400">{saveError}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-[var(--color-text)]">
+                      {t('promptPreview.overrideMode')}
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setOverrideMode('none')}
+                        className={`flex-1 px-3 py-2 text-xs rounded-lg border transition-colors ${
+                          overrideMode === 'none'
+                            ? 'border-brand-500 bg-brand-900/30 text-brand-300'
+                            : 'border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                        }`}
+                      >
+                        None (assembled)
+                      </button>
+                      <button
+                        onClick={() => setOverrideMode('inline')}
+                        className={`flex-1 px-3 py-2 text-xs rounded-lg border transition-colors ${
+                          overrideMode === 'inline'
+                            ? 'border-brand-500 bg-brand-900/30 text-brand-300'
+                            : 'border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                        }`}
+                      >
+                        Custom text
+                      </button>
+                      <button
+                        onClick={() => setOverrideMode('url')}
+                        className={`flex-1 px-3 py-2 text-xs rounded-lg border transition-colors ${
+                          overrideMode === 'url'
+                            ? 'border-brand-500 bg-brand-900/30 text-brand-300'
+                            : 'border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                        }`}
+                      >
+                        URL
+                      </button>
+                    </div>
+                  </div>
+
+                  {overrideMode === 'inline' && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-[var(--color-text)]">
+                        {t('promptPreview.customText')}
+                      </label>
+                      <textarea
+                        value={inlineText}
+                        onChange={(e) => setInlineText(e.target.value)}
+                        className="w-full h-48 p-3 text-xs rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+                        placeholder="Enter custom system prompt..."
+                      />
+                    </div>
+                  )}
+
+                  {overrideMode === 'url' && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-[var(--color-text)]">
+                        {t('promptPreview.urlInput')}
+                      </label>
+                      <input
+                        type="url"
+                        value={urlValue}
+                        onChange={(e) => setUrlValue(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+                        placeholder="https://example.com/prompt.txt"
+                      />
+                      <p className="text-xs text-[var(--color-text-tertiary)]">
+                        {t('promptPreview.cacheTtlHint')}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSave}
+                      disabled={isSaving}
+                      className="flex-1 px-3 py-2 text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition-colors disabled:opacity-50"
+                    >
+                      {isSaving ? t('common.saving') : t('common.save')}
+                    </button>
+                    <button
+                      onClick={handleCancel}
+                      disabled={isSaving}
+                      className="flex-1 px-3 py-2 text-xs rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] transition-colors disabled:opacity-50"
+                    >
+                      {t('common.cancel')}
+                    </button>
+                    {activeAgent?.systemPromptOverride && (
+                      <button
+                        onClick={handleClear}
+                        disabled={isSaving}
+                        className="px-3 py-2 text-xs rounded-lg bg-red-900/30 hover:bg-red-900/50 text-red-400 transition-colors disabled:opacity-50"
+                      >
+                        {t('promptPreview.clear')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <pre className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap font-mono bg-[var(--color-bg-secondary)] rounded-lg p-4 overflow-x-auto">
+                  {preview.systemPrompt}
+                </pre>
+              )}
             </div>
           )}
 

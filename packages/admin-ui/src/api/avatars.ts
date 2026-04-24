@@ -32,6 +32,10 @@ export interface PlatformConfig {
   allowedDmUserIds?: string[];
 }
 
+export type SystemPromptOverride =
+  | { kind: 'inline'; text: string }
+  | { kind: 'url'; url: string; cacheTtlSec?: number };
+
 export interface AvatarResponse {
   avatarId: string;
   name: string;
@@ -77,6 +81,7 @@ export interface AvatarResponse {
     enabled: boolean;
   };
   llmConfig?: LlmConfig;
+  systemPromptOverride?: SystemPromptOverride;
 }
 
 export async function slotOrb(avatarId: string, mintAddress: string): Promise<{ success: boolean }>{
@@ -174,7 +179,7 @@ export async function getAvatar(avatarId: string): Promise<AvatarResponse> {
  */
 export async function updateAvatar(
   avatarId: string,
-  updates: Partial<Pick<AvatarResponse, 'name' | 'description' | 'persona' | 'profileImage' | 'characterReference' | 'llmConfig' | 'mediaConfig' | 'voiceConfig' | 'platforms'>>
+  updates: Partial<Pick<AvatarResponse, 'name' | 'description' | 'persona' | 'profileImage' | 'characterReference' | 'llmConfig' | 'mediaConfig' | 'voiceConfig' | 'platforms' | 'systemPromptOverride'>>
 ): Promise<AvatarResponse> {
   const response = await fetch(`${API_BASE}/avatars/${avatarId}`, {
     method: 'PUT',

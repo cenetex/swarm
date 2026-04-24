@@ -2,6 +2,10 @@
  * Avatar Types
  */
 
+export type SystemPromptOverride =
+  | { kind: 'inline'; text: string }
+  | { kind: 'url'; url: string; cacheTtlSec?: number };
+
 export interface AvatarSecret {
   key: string;
   name: string;
@@ -51,6 +55,8 @@ export interface AvatarConfig {
     twitter?: PlatformConfig;
     discord?: PlatformConfig;
   };
+  // System prompt override (inline text or URL)
+  systemPromptOverride?: SystemPromptOverride;
   // Legacy fields (deprecated)
   ownerWallet?: string;
   ownerClaimedAt?: number;
