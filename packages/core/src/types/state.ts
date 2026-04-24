@@ -32,6 +32,14 @@ export interface ResponseDecision {
   trigger: ResponseTrigger;
   delay: number;           // Delay in ms before responding (0 = immediate)
   priority: 'high' | 'normal' | 'low';
+  // Suppression context (optional)
+  suppressionReason?: 'follow_up_cap' | 'ambient_cooldown';
+  suppressionDetails?: {
+    followUpsInWindow?: number;
+    windowEndsAt?: number;
+    msSinceLastResponse?: number;
+    cooldownMs?: number;
+  };
 }
 
 export interface ChannelState {

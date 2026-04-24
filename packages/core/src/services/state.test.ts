@@ -1280,7 +1280,7 @@ describe('DynamoDB Response Validation', () => {
   });
 
   describe('Follow-up cap (#1534)', () => {
-    it('should cap engaged_user follow-ups at MAX_FOLLOW_UPS', () => {
+    it('should cap engaged_user follow-ups at MAX_FOLLOW_UPS with suppression details', () => {
       const now = Date.now();
       const engagementWindowStart = now - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
       const engagedUntil = now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS / 2;
@@ -1308,6 +1308,9 @@ describe('DynamoDB Response Validation', () => {
 
       expect(decision.shouldRespond).toBe(false);
       expect(decision.trigger).toBe('none');
+      expect(decision.suppressionReason).toBe('follow_up_cap');
+      expect(decision.suppressionDetails?.followUpsInWindow).toBe(CHANNEL_CONFIG.MAX_FOLLOW_UPS);
+      expect(decision.suppressionDetails?.windowEndsAt).toBe(engagedUntil);
     });
 
     it('should allow engaged_user following before cap', () => {
@@ -1367,12 +1370,11 @@ describe('DynamoDB Response Validation', () => {
   });
 
   describe('Ambient cooldown (#1534)', () => {
-    it('should suppress first non-direct response within ambient cooldown', () => {
+    it('should suppress first non-direct response within ambient cooldown with details', () => {
       const now = Date.now();
       const lastResponseAt = now - CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS / 2; // Within 5 min
 
       const state = createChannelState({
-        chatType: 'private', // Note: private bypasses cooldown, so use 1:1 setup if needed
         state: 'IDLE',
         lastResponseAt,
         recentMessages: Array.from({ length: 5 }, (_, i) =>
@@ -1385,6 +1387,10 @@ describe('DynamoDB Response Validation', () => {
       const decision = evaluateResponseTrigger(state);
 
       expect(decision.shouldRespond).toBe(false);
+      expect(decision.suppressionReason).toBe('ambient_cooldown');
+      expect(decision.suppressionDetails?.msSinceLastResponse).toBeGreaterThan(0);
+      expect(decision.suppressionDetails?.msSinceLastResponse).toBeLessThan(CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS);
+      expect(decision.suppressionDetails?.cooldownMs).toBe(CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS);
     });
 
     it('should allow non-direct response after ambient cooldown expires', () => {

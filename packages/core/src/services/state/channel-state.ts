@@ -507,6 +507,7 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
       const engagedUntil = state.engagedUsers[lastMessage.userId];
       if (engagedUntil && engagedUntil > now) {
         // Check if we've hit the follow-up cap for this engagement window
+        const windowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
         const followUpCount = getFollowUpCountInCurrentWindow(state, engagedUntil);
         if (followUpCount >= CHANNEL_CONFIG.MAX_FOLLOW_UPS) {
           return {
@@ -514,6 +515,11 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
             trigger: 'none',
             delay: 0,
             priority: 'low',
+            suppressionReason: 'follow_up_cap',
+            suppressionDetails: {
+              followUpsInWindow: followUpCount,
+              windowEndsAt: engagedUntil,
+            },
           };
         }
 
@@ -554,6 +560,7 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
   if (state.engagedUsers && lastMessage?.userId) {
     const engagedUntil = state.engagedUsers[lastMessage.userId];
     if (engagedUntil && engagedUntil > now) {
+      const windowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
       const followUpCount = getFollowUpCountInCurrentWindow(state, engagedUntil);
       if (followUpCount >= CHANNEL_CONFIG.MAX_FOLLOW_UPS) {
         return {
@@ -561,6 +568,11 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
           trigger: 'none',
           delay: 0,
           priority: 'low',
+          suppressionReason: 'follow_up_cap',
+          suppressionDetails: {
+            followUpsInWindow: followUpCount,
+            windowEndsAt: engagedUntil,
+          },
         };
       }
 
@@ -594,11 +606,17 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
     // Message threshold trigger - subject to ambient cooldown
     if (state.recentMessages.length >= CHANNEL_CONFIG.MESSAGE_THRESHOLD) {
       if (isAmbientCooldownActive(state)) {
+        const elapsed = now - (state.lastResponseAt || 0);
         return {
           shouldRespond: false,
           trigger: 'none',
           delay: 0,
           priority: 'low',
+          suppressionReason: 'ambient_cooldown',
+          suppressionDetails: {
+            msSinceLastResponse: elapsed,
+            cooldownMs: CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS,
+          },
         };
       }
 
@@ -617,11 +635,17 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
       timeSinceActivity > CHANNEL_CONFIG.CONVERSATION_GAP_MS
     ) {
       if (isAmbientCooldownActive(state)) {
+        const elapsed = now - (state.lastResponseAt || 0);
         return {
           shouldRespond: false,
           trigger: 'none',
           delay: 0,
           priority: 'low',
+          suppressionReason: 'ambient_cooldown',
+          suppressionDetails: {
+            msSinceLastResponse: elapsed,
+            cooldownMs: CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS,
+          },
         };
       }
 
@@ -639,11 +663,17 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
     // If we've been active for a while with messages, consider responding - subject to ambient cooldown
     if (state.recentMessages.length >= 2) {
       if (isAmbientCooldownActive(state)) {
+        const elapsed = now - (state.lastResponseAt || 0);
         return {
           shouldRespond: false,
           trigger: 'none',
           delay: 0,
           priority: 'low',
+          suppressionReason: 'ambient_cooldown',
+          suppressionDetails: {
+            msSinceLastResponse: elapsed,
+            cooldownMs: CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS,
+          },
         };
       }
 
