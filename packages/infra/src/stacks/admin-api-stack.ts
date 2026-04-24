@@ -20,6 +20,7 @@ import { ClaudeCodeWorker } from '../constructs/claude-code-worker.js';
 import { DiscordGatewayWorker } from '../constructs/discord-gateway-worker.js';
 import { OpsDashboard } from '../constructs/ops-dashboard.js';
 import type { SharedInfraStack } from './shared-infra-stack.js';
+import type { CoreInfraStack } from './core-infra-stack.js';
 
 /**
  * Computes the SSM parameter name for the Admin API endpoint URL.
@@ -41,9 +42,9 @@ export interface AdminApiStackProps extends cdk.StackProps {
   nameSuffix?: string;
 
   /**
-   * Reference to the shared infrastructure stack
+   * Reference to the shared infrastructure stack (CoreInfraStack or SharedInfraStack for backwards compatibility)
    */
-  sharedInfraStack: SharedInfraStack;
+  sharedInfraStack: SharedInfraStack | CoreInfraStack;
 
   /**
    * Path to compiled handlers
