@@ -169,7 +169,14 @@ export async function getOrCreateChannelState(
 }
 
 /**
- * Add message to channel with Kyro-style state machine updates
+ * Add message to channel with Kyro-style state machine updates.
+ *
+ * Idempotent by `message.messageId` against the current `recentMessages`
+ * buffer (#1552). Handles the case where the same Telegram update flows
+ * through both the shared-gateway path and the legacy path (or is
+ * delivered twice) and would otherwise append twice — observed today
+ * when CHOPPA's buffer had the same user message stored twice at the same
+ * timestamp with conflicting `isMention` flags.
  */
 export async function addMessageToChannel(
   docClient: DynamoDBDocumentClient,
@@ -185,6 +192,25 @@ export async function addMessageToChannel(
   const now = Date.now();
   const ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
   const isDirect = Boolean(message.isMention || message.isReplyToBot);
+
+  // #1552 — idempotency guard. FIFO queue groups by conversationId so
+  // reads/writes for the same conversation are serialized; a plain
+  // read-then-skip here is race-free for our access pattern. Falls through
+  // (non-blocking) if the read errors — worst case a duplicate append,
+  // which is the current behavior.
+  try {
+    const existing = await getChannelState(docClient, tableName, avatarId, channelId);
+    if (
+      existing?.recentMessages &&
+      message.messageId &&
+      existing.recentMessages.some(m => m.messageId === message.messageId)
+    ) {
+      // Already recorded. No-op.
+      return existing;
+    }
+  } catch {
+    // Fall through — better to double-append than to fail the inbound path.
+  }
 
   // Data minimization: truncate message content stored in channel state buffers.
   // Full content is available in CloudWatch logs for debugging; the state buffer

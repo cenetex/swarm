@@ -52,8 +52,14 @@ describe('DynamoDBStateService Integration', () => {
     });
 
     expect(mockSend).toHaveBeenCalled();
-    const updateCall = mockSend.mock.calls[0][0] as any;
-    expect(updateCall.input.TableName).toBe('test-table');
-    expect(updateCall.input.UpdateExpression).toContain('recentMessages = list_append');
+    // #1552 — addMessageToChannel now does a GetItem first for idempotency,
+    // then the UpdateItem. Find the update call among the mock's call list
+    // rather than assuming index 0.
+    const updateCall = (mockSend.mock.calls as unknown[][])
+      .map(([cmd]) => cmd as { input?: { UpdateExpression?: string; TableName?: string } })
+      .find(cmd => typeof cmd?.input?.UpdateExpression === 'string');
+    expect(updateCall).toBeDefined();
+    expect(updateCall!.input!.TableName).toBe('test-table');
+    expect(updateCall!.input!.UpdateExpression).toContain('recentMessages = list_append');
   });
 });
