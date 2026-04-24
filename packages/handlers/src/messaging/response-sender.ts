@@ -27,6 +27,7 @@ import { isAllowedDmUserById } from '../telegram/telegram-webhook-shared.js';
 import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../services/sqs-send.js';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
+import { shouldPauseAvatar } from '../services/anomaly-detector.js';
 import { RaticrossAdapter } from './adapters/raticross-adapter.js';
 
 const dynamo = getDynamoClient();
@@ -564,6 +565,68 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       } else {
         // No media actions, send directly
         actionsToSend = response.actions;
+      }
+
+      // Check for anomaly (loop detection) before sending
+      let anomalyCheckResult = null;
+      if (actionsToSend && actionsToSend.length > 0) {
+        const messageActions = actionsToSend.filter((a: ResponseAction) => a.type === 'send_message') as Array<{ type: 'send_message'; text: string }>;
+        if (messageActions.length > 0) {
+          const messageText = messageActions.map(a => a.text).join('\n');
+          anomalyCheckResult = await shouldPauseAvatar(avatarId, response.conversationId, messageText);
+        }
+      }
+
+      // If anomaly detected, pause the avatar on this platform
+      if (anomalyCheckResult?.paused) {
+        logger.warn('Anomaly detected - auto-pausing avatar on platform', {
+          event: 'anomaly_auto_pause',
+          subsystem: 'outbound',
+          avatarId,
+          platform: response.platform,
+          conversationId: response.conversationId,
+          reason: anomalyCheckResult.reason,
+          metrics: anomalyCheckResult.metrics,
+        });
+
+        // Disable platform to prevent further spam
+        try {
+          const updatedConfig = structuredClone(outboundRuntime.avatarConfig);
+          const platformKey = response.platform as keyof typeof updatedConfig.platforms;
+          if (updatedConfig.platforms[platformKey]) {
+            updatedConfig.platforms[platformKey]!.enabled = false;
+          }
+          await stateService.saveAvatarConfig(updatedConfig);
+          logger.info('Avatar platform disabled due to anomaly', {
+            event: 'anomaly_paused',
+            subsystem: 'outbound',
+            avatarId,
+            platform: response.platform,
+          });
+        } catch (error) {
+          logger.warn('Failed to disable platform after anomaly', {
+            error: error instanceof Error ? error.message : String(error),
+            avatarId,
+            platform: response.platform,
+          });
+        }
+
+        // Skip sending this message and mark response as handled
+        try {
+          await markResponseHandled(avatarId, responseKey);
+        } catch {
+          // Best effort
+        }
+
+        metrics.incrementCounter('AnomalyPaused');
+        logger.info('Response skipped due to anomaly pause', {
+          event: 'response_sent',
+          subsystem: 'outbound',
+          conversationId: response.conversationId,
+          platform: response.platform,
+          actionCount: 0,
+        });
+        continue;
       }
 
       // Mark as handling (optimistic write) BEFORE sending to prevent triple-send bug.
