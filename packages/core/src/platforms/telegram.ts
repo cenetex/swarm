@@ -578,12 +578,27 @@ export function envelopeToBufferedMessage(envelope: SwarmEnvelope): BufferedMess
 // TELEGRAM ADAPTER CLASS
 // =============================================================================
 
+/**
+ * Default hold before sending a group/supergroup reply (#1527). Gives mod-bot
+ * and anti-spam deletions time to land so we never post a reply to a message
+ * that has already been purged.
+ */
+const DEFAULT_GROUP_PRE_REPLY_DELAY_MS = 10_000;
+
 export class TelegramAdapter extends PlatformAdapter {
   readonly platform = 'telegram' as const;
   private bot: Bot | null = null;
   private config: TelegramConfig;
   private botId?: number;
   private botIdentityPromise: Promise<void> | null = null;
+
+  /**
+   * Whether this action would carry `reply_to_message_id` to Telegram — the
+   * only actions affected by the pre-reply group hold (#1527).
+   */
+  private isReplyAction(action: ResponseAction): boolean {
+    return action.type === 'send_message' || action.type === 'send_media';
+  }
 
   constructor(avatarConfig: AvatarConfig, private readonly botToken: string, botId?: number) {
     super(avatarConfig);
@@ -698,6 +713,24 @@ export class TelegramAdapter extends PlatformAdapter {
 
     const chatId = parseInt(conversationId);
     const replyParams = replyToMessageId ? { reply_to_message_id: parseInt(replyToMessageId) } : {};
+
+    // Pre-reply hold for groups (#1527) — give mod-bot / anti-spam deletions
+    // time to land before we commit to a reply. Negative chat IDs are groups
+    // or supergroups in Telegram; positive are user DMs (no hold needed).
+    if (chatId < 0 && replyToMessageId && this.isReplyAction(action)) {
+      const delayMs = this.config.preReplyDelayMs ?? DEFAULT_GROUP_PRE_REPLY_DELAY_MS;
+      if (delayMs > 0) {
+        logger.info('Holding reply before send to let anti-spam deletions land', {
+          subsystem: 'platform',
+          platform: 'telegram',
+          event: 'pre_reply_hold',
+          chatId,
+          replyToMessageId,
+          delayMs,
+        });
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
 
     try {
       switch (action.type) {
@@ -872,24 +905,31 @@ export class TelegramAdapter extends PlatformAdapter {
         ?? (error as { error_code?: number }).error_code;
       const errorMsg = error instanceof Error ? error.message : String(error);
 
-      // Reply target gone (parent message deleted — common when spammers
-      // get banned and their messages purged). Retry without
-      // reply_to_message_id rather than discarding the whole reply. See
-      // #1511.
+      // Reply target gone — the parent message was deleted between the time
+      // we decided to respond and the time we tried to send. Most common
+      // cause: mod bots / Telegram anti-spam purging the original message.
+      // DROP the reply entirely. See aws-swarm#1527 (reverses the no-reply
+      // fallback from #1511, which produced bare messages stranded in the
+      // channel talking to deleted scam messages).
       if (status === 400 && errorMsg.includes('message to be replied not found') && extra && 'reply_to_message_id' in extra) {
-        const { reply_to_message_id, ...rest } = extra as Record<string, unknown>;
-        logger.warn('Telegram reply target missing, retrying without reply_to_message_id', {
+        const replyToMessageId = (extra as Record<string, unknown>).reply_to_message_id;
+        logger.warn('Telegram reply target missing — dropping reply to avoid stranded bare message', {
           subsystem: 'platform',
           platform: 'telegram',
-          event: 'reply_target_missing_fallback',
+          event: 'reply_target_deleted',
           chatId: chatIdNum,
-          replyToMessageId: reply_to_message_id,
+          replyToMessageId,
         });
-        await this.bot.api.sendMessage(chatIdNum, htmlText, {
-          parse_mode: 'HTML',
-          ...rest,
-        });
-        return;
+        throw new PlatformError(
+          'Reply target message was deleted before send',
+          {
+            platform: 'telegram',
+            statusCode: 400,
+            retryable: false,
+            cause: error,
+            code: SwarmErrorCode.PLATFORM_API_ERROR,
+          },
+        );
       }
 
       // Only fall back to plain text for HTML formatting errors.
@@ -939,8 +979,9 @@ export class TelegramAdapter extends PlatformAdapter {
       const captionFits = text.length > 0 && text.length <= TELEGRAM_CAPTION_LIMIT;
       const captionHtml = captionFits ? markdownToTelegramHtml(text) : undefined;
 
-      // Wrap the media send so it falls back to no-reply when the parent
-      // message was deleted (#1511) — same pattern as sendTextWithFallback.
+      // Wrap the media send so it DROPS the action when the parent message
+      // was deleted (#1527, reverses #1511). Stranded bare media replying
+      // to a removed spam message is worse than no media at all.
       const sendWithReplyFallback = async <T>(
         send: (extra: Record<string, unknown> | undefined) => Promise<T>,
       ): Promise<T> => {
@@ -955,15 +996,24 @@ export class TelegramAdapter extends PlatformAdapter {
             errorMsg.includes('message to be replied not found') &&
             replyParams
           ) {
-            logger.warn('Telegram reply target missing on media send, retrying without reply_to_message_id', {
+            logger.warn('Telegram reply target missing on media send — dropping media action', {
               subsystem: 'platform',
               platform: 'telegram',
-              event: 'reply_target_missing_fallback',
+              event: 'reply_target_deleted',
               chatId: chatIdNum,
               replyToMessageId: replyParams.reply_to_message_id,
               mediaType: firstMedia.type,
             });
-            return await send(undefined);
+            throw new PlatformError(
+              'Reply target message was deleted before media send',
+              {
+                platform: 'telegram',
+                statusCode: 400,
+                retryable: false,
+                cause: error,
+                code: SwarmErrorCode.PLATFORM_API_ERROR,
+              },
+            );
           }
           throw error;
         }

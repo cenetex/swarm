@@ -20,6 +20,16 @@ export interface AvatarRecord {
   description?: string;
   persona?: string;
 
+  /**
+   * Operator override of the assembled system prompt. When set, the entire
+   * prompt-builder template stack is bypassed. See aws-swarm#1522.
+   * - `inline`: literal text used verbatim.
+   * - `url`: fetched at request time with in-memory cache (default 300s).
+   */
+  systemPromptOverride?:
+    | { kind: 'inline'; text: string }
+    | { kind: 'url'; url: string; cacheTtlSec?: number };
+
   // Profile image for character consistency (avatar/headshot)
   profileImage?: {
     url: string;           // S3/CDN URL

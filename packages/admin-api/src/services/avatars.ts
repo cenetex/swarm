@@ -337,6 +337,7 @@ export async function updateAvatar(
     'name'
     | 'description'
     | 'persona'
+    | 'systemPromptOverride'
     | 'platforms'
     | 'llmConfig'
     | 'status'
@@ -353,10 +354,14 @@ export async function updateAvatar(
     throw new Error(`Avatar not found: ${avatarId}`);
   }
 
-  // Block persona and profile image updates for ascended avatars (permanently locked)
+  // Block persona, systemPromptOverride, and profile image updates for ascended
+  // avatars (permanently locked — #1522 override is treated like persona).
   if (existing.isAscended) {
     if (updates.persona !== undefined) {
       throw new Error('Cannot update persona of ascended avatar - it is permanently locked');
+    }
+    if (updates.systemPromptOverride !== undefined) {
+      throw new Error('Cannot update systemPromptOverride of ascended avatar - it is permanently locked');
     }
     if (updates.profileImage !== undefined) {
       throw new Error('Cannot update profile image of ascended avatar - it is permanently locked');

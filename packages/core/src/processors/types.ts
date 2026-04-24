@@ -91,6 +91,14 @@ export interface ProcessorAvatarConfig {
   name?: string;
   description?: string;
   persona?: string;
+  /**
+   * Operator override of the assembled system prompt. See aws-swarm#1522.
+   * When set, `resolveSystemPrompt` returns this value verbatim and bypasses
+   * the prompt-builder template stack.
+   */
+  systemPromptOverride?:
+    | { kind: 'inline'; text: string }
+    | { kind: 'url'; url: string; cacheTtlSec?: number };
   responseStyle?: ResponseStyle;
 
   /** Which categories of tools are enabled */

@@ -14,7 +14,7 @@ import { isAuthError } from '../auth/errors.js';
 import { isRequestValidationError, validateRequestBody } from '../middleware/validate.js';
 import { getCorsHeaders } from '../http/cors.js';
 import {
-  buildDynamicSystemPrompt,
+  resolveSystemPrompt,
   type ToolCategory,
   type ProcessorAvatarConfig,
 } from '@swarm/core';
@@ -159,15 +159,18 @@ export async function handler(
     if (enabledToolsets.includes('property')) enabledCategories.push('property');
     if (enabledToolsets.includes('signal-station')) enabledCategories.push('signal-station');
 
-    // Build system prompt using unified prompt builder
+    // Build system prompt using unified prompt builder.
+    // #1522: resolveSystemPrompt applies an operator override (inline text or
+    // fetched URL) if set, so the preview shows exactly what the LLM will see.
     const avatarConfig: ProcessorAvatarConfig = {
       avatarId,
       name: avatarRecord.name,
       description: avatarRecord.description,
       persona: avatarRecord.persona,
+      systemPromptOverride: avatarRecord.systemPromptOverride,
       enabledCategories,
     };
-    const systemPrompt = buildDynamicSystemPrompt(avatarConfig, 'admin-ui');
+    const systemPrompt = await resolveSystemPrompt(avatarConfig, 'admin-ui');
 
     // Get enabled toolsets (fallback to category defaults on failure)
     let mcpEnabledToolsets: ToolsetId[] = [];
