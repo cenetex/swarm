@@ -28,11 +28,23 @@ export interface ResponseStyle {
 // AGENT CONFIGURATION
 // =============================================================================
 
+/**
+ * Operator override of the assembled system prompt. When set, the full
+ * prompt-builder template stack is bypassed and this value is used verbatim.
+ * `inline` carries the text directly; `url` fetches at request time with a
+ * short in-memory cache (default 300s) and falls back to the template on
+ * fetch failure. See aws-swarm#1522.
+ */
+export type SystemPromptOverride =
+  | { kind: 'inline'; text: string }
+  | { kind: 'url'; url: string; cacheTtlSec?: number };
+
 export interface AvatarConfig {
   id: string;
   name: string;
   version: string;
   persona: string; // Path or content of persona markdown
+  systemPromptOverride?: SystemPromptOverride; // #1522 — operator override of assembled prompt
   responseStyle?: ResponseStyle; // Formatting and length preferences (separate from persona)
   brain?: {
     writeMode?: 'legacy' | 'dual' | 'canonical';
@@ -117,6 +129,15 @@ export interface TelegramConfig {
   botUsername: string;
   botId?: number;
   webhookPath: string;
+  /**
+   * How long to wait (ms) between deciding to respond and sending the reply.
+   * Purpose: let mod-bot / anti-spam deletions land first so the bot never
+   * posts a reply to a message that has already been purged. See #1527.
+   *
+   * Applied ONLY in group/supergroup chats. DMs and private replies bypass
+   * the delay. If unset, defaults to 10000 (10s) for groups.
+   */
+  preReplyDelayMs?: number;
   allowedChatTypes?: ('private' | 'group' | 'supergroup' | 'channel')[];
   /**
    * Optional allowlist of Telegram chat IDs the bot is allowed to respond in.

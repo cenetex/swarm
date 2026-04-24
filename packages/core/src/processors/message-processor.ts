@@ -37,6 +37,7 @@ import {
   type FilterableToolDefinition,
 } from './tool-builder.js';
 import { buildDynamicSystemPrompt, buildChatSystemPrompt } from './prompt-builder.js';
+import { resolveSystemPrompt } from './system-prompt-resolver.js';
 import { logger } from '../utils/logger.js';
 
 // =============================================================================
@@ -259,11 +260,16 @@ export class MessageProcessor {
     let systemPrompt: string = options.customSystemPrompt || '';
 
     if (!systemPrompt) {
-      if (config.platform === 'admin-ui' || config.platform === 'api') {
-        // Full dynamic prompt for admin UI
+      // If an operator override is set, the resolver returns it verbatim
+      // (inline) or fetched (url) — see #1522. Fail-closed: on URL error the
+      // resolver falls back to buildDynamicSystemPrompt, which for messaging
+      // platforms is more than the chat template would produce, but still
+      // correct. Without an override, keep the platform-specific defaults.
+      if (avatar.systemPromptOverride) {
+        systemPrompt = await resolveSystemPrompt(avatar, config.platform);
+      } else if (config.platform === 'admin-ui' || config.platform === 'api') {
         systemPrompt = buildDynamicSystemPrompt(avatar, config.platform);
       } else {
-        // Shorter chat-optimized prompt for messaging platforms
         systemPrompt = buildChatSystemPrompt(avatar, config.platform as 'telegram' | 'discord' | 'twitter' | 'web');
       }
     }

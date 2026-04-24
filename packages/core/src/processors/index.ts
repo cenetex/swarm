@@ -59,6 +59,12 @@ export {
   type RuntimeContext,
 } from './prompt-builder.js';
 
+// === System Prompt Resolver (override-aware, async) ===
+export {
+  resolveSystemPrompt,
+  clearSystemPromptOverrideCache,
+} from './system-prompt-resolver.js';
+
 // === Legacy Processors ===
 export {
   MessageEvaluator,

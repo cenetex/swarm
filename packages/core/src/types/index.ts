@@ -628,11 +628,31 @@ export const ResponseStyleSchema = z.object({
   bulletPoints: z.boolean().optional(),
 });
 
+/**
+ * When set, the operator has fully overridden the assembled system prompt.
+ * `inline` = literal text used verbatim.
+ * `url`    = fetched at request time and cached for `cacheTtlSec` (default 300s).
+ *            Fetch failures fall back to the assembled template (fail-closed).
+ * See aws-swarm#1522.
+ */
+export const SystemPromptOverrideSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('inline'),
+    text: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal('url'),
+    url: z.string().url(),
+    cacheTtlSec: z.number().int().positive().max(86400).optional(),
+  }),
+]);
+
 export const AvatarConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   version: z.string(),
   persona: z.string(),
+  systemPromptOverride: SystemPromptOverrideSchema.optional(),
   responseStyle: ResponseStyleSchema.optional(),
   platforms: PlatformConfigsSchema,
   llm: LLMConfigSchema,

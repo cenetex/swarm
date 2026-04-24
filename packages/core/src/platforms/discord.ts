@@ -937,7 +937,12 @@ export function buildDiscordEnvelope(
     ignoreBots?: boolean;
   }
 ): SwarmEnvelope | null {
-  // Skip bot messages if configured
+  // Own-message filter: drop if author is the avatar's own bot account (prevents self-reply loops)
+  if (config.botUserId && message.author.id === config.botUserId) {
+    return null;
+  }
+
+  // Skip bot messages if configured (default true to prevent bot ping-pong)
   if (config.ignoreBots && message.author.bot) {
     return null;
   }

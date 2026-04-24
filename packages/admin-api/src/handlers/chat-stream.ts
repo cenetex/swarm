@@ -18,7 +18,7 @@ import type {
 } from 'aws-lambda';
 import {
   logger,
-  buildDynamicSystemPrompt,
+  resolveSystemPrompt,
   extractThinking,
   detectEnabledCategories,
   type ToolCategory,
@@ -206,13 +206,14 @@ async function* streamLlmResponse(
 
 // ---- Build System Prompt (duplicated from chat.ts for decoupling) ----
 
-function buildSystemPrompt(avatar?: {
+async function buildSystemPrompt(avatar?: {
   id: string;
   name?: string;
   description?: string;
   persona?: string;
+  systemPromptOverride?: ProcessorAvatarConfig['systemPromptOverride'];
   enabledCategories?: ToolCategory[];
-}): string {
+}): Promise<string> {
   if (avatar) {
     const categories = avatar.enabledCategories || [
       'secrets', 'profile', 'media', 'gallery', 'wallets', 'diagnostics',
@@ -222,9 +223,11 @@ function buildSystemPrompt(avatar?: {
       name: avatar.name,
       description: avatar.description,
       persona: avatar.persona,
+      systemPromptOverride: avatar.systemPromptOverride,
       enabledCategories: categories,
     };
-    return buildDynamicSystemPrompt(avatarConfig, 'admin-ui');
+    // #1522 — resolver applies operator override (inline/url) if set.
+    return resolveSystemPrompt(avatarConfig, 'admin-ui');
   }
   return 'You are a Swarm avatar assistant. Please select an avatar to chat with.';
 }
@@ -319,10 +322,11 @@ export async function handler(
       name: avatarRecord?.name ?? avatar.name,
       description: avatarRecord?.description ?? avatar.description,
       persona: avatarRecord?.persona ?? avatar.persona,
+      systemPromptOverride: avatarRecord?.systemPromptOverride,
       enabledCategories,
     } : undefined;
 
-    let systemPrompt = buildSystemPrompt(avatarContext);
+    let systemPrompt = await buildSystemPrompt(avatarContext);
     // Inject user identity context (linked wallets) for the streaming path
     if (session.accountId) {
       const { injectUserIdentityContext } = await import('./chat-tools/context-builder.js');

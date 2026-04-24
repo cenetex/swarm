@@ -1371,6 +1371,35 @@ describe('buildDiscordEnvelope', () => {
     });
   });
 
+  describe('Own-Message Filter (Self-Reply Loop Protection)', () => {
+    it('should filter own messages when botUserId matches author.id', () => {
+      const msg = createDiscordMessage({
+        author: { id: 'bot-999', username: 'bot', global_name: 'Bot', bot: true },
+      });
+      const envelope = buildDiscordEnvelope(msg, { ...defaultConfig, botUserId: 'bot-999' });
+
+      expect(envelope).toBeNull();
+    });
+
+    it('should not filter messages from other users when botUserId is set', () => {
+      const msg = createDiscordMessage({
+        author: { id: 'user-111', username: 'user', global_name: 'User', bot: false },
+      });
+      const envelope = buildDiscordEnvelope(msg, { ...defaultConfig, botUserId: 'bot-999' });
+
+      expect(envelope).not.toBeNull();
+    });
+
+    it('should proceed normally when botUserId is not set', () => {
+      const msg = createDiscordMessage({
+        author: { id: 'bot-999', username: 'bot', global_name: 'Bot', bot: true },
+      });
+      const envelope = buildDiscordEnvelope(msg, { avatarId: 'test-avatar' });
+
+      expect(envelope).not.toBeNull();
+    });
+  });
+
   describe('Guild and Channel Filtering', () => {
     it('should filter by allowedGuilds', () => {
       const msg = createDiscordMessage({ guild_id: 'bad-guild' });

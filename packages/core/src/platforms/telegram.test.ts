@@ -500,37 +500,78 @@ describe('envelopeToBufferedMessage', () => {
   });
 });
 
-describe('TelegramAdapter — reply target fallback (#1511)', () => {
+describe('TelegramAdapter — drop reply when source deleted (#1527, reverses #1511)', () => {
   /**
    * Source-introspection: the adapter's private send paths are awkward to
    * mock without standing up the full grammY bot. These assertions lock in
-   * the contract that on a 'message to be replied not found' 400 from
-   * Telegram, the adapter retries the same send WITHOUT
-   * reply_to_message_id rather than discarding the reply.
+   * the contract that on a "message to be replied not found" 400 from
+   * Telegram, the adapter DROPS the reply via a non-retryable PlatformError
+   * rather than retrying without reply_to_message_id (which would strand a
+   * bare message in the channel — see #1527).
    */
-  it('sendTextWithFallback retries without reply_to_message_id on missing reply target', async () => {
+  async function readAdapterSource(): Promise<string> {
     const fs = await import('node:fs/promises');
     const url = await import('node:url');
     const path = await import('node:path');
     const here = path.dirname(url.fileURLToPath(import.meta.url));
-    const source = await fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+    return fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+  }
 
-    expect(source).toContain('reply_target_missing_fallback');
+  it('text send path throws a non-retryable error (does NOT retry without reply_to_message_id)', async () => {
+    const source = await readAdapterSource();
+    // New event name present:
+    expect(source).toContain('reply_target_deleted');
+    // Old retry-without-reply fallback removed from the text path:
+    expect(source).not.toContain('reply_target_missing_fallback');
+    expect(source).not.toMatch(
+      /message to be replied not found[\s\S]{0,800}reply_to_message_id[\s\S]{0,200}sendMessage/,
+    );
+    // PlatformError thrown with retryable:false on the deleted path:
     expect(source).toMatch(
-      /message to be replied not found[\s\S]{0,500}reply_to_message_id[\s\S]{0,500}sendMessage/,
+      /reply_target_deleted[\s\S]{0,600}PlatformError[\s\S]{0,400}retryable:\s*false/,
     );
   });
 
-  it('sendMessage media path retries without reply on missing reply target', async () => {
+  it('media send path throws instead of retrying without reply_to_message_id', async () => {
+    const source = await readAdapterSource();
+    // Old send(undefined) retry removed:
+    expect(source).not.toMatch(
+      /sendWithReplyFallback[\s\S]{0,1000}message to be replied not found[\s\S]{0,500}return await send\(undefined\)/,
+    );
+    // New non-retryable throw present on media path:
+    expect(source).toMatch(
+      /Reply target message was deleted before media send[\s\S]{0,400}retryable:\s*false/,
+    );
+  });
+});
+
+describe('TelegramAdapter — pre-reply group hold (#1527)', () => {
+  it('waits DEFAULT_GROUP_PRE_REPLY_DELAY_MS before sending a reply in a group chat', async () => {
     const fs = await import('node:fs/promises');
     const url = await import('node:url');
     const path = await import('node:path');
     const here = path.dirname(url.fileURLToPath(import.meta.url));
     const source = await fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
 
-    expect(source).toContain('sendWithReplyFallback');
-    expect(source).toMatch(
-      /sendWithReplyFallback[\s\S]{0,1000}message to be replied not found[\s\S]{0,500}return await send\(undefined\)/,
-    );
+    // The hold constant is defined and 10s by default.
+    expect(source).toMatch(/DEFAULT_GROUP_PRE_REPLY_DELAY_MS\s*=\s*10_?000/);
+    // The hold is gated on negative chatId (group/supergroup) + replyToMessageId,
+    // and uses the configurable override when present.
+    expect(source).toMatch(/chatId\s*<\s*0[\s\S]{0,200}replyToMessageId[\s\S]{0,400}preReplyDelayMs/);
+    // Structured log event emitted.
+    expect(source).toContain('pre_reply_hold');
+  });
+
+  it('does not apply the hold to DMs (positive chatId) or non-reply actions', async () => {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const source = await fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+
+    // The hold is strictly gated: the condition must require replyToMessageId
+    // and isReplyAction(action) — so 'react' / 'ignore' / DMs skip it.
+    expect(source).toMatch(/isReplyAction\(action\)/);
+    expect(source).toMatch(/private isReplyAction\(action[\s\S]{0,200}send_message[\s\S]{0,100}send_media/);
   });
 });
