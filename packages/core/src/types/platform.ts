@@ -28,11 +28,23 @@ export interface ResponseStyle {
 // AGENT CONFIGURATION
 // =============================================================================
 
+/**
+ * Operator override of the assembled system prompt. When set, the full
+ * prompt-builder template stack is bypassed and this value is used verbatim.
+ * `inline` carries the text directly; `url` fetches at request time with a
+ * short in-memory cache (default 300s) and falls back to the template on
+ * fetch failure. See aws-swarm#1522.
+ */
+export type SystemPromptOverride =
+  | { kind: 'inline'; text: string }
+  | { kind: 'url'; url: string; cacheTtlSec?: number };
+
 export interface AvatarConfig {
   id: string;
   name: string;
   version: string;
   persona: string; // Path or content of persona markdown
+  systemPromptOverride?: SystemPromptOverride; // #1522 — operator override of assembled prompt
   responseStyle?: ResponseStyle; // Formatting and length preferences (separate from persona)
   brain?: {
     writeMode?: 'legacy' | 'dual' | 'canonical';
