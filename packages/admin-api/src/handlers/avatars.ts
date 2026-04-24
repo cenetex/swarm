@@ -40,6 +40,7 @@ import { handleHealthRoutes } from './avatar-routes/health.js';
 import { handleOnboardingAvatarRoutes } from './avatar-routes/onboarding.js';
 import { handleDesignPartnerRoutes } from './avatar-routes/design-partner.js';
 import { handleGalleryRoutes } from './avatar-routes/gallery.js';
+import { handlePersonaRoutes } from './avatar-routes/persona.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ const routeHandlers: RouteHandler[] = [
   handleMemoryRoutes,
   handleUsageRoutes,
   handleGalleryRoutes,
+  handlePersonaRoutes,
 ];
 
 // ── Lambda handler ─────────────────────────────────────────────────────────
