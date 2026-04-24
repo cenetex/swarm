@@ -66,13 +66,57 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Need history for git-diff change detection below (#1542, #1543).
+          fetch-depth: 0
+
+      - name: Detect deploy-relevant file changes (#1542, #1543)
+        id: detect
+        run: |
+          # Pick a sensible "previous" revision to diff against:
+          #  - on a tag: the prior tag (or HEAD~1 if first tag)
+          #  - on main: HEAD~1
+          #  - anything else: HEAD~1
+          # We fall back to HEAD~1 on any error.
+          REF="${{ github.ref }}"
+          PREV=""
+          if [[ "$REF" == refs/tags/v* ]]; then
+            PREV=$(git describe --tags --abbrev=0 "HEAD^" 2>/dev/null || git rev-parse HEAD~1 2>/dev/null || echo "")
+          else
+            PREV=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$PREV" ]; then
+            echo "::notice::No prior revision found — treating all Docker files as changed (safe fallback)"
+            echo "docker_changed=true" >> "$GITHUB_OUTPUT"
+            echo "previous_ref=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Detecting changes between $PREV and HEAD"
+          CHANGED=$(git diff --name-only "$PREV" HEAD 2>/dev/null || echo "")
+
+          # Docker-relevant paths: any Dockerfile, or any file under a docker/ dir,
+          # or the layer package (its contents ship into every Lambda via the layer).
+          if echo "$CHANGED" | grep -qE '(^|/)Dockerfile(\.|$)|(^|/)docker/|(^|/)packages/layer/'; then
+            echo "docker_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Docker-relevant files changed:"
+            echo "$CHANGED" | grep -E '(^|/)Dockerfile(\.|$)|(^|/)docker/|(^|/)packages/layer/' || true
+          else
+            echo "docker_changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Dockerfile/layer changes — skipping QEMU + Buildx setup (#1542)"
+          fi
+
+          echo "previous_ref=$PREV" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU (for ARM64 Docker builds)
+        if: steps.detect.outputs.docker_changed == 'true'
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
         with:
           platforms: arm64
 
       - name: Set up Docker Buildx
+        if: steps.detect.outputs.docker_changed == 'true'
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
         with:
           driver: docker-container
@@ -97,11 +141,23 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
+        env:
+          PREV_REF: ${{ steps.detect.outputs.previous_ref }}
         run: |
           if [ "${{ steps.layer-cache.outputs.cache-hit }}" != "true" ]; then
             cd packages/layer && pnpm run build:layer && cd ../..
           fi
-          pnpm -r --filter '!admin-ui' build
+
+          # Selective build (#1543): only rebuild packages that changed since the
+          # previous revision PLUS their transitive workspace dependents. Falls
+          # back to a full recursive build if pnpm's filter can't resolve the
+          # range (first tag, divergent history, shallow checkout, etc.).
+          if [ -n "$PREV_REF" ] && pnpm -r --filter '!admin-ui' --filter "...[$PREV_REF]" build; then
+            echo "::notice::Built only packages changed since $PREV_REF (selective build, #1543)"
+          else
+            echo "::notice::Selective build unavailable — running full recursive build"
+            pnpm -r --filter '!admin-ui' build
+          fi
 
       - name: Validate AWS environment secrets
         run: |
