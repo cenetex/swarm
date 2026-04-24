@@ -159,9 +159,10 @@ export class DynamoDBStateService implements StateService {
   async markResponseSent(
     avatarId: string,
     channelId: string,
-    responseMessageId: string
+    responseMessageId: string,
+    trigger?: string
   ): Promise<ChannelState | null> {
-    return markResponseSent(this.docClient, this.tableName, avatarId, channelId, responseMessageId);
+    return markResponseSent(this.docClient, this.tableName, avatarId, channelId, responseMessageId, trigger);
   }
 
   isCooldownExpired(state: ChannelState): boolean {

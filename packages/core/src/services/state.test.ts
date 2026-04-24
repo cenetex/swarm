@@ -1210,4 +1210,219 @@ describe('DynamoDB Response Validation', () => {
       expect(finalState.recentMessages.length).toBe(60);
     });
   });
+
+  describe('Direct engagement bug fix (line 471)', () => {
+    it('should NOT fire on stale mentions — only check latest message', () => {
+      const now = Date.now();
+      // Old mention followed by 10 benign messages
+      const messages = [
+        createMessage({ messageId: '1', isMention: true, timestamp: now - 10000 }),
+        ...Array.from({ length: 10 }, (_, i) =>
+          createMessage({ messageId: String(i + 2), timestamp: now - 9000 + i * 500 })
+        ),
+      ];
+
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: messages,
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      // Should NOT respond because the latest message is not a mention/reply
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
+    });
+
+    it('should fire on latest mention even with old benign messages', () => {
+      const now = Date.now();
+      const messages = [
+        createMessage({ messageId: '1', timestamp: now - 5000 }),
+        createMessage({ messageId: '2', timestamp: now - 4000 }),
+        createMessage({ messageId: '3', isMention: true, timestamp: now }), // Latest is mention
+      ];
+
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: messages,
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('direct_engagement');
+    });
+
+    it('should fire on any mention/reply newer than lastResponseAt', () => {
+      const now = Date.now();
+      const lastResponseAt = now - 3000;
+
+      const messages = [
+        createMessage({ messageId: '1', isMention: true, timestamp: now - 4000 }), // Before lastResponseAt
+        createMessage({ messageId: '2', isMention: true, timestamp: now - 1000 }), // After lastResponseAt
+        createMessage({ messageId: '3', timestamp: now }), // Before lastResponseAt
+      ];
+
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        lastResponseAt,
+        recentMessages: messages,
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('direct_engagement');
+    });
+  });
+
+  describe('Follow-up cap (#1534)', () => {
+    it('should cap engaged_user follow-ups at MAX_FOLLOW_UPS', () => {
+      const now = Date.now();
+      const engagementWindowStart = now - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+      const engagedUntil = now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS / 2;
+
+      // Simulate 3 responses already sent in this window
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: [
+          createMessage({
+            messageId: '1',
+            userId: 'user-123',
+            timestamp: now,
+          }),
+        ],
+        engagedUsers: {
+          'user-123': engagedUntil,
+        },
+        followUpCountByWindow: {
+          [engagementWindowStart]: CHANNEL_CONFIG.MAX_FOLLOW_UPS, // At cap
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
+    });
+
+    it('should allow engaged_user following before cap', () => {
+      const now = Date.now();
+      const engagementWindowStart = now - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+      const engagedUntil = now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS / 2;
+
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: [
+          createMessage({
+            messageId: '1',
+            userId: 'user-123',
+            timestamp: now,
+          }),
+        ],
+        engagedUsers: {
+          'user-123': engagedUntil,
+        },
+        followUpCountByWindow: {
+          [engagementWindowStart]: CHANNEL_CONFIG.MAX_FOLLOW_UPS - 1, // Below cap
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('engaged_user');
+    });
+
+    it('should reset follow-up count when new direct engagement occurs', () => {
+      const now = Date.now();
+      const oldWindowStart = now - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS * 2;
+
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: [
+          createMessage({
+            messageId: '1',
+            isMention: true, // New direct engagement
+            timestamp: now,
+          }),
+        ],
+        followUpCountByWindow: {
+          [oldWindowStart]: CHANNEL_CONFIG.MAX_FOLLOW_UPS, // Old window at cap
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      // Should respond because this is direct_engagement, not engaged_user
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('direct_engagement');
+    });
+  });
+
+  describe('Ambient cooldown (#1534)', () => {
+    it('should suppress first non-direct response within ambient cooldown', () => {
+      const now = Date.now();
+      const lastResponseAt = now - CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS / 2; // Within 5 min
+
+      const state = createChannelState({
+        chatType: 'private', // Note: private bypasses cooldown, so use 1:1 setup if needed
+        state: 'IDLE',
+        lastResponseAt,
+        recentMessages: Array.from({ length: 5 }, (_, i) =>
+          createMessage({ messageId: String(i), timestamp: now - i * 1000 })
+        ),
+      });
+
+      // Override to 1:1 for test
+      state.chatType = undefined; // Remove group constraint
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(false);
+    });
+
+    it('should allow non-direct response after ambient cooldown expires', () => {
+      const now = Date.now();
+      const lastResponseAt = now - CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS - 1000; // Beyond 5 min
+
+      const state = createChannelState({
+        state: 'IDLE',
+        lastResponseAt,
+        chatType: undefined, // Not a group
+        recentMessages: Array.from({ length: 5 }, (_, i) =>
+          createMessage({ messageId: String(i), timestamp: now - i * 1000 })
+        ),
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(true);
+    });
+
+    it('should bypass ambient cooldown for direct engagement', () => {
+      const now = Date.now();
+      const lastResponseAt = now - 1000; // Very recent
+
+      const state = createChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        lastResponseAt,
+        recentMessages: [
+          createMessage({ messageId: '1', isMention: true, timestamp: now }),
+        ],
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      // Direct engagement should bypass ambient cooldown
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('direct_engagement');
+    });
+  });
 });

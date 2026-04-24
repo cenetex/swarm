@@ -30,6 +30,10 @@ export const CHANNEL_CONFIG = {
   // Engaged user tracking
   ENGAGEMENT_WINDOW_MS: 5 * 60 * 1000, // 5 minutes - how long to keep responding to a user after direct engagement
 
+  // Response rate limiting
+  MAX_FOLLOW_UPS: parseInt(process.env.MAX_FOLLOW_UPS || '3', 10),         // Max consecutive follow-ups per engagement window
+  AMBIENT_COOLDOWN_MS: parseInt(process.env.AMBIENT_COOLDOWN_MS || '300000', 10), // 5 minutes minimum between non-direct responses
+
   // Response timing
   MIN_RESPONSE_DELAY_MS: 500,     // Minimum delay to seem natural
   MAX_RESPONSE_DELAY_MS: 3000,    // Maximum random delay
@@ -77,6 +81,7 @@ export async function getChannelState(
     pendingResponseAt: result.Item.pendingResponseAt,
     directEngagementAt: result.Item.directEngagementAt,
     engagedUsers: result.Item.engagedUsers,
+    followUpCountByWindow: result.Item.followUpCountByWindow,
     ttl: result.Item.ttl,
   };
 }
@@ -366,13 +371,16 @@ export async function transitionState(
  * Mark response sent - transitions to COOLDOWN
  * Note: recentMessages is NOT cleared here to preserve conversation history
  * for context in future interactions. Buffer trimming is handled by addMessageToChannel.
+ *
+ * If this is an engaged_user response, increments the follow-up count for the current window.
  */
 export async function markResponseSent(
   docClient: DynamoDBDocumentClient,
   tableName: string,
   avatarId: string,
   channelId: string,
-  responseMessageId: string
+  responseMessageId: string,
+  trigger?: string
 ): Promise<ChannelState | null> {
   const current = await getChannelState(docClient, tableName, avatarId, channelId);
   if (!current) return null;
@@ -385,6 +393,33 @@ export async function markResponseSent(
   current.pendingResponseAt = undefined;
   // Keep recentMessages intact for conversation history/context
   current.ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
+
+  // Track follow-up count if this was an engaged_user response
+  if (trigger === 'engaged_user' && current.engagedUsers) {
+    const lastMessage = current.recentMessages[current.recentMessages.length - 1];
+    if (lastMessage?.userId) {
+      const engagedUntil = current.engagedUsers[lastMessage.userId];
+      if (engagedUntil && engagedUntil > now) {
+        const windowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+        if (!current.followUpCountByWindow) {
+          current.followUpCountByWindow = {};
+        }
+        current.followUpCountByWindow[windowStart] = (current.followUpCountByWindow[windowStart] || 0) + 1;
+      }
+    }
+  }
+
+  // Clean up expired follow-up windows
+  if (current.followUpCountByWindow) {
+    const cleanedWindows: Record<number, number> = {};
+    for (const [windowStart, count] of Object.entries(current.followUpCountByWindow)) {
+      const windowEnd = parseInt(windowStart, 10) + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+      if (windowEnd > now) {
+        cleanedWindows[parseInt(windowStart, 10)] = count;
+      }
+    }
+    current.followUpCountByWindow = Object.keys(cleanedWindows).length > 0 ? cleanedWindows : undefined;
+  }
 
   await updateChannelState(docClient, tableName, current);
   return current;
@@ -410,6 +445,29 @@ export function isActiveTimedOut(state: ChannelState): boolean {
 }
 
 /**
+ * Get the number of follow-ups in the current engagement window
+ * The engagement window is identified by the engagedUntil timestamp
+ * Window starts at (engagedUntil - ENGAGEMENT_WINDOW_MS)
+ */
+function getFollowUpCountInCurrentWindow(state: ChannelState, engagedUntil: number): number {
+  if (!state.followUpCountByWindow) return 0;
+
+  const windowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+  return state.followUpCountByWindow[windowStart] || 0;
+}
+
+/**
+ * Check if ambient cooldown is currently active
+ * Applies to non-direct responses (message_threshold, conversation_gap, etc.)
+ * Private chats bypass this. Direct responses always bypass this.
+ */
+function isAmbientCooldownActive(state: ChannelState): boolean {
+  if (!state.lastResponseAt) return false;
+  const elapsed = Date.now() - state.lastResponseAt;
+  return elapsed < CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS;
+}
+
+/**
  * Evaluate whether to respond to this channel (Kyro-style)
  * Returns decision with trigger type and delay
  */
@@ -428,13 +486,14 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
 
   // In COOLDOWN - don't respond unless there's new direct engagement or engaged user
   if (state.state === 'COOLDOWN' && !isCooldownExpired(state)) {
-    // Check if there's a new direct engagement since cooldown started
-    const hasNewEngagement = state.recentMessages.some(
-      m => (m.isMention || m.isReplyToBot) &&
-           m.timestamp > (state.stateChangedAt || 0)
-    );
+    // Check if there's a new direct engagement (only latest message or newer than stateChangedAt)
+    const lastMessage = state.recentMessages[state.recentMessages.length - 1];
+    const hasNewDirectEngagement =
+      lastMessage &&
+      (lastMessage.isMention || lastMessage.isReplyToBot) &&
+      lastMessage.timestamp > (state.stateChangedAt || 0);
 
-    if (hasNewEngagement) {
+    if (hasNewDirectEngagement) {
       return {
         shouldRespond: true,
         trigger: 'direct_engagement',
@@ -443,19 +502,27 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
       };
     }
 
-    // Check if the most recent message is from an engaged user
-    if (state.engagedUsers) {
-      const lastMessage = state.recentMessages[state.recentMessages.length - 1];
-      if (lastMessage?.userId && lastMessage.timestamp > (state.stateChangedAt || 0)) {
-        const engagedUntil = state.engagedUsers[lastMessage.userId];
-        if (engagedUntil && engagedUntil > now) {
+    // Check if the most recent message is from an engaged user (with follow-up cap)
+    if (state.engagedUsers && lastMessage?.userId && lastMessage.timestamp > (state.stateChangedAt || 0)) {
+      const engagedUntil = state.engagedUsers[lastMessage.userId];
+      if (engagedUntil && engagedUntil > now) {
+        // Check if we've hit the follow-up cap for this engagement window
+        const followUpCount = getFollowUpCountInCurrentWindow(state, engagedUntil);
+        if (followUpCount >= CHANNEL_CONFIG.MAX_FOLLOW_UPS) {
           return {
-            shouldRespond: true,
-            trigger: 'engaged_user',
-            delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
-            priority: 'high',
+            shouldRespond: false,
+            trigger: 'none',
+            delay: 0,
+            priority: 'low',
           };
         }
+
+        return {
+          shouldRespond: true,
+          trigger: 'engaged_user',
+          delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
+          priority: 'high',
+        };
       }
     }
 
@@ -467,10 +534,12 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
     };
   }
 
-  // Check for direct engagement (mention/reply)
-  const hasDirectEngagement = state.recentMessages.some(
-    m => m.isMention || m.isReplyToBot
-  );
+  // Check for direct engagement (only latest message or newer than lastResponseAt)
+  const lastMessage = state.recentMessages[state.recentMessages.length - 1];
+  const hasDirectEngagement =
+    lastMessage &&
+    (lastMessage.isMention || lastMessage.isReplyToBot) &&
+    (!state.lastResponseAt || lastMessage.timestamp > state.lastResponseAt);
 
   if (hasDirectEngagement) {
     return {
@@ -481,19 +550,26 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
     };
   }
 
-  // Check if the most recent message is from an engaged user (within the engagement window)
-  if (state.engagedUsers) {
-    const lastMessage = state.recentMessages[state.recentMessages.length - 1];
-    if (lastMessage?.userId) {
-      const engagedUntil = state.engagedUsers[lastMessage.userId];
-      if (engagedUntil && engagedUntil > now) {
+  // Check if the most recent message is from an engaged user (within the engagement window, with follow-up cap)
+  if (state.engagedUsers && lastMessage?.userId) {
+    const engagedUntil = state.engagedUsers[lastMessage.userId];
+    if (engagedUntil && engagedUntil > now) {
+      const followUpCount = getFollowUpCountInCurrentWindow(state, engagedUntil);
+      if (followUpCount >= CHANNEL_CONFIG.MAX_FOLLOW_UPS) {
         return {
-          shouldRespond: true,
-          trigger: 'engaged_user',
-          delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
-          priority: 'high',
+          shouldRespond: false,
+          trigger: 'none',
+          delay: 0,
+          priority: 'low',
         };
       }
+
+      return {
+        shouldRespond: true,
+        trigger: 'engaged_user',
+        delay: CHANNEL_CONFIG.DIRECT_ENGAGEMENT_DELAY_MS,
+        priority: 'high',
+      };
     }
   }
 
@@ -515,8 +591,17 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
 
   // In IDLE state or expired cooldown, check other triggers (1:1 chats only)
   if (state.state === 'IDLE' || isCooldownExpired(state)) {
-    // Message threshold trigger
+    // Message threshold trigger - subject to ambient cooldown
     if (state.recentMessages.length >= CHANNEL_CONFIG.MESSAGE_THRESHOLD) {
+      if (isAmbientCooldownActive(state)) {
+        return {
+          shouldRespond: false,
+          trigger: 'none',
+          delay: 0,
+          priority: 'low',
+        };
+      }
+
       return {
         shouldRespond: true,
         trigger: 'message_threshold',
@@ -525,12 +610,21 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
       };
     }
 
-    // Conversation gap trigger (activity followed by silence)
+    // Conversation gap trigger (activity followed by silence) - subject to ambient cooldown
     const timeSinceActivity = now - state.lastActivityAt;
     if (
       state.recentMessages.length > 0 &&
       timeSinceActivity > CHANNEL_CONFIG.CONVERSATION_GAP_MS
     ) {
+      if (isAmbientCooldownActive(state)) {
+        return {
+          shouldRespond: false,
+          trigger: 'none',
+          delay: 0,
+          priority: 'low',
+        };
+      }
+
       return {
         shouldRespond: true,
         trigger: 'conversation_gap',
@@ -542,8 +636,17 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
 
   // ACTIVE state but no trigger met yet (1:1 chats only)
   if (state.state === 'ACTIVE') {
-    // If we've been active for a while with messages, consider responding
+    // If we've been active for a while with messages, consider responding - subject to ambient cooldown
     if (state.recentMessages.length >= 2) {
+      if (isAmbientCooldownActive(state)) {
+        return {
+          shouldRespond: false,
+          trigger: 'none',
+          delay: 0,
+          priority: 'low',
+        };
+      }
+
       return {
         shouldRespond: true,
         trigger: 'message_threshold',
@@ -690,6 +793,8 @@ export async function getAllChannelStates(
       lastResponseMessageId: item.lastResponseMessageId,
       pendingResponseAt: item.pendingResponseAt,
       directEngagementAt: item.directEngagementAt,
+      engagedUsers: item.engagedUsers,
+      followUpCountByWindow: item.followUpCountByWindow,
       ttl: item.ttl,
     }));
 }
