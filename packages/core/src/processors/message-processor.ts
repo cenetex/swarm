@@ -309,6 +309,22 @@ export class MessageProcessor {
 
         const query = (userMessage ?? lastUserFromHistory).trim();
 
+        // Proactively inject top 3-5 relevant facts before tool guidance
+        let relevantFactsSection = '';
+        if (query && this.deps.memoryService.recall) {
+          try {
+            const facts = await this.deps.memoryService.recall(config.avatarId, query, config.userId);
+            if (facts && facts.length > 0) {
+              const factLines = facts.slice(0, 5).map((f) => `- ${f.fact}${f.about ? ` (about: ${f.about})` : ''}`);
+              relevantFactsSection = `## Relevant Facts\n${factLines.join('\n')}`;
+              systemPrompt += '\n\n' + relevantFactsSection;
+            }
+          } catch {
+            // Recall failed, continue without proactive injection
+          }
+        }
+
+        // Also include the full memory context for tool-driven recall
         const memoryContext = query && this.deps.memoryService.getMemoryContextForQuery
           ? await this.deps.memoryService.getMemoryContextForQuery(config.avatarId, query)
           : await this.deps.memoryService.getMemoryContext(config.avatarId);
