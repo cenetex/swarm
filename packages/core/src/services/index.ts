@@ -6,7 +6,9 @@ export {
   SwarmMediaService,
   createMediaService,
   createMediaServiceWithDeps,
+  buildVoiceCloneInput,
   type GeneratedMediaExtended,
+  type VoiceCloneInput,
 } from './media/index.js';
 export {
   createMediaDependencies,
