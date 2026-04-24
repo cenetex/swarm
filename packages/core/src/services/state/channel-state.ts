@@ -394,31 +394,33 @@ export async function markResponseSent(
   // Keep recentMessages intact for conversation history/context
   current.ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
 
-  // Track follow-up count if this was an engaged_user response
+  // Follow-up cap bookkeeping (#1534). Per-window counter keyed by
+  // `windowStart = engagedUntil - ENGAGEMENT_WINDOW_MS`. Only engaged_user
+  // responses consume a slot; direct_engagement opens a fresh window by
+  // timestamp so no reset is needed.
   if (trigger === 'engaged_user' && current.engagedUsers) {
-    const lastMessage = current.recentMessages[current.recentMessages.length - 1];
-    if (lastMessage?.userId) {
-      const engagedUntil = current.engagedUsers[lastMessage.userId];
+    const latest = current.recentMessages[current.recentMessages.length - 1];
+    if (latest?.userId) {
+      const engagedUntil = current.engagedUsers[latest.userId];
       if (engagedUntil && engagedUntil > now) {
         const windowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
-        if (!current.followUpCountByWindow) {
-          current.followUpCountByWindow = {};
-        }
-        current.followUpCountByWindow[windowStart] = (current.followUpCountByWindow[windowStart] || 0) + 1;
+        if (!current.followUpCountByWindow) current.followUpCountByWindow = {};
+        current.followUpCountByWindow[windowStart] =
+          (current.followUpCountByWindow[windowStart] ?? 0) + 1;
       }
     }
   }
 
-  // Clean up expired follow-up windows
+  // Prune stale window entries (end time already passed) so the map can't grow.
   if (current.followUpCountByWindow) {
-    const cleanedWindows: Record<number, number> = {};
-    for (const [windowStart, count] of Object.entries(current.followUpCountByWindow)) {
-      const windowEnd = parseInt(windowStart, 10) + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
-      if (windowEnd > now) {
-        cleanedWindows[parseInt(windowStart, 10)] = count;
-      }
+    const pruned: Record<number, number> = {};
+    for (const [startStr, count] of Object.entries(current.followUpCountByWindow)) {
+      const windowStart = Number(startStr);
+      const windowEnd = windowStart + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+      if (windowEnd > now) pruned[windowStart] = count;
     }
-    current.followUpCountByWindow = Object.keys(cleanedWindows).length > 0 ? cleanedWindows : undefined;
+    current.followUpCountByWindow =
+      Object.keys(pruned).length > 0 ? pruned : undefined;
   }
 
   await updateChannelState(docClient, tableName, current);
@@ -445,15 +447,16 @@ export function isActiveTimedOut(state: ChannelState): boolean {
 }
 
 /**
- * Get the number of follow-ups in the current engagement window
- * The engagement window is identified by the engagedUntil timestamp
- * Window starts at (engagedUntil - ENGAGEMENT_WINDOW_MS)
+ * Get the number of follow-ups the bot has already sent inside the current
+ * engagement window. Simpler than a per-window map: we only care about the
+ * *current* window, tracked by `ChannelState.followUpsInWindow` /
+ * `windowStartedAt`. The counter is reset on every direct mention/reply by
+ * `markResponseSent`.
  */
 function getFollowUpCountInCurrentWindow(state: ChannelState, engagedUntil: number): number {
   if (!state.followUpCountByWindow) return 0;
-
   const windowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
-  return state.followUpCountByWindow[windowStart] || 0;
+  return state.followUpCountByWindow[windowStart] ?? 0;
 }
 
 /**
@@ -486,12 +489,16 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
 
   // In COOLDOWN - don't respond unless there's new direct engagement or engaged user
   if (state.state === 'COOLDOWN' && !isCooldownExpired(state)) {
-    // Check if there's a new direct engagement (only latest message or newer than stateChangedAt)
+    // Check if there's a new direct engagement: any message in the buffer
+    // that is a mention/reply AND is newer than the last state transition.
+    // Scoped by timestamp (not "latest only") so if a user mentions the bot
+    // and then sends a follow-up chatter message before we process, we still
+    // recognize the mention as unanswered. See #1534.
     const lastMessage = state.recentMessages[state.recentMessages.length - 1];
-    const hasNewDirectEngagement =
-      lastMessage &&
-      (lastMessage.isMention || lastMessage.isReplyToBot) &&
-      lastMessage.timestamp > (state.stateChangedAt || 0);
+    const hasNewDirectEngagement = state.recentMessages.some(
+      m => (m.isMention || m.isReplyToBot) &&
+           m.timestamp > (state.stateChangedAt || 0)
+    );
 
     if (hasNewDirectEngagement) {
       return {
@@ -507,7 +514,6 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
       const engagedUntil = state.engagedUsers[lastMessage.userId];
       if (engagedUntil && engagedUntil > now) {
         // Check if we've hit the follow-up cap for this engagement window
-        const windowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
         const followUpCount = getFollowUpCountInCurrentWindow(state, engagedUntil);
         if (followUpCount >= CHANNEL_CONFIG.MAX_FOLLOW_UPS) {
           return {
@@ -540,12 +546,19 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
     };
   }
 
-  // Check for direct engagement (only latest message or newer than lastResponseAt)
+  // Check for direct engagement (#1534).
+  // - If we've responded before (`lastResponseAt` set), any mention/reply
+  //   newer than that response is fresh and deserves an immediate reply.
+  // - If we've never responded, only the LATEST message being a mention/
+  //   reply counts; older mentions in the buffer are assumed already
+  //   handled or stale, preventing the 50-msg-buffer spam vector.
   const lastMessage = state.recentMessages[state.recentMessages.length - 1];
-  const hasDirectEngagement =
-    lastMessage &&
-    (lastMessage.isMention || lastMessage.isReplyToBot) &&
-    (!state.lastResponseAt || lastMessage.timestamp > state.lastResponseAt);
+  const hasDirectEngagement = state.lastResponseAt
+    ? state.recentMessages.some(
+        m => (m.isMention || m.isReplyToBot) &&
+             m.timestamp > (state.lastResponseAt as number)
+      )
+    : !!(lastMessage && (lastMessage.isMention || lastMessage.isReplyToBot));
 
   if (hasDirectEngagement) {
     return {
@@ -560,7 +573,6 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
   if (state.engagedUsers && lastMessage?.userId) {
     const engagedUntil = state.engagedUsers[lastMessage.userId];
     if (engagedUntil && engagedUntil > now) {
-      const windowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
       const followUpCount = getFollowUpCountInCurrentWindow(state, engagedUntil);
       if (followUpCount >= CHANNEL_CONFIG.MAX_FOLLOW_UPS) {
         return {

@@ -79,8 +79,9 @@ export interface ChannelState {
   // Engaged users tracking: { [userId]: engagedUntil timestamp }
   engagedUsers?: Record<string, number>;
 
-  // Follow-up cap tracking: { [engagementWindowStart]: followUpCount }
-  // Maps the start time of an engagement window to the number of follow-ups in that window
+  // Follow-up cap bookkeeping (aws-swarm#1534). Maps the start time of an
+  // engagement window (`engagedUntil - ENGAGEMENT_WINDOW_MS`) to the number
+  // of engaged-user follow-ups sent in that window.
   followUpCountByWindow?: Record<number, number>;
 
   // TTL for cleanup (DynamoDB TTL in seconds)

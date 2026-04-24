@@ -345,6 +345,16 @@ export interface ResponseDecision {
   trigger: ResponseTrigger;
   delay: number;           // Delay in ms before responding (0 = immediate)
   priority: 'high' | 'normal' | 'low';
+  // Suppression context for logging/metrics (aws-swarm#1534).
+  // Optional; populated only when shouldRespond = false AND there is a
+  // meaningful brake (cap/cooldown) that explains the decision.
+  suppressionReason?: 'follow_up_cap' | 'ambient_cooldown';
+  suppressionDetails?: {
+    followUpsInWindow?: number;
+    windowEndsAt?: number;
+    msSinceLastResponse?: number;
+    cooldownMs?: number;
+  };
 }
 
 export interface ChannelState {
@@ -383,6 +393,13 @@ export interface ChannelState {
 
   // Engaged users tracking: { [userId]: engagedUntil timestamp }
   engagedUsers?: Record<string, number>;
+
+  // Follow-up cap bookkeeping (aws-swarm#1534). Maps the start time of an
+  // engagement window (`engagedUntil - ENGAGEMENT_WINDOW_MS`) to the number
+  // of engaged-user follow-ups sent in that window. Cap per window is
+  // CHANNEL_CONFIG.MAX_FOLLOW_UPS. Stale window entries are pruned when
+  // their end time passes.
+  followUpCountByWindow?: Record<number, number>;
 
   // TTL for cleanup (DynamoDB TTL in seconds)
   ttl?: number;

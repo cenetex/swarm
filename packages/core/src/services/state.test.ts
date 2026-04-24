@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { CHANNEL_CONFIG, DynamoDBStateService } from './state.js';
+import { evaluateResponseTrigger } from './state/channel-state.js';
 import type { ChannelState, ContextMessage, ResponseDecision, Platform } from '../types/index.js';
 
 class InMemoryStateService extends DynamoDBStateService {
@@ -152,7 +153,7 @@ describe('CHANNEL_CONFIG', () => {
 
 describe('Channel State Machine Logic', () => {
   // Helper to create a base channel state
-  function createChannelState(overrides: Partial<ChannelState> = {}): ChannelState {
+  function createTestChannelState(overrides: Partial<ChannelState> = {}): ChannelState {
     const now = Date.now();
     return {
       avatarId: 'test-avatar',
@@ -169,7 +170,7 @@ describe('Channel State Machine Logic', () => {
   }
 
   // Helper to create a context message
-  function createMessage(overrides: Partial<ContextMessage> = {}): ContextMessage {
+  function createTestMessage(overrides: Partial<ContextMessage> = {}): ContextMessage {
     return {
       messageId: '1',
       sender: 'TestUser',
@@ -190,12 +191,12 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should return true when not in COOLDOWN state', () => {
-      const state = createChannelState({ state: 'IDLE' });
+      const state = createTestChannelState({ state: 'IDLE' });
       expect(isCooldownExpired(state)).toBe(true);
     });
 
     it('should return false when in fresh COOLDOWN', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         state: 'COOLDOWN',
         stateChangedAt: Date.now() - 5000, // 5 seconds ago
       });
@@ -203,7 +204,7 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should return true when COOLDOWN has expired', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         state: 'COOLDOWN',
         stateChangedAt: Date.now() - 15000, // 15 seconds ago
       });
@@ -220,12 +221,12 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should return false when not in ACTIVE state', () => {
-      const state = createChannelState({ state: 'IDLE' });
+      const state = createTestChannelState({ state: 'IDLE' });
       expect(isActiveTimedOut(state)).toBe(false);
     });
 
     it('should return false when recently active', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         state: 'ACTIVE',
         lastActivityAt: Date.now() - 30000, // 30 seconds ago
       });
@@ -233,7 +234,7 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should return true when ACTIVE has timed out', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         state: 'ACTIVE',
         lastActivityAt: Date.now() - 90000, // 90 seconds ago
       });
@@ -391,9 +392,9 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should always respond in private chats', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'private',
-        recentMessages: [createMessage()],
+        recentMessages: [createTestMessage()],
       });
 
       const decision = evaluateResponseTrigger(state);
@@ -405,10 +406,10 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should respond to direct mention', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         recentMessages: [
-          createMessage({ isMention: true }),
+          createTestMessage({ isMention: true }),
         ],
       });
 
@@ -420,10 +421,10 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should respond to reply to bot', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         recentMessages: [
-          createMessage({ isReplyToBot: true }),
+          createTestMessage({ isReplyToBot: true }),
         ],
       });
 
@@ -434,12 +435,12 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should not respond in COOLDOWN without new engagement', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'COOLDOWN',
         stateChangedAt: Date.now() - 5000, // 5 seconds ago
         recentMessages: [
-          createMessage({ timestamp: Date.now() - 10000 }), // Before cooldown
+          createTestMessage({ timestamp: Date.now() - 10000 }), // Before cooldown
         ],
       });
 
@@ -451,12 +452,12 @@ describe('Channel State Machine Logic', () => {
 
     it('should respond in COOLDOWN with new direct engagement', () => {
       const cooldownStart = Date.now() - 5000;
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'COOLDOWN',
         stateChangedAt: cooldownStart,
         recentMessages: [
-          createMessage({ timestamp: Date.now(), isMention: true }), // After cooldown started
+          createTestMessage({ timestamp: Date.now(), isMention: true }), // After cooldown started
         ],
       });
 
@@ -467,11 +468,11 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should NOT respond on message_threshold in groups (#1505)', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: Array.from({ length: 5 }, (_, i) =>
-          createMessage({ messageId: String(i), content: `Message ${i}` })
+          createTestMessage({ messageId: String(i), content: `Message ${i}` })
         ),
       });
 
@@ -483,11 +484,11 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should respond on message_threshold in private chats', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'private',
         state: 'IDLE',
         recentMessages: Array.from({ length: 5 }, (_, i) =>
-          createMessage({ messageId: String(i), content: `Message ${i}` })
+          createTestMessage({ messageId: String(i), content: `Message ${i}` })
         ),
       });
 
@@ -500,11 +501,11 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should NOT respond on conversation_gap in groups (#1505)', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         lastActivityAt: Date.now() - 35000, // 35 seconds ago
-        recentMessages: [createMessage({ timestamp: Date.now() - 35000 })],
+        recentMessages: [createTestMessage({ timestamp: Date.now() - 35000 })],
       });
 
       const decision = evaluateResponseTrigger(state);
@@ -514,7 +515,7 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should not respond with no messages', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [],
@@ -526,12 +527,12 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should NOT respond in ACTIVE state with 2+ messages in groups (#1505)', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'ACTIVE',
         recentMessages: [
-          createMessage({ messageId: '1' }),
-          createMessage({ messageId: '2' }),
+          createTestMessage({ messageId: '1' }),
+          createTestMessage({ messageId: '2' }),
         ],
       });
 
@@ -543,12 +544,12 @@ describe('Channel State Machine Logic', () => {
 
     it('should respond to follow-up from engaged user within engagement window', () => {
       const now = Date.now();
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [
           // A follow-up message (no mention/reply) from user who previously engaged
-          createMessage({
+          createTestMessage({
             messageId: '2',
             userId: 'user-123',
             sender: 'Alice',
@@ -570,11 +571,11 @@ describe('Channel State Machine Logic', () => {
 
     it('should NOT respond to follow-up from engaged user after window expires', () => {
       const now = Date.now();
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '2',
             userId: 'user-123',
             sender: 'Alice',
@@ -595,11 +596,11 @@ describe('Channel State Machine Logic', () => {
 
     it('should NOT treat a non-engaged user as engaged', () => {
       const now = Date.now();
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '1',
             userId: 'user-999',
             sender: 'Bob',
@@ -621,12 +622,12 @@ describe('Channel State Machine Logic', () => {
     it('should respond to engaged user even during COOLDOWN', () => {
       const now = Date.now();
       const cooldownStart = now - 5000; // 5 seconds ago
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'COOLDOWN',
         stateChangedAt: cooldownStart,
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '1',
             userId: 'user-123',
             sender: 'Alice',
@@ -649,12 +650,12 @@ describe('Channel State Machine Logic', () => {
     it('should NOT respond to engaged user in COOLDOWN if message is before cooldown started', () => {
       const now = Date.now();
       const cooldownStart = now - 5000;
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'COOLDOWN',
         stateChangedAt: cooldownStart,
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '1',
             userId: 'user-123',
             sender: 'Alice',
@@ -675,11 +676,11 @@ describe('Channel State Machine Logic', () => {
 
     it('should handle message without userId gracefully (no engaged_user trigger)', () => {
       const now = Date.now();
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '1',
             sender: 'Alice',
             content: 'No userId set',
@@ -700,7 +701,7 @@ describe('Channel State Machine Logic', () => {
 
   describe('State Transitions', () => {
     it('should transition to ACTIVE on direct engagement in IDLE', () => {
-      const message = createMessage({ isMention: true });
+      const message = createTestMessage({ isMention: true });
 
       // Simulating addMessageToChannel logic
       let newState: ChannelState['state'] = 'IDLE';
@@ -712,7 +713,7 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should stay IDLE for regular message in group', () => {
-      const message = createMessage(); // No mention or reply
+      const message = createTestMessage(); // No mention or reply
 
       let newState: ChannelState['state'] = 'IDLE';
       if (message.isMention || message.isReplyToBot) {
@@ -724,7 +725,7 @@ describe('Channel State Machine Logic', () => {
 
     it('should stay in COOLDOWN for regular messages', () => {
       const currentState: ChannelState['state'] = 'COOLDOWN';
-      const message = createMessage(); // No engagement
+      const message = createTestMessage(); // No engagement
 
       let newState = currentState;
       if (message.isMention || message.isReplyToBot) {
@@ -745,7 +746,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isMention: true })
+        createTestMessage({ isMention: true })
       );
 
       const afterTime = Date.now();
@@ -766,7 +767,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice' })
+        createTestMessage({ isMention: true, userId: 'user-123', sender: 'Alice' })
       );
 
       expect(result.engagedUsers).toBeDefined();
@@ -784,7 +785,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ userId: 'user-123', sender: 'Alice' }) // No isMention/isReplyToBot
+        createTestMessage({ userId: 'user-123', sender: 'Alice' }) // No isMention/isReplyToBot
       );
 
       expect(result.engagedUsers).toBeUndefined();
@@ -798,7 +799,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '1' })
+        createTestMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '1' })
       );
 
       // Small delay to ensure timestamps differ
@@ -809,7 +810,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '2' })
+        createTestMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '2' })
       );
 
       // Window should be refreshed
@@ -826,7 +827,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '1' })
+        createTestMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '1' })
       );
 
       // Second user engages
@@ -834,7 +835,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isReplyToBot: true, userId: 'user-456', sender: 'Bob', messageId: '2' })
+        createTestMessage({ isReplyToBot: true, userId: 'user-456', sender: 'Bob', messageId: '2' })
       );
 
       expect(result.engagedUsers!['user-123']).toBeDefined();
@@ -844,13 +845,13 @@ describe('Channel State Machine Logic', () => {
     it('markResponseSent preserves buffer and enters COOLDOWN', async () => {
       const svc = new InMemoryStateService();
       const now = Date.now();
-      const initialState = createChannelState({
+      const initialState = createTestChannelState({
         channelId: 'channel',
         state: 'ACTIVE',
         stateChangedAt: now,
         recentMessages: [
-          createMessage({ messageId: '1' }),
-          createMessage({ messageId: '2' }),
+          createTestMessage({ messageId: '1' }),
+          createTestMessage({ messageId: '2' }),
         ],
         messageCount: 2,
       });
@@ -890,10 +891,10 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should format messages for LLM context', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         recentMessages: [
-          createMessage({ sender: 'Alice', username: 'alice', content: 'Hello' }),
-          createMessage({ sender: 'Bob', content: 'Hi there!' }),
+          createTestMessage({ sender: 'Alice', username: 'alice', content: 'Hello' }),
+          createTestMessage({ sender: 'Bob', content: 'Hi there!' }),
         ],
       });
 
@@ -904,20 +905,20 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should return empty string for no messages', () => {
-      const state = createChannelState({ recentMessages: [] });
+      const state = createTestChannelState({ recentMessages: [] });
       const context = buildConversationContext(state);
       expect(context).toBe('');
     });
 
     it('should respect token limit', () => {
       const longMessages = Array.from({ length: 100 }, (_, i) =>
-        createMessage({
+        createTestMessage({
           messageId: String(i),
           content: 'This is a fairly long message that should use up tokens quickly when repeated many times.',
         })
       );
 
-      const state = createChannelState({ recentMessages: longMessages });
+      const state = createTestChannelState({ recentMessages: longMessages });
       const context = buildConversationContext(state, 100); // Very low limit
 
       // Should be truncated
@@ -940,12 +941,12 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should return last direct engagement message', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         recentMessages: [
-          createMessage({ messageId: '1', sender: 'Alice', isMention: true }),
-          createMessage({ messageId: '2', sender: 'Bob' }),
-          createMessage({ messageId: '3', sender: 'Charlie', isMention: true }),
-          createMessage({ messageId: '4', sender: 'Dave' }),
+          createTestMessage({ messageId: '1', sender: 'Alice', isMention: true }),
+          createTestMessage({ messageId: '2', sender: 'Bob' }),
+          createTestMessage({ messageId: '3', sender: 'Charlie', isMention: true }),
+          createTestMessage({ messageId: '4', sender: 'Dave' }),
         ],
       });
 
@@ -956,10 +957,10 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should fall back to last message if no engagement', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         recentMessages: [
-          createMessage({ messageId: '1', sender: 'Alice' }),
-          createMessage({ messageId: '2', sender: 'Bob' }),
+          createTestMessage({ messageId: '1', sender: 'Alice' }),
+          createTestMessage({ messageId: '2', sender: 'Bob' }),
         ],
       });
 
@@ -970,7 +971,7 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should return null for empty buffer', () => {
-      const state = createChannelState({ recentMessages: [] });
+      const state = createTestChannelState({ recentMessages: [] });
       const target = getResponseTarget(state);
       expect(target).toBeNull();
     });
@@ -1001,13 +1002,13 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should count participants and sort by message count', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         recentMessages: [
-          createMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
-          createMessage({ userId: '200', sender: 'Bob' }),
-          createMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
-          createMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
-          createMessage({ userId: '200', sender: 'Bob' }),
+          createTestMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
+          createTestMessage({ userId: '200', sender: 'Bob' }),
+          createTestMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
+          createTestMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
+          createTestMessage({ userId: '200', sender: 'Bob' }),
         ],
       });
 
@@ -1021,7 +1022,7 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should return empty array for no messages', () => {
-      const state = createChannelState({ recentMessages: [] });
+      const state = createTestChannelState({ recentMessages: [] });
       const participants = getActiveParticipants(state);
       expect(participants).toHaveLength(0);
     });
@@ -1216,13 +1217,13 @@ describe('DynamoDB Response Validation', () => {
       const now = Date.now();
       // Old mention followed by 10 benign messages
       const messages = [
-        createMessage({ messageId: '1', isMention: true, timestamp: now - 10000 }),
+        createTestMessage({ messageId: '1', isMention: true, timestamp: now - 10000 }),
         ...Array.from({ length: 10 }, (_, i) =>
-          createMessage({ messageId: String(i + 2), timestamp: now - 9000 + i * 500 })
+          createTestMessage({ messageId: String(i + 2), timestamp: now - 9000 + i * 500 })
         ),
       ];
 
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: messages,
@@ -1238,12 +1239,12 @@ describe('DynamoDB Response Validation', () => {
     it('should fire on latest mention even with old benign messages', () => {
       const now = Date.now();
       const messages = [
-        createMessage({ messageId: '1', timestamp: now - 5000 }),
-        createMessage({ messageId: '2', timestamp: now - 4000 }),
-        createMessage({ messageId: '3', isMention: true, timestamp: now }), // Latest is mention
+        createTestMessage({ messageId: '1', timestamp: now - 5000 }),
+        createTestMessage({ messageId: '2', timestamp: now - 4000 }),
+        createTestMessage({ messageId: '3', isMention: true, timestamp: now }), // Latest is mention
       ];
 
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: messages,
@@ -1260,12 +1261,12 @@ describe('DynamoDB Response Validation', () => {
       const lastResponseAt = now - 3000;
 
       const messages = [
-        createMessage({ messageId: '1', isMention: true, timestamp: now - 4000 }), // Before lastResponseAt
-        createMessage({ messageId: '2', isMention: true, timestamp: now - 1000 }), // After lastResponseAt
-        createMessage({ messageId: '3', timestamp: now }), // Before lastResponseAt
+        createTestMessage({ messageId: '1', isMention: true, timestamp: now - 4000 }), // Before lastResponseAt
+        createTestMessage({ messageId: '2', isMention: true, timestamp: now - 1000 }), // After lastResponseAt
+        createTestMessage({ messageId: '3', timestamp: now }), // Before lastResponseAt
       ];
 
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         lastResponseAt,
@@ -1282,15 +1283,17 @@ describe('DynamoDB Response Validation', () => {
   describe('Follow-up cap (#1534)', () => {
     it('should cap engaged_user follow-ups at MAX_FOLLOW_UPS with suppression details', () => {
       const now = Date.now();
-      const engagementWindowStart = now - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+      // windowStart = engagedUntil - ENGAGEMENT_WINDOW_MS by definition, so
+      // the follow-up counter map keys by that derived value (#1534).
       const engagedUntil = now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS / 2;
+      const engagementWindowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
 
       // Simulate 3 responses already sent in this window
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '1',
             userId: 'user-123',
             timestamp: now,
@@ -1315,14 +1318,16 @@ describe('DynamoDB Response Validation', () => {
 
     it('should allow engaged_user following before cap', () => {
       const now = Date.now();
-      const engagementWindowStart = now - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+      // windowStart = engagedUntil - ENGAGEMENT_WINDOW_MS by definition, so
+      // the follow-up counter map keys by that derived value (#1534).
       const engagedUntil = now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS / 2;
+      const engagementWindowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
 
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '1',
             userId: 'user-123',
             timestamp: now,
@@ -1346,11 +1351,11 @@ describe('DynamoDB Response Validation', () => {
       const now = Date.now();
       const oldWindowStart = now - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS * 2;
 
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '1',
             isMention: true, // New direct engagement
             timestamp: now,
@@ -1374,11 +1379,11 @@ describe('DynamoDB Response Validation', () => {
       const now = Date.now();
       const lastResponseAt = now - CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS / 2; // Within 5 min
 
-      const state = createChannelState({
+      const state = createTestChannelState({
         state: 'IDLE',
         lastResponseAt,
         recentMessages: Array.from({ length: 5 }, (_, i) =>
-          createMessage({ messageId: String(i), timestamp: now - i * 1000 })
+          createTestMessage({ messageId: String(i), timestamp: now - i * 1000 })
         ),
       });
 
@@ -1397,12 +1402,12 @@ describe('DynamoDB Response Validation', () => {
       const now = Date.now();
       const lastResponseAt = now - CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS - 1000; // Beyond 5 min
 
-      const state = createChannelState({
+      const state = createTestChannelState({
         state: 'IDLE',
         lastResponseAt,
         chatType: undefined, // Not a group
         recentMessages: Array.from({ length: 5 }, (_, i) =>
-          createMessage({ messageId: String(i), timestamp: now - i * 1000 })
+          createTestMessage({ messageId: String(i), timestamp: now - i * 1000 })
         ),
       });
 
@@ -1415,12 +1420,12 @@ describe('DynamoDB Response Validation', () => {
       const now = Date.now();
       const lastResponseAt = now - 1000; // Very recent
 
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         lastResponseAt,
         recentMessages: [
-          createMessage({ messageId: '1', isMention: true, timestamp: now }),
+          createTestMessage({ messageId: '1', isMention: true, timestamp: now }),
         ],
       });
 
