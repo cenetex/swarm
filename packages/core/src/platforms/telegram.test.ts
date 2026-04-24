@@ -604,10 +604,12 @@ describe('TelegramAdapter — executeAction catch preserves PlatformError retrya
     expect(source).toMatch(/aws-swarm#1538/);
   });
 
-  it('still applies the 4xx-non-retryable path for raw grammY errors', async () => {
+  it('still applies the 4xx-non-retryable path for raw grammY errors via classifyError', async () => {
     const source = await readAdapterSource();
-    // After the PlatformError short-circuit, the 4xx classification + re-wrap path remains.
-    expect(source).toMatch(/isNonRetryable\s*=\s*typeof\s+status\s*===\s*'number'\s*&&\s*status\s*>=\s*400\s*&&\s*status\s*<\s*500\s*&&\s*status\s*!==\s*429/);
-    expect(source).toMatch(/throw\s+new\s+PlatformError\([\s\S]{0,300}retryable:\s*!isNonRetryable/);
+    // After the PlatformError short-circuit, the outer catch delegates to
+    // the canonical classifyError helper (aws-swarm#1550) instead of the
+    // old hand-rolled status check. Lock that wiring in.
+    expect(source).toMatch(/classifyError\s*\(\s*error\s*,\s*\{\s*platform:\s*'telegram'\s*\}\s*\)/);
+    expect(source).toMatch(/throw\s+new\s+PlatformError\([\s\S]{0,300}retryable:\s*c\.retryable/);
   });
 });

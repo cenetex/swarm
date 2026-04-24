@@ -21,3 +21,9 @@ export {
   swarmErrorToHttpResponse,
   type ErrorContext,
 } from './errors.js';
+
+export {
+  classifyError,
+  type ErrorClassification,
+  type ErrorReason,
+} from './classify.js';

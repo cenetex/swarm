@@ -9,6 +9,7 @@ import { PlatformAdapter } from './base.js';
 import { fetchWithRetry } from '../utils/fetch-retry.js';
 import { PlatformError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
+import { classifyError } from '../errors/classify.js';
 import { logger } from '../utils/logger.js';
 import { markdownToTelegramHtml, stripMarkdown } from '../utils/telegram-html.js';
 import {
@@ -864,25 +865,24 @@ export class TelegramAdapter extends PlatformAdapter {
         throw error;
       }
 
-      const status = (error as { status?: number }).status
-        ?? (error as { error_code?: number }).error_code;
-
-      // Telegram 4xx errors (except 429 rate limit) are permanent — do not retry.
-      const isNonRetryable = typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
+      // Canonical classification — handles 4xx/5xx, rate-limit, network,
+      // timeout, and explicit-retryable hints in one place (aws-swarm#1550).
+      const c = classifyError(error, { platform: 'telegram' });
 
       logger.error('Failed to execute Telegram action', error, {
         subsystem: 'platform',
         platform: 'telegram',
-        ...(typeof status === 'number' ? { statusCode: status } : {}),
-        retryable: !isNonRetryable,
+        ...(typeof c.statusCode === 'number' ? { statusCode: c.statusCode } : {}),
+        retryable: c.retryable,
+        reason: c.reason,
       });
 
       throw new PlatformError(
         error instanceof Error ? error.message : String(error),
         {
           platform: 'telegram',
-          statusCode: typeof status === 'number' ? status : undefined,
-          retryable: !isNonRetryable,
+          statusCode: c.statusCode,
+          retryable: c.retryable,
           cause: error,
           code: SwarmErrorCode.PLATFORM_API_ERROR,
         },
