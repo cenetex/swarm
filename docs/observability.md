@@ -108,6 +108,16 @@ log.setRequestId(event.requestContext.requestId);
 
 All subsequent `log.*` calls on that logger include `requestId`, so Logs Insights `filter requestId = "..."` reconstructs the full flow. Pass the same request ID into downstream services if they accept one.
 
+## Channel State and Message Deduplication
+
+When storing messages in `ChannelState.recentMessages`, each message must be uniquely identifiable. The `messageId` field is the platform-specific message identifier (e.g., Telegram `message_id`, not SQS `messageId`). Important invariants:
+
+- **`messageId` uniqueness**: Each entry in `recentMessages` has a unique `messageId` per channel. This is guaranteed by the idempotency guard in `addMessageToChannel` (issue #1552).
+- **No duplicate appends on redelivery**: If SQS redelivers the same message (same platform `messageId`), it will only be appended to the buffer once. Subsequent deliveries are idempotent no-ops.
+- **Flags computed once**: `isMention` and `isReplyToBot` metadata are computed exactly once at envelope construction time (`buildTelegramEnvelope`, etc.) and propagated through to the channel buffer via `ContextMessage`. There is no re-derivation downstream — downstream consumers read from `envelope.metadata` and `contextMessage` directly.
+
+When querying `recentMessages` in triggers or response selection, you can safely assume each `messageId` appears exactly once, even if the underlying transport (SQS) might redeliver the same update multiple times.
+
 ## What this doc doesn't cover
 
 - **OpenTelemetry / distributed tracing.** Deferred in #1363; when it lands it'll live in its own doc.
