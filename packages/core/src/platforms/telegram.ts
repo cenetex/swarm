@@ -847,6 +847,11 @@ export class TelegramAdapter extends PlatformAdapter {
       
       return true;
     } catch (error) {
+      // If the error is already a PlatformError, preserve its retryable flag — don't re-wrap and flip it.
+      if (error instanceof PlatformError) {
+        throw error;
+      }
+
       const status = (error as { status?: number }).status
         ?? (error as { error_code?: number }).error_code;
 

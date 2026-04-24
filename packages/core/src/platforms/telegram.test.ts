@@ -575,3 +575,33 @@ describe('TelegramAdapter — pre-reply group hold (#1527)', () => {
     expect(source).toMatch(/private isReplyAction\(action[\s\S]{0,200}send_message[\s\S]{0,100}send_media/);
   });
 });
+
+describe('TelegramAdapter.executeAction — PlatformError retryable flag preservation (#1538)', () => {
+  it('verifies executeAction preserves PlatformError.retryable when already thrown', async () => {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const source = await fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+
+    // The fix is present: `if (error instanceof PlatformError) throw error;`
+    expect(source).toMatch(/if\s*\(\s*error\s+instanceof\s+PlatformError\s*\)\s*throw\s+error/);
+    // This check should occur before the status extraction / re-wrap logic
+    expect(source).toMatch(
+      /if\s*\(\s*error\s+instanceof\s+PlatformError\s*\)[\s\S]{0,50}throw\s+error[\s\S]{0,100}const\s+status\s*=/,
+    );
+  });
+
+  it('verifies raw errors without `.status` are still wrapped with correct retryable classification', async () => {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const source = await fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+
+    // The 4xx non-retryable classification logic remains:
+    expect(source).toMatch(/isNonRetryable\s*=\s*typeof\s+status\s*===\s*['"]number['"]\s*&&\s*status\s*>=\s*400/);
+    // And it's used to set retryable in the thrown PlatformError:
+    expect(source).toMatch(/retryable:\s*!isNonRetryable/);
+  });
+});
