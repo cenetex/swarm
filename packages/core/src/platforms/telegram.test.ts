@@ -575,3 +575,39 @@ describe('TelegramAdapter — pre-reply group hold (#1527)', () => {
     expect(source).toMatch(/private isReplyAction\(action[\s\S]{0,200}send_message[\s\S]{0,100}send_media/);
   });
 });
+
+describe('TelegramAdapter — executeAction catch preserves PlatformError retryable (#1538)', () => {
+  /**
+   * Regression for the CHOPPA infinite-retry loop: the outer catch in
+   * executeAction used to re-read `.status` off the error and re-wrap,
+   * which silently flipped `retryable: false` back to `true` because
+   * PlatformError exposes `.statusCode` not `.status`. The fix short-
+   * circuits when the caught error is already a PlatformError.
+   *
+   * Source-introspection — the full grammY flow is awkward to mock here,
+   * so we lock in the specific control-flow via regex on the adapter.
+   */
+  async function readAdapterSource(): Promise<string> {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    return fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+  }
+
+  it('short-circuits when the caught error is already a PlatformError', async () => {
+    const source = await readAdapterSource();
+    // The catch block early-returns via `throw error` on PlatformError,
+    // preserving the inner layer's retryable/statusCode classification.
+    expect(source).toMatch(/catch\s*\(error\)\s*\{[\s\S]{0,800}if\s*\(\s*error\s+instanceof\s+PlatformError\s*\)\s*\{[\s\S]{0,400}throw\s+error;/);
+    // The #1538 event/annotation stays in the code for future greppability.
+    expect(source).toMatch(/aws-swarm#1538/);
+  });
+
+  it('still applies the 4xx-non-retryable path for raw grammY errors', async () => {
+    const source = await readAdapterSource();
+    // After the PlatformError short-circuit, the 4xx classification + re-wrap path remains.
+    expect(source).toMatch(/isNonRetryable\s*=\s*typeof\s+status\s*===\s*'number'\s*&&\s*status\s*>=\s*400\s*&&\s*status\s*<\s*500\s*&&\s*status\s*!==\s*429/);
+    expect(source).toMatch(/throw\s+new\s+PlatformError\([\s\S]{0,300}retryable:\s*!isNonRetryable/);
+  });
+});

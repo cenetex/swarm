@@ -847,6 +847,23 @@ export class TelegramAdapter extends PlatformAdapter {
       
       return true;
     } catch (error) {
+      // If an inner layer already classified this as a PlatformError
+      // (e.g. reply_target_deleted from sendTextWithFallback / sendMedia),
+      // preserve its `retryable` flag. The old code re-read `.status` off
+      // the error, but PlatformError exposes `.statusCode`, so the outer
+      // re-wrap silently flipped `retryable: false` back to `true` — the
+      // exact bug that left CHOPPA in an infinite SQS retry loop
+      // (aws-swarm#1538).
+      if (error instanceof PlatformError) {
+        logger.error('Failed to execute Telegram action', error, {
+          subsystem: 'platform',
+          platform: 'telegram',
+          ...(typeof error.statusCode === 'number' ? { statusCode: error.statusCode } : {}),
+          retryable: error.retryable,
+        });
+        throw error;
+      }
+
       const status = (error as { status?: number }).status
         ?? (error as { error_code?: number }).error_code;
 
