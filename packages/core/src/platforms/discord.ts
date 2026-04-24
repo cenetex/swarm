@@ -21,6 +21,57 @@ import { PlatformError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
 import { logger } from '../utils/logger.js';
 import type { DiscordWebhookManager } from './discord-webhook-manager.js';
+import { PLATFORM_CHAR_LIMITS } from '../types/long-form.js';
+
+// Discord message length limit
+const DISCORD_MAX_MESSAGE_LENGTH = PLATFORM_CHAR_LIMITS.discord || 2000;
+
+// Split message on paragraph/sentence boundaries, with fallback to char split
+export function splitMessageForDiscord(content: string): string[] {
+  if (content.length <= DISCORD_MAX_MESSAGE_LENGTH) {
+    return [content];
+  }
+
+  const messages: string[] = [];
+  let remaining = content;
+
+  while (remaining.length > 0) {
+    if (remaining.length <= DISCORD_MAX_MESSAGE_LENGTH) {
+      messages.push(remaining);
+      break;
+    }
+
+    // Try to split on paragraph boundary (double newline)
+    let splitAt = DISCORD_MAX_MESSAGE_LENGTH;
+    let splitPoint = remaining.lastIndexOf('\n\n', DISCORD_MAX_MESSAGE_LENGTH);
+
+    if (splitPoint > 0 && splitPoint > DISCORD_MAX_MESSAGE_LENGTH * 0.75) {
+      splitAt = splitPoint + 1;
+    } else {
+      // Try to split on sentence boundary (. ! ?)
+      splitPoint = Math.max(
+        remaining.lastIndexOf('. ', DISCORD_MAX_MESSAGE_LENGTH),
+        remaining.lastIndexOf('! ', DISCORD_MAX_MESSAGE_LENGTH),
+        remaining.lastIndexOf('? ', DISCORD_MAX_MESSAGE_LENGTH),
+      );
+
+      if (splitPoint > 0 && splitPoint > DISCORD_MAX_MESSAGE_LENGTH * 0.75) {
+        splitAt = splitPoint + 2;
+      } else {
+        // Try to split on word boundary (space)
+        splitPoint = remaining.lastIndexOf(' ', DISCORD_MAX_MESSAGE_LENGTH);
+        if (splitPoint > 0) {
+          splitAt = splitPoint;
+        }
+      }
+    }
+
+    messages.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+
+  return messages;
+}
 
 // Discord API types (minimal, to avoid dependency on discord.js in core)
 export interface DiscordMessage {
@@ -475,6 +526,7 @@ export class DiscordAdapter extends PlatformAdapter {
 
   /**
    * Send a message via webhook or bot
+   * Enforces Discord's 2000-char limit by splitting on paragraph/sentence boundaries
    */
   private async sendMessage(
     channelId: string,
@@ -482,26 +534,49 @@ export class DiscordAdapter extends PlatformAdapter {
     media?: Array<{ type: string; url: string }>,
     replyToMessageId?: string
   ): Promise<void> {
-    // Global mode: send via per-channel webhook with avatar identity
-    if (this.config.mode === 'global' && this.credentials.webhookManager) {
-      await this.sendViaGlobalWebhook(channelId, text, media);
-      return;
+    // Split message if it exceeds Discord's 2000-char limit
+    const messages = splitMessageForDiscord(text);
+    if (messages.length > 1) {
+      logger.info('Discord message split due to length limit', {
+        event: 'platform_length_split',
+        subsystem: 'platform',
+        platform: 'discord',
+        originalLength: text.length,
+        splitCount: messages.length,
+        channelId,
+      });
     }
 
-    // Prefer webhook for sending (custom avatar)
-    if (this.config.mode === 'webhook' || this.config.mode === 'hybrid') {
-      await this.sendViaWebhook(text, media);
-      return;
-    }
+    // Send each message chunk
+    for (let i = 0; i < messages.length; i++) {
+      const messageText = messages[i];
+      // Only attach media to the last message
+      const messageMedia = i === messages.length - 1 ? media : undefined;
+      // Only use replyTo on the first message
+      const messageReplyTo = i === 0 ? replyToMessageId : undefined;
 
-    // Fall back to bot API
-    if (this.credentials.botToken) {
-      await this.sendViaBot(channelId, text, media, replyToMessageId);
+      // Global mode: send via per-channel webhook with avatar identity
+      if (this.config.mode === 'global' && this.credentials.webhookManager) {
+        await this.sendViaGlobalWebhook(channelId, messageText, messageMedia);
+        continue;
+      }
+
+      // Prefer webhook for sending (custom avatar)
+      if (this.config.mode === 'webhook' || this.config.mode === 'hybrid') {
+        await this.sendViaWebhook(messageText, messageMedia);
+        continue;
+      }
+
+      // Fall back to bot API
+      if (this.credentials.botToken) {
+        await this.sendViaBot(channelId, messageText, messageMedia, messageReplyTo);
+      }
     }
   }
 
   /**
    * Send message via global webhook manager with avatar's name and profile image
+   * Enforces Discord's 2000-char limit on content
    */
   private async sendViaGlobalWebhook(
     channelId: string,
@@ -515,6 +590,22 @@ export class DiscordAdapter extends PlatformAdapter {
       });
     }
 
+    // Enforce Discord's 2000-char limit on content
+    const finalContent = content.length > DISCORD_MAX_MESSAGE_LENGTH
+      ? content.slice(0, 1997) + '...'
+      : content;
+
+    if (finalContent !== content) {
+      logger.info('Discord webhook message truncated due to length limit', {
+        event: 'platform_length_truncate',
+        subsystem: 'platform',
+        platform: 'discord',
+        originalLength: content.length,
+        truncatedLength: finalContent.length,
+        channelId,
+      });
+    }
+
     const embeds = media?.length
       ? media
           .filter(m => m.type === 'image')
@@ -522,7 +613,7 @@ export class DiscordAdapter extends PlatformAdapter {
       : undefined;
 
     await this.credentials.webhookManager.send(channelId, {
-      content,
+      content: finalContent,
       username: this.avatarConfig.name,
       avatar_url: this.avatarConfig.profileImage?.url,
       embeds,
