@@ -998,6 +998,65 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       }
 
       // =========================================================
+      // CHANNEL COOLDOWN ENFORCEMENT (Discord self-reply loop protection)
+      // =========================================================
+      // Check if avatar has recently responded in this channel.
+      // Default cooldown: 30s per channel (Telegram-style engagement tracking).
+      // This prevents rapid self-reply loops even when the own-message filter fails.
+      const CHANNEL_COOLDOWN_MS = 30 * 1000; // 30 seconds
+      const channelCooldownKey = `channelcd:${avatarId}:${envelope.conversationId}`;
+      const lastResponseAt = await stateService.checkAndSetIdempotency(channelCooldownKey, Math.floor(CHANNEL_COOLDOWN_MS / 1000));
+      if (!lastResponseAt) {
+        // Not the first time we checked — we recently responded in this channel
+        logger.info('Skipping response due to channel cooldown', {
+          event: 'channel_cooldown_active',
+          subsystem: 'chat',
+          channelId: envelope.conversationId,
+          cooldownMs: CHANNEL_COOLDOWN_MS,
+        });
+        continue;
+      }
+
+      // =========================================================
+      // LOOP DETECTION TELEMETRY
+      // =========================================================
+      // Track response frequency per channel via idempotency keys with short TTL.
+      // Each response increments a counter; if we see >5 in 5min, emit loop_detected event.
+      // Implementation: use sequential keys (loop:N:avatarId:channelId) to track temporal bursts.
+      const LOOP_DETECTION_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+      const LOOP_DETECTION_THRESHOLD = 5; // >5 messages = loop
+      const loopBucketSize = Math.floor(LOOP_DETECTION_WINDOW_MS / LOOP_DETECTION_THRESHOLD); // 60s per bucket
+      const bucketIndex = Math.floor(Date.now() / loopBucketSize);
+      const loopCounterKey = `loop:${bucketIndex}:${avatarId}:${envelope.conversationId}`;
+
+      // Simulate counter by checking existence of multiple keys across buckets
+      let recentResponseCount = 0;
+      for (let i = 0; i < LOOP_DETECTION_THRESHOLD; i++) {
+        const pastBucketIndex = bucketIndex - i;
+        const keyToCheck = `loop:${pastBucketIndex}:${avatarId}:${envelope.conversationId}`;
+        const exists = await stateService.checkAndSetIdempotency(keyToCheck, Math.floor(LOOP_DETECTION_WINDOW_MS / 1000));
+        if (!exists) recentResponseCount++;
+      }
+
+      if (recentResponseCount >= LOOP_DETECTION_THRESHOLD) {
+        logger.warn('Potential response loop detected', {
+          event: 'loop_detected',
+          subsystem: 'chat',
+          severity: 'high',
+          channelId: envelope.conversationId,
+          avatarId,
+          recentResponseCount,
+          windowMs: LOOP_DETECTION_WINDOW_MS,
+          threshold: LOOP_DETECTION_THRESHOLD,
+        });
+        // Apply emergency backoff: skip this response and extend cooldown to 10 minutes
+        const emergencyBackoffKey = `channelcd:${avatarId}:${envelope.conversationId}`;
+        await stateService.checkAndSetIdempotency(emergencyBackoffKey, 600); // 10 minutes
+        metrics.incrementCounter('LoopsDetected');
+        continue;
+      }
+
+      // =========================================================
       // ENTITLEMENT ENFORCEMENT
       // =========================================================
       // Debit ONLY when we have committed to responding (#1509). Previously
