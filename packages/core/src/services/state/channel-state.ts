@@ -497,7 +497,23 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
     }
   }
 
-  // In IDLE state or expired cooldown, check other triggers
+  // In group/supergroup chats, the bot ONLY responds to direct engagement
+  // and engaged-user follow-ups (handled above). Ambient triggers
+  // (message_threshold, conversation_gap, ACTIVE-state pile-up) are
+  // disabled because they fire on chat the bot wasn't addressed in,
+  // producing the "responds to everyone" complaint reported in #1505.
+  // Heartbeat-driven proactive replies are tracked separately.
+  const isGroup = state.chatType === 'group' || state.chatType === 'supergroup';
+  if (isGroup) {
+    return {
+      shouldRespond: false,
+      trigger: 'none',
+      delay: 0,
+      priority: 'low',
+    };
+  }
+
+  // In IDLE state or expired cooldown, check other triggers (1:1 chats only)
   if (state.state === 'IDLE' || isCooldownExpired(state)) {
     // Message threshold trigger
     if (state.recentMessages.length >= CHANNEL_CONFIG.MESSAGE_THRESHOLD) {
@@ -524,7 +540,7 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
     }
   }
 
-  // ACTIVE state but no trigger met yet
+  // ACTIVE state but no trigger met yet (1:1 chats only)
   if (state.state === 'ACTIVE') {
     // If we've been active for a while with messages, consider responding
     if (state.recentMessages.length >= 2) {

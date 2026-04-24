@@ -331,7 +331,18 @@ describe('Channel State Machine Logic', () => {
         }
       }
 
-      // Check message threshold
+      // Group chats skip ambient triggers (#1505): bot must be addressed.
+      const isGroup = state.chatType === 'group' || state.chatType === 'supergroup';
+      if (isGroup) {
+        return {
+          shouldRespond: false,
+          trigger: 'none',
+          delay: 0,
+          priority: 'low',
+        };
+      }
+
+      // Check message threshold (1:1 chats only)
       if (state.recentMessages.length >= CHANNEL_CONFIG.MESSAGE_THRESHOLD) {
         return {
           shouldRespond: true,
@@ -344,7 +355,7 @@ describe('Channel State Machine Logic', () => {
         };
       }
 
-      // Check conversation gap
+      // Check conversation gap (1:1 chats only)
       const timeSinceActivity = now - state.lastActivityAt;
       if (
         state.recentMessages.length > 0 &&
@@ -358,7 +369,7 @@ describe('Channel State Machine Logic', () => {
         };
       }
 
-      // ACTIVE state with some messages
+      // ACTIVE state with some messages (1:1 chats only)
       if (state.state === 'ACTIVE' && state.recentMessages.length >= 2) {
         return {
           shouldRespond: true,
@@ -455,7 +466,7 @@ describe('Channel State Machine Logic', () => {
       expect(decision.trigger).toBe('direct_engagement');
     });
 
-    it('should respond when message threshold reached', () => {
+    it('should NOT respond on message_threshold in groups (#1505)', () => {
       const state = createChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
@@ -466,14 +477,29 @@ describe('Channel State Machine Logic', () => {
 
       const decision = evaluateResponseTrigger(state);
 
-      expect(decision.shouldRespond).toBe(true);
-      expect(decision.trigger).toBe('message_threshold');
-      expect(decision.priority).toBe('normal');
-      expect(decision.delay).toBeGreaterThanOrEqual(CHANNEL_CONFIG.MIN_RESPONSE_DELAY_MS);
-      expect(decision.delay).toBeLessThanOrEqual(CHANNEL_CONFIG.MAX_RESPONSE_DELAY_MS);
+      // Ambient triggers are disabled in groups; bot must be addressed.
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
     });
 
-    it('should respond on conversation gap', () => {
+    it('should respond on message_threshold in private chats', () => {
+      const state = createChannelState({
+        chatType: 'private',
+        state: 'IDLE',
+        recentMessages: Array.from({ length: 5 }, (_, i) =>
+          createMessage({ messageId: String(i), content: `Message ${i}` })
+        ),
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      // Private chats short-circuit to private_chat trigger before
+      // even reaching the threshold check.
+      expect(decision.shouldRespond).toBe(true);
+      expect(['private_chat', 'message_threshold']).toContain(decision.trigger);
+    });
+
+    it('should NOT respond on conversation_gap in groups (#1505)', () => {
       const state = createChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
@@ -483,8 +509,8 @@ describe('Channel State Machine Logic', () => {
 
       const decision = evaluateResponseTrigger(state);
 
-      expect(decision.shouldRespond).toBe(true);
-      expect(decision.trigger).toBe('conversation_gap');
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
     });
 
     it('should not respond with no messages', () => {
@@ -499,7 +525,7 @@ describe('Channel State Machine Logic', () => {
       expect(decision.shouldRespond).toBe(false);
     });
 
-    it('should respond in ACTIVE state with 2+ messages', () => {
+    it('should NOT respond in ACTIVE state with 2+ messages in groups (#1505)', () => {
       const state = createChannelState({
         chatType: 'supergroup',
         state: 'ACTIVE',
@@ -511,8 +537,8 @@ describe('Channel State Machine Logic', () => {
 
       const decision = evaluateResponseTrigger(state);
 
-      expect(decision.shouldRespond).toBe(true);
-      expect(decision.trigger).toBe('message_threshold');
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
     });
 
     it('should respond to follow-up from engaged user within engagement window', () => {
