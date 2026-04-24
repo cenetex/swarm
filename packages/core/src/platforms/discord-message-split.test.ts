@@ -5,56 +5,10 @@
  * @see packages/core/src/platforms/discord.ts
  */
 import { describe, it, expect } from 'bun:test';
+import { splitMessageForDiscord } from './discord.js';
 import { PLATFORM_CHAR_LIMITS } from '../types/long-form.js';
 
-/* Re-implement splitMessageForDiscord for testing (since the original is private) */
 const DISCORD_MAX_MESSAGE_LENGTH = PLATFORM_CHAR_LIMITS.discord || 2000;
-
-function splitMessageForDiscord(content: string): string[] {
-  if (content.length <= DISCORD_MAX_MESSAGE_LENGTH) {
-    return [content];
-  }
-
-  const messages: string[] = [];
-  let remaining = content;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= DISCORD_MAX_MESSAGE_LENGTH) {
-      messages.push(remaining);
-      break;
-    }
-
-    // Try to split on paragraph boundary (double newline)
-    let splitAt = DISCORD_MAX_MESSAGE_LENGTH;
-    let splitPoint = remaining.lastIndexOf('\n\n', DISCORD_MAX_MESSAGE_LENGTH);
-
-    if (splitPoint > 0 && splitPoint > DISCORD_MAX_MESSAGE_LENGTH * 0.75) {
-      splitAt = splitPoint + 1;
-    } else {
-      // Try to split on sentence boundary (. ! ?)
-      splitPoint = Math.max(
-        remaining.lastIndexOf('. ', DISCORD_MAX_MESSAGE_LENGTH),
-        remaining.lastIndexOf('! ', DISCORD_MAX_MESSAGE_LENGTH),
-        remaining.lastIndexOf('? ', DISCORD_MAX_MESSAGE_LENGTH),
-      );
-
-      if (splitPoint > 0 && splitPoint > DISCORD_MAX_MESSAGE_LENGTH * 0.75) {
-        splitAt = splitPoint + 2;
-      } else {
-        // Try to split on word boundary (space)
-        splitPoint = remaining.lastIndexOf(' ', DISCORD_MAX_MESSAGE_LENGTH);
-        if (splitPoint > 0) {
-          splitAt = splitPoint;
-        }
-      }
-    }
-
-    messages.push(remaining.slice(0, splitAt).trim());
-    remaining = remaining.slice(splitAt).trim();
-  }
-
-  return messages;
-}
 
 describe('Discord Message Splitting', () => {
   describe('Short messages', () => {
