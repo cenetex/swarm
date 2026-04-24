@@ -129,6 +129,15 @@ export interface TelegramConfig {
   botUsername: string;
   botId?: number;
   webhookPath: string;
+  /**
+   * How long to wait (ms) between deciding to respond and sending the reply.
+   * Purpose: let mod-bot / anti-spam deletions land first so the bot never
+   * posts a reply to a message that has already been purged. See #1527.
+   *
+   * Applied ONLY in group/supergroup chats. DMs and private replies bypass
+   * the delay. If unset, defaults to 10000 (10s) for groups.
+   */
+  preReplyDelayMs?: number;
   allowedChatTypes?: ('private' | 'group' | 'supergroup' | 'channel')[];
   /**
    * Optional allowlist of Telegram chat IDs the bot is allowed to respond in.
