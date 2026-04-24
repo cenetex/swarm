@@ -17,6 +17,9 @@ export interface TokenEstimate {
   total: number;
 }
 
+import type { SystemPromptOverride } from './avatars';
+export type { SystemPromptOverride };
+
 export interface PromptPreviewResponse {
   systemPrompt: string;
   tools: ToolPreview[];
@@ -28,6 +31,11 @@ export interface PromptPreviewResponse {
     content: string;
   }>;
   tokenEstimate: TokenEstimate;
+  /**
+   * Current operator override state on the avatar (if any). Lets the UI show
+   * the active mode without a separate fetch. See #1531.
+   */
+  systemPromptOverride?: SystemPromptOverride;
 }
 
 export interface PromptPreviewRequest {

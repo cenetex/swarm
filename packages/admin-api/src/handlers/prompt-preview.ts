@@ -47,6 +47,10 @@ interface ToolPreview {
   parameters: Record<string, unknown>;
 }
 
+type SystemPromptOverrideShape =
+  | { kind: 'inline'; text: string }
+  | { kind: 'url'; url: string; cacheTtlSec?: number };
+
 interface PromptPreviewResponse {
   systemPrompt: string;
   tools: ToolPreview[];
@@ -63,6 +67,11 @@ interface PromptPreviewResponse {
     messages: number;
     total: number;
   };
+  /**
+   * Current operator override on the avatar (aws-swarm#1522/#1531).
+   * Lets the admin-ui show the active mode without a separate fetch.
+   */
+  systemPromptOverride?: SystemPromptOverrideShape;
 }
 
 const CATEGORY_TOOLSETS: Record<ToolCategory, ToolsetId[]> = {
@@ -293,6 +302,9 @@ export async function handler(
       enabledCategories,
       messages,
       tokenEstimate,
+      ...(avatarRecord.systemPromptOverride
+        ? { systemPromptOverride: avatarRecord.systemPromptOverride as SystemPromptOverrideShape }
+        : {}),
     };
 
     return {

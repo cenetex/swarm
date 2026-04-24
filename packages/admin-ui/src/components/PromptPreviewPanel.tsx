@@ -6,7 +6,8 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { fetchPromptPreview, type PromptPreviewResponse, type ToolPreview } from '../api/prompt-preview';
+import { fetchPromptPreview, type PromptPreviewResponse, type ToolPreview, type SystemPromptOverride } from '../api/prompt-preview';
+import { updateAvatar } from '../api/avatars';
 import { useActiveAvatar, useActiveChat } from '../store';
 
 interface PromptPreviewPanelProps {
@@ -83,6 +84,87 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
   const [activeTab, setActiveTab] = useState<TabId>('prompt');
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [toolsetFilter, setToolsetFilter] = useState<string>('all');
+
+  // System-prompt override edit state (#1531).
+  const [isEditing, setIsEditing] = useState(false);
+  const [editMode, setEditMode] = useState<'none' | 'inline' | 'url'>('none');
+  const [editText, setEditText] = useState('');
+  const [editUrl, setEditUrl] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const currentOverrideKind = preview?.systemPromptOverride?.kind ?? 'none';
+
+  const openEditor = useCallback(() => {
+    const override = preview?.systemPromptOverride;
+    if (override?.kind === 'inline') {
+      setEditMode('inline');
+      setEditText(override.text);
+      setEditUrl('');
+    } else if (override?.kind === 'url') {
+      setEditMode('url');
+      setEditText(preview?.systemPrompt ?? '');
+      setEditUrl(override.url);
+    } else {
+      // No override today — preload the textarea with the current assembled
+      // prompt so the operator has a starting point rather than a blank box.
+      setEditMode('inline');
+      setEditText(preview?.systemPrompt ?? '');
+      setEditUrl('');
+    }
+    setSaveError(null);
+    setIsEditing(true);
+  }, [preview]);
+
+  const cancelEditor = useCallback(() => {
+    setIsEditing(false);
+    setSaveError(null);
+  }, []);
+
+  const saveOverride = useCallback(async () => {
+    if (!activeAgent) return;
+    setIsSaving(true);
+    setSaveError(null);
+
+    let payload: { systemPromptOverride: SystemPromptOverride | null };
+    if (editMode === 'none') {
+      payload = { systemPromptOverride: null };
+    } else if (editMode === 'inline') {
+      const trimmed = editText.trim();
+      if (!trimmed) {
+        setSaveError(t('promptPreview.override.errorEmptyText') || 'Prompt text cannot be empty.');
+        setIsSaving(false);
+        return;
+      }
+      payload = { systemPromptOverride: { kind: 'inline', text: editText } };
+    } else {
+      const trimmed = editUrl.trim();
+      if (!trimmed) {
+        setSaveError(t('promptPreview.override.errorEmptyUrl') || 'URL cannot be empty.');
+        setIsSaving(false);
+        return;
+      }
+      try {
+        // eslint-disable-next-line no-new
+        new URL(trimmed);
+      } catch {
+        setSaveError(t('promptPreview.override.errorInvalidUrl') || 'URL is not valid.');
+        setIsSaving(false);
+        return;
+      }
+      payload = { systemPromptOverride: { kind: 'url', url: trimmed } };
+    }
+
+    try {
+      await updateAvatar(activeAgent.id, payload);
+      setIsEditing(false);
+      await loadPreview();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [activeAgent, editMode, editText, editUrl, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadPreview = useCallback(async () => {
     if (!activeAgent) return;
@@ -293,11 +375,138 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
           )}
 
           {/* System Prompt Tab */}
-          {activeTab === 'prompt' && preview && (
-            <div className="p-4">
+          {activeTab === 'prompt' && preview && !isEditing && (
+            <div className="p-4 space-y-3">
+              {/* Header: override badge + edit button */}
+              <div className="flex items-center justify-between gap-2">
+                <div
+                  className="flex items-center gap-2 text-xs"
+                  data-testid="prompt-override-badge"
+                  data-override-kind={currentOverrideKind}
+                >
+                  <span className="text-[var(--color-text-tertiary)]">
+                    {t('promptPreview.override.mode') || 'Mode:'}
+                  </span>
+                  {currentOverrideKind === 'inline' && (
+                    <span className="px-2 py-0.5 rounded bg-amber-900/40 text-amber-300">
+                      {t('promptPreview.override.inlineActive') || 'Using override: inline'}
+                    </span>
+                  )}
+                  {currentOverrideKind === 'url' && (
+                    <span
+                      className="px-2 py-0.5 rounded bg-amber-900/40 text-amber-300"
+                      title={preview.systemPromptOverride?.kind === 'url' ? preview.systemPromptOverride.url : ''}
+                    >
+                      {t('promptPreview.override.urlActive') || 'Using override: URL'}
+                    </span>
+                  )}
+                  {currentOverrideKind === 'none' && (
+                    <span className="px-2 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)]">
+                      {t('promptPreview.override.templateActive') || 'Assembled template'}
+                    </span>
+                  )}
+                </div>
+                <button
+                  data-testid="prompt-override-edit"
+                  onClick={openEditor}
+                  className="text-xs px-3 py-1 rounded-md bg-brand-900/40 hover:bg-brand-900/60 text-brand-300 transition-colors"
+                >
+                  {t('promptPreview.override.edit') || 'Edit'}
+                </button>
+              </div>
+
               <pre className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap font-mono bg-[var(--color-bg-secondary)] rounded-lg p-4 overflow-x-auto">
                 {preview.systemPrompt}
               </pre>
+            </div>
+          )}
+
+          {/* System Prompt Tab — EDIT MODE */}
+          {activeTab === 'prompt' && preview && isEditing && (
+            <div className="p-4 space-y-3" data-testid="prompt-override-editor">
+              {/* Mode selector */}
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-[var(--color-text-tertiary)]">
+                  {t('promptPreview.override.mode') || 'Mode:'}
+                </span>
+                {(['none', 'inline', 'url'] as const).map((mode) => (
+                  <label key={mode} className="inline-flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="override-mode"
+                      value={mode}
+                      checked={editMode === mode}
+                      onChange={() => setEditMode(mode)}
+                      data-testid={`prompt-override-mode-${mode}`}
+                    />
+                    <span className="text-[var(--color-text-secondary)]">
+                      {mode === 'none' && (t('promptPreview.override.modeNone') || 'None (template)')}
+                      {mode === 'inline' && (t('promptPreview.override.modeInline') || 'Custom text')}
+                      {mode === 'url' && (t('promptPreview.override.modeUrl') || 'URL')}
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              {editMode === 'inline' && (
+                <textarea
+                  data-testid="prompt-override-text"
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  rows={18}
+                  className="w-full text-xs font-mono bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  placeholder={t('promptPreview.override.placeholderText') || 'Paste the full system prompt the LLM should receive.'}
+                />
+              )}
+
+              {editMode === 'url' && (
+                <div className="space-y-1">
+                  <input
+                    type="url"
+                    data-testid="prompt-override-url"
+                    value={editUrl}
+                    onChange={(e) => setEditUrl(e.target.value)}
+                    className="w-full text-xs font-mono bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    placeholder="https://example.com/prompt.md"
+                  />
+                  <p className="text-[10px] text-[var(--color-text-tertiary)]">
+                    {t('promptPreview.override.urlHint') || 'Fetched at request time (5s timeout, 512 KiB cap). Cached ~5 minutes per Lambda instance. Fetch failures fall back to the assembled template.'}
+                  </p>
+                </div>
+              )}
+
+              {editMode === 'none' && (
+                <p className="text-xs text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)] rounded-lg p-3 border border-[var(--color-border)]">
+                  {t('promptPreview.override.noneDescription') || 'Saving with "None" removes any override and reverts to the prompt-builder template.'}
+                </p>
+              )}
+
+              {saveError && (
+                <div className="text-xs text-red-400 bg-red-900/20 border border-red-900/40 rounded-md px-3 py-2" data-testid="prompt-override-error">
+                  {saveError}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  data-testid="prompt-override-save"
+                  onClick={saveOverride}
+                  disabled={isSaving}
+                  className="text-xs px-3 py-1.5 rounded-md bg-brand-600 hover:bg-brand-500 text-white transition-colors disabled:opacity-50"
+                >
+                  {isSaving
+                    ? (t('common.saving') || 'Saving…')
+                    : (t('common.save') || 'Save')}
+                </button>
+                <button
+                  data-testid="prompt-override-cancel"
+                  onClick={cancelEditor}
+                  disabled={isSaving}
+                  className="text-xs px-3 py-1.5 rounded-md bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] transition-colors disabled:opacity-50"
+                >
+                  {t('common.cancel') || 'Cancel'}
+                </button>
+              </div>
             </div>
           )}
 
