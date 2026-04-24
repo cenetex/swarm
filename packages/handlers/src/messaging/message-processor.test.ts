@@ -954,3 +954,53 @@ describe('buildReplyAnnotation', () => {
     expect(result).toBeUndefined();
   });
 });
+
+describe('Message Processor - Quota debit ordering (#1509)', () => {
+  /**
+   * Source-introspection test: ensures `checkAndIncrementMessageUsage` is
+   * called AFTER the response decision — so ignored ambient messages don't
+   * burn quota. Pairs with the #1505 spam fix.
+   *
+   * Mocking the full handler (state, presence, secrets, runtime cache, LLM)
+   * for an end-to-end ordering test is too much scaffolding for the value;
+   * source-anchored assertions catch accidental regressions cheaply.
+   */
+  it('debits quota only after evaluateResponseTrigger runs', async () => {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const source = await fs.readFile(
+      path.join(here, 'message-processor.ts'),
+      'utf8',
+    );
+
+    const decisionIdx = source.indexOf('stateService.evaluateResponseTrigger(updatedState)');
+    const debitIdx = source.indexOf('checkAndIncrementMessageUsage(avatarId)');
+
+    expect(decisionIdx).toBeGreaterThan(0);
+    expect(debitIdx).toBeGreaterThan(0);
+    expect(debitIdx).toBeGreaterThan(decisionIdx);
+  });
+
+  it('skips quota debit when response is skipped (control-flow check)', async () => {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const source = await fs.readFile(
+      path.join(here, 'message-processor.ts'),
+      'utf8',
+    );
+
+    // The `continue` for response_skipped must appear between the decision
+    // call and the quota debit, so an ignored ambient message exits the
+    // iteration before quota is touched.
+    const decisionIdx = source.indexOf('stateService.evaluateResponseTrigger(updatedState)');
+    const skipIdx = source.indexOf("event: 'response_skipped'");
+    const debitIdx = source.indexOf('checkAndIncrementMessageUsage(avatarId)');
+
+    expect(skipIdx).toBeGreaterThan(decisionIdx);
+    expect(debitIdx).toBeGreaterThan(skipIdx);
+  });
+});

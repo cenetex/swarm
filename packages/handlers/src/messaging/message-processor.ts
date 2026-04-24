@@ -927,26 +927,12 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       });
 
       // =========================================================
-      // ENTITLEMENT ENFORCEMENT
-      // =========================================================
-      const usageCheck = await checkAndIncrementMessageUsage(avatarId);
-      if (!usageCheck.allowed) {
-        logger.warn('Message rejected due to limit', {
-          event: 'limit_exceeded',
-          subsystem: 'entitlements',
-          reason: usageCheck.reason,
-          limit: usageCheck.limit,
-          current: usageCheck.current,
-        });
-        metrics.incrementCounter('EntitlementRejections');
-        metrics.setProperty('Outcome', 'rejected');
-        // Don't retry - this is a policy rejection, not an error
-        continue;
-      }
-
-      // =========================================================
       // KYRO-STYLE CHANNEL STATE MANAGEMENT
       // =========================================================
+      // Note: state is updated for every inbound message regardless of whether
+      // the bot will respond — visibility != response. The message belongs in
+      // the buffer for context. Quota is debited later, only when we actually
+      // call the LLM. See #1509.
 
       await stateService.getOrCreateChannelState(
         avatarId,
@@ -1008,6 +994,28 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           subsystem: 'chat',
           reason: decision.trigger,
         });
+        continue;
+      }
+
+      // =========================================================
+      // ENTITLEMENT ENFORCEMENT
+      // =========================================================
+      // Debit ONLY when we have committed to responding (#1509). Previously
+      // this fired before evaluateResponseTrigger, so every ignored ambient
+      // message in a group still consumed quota — meaningful waste after
+      // #1505 disabled ambient triggers.
+      const usageCheck = await checkAndIncrementMessageUsage(avatarId);
+      if (!usageCheck.allowed) {
+        logger.warn('Message rejected due to limit', {
+          event: 'limit_exceeded',
+          subsystem: 'entitlements',
+          reason: usageCheck.reason,
+          limit: usageCheck.limit,
+          current: usageCheck.current,
+        });
+        metrics.incrementCounter('EntitlementRejections');
+        metrics.setProperty('Outcome', 'rejected');
+        // Don't retry - this is a policy rejection, not an error
         continue;
       }
 
