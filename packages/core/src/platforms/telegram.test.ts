@@ -499,3 +499,38 @@ describe('envelopeToBufferedMessage', () => {
     expect(buffered.isMention).toBe(true);
   });
 });
+
+describe('TelegramAdapter — reply target fallback (#1511)', () => {
+  /**
+   * Source-introspection: the adapter's private send paths are awkward to
+   * mock without standing up the full grammY bot. These assertions lock in
+   * the contract that on a 'message to be replied not found' 400 from
+   * Telegram, the adapter retries the same send WITHOUT
+   * reply_to_message_id rather than discarding the reply.
+   */
+  it('sendTextWithFallback retries without reply_to_message_id on missing reply target', async () => {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const source = await fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+
+    expect(source).toContain('reply_target_missing_fallback');
+    expect(source).toMatch(
+      /message to be replied not found[\s\S]{0,500}reply_to_message_id[\s\S]{0,500}sendMessage/,
+    );
+  });
+
+  it('sendMessage media path retries without reply on missing reply target', async () => {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const source = await fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+
+    expect(source).toContain('sendWithReplyFallback');
+    expect(source).toMatch(
+      /sendWithReplyFallback[\s\S]{0,1000}message to be replied not found[\s\S]{0,500}return await send\(undefined\)/,
+    );
+  });
+});

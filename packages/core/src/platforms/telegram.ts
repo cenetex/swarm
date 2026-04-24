@@ -872,8 +872,29 @@ export class TelegramAdapter extends PlatformAdapter {
         ?? (error as { error_code?: number }).error_code;
       const errorMsg = error instanceof Error ? error.message : String(error);
 
+      // Reply target gone (parent message deleted — common when spammers
+      // get banned and their messages purged). Retry without
+      // reply_to_message_id rather than discarding the whole reply. See
+      // #1511.
+      if (status === 400 && errorMsg.includes('message to be replied not found') && extra && 'reply_to_message_id' in extra) {
+        const { reply_to_message_id, ...rest } = extra as Record<string, unknown>;
+        logger.warn('Telegram reply target missing, retrying without reply_to_message_id', {
+          subsystem: 'platform',
+          platform: 'telegram',
+          event: 'reply_target_missing_fallback',
+          chatId: chatIdNum,
+          replyToMessageId: reply_to_message_id,
+        });
+        await this.bot.api.sendMessage(chatIdNum, htmlText, {
+          parse_mode: 'HTML',
+          ...rest,
+        });
+        return;
+      }
+
       // Only fall back to plain text for HTML formatting errors.
-      // Other 400 errors (reply not found, chat not found, etc.) must propagate.
+      // Other 400 errors (chat not found, bot blocked/kicked) must
+      // propagate — those can't be recovered by reformatting the message.
       const isHtmlFormattingError = status === 400
         && !errorMsg.includes('message to be replied not found')
         && !errorMsg.includes('chat not found')
@@ -918,21 +939,57 @@ export class TelegramAdapter extends PlatformAdapter {
       const captionFits = text.length > 0 && text.length <= TELEGRAM_CAPTION_LIMIT;
       const captionHtml = captionFits ? markdownToTelegramHtml(text) : undefined;
 
+      // Wrap the media send so it falls back to no-reply when the parent
+      // message was deleted (#1511) — same pattern as sendTextWithFallback.
+      const sendWithReplyFallback = async <T>(
+        send: (extra: Record<string, unknown> | undefined) => Promise<T>,
+      ): Promise<T> => {
+        try {
+          return await send(replyParams);
+        } catch (error) {
+          const status = (error as { status?: number }).status
+            ?? (error as { error_code?: number }).error_code;
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          if (
+            status === 400 &&
+            errorMsg.includes('message to be replied not found') &&
+            replyParams
+          ) {
+            logger.warn('Telegram reply target missing on media send, retrying without reply_to_message_id', {
+              subsystem: 'platform',
+              platform: 'telegram',
+              event: 'reply_target_missing_fallback',
+              chatId: chatIdNum,
+              replyToMessageId: replyParams.reply_to_message_id,
+              mediaType: firstMedia.type,
+            });
+            return await send(undefined);
+          }
+          throw error;
+        }
+      };
+
       if (firstMedia.type === 'image') {
-        await this.bot.api.sendPhoto(chatIdNum, firstMedia.url, {
-          caption: captionHtml,
-          parse_mode: captionHtml ? 'HTML' : undefined,
-          ...replyParams,
-        });
+        await sendWithReplyFallback((extra) =>
+          this.bot!.api.sendPhoto(chatIdNum, firstMedia.url, {
+            caption: captionHtml,
+            parse_mode: captionHtml ? 'HTML' : undefined,
+            ...extra,
+          }),
+        );
       } else if (firstMedia.type === 'video') {
-        await this.bot.api.sendVideo(chatIdNum, firstMedia.url, {
-          caption: captionHtml,
-          parse_mode: captionHtml ? 'HTML' : undefined,
-          ...replyParams,
-        });
+        await sendWithReplyFallback((extra) =>
+          this.bot!.api.sendVideo(chatIdNum, firstMedia.url, {
+            caption: captionHtml,
+            parse_mode: captionHtml ? 'HTML' : undefined,
+            ...extra,
+          }),
+        );
       } else if (firstMedia.type === 'sticker') {
         // Send sticker first, then text separately
-        await this.bot.api.sendSticker(chatIdNum, firstMedia.url, replyParams);
+        await sendWithReplyFallback((extra) =>
+          this.bot!.api.sendSticker(chatIdNum, firstMedia.url, extra),
+        );
       }
 
       if (text.length > 0 && !captionFits) {
