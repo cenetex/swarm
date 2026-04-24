@@ -19,6 +19,7 @@ import { toolResultsToActions } from './tool-executor.js';
 import {
   checkToolCallLimit,
   isMemoryWriteAllowed,
+  releaseMessageUsage,
 } from '../services/entitlement-enforcement.js';
 import type { createRuntimeBrainService } from '../services/brain.js';
 
@@ -83,14 +84,15 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
   let iterations = startIteration;
   let totalTokens = 0;
 
-  while (iterations < MAX_TOOL_ITERATIONS) {
-    iterations++;
+  try {
+    while (iterations < MAX_TOOL_ITERATIONS) {
+      iterations++;
 
-    // Refresh typing indicator before each LLM round-trip (expires after ~5s)
-    if (refreshTyping) await refreshTyping();
+      // Refresh typing indicator before each LLM round-trip (expires after ~5s)
+      if (refreshTyping) await refreshTyping();
 
-    const llmResponse = await callLLM(messages, enabledTools, llmConfig, secrets);
-    totalTokens += 100; // Approximate
+      const llmResponse = await callLLM(messages, enabledTools, llmConfig, secrets);
+      totalTokens += 100; // Approximate
 
     if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
       // No tool calls — final response
@@ -204,6 +206,22 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
 
       logger.info('Tool result', { tool: toolCall.name, success: result.success, hasUiAction: !!result.uiAction });
     }
+    }
+  } catch (err) {
+    // Terminal LLM error that produces no response.
+    // Release the reserved quota since no response will be sent.
+    logger.error('LLM error in tool loop', err, {
+      event: 'llm_error',
+      subsystem: 'llm',
+      avatarId: envelope.avatarId,
+      messageId: envelope.messageId,
+    });
+
+    // Release quota on terminal LLM error
+    await releaseMessageUsage(envelope.avatarId, envelope.messageId, 'llm_error');
+
+    // Re-throw so the caller knows this failed
+    throw err;
   }
 
   return { finalContent, cleanFinalContent, allToolResults, totalTokens };

@@ -44,7 +44,7 @@ import {
 import { createPlatformMCPServices } from '../services/platform-mcp-adapter.js';
 import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../services/sqs-send.js';
 import {
-  checkAndIncrementMessageUsage,
+  reserveMessageUsage,
   isMemoryWriteAllowed,
 } from '../services/entitlement-enforcement.js';
 import { ensureReplicateKey } from '../utils/system-replicate-key.js';
@@ -998,26 +998,29 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       }
 
       // =========================================================
-      // ENTITLEMENT ENFORCEMENT
+      // ENTITLEMENT ENFORCEMENT - PHASE 1: RESERVATION
       // =========================================================
-      // Debit ONLY when we have committed to responding (#1509). Previously
-      // this fired before evaluateResponseTrigger, so every ignored ambient
-      // message in a group still consumed quota — meaningful waste after
-      // #1505 disabled ambient triggers.
-      const usageCheck = await checkAndIncrementMessageUsage(avatarId);
-      if (!usageCheck.allowed) {
-        logger.warn('Message rejected due to limit', {
+      // Reserve quota before attempting to generate response.
+      // If reservation fails, the response is rejected.
+      // On success, commitment happens after send (response-sender)
+      // or release on terminal error (tool-loop, response-sender).
+      const reservationCheck = await reserveMessageUsage(avatarId, envelope.messageId);
+      if (!reservationCheck.allowed) {
+        logger.warn('Message rejected due to quota limit', {
           event: 'limit_exceeded',
           subsystem: 'entitlements',
-          reason: usageCheck.reason,
-          limit: usageCheck.limit,
-          current: usageCheck.current,
+          reason: reservationCheck.reason,
+          limit: reservationCheck.limit,
+          current: reservationCheck.current,
         });
         metrics.incrementCounter('EntitlementRejections');
+        metrics.incrementCounter('QuotaReserved');
         metrics.setProperty('Outcome', 'rejected');
         // Don't retry - this is a policy rejection, not an error
         continue;
       }
+
+      metrics.incrementCounter('QuotaReserved');
 
       if (decision.delay > 0) {
         await new Promise(resolve => setTimeout(resolve, decision.delay));

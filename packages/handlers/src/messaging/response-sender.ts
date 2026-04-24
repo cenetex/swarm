@@ -25,6 +25,7 @@ import {
 } from '@swarm/core';
 import { isAllowedDmUserById } from '../telegram/telegram-webhook-shared.js';
 import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../services/sqs-send.js';
+import { commitMessageUsage, releaseMessageUsage } from '../services/entitlement-enforcement.js';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
 import { RaticrossAdapter } from './adapters/raticross-adapter.js';
@@ -705,10 +706,13 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             conversationId: response.conversationId,
             errors: sendErrors,
           });
-          // Non-retryable errors: keep the idempotency record so we don't retry forever.
-          // The mark already happened before send, so it's safe.
+          // Non-retryable errors: release quota and keep idempotency record
+          // so we don't retry forever.
+          await releaseMessageUsage(avatarId, response.replyToMessageId, 'send_failed');
+          metrics.incrementCounter('QuotaReleased', { reason: 'send_failed' });
         } else {
           // Retryable errors: clear the idempotency record so SQS retry can work.
+          // Don't release quota yet; retry may succeed and quota will be committed.
           await clearResponseHandled(avatarId, responseKey);
           batchItemFailures.push({ itemIdentifier: record.messageId });
           logger.error('Response actions failed to send', undefined, {
@@ -724,6 +728,10 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
         }
         continue;
       }
+
+      // Commit quota on successful send (Phase 2 of two-phase quota)
+      await commitMessageUsage(avatarId, response.replyToMessageId);
+      metrics.incrementCounter('QuotaCommitted');
 
       // Clean up offloaded S3 payload (if any)
       if (wasOffloaded) {
