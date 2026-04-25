@@ -144,7 +144,7 @@ export function buildTelegramEnvelope(
     : false;
 
   // Check if bot is mentioned via text_mention entity (inline mention without @)
-  const isMentionByEntity = config.botId && mentions.some(m => m.userId === config.botId?.toString());
+  const isMentionByEntity = config.botId != null && mentions.some(m => m.userId === config.botId?.toString());
   const isMention = isMentionByText || isMentionByEntity;
 
   const isReplyToBot = !!(

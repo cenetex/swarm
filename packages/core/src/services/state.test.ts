@@ -65,6 +65,11 @@ class InMemoryStateService extends DynamoDBStateService {
       };
     }
 
+    // Idempotency guard: skip if messageId already in buffer (mirrors channel-state.ts)
+    if (message.messageId && state.recentMessages.some(m => m.messageId === message.messageId)) {
+      return state;
+    }
+
     // Add message to buffer
     state.recentMessages.push(message);
     if (state.recentMessages.length > maxMessages) {
