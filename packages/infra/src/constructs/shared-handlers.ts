@@ -348,7 +348,10 @@ export class SharedHandlers extends Construct {
     // The externalModules for node-fetch forces grammy to fail import and fall back to native fetch
     const bundlingOptions = {
       format: nodejs.OutputFormat.CJS,
-      externalModules: ['sharp', 'node-fetch', 'abort-controller'],
+      // @swarm/admin-api is loaded via dynamic import() at runtime through the
+      // shared layer; esbuild must NOT bundle it (selective package builds may
+      // not produce its dist/ at bundle time).
+      externalModules: ['sharp', 'node-fetch', 'abort-controller', '@swarm/admin-api'],
       minify: true,
       sourceMap: true,
     };
