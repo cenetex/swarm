@@ -1160,6 +1160,16 @@ export class AdminApiConstruct extends Construct {
         CDN_URL: cdnUrl || '',
         // Gallery upload / media routes use S3 presigned URLs
         MEDIA_BUCKET: mediaBucket?.bucketName || '',
+        // NFT-as-avatar claim flow (services/web3/nft-gate.ts).
+        // Helius is required to verify the caller owns an NFT in one of the
+        // whitelisted collections. The whitelist ships with a default
+        // collection so claiming works out of the box; override with the
+        // WHITELISTED_NFT_COLLECTIONS env var for additional collections.
+        HELIUS_API_KEY_ARN: heliusApiKeySecret?.secretArn || '',
+        HELIUS_API_KEY: props.heliusApiKey || '',
+        WHITELISTED_NFT_COLLECTIONS:
+          process.env.WHITELISTED_NFT_COLLECTIONS ||
+          '5QBfYxnihn5De4UEV3U1To4sWuWoWwHYJsxpd3hPamaf',
         ...activeUserLimitEnvVars,
       },
       bundling: {
@@ -1173,6 +1183,9 @@ export class AdminApiConstruct extends Construct {
 
     // Grant permissions to avatars handler
     llmApiKey.grantRead(avatarsHandler);
+    if (heliusApiKeySecret) {
+      heliusApiKeySecret.grantRead(avatarsHandler);
+    }
     this.table.grantReadWriteData(avatarsHandler);
     if (mediaBucket) {
       mediaBucket.grantReadWrite(avatarsHandler);
