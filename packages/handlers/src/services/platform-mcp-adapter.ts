@@ -157,6 +157,12 @@ export interface PlatformServicesConfig {
   wallets?: Array<{ name: string; publicKey: string; address?: string; walletType: 'solana' | 'ethereum' }>;
   mediaBucket?: string;
   cdnUrl?: string;
+  /**
+   * Admin DynamoDB table (SwarmAdmin-{env}). When set, `resolveMediaUrls`
+   * looks up gallery items by id to recover the full S3 path. Without it,
+   * bare gallery ids passed via `mediaIds` yield broken URLs (#1577).
+   */
+  adminTable?: string;
 }
 
 /**
@@ -262,7 +268,62 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
     return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   }
 
-  function resolveMediaUrls(mediaUrls?: string[], mediaIds?: string[]): string[] {
+  /**
+   * Look up a gallery item's persisted url/s3Key by its `id`. Returns null
+   * if not found or the admin table is not configured.
+   *
+   * The gallery sort key is `GALLERY#${createdAt}#${id}`, so we can't direct-
+   * Get by id alone. Query under the avatar's pk and filter by id. Bounded by
+   * the gallery size per avatar (small), so this is cheap and avoids adding
+   * a GSI.
+   */
+  async function lookupGalleryItem(
+    id: string,
+  ): Promise<{ url?: string; s3Key?: string } | null> {
+    const tableName = config.adminTable;
+    if (!tableName) return null;
+    try {
+      const result = await getDynamoClient().send(new QueryCommand({
+        TableName: tableName,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+        FilterExpression: 'id = :id',
+        ExpressionAttributeValues: {
+          ':pk': `AVATAR#${avatarId}`,
+          ':sk': 'GALLERY#',
+          ':id': id,
+        },
+        ProjectionExpression: '#u, s3Key',
+        ExpressionAttributeNames: { '#u': 'url' },
+        Limit: 1,
+      }));
+      const item = result.Items?.[0];
+      if (!item) return null;
+      return {
+        url: item.url as string | undefined,
+        s3Key: item.s3Key as string | undefined,
+      };
+    } catch (err) {
+      logger.warn('Gallery item lookup failed; falling back to bare-id URL', {
+        avatarId,
+        id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Resolve a list of mediaUrls + mediaIds into concrete URLs the platform
+   * adapter can fetch. Direct URLs pass through. Bare gallery ids are
+   * resolved via the gallery DDB record (carries the full
+   * `avatars/<avatarId>/images/...png` s3Key written by generateImage).
+   * Falls back to the legacy `${cdn}/${id}` shape on lookup miss for
+   * non-gallery callers.
+   */
+  async function resolveMediaUrls(
+    mediaUrls?: string[],
+    mediaIds?: string[],
+  ): Promise<string[]> {
     const resolved: string[] = [];
 
     if (mediaUrls && mediaUrls.length > 0) {
@@ -277,6 +338,19 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
           resolved.push(id);
           continue;
         }
+
+        const gallery = await lookupGalleryItem(id);
+        if (gallery?.url) {
+          resolved.push(gallery.url);
+          continue;
+        }
+        if (gallery?.s3Key && (cdnBase || bucket)) {
+          resolved.push(
+            buildMediaUrl(gallery.s3Key.replace(/^\/+/, ''), bucket || '', cdnBase),
+          );
+          continue;
+        }
+
         if (cdnBase || bucket) {
           resolved.push(buildMediaUrl(id.replace(/^\/+/, ''), bucket || '', cdnBase));
           continue;
@@ -887,7 +961,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
             if (!twitterAdapter.isConfigured()) {
               return { error: 'Twitter is not configured. Please connect Twitter first.' };
             }
-            const resolvedMediaUrls = resolveMediaUrls(mediaUrls, mediaIds);
+            const resolvedMediaUrls = await resolveMediaUrls(mediaUrls, mediaIds);
 
             // Use decoupled posting via content store + POST_QUEUE when available
             // This prevents Lambda timeouts when image generation + Twitter posting exceed 120s
@@ -1059,7 +1133,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
               }
             }
             
-            const resolvedMediaUrls = resolveMediaUrls(mediaUrls, mediaIds);
+            const resolvedMediaUrls = await resolveMediaUrls(mediaUrls, mediaIds);
 
             // Use decoupled posting via content store + POST_QUEUE when available
             if (useDecoupledPosting && contentStoreService && postQueueUrl) {
@@ -1161,7 +1235,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
 
         quoteTweet: async (tweetId: string, text: string, mediaUrls?: string[], mediaIds?: string[]) => {
           try {
-            const resolvedMediaUrls = resolveMediaUrls(mediaUrls, mediaIds);
+            const resolvedMediaUrls = await resolveMediaUrls(mediaUrls, mediaIds);
             const media = resolvedMediaUrls.map(url => ({ type: inferMediaType(url), url }));
             const quoteId = await twitterAdapter.quoteTweet(text, tweetId, media.length > 0 ? media : undefined);
             const username = await getTwitterUsername();

@@ -62,6 +62,22 @@ export function classifyTwitterApiError(error: unknown): TwitterApiDiagnostic {
   const rateLimit = errObj.rateLimit as { reset?: number; remaining?: number } | undefined;
   const dataDetail = (errObj.data as Record<string, unknown> | undefined)?.detail;
 
+  // Self-hosted media fetch failure (downloadMedia threw a PlatformError with
+  // "HTTP fetch failed: <status>"). Distinguish this from a Twitter API
+  // rejection so operators don't waste time chasing the wrong root cause —
+  // the 403/404/etc. is *our own* CDN/origin saying the URL is bad, not
+  // Twitter saying our scope/tier is wrong. See #1577.
+  if (error.message.startsWith('HTTP fetch failed')) {
+    return {
+      isTierLimited: false,
+      isRetryable: statusCode !== undefined && statusCode >= 500,
+      statusCode,
+      description:
+        `Self-hosted media unreachable (${statusCode ?? '?'}): ${error.message}. ` +
+        `The URL passed to Twitter resolves to our own bucket/CDN; check that the gallery item id maps to a real S3 object.`,
+    };
+  }
+
   // 429 - Rate limited
   if (statusCode === 429) {
     return {

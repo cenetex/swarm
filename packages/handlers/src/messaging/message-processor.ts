@@ -395,6 +395,7 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
     secrets,
     mediaBucket,
     cdnUrl: getCdnUrl(),
+    adminTable,
   });
 
   const registry = new ToolRegistry();
