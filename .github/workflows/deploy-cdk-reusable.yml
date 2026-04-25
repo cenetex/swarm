@@ -130,16 +130,12 @@ jobs:
             cd packages/layer && pnpm run build:layer && cd ../..
           fi
 
-          # Selective build (#1543): only rebuild packages that changed since the
-          # previous revision PLUS their transitive workspace dependents. Falls
-          # back to a full recursive build if pnpm's filter can't resolve the
-          # range (first tag, divergent history, shallow checkout, etc.).
-          if [ -n "$PREV_REF" ] && pnpm -r --filter '!admin-ui' --filter "...[$PREV_REF]" build; then
-            echo "::notice::Built only packages changed since $PREV_REF (selective build, #1543)"
-          else
-            echo "::notice::Selective build unavailable — running full recursive build"
-            pnpm -r --filter '!admin-ui' build
-          fi
+          # Always do a full recursive build. The selective build added in #1543
+          # rebuilds changed packages plus their dependents, but NOT their
+          # workspace dependencies — so esbuild later fails to resolve workspace
+          # imports whose dist/ never got produced (broke staging on #1561 and
+          # again on #1564). Reverted in #1566.
+          pnpm -r --filter '!admin-ui' build
 
       - name: Validate AWS environment secrets
         run: |
