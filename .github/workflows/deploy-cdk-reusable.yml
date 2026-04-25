@@ -70,14 +70,15 @@ jobs:
           # Need history for git-diff change detection below (#1542, #1543).
           fetch-depth: 0
 
-      - name: Detect deploy-relevant file changes (#1542, #1543)
+      - name: Compute previous revision for selective build (#1543)
         id: detect
         run: |
-          # Pick a sensible "previous" revision to diff against:
-          #  - on a tag: the prior tag (or HEAD~1 if first tag)
-          #  - on main: HEAD~1
-          #  - anything else: HEAD~1
-          # We fall back to HEAD~1 on any error.
+          # Pick a sensible "previous" revision so the build step (#1543) can
+          # filter pnpm packages by what's actually changed. We always set up
+          # QEMU + Buildx below — the earlier conditional skip (#1542) was
+          # incorrect because CDK rebuilds container assets when their bundled
+          # source changes, not just when the Dockerfile changes; that broke
+          # the v0.31.4 prod deploy. See aws-swarm#1545 follow-up.
           REF="${{ github.ref }}"
           PREV=""
           if [[ "$REF" == refs/tags/v* ]]; then
@@ -85,38 +86,19 @@ jobs:
           else
             PREV=$(git rev-parse HEAD~1 2>/dev/null || echo "")
           fi
-
-          if [ -z "$PREV" ]; then
-            echo "::notice::No prior revision found — treating all Docker files as changed (safe fallback)"
-            echo "docker_changed=true" >> "$GITHUB_OUTPUT"
-            echo "previous_ref=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "Detecting changes between $PREV and HEAD"
-          CHANGED=$(git diff --name-only "$PREV" HEAD 2>/dev/null || echo "")
-
-          # Docker-relevant paths: any Dockerfile, or any file under a docker/ dir,
-          # or the layer package (its contents ship into every Lambda via the layer).
-          if echo "$CHANGED" | grep -qE '(^|/)Dockerfile(\.|$)|(^|/)docker/|(^|/)packages/layer/'; then
-            echo "docker_changed=true" >> "$GITHUB_OUTPUT"
-            echo "Docker-relevant files changed:"
-            echo "$CHANGED" | grep -E '(^|/)Dockerfile(\.|$)|(^|/)docker/|(^|/)packages/layer/' || true
-          else
-            echo "docker_changed=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No Dockerfile/layer changes — skipping QEMU + Buildx setup (#1542)"
-          fi
-
           echo "previous_ref=$PREV" >> "$GITHUB_OUTPUT"
+          if [ -n "$PREV" ]; then
+            echo "Selective build will diff against $PREV"
+          else
+            echo "::notice::No prior revision — full recursive build will run"
+          fi
 
       - name: Set up QEMU (for ARM64 Docker builds)
-        if: steps.detect.outputs.docker_changed == 'true'
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
         with:
           platforms: arm64
 
       - name: Set up Docker Buildx
-        if: steps.detect.outputs.docker_changed == 'true'
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
         with:
           driver: docker-container
