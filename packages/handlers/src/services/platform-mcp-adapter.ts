@@ -283,18 +283,24 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
     const tableName = config.adminTable;
     if (!tableName) return null;
     try {
+      // NOTE: do NOT pass `Limit` here. DynamoDB applies Limit BEFORE
+      // FilterExpression, so `Limit: 1` reads exactly one row and filters
+      // — almost always zero matches even when the item exists. Verified
+      // live: identical query without Limit scans 22 rows and finds the
+      // match; with Limit=1 returns 0. Per-avatar gallery is bounded
+      // (dozens to low hundreds), so a full partition scan is cheap.
+      // See #1580.
       const result = await getDynamoClient().send(new QueryCommand({
         TableName: tableName,
         KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
-        FilterExpression: 'id = :id',
+        FilterExpression: '#id = :id',
         ExpressionAttributeValues: {
           ':pk': `AVATAR#${avatarId}`,
           ':sk': 'GALLERY#',
           ':id': id,
         },
         ProjectionExpression: '#u, s3Key',
-        ExpressionAttributeNames: { '#u': 'url' },
-        Limit: 1,
+        ExpressionAttributeNames: { '#u': 'url', '#id': 'id' },
       }));
       const item = result.Items?.[0];
       if (!item) return null;
