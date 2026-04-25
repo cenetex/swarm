@@ -50,6 +50,8 @@ import {
   activateAvatarInChatFromWebhook,
   addSharedChannelMembership,
   maybeBootstrapHomeChannelFromGroupEngagement,
+  getChannelRegisteredAvatars,
+  resolveMentionedAvatar,
 } from './webhook-home-channel.js';
 
 import {
@@ -1034,6 +1036,36 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           messageId: envelope.messageId,
         });
         return ok();
+      }
+
+      // Redirect the SQS job to the @-mentioned avatar when several bots
+      // are in this chat. Telegram fans the same update out to every bot;
+      // whichever webhook wins the dedup race owns the avatarId on the
+      // envelope, but the user may have explicitly @-mentioned a different
+      // bot. Without this redirect the wrong avatar processes the message
+      // and decides not to respond, which leaves the mention unanswered.
+      try {
+        const messageText = envelope.content.text || '';
+        if (messageText) {
+          const registered = await getChannelRegisteredAvatars(envelope.conversationId);
+          const mentioned = resolveMentionedAvatar(messageText, registered);
+          if (mentioned && mentioned.avatarId !== avatarId) {
+            logger.info('Redirecting shared-room job to @-mentioned avatar', {
+              event: 'shared_room_mention_redirect',
+              roomKey: ingressResult.roomKey,
+              messageId: envelope.messageId,
+              fromAvatarId: avatarId,
+              toAvatarId: mentioned.avatarId,
+              mentionedBot: mentioned.botUsername,
+            });
+            envelope.avatarId = mentioned.avatarId;
+            envelope.metadata.isMention = true;
+          }
+        }
+      } catch (err) {
+        logger.warn('mention-redirect failed; continuing with original avatar', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
 
       // Send typing indicator immediately so group members see instant feedback
