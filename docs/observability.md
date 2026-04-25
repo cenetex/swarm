@@ -108,6 +108,19 @@ log.setRequestId(event.requestContext.requestId);
 
 All subsequent `log.*` calls on that logger include `requestId`, so Logs Insights `filter requestId = "..."` reconstructs the full flow. Pass the same request ID into downstream services if they accept one.
 
+## Lambda log levels by environment
+
+Production Lambdas are deployed with the following log levels (see `packages/infra/src/constructs/shared-handlers.ts` and `packages/infra/src/constructs/admin-api.ts`):
+
+| Lambda | Environment | Log Level | Notes |
+|--------|-------------|-----------|-------|
+| **Shared Handlers** | prod | `info` | Message processor, chat-worker, response-sender, media processor, etc. — lifecycle events are critical for debugging messaging paths. |
+| **Shared Handlers** | dev/staging | `info` | Same as prod for visibility during development. |
+| **Admin API** | prod | `warn` | Non-critical admin operations; only errors and warnings. |
+| **Admin API** | dev/staging | `info` | Full visibility during development. |
+
+High-throughput Lambdas (message-processor, telegram-webhook) are already at `info` and tuned for CloudWatch cost. Handlers that emit fewer events per second (chat-worker, response-sender) now also emit at `info` to ensure the messaging lifecycle is debuggable in production (see #1584).
+
 ## What this doc doesn't cover
 
 - **OpenTelemetry / distributed tracing.** Deferred in #1363; when it lands it'll live in its own doc.
