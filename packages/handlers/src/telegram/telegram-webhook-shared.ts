@@ -752,7 +752,10 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           await telegramAdapter.sendTypingIndicator(envelope.conversationId);
         } catch { /* non-critical */ }
 
-        // Queue for processing
+        // Queue for processing.
+        // Pass the full ContextMessage (see #1573) — processor's idempotency
+        // guard skips its own write if the messageId is already in the buffer,
+        // so the flags must be set here.
         await stateService.addMessageToChannel(
           avatarId,
           envelope.conversationId,
@@ -763,6 +766,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
             isBot: envelope.sender.isBot,
             content: envelope.content.text || '[media]',
             timestamp: envelope.timestamp,
+            userId: envelope.sender.id,
+            username: envelope.sender.username,
+            isMention: envelope.metadata.isMention,
+            isReplyToBot: envelope.metadata.isReplyToBot,
+            replyToMessageId: envelope.replyTo,
           },
           undefined,
           'private',
@@ -1099,7 +1107,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         durationMs: Date.now() - startTime,
       });
     } else {
-      // Single-avatar channel: use legacy per-avatar enqueue path
+      // Single-avatar channel: use legacy per-avatar enqueue path.
+      // IMPORTANT: pass the FULL ContextMessage including isMention /
+      // isReplyToBot / userId / username / replyToMessageId. The processor
+      // calls addMessageToChannel again with the same messageId; its
+      // idempotency guard (channel-state.ts) then skips the second write,
+      // so the buffer entry the response evaluator reads is whatever the
+      // webhook wrote here. Stripping flags here means evaluateResponseTrigger
+      // sees `m.isMention === undefined` for every message, hasDirectEngagement
+      // is always false, and the bot ignores @-mentions in groups (#1573).
       await stateService.addMessageToChannel(
         avatarId,
         envelope.conversationId,
@@ -1110,6 +1126,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           isBot: envelope.sender.isBot,
           content: envelope.content.text || '[media]',
           timestamp: envelope.timestamp,
+          userId: envelope.sender.id,
+          username: envelope.sender.username,
+          isMention: envelope.metadata.isMention,
+          isReplyToBot: envelope.metadata.isReplyToBot,
+          replyToMessageId: envelope.replyTo,
         },
         undefined,
         normalizedChatType,
