@@ -365,7 +365,7 @@ export class SharedHandlers extends Construct {
     const logRemovalPolicy = isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
     const logRetention = isProd
       ? logs.RetentionDays.ONE_MONTH
-      : logs.RetentionDays.THREE_DAYS;
+      : logs.RetentionDays.ONE_WEEK;
 
     const messageProcessorLogGroup = new LogGroupWithRetention(this, 'MessageProcessorLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-message-processor`,
