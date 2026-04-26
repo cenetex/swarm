@@ -5,6 +5,8 @@ import {
   PutCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { getEmbeddingService } from '../embeddings.js';
+import { logger } from '../../utils/index.js';
 
 /**
  * Interface for the canonical memory module used by the runtime brain service.
@@ -113,24 +115,58 @@ export function createCanonicalMemoryClient(
       const now = Date.now();
       const id = randomUUID();
 
+      // Attempt to generate embedding; if it fails, write memory anyway
+      let embedding: number[] | undefined;
+      let embeddingModel: string | undefined;
+
+      try {
+        const embeddingService = getEmbeddingService();
+        const result = await embeddingService.embedText(validContent);
+        embedding = result.vector;
+        embeddingModel = result.model;
+
+        logger.info('Embedding generated for memory', {
+          event: 'embedding_generated',
+          avatarId: validAvatarId,
+          memoryId: id,
+          model: embeddingModel,
+          vectorDimensions: embedding.length,
+        });
+      } catch (error) {
+        logger.warn('Failed to generate embedding for memory', {
+          event: 'embedding_failed',
+          avatarId: validAvatarId,
+          memoryId: id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+
+      const item: Record<string, any> = {
+        pk: `MEMORY#${validAvatarId}`,
+        sk: `immediate#${now}#${id}`,
+        id,
+        avatarId: validAvatarId,
+        tier: 'immediate',
+        type: about ? 'fact' : 'event',
+        content: validContent,
+        about: about?.trim().slice(0, MAX_ABOUT_LENGTH),
+        userId: userId?.trim(),
+        strength: DEFAULT_STRENGTH,
+        createdAt: now,
+        updatedAt: now,
+        ttl: computeTtl(),
+      };
+
+      // Only add embedding fields if generation succeeded
+      if (embedding) {
+        item.embedding = embedding;
+        item.embeddingModel = embeddingModel;
+      }
+
       await getDynamoClient().send(
         new PutCommand({
           TableName: table,
-          Item: {
-            pk: `MEMORY#${validAvatarId}`,
-            sk: `immediate#${now}#${id}`,
-            id,
-            avatarId: validAvatarId,
-            tier: 'immediate',
-            type: about ? 'fact' : 'event',
-            content: validContent,
-            about: about?.trim().slice(0, MAX_ABOUT_LENGTH),
-            userId: userId?.trim(),
-            strength: DEFAULT_STRENGTH,
-            createdAt: now,
-            updatedAt: now,
-            ttl: computeTtl(),
-          },
+          Item: item,
         })
       );
 
