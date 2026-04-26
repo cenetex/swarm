@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "dev": "tsc --build --watch",
     "start": "node dist/index.js",
-    "lint": "eslint src/"
+    "lint": "eslint --max-warnings 70 src/"
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.114",
