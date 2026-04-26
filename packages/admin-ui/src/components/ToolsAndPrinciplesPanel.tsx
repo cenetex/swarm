@@ -6,7 +6,6 @@
  * - Operating principles override
  */
 import { useCallback, useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useActiveAvatar } from '../store';
 
 interface ToolState {
@@ -89,7 +88,6 @@ function ToolsEditor({ tools, onUpdate, isUpdating }: {
   onUpdate: (disable: string[], enable: string[]) => Promise<void>;
   isUpdating: boolean;
 }) {
-  const { t } = useTranslation();
   const [disabledTools, setDisabledTools] = useState<Set<string>>(new Set());
   const [enabledTools, setEnabledTools] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -217,8 +215,9 @@ function ToolsEditor({ tools, onUpdate, isUpdating }: {
   );
 }
 
-function OperatingPrinciplesEditor({ onUpdate, isUpdating }: {
+function OperatingPrinciplesEditor({ onUpdate, onDelete, isUpdating }: {
   onUpdate: (kind: 'inline' | 'url', text?: string, url?: string) => Promise<void>;
+  onDelete: () => Promise<void>;
   isUpdating: boolean;
 }) {
   const [editMode, setEditMode] = useState<'none' | 'inline' | 'url'>('none');
@@ -230,8 +229,7 @@ function OperatingPrinciplesEditor({ onUpdate, isUpdating }: {
     setError(null);
     if (editMode === 'none') {
       try {
-        // Note: For 'none' mode, we'd need a DELETE endpoint
-        // This is handled separately or requires API extension
+        await onDelete();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Save failed');
       }
@@ -242,7 +240,7 @@ function OperatingPrinciplesEditor({ onUpdate, isUpdating }: {
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Save failed');
       }
-    } else if (editMode === 'url' && editText.trim()) {
+    } else if (editMode === 'url' && editUrl.trim()) {
       try {
         new URL(editUrl);
         await onUpdate('url', editUrl);
@@ -320,7 +318,6 @@ function OperatingPrinciplesEditor({ onUpdate, isUpdating }: {
 }
 
 export function ToolsAndPrinciplesPanel({ isOpen, onClose }: ToolsAndPrinciplesPanelProps) {
-  const { t } = useTranslation();
   const activeAgent = useActiveAvatar();
 
   const [tools, setTools] = useState<ToolState[] | null>(null);
@@ -369,6 +366,19 @@ export function ToolsAndPrinciplesPanel({ isOpen, onClose }: ToolsAndPrinciplesP
       setIsUpdating(true);
       try {
         await updateOperatingPrinciplesOverride(activeAgent.id, kind, text, url);
+      } finally {
+        setIsUpdating(false);
+      }
+    },
+    [activeAgent]
+  );
+
+  const handleDeletePrinciples = useCallback(
+    async () => {
+      if (!activeAgent) return;
+      setIsUpdating(true);
+      try {
+        await deleteOperatingPrinciplesOverride(activeAgent.id);
       } finally {
         setIsUpdating(false);
       }
@@ -450,7 +460,7 @@ export function ToolsAndPrinciplesPanel({ isOpen, onClose }: ToolsAndPrinciplesP
           )}
 
           {activeTab === 'principles' && !isLoading && (
-            <OperatingPrinciplesEditor onUpdate={handleUpdatePrinciples} isUpdating={isUpdating} />
+            <OperatingPrinciplesEditor onUpdate={handleUpdatePrinciples} onDelete={handleDeletePrinciples} isUpdating={isUpdating} />
           )}
         </div>
       </div>
