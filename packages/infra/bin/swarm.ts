@@ -12,7 +12,12 @@ import * as cdk from 'aws-cdk-lib';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { SharedInfraStack } from '../src/stacks/shared-infra-stack.js';
+import { CoreInfraStack } from '../src/stacks/core-infra-stack.js';
+import { MessagingStack } from '../src/stacks/messaging-stack.js';
+import { MediaStack } from '../src/stacks/media-stack.js';
+import { StationStack } from '../src/stacks/station-stack.js';
 import { AdminApiStack } from '../src/stacks/admin-api-stack.js';
+import { FrontendStack } from '../src/stacks/frontend-stack.js';
 import { AdminUiStack } from '../src/stacks/admin-ui-stack.js';
 import { ProfilePageStack } from '../src/stacks/profile-page-stack.js';
 import { DocsSiteStack } from '../src/stacks/docs-site-stack.js';
@@ -201,6 +206,61 @@ const sharedInfraStack = new SharedInfraStack(app, `SwarmShared-${environment}${
   description: `Swarm Shared Infrastructure (${environment})`,
 });
 
+// Domain-aligned stacks (parallel deployment architecture)
+// These stacks can be deployed independently, reducing blast radius and deploy time
+
+// 1a. Core Infrastructure Stack (refactored from SharedInfraStack)
+const coreInfraStack = new CoreInfraStack(app, `SwarmCore-${environment}${nameSuffix}`, {
+  environment,
+  nameSuffix,
+  enableCdn: true,
+  enableWaf,
+  galleryDomain,
+  galleryCertificateArn,
+  mediaCdnUrl,
+  alarmNotificationEmail,
+  monthlyBudgetUsd,
+  useExistingResources,
+  env: stackEnv,
+  description: `Swarm Core Infrastructure (${environment})`,
+});
+
+// 1b. Messaging Stack (depends on core, contains message routing and SQS)
+const messagingStack = new MessagingStack(app, `SwarmMessaging-${environment}${nameSuffix}`, {
+  environment,
+  nameSuffix: nonSharedResourceSuffix,
+  coreInfraStack,
+  handlersPath,
+  secretPrefix,
+  messagingNameSuffix: nonSharedResourceSuffix,
+  enableDiscordGateway,
+  env: stackEnv,
+  description: `Swarm Messaging (${environment})`,
+});
+messagingStack.addDependency(coreInfraStack);
+
+// 1c. Media Stack (depends on core, contains CDN for avatar media)
+const mediaStack = new MediaStack(app, `SwarmMedia-${environment}${nameSuffix}`, {
+  environment,
+  nameSuffix: nonSharedResourceSuffix,
+  coreInfraStack,
+  env: stackEnv,
+  description: `Swarm Media (${environment})`,
+});
+mediaStack.addDependency(coreInfraStack);
+
+// 1d. Station Stack (depends on core + messaging, for long-running services)
+const stationStack = new StationStack(app, `SwarmStation-${environment}${nameSuffix}`, {
+  environment,
+  nameSuffix: nonSharedResourceSuffix,
+  coreInfraStack,
+  messagingStack,
+  env: stackEnv,
+  description: `Swarm Station Services (${environment})`,
+});
+stationStack.addDependency(coreInfraStack);
+stationStack.addDependency(messagingStack);
+
 // 2. Admin API Stack (depends on shared, changes with code updates)
 const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffix}`, {
   environment,
@@ -238,7 +298,22 @@ const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffi
 });
 adminApiStack.addDependency(sharedInfraStack);
 
-// 3. Admin UI Stack (depends on API for origin, changes with UI updates)
+// 3. Frontend Stack (consolidates admin UI, profile page, docs site)
+const frontendStack = new FrontendStack(app, `SwarmFrontend-${environment}${nameSuffix}`, {
+  environment,
+  nameSuffix: nonSharedResourceSuffix,
+  adminApiStack,
+  adminDomain,
+  adminCertificateArn,
+  enableWaf,
+  useExistingBuckets,
+  skipDomainAliases,
+  env: stackEnv,
+  description: `Swarm Frontend (${environment})`,
+});
+frontendStack.addDependency(adminApiStack);
+
+// 3a. Admin UI Stack (depends on API for origin, changes with UI updates) — LEGACY
 const adminUiStack = new AdminUiStack(app, `SwarmUi-${environment}${nameSuffix}`, {
   environment,
   nameSuffix: nonSharedResourceSuffix,
