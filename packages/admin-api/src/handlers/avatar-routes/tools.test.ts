@@ -19,14 +19,14 @@ function buildContext(overrides?: Partial<RouteContext>): RouteContext {
     method: 'GET',
     path: '/avatars/test-avatar/tools',
     corsHeaders: { 'Access-Control-Allow-Origin': '*' },
-    session: { email: 'test@example.com', isAdmin: true },
+    session: { email: 'test@example.com', userId: 'user-1', isAdmin: true, accessToken: 'tok' },
     event: {
       requestContext: { http: { method: 'GET' } },
       headers: {},
       body: null,
     } as any,
     walletAddress: null,
-    accountId: null,
+    accountId: undefined,
     effectiveIsAdmin: true,
     ...overrides,
   };

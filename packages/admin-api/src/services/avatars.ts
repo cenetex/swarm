@@ -346,6 +346,8 @@ export async function updateAvatar(
     | 'mediaConfig'
     | 'voiceConfig'
     | 'stickerPack'
+    | 'toolPreferences'
+    | 'operatingPrinciplesOverride'
   >>,
   session: UserSession
 ): Promise<AvatarRecord> {
@@ -400,6 +402,16 @@ export async function updateAvatar(
     updatedAt: Date.now(),
     updatedBy: session.email,
   };
+
+  // When an optional field is explicitly passed as undefined, treat it as a
+  // field-removal request (clear the stored value). This is needed for DELETE
+  // endpoints that pass `{ field: undefined }` to signal "remove this field".
+  if ('operatingPrinciplesOverride' in updates && updates.operatingPrinciplesOverride === undefined) {
+    delete (updated as unknown as Record<string, unknown>).operatingPrinciplesOverride;
+  }
+  if ('toolPreferences' in updates && updates.toolPreferences === undefined) {
+    delete (updated as unknown as Record<string, unknown>).toolPreferences;
+  }
 
   await getDynamoClient().send(new PutCommand({
     TableName: getAdminTable(),

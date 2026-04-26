@@ -44,7 +44,10 @@ export type AuditEventType =
   | 'secret_set'
   | 'wallet_swept'
   | 'wallet_key_deleted'
-  | 'persona_updated';
+  | 'persona_updated'
+  | 'tools_updated'
+  | 'operating_principles_override_updated'
+  | 'operating_principles_override_deleted';
 
 export type ActorType = 'admin' | 'owner';
 

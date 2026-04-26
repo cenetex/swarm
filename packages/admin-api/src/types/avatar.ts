@@ -30,6 +30,14 @@ export interface AvatarRecord {
     | { kind: 'inline'; text: string }
     | { kind: 'url'; url: string; cacheTtlSec?: number };
 
+  /** Per-avatar tool enable/disable preferences. Applies on next message send. */
+  toolPreferences?: { disabled?: string[]; enabled?: string[] };
+
+  /** Override for the operating-principles section of the system prompt. */
+  operatingPrinciplesOverride?:
+    | { kind: 'inline'; text: string }
+    | { kind: 'url'; url: string; cacheTtlSec?: number };
+
   // Profile image for character consistency (avatar/headshot)
   profileImage?: {
     url: string;           // S3/CDN URL

@@ -8,6 +8,7 @@
  */
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 import type { RouteContext } from './types.js';
+import type { UserSession } from '../../types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { parseJsonBody } from '../../http/request-body.js';
 import * as avatarService from '../../services/avatars.js';
@@ -46,7 +47,7 @@ function resolveActorType(effectiveIsAdmin: boolean): ActorType {
  */
 async function getAvailableTools(
   avatarId: string,
-  session: { email?: string; isAdmin?: boolean }
+  session: UserSession
 ): Promise<Array<{ name: string; description: string }>> {
   try {
     const mcpServices = createMCPServices(avatarId, session, undefined, {
@@ -226,19 +227,16 @@ export async function handleToolsRoutes(
       });
     }
 
-    // Update preferences
+    // Update preferences — if both lists are empty, pass undefined to clear
     const oldPrefs = avatar.toolPreferences;
-    const newPrefs = {
-      disabled: disable.length > 0 ? disable : undefined,
-      enabled: enable.length > 0 ? enable : undefined,
-    };
+    const toolPreferences = (disable.length > 0 || enable.length > 0)
+      ? {
+          disabled: disable.length > 0 ? disable : undefined,
+          enabled: enable.length > 0 ? enable : undefined,
+        }
+      : undefined;
 
-    // Only include non-empty properties
-    const updatePayload: Record<string, unknown> = {
-      toolPreferences: Object.keys(newPrefs).length > 0 ? newPrefs : undefined,
-    };
-
-    const updated = await avatarService.updateAvatar(avatarId, updatePayload, session);
+    const updated = await avatarService.updateAvatar(avatarId, { toolPreferences }, session);
 
     // Audit
     try {
@@ -250,7 +248,7 @@ export async function handleToolsRoutes(
         actorType: resolveActorType(effectiveIsAdmin),
         details: {
           oldPreferences: oldPrefs,
-          newPreferences: newPrefs,
+          newPreferences: toolPreferences,
           disabledTools: disable,
           enabledTools: enable,
         },
@@ -369,7 +367,7 @@ export async function handleToolsRoutes(
     }
 
     const oldOverride = avatar.operatingPrinciplesOverride;
-    const updated = await avatarService.updateAvatar(
+    await avatarService.updateAvatar(
       avatarId,
       { operatingPrinciplesOverride: undefined },
       session
