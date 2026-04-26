@@ -351,6 +351,15 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
     ].forEach(t => effectiveTools.add(t));
   }
 
+  // Apply tool preferences: disable and enable tools as configured
+  const toolPrefs = avatarConfig.toolPreferences;
+  if (toolPrefs?.disabled) {
+    toolPrefs.disabled.forEach(t => effectiveTools.delete(t));
+  }
+  if (toolPrefs?.enabled) {
+    toolPrefs.enabled.forEach(t => effectiveTools.add(t));
+  }
+
   if (effectiveTools.size !== (avatarConfig.tools || []).length) {
     avatarConfig.tools = Array.from(effectiveTools);
   }

@@ -45,7 +45,12 @@ export interface AvatarConfig {
   version: string;
   persona: string; // Path or content of persona markdown
   systemPromptOverride?: SystemPromptOverride; // #1522 — operator override of assembled prompt
+  operatingPrinciplesOverride?: SystemPromptOverride; // #1593 — operator override of operating principles
   responseStyle?: ResponseStyle; // Formatting and length preferences (separate from persona)
+  toolPreferences?: {
+    disabled?: string[];   // names to subtract from the platform-derived set
+    enabled?: string[];    // names to add (for opt-in / experimental tools)
+  };
   brain?: {
     writeMode?: 'legacy' | 'dual' | 'canonical';
     readMode?: 'legacy' | 'hybrid' | 'canonical';

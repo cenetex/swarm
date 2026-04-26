@@ -16,4 +16,5 @@ export { handleOnboardingAvatarRoutes } from './onboarding.js';
 export { handleMemoryRoutes } from './memory.js';
 export { handleUsageRoutes } from './usage.js';
 export { handleHealthRoutes } from './health.js';
+export { handleToolsRoutes } from './tools.js';
 export type { RouteContext, RouteHandler } from './types.js';
