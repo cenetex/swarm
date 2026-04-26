@@ -23,6 +23,17 @@ export interface ActionError {
   isRetryable?: boolean;
 }
 
+/**
+ * Record of a successfully delivered non-text artifact (image, video,
+ * animation). Callers use this to write a marker into chat history so the
+ * LLM knows the media was delivered — see #1487.
+ */
+export interface SentMediaRecord {
+  mediaType: 'image' | 'video' | 'animation';
+  url: string;
+  caption?: string;
+}
+
 export class OutboundSender {
   constructor(
     private readonly platformRegistry: PlatformRegistry,
@@ -32,7 +43,12 @@ export class OutboundSender {
   /**
    * Execute all actions in a response
    */
-  async send(response: SwarmResponse): Promise<{ success: boolean; errors: ActionError[]; sentMessages: string[] }> {
+  async send(response: SwarmResponse): Promise<{
+    success: boolean;
+    errors: ActionError[];
+    sentMessages: string[];
+    sentMedia: SentMediaRecord[];
+  }> {
     const adapter = this.platformRegistry.get(response.platform);
 
     if (!adapter) {
@@ -40,12 +56,14 @@ export class OutboundSender {
         success: false,
         errors: [{ action: 'init', message: `No adapter found for platform: ${response.platform}`, isRetryable: false }],
         sentMessages: [],
+        sentMedia: [],
       };
     }
 
     const errors: ActionError[] = [];
     let hasSuccessfulAction = false;
     const sentMessages: string[] = [];
+    const sentMedia: SentMediaRecord[] = [];
 
     for (const action of response.actions) {
       try {
@@ -77,6 +95,12 @@ export class OutboundSender {
           hasSuccessfulAction = true;
           if (action.type === 'send_message') {
             sentMessages.push(action.text);
+          } else if (action.type === 'send_media') {
+            sentMedia.push({
+              mediaType: action.mediaType,
+              url: action.url,
+              caption: action.caption,
+            });
           }
         } else {
           errors.push({ action: action.type, message: `Action ${action.type} failed`, isRetryable: true });
@@ -128,6 +152,7 @@ export class OutboundSender {
       success: hasSuccessfulAction || errors.length === 0,
       errors,
       sentMessages,
+      sentMedia,
     };
   }
 

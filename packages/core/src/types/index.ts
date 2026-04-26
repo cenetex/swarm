@@ -345,6 +345,16 @@ export interface ResponseDecision {
   trigger: ResponseTrigger;
   delay: number;           // Delay in ms before responding (0 = immediate)
   priority: 'high' | 'normal' | 'low';
+  // Suppression context for logging/metrics (aws-swarm#1534).
+  // Optional; populated only when shouldRespond = false AND there is a
+  // meaningful brake (cap/cooldown) that explains the decision.
+  suppressionReason?: 'follow_up_cap' | 'ambient_cooldown';
+  suppressionDetails?: {
+    followUpsInWindow?: number;
+    windowEndsAt?: number;
+    msSinceLastResponse?: number;
+    cooldownMs?: number;
+  };
 }
 
 export interface ChannelState {
@@ -383,6 +393,13 @@ export interface ChannelState {
 
   // Engaged users tracking: { [userId]: engagedUntil timestamp }
   engagedUsers?: Record<string, number>;
+
+  // Follow-up cap bookkeeping (aws-swarm#1534). Maps the start time of an
+  // engagement window (`engagedUntil - ENGAGEMENT_WINDOW_MS`) to the number
+  // of engaged-user follow-ups sent in that window. Cap per window is
+  // CHANNEL_CONFIG.MAX_FOLLOW_UPS. Stale window entries are pruned when
+  // their end time passes.
+  followUpCountByWindow?: Record<number, number>;
 
   // TTL for cleanup (DynamoDB TTL in seconds)
   ttl?: number;
@@ -628,11 +645,31 @@ export const ResponseStyleSchema = z.object({
   bulletPoints: z.boolean().optional(),
 });
 
+/**
+ * When set, the operator has fully overridden the assembled system prompt.
+ * `inline` = literal text used verbatim.
+ * `url`    = fetched at request time and cached for `cacheTtlSec` (default 300s).
+ *            Fetch failures fall back to the assembled template (fail-closed).
+ * See aws-swarm#1522.
+ */
+export const SystemPromptOverrideSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('inline'),
+    text: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal('url'),
+    url: z.string().url(),
+    cacheTtlSec: z.number().int().positive().max(86400).optional(),
+  }),
+]);
+
 export const AvatarConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   version: z.string(),
   persona: z.string(),
+  systemPromptOverride: SystemPromptOverrideSchema.optional(),
   responseStyle: ResponseStyleSchema.optional(),
   platforms: PlatformConfigsSchema,
   llm: LLMConfigSchema,

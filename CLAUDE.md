@@ -148,6 +148,13 @@ Full governance details: [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md), [do
 
 ---
 
+## Patterns & Observability
+
+- [docs/patterns/autonomous-agent-runner.md](docs/patterns/autonomous-agent-runner.md) — scheduled Lambda that wakes an avatar for one tool-loop tick. Reference implementation: `packages/handlers/src/station/station-agent-runner.ts`.
+- [docs/observability.md](docs/observability.md) — structured-logger conventions (`createAvatarLogger` vs `createSystemLogger`, event codes, the `no-console` ratchet).
+
+---
+
 ## Versioning & Releases
 
 SemVer via GitHub Releases (no `version` in package.json). Release with `./scripts/release.sh [patch|minor|major]`. Tags trigger production deploy.

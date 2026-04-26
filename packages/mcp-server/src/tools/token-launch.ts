@@ -31,6 +31,15 @@ export interface TokenLaunchPreflightResult {
   hasWallet: boolean;
   hasApiKey: boolean;
   hasProfileImage?: boolean;
+  /**
+   * Whether the platform operator has configured a token-launch provider.
+   * When false, the feature is unavailable for this deployment — the model
+   * should NOT tell the user to configure an API key; instead, state that
+   * token launching is not available on this deployment.
+   */
+  platformProviderConfigured?: boolean;
+  /** True when this avatar is relying on the platform-global fallback key. */
+  usingGlobalFallback?: boolean;
   existingToken?: TokenLaunchInfo;
   error?: string;
   errorCode?: string;
@@ -324,7 +333,14 @@ export const createTokenLaunchTools = (services: TokenLaunchServices) => [
     name: 'token_launch_preflight',
     description:
       'Check if I can launch a token without actually launching. ' +
-      'Shows requirements status: Twitter account, Solana wallet, API key, and burn tier.',
+      'Shows requirements status: Twitter account, Solana wallet, API key, and burn tier. ' +
+      'IMPORTANT: "Launch API Key" is a credential for the external token-launch provider ' +
+      'configured by the platform operator (not something the end user obtains themselves). ' +
+      'If `requirements.launchApiKey.platformProviderConfigured` is false, token launching is ' +
+      'NOT available on this deployment — do not tell the user to provision a key; instead ' +
+      'state the feature is unavailable here. If `platformProviderConfigured` is true but ' +
+      '`configured` is false, the platform operator needs to set a global or avatar-level ' +
+      '`token_launch_api_key` secret.',
     category: 'token-launch',
     inputSchema: z.object({}),
     execute: async (_input, context): Promise<ToolResult> => {
@@ -347,6 +363,10 @@ export const createTokenLaunchTools = (services: TokenLaunchServices) => [
             },
             launchApiKey: {
               configured: preflight.hasApiKey,
+              platformProviderConfigured: preflight.platformProviderConfigured !== false,
+              usingGlobalFallback: preflight.usingGlobalFallback ?? false,
+              description:
+                'Credential for the external token-launch provider. Managed by the platform operator, not the end user.',
             },
             burnTier: {
               tier: preflight.tier,

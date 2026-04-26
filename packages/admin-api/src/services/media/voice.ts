@@ -13,6 +13,7 @@ import { v4 as uuid } from 'uuid';
 import type { AudioAsset, VoiceProfile, AICapability } from '../../types.js';
 import { _getSecretValueInternal } from '../secrets.js';
 import { syncAvatarConfig } from '../config-sync.js';
+import { buildVoiceCloneInput } from '@swarm/core';
 import { getAvatar } from '../avatars.js';
 import * as credits from '../billing/credits.js';
 import { DEFAULT_MODELS } from '../models-registry.js';
@@ -37,8 +38,9 @@ const MEDIA_CONVERT_FUNCTION = process.env.MEDIA_CONVERT_FUNCTION;
 // Default: stability-ai/stable-audio-2.5 - generates audio/music/sound effects (WARM, fast!)
 const DEFAULT_STABLE_AUDIO_MODEL = process.env.STABLE_AUDIO_MODEL || DEFAULT_MODELS.audio_generation;
 
-// VOICE_TTS_MODEL: Used for voice cloning and TTS with a reference audio
-// Default: lucataco/xtts-v2 - popular voice cloning model (4.7M runs)
+// VOICE_TTS_MODEL: Used for voice cloning and TTS with a reference audio.
+// Default resolves via DEFAULT_MODELS.voice_clone (currently x-lance/f5-tts).
+// Override for legacy XTTS-v2 support via env var.
 const DEFAULT_VOICE_TTS_MODEL = process.env.VOICE_TTS_MODEL || DEFAULT_MODELS.voice_clone;
 
 // Official models (like stability-ai) use a different endpoint than community models
@@ -524,12 +526,16 @@ async function runVoiceClonePass(params: {
     model: voiceModel,
   });
 
-  const outputUrl = await runReplicatePrediction(apiKey, voiceModel, {
-    text: params.text,
-    speaker: params.referenceUrl,
-    language: 'en',
-    cleanup_voice: params.cleanupVoice ?? false,
-  });
+  const outputUrl = await runReplicatePrediction(
+    apiKey,
+    voiceModel,
+    buildVoiceCloneInput(voiceModel, {
+      text: params.text,
+      referenceUrl: params.referenceUrl,
+      language: 'en',
+      cleanupVoice: params.cleanupVoice ?? false,
+    }),
+  );
 
   if (!params.saveAsAsset) {
     return { url: outputUrl };
@@ -973,11 +979,15 @@ export async function generateVoiceMessage(params: {
   // Make URL accessible (signed URL for S3)
   const accessibleSeedUrl = await makeUrlAccessible(seedUrl);
 
-  const outputUrl = await runReplicatePrediction(apiKey, ttsModel, {
-    text: params.text,
-    speaker: accessibleSeedUrl, // XTTS-v2 uses 'speaker' not 'speaker_wav'
-    language: 'en',
-  });
+  const outputUrl = await runReplicatePrediction(
+    apiKey,
+    ttsModel,
+    buildVoiceCloneInput(ttsModel, {
+      text: params.text,
+      referenceUrl: accessibleSeedUrl,
+      language: 'en',
+    }),
+  );
 
   const audioResponse = await fetchWithTimeout(outputUrl);
   if (!audioResponse.ok) {

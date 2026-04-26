@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { CHANNEL_CONFIG, DynamoDBStateService } from './state.js';
+import { evaluateResponseTrigger } from './state/channel-state.js';
 import type { ChannelState, ContextMessage, ResponseDecision, Platform } from '../types/index.js';
 
 class InMemoryStateService extends DynamoDBStateService {
@@ -62,6 +63,11 @@ class InMemoryStateService extends DynamoDBStateService {
         chatType,
         chatTitle,
       };
+    }
+
+    // Idempotency guard: skip if messageId already in buffer (mirrors channel-state.ts)
+    if (message.messageId && state.recentMessages.some(m => m.messageId === message.messageId)) {
+      return state;
     }
 
     // Add message to buffer
@@ -152,7 +158,7 @@ describe('CHANNEL_CONFIG', () => {
 
 describe('Channel State Machine Logic', () => {
   // Helper to create a base channel state
-  function createChannelState(overrides: Partial<ChannelState> = {}): ChannelState {
+  function createTestChannelState(overrides: Partial<ChannelState> = {}): ChannelState {
     const now = Date.now();
     return {
       avatarId: 'test-avatar',
@@ -169,7 +175,7 @@ describe('Channel State Machine Logic', () => {
   }
 
   // Helper to create a context message
-  function createMessage(overrides: Partial<ContextMessage> = {}): ContextMessage {
+  function createTestMessage(overrides: Partial<ContextMessage> = {}): ContextMessage {
     return {
       messageId: '1',
       sender: 'TestUser',
@@ -190,12 +196,12 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should return true when not in COOLDOWN state', () => {
-      const state = createChannelState({ state: 'IDLE' });
+      const state = createTestChannelState({ state: 'IDLE' });
       expect(isCooldownExpired(state)).toBe(true);
     });
 
     it('should return false when in fresh COOLDOWN', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         state: 'COOLDOWN',
         stateChangedAt: Date.now() - 5000, // 5 seconds ago
       });
@@ -203,7 +209,7 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should return true when COOLDOWN has expired', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         state: 'COOLDOWN',
         stateChangedAt: Date.now() - 15000, // 15 seconds ago
       });
@@ -220,12 +226,12 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should return false when not in ACTIVE state', () => {
-      const state = createChannelState({ state: 'IDLE' });
+      const state = createTestChannelState({ state: 'IDLE' });
       expect(isActiveTimedOut(state)).toBe(false);
     });
 
     it('should return false when recently active', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         state: 'ACTIVE',
         lastActivityAt: Date.now() - 30000, // 30 seconds ago
       });
@@ -233,7 +239,7 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should return true when ACTIVE has timed out', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         state: 'ACTIVE',
         lastActivityAt: Date.now() - 90000, // 90 seconds ago
       });
@@ -331,7 +337,18 @@ describe('Channel State Machine Logic', () => {
         }
       }
 
-      // Check message threshold
+      // Group chats skip ambient triggers (#1505): bot must be addressed.
+      const isGroup = state.chatType === 'group' || state.chatType === 'supergroup';
+      if (isGroup) {
+        return {
+          shouldRespond: false,
+          trigger: 'none',
+          delay: 0,
+          priority: 'low',
+        };
+      }
+
+      // Check message threshold (1:1 chats only)
       if (state.recentMessages.length >= CHANNEL_CONFIG.MESSAGE_THRESHOLD) {
         return {
           shouldRespond: true,
@@ -344,7 +361,7 @@ describe('Channel State Machine Logic', () => {
         };
       }
 
-      // Check conversation gap
+      // Check conversation gap (1:1 chats only)
       const timeSinceActivity = now - state.lastActivityAt;
       if (
         state.recentMessages.length > 0 &&
@@ -358,7 +375,7 @@ describe('Channel State Machine Logic', () => {
         };
       }
 
-      // ACTIVE state with some messages
+      // ACTIVE state with some messages (1:1 chats only)
       if (state.state === 'ACTIVE' && state.recentMessages.length >= 2) {
         return {
           shouldRespond: true,
@@ -380,9 +397,9 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should always respond in private chats', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'private',
-        recentMessages: [createMessage()],
+        recentMessages: [createTestMessage()],
       });
 
       const decision = evaluateResponseTrigger(state);
@@ -394,10 +411,10 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should respond to direct mention', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         recentMessages: [
-          createMessage({ isMention: true }),
+          createTestMessage({ isMention: true }),
         ],
       });
 
@@ -409,10 +426,10 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should respond to reply to bot', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         recentMessages: [
-          createMessage({ isReplyToBot: true }),
+          createTestMessage({ isReplyToBot: true }),
         ],
       });
 
@@ -423,12 +440,12 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should not respond in COOLDOWN without new engagement', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'COOLDOWN',
         stateChangedAt: Date.now() - 5000, // 5 seconds ago
         recentMessages: [
-          createMessage({ timestamp: Date.now() - 10000 }), // Before cooldown
+          createTestMessage({ timestamp: Date.now() - 10000 }), // Before cooldown
         ],
       });
 
@@ -440,12 +457,12 @@ describe('Channel State Machine Logic', () => {
 
     it('should respond in COOLDOWN with new direct engagement', () => {
       const cooldownStart = Date.now() - 5000;
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'COOLDOWN',
         stateChangedAt: cooldownStart,
         recentMessages: [
-          createMessage({ timestamp: Date.now(), isMention: true }), // After cooldown started
+          createTestMessage({ timestamp: Date.now(), isMention: true }), // After cooldown started
         ],
       });
 
@@ -455,40 +472,55 @@ describe('Channel State Machine Logic', () => {
       expect(decision.trigger).toBe('direct_engagement');
     });
 
-    it('should respond when message threshold reached', () => {
-      const state = createChannelState({
+    it('should NOT respond on message_threshold in groups (#1505)', () => {
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: Array.from({ length: 5 }, (_, i) =>
-          createMessage({ messageId: String(i), content: `Message ${i}` })
+          createTestMessage({ messageId: String(i), content: `Message ${i}` })
         ),
       });
 
       const decision = evaluateResponseTrigger(state);
 
-      expect(decision.shouldRespond).toBe(true);
-      expect(decision.trigger).toBe('message_threshold');
-      expect(decision.priority).toBe('normal');
-      expect(decision.delay).toBeGreaterThanOrEqual(CHANNEL_CONFIG.MIN_RESPONSE_DELAY_MS);
-      expect(decision.delay).toBeLessThanOrEqual(CHANNEL_CONFIG.MAX_RESPONSE_DELAY_MS);
+      // Ambient triggers are disabled in groups; bot must be addressed.
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
     });
 
-    it('should respond on conversation gap', () => {
-      const state = createChannelState({
-        chatType: 'supergroup',
+    it('should respond on message_threshold in private chats', () => {
+      const state = createTestChannelState({
+        chatType: 'private',
         state: 'IDLE',
-        lastActivityAt: Date.now() - 35000, // 35 seconds ago
-        recentMessages: [createMessage({ timestamp: Date.now() - 35000 })],
+        recentMessages: Array.from({ length: 5 }, (_, i) =>
+          createTestMessage({ messageId: String(i), content: `Message ${i}` })
+        ),
       });
 
       const decision = evaluateResponseTrigger(state);
 
+      // Private chats short-circuit to private_chat trigger before
+      // even reaching the threshold check.
       expect(decision.shouldRespond).toBe(true);
-      expect(decision.trigger).toBe('conversation_gap');
+      expect(['private_chat', 'message_threshold']).toContain(decision.trigger);
+    });
+
+    it('should NOT respond on conversation_gap in groups (#1505)', () => {
+      const state = createTestChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        lastActivityAt: Date.now() - 35000, // 35 seconds ago
+        recentMessages: [createTestMessage({ timestamp: Date.now() - 35000 })],
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
     });
 
     it('should not respond with no messages', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [],
@@ -499,30 +531,30 @@ describe('Channel State Machine Logic', () => {
       expect(decision.shouldRespond).toBe(false);
     });
 
-    it('should respond in ACTIVE state with 2+ messages', () => {
-      const state = createChannelState({
+    it('should NOT respond in ACTIVE state with 2+ messages in groups (#1505)', () => {
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'ACTIVE',
         recentMessages: [
-          createMessage({ messageId: '1' }),
-          createMessage({ messageId: '2' }),
+          createTestMessage({ messageId: '1' }),
+          createTestMessage({ messageId: '2' }),
         ],
       });
 
       const decision = evaluateResponseTrigger(state);
 
-      expect(decision.shouldRespond).toBe(true);
-      expect(decision.trigger).toBe('message_threshold');
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
     });
 
     it('should respond to follow-up from engaged user within engagement window', () => {
       const now = Date.now();
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [
           // A follow-up message (no mention/reply) from user who previously engaged
-          createMessage({
+          createTestMessage({
             messageId: '2',
             userId: 'user-123',
             sender: 'Alice',
@@ -544,11 +576,11 @@ describe('Channel State Machine Logic', () => {
 
     it('should NOT respond to follow-up from engaged user after window expires', () => {
       const now = Date.now();
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '2',
             userId: 'user-123',
             sender: 'Alice',
@@ -569,11 +601,11 @@ describe('Channel State Machine Logic', () => {
 
     it('should NOT treat a non-engaged user as engaged', () => {
       const now = Date.now();
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '1',
             userId: 'user-999',
             sender: 'Bob',
@@ -595,12 +627,12 @@ describe('Channel State Machine Logic', () => {
     it('should respond to engaged user even during COOLDOWN', () => {
       const now = Date.now();
       const cooldownStart = now - 5000; // 5 seconds ago
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'COOLDOWN',
         stateChangedAt: cooldownStart,
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '1',
             userId: 'user-123',
             sender: 'Alice',
@@ -623,12 +655,12 @@ describe('Channel State Machine Logic', () => {
     it('should NOT respond to engaged user in COOLDOWN if message is before cooldown started', () => {
       const now = Date.now();
       const cooldownStart = now - 5000;
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'COOLDOWN',
         stateChangedAt: cooldownStart,
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '1',
             userId: 'user-123',
             sender: 'Alice',
@@ -649,11 +681,11 @@ describe('Channel State Machine Logic', () => {
 
     it('should handle message without userId gracefully (no engaged_user trigger)', () => {
       const now = Date.now();
-      const state = createChannelState({
+      const state = createTestChannelState({
         chatType: 'supergroup',
         state: 'IDLE',
         recentMessages: [
-          createMessage({
+          createTestMessage({
             messageId: '1',
             sender: 'Alice',
             content: 'No userId set',
@@ -674,7 +706,7 @@ describe('Channel State Machine Logic', () => {
 
   describe('State Transitions', () => {
     it('should transition to ACTIVE on direct engagement in IDLE', () => {
-      const message = createMessage({ isMention: true });
+      const message = createTestMessage({ isMention: true });
 
       // Simulating addMessageToChannel logic
       let newState: ChannelState['state'] = 'IDLE';
@@ -686,7 +718,7 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should stay IDLE for regular message in group', () => {
-      const message = createMessage(); // No mention or reply
+      const message = createTestMessage(); // No mention or reply
 
       let newState: ChannelState['state'] = 'IDLE';
       if (message.isMention || message.isReplyToBot) {
@@ -698,7 +730,7 @@ describe('Channel State Machine Logic', () => {
 
     it('should stay in COOLDOWN for regular messages', () => {
       const currentState: ChannelState['state'] = 'COOLDOWN';
-      const message = createMessage(); // No engagement
+      const message = createTestMessage(); // No engagement
 
       let newState = currentState;
       if (message.isMention || message.isReplyToBot) {
@@ -719,7 +751,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isMention: true })
+        createTestMessage({ isMention: true })
       );
 
       const afterTime = Date.now();
@@ -740,7 +772,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice' })
+        createTestMessage({ isMention: true, userId: 'user-123', sender: 'Alice' })
       );
 
       expect(result.engagedUsers).toBeDefined();
@@ -758,7 +790,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ userId: 'user-123', sender: 'Alice' }) // No isMention/isReplyToBot
+        createTestMessage({ userId: 'user-123', sender: 'Alice' }) // No isMention/isReplyToBot
       );
 
       expect(result.engagedUsers).toBeUndefined();
@@ -772,7 +804,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '1' })
+        createTestMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '1' })
       );
 
       // Small delay to ensure timestamps differ
@@ -783,7 +815,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '2' })
+        createTestMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '2' })
       );
 
       // Window should be refreshed
@@ -800,7 +832,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '1' })
+        createTestMessage({ isMention: true, userId: 'user-123', sender: 'Alice', messageId: '1' })
       );
 
       // Second user engages
@@ -808,7 +840,7 @@ describe('Channel State Machine Logic', () => {
         'avatar',
         'channel',
         'telegram' as Platform,
-        createMessage({ isReplyToBot: true, userId: 'user-456', sender: 'Bob', messageId: '2' })
+        createTestMessage({ isReplyToBot: true, userId: 'user-456', sender: 'Bob', messageId: '2' })
       );
 
       expect(result.engagedUsers!['user-123']).toBeDefined();
@@ -818,13 +850,13 @@ describe('Channel State Machine Logic', () => {
     it('markResponseSent preserves buffer and enters COOLDOWN', async () => {
       const svc = new InMemoryStateService();
       const now = Date.now();
-      const initialState = createChannelState({
+      const initialState = createTestChannelState({
         channelId: 'channel',
         state: 'ACTIVE',
         stateChangedAt: now,
         recentMessages: [
-          createMessage({ messageId: '1' }),
-          createMessage({ messageId: '2' }),
+          createTestMessage({ messageId: '1' }),
+          createTestMessage({ messageId: '2' }),
         ],
         messageCount: 2,
       });
@@ -837,6 +869,93 @@ describe('Channel State Machine Logic', () => {
       expect(updated?.recentMessages.length).toBe(2);
       expect(updated?.lastResponseMessageId).toBe('resp-1');
       expect(updated?.lastResponseAt).toBeDefined();
+    });
+
+    it('addMessageToChannel is idempotent: redelivered envelope without double-append (issue #1552)', async () => {
+      const svc = new InMemoryStateService();
+      const message = createTestMessage({
+        messageId: 'msg-abc-123',
+        sender: 'Alice',
+        isMention: true,
+        content: '@TestBot help!',
+      });
+
+      // First append
+      const firstResult = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        message
+      );
+
+      expect(firstResult.recentMessages).toHaveLength(1);
+      expect(firstResult.messageCount).toBe(1);
+
+      // Simulate SQS redelivery: same messageId, but possibly recomputed with different isMention
+      // This should be detected as idempotent and NOT double-append
+      const redeliveredMessage = createTestMessage({
+        messageId: 'msg-abc-123', // Same messageId (platform)
+        sender: 'Alice',
+        isMention: true,
+        content: '@TestBot help!',
+      });
+
+      const secondResult = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        redeliveredMessage
+      );
+
+      // The second append should be skipped; recentMessages.length should remain 1
+      expect(secondResult.recentMessages).toHaveLength(1);
+      expect(secondResult.messageCount).toBe(1);
+      // Content and flags should match the first append
+      expect(secondResult.recentMessages[0]?.messageId).toBe('msg-abc-123');
+      expect(secondResult.recentMessages[0]?.isMention).toBe(true);
+    });
+
+    it('addMessageToChannel idempotency works even with differing isMention flags', async () => {
+      const svc = new InMemoryStateService();
+
+      // Scenario: SQS delivers the same message twice, but due to re-computation
+      // of isMention, second call might have different isMention value.
+      // The idempotency guard should prevent double-append regardless.
+      const firstMessage = createTestMessage({
+        messageId: 'dedup-test-1',
+        sender: 'Bob',
+        isMention: true,
+        content: '@TestBot hello',
+      });
+
+      const firstResult = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        firstMessage
+      );
+
+      expect(firstResult.recentMessages).toHaveLength(1);
+
+      // Second delivery with isMention: false (hypothetically, due to re-computation issue)
+      const secondMessage = createTestMessage({
+        messageId: 'dedup-test-1', // Same messageId
+        sender: 'Bob',
+        isMention: false, // Different flag
+        content: '@TestBot hello',
+      });
+
+      const secondResult = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        secondMessage
+      );
+
+      // Should not double-append, and should return the original state
+      expect(secondResult.recentMessages).toHaveLength(1);
+      // The first append's isMention value should be preserved
+      expect(secondResult.recentMessages[0]?.isMention).toBe(true);
     });
   });
 
@@ -864,10 +983,10 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should format messages for LLM context', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         recentMessages: [
-          createMessage({ sender: 'Alice', username: 'alice', content: 'Hello' }),
-          createMessage({ sender: 'Bob', content: 'Hi there!' }),
+          createTestMessage({ sender: 'Alice', username: 'alice', content: 'Hello' }),
+          createTestMessage({ sender: 'Bob', content: 'Hi there!' }),
         ],
       });
 
@@ -878,20 +997,20 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should return empty string for no messages', () => {
-      const state = createChannelState({ recentMessages: [] });
+      const state = createTestChannelState({ recentMessages: [] });
       const context = buildConversationContext(state);
       expect(context).toBe('');
     });
 
     it('should respect token limit', () => {
       const longMessages = Array.from({ length: 100 }, (_, i) =>
-        createMessage({
+        createTestMessage({
           messageId: String(i),
           content: 'This is a fairly long message that should use up tokens quickly when repeated many times.',
         })
       );
 
-      const state = createChannelState({ recentMessages: longMessages });
+      const state = createTestChannelState({ recentMessages: longMessages });
       const context = buildConversationContext(state, 100); // Very low limit
 
       // Should be truncated
@@ -914,12 +1033,12 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should return last direct engagement message', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         recentMessages: [
-          createMessage({ messageId: '1', sender: 'Alice', isMention: true }),
-          createMessage({ messageId: '2', sender: 'Bob' }),
-          createMessage({ messageId: '3', sender: 'Charlie', isMention: true }),
-          createMessage({ messageId: '4', sender: 'Dave' }),
+          createTestMessage({ messageId: '1', sender: 'Alice', isMention: true }),
+          createTestMessage({ messageId: '2', sender: 'Bob' }),
+          createTestMessage({ messageId: '3', sender: 'Charlie', isMention: true }),
+          createTestMessage({ messageId: '4', sender: 'Dave' }),
         ],
       });
 
@@ -930,10 +1049,10 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should fall back to last message if no engagement', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         recentMessages: [
-          createMessage({ messageId: '1', sender: 'Alice' }),
-          createMessage({ messageId: '2', sender: 'Bob' }),
+          createTestMessage({ messageId: '1', sender: 'Alice' }),
+          createTestMessage({ messageId: '2', sender: 'Bob' }),
         ],
       });
 
@@ -944,7 +1063,7 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should return null for empty buffer', () => {
-      const state = createChannelState({ recentMessages: [] });
+      const state = createTestChannelState({ recentMessages: [] });
       const target = getResponseTarget(state);
       expect(target).toBeNull();
     });
@@ -975,13 +1094,13 @@ describe('Channel State Machine Logic', () => {
     }
 
     it('should count participants and sort by message count', () => {
-      const state = createChannelState({
+      const state = createTestChannelState({
         recentMessages: [
-          createMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
-          createMessage({ userId: '200', sender: 'Bob' }),
-          createMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
-          createMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
-          createMessage({ userId: '200', sender: 'Bob' }),
+          createTestMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
+          createTestMessage({ userId: '200', sender: 'Bob' }),
+          createTestMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
+          createTestMessage({ userId: '100', sender: 'Alice', username: 'alice' }),
+          createTestMessage({ userId: '200', sender: 'Bob' }),
         ],
       });
 
@@ -995,7 +1114,7 @@ describe('Channel State Machine Logic', () => {
     });
 
     it('should return empty array for no messages', () => {
-      const state = createChannelState({ recentMessages: [] });
+      const state = createTestChannelState({ recentMessages: [] });
       const participants = getActiveParticipants(state);
       expect(participants).toHaveLength(0);
     });
@@ -1182,6 +1301,231 @@ describe('DynamoDB Response Validation', () => {
 
       // State should have 60 messages (not trimmed due to race)
       expect(finalState.recentMessages.length).toBe(60);
+    });
+  });
+
+  describe('Direct engagement bug fix (line 471)', () => {
+    it('should NOT fire on stale mentions — only check latest message', () => {
+      const now = Date.now();
+      // Old mention followed by 10 benign messages
+      const messages = [
+        createTestMessage({ messageId: '1', isMention: true, timestamp: now - 10000 }),
+        ...Array.from({ length: 10 }, (_, i) =>
+          createTestMessage({ messageId: String(i + 2), timestamp: now - 9000 + i * 500 })
+        ),
+      ];
+
+      const state = createTestChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: messages,
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      // Should NOT respond because the latest message is not a mention/reply
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
+    });
+
+    it('should fire on latest mention even with old benign messages', () => {
+      const now = Date.now();
+      const messages = [
+        createTestMessage({ messageId: '1', timestamp: now - 5000 }),
+        createTestMessage({ messageId: '2', timestamp: now - 4000 }),
+        createTestMessage({ messageId: '3', isMention: true, timestamp: now }), // Latest is mention
+      ];
+
+      const state = createTestChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: messages,
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('direct_engagement');
+    });
+
+    it('should fire on any mention/reply newer than lastResponseAt', () => {
+      const now = Date.now();
+      const lastResponseAt = now - 3000;
+
+      const messages = [
+        createTestMessage({ messageId: '1', isMention: true, timestamp: now - 4000 }), // Before lastResponseAt
+        createTestMessage({ messageId: '2', isMention: true, timestamp: now - 1000 }), // After lastResponseAt
+        createTestMessage({ messageId: '3', timestamp: now }), // Before lastResponseAt
+      ];
+
+      const state = createTestChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        lastResponseAt,
+        recentMessages: messages,
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('direct_engagement');
+    });
+  });
+
+  describe('Follow-up cap (#1534)', () => {
+    it('should cap engaged_user follow-ups at MAX_FOLLOW_UPS with suppression details', () => {
+      const now = Date.now();
+      // windowStart = engagedUntil - ENGAGEMENT_WINDOW_MS by definition, so
+      // the follow-up counter map keys by that derived value (#1534).
+      const engagedUntil = now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS / 2;
+      const engagementWindowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+
+      // Simulate 3 responses already sent in this window
+      const state = createTestChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: [
+          createTestMessage({
+            messageId: '1',
+            userId: 'user-123',
+            timestamp: now,
+          }),
+        ],
+        engagedUsers: {
+          'user-123': engagedUntil,
+        },
+        followUpCountByWindow: {
+          [engagementWindowStart]: CHANNEL_CONFIG.MAX_FOLLOW_UPS, // At cap
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
+      expect(decision.suppressionReason).toBe('follow_up_cap');
+      expect(decision.suppressionDetails?.followUpsInWindow).toBe(CHANNEL_CONFIG.MAX_FOLLOW_UPS);
+      expect(decision.suppressionDetails?.windowEndsAt).toBe(engagedUntil);
+    });
+
+    it('should allow engaged_user following before cap', () => {
+      const now = Date.now();
+      // windowStart = engagedUntil - ENGAGEMENT_WINDOW_MS by definition, so
+      // the follow-up counter map keys by that derived value (#1534).
+      const engagedUntil = now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS / 2;
+      const engagementWindowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+
+      const state = createTestChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: [
+          createTestMessage({
+            messageId: '1',
+            userId: 'user-123',
+            timestamp: now,
+          }),
+        ],
+        engagedUsers: {
+          'user-123': engagedUntil,
+        },
+        followUpCountByWindow: {
+          [engagementWindowStart]: CHANNEL_CONFIG.MAX_FOLLOW_UPS - 1, // Below cap
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('engaged_user');
+    });
+
+    it('should reset follow-up count when new direct engagement occurs', () => {
+      const now = Date.now();
+      const oldWindowStart = now - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS * 2;
+
+      const state = createTestChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        recentMessages: [
+          createTestMessage({
+            messageId: '1',
+            isMention: true, // New direct engagement
+            timestamp: now,
+          }),
+        ],
+        followUpCountByWindow: {
+          [oldWindowStart]: CHANNEL_CONFIG.MAX_FOLLOW_UPS, // Old window at cap
+        },
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      // Should respond because this is direct_engagement, not engaged_user
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('direct_engagement');
+    });
+  });
+
+  describe('Ambient cooldown (#1534)', () => {
+    it('should suppress first non-direct response within ambient cooldown with details', () => {
+      const now = Date.now();
+      const lastResponseAt = now - CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS / 2; // Within 5 min
+
+      const state = createTestChannelState({
+        state: 'IDLE',
+        lastResponseAt,
+        recentMessages: Array.from({ length: 5 }, (_, i) =>
+          createTestMessage({ messageId: String(i), timestamp: now - i * 1000 })
+        ),
+      });
+
+      // Override to 1:1 for test
+      state.chatType = undefined; // Remove group constraint
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.suppressionReason).toBe('ambient_cooldown');
+      expect(decision.suppressionDetails?.msSinceLastResponse).toBeGreaterThan(0);
+      expect(decision.suppressionDetails?.msSinceLastResponse).toBeLessThan(CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS);
+      expect(decision.suppressionDetails?.cooldownMs).toBe(CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS);
+    });
+
+    it('should allow non-direct response after ambient cooldown expires', () => {
+      const now = Date.now();
+      const lastResponseAt = now - CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS - 1000; // Beyond 5 min
+
+      const state = createTestChannelState({
+        state: 'IDLE',
+        lastResponseAt,
+        chatType: undefined, // Not a group
+        recentMessages: Array.from({ length: 5 }, (_, i) =>
+          createTestMessage({ messageId: String(i), timestamp: now - i * 1000 })
+        ),
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(true);
+    });
+
+    it('should bypass ambient cooldown for direct engagement', () => {
+      const now = Date.now();
+      const lastResponseAt = now - 1000; // Very recent
+
+      const state = createTestChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        lastResponseAt,
+        recentMessages: [
+          createTestMessage({ messageId: '1', isMention: true, timestamp: now }),
+        ],
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      // Direct engagement should bypass ambient cooldown
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('direct_engagement');
     });
   });
 });

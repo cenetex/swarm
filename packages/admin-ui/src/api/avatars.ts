@@ -32,11 +32,22 @@ export interface PlatformConfig {
   allowedDmUserIds?: string[];
 }
 
+/**
+ * Operator override of the assembled system prompt (aws-swarm#1522 backend /
+ * #1531 UI). When set, the prompt-builder template stack is bypassed.
+ * - `inline`: literal text used verbatim.
+ * - `url`: fetched at request time (default TTL 300s, fail-closed to template).
+ */
+export type SystemPromptOverride =
+  | { kind: 'inline'; text: string }
+  | { kind: 'url'; url: string; cacheTtlSec?: number };
+
 export interface AvatarResponse {
   avatarId: string;
   name: string;
   description?: string;
   persona?: string;
+  systemPromptOverride?: SystemPromptOverride;
   status: 'shell' | 'configured' | 'active' | 'error' | 'draft' | 'paused';
   createdAt: number;
   updatedAt: number;
@@ -174,7 +185,13 @@ export async function getAvatar(avatarId: string): Promise<AvatarResponse> {
  */
 export async function updateAvatar(
   avatarId: string,
-  updates: Partial<Pick<AvatarResponse, 'name' | 'description' | 'persona' | 'profileImage' | 'characterReference' | 'llmConfig' | 'mediaConfig' | 'voiceConfig' | 'platforms'>>
+  updates: Omit<
+    Partial<Pick<AvatarResponse, 'name' | 'description' | 'persona' | 'profileImage' | 'characterReference' | 'llmConfig' | 'mediaConfig' | 'voiceConfig' | 'platforms'>>,
+    'systemPromptOverride'
+  > & {
+    // Explicit null clears the override on the server; undefined leaves it unchanged.
+    systemPromptOverride?: SystemPromptOverride | null;
+  }
 ): Promise<AvatarResponse> {
   const response = await fetch(`${API_BASE}/avatars/${avatarId}`, {
     method: 'PUT',

@@ -518,6 +518,7 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       let actionsToSend: ResponseAction[] | null = null;
       let queuedMedia = false;
       let sentMessages: string[] = [];
+      let sentMedia: Array<{ mediaType: 'image' | 'video' | 'animation'; url: string; caption?: string }> = [];
       let sendErrors: ActionError[] = [];
       let sendSuccess = false;
 
@@ -575,6 +576,7 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
         try {
           const result = await outboundRuntime.outboundSender.send({ ...response, actions: actionsToSend });
           sentMessages = result.sentMessages;
+          sentMedia = result.sentMedia;
           sendErrors = result.errors;
           sendSuccess = result.success;
 
@@ -627,6 +629,33 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
         }
       }
 
+      // Record media deliveries in channel history so the LLM sees them on
+      // the next turn (#1487). Without this, the model announces "generating
+      // your image..." then after delivery has no memory of the send and
+      // announces generation again when the user responds.
+      for (const media of sentMedia) {
+        const promptPart = media.caption ? ` (prompt: ${media.caption})` : '';
+        const marker = `[sent ${media.mediaType}${promptPart}]`;
+        try {
+          await stateService.addMessageToChannel(
+            avatarId,
+            response.conversationId,
+            response.platform,
+            {
+              messageId: `bot_${randomUUID()}`,
+              sender: outboundRuntime.avatarConfig.name,
+              isBot: true,
+              content: marker,
+              timestamp: Date.now(),
+            }
+          );
+        } catch (error) {
+          logger.warn('Failed to update channel state for sent media', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
       const hasActionsToSend = Boolean(actionsToSend && actionsToSend.length > 0);
       const hasSendMessageAction = actionsToSend?.some(
         (a: ResponseAction) => a.type === 'send_message'
@@ -654,6 +683,19 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             error: error instanceof Error ? error.message : String(error),
           });
         }
+
+        // #1554 — canonical "platform accepted the response" lifecycle event.
+        // Distinct from `response_sent` (historical, kept elsewhere): this
+        // fires ONLY when the platform adapter confirmed delivery. Operators
+        // and dashboards can trust this to mean "the user saw a message."
+        logger.info('response_accepted_by_platform', {
+          event: 'response_accepted_by_platform',
+          subsystem: 'outbound',
+          platform: response.platform,
+          conversationId: response.conversationId,
+          deliveredActionCount: sentMessages.length,
+          totalActionCount: actionsToSend?.length ?? 0,
+        });
       }
 
       if (actionsToSend && actionsToSend.length > 0 && !sendSuccess) {
@@ -675,6 +717,22 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             avatarId,
             conversationId: response.conversationId,
             errors: sendErrors,
+          });
+          // #1554 — terminal failure lifecycle event. Distinguishes "the
+          // response was generated and enqueued but never made it to the
+          // user" from "send succeeded." Operators debugging silent-bot
+          // reports (like today's CHOPPA session) can grep this to find
+          // drop reasons without cross-referencing four log streams.
+          const primaryReason = sendErrors[0]?.message || 'unknown';
+          logger.warn('response_dropped', {
+            event: 'response_dropped',
+            subsystem: 'outbound',
+            platform: response.platform,
+            avatarId,
+            conversationId: response.conversationId,
+            reason: primaryReason,
+            errorCount: sendErrors.length,
+            actionTypes: actionsToSend?.map(a => a.type) ?? [],
           });
           // Non-retryable errors: keep the idempotency record so we don't retry forever.
           // The mark already happened before send, so it's safe.

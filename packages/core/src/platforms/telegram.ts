@@ -9,6 +9,7 @@ import { PlatformAdapter } from './base.js';
 import { fetchWithRetry } from '../utils/fetch-retry.js';
 import { PlatformError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
+import { classifyError } from '../errors/classify.js';
 import { logger } from '../utils/logger.js';
 import { markdownToTelegramHtml, stripMarkdown } from '../utils/telegram-html.js';
 import {
@@ -134,11 +135,17 @@ export function buildTelegramEnvelope(
   const mentions = extractMentions(message);
   const forwardMetadata = extractForwardMetadata(message);
 
-  // Detect direct engagement
+  // Detect direct engagement by checking:
+  // 1. Text-based @botusername mention (most common)
+  // 2. text_mention entity pointing to the bot (inline mention)
   const text = message.text || message.caption || '';
-  const isMention = config.botUsername
+  const isMentionByText = config.botUsername
     ? new RegExp(`@${config.botUsername}\\b`, 'i').test(text)
     : false;
+
+  // Check if bot is mentioned via text_mention entity (inline mention without @)
+  const isMentionByEntity = config.botId != null && mentions.some(m => m.userId === config.botId?.toString());
+  const isMention = isMentionByText || isMentionByEntity;
 
   const isReplyToBot = !!(
     (config.botId && message.reply_to_message?.from?.id === config.botId) ||
@@ -578,12 +585,27 @@ export function envelopeToBufferedMessage(envelope: SwarmEnvelope): BufferedMess
 // TELEGRAM ADAPTER CLASS
 // =============================================================================
 
+/**
+ * Default hold before sending a group/supergroup reply (#1527). Gives mod-bot
+ * and anti-spam deletions time to land so we never post a reply to a message
+ * that has already been purged.
+ */
+const DEFAULT_GROUP_PRE_REPLY_DELAY_MS = 10_000;
+
 export class TelegramAdapter extends PlatformAdapter {
   readonly platform = 'telegram' as const;
   private bot: Bot | null = null;
   private config: TelegramConfig;
   private botId?: number;
   private botIdentityPromise: Promise<void> | null = null;
+
+  /**
+   * Whether this action would carry `reply_to_message_id` to Telegram — the
+   * only actions affected by the pre-reply group hold (#1527).
+   */
+  private isReplyAction(action: ResponseAction): boolean {
+    return action.type === 'send_message' || action.type === 'send_media';
+  }
 
   constructor(avatarConfig: AvatarConfig, private readonly botToken: string, botId?: number) {
     super(avatarConfig);
@@ -698,6 +720,24 @@ export class TelegramAdapter extends PlatformAdapter {
 
     const chatId = parseInt(conversationId);
     const replyParams = replyToMessageId ? { reply_to_message_id: parseInt(replyToMessageId) } : {};
+
+    // Pre-reply hold for groups (#1527) — give mod-bot / anti-spam deletions
+    // time to land before we commit to a reply. Negative chat IDs are groups
+    // or supergroups in Telegram; positive are user DMs (no hold needed).
+    if (chatId < 0 && replyToMessageId && this.isReplyAction(action)) {
+      const delayMs = this.config.preReplyDelayMs ?? DEFAULT_GROUP_PRE_REPLY_DELAY_MS;
+      if (delayMs > 0) {
+        logger.info('Holding reply before send to let anti-spam deletions land', {
+          subsystem: 'platform',
+          platform: 'telegram',
+          event: 'pre_reply_hold',
+          chatId,
+          replyToMessageId,
+          delayMs,
+        });
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
 
     try {
       switch (action.type) {
@@ -814,25 +854,41 @@ export class TelegramAdapter extends PlatformAdapter {
       
       return true;
     } catch (error) {
-      const status = (error as { status?: number }).status
-        ?? (error as { error_code?: number }).error_code;
+      // If an inner layer already classified this as a PlatformError
+      // (e.g. reply_target_deleted from sendTextWithFallback / sendMedia),
+      // preserve its `retryable` flag. The old code re-read `.status` off
+      // the error, but PlatformError exposes `.statusCode`, so the outer
+      // re-wrap silently flipped `retryable: false` back to `true` — the
+      // exact bug that left CHOPPA in an infinite SQS retry loop
+      // (aws-swarm#1538).
+      if (error instanceof PlatformError) {
+        logger.error('Failed to execute Telegram action', error, {
+          subsystem: 'platform',
+          platform: 'telegram',
+          ...(typeof error.statusCode === 'number' ? { statusCode: error.statusCode } : {}),
+          retryable: error.retryable,
+        });
+        throw error;
+      }
 
-      // Telegram 4xx errors (except 429 rate limit) are permanent — do not retry.
-      const isNonRetryable = typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
+      // Canonical classification — handles 4xx/5xx, rate-limit, network,
+      // timeout, and explicit-retryable hints in one place (aws-swarm#1550).
+      const c = classifyError(error, { platform: 'telegram' });
 
       logger.error('Failed to execute Telegram action', error, {
         subsystem: 'platform',
         platform: 'telegram',
-        ...(typeof status === 'number' ? { statusCode: status } : {}),
-        retryable: !isNonRetryable,
+        ...(typeof c.statusCode === 'number' ? { statusCode: c.statusCode } : {}),
+        retryable: c.retryable,
+        reason: c.reason,
       });
 
       throw new PlatformError(
         error instanceof Error ? error.message : String(error),
         {
           platform: 'telegram',
-          statusCode: typeof status === 'number' ? status : undefined,
-          retryable: !isNonRetryable,
+          statusCode: c.statusCode,
+          retryable: c.retryable,
           cause: error,
           code: SwarmErrorCode.PLATFORM_API_ERROR,
         },
@@ -872,8 +928,36 @@ export class TelegramAdapter extends PlatformAdapter {
         ?? (error as { error_code?: number }).error_code;
       const errorMsg = error instanceof Error ? error.message : String(error);
 
+      // Reply target gone — the parent message was deleted between the time
+      // we decided to respond and the time we tried to send. Most common
+      // cause: mod bots / Telegram anti-spam purging the original message.
+      // DROP the reply entirely. See aws-swarm#1527 (reverses the no-reply
+      // fallback from #1511, which produced bare messages stranded in the
+      // channel talking to deleted scam messages).
+      if (status === 400 && errorMsg.includes('message to be replied not found') && extra && 'reply_to_message_id' in extra) {
+        const replyToMessageId = (extra as Record<string, unknown>).reply_to_message_id;
+        logger.warn('Telegram reply target missing — dropping reply to avoid stranded bare message', {
+          subsystem: 'platform',
+          platform: 'telegram',
+          event: 'reply_target_deleted',
+          chatId: chatIdNum,
+          replyToMessageId,
+        });
+        throw new PlatformError(
+          'Reply target message was deleted before send',
+          {
+            platform: 'telegram',
+            statusCode: 400,
+            retryable: false,
+            cause: error,
+            code: SwarmErrorCode.PLATFORM_API_ERROR,
+          },
+        );
+      }
+
       // Only fall back to plain text for HTML formatting errors.
-      // Other 400 errors (reply not found, chat not found, etc.) must propagate.
+      // Other 400 errors (chat not found, bot blocked/kicked) must
+      // propagate — those can't be recovered by reformatting the message.
       const isHtmlFormattingError = status === 400
         && !errorMsg.includes('message to be replied not found')
         && !errorMsg.includes('chat not found')
@@ -918,21 +1002,67 @@ export class TelegramAdapter extends PlatformAdapter {
       const captionFits = text.length > 0 && text.length <= TELEGRAM_CAPTION_LIMIT;
       const captionHtml = captionFits ? markdownToTelegramHtml(text) : undefined;
 
+      // Wrap the media send so it DROPS the action when the parent message
+      // was deleted (#1527, reverses #1511). Stranded bare media replying
+      // to a removed spam message is worse than no media at all.
+      const sendWithReplyFallback = async <T>(
+        send: (extra: Record<string, unknown> | undefined) => Promise<T>,
+      ): Promise<T> => {
+        try {
+          return await send(replyParams);
+        } catch (error) {
+          const status = (error as { status?: number }).status
+            ?? (error as { error_code?: number }).error_code;
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          if (
+            status === 400 &&
+            errorMsg.includes('message to be replied not found') &&
+            replyParams
+          ) {
+            logger.warn('Telegram reply target missing on media send — dropping media action', {
+              subsystem: 'platform',
+              platform: 'telegram',
+              event: 'reply_target_deleted',
+              chatId: chatIdNum,
+              replyToMessageId: replyParams.reply_to_message_id,
+              mediaType: firstMedia.type,
+            });
+            throw new PlatformError(
+              'Reply target message was deleted before media send',
+              {
+                platform: 'telegram',
+                statusCode: 400,
+                retryable: false,
+                cause: error,
+                code: SwarmErrorCode.PLATFORM_API_ERROR,
+              },
+            );
+          }
+          throw error;
+        }
+      };
+
       if (firstMedia.type === 'image') {
-        await this.bot.api.sendPhoto(chatIdNum, firstMedia.url, {
-          caption: captionHtml,
-          parse_mode: captionHtml ? 'HTML' : undefined,
-          ...replyParams,
-        });
+        await sendWithReplyFallback((extra) =>
+          this.bot!.api.sendPhoto(chatIdNum, firstMedia.url, {
+            caption: captionHtml,
+            parse_mode: captionHtml ? 'HTML' : undefined,
+            ...extra,
+          }),
+        );
       } else if (firstMedia.type === 'video') {
-        await this.bot.api.sendVideo(chatIdNum, firstMedia.url, {
-          caption: captionHtml,
-          parse_mode: captionHtml ? 'HTML' : undefined,
-          ...replyParams,
-        });
+        await sendWithReplyFallback((extra) =>
+          this.bot!.api.sendVideo(chatIdNum, firstMedia.url, {
+            caption: captionHtml,
+            parse_mode: captionHtml ? 'HTML' : undefined,
+            ...extra,
+          }),
+        );
       } else if (firstMedia.type === 'sticker') {
         // Send sticker first, then text separately
-        await this.bot.api.sendSticker(chatIdNum, firstMedia.url, replyParams);
+        await sendWithReplyFallback((extra) =>
+          this.bot!.api.sendSticker(chatIdNum, firstMedia.url, extra),
+        );
       }
 
       if (text.length > 0 && !captionFits) {

@@ -58,6 +58,11 @@ import { executeToolLoop, buildResponseFromToolLoop } from './tool-loop.js';
 import { buildSystemPrompt, formatBrainMemoryContext } from './context-builder.js';
 import { extractMediaContext, buildUserMessageContent, type MediaExtractionConfig } from './media-extractor.js';
 import type { ChatWorkerMessage } from './chat-worker.js';
+import {
+  registerTelegramRoomMetaResolver,
+  runRoomCoordinator,
+} from './room-coordinator-runner.js';
+import { isSharedRoom } from '../services/room-ingress.js';
 
 const REPLY_CONTEXT_MAX_LENGTH = 200;
 
@@ -288,6 +293,11 @@ async function initialize(): Promise<void> {
   stateService = createStateService(getStateTable());
   secretsService = createSecretsService();
   presenceService = createPresenceService(getStateTable());
+
+  // Register the Telegram meta resolver so the room coordinator can score
+  // turns by display name + @-handle. The resolver reads HOME_CHANNELS and
+  // joins each registered avatar's name from its CONFIG record.
+  registerTelegramRoomMetaResolver(stateService);
 }
 
 async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
@@ -385,6 +395,7 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
     secrets,
     mediaBucket,
     cdnUrl: getCdnUrl(),
+    adminTable,
   });
 
   const registry = new ToolRegistry();
@@ -874,7 +885,7 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       }
       const item = parseResult.data;
       const envelope = item.envelope as SwarmEnvelope;
-      const avatarId = envelope.avatarId || process.env.AVATAR_ID;
+      let avatarId = envelope.avatarId || process.env.AVATAR_ID;
       if (!avatarId) {
         logger.error('Missing avatarId (shared handler requires envelope.avatarId)', {
           event: 'validation_error',
@@ -883,6 +894,61 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
         });
         batchItemFailures.push({ itemIdentifier: record.messageId });
         continue;
+      }
+
+      // ---- Room coordinator (gated by ROOM_COORDINATOR_ENABLED) ----
+      // For shared rooms, re-decide the primary responder using the full
+      // coordinator (mention + name-hit signals today). The webhook stamps
+      // `envelope.avatarId` with whichever bot's webhook won the dedup race;
+      // that's the wrong avatar when the user mentioned (or named) someone
+      // else. Off by default — flip via env var on the deploying lambda
+      // after staging validation. See #1571.
+      if (
+        process.env.ROOM_COORDINATOR_ENABLED === 'true' &&
+        envelope.platform &&
+        envelope.conversationId &&
+        await isSharedRoom(envelope.platform, envelope.conversationId)
+      ) {
+        try {
+          const result = await runRoomCoordinator(envelope);
+          if (result) {
+            const { decision } = result;
+            if (!decision.primary) {
+              logger.info('Room coordinator: no primary — skipping record', {
+                event: 'room_coordinator_no_primary',
+                subsystem: 'room-coordinator',
+                messageId: envelope.messageId,
+                conversationId: envelope.conversationId,
+                decisionReason: decision.decisionReason,
+              });
+              continue;
+            }
+            if (decision.primary.avatarId !== avatarId) {
+              logger.info('Room coordinator: routing to chosen primary', {
+                event: 'room_coordinator_override',
+                subsystem: 'room-coordinator',
+                messageId: envelope.messageId,
+                fromAvatarId: avatarId,
+                toAvatarId: decision.primary.avatarId,
+                decisionReason: decision.decisionReason,
+              });
+              avatarId = decision.primary.avatarId;
+              envelope.avatarId = decision.primary.avatarId;
+              if (
+                decision.decisionReason === 'direct-mention' ||
+                decision.decisionReason === 'reply-to-avatar'
+              ) {
+                envelope.metadata.isMention = true;
+              }
+            }
+          }
+        } catch (coordErr) {
+          logger.warn('Room coordinator failed; falling back to envelope avatar', {
+            event: 'room_coordinator_error',
+            subsystem: 'room-coordinator',
+            error: coordErr instanceof Error ? coordErr.message : String(coordErr),
+          });
+        }
       }
 
       const avatarRuntime = await getAvatarRuntime(avatarId);
@@ -927,26 +993,12 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       });
 
       // =========================================================
-      // ENTITLEMENT ENFORCEMENT
-      // =========================================================
-      const usageCheck = await checkAndIncrementMessageUsage(avatarId);
-      if (!usageCheck.allowed) {
-        logger.warn('Message rejected due to limit', {
-          event: 'limit_exceeded',
-          subsystem: 'entitlements',
-          reason: usageCheck.reason,
-          limit: usageCheck.limit,
-          current: usageCheck.current,
-        });
-        metrics.incrementCounter('EntitlementRejections');
-        metrics.setProperty('Outcome', 'rejected');
-        // Don't retry - this is a policy rejection, not an error
-        continue;
-      }
-
-      // =========================================================
       // KYRO-STYLE CHANNEL STATE MANAGEMENT
       // =========================================================
+      // Note: state is updated for every inbound message regardless of whether
+      // the bot will respond — visibility != response. The message belongs in
+      // the buffer for context. Quota is debited later, only when we actually
+      // call the LLM. See #1509.
 
       await stateService.getOrCreateChannelState(
         avatarId,
@@ -1008,6 +1060,28 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           subsystem: 'chat',
           reason: decision.trigger,
         });
+        continue;
+      }
+
+      // =========================================================
+      // ENTITLEMENT ENFORCEMENT
+      // =========================================================
+      // Debit ONLY when we have committed to responding (#1509). Previously
+      // this fired before evaluateResponseTrigger, so every ignored ambient
+      // message in a group still consumed quota — meaningful waste after
+      // #1505 disabled ambient triggers.
+      const usageCheck = await checkAndIncrementMessageUsage(avatarId);
+      if (!usageCheck.allowed) {
+        logger.warn('Message rejected due to limit', {
+          event: 'limit_exceeded',
+          subsystem: 'entitlements',
+          reason: usageCheck.reason,
+          limit: usageCheck.limit,
+          current: usageCheck.current,
+        });
+        metrics.incrementCounter('EntitlementRejections');
+        metrics.setProperty('Outcome', 'rejected');
+        // Don't retry - this is a policy rejection, not an error
         continue;
       }
 

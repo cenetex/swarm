@@ -146,6 +146,7 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
     secrets,
     mediaBucket,
     cdnUrl,
+    adminTable,
   });
 
   const registry = new ToolRegistry();
@@ -341,6 +342,22 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           event: 'chat_worker_complete',
           subsystem: 'chat-worker',
           actions: response.actions.length,
+          tokensUsed: response.tokensUsed,
+        });
+
+        // #1554 — canonical "response_generated" lifecycle event, distinct
+        // from "response_accepted_by_platform" (response-sender) and the
+        // eventual activity-table `response_sent` alias. Fires when the
+        // LLM produced a reply and it's been enqueued to the response
+        // queue — NOT when a user actually saw it.
+        logger.info('response_generated', {
+          event: 'response_generated',
+          subsystem: 'chat-worker',
+          avatarId,
+          platform: envelope.platform,
+          conversationId: envelope.conversationId,
+          actionCount: response.actions.length,
+          actionTypes: response.actions.map(a => a.type),
           tokensUsed: response.tokensUsed,
         });
 

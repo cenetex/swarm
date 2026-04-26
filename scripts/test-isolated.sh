@@ -55,6 +55,17 @@ echo "$MOCKING_FILES" | while IFS= read -r f; do
   fi
 done || FAILED=1
 
+# admin-ui DOM tests (#1455): *.test.tsx files run under vitest + jsdom, not
+# bun. Bun's test discovery above uses `-name '*.test.ts'` so .test.tsx files
+# are invisible to it; we invoke vitest here to cover them.
+if find packages/admin-ui/src -name '*.test.tsx' -not -path '*/node_modules/*' 2>/dev/null | grep -q .; then
+  echo ""
+  echo "─── admin-ui: vitest (DOM) ───"
+  if ! pnpm --filter @swarm/admin-ui test; then
+    FAILED=1
+  fi
+fi
+
 # Smoke tests are renamed *.smoke.ts (no .test.) so bun test does not auto-discover
 # them. They have known pre-existing test logic failures (issue #1311 follow-up).
 # Run them only when RUN_SMOKE_TESTS=1 is set so CI stays green while the smoke

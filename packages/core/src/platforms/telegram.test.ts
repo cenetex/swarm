@@ -302,6 +302,64 @@ describe('buildTelegramEnvelope', () => {
       expect(mentionEnvelope!.metadata.priority).toBe('high');
       expect(regularEnvelope!.metadata.priority).toBe('normal');
     });
+
+    it('should consistently detect mention regardless of entity type', () => {
+      // Both @mention and text_mention should result in isMention: true
+      const textMentionUpdate = createTelegramUpdate({
+        text: 'Hey TestBot can you help?',
+        entities: [
+          {
+            type: 'text_mention',
+            offset: 4,
+            length: 7, // length of "TestBot"
+            user: {
+              id: 12345, // This is the botId from defaultConfig
+              is_bot: true,
+              first_name: 'TestBot',
+              username: 'TestBot'
+            }
+          }
+        ]
+      });
+
+      // Also test the traditional @mention format
+      const atMentionUpdate = createTelegramUpdate({
+        text: 'Hey @TestBot can you help?',
+      });
+
+      const textMentionEnvelope = buildTelegramEnvelope(textMentionUpdate, defaultConfig);
+      const atMentionEnvelope = buildTelegramEnvelope(atMentionUpdate, defaultConfig);
+
+      // Both should set isMention to true for the bot
+      expect(atMentionEnvelope!.metadata.isMention).toBe(true);
+      expect(textMentionEnvelope!.metadata.isMention).toBe(true); // text_mention should also be detected
+      expect(textMentionEnvelope!.metadata.priority).toBe('high');
+    });
+
+    it('should not flag non-bot text_mention as isMention', () => {
+      const textMentionUpdate = createTelegramUpdate({
+        text: 'Hey OtherUser can you help?',
+        entities: [
+          {
+            type: 'text_mention',
+            offset: 4,
+            length: 9, // length of "OtherUser"
+            user: {
+              id: 99999, // Different from defaultConfig botId (12345)
+              is_bot: false,
+              first_name: 'OtherUser',
+              username: 'otheruser'
+            }
+          }
+        ]
+      });
+
+      const envelope = buildTelegramEnvelope(textMentionUpdate, defaultConfig);
+
+      // Should not be flagged as mention since text_mention is for a different user
+      expect(envelope!.metadata.isMention).toBe(false);
+      expect(envelope!.metadata.priority).toBe('normal');
+    });
   });
 
   describe('Media Handling', () => {
@@ -497,5 +555,119 @@ describe('envelopeToBufferedMessage', () => {
     const buffered = envelopeToBufferedMessage(envelope);
 
     expect(buffered.isMention).toBe(true);
+  });
+});
+
+describe('TelegramAdapter — drop reply when source deleted (#1527, reverses #1511)', () => {
+  /**
+   * Source-introspection: the adapter's private send paths are awkward to
+   * mock without standing up the full grammY bot. These assertions lock in
+   * the contract that on a "message to be replied not found" 400 from
+   * Telegram, the adapter DROPS the reply via a non-retryable PlatformError
+   * rather than retrying without reply_to_message_id (which would strand a
+   * bare message in the channel — see #1527).
+   */
+  async function readAdapterSource(): Promise<string> {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    return fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+  }
+
+  it('text send path throws a non-retryable error (does NOT retry without reply_to_message_id)', async () => {
+    const source = await readAdapterSource();
+    // New event name present:
+    expect(source).toContain('reply_target_deleted');
+    // Old retry-without-reply fallback removed from the text path:
+    expect(source).not.toContain('reply_target_missing_fallback');
+    expect(source).not.toMatch(
+      /message to be replied not found[\s\S]{0,800}reply_to_message_id[\s\S]{0,200}sendMessage/,
+    );
+    // PlatformError thrown with retryable:false on the deleted path:
+    expect(source).toMatch(
+      /reply_target_deleted[\s\S]{0,600}PlatformError[\s\S]{0,400}retryable:\s*false/,
+    );
+  });
+
+  it('media send path throws instead of retrying without reply_to_message_id', async () => {
+    const source = await readAdapterSource();
+    // Old send(undefined) retry removed:
+    expect(source).not.toMatch(
+      /sendWithReplyFallback[\s\S]{0,1000}message to be replied not found[\s\S]{0,500}return await send\(undefined\)/,
+    );
+    // New non-retryable throw present on media path:
+    expect(source).toMatch(
+      /Reply target message was deleted before media send[\s\S]{0,400}retryable:\s*false/,
+    );
+  });
+});
+
+describe('TelegramAdapter — pre-reply group hold (#1527)', () => {
+  it('waits DEFAULT_GROUP_PRE_REPLY_DELAY_MS before sending a reply in a group chat', async () => {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const source = await fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+
+    // The hold constant is defined and 10s by default.
+    expect(source).toMatch(/DEFAULT_GROUP_PRE_REPLY_DELAY_MS\s*=\s*10_?000/);
+    // The hold is gated on negative chatId (group/supergroup) + replyToMessageId,
+    // and uses the configurable override when present.
+    expect(source).toMatch(/chatId\s*<\s*0[\s\S]{0,200}replyToMessageId[\s\S]{0,400}preReplyDelayMs/);
+    // Structured log event emitted.
+    expect(source).toContain('pre_reply_hold');
+  });
+
+  it('does not apply the hold to DMs (positive chatId) or non-reply actions', async () => {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const source = await fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+
+    // The hold is strictly gated: the condition must require replyToMessageId
+    // and isReplyAction(action) — so 'react' / 'ignore' / DMs skip it.
+    expect(source).toMatch(/isReplyAction\(action\)/);
+    expect(source).toMatch(/private isReplyAction\(action[\s\S]{0,200}send_message[\s\S]{0,100}send_media/);
+  });
+});
+
+describe('TelegramAdapter — executeAction catch preserves PlatformError retryable (#1538)', () => {
+  /**
+   * Regression for the CHOPPA infinite-retry loop: the outer catch in
+   * executeAction used to re-read `.status` off the error and re-wrap,
+   * which silently flipped `retryable: false` back to `true` because
+   * PlatformError exposes `.statusCode` not `.status`. The fix short-
+   * circuits when the caught error is already a PlatformError.
+   *
+   * Source-introspection — the full grammY flow is awkward to mock here,
+   * so we lock in the specific control-flow via regex on the adapter.
+   */
+  async function readAdapterSource(): Promise<string> {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    return fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+  }
+
+  it('short-circuits when the caught error is already a PlatformError', async () => {
+    const source = await readAdapterSource();
+    // The catch block early-returns via `throw error` on PlatformError,
+    // preserving the inner layer's retryable/statusCode classification.
+    expect(source).toMatch(/catch\s*\(error\)\s*\{[\s\S]{0,800}if\s*\(\s*error\s+instanceof\s+PlatformError\s*\)\s*\{[\s\S]{0,400}throw\s+error;/);
+    // The #1538 event/annotation stays in the code for future greppability.
+    expect(source).toMatch(/aws-swarm#1538/);
+  });
+
+  it('still applies the 4xx-non-retryable path for raw grammY errors via classifyError', async () => {
+    const source = await readAdapterSource();
+    // After the PlatformError short-circuit, the outer catch delegates to
+    // the canonical classifyError helper (aws-swarm#1550) instead of the
+    // old hand-rolled status check. Lock that wiring in.
+    expect(source).toMatch(/classifyError\s*\(\s*error\s*,\s*\{\s*platform:\s*'telegram'\s*\}\s*\)/);
+    expect(source).toMatch(/throw\s+new\s+PlatformError\([\s\S]{0,300}retryable:\s*c\.retryable/);
   });
 });

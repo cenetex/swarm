@@ -6,7 +6,9 @@ export {
   SwarmMediaService,
   createMediaService,
   createMediaServiceWithDeps,
+  buildVoiceCloneInput,
   type GeneratedMediaExtended,
+  type VoiceCloneInput,
 } from './media/index.js';
 export {
   createMediaDependencies,
@@ -237,3 +239,9 @@ export {
   type PendingDmRecord,
   type BlockedRecord,
 } from './telegram-dm-approval.js';
+export {
+  getEmbeddingService,
+  _resetEmbeddingService,
+  type EmbeddingService,
+  type EmbeddingResult,
+} from './embeddings.js';

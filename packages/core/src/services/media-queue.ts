@@ -37,7 +37,7 @@ export interface MediaQueueMessage {
 }
 
 /**
- * Enqueue an image generation job to MEDIA_QUEUE
+ * Enqueue a media generation job (image or video) to MEDIA_QUEUE
  */
 export async function enqueueMediaJob(
   queueUrl: string,
@@ -51,6 +51,7 @@ export async function enqueueMediaJob(
     referenceImageUrls?: string[];
     traceId?: string;
     usageAccounted?: boolean;
+    jobType?: 'generate_image' | 'generate_video';
   }
 ): Promise<{ jobId: string }> {
   const jobId = randomUUID();
@@ -63,7 +64,7 @@ export async function enqueueMediaJob(
     usageAccounted: params.usageAccounted === true,
     conversationId: params.conversationId,
     action: {
-      type: 'generate_image',
+      type: params.jobType || 'generate_image',
       prompt: params.prompt,
       aspectRatio: params.aspectRatio,
       referenceImageUrls: params.referenceImageUrls,

@@ -6,7 +6,7 @@
 import {
   createChannelSummaryService,
   logger,
-  buildDynamicSystemPrompt,
+  resolveSystemPrompt,
   toolsToCategories,
   type BrainMemoryFact,
   type ProcessorAvatarConfig,
@@ -296,7 +296,8 @@ export async function buildSystemPrompt(
     customContext,
   };
 
-  return buildDynamicSystemPrompt(processorConfig, envelope.platform as Platform, runtimeContext);
+  // #1522 — operator override short-circuits the template stack (inline or URL).
+  return resolveSystemPrompt(processorConfig, envelope.platform as Platform, runtimeContext);
 }
 
 /**

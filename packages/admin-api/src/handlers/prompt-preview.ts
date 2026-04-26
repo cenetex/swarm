@@ -14,7 +14,7 @@ import { isAuthError } from '../auth/errors.js';
 import { isRequestValidationError, validateRequestBody } from '../middleware/validate.js';
 import { getCorsHeaders } from '../http/cors.js';
 import {
-  buildDynamicSystemPrompt,
+  resolveSystemPrompt,
   type ToolCategory,
   type ProcessorAvatarConfig,
 } from '@swarm/core';
@@ -47,6 +47,10 @@ interface ToolPreview {
   parameters: Record<string, unknown>;
 }
 
+type SystemPromptOverrideShape =
+  | { kind: 'inline'; text: string }
+  | { kind: 'url'; url: string; cacheTtlSec?: number };
+
 interface PromptPreviewResponse {
   systemPrompt: string;
   tools: ToolPreview[];
@@ -63,6 +67,11 @@ interface PromptPreviewResponse {
     messages: number;
     total: number;
   };
+  /**
+   * Current operator override on the avatar (aws-swarm#1522/#1531).
+   * Lets the admin-ui show the active mode without a separate fetch.
+   */
+  systemPromptOverride?: SystemPromptOverrideShape;
 }
 
 const CATEGORY_TOOLSETS: Record<ToolCategory, ToolsetId[]> = {
@@ -159,15 +168,18 @@ export async function handler(
     if (enabledToolsets.includes('property')) enabledCategories.push('property');
     if (enabledToolsets.includes('signal-station')) enabledCategories.push('signal-station');
 
-    // Build system prompt using unified prompt builder
+    // Build system prompt using unified prompt builder.
+    // #1522: resolveSystemPrompt applies an operator override (inline text or
+    // fetched URL) if set, so the preview shows exactly what the LLM will see.
     const avatarConfig: ProcessorAvatarConfig = {
       avatarId,
       name: avatarRecord.name,
       description: avatarRecord.description,
       persona: avatarRecord.persona,
+      systemPromptOverride: avatarRecord.systemPromptOverride,
       enabledCategories,
     };
-    const systemPrompt = buildDynamicSystemPrompt(avatarConfig, 'admin-ui');
+    const systemPrompt = await resolveSystemPrompt(avatarConfig, 'admin-ui');
 
     // Get enabled toolsets (fallback to category defaults on failure)
     let mcpEnabledToolsets: ToolsetId[] = [];
@@ -290,6 +302,9 @@ export async function handler(
       enabledCategories,
       messages,
       tokenEstimate,
+      ...(avatarRecord.systemPromptOverride
+        ? { systemPromptOverride: avatarRecord.systemPromptOverride as SystemPromptOverrideShape }
+        : {}),
     };
 
     return {

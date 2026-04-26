@@ -307,6 +307,37 @@ Include:
 
 We aim to respond within 48 hours.
 
+## Secrets Manager Lifecycle
+
+Avatar secrets stored in AWS Secrets Manager under the `swarm/` prefix are subject to lifecycle management rules:
+
+### Creation
+- Per-avatar secrets follow the pattern: `swarm/<avatarId>/<secret-name>` (e.g., `swarm/agent-1-abc/telegram_bot_token`)
+- Secrets are created by the admin API during avatar setup
+- Shared platform secrets use: `swarm/global/<secret-name>` or `swarm/<environment>/<secret-name>`
+
+### Monitoring
+- Use `scripts/audit-secrets.sh <env>` to list all secrets with:
+  - Last access date (helps identify stale secrets)
+  - Extracted avatar ID (for matching against active avatars)
+  - Orphan detection (secrets without matching active avatars)
+- Run monthly to identify candidates for cleanup
+
+### Cleanup
+**Rule:** When an avatar is deleted or archived, all associated secrets must be removed within 30 days.
+
+- Secrets without a matching active avatar in the state table are cleanup candidates
+- Cleanup is **never automatic** — always requires explicit human review
+- Track secrets pending deletion with `scripts/audit-secrets.sh` output and cross-reference GitHub issues
+- When deleting secrets, document the avatar ID and reason in the commit message
+
+### Cost Impact
+- Each secret costs $0.40/month
+- Orphaned secrets accumulate ~$40/mo in staging, $40+/mo in prod
+- Regular cleanup is required for cost hygiene
+
+---
+
 ## Security Best Practices
 
 ### Code Security

@@ -43,6 +43,25 @@ export interface RoomIngressResult {
  */
 export type ChannelAvatarResolver = (channelId: string) => Promise<string[]>;
 
+/**
+ * Avatar metadata required for the room coordinator to score a turn:
+ * the id, display name (for name-hit), and platform handle (for @-mention).
+ */
+export interface ChannelAvatarMeta {
+  avatarId: string;
+  /** Display name as the avatar shows up to humans (used for name-hit scoring). */
+  avatarName: string;
+  /** Platform handle for @-mention matching. Telegram = botUsername, Discord = bot user id-as-mention. */
+  platformHandle?: string;
+}
+
+/**
+ * Platform-agnostic resolver returning rich metadata for every avatar in a
+ * channel. Used by the message-processor's room coordinator to build turn
+ * candidates. Falls back to ids-only when not registered.
+ */
+export type ChannelAvatarMetaResolver = (channelId: string) => Promise<ChannelAvatarMeta[]>;
+
 /** Overridable dependencies for testing without process-global mock.module. */
 export interface RoomIngressDeps {
   appendMessage: typeof _appendMessage;
@@ -62,6 +81,7 @@ const defaultDeps: RoomIngressDeps = {
  * correct data source for each platform.
  */
 const platformResolvers = new Map<Platform, ChannelAvatarResolver>();
+const platformMetaResolvers = new Map<Platform, ChannelAvatarMetaResolver>();
 
 /**
  * Register a platform-specific ChannelAvatarResolver.
@@ -77,10 +97,36 @@ export function registerChannelAvatarResolver(
 }
 
 /**
+ * Register a platform-specific ChannelAvatarMetaResolver. The room-coordinator
+ * runner uses this to build turn candidates with display names and @-handles.
+ */
+export function registerChannelAvatarMetaResolver(
+  platform: Platform,
+  resolver: ChannelAvatarMetaResolver,
+): void {
+  platformMetaResolvers.set(platform, resolver);
+}
+
+/**
+ * Resolve the meta-bearing avatar list for a channel. Returns [] if no meta
+ * resolver is registered for the platform — callers should treat that as
+ * "coordinator unavailable, fall through".
+ */
+export async function resolveChannelAvatarsWithMeta(
+  platform: Platform,
+  channelId: string,
+): Promise<ChannelAvatarMeta[]> {
+  const resolver = platformMetaResolvers.get(platform);
+  if (!resolver) return [];
+  return resolver(channelId);
+}
+
+/**
  * Unregister a platform-specific resolver (useful for cleanup/testing).
  */
 export function unregisterChannelAvatarResolver(platform: Platform): void {
   platformResolvers.delete(platform);
+  platformMetaResolvers.delete(platform);
 }
 
 /** Replace dependencies for testing. */
@@ -94,6 +140,7 @@ export function _resetDeps(): void {
   defaultDeps.getRecentMessages = _getRecentMessages;
   defaultDeps.getChannelAvatarIds = _getChannelAvatarIds;
   platformResolvers.clear();
+  platformMetaResolvers.clear();
 }
 
 /**

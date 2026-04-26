@@ -12,6 +12,10 @@
  *   const log = createAvatarLogger('avatar-id', 'telegram');
  *   log.info('chat', 'message_received', { userId: '123' });
  *   log.error('llm', 'api_error', { error: 'timeout' });
+ *
+ * See docs/observability.md for the decision tree (avatar vs system logger),
+ * subsystem/event naming conventions, and the documented exception sites in
+ * avatar-observability.ts.
  */
 import { redactLogData } from '@swarm/core';
 import { recordLog, type LogLevel } from './avatar-observability.js';

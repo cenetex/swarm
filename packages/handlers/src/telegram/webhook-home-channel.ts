@@ -286,6 +286,47 @@ export async function getChannelAvatarIds(chatId: string): Promise<string[]> {
 }
 
 /**
+ * Get the {avatarId, botUsername} pairs registered in a specific channel.
+ * Used by the shared-room dispatcher to route an @-mention to the correct
+ * avatar when several bots receive the same Telegram update.
+ */
+export async function getChannelRegisteredAvatars(
+  chatId: string
+): Promise<Array<{ avatarId: string; botUsername: string }>> {
+  const entries = await getHomeChannelEntries();
+  const entry = entries.find((e) => e.sk === chatId);
+  return entry?.registeredAvatars ?? [];
+}
+
+/**
+ * Find which registered avatar a message text @-mentions, by scanning for
+ * `@<botUsername>` (case-insensitive) against the channel's registered bots.
+ * Returns the first match, or null if no registered bot is mentioned.
+ */
+export function resolveMentionedAvatar(
+  text: string,
+  registered: Array<{ avatarId: string; botUsername: string }>
+): { avatarId: string; botUsername: string } | null {
+  if (!text || registered.length === 0) return null;
+  const lower = text.toLowerCase();
+  // Iterate in registration order so the result is stable when several bots
+  // are mentioned in the same message.
+  for (const r of registered) {
+    if (!r.botUsername) continue;
+    const needle = `@${r.botUsername.toLowerCase()}`;
+    const idx = lower.indexOf(needle);
+    if (idx === -1) continue;
+    // Require a word boundary after the username (whitespace, punctuation, or EOL)
+    // so `@NyxRatiBot` does not match `@NyxRatiBotter`.
+    const after = lower[idx + needle.length];
+    if (after === undefined || !/[a-z0-9_]/.test(after)) {
+      return { avatarId: r.avatarId, botUsername: r.botUsername };
+    }
+  }
+  return null;
+}
+
+/**
  * Get all home channel IDs from the registry (global, for backward compatibility).
  * Uses in-memory caching with 60 second TTL.
  * @deprecated Prefer getHomeChannelIdsForAvatar for per-avatar scoping.
