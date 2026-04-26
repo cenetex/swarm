@@ -80,7 +80,7 @@ describe('prompt-builder refactoring', () => {
 
       const prompt = buildChatSystemPrompt(avatar, 'telegram');
       // Response style section should be present and indicate brief/short responses
-      expect(prompt).toContain('Brief');
+      expect(prompt).toContain('Keep responses to 1-2 sentences');
     });
 
     it('respects explicit responseStyle when provided', () => {
@@ -94,7 +94,7 @@ describe('prompt-builder refactoring', () => {
 
       const prompt = buildChatSystemPrompt(avatar, 'telegram');
       // Should use the provided long responseStyle, not default to short
-      expect(prompt).toContain('Detailed');
+      expect(prompt).toContain('longer responses');
     });
   });
 
