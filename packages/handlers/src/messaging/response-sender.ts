@@ -683,6 +683,19 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             error: error instanceof Error ? error.message : String(error),
           });
         }
+
+        // #1554 — canonical "platform accepted the response" lifecycle event.
+        // Distinct from `response_sent` (historical, kept elsewhere): this
+        // fires ONLY when the platform adapter confirmed delivery. Operators
+        // and dashboards can trust this to mean "the user saw a message."
+        logger.info('response_accepted_by_platform', {
+          event: 'response_accepted_by_platform',
+          subsystem: 'outbound',
+          platform: response.platform,
+          conversationId: response.conversationId,
+          deliveredActionCount: sentMessages.length,
+          totalActionCount: actionsToSend?.length ?? 0,
+        });
       }
 
       if (actionsToSend && actionsToSend.length > 0 && !sendSuccess) {
@@ -704,6 +717,22 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             avatarId,
             conversationId: response.conversationId,
             errors: sendErrors,
+          });
+          // #1554 — terminal failure lifecycle event. Distinguishes "the
+          // response was generated and enqueued but never made it to the
+          // user" from "send succeeded." Operators debugging silent-bot
+          // reports (like today's CHOPPA session) can grep this to find
+          // drop reasons without cross-referencing four log streams.
+          const primaryReason = sendErrors[0]?.message || 'unknown';
+          logger.warn('response_dropped', {
+            event: 'response_dropped',
+            subsystem: 'outbound',
+            platform: response.platform,
+            avatarId,
+            conversationId: response.conversationId,
+            reason: primaryReason,
+            errorCount: sendErrors.length,
+            actionTypes: actionsToSend?.map(a => a.type) ?? [],
           });
           // Non-retryable errors: keep the idempotency record so we don't retry forever.
           // The mark already happened before send, so it's safe.

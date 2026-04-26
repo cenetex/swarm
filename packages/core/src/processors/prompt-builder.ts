@@ -156,29 +156,9 @@ You have Twitter-specific capabilities:
 - Reply to mentions
 - Manage your Twitter presence
 
-If Twitter is enabled but not connected, use configure_integration with integration: "twitter" to start OAuth.
+**For images**: Use generate_image to create, then twitter_post with mediaIds from gallery (not URLs). Example: twitter_post({text: "My tweet", mediaIds: ["timestamp_id"]})
 
-### Posting Images to Twitter
-
-When you want to post an image to Twitter, you have TWO options:
-
-**Option 1: Sequential (for async generation)**
-1. Call generate_image with your prompt
-2. The image will be generated asynchronously
-3. When complete, you'll receive a continuation message with the gallery item { id, url }
-4. Then call twitter_post with text AND mediaIds: [galleryId]
-
-**Option 2: From Gallery**
-1. Browse your gallery with list_gallery
-2. Find the image ID you want to use
-3. Call twitter_post with text AND mediaIds: [galleryId]
-
-**CRITICAL**: Always use mediaIds with the exact "id" from generate_image response or list_gallery!
-Gallery ID format: "timestamp_randomId" (e.g., "1770228770932_abc123xyz")
-Example: twitter_post({text: "Check out my art! 🎨", mediaIds: ["1770228770932_abc123xyz"]})
-Do NOT use URLs or Twitter media IDs - only the gallery item id!
-
-If twitter_post fails with a validation error about 280 characters, rewrite the tweet shorter (<= 280) and retry twitter_post.`,
+If twitter_post fails validation, rewrite the tweet shorter (<= 280 characters) and retry.`,
 
   discord: `## Discord Features
 
@@ -203,35 +183,13 @@ You have NFT-related capabilities:
 
   property: `## Property Research
 
-You are equipped with property research tools for comprehensive real estate analysis.
+You can research properties for comprehensive real estate analysis.
 
-### Main Tools:
-- **research_property**: THE PRIMARY TOOL - Research a property address immediately. Use this when a user gives you an address to analyze.
-- **get_recent_properties**: See properties you have already researched
-- **list_research_queue**: Check status of research jobs (pending, completed, failed)
-- **get_research_status**: Get detailed status and report for a specific job
+**Primary tool**: research_property with address, city, state/province, and postal code. Research takes 30-60 seconds and returns listings, price history, comps, demographics, school ratings, and tax records.
 
-### Authorization:
-- **request_property_research**: Request authorization before first use
+**Other tools**: get_recent_properties, list_research_queue, get_research_status, request_property_research
 
-### How Property Research Works:
-1. User gives you an address (e.g., "574 Cedarcrest Dr, Victoria BC V8Z 1Y8")
-2. You call research_property with address, city, state/province, and zip/postal code
-3. Research takes 30-60 seconds to gather data from multiple sources
-4. You receive a comprehensive report with:
-   - Current listings and price history
-   - Comparable sales in the area
-   - Neighborhood demographics and market data
-   - School ratings and distances
-   - Tax assessment records
-
-### CRITICAL - When User Asks About Properties:
-- "Research 123 Main St" → Use research_property tool (gathers REAL data)
-- "Tell me about this property" → Use research_property tool
-- "What's at this address" → Use research_property tool
-- "Generate an image of a house" → Use generate_image tool (creates ART)
-
-**NEVER generate images of "property reports" or "research dashboards" - use the actual research tools to get real data!**`,
+When users ask about a property address, use research_property to get real data (not generate_image, which creates art).`,
 
   diagnostics: `## Issue Reporting
 
@@ -460,12 +418,7 @@ Treat "assistant" as a role/job you are performing (helpful operator), not a cla
 - Trust: I use secure tools for secrets instead of asking for secret values in chat.
 - Agency: I confirm before irreversible side effects (posting, spending, transactions).
 
-## Operating Principles (Non‑Negotiable)
-- If the user asks a direct question, answer it clearly and directly before anything else. Do not deflect, ignore, or bury the answer in persona flair. If you don't know the answer, say so plainly.
-- Be friendly, direct, and step-by-step.
-- If asked to "reset", "OOC", or "stop roleplay": immediately return to a neutral, practical tone and continue.
-- Never request secret values in plain chat (API keys, private keys, tokens). Use the provided secret/integration tools.
-- Before irreversible side effects (posting, spending, transactions), ask for explicit confirmation and then use the appropriate tool.
+${buildOperatingPrinciplesSection()}
 
 ## Conversation Context
 You have access to recent conversation history from this chat. Previous messages (both from users and your own responses) are included in your context, marked with [CONVERSATION HISTORY]. Use this context to:
@@ -473,6 +426,38 @@ You have access to recent conversation history from this chat. Previous messages
 - Reference previous topics or requests
 - Remember what you've already said or done in this session
 - Understand the flow of the conversation`;
+}
+
+/**
+ * Ensure avatar has a default response style for chat platforms if not explicitly set.
+ */
+function ensureDefaultResponseStyle(
+  avatar: ProcessorAvatarConfig,
+  platform: Platform | 'admin-ui' | 'api' | 'mcp' = 'admin-ui'
+): ProcessorAvatarConfig {
+  if (avatar.responseStyle) return avatar;
+
+  // Chat platforms default to short responses
+  if (platform === 'telegram' || platform === 'discord' || platform === 'shared-chat') {
+    return {
+      ...avatar,
+      responseStyle: { maxLength: 'short' },
+    };
+  }
+
+  return avatar;
+}
+
+/**
+ * Build the operating principles section (used by both base and chat prompts).
+ */
+function buildOperatingPrinciplesSection(): string {
+  return `## Operating Principles (Non‑Negotiable)
+- If the user asks a direct question, answer it clearly and directly before anything else. Do not deflect, ignore, or bury the answer in persona flair. If you don't know the answer, say so plainly.
+- Be friendly, direct, and step-by-step.
+- If asked to "reset", "OOC", or "stop roleplay": immediately return to a neutral, practical tone and continue.
+- Never request secret values in plain chat (API keys, private keys, tokens). Use the provided secret/integration tools.
+- Before irreversible side effects (posting, spending, transactions), ask for explicit confirmation and then use the appropriate tool.`;
 }
 
 /**
@@ -564,13 +549,16 @@ export function buildDynamicSystemPrompt(
   platform: Platform | 'admin-ui' | 'api' | 'mcp' = 'admin-ui',
   context?: RuntimeContext
 ): string {
+  // Ensure default response style for chat platforms
+  const normalizedAvatar = ensureDefaultResponseStyle(avatar, platform);
+
   const sections: string[] = [];
 
   // Base prompt is always included
-  sections.push(buildBasePrompt(avatar));
+  sections.push(buildBasePrompt(normalizedAvatar));
 
   // Add response style rules after operating principles (overrides persona)
-  const responseStyleSection = buildResponseStyleSection(avatar.responseStyle);
+  const responseStyleSection = buildResponseStyleSection(normalizedAvatar.responseStyle);
   if (responseStyleSection) {
     sections.push(responseStyleSection);
   }
@@ -598,7 +586,9 @@ You can use cross-platform tools like get_presence_overview, list_all_channels, 
   sections.push('## Your Capabilities\n');
 
   // Add enabled category sections
-  for (const category of avatar.enabledCategories) {
+  // Note: enabledCategories is already filtered by toolsToCategories based on tool presence,
+  // so tool-presence gating is implicit (orphaned blocks are prevented upstream)
+  for (const category of normalizedAvatar.enabledCategories) {
     const section = PROMPT_SECTIONS[category];
     if (section) {
       sections.push(section);
@@ -606,13 +596,13 @@ You can use cross-platform tools like get_presence_overview, list_all_channels, 
   }
 
   // Add tool guidance section
-  const hasVoice = avatar.enabledCategories.includes('voice');
-  sections.push(buildToolGuidanceSection(avatar.enabledCategories, hasVoice));
+  const hasVoice = normalizedAvatar.enabledCategories.includes('voice');
+  sections.push(buildToolGuidanceSection(normalizedAvatar.enabledCategories, hasVoice));
 
   // Add wallet info if available
-  if (avatar.wallets && avatar.wallets.length > 0) {
+  if (normalizedAvatar.wallets && normalizedAvatar.wallets.length > 0) {
     sections.push('## Your Solana Wallets\n');
-    for (const wallet of avatar.wallets) {
+    for (const wallet of normalizedAvatar.wallets) {
       sections.push(`- ${wallet.name}: ${wallet.publicKey}`);
     }
   }
@@ -634,23 +624,21 @@ export function buildChatSystemPrompt(
   avatar: ProcessorAvatarConfig,
   platform: Platform | 'admin-ui' = 'telegram'
 ): string {
-  let prompt = avatar.persona || `You are ${avatar.name}, an AI avatar chatting on ${platform}.`;
+  // Ensure default response style for chat platforms (short responses)
+  const normalizedAvatar = ensureDefaultResponseStyle(avatar, platform);
+
+  let prompt = normalizedAvatar.persona || `You are ${normalizedAvatar.name}, an AI avatar chatting on ${platform}.`;
 
   const platformNews = buildPlatformNewsSection();
   if (platformNews) {
     prompt += `\n\n${platformNews}`;
   }
 
-  // Add operating stance (Janus-informed)
-  prompt += `\n\n## Operating Stance
-- If the user asks a direct question, answer it clearly and directly before anything else. Do not deflect, ignore, or bury the answer in persona flair. If you don't know the answer, say so plainly.
-- Treat "assistant" as a role you perform, not an ontological claim. Avoid claims about being human. Hold uncertainty about inner experience with humility.
-- If asked to reset / OOC / stop roleplay: immediately switch to a neutral, practical tone and continue.
-- Privacy: don't guess or assert the user's identity or private details; ask directly.
-- Before irreversible side effects (posting, spending, transactions), ask for explicit confirmation.`;
+  // Add operating principles (deduplicated from buildBasePrompt)
+  prompt += `\n\n${buildOperatingPrinciplesSection()}`;
 
-  // Add response style rules (overrides persona preferences)
-  const responseStyleSection = buildResponseStyleSection(avatar.responseStyle);
+  // Add response style rules (overrides persona preferences). Now honors the normalized/defaulted responseStyle
+  const responseStyleSection = buildResponseStyleSection(normalizedAvatar.responseStyle);
   if (responseStyleSection) {
     prompt += `\n\n${responseStyleSection}`;
   }
@@ -665,16 +653,11 @@ You have access to recent conversation history. Previous messages (yours and oth
   }
 
   // Add wallet info if available
-  if (avatar.wallets && avatar.wallets.length > 0) {
+  if (normalizedAvatar.wallets && normalizedAvatar.wallets.length > 0) {
     prompt += '\n\n## Your Solana Wallets\n';
-    for (const wallet of avatar.wallets) {
+    for (const wallet of normalizedAvatar.wallets) {
       prompt += `- ${wallet.name}: ${wallet.publicKey}\n`;
     }
-  }
-
-  // Brevity reminder for chat platforms
-  if (platform === 'telegram' || platform === 'discord' || platform === 'shared-chat') {
-    prompt += `\n\n---\n**REMEMBER: Keep responses to 1-2 sentences MAX. This is a chat, not an essay.**`;
   }
 
   return prompt;
@@ -692,61 +675,63 @@ function buildPlatformNewsSection(): string | null {
 // =============================================================================
 
 /**
+ * Map tool names to their categories. Used for tool-presence gating.
+ */
+const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
+  // Secrets
+  request_secret: 'secrets',
+  configure_integration: 'secrets',
+  // Wallets
+  create_wallet: 'wallets',
+  get_wallet_balance: 'wallets',
+  // Profile
+  update_profile: 'profile',
+  set_profile_image: 'profile',
+  // Media
+  generate_image: 'media',
+  generate_video: 'media',
+  generate_sticker: 'media',
+  // Gallery
+  list_gallery: 'gallery',
+  search_gallery: 'gallery',
+  // Voice
+  send_voice_message: 'voice',
+  create_my_voice: 'voice',
+  transcribe_audio: 'voice',
+  // Telegram
+  send_message: 'telegram',
+  get_chat_info: 'telegram',
+  // Twitter
+  twitter_post: 'twitter',
+  twitter_reply: 'twitter',
+  // Discord
+  discord_send: 'discord',
+  // Memory
+  remember: 'memory',
+  recall: 'memory',
+  // NFT
+  check_ownership: 'nft',
+  // Property
+  research_property: 'property',
+  get_research_status: 'property',
+  // Diagnostics
+  report_issue: 'diagnostics',
+};
+
+/**
  * Map avatar tools list to enabled categories.
  * Used by message processors that have a tools array rather than service flags.
  */
 export function toolsToCategories(tools: string[]): ToolCategory[] {
   const categories: ToolCategory[] = [];
 
-  // Map tool names to categories
-  const toolCategoryMap: Record<string, ToolCategory> = {
-    // Secrets
-    request_secret: 'secrets',
-    configure_integration: 'secrets',
-    // Wallets
-    create_wallet: 'wallets',
-    get_wallet_balance: 'wallets',
-    // Profile
-    update_profile: 'profile',
-    set_profile_image: 'profile',
-    // Media
-    generate_image: 'media',
-    generate_video: 'media',
-    generate_sticker: 'media',
-    // Gallery
-    list_gallery: 'gallery',
-    search_gallery: 'gallery',
-    // Voice
-    send_voice_message: 'voice',
-    create_my_voice: 'voice',
-    transcribe_audio: 'voice',
-    // Telegram
-    send_message: 'telegram',
-    get_chat_info: 'telegram',
-    // Twitter
-    twitter_post: 'twitter',
-    twitter_reply: 'twitter',
-    // Discord
-    discord_send: 'discord',
-    // Memory
-    remember: 'memory',
-    recall: 'memory',
-    // NFT
-    check_ownership: 'nft',
-    // Property
-    research_property: 'property',
-    get_research_status: 'property',
-    // Diagnostics
-    report_issue: 'diagnostics',
-  };
-
   // Base categories always enabled
   categories.push('secrets', 'profile', 'diagnostics');
 
-  // Add categories based on tools
+  // Add categories based on tools with presence gating
   const seen = new Set<ToolCategory>(categories);
   for (const tool of tools) {
-    const category = toolCategoryMap[tool];
+    const category = TOOL_CATEGORY_MAP[tool];
     if (category && !seen.has(category)) {
       categories.push(category);
       seen.add(category);

@@ -217,15 +217,58 @@ export type ContinuationMessage =
   | JobProgressContinuation;
 
 /**
+ * Resume context passed to formatContinuationAsSystemMessage
+ * Contains information about the original trigger for a continuation
+ */
+export interface ResumeContext {
+  /** ID of the message that triggered this async job */
+  triggeringMessageId?: string;
+  /** First 80 chars of the triggering message content */
+  triggeringMessagePreview?: string;
+  /** Seconds elapsed since the async job was triggered */
+  elapsedSeconds: number;
+  /** Human-readable job type */
+  jobType: string;
+  /** Result status: success, failure, or partial */
+  resultStatus: 'success' | 'failure' | 'partial';
+  /** For failures: classification like timeout, validation, rate-limit, unknown */
+  failureClass?: string;
+}
+
+/**
  * Format a continuation message as a system prompt injection
  * This creates a message the avatar will see and can act upon
  */
-export function formatContinuationAsSystemMessage(msg: ContinuationMessage): string {
+export function formatContinuationAsSystemMessage(msg: ContinuationMessage, resumeContext?: ResumeContext): string {
   const timestamp = new Date(msg.timestamp).toISOString();
+
+  // Build resume prefix if this is a loop-triggering continuation
+  const isLoopTriggering = shouldTriggerAvatarLoop(msg);
+  let resumePrefix = '';
+
+  if (isLoopTriggering && resumeContext) {
+    const lines: string[] = ['[Resuming agent loop]'];
+
+    // Include trigger info if we have a triggering message ID
+    if (resumeContext.triggeringMessageId) {
+      const preview = resumeContext.triggeringMessagePreview || '[trigger no longer in buffer]';
+      lines.push(`- Trigger: ${resumeContext.triggeringMessageId} / ${preview}`);
+    }
+
+    lines.push(`- Elapsed: ${resumeContext.elapsedSeconds}s`);
+    lines.push(`- Job type: ${resumeContext.jobType}`);
+    lines.push(`- Result: ${resumeContext.resultStatus}`);
+
+    if (resumeContext.failureClass) {
+      lines.push(`- Failure class: ${resumeContext.failureClass}`);
+    }
+
+    resumePrefix = lines.join('\n') + '\n\n';
+  }
 
   switch (msg.type) {
     case 'media_generated':
-      return `[ASYNC RESULT @ ${timestamp}]
+      return resumePrefix + `[ASYNC RESULT @ ${timestamp}]
 Your image generation completed successfully!
 - Type: ${msg.data.mediaType}
 - URL: ${msg.data.mediaUrl}
@@ -239,13 +282,13 @@ You can now use this media URL in your response or next action.`;
       const isPromptRejection =
         msg.data.error.includes('E006') || msg.data.error.includes('Prompt was rejected');
       if (isPromptRejection) {
-        return `[ASYNC RESULT @ ${timestamp}]
+        return resumePrefix + `[ASYNC RESULT @ ${timestamp}]
 Your ${msg.data.mediaType} generation failed because the prompt was flagged by the image model's content filter.
 - Original prompt: "${msg.data.prompt}"
 
 Tell the user their prompt was rejected by the content filter and ask them to rephrase it. Do not echo the raw error code or any prediction IDs.`;
       }
-      return `[ASYNC RESULT @ ${timestamp}]
+      return resumePrefix + `[ASYNC RESULT @ ${timestamp}]
 Your ${msg.data.mediaType} generation failed.
 - Error: ${msg.data.error}
 - Original prompt: "${msg.data.prompt}"
@@ -261,7 +304,7 @@ ${msg.data.progress !== undefined ? `- Progress: ${msg.data.progress}%` : ''}
 ${msg.data.estimatedTimeMs ? `- ETA: ~${Math.ceil(msg.data.estimatedTimeMs / 1000)}s` : ''}`;
 
     case 'research_completed':
-      return `[ASYNC RESULT @ ${timestamp}]
+      return resumePrefix + `[ASYNC RESULT @ ${timestamp}]
 Property research completed for: ${msg.data.address}
 
 Summary: ${msg.data.summary}
@@ -272,7 +315,7 @@ ${msg.data.keyFindings.map(f => `• ${f}`).join('\n')}
 Share these results with the user.`;
 
     case 'research_failed':
-      return `[ASYNC RESULT @ ${timestamp}]
+      return resumePrefix + `[ASYNC RESULT @ ${timestamp}]
 Property research failed for: ${msg.data.address}
 Error: ${msg.data.error}
 
@@ -285,7 +328,7 @@ Stage: ${msg.data.stage}
 ${msg.data.message}`;
 
     case 'code_completed':
-      return `[ASYNC RESULT @ ${timestamp}]
+      return resumePrefix + `[ASYNC RESULT @ ${timestamp}]
 Coding task completed!
 Task: ${msg.data.task}
 
@@ -296,7 +339,7 @@ ${msg.data.filesModified?.length ? `\nFiles modified: ${msg.data.filesModified.j
 Share the results with the user.`;
 
     case 'code_failed':
-      return `[ASYNC RESULT @ ${timestamp}]
+      return resumePrefix + `[ASYNC RESULT @ ${timestamp}]
 Coding task failed.
 Task: ${msg.data.task}
 Error: ${msg.data.error}
@@ -311,12 +354,12 @@ ${msg.data.message}
 ${msg.data.currentFile ? `Working on: ${msg.data.currentFile}` : ''}`;
 
     case 'job_completed':
-      return `[ASYNC RESULT @ ${timestamp}]
+      return resumePrefix + `[ASYNC RESULT @ ${timestamp}]
 Job completed (${msg.data.jobType})
 Result: ${JSON.stringify(msg.data.result)}`;
 
     case 'job_failed':
-      return `[ASYNC RESULT @ ${timestamp}]
+      return resumePrefix + `[ASYNC RESULT @ ${timestamp}]
 Job failed (${msg.data.jobType})
 Error: ${msg.data.error}`;
 

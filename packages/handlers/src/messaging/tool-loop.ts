@@ -89,8 +89,23 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
     // Refresh typing indicator before each LLM round-trip (expires after ~5s)
     if (refreshTyping) await refreshTyping();
 
+    const llmStart = Date.now();
     const llmResponse = await callLLM(messages, enabledTools, llmConfig, secrets);
     totalTokens += 100; // Approximate
+
+    // #1551 — structured telemetry for each LLM round-trip. No message text,
+    // only shapes/counts so dashboards and debugging queries can reconstruct
+    // behavior without touching conversation content.
+    logger.info('llm_round', {
+      event: 'llm_round',
+      subsystem: 'chat',
+      iteration: iterations,
+      modelId: llmConfig.model,
+      toolCallCount: llmResponse.toolCalls?.length ?? 0,
+      toolNames: (llmResponse.toolCalls ?? []).map(tc => tc.name),
+      latencyMs: Date.now() - llmStart,
+      hasFinalContent: !!llmResponse.content,
+    });
 
     if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
       // No tool calls — final response
@@ -165,7 +180,26 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
 
       logger.info('Executing tool', { tool: toolCall.name, args: toolCall.arguments });
 
+      const toolStart = Date.now();
       const result = await toolClient.execute(toolCall.name, toolCall.arguments, toolContext);
+
+      // #1551 — structured tool execution telemetry. Shapes only, no payloads.
+      const resultShape: 'media' | 'uiAction' | 'text' | 'error' | 'pending' | 'empty' =
+        !result.success ? 'error'
+        : result.media?.url ? 'media'
+        : result.uiAction ? 'uiAction'
+        : result.pendingJob ? 'pending'
+        : result.data ? 'text'
+        : 'empty';
+      logger.info('tool_executed', {
+        event: 'tool_executed',
+        subsystem: 'chat',
+        tool: toolCall.name,
+        success: result.success,
+        resultShape,
+        latencyMs: Date.now() - toolStart,
+        iteration: iterations,
+      });
 
       allToolResults.push({ name: toolCall.name, result });
 
@@ -205,6 +239,17 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
       logger.info('Tool result', { tool: toolCall.name, success: result.success, hasUiAction: !!result.uiAction });
     }
   }
+
+  // #1551 — loop exit summary. Lets dashboards count "loops that hit the
+  // MAX_TOOL_ITERATIONS cap" vs. "loops that naturally terminated."
+  logger.info('tool_loop_complete', {
+    event: 'tool_loop_complete',
+    subsystem: 'chat',
+    iterations,
+    hitIterationCap: iterations >= MAX_TOOL_ITERATIONS,
+    totalToolCalls: allToolResults.length,
+    finalContentLen: cleanFinalContent?.length ?? finalContent?.length ?? 0,
+  });
 
   return { finalContent, cleanFinalContent, allToolResults, totalTokens };
 }

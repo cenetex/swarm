@@ -50,6 +50,8 @@ import {
   activateAvatarInChatFromWebhook,
   addSharedChannelMembership,
   maybeBootstrapHomeChannelFromGroupEngagement,
+  getChannelRegisteredAvatars,
+  resolveMentionedAvatar,
 } from './webhook-home-channel.js';
 
 import {
@@ -750,7 +752,10 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           await telegramAdapter.sendTypingIndicator(envelope.conversationId);
         } catch { /* non-critical */ }
 
-        // Queue for processing
+        // Queue for processing.
+        // Pass the full ContextMessage (see #1573) — processor's idempotency
+        // guard skips its own write if the messageId is already in the buffer,
+        // so the flags must be set here.
         await stateService.addMessageToChannel(
           avatarId,
           envelope.conversationId,
@@ -761,6 +766,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
             isBot: envelope.sender.isBot,
             content: envelope.content.text || '[media]',
             timestamp: envelope.timestamp,
+            userId: envelope.sender.id,
+            username: envelope.sender.username,
+            isMention: envelope.metadata.isMention,
+            isReplyToBot: envelope.metadata.isReplyToBot,
+            replyToMessageId: envelope.replyTo,
           },
           undefined,
           'private',
@@ -1036,6 +1046,36 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         return ok();
       }
 
+      // Redirect the SQS job to the @-mentioned avatar when several bots
+      // are in this chat. Telegram fans the same update out to every bot;
+      // whichever webhook wins the dedup race owns the avatarId on the
+      // envelope, but the user may have explicitly @-mentioned a different
+      // bot. Without this redirect the wrong avatar processes the message
+      // and decides not to respond, which leaves the mention unanswered.
+      try {
+        const messageText = envelope.content.text || '';
+        if (messageText) {
+          const registered = await getChannelRegisteredAvatars(envelope.conversationId);
+          const mentioned = resolveMentionedAvatar(messageText, registered);
+          if (mentioned && mentioned.avatarId !== avatarId) {
+            logger.info('Redirecting shared-room job to @-mentioned avatar', {
+              event: 'shared_room_mention_redirect',
+              roomKey: ingressResult.roomKey,
+              messageId: envelope.messageId,
+              fromAvatarId: avatarId,
+              toAvatarId: mentioned.avatarId,
+              mentionedBot: mentioned.botUsername,
+            });
+            envelope.avatarId = mentioned.avatarId;
+            envelope.metadata.isMention = true;
+          }
+        }
+      } catch (err) {
+        logger.warn('mention-redirect failed; continuing with original avatar', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
       // Send typing indicator immediately so group members see instant feedback
       try {
         await telegramAdapter.sendTypingIndicator(envelope.conversationId);
@@ -1067,7 +1107,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         durationMs: Date.now() - startTime,
       });
     } else {
-      // Single-avatar channel: use legacy per-avatar enqueue path
+      // Single-avatar channel: use legacy per-avatar enqueue path.
+      // IMPORTANT: pass the FULL ContextMessage including isMention /
+      // isReplyToBot / userId / username / replyToMessageId. The processor
+      // calls addMessageToChannel again with the same messageId; its
+      // idempotency guard (channel-state.ts) then skips the second write,
+      // so the buffer entry the response evaluator reads is whatever the
+      // webhook wrote here. Stripping flags here means evaluateResponseTrigger
+      // sees `m.isMention === undefined` for every message, hasDirectEngagement
+      // is always false, and the bot ignores @-mentions in groups (#1573).
       await stateService.addMessageToChannel(
         avatarId,
         envelope.conversationId,
@@ -1078,6 +1126,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           isBot: envelope.sender.isBot,
           content: envelope.content.text || '[media]',
           timestamp: envelope.timestamp,
+          userId: envelope.sender.id,
+          username: envelope.sender.username,
+          isMention: envelope.metadata.isMention,
+          isReplyToBot: envelope.metadata.isReplyToBot,
+          replyToMessageId: envelope.replyTo,
         },
         undefined,
         normalizedChatType,

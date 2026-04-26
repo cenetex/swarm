@@ -66,6 +66,32 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Need history for git-diff change detection below (#1542, #1543).
+          fetch-depth: 0
+
+      - name: Compute previous revision for selective build (#1543)
+        id: detect
+        run: |
+          # Pick a sensible "previous" revision so the build step (#1543) can
+          # filter pnpm packages by what's actually changed. We always set up
+          # QEMU + Buildx below — the earlier conditional skip (#1542) was
+          # incorrect because CDK rebuilds container assets when their bundled
+          # source changes, not just when the Dockerfile changes; that broke
+          # the v0.31.4 prod deploy. See aws-swarm#1545 follow-up.
+          REF="${{ github.ref }}"
+          PREV=""
+          if [[ "$REF" == refs/tags/v* ]]; then
+            PREV=$(git describe --tags --abbrev=0 "HEAD^" 2>/dev/null || git rev-parse HEAD~1 2>/dev/null || echo "")
+          else
+            PREV=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          fi
+          echo "previous_ref=$PREV" >> "$GITHUB_OUTPUT"
+          if [ -n "$PREV" ]; then
+            echo "Selective build will diff against $PREV"
+          else
+            echo "::notice::No prior revision — full recursive build will run"
+          fi
 
       - name: Set up QEMU (for ARM64 Docker builds)
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
@@ -97,10 +123,18 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
+        env:
+          PREV_REF: ${{ steps.detect.outputs.previous_ref }}
         run: |
           if [ "${{ steps.layer-cache.outputs.cache-hit }}" != "true" ]; then
             cd packages/layer && pnpm run build:layer && cd ../..
           fi
+
+          # Always do a full recursive build. The selective build added in #1543
+          # rebuilds changed packages plus their dependents, but NOT their
+          # workspace dependencies — so esbuild later fails to resolve workspace
+          # imports whose dist/ never got produced (broke staging on #1561 and
+          # again on #1564). Reverted in #1566.
           pnpm -r --filter '!admin-ui' build
 
       - name: Validate AWS environment secrets
