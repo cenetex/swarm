@@ -373,6 +373,7 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
 
         metrics.trackDuration('ProcessingLatency', recordStartTime);
         metrics.incrementCounter('ToolLoopsProcessed');
+        metrics.incrementCounter('ResponsesGenerated');
         metrics.setProperty('Outcome', 'success');
 
       } finally {

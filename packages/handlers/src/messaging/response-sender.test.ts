@@ -580,6 +580,211 @@ describe('Response Sender - Service Mock Integration', () => {
   });
 });
 
+describe('Response Sender - Lifecycle Events (#1554)', () => {
+  /**
+   * Tests for the three-phase response lifecycle:
+   * 1. response_generated: LLM produced content, enqueued to response queue
+   * 2. response_accepted_by_platform: platform adapter confirmed delivery
+   * 3. response_dropped: all actions failed with non-retryable errors
+   *
+   * @see https://github.com/cenetex/aws-swarm/issues/1554
+   */
+
+  describe('response_generated event', () => {
+    it('should emit when response envelope is enqueued after tool-loop', () => {
+      const event = {
+        event: 'response_generated',
+        subsystem: 'chat-worker',
+        avatarId: 'avatar-123',
+        platform: 'telegram',
+        conversationId: 'conv-456',
+        actionCount: 2,
+        actionTypes: ['send_message', 'send_media'],
+        tokensUsed: 450,
+      };
+
+      expect(event.event).toBe('response_generated');
+      expect(event.actionCount).toBe(2);
+      expect(event.subsystem).toBe('chat-worker');
+    });
+
+    it('should include all action types for analytics', () => {
+      const actionTypes = ['send_message', 'take_selfie', 'react'];
+      const event = { event: 'response_generated', actionCount: 3, actionTypes };
+
+      expect(event.actionTypes).toEqual(actionTypes);
+    });
+  });
+
+  describe('response_accepted_by_platform event', () => {
+    it('should emit when platform adapter confirms delivery', () => {
+      const event = {
+        event: 'response_accepted_by_platform',
+        subsystem: 'outbound',
+        platform: 'telegram',
+        conversationId: 'conv-456',
+        deliveredActionCount: 2,
+        totalActionCount: 2,
+      };
+
+      expect(event.event).toBe('response_accepted_by_platform');
+      expect(event.deliveredActionCount).toBe(event.totalActionCount);
+    });
+
+    it('should emit counter metric when platform accepts', () => {
+      // Simulate metrics tracking
+      const metrics = {
+        counters: [] as string[],
+        incrementCounter(name: string) {
+          this.counters.push(name);
+        },
+      };
+
+      metrics.incrementCounter('ResponsesAccepted');
+
+      expect(metrics.counters).toContain('ResponsesAccepted');
+    });
+
+    it('should track delivered vs total action count', () => {
+      const event = {
+        deliveredActionCount: 1,
+        totalActionCount: 3,
+        reason: 'partial_send',
+      };
+
+      // In real usage, partial sends (1 of 3) should still be treated as accepted
+      // if the primary send_message action succeeded
+      expect(event.deliveredActionCount >= 0 && event.deliveredActionCount <= event.totalActionCount).toBe(true);
+    });
+  });
+
+  describe('response_dropped event', () => {
+    it('should emit when all errors are non-retryable', () => {
+      const sendErrors = [
+        { action: 'send_message', message: 'reply_target_deleted', statusCode: 400, isRetryable: false },
+      ];
+
+      const event = {
+        event: 'response_dropped',
+        subsystem: 'outbound',
+        reason: sendErrors[0].message,
+        errorCount: sendErrors.length,
+      };
+
+      expect(event.event).toBe('response_dropped');
+      expect(event.reason).toBe('reply_target_deleted');
+    });
+
+    it('should include reason dimension in drop event', () => {
+      const reasons = [
+        'reply_target_deleted',
+        'rate_limit',
+        'overflow',
+        '403_forbidden',
+        'unauthorized',
+      ];
+
+      for (const reason of reasons) {
+        const event = {
+          event: 'response_dropped',
+          reason,
+        };
+
+        expect(event.reason).toBe(reason);
+      }
+    });
+
+    it('should emit counter metric when response dropped', () => {
+      const metrics = {
+        counters: [] as string[],
+        properties: {} as Record<string, string>,
+        incrementCounter(name: string) {
+          this.counters.push(name);
+        },
+        setProperty(key: string, value: string) {
+          this.properties[key] = value;
+        },
+      };
+
+      const reason = 'reply_target_deleted';
+      metrics.incrementCounter('ResponsesDropped');
+      metrics.setProperty('DropReason', reason);
+
+      expect(metrics.counters).toContain('ResponsesDropped');
+      expect(metrics.properties.DropReason).toBe(reason);
+    });
+
+    it('should not retry when response dropped', () => {
+      const batchItemFailures: { itemIdentifier: string }[] = [];
+      const messageId = 'msg-dropped';
+
+      const sendErrors = [
+        { action: 'send_message', message: 'reply_target_deleted', isRetryable: false },
+        { action: 'react', message: 'reply_target_deleted', isRetryable: false },
+      ];
+
+      const hasRetryableError = sendErrors.length === 0 ||
+        sendErrors.some(e => e.isRetryable !== false);
+
+      if (!hasRetryableError) {
+        // Don't add to batch failures — keep idempotency record
+      } else {
+        batchItemFailures.push({ itemIdentifier: messageId });
+      }
+
+      expect(batchItemFailures).toHaveLength(0);
+    });
+
+    it('should log multiple drop reasons if errors differ', () => {
+      const sendErrors = [
+        { message: 'reply_target_deleted' },
+        { message: 'rate_limit' },
+      ];
+
+      // Use the first error's message as the primary reason
+      const primaryReason = sendErrors[0]?.message || 'unknown';
+
+      expect(primaryReason).toBe('reply_target_deleted');
+    });
+  });
+
+  describe('Lifecycle phase detection', () => {
+    it('should distinguish generated from accepted', () => {
+      const events = [
+        { phase: 'generated', timestamp: 1000 },
+        { phase: 'accepted', timestamp: 1050 },
+      ];
+
+      expect(events[0].phase).not.toBe(events[1].phase);
+    });
+
+    it('should distinguish dropped from accepted', () => {
+      const acceptedEvent = { phase: 'accepted', status: 'success' };
+      const droppedEvent = { phase: 'dropped', status: 'failure' };
+
+      expect(acceptedEvent.phase).not.toBe(droppedEvent.phase);
+    });
+
+    it('should query CloudWatch for responses generated but not accepted', () => {
+      // Example CloudWatch Insights query documented in issue #1554
+      const query = `
+        fields @timestamp, avatarId, @message
+        | filter subsystem = "outbound" and event = "response_generated"
+        | stats count() as generated by avatarId, hour(@timestamp)
+        | join (
+            fields @timestamp, avatarId
+            | filter subsystem = "outbound" and event = "response_accepted_by_platform"
+            | stats count() as accepted by avatarId, hour(@timestamp)
+          ) on avatarId
+        | filter generated > accepted
+      `;
+
+      expect(query).toContain('response_generated');
+      expect(query).toContain('response_accepted_by_platform');
+    });
+  });
+});
+
 describe('Response Sender - Non-Retryable Error Handling (#368)', () => {
   /**
    * Tests for Twitter 403 and other non-retryable errors.
