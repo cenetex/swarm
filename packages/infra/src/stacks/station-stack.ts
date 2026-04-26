@@ -38,7 +38,7 @@ export class StationStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: StationStackProps) {
     super(scope, id, props);
 
-    const { environment, nameSuffix = '', coreInfraStack, messagingStack } = props;
+    const { environment, nameSuffix = '', coreInfraStack, messagingStack: _messagingStack } = props;
 
     new cdk.CfnOutput(this, 'EcsClusterNameExport', {
       value: coreInfraStack.discordClusterName,

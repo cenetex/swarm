@@ -62,10 +62,10 @@ export class FrontendStack extends cdk.Stack {
       nameSuffix = '',
       adminApiStack,
       adminDomain,
-      adminCertificateArn,
-      useExistingBuckets,
-      skipDomainAliases,
-      enableWaf,
+      adminCertificateArn: _adminCertificateArn,
+      useExistingBuckets: _useExistingBuckets,
+      skipDomainAliases: _skipDomainAliases,
+      enableWaf: _enableWaf,
     } = props;
 
     if (adminApiStack) {
