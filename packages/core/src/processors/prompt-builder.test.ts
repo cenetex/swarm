@@ -2,7 +2,6 @@ import { describe, it, expect } from 'bun:test';
 import {
   buildDynamicSystemPrompt,
   buildChatSystemPrompt,
-  buildResponseStyleSection,
   toolsToCategories,
 } from './prompt-builder.js';
 import type { ProcessorAvatarConfig } from './types.js';
