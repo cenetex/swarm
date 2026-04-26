@@ -10,7 +10,7 @@
     "typecheck": "tsc -b",
     "watch": "tsc --build --watch",
     "test": "bun test",
-    "lint": "eslint src/"
+    "lint": "eslint --max-warnings 70 src/"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1032.0",
