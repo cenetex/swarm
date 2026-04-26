@@ -10,7 +10,7 @@
     "watch": "tsc --build --watch",
     "test": "bun test",
     "test:update-snapshots": "bun test --update-snapshots",
-    "lint": "eslint src/",
+    "lint": "eslint --max-warnings 70 src/",
     "cdk": "cdk",
     "synth": "cdk synth",
     "deploy": "cdk deploy",
