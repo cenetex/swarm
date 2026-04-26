@@ -23,7 +23,8 @@
     "reloadPage": "Reload Page",
     "signOut": "Sign out",
     "copied": "Copied!",
-    "copy": "Copy"
+    "copy": "Copy",
+    "saving": "Saving…"
   },
   "error": {
     "somethingWentWrong": "Something went wrong",
@@ -704,7 +705,23 @@
     "retrying": "Retrying...",
     "loadingPreview": "Loading preview...",
     "filterByToolset": "Filter by toolset:",
-    "allToolsets": "All ({{count}})"
+    "allToolsets": "All ({{count}})",
+    "override": {
+      "mode": "Mode:",
+      "inlineActive": "Using override: inline",
+      "urlActive": "Using override: URL",
+      "templateActive": "Assembled template",
+      "edit": "Edit",
+      "modeNone": "None (template)",
+      "modeInline": "Custom text",
+      "modeUrl": "URL",
+      "placeholderText": "Paste the full system prompt the LLM should receive.",
+      "urlHint": "Fetched at request time (5s timeout, 512 KiB cap). Cached ~5 minutes per Lambda instance. Fetch failures fall back to the assembled template.",
+      "noneDescription": "Saving with \"None\" removes any override and reverts to the prompt-builder template.",
+      "errorEmptyText": "Prompt text cannot be empty.",
+      "errorEmptyUrl": "URL cannot be empty.",
+      "errorInvalidUrl": "URL is not valid."
+    }
   },
   "publicChat": {
     "poweredBySwarm": "Powered by Swarm",

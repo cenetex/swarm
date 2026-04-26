@@ -43,7 +43,8 @@ export type AuditEventType =
   | 'avatar_ownership_denied'
   | 'secret_set'
   | 'wallet_swept'
-  | 'wallet_key_deleted';
+  | 'wallet_key_deleted'
+  | 'persona_updated';
 
 export type ActorType = 'admin' | 'owner';
 

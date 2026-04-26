@@ -15,6 +15,7 @@ import type {
 // Re-export types and resolvers
 export * from './types.js';
 export * from './resolvers.js';
+export { buildVoiceCloneInput, type VoiceCloneInput } from './voice-input.js';
 
 /**
  * Extended result that includes gallery info

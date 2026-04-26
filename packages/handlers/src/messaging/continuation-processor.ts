@@ -18,14 +18,16 @@ import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-sec
 import { logger, extractCorrelationIdFromSqsRecord } from '@swarm/core';
 import type {
   ContinuationMessage,
+  ResumeContext,
 } from '@swarm/core';
 import {
   formatContinuationAsSystemMessage,
   shouldTriggerAvatarLoop,
   isProgressUpdate,
 } from '@swarm/core';
-import { getDynamoClient } from '../services/dynamo-client.js';
 import { getAdminTable } from '../services/env-validation.js';
+import { getDynamoClient } from '../services/dynamo-client.js';
+import { createStateService } from '@swarm/core/services';
 
 const dynamoClient = getDynamoClient();
 const secretsClient = new SecretsManagerClient({});
@@ -168,6 +170,88 @@ async function storeContinuationContext(
     conversationId,
     messageType: msg.type,
   });
+}
+
+/**
+ * Extract job type name from continuation message type
+ */
+function getJobTypeName(continuationType: string): string {
+  const typeMap: Record<string, string> = {
+    'media_generated': 'image_generation',
+    'media_failed': 'image_generation',
+    'research_completed': 'property_research',
+    'research_failed': 'property_research',
+    'code_completed': 'code_task',
+    'code_failed': 'code_task',
+    'job_completed': 'async_job',
+    'job_failed': 'async_job',
+  };
+  return typeMap[continuationType] || continuationType;
+}
+
+/**
+ * Extract failure class from error message
+ */
+function extractFailureClass(error: string): string {
+  if (error.includes('timeout') || error.includes('Timeout')) return 'timeout';
+  if (error.includes('rate') || error.includes('Rate')) return 'rate-limit';
+  if (error.includes('E006') || error.includes('Prompt was rejected') || error.includes('validation')) {
+    return 'validation';
+  }
+  return 'unknown';
+}
+
+/**
+ * Build resume context for a continuation message
+ * Looks up triggering message from channel state and calculates elapsed time
+ */
+async function buildResumeContext(
+  msg: ContinuationMessage,
+  stateService: ReturnType<typeof createStateService>
+): Promise<ResumeContext> {
+  const elapsedSeconds = Math.round((Date.now() - msg.timestamp) / 1000);
+  const jobType = getJobTypeName(msg.type);
+  const isFailed = msg.type.includes('failed');
+  const resultStatus = isFailed ? 'failure' : 'success';
+
+  let triggeringMessageId: string | undefined;
+  let triggeringMessagePreview: string | undefined;
+
+  // Try to look up the triggering message from channel state
+  try {
+    const channelState = await stateService.getChannelState(msg.avatarId, msg.conversationId);
+    if (channelState?.recentMessages) {
+      const lookupId = msg.replyToMessageId || msg.jobId;
+      if (lookupId) {
+        const triggeringMsg = channelState.recentMessages.find(m => m.messageId === lookupId);
+        if (triggeringMsg) {
+          triggeringMessageId = triggeringMsg.messageId;
+          triggeringMessagePreview = triggeringMsg.content.slice(0, 80);
+        }
+      }
+    }
+  } catch (error) {
+    logger.warn('Failed to look up triggering message', {
+      error,
+      avatarId: msg.avatarId,
+      conversationId: msg.conversationId,
+    });
+  }
+
+  const context: ResumeContext = {
+    triggeringMessageId,
+    triggeringMessagePreview,
+    elapsedSeconds,
+    jobType,
+    resultStatus,
+  };
+
+  // Add failure class for failed continuations
+  if (isFailed && 'data' in msg && 'error' in msg.data) {
+    context.failureClass = extractFailureClass(msg.data.error as string);
+  }
+
+  return context;
 }
 
 /**
@@ -318,7 +402,10 @@ async function processMessage(msg: ContinuationMessage, traceId: string): Promis
 
   // Handle actionable events - trigger the avatar loop
   if (shouldTriggerAvatarLoop(msg)) {
-    const systemMessage = formatContinuationAsSystemMessage(msg);
+    // Build resume context for the system message
+    const stateService = createStateService(getAdminTable());
+    const resumeContext = await buildResumeContext(msg, stateService);
+    const systemMessage = formatContinuationAsSystemMessage(msg, resumeContext);
 
     // Store context for the avatar to use
     await storeContinuationContext(avatarId, conversationId, msg);

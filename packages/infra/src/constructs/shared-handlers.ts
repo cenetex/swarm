@@ -307,7 +307,7 @@ export class SharedHandlers extends Construct {
       POST_QUEUE_URL: this.postQueue.queueUrl,
       CDN_URL: cdnUrl || '',
       ENVIRONMENT: environment,
-      LOG_LEVEL: isProd ? 'warn' : 'info',
+      LOG_LEVEL: 'info',
       SECRET_PREFIX: secretPrefix,
       // Runtime cache defaults (explicitly set in infra for predictable behavior).
       AVATAR_RUNTIME_CACHE_TTL_MS: '300000',
@@ -348,7 +348,10 @@ export class SharedHandlers extends Construct {
     // The externalModules for node-fetch forces grammy to fail import and fall back to native fetch
     const bundlingOptions = {
       format: nodejs.OutputFormat.CJS,
-      externalModules: ['sharp', 'node-fetch', 'abort-controller'],
+      // @swarm/admin-api is loaded via dynamic import() at runtime through the
+      // shared layer; esbuild must NOT bundle it (selective package builds may
+      // not produce its dist/ at bundle time).
+      externalModules: ['sharp', 'node-fetch', 'abort-controller', '@swarm/admin-api'],
       minify: true,
       sourceMap: true,
     };
@@ -362,7 +365,7 @@ export class SharedHandlers extends Construct {
     const logRemovalPolicy = isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
     const logRetention = isProd
       ? logs.RetentionDays.ONE_MONTH
-      : logs.RetentionDays.THREE_DAYS;
+      : logs.RetentionDays.ONE_WEEK;
 
     const messageProcessorLogGroup = new LogGroupWithRetention(this, 'MessageProcessorLogGroup', {
       logGroupName: `/aws/lambda/swarm-${environment}${suffix}-message-processor`,

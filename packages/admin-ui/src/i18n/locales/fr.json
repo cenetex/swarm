@@ -23,7 +23,8 @@
     "reloadPage": "Recharger la page",
     "signOut": "Se déconnecter",
     "copied": "Copié !",
-    "copy": "Copier"
+    "copy": "Copier",
+    "saving": "Enregistrement…"
   },
   "error": {
     "somethingWentWrong": "Une erreur est survenue",
@@ -681,7 +682,23 @@
     "retrying": "Nouvelle tentative...",
     "loadingPreview": "Chargement de l'aperçu...",
     "filterByToolset": "Filtrer par ensemble d'outils :",
-    "allToolsets": "Tous ({{count}})"
+    "allToolsets": "Tous ({{count}})",
+    "override": {
+      "mode": "Mode :",
+      "inlineActive": "Remplacement : texte inline",
+      "urlActive": "Remplacement : URL",
+      "templateActive": "Modèle assemblé",
+      "edit": "Modifier",
+      "modeNone": "Aucun (modèle)",
+      "modeInline": "Texte personnalisé",
+      "modeUrl": "URL",
+      "placeholderText": "Collez le prompt système complet à envoyer au LLM.",
+      "urlHint": "Récupéré à la demande (délai 5 s, plafond 512 Kio). Mis en cache ~5 minutes par instance Lambda. En cas d'échec, retour au modèle assemblé.",
+      "noneDescription": "Enregistrer avec \"Aucun\" supprime le remplacement et revient au modèle prompt-builder.",
+      "errorEmptyText": "Le texte du prompt ne peut pas être vide.",
+      "errorEmptyUrl": "L'URL ne peut pas être vide.",
+      "errorInvalidUrl": "L'URL n'est pas valide."
+    }
   },
   "publicChat": {
     "poweredBySwarm": "Propulsé par Swarm",

@@ -302,6 +302,64 @@ describe('buildTelegramEnvelope', () => {
       expect(mentionEnvelope!.metadata.priority).toBe('high');
       expect(regularEnvelope!.metadata.priority).toBe('normal');
     });
+
+    it('should consistently detect mention regardless of entity type', () => {
+      // Both @mention and text_mention should result in isMention: true
+      const textMentionUpdate = createTelegramUpdate({
+        text: 'Hey TestBot can you help?',
+        entities: [
+          {
+            type: 'text_mention',
+            offset: 4,
+            length: 7, // length of "TestBot"
+            user: {
+              id: 12345, // This is the botId from defaultConfig
+              is_bot: true,
+              first_name: 'TestBot',
+              username: 'TestBot'
+            }
+          }
+        ]
+      });
+
+      // Also test the traditional @mention format
+      const atMentionUpdate = createTelegramUpdate({
+        text: 'Hey @TestBot can you help?',
+      });
+
+      const textMentionEnvelope = buildTelegramEnvelope(textMentionUpdate, defaultConfig);
+      const atMentionEnvelope = buildTelegramEnvelope(atMentionUpdate, defaultConfig);
+
+      // Both should set isMention to true for the bot
+      expect(atMentionEnvelope!.metadata.isMention).toBe(true);
+      expect(textMentionEnvelope!.metadata.isMention).toBe(true); // text_mention should also be detected
+      expect(textMentionEnvelope!.metadata.priority).toBe('high');
+    });
+
+    it('should not flag non-bot text_mention as isMention', () => {
+      const textMentionUpdate = createTelegramUpdate({
+        text: 'Hey OtherUser can you help?',
+        entities: [
+          {
+            type: 'text_mention',
+            offset: 4,
+            length: 9, // length of "OtherUser"
+            user: {
+              id: 99999, // Different from defaultConfig botId (12345)
+              is_bot: false,
+              first_name: 'OtherUser',
+              username: 'otheruser'
+            }
+          }
+        ]
+      });
+
+      const envelope = buildTelegramEnvelope(textMentionUpdate, defaultConfig);
+
+      // Should not be flagged as mention since text_mention is for a different user
+      expect(envelope!.metadata.isMention).toBe(false);
+      expect(envelope!.metadata.priority).toBe('normal');
+    });
   });
 
   describe('Media Handling', () => {
@@ -573,5 +631,43 @@ describe('TelegramAdapter — pre-reply group hold (#1527)', () => {
     // and isReplyAction(action) — so 'react' / 'ignore' / DMs skip it.
     expect(source).toMatch(/isReplyAction\(action\)/);
     expect(source).toMatch(/private isReplyAction\(action[\s\S]{0,200}send_message[\s\S]{0,100}send_media/);
+  });
+});
+
+describe('TelegramAdapter — executeAction catch preserves PlatformError retryable (#1538)', () => {
+  /**
+   * Regression for the CHOPPA infinite-retry loop: the outer catch in
+   * executeAction used to re-read `.status` off the error and re-wrap,
+   * which silently flipped `retryable: false` back to `true` because
+   * PlatformError exposes `.statusCode` not `.status`. The fix short-
+   * circuits when the caught error is already a PlatformError.
+   *
+   * Source-introspection — the full grammY flow is awkward to mock here,
+   * so we lock in the specific control-flow via regex on the adapter.
+   */
+  async function readAdapterSource(): Promise<string> {
+    const fs = await import('node:fs/promises');
+    const url = await import('node:url');
+    const path = await import('node:path');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    return fs.readFile(path.join(here, 'telegram.ts'), 'utf8');
+  }
+
+  it('short-circuits when the caught error is already a PlatformError', async () => {
+    const source = await readAdapterSource();
+    // The catch block early-returns via `throw error` on PlatformError,
+    // preserving the inner layer's retryable/statusCode classification.
+    expect(source).toMatch(/catch\s*\(error\)\s*\{[\s\S]{0,800}if\s*\(\s*error\s+instanceof\s+PlatformError\s*\)\s*\{[\s\S]{0,400}throw\s+error;/);
+    // The #1538 event/annotation stays in the code for future greppability.
+    expect(source).toMatch(/aws-swarm#1538/);
+  });
+
+  it('still applies the 4xx-non-retryable path for raw grammY errors via classifyError', async () => {
+    const source = await readAdapterSource();
+    // After the PlatformError short-circuit, the outer catch delegates to
+    // the canonical classifyError helper (aws-swarm#1550) instead of the
+    // old hand-rolled status check. Lock that wiring in.
+    expect(source).toMatch(/classifyError\s*\(\s*error\s*,\s*\{\s*platform:\s*'telegram'\s*\}\s*\)/);
+    expect(source).toMatch(/throw\s+new\s+PlatformError\([\s\S]{0,300}retryable:\s*c\.retryable/);
   });
 });

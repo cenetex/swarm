@@ -23,7 +23,8 @@
     "reloadPage": "刷新页面",
     "signOut": "退出登录",
     "copied": "已复制！",
-    "copy": "复制"
+    "copy": "复制",
+    "saving": "保存中…"
   },
   "error": {
     "somethingWentWrong": "出了点问题",
@@ -681,7 +682,23 @@
     "retrying": "重试中...",
     "loadingPreview": "加载预览中...",
     "filterByToolset": "按工具集筛选：",
-    "allToolsets": "全部（{{count}}）"
+    "allToolsets": "全部（{{count}}）",
+    "override": {
+      "mode": "模式：",
+      "inlineActive": "正在使用覆盖：内联文本",
+      "urlActive": "正在使用覆盖：URL",
+      "templateActive": "组装模板",
+      "edit": "编辑",
+      "modeNone": "无（模板）",
+      "modeInline": "自定义文本",
+      "modeUrl": "URL",
+      "placeholderText": "粘贴发送给 LLM 的完整系统提示词。",
+      "urlHint": "请求时获取（5 秒超时，上限 512 KiB）。每个 Lambda 实例缓存约 5 分钟。获取失败时回退到组装模板。",
+      "noneDescription": "保存为\"无\"会移除覆盖，并恢复为 prompt-builder 模板。",
+      "errorEmptyText": "提示词文本不能为空。",
+      "errorEmptyUrl": "URL 不能为空。",
+      "errorInvalidUrl": "URL 无效。"
+    }
   },
   "publicChat": {
     "poweredBySwarm": "由 Swarm 提供支持",

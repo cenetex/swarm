@@ -38,6 +38,7 @@ export const REPLICATE_MODEL_VERSIONS: Record<string, string | undefined> = {
   'minimax/video-01': undefined,
   'stability-ai/stable-audio-2.5': undefined,
   'lucataco/xtts-v2': undefined,
+  'x-lance/f5-tts': undefined,
 };
 
 /**
@@ -148,15 +149,26 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   // VOICE CLONE / TTS
   // ==========================================================================
   {
-    id: 'lucataco/xtts-v2',
-    name: 'XTTS v2',
+    id: 'x-lance/f5-tts',
+    name: 'F5-TTS',
     provider: 'replicate',
     capabilities: ['voice_clone', 'text_to_speech'],
-    description: 'Voice cloning and text-to-speech from a reference audio sample.',
+    description: 'SOTA open-source voice cloning. Better quality than XTTS-v2; drop-in replacement.',
     tier: 'standard',
     speed: 'medium',
     quality: 'high',
     isDefault: true,
+  },
+  {
+    id: 'lucataco/xtts-v2',
+    name: 'XTTS v2 (legacy)',
+    provider: 'replicate',
+    capabilities: ['voice_clone', 'text_to_speech'],
+    description: 'Legacy Coqui TTS clone model. Kept for rollback; prefer F5-TTS for new avatars.',
+    tier: 'standard',
+    speed: 'medium',
+    quality: 'high',
+    isDefault: false,
   },
   {
     id: 'gpt-4o-mini-tts',
@@ -291,8 +303,8 @@ export const DEFAULT_MODELS: Record<AICapability, string> = {
   image_generation: 'black-forest-labs/flux-1.1-pro',
   video_generation: 'minimax/video-01',
   audio_generation: 'stability-ai/stable-audio-2.5',
-  voice_clone: 'lucataco/xtts-v2',
-  text_to_speech: 'lucataco/xtts-v2',
+  voice_clone: 'x-lance/f5-tts',
+  text_to_speech: 'x-lance/f5-tts',
   transcription: 'whisper-1',
   llm: 'anthropic/claude-3-5-sonnet-latest',
 };

@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { buildMediaUrl, canonicalizeMediaUrl, logger } from '@swarm/core';
+import { buildMediaUrl, canonicalizeMediaUrl, logger, buildVoiceCloneInput } from '@swarm/core';
 
 // Default S3 client - lazy initialized
 let defaultS3Client: S3Client | null = null;
@@ -27,9 +27,10 @@ interface S3ClientLike {
   send: (command: unknown) => Promise<unknown>;
 }
 
-// VOICE_TTS_MODEL: Used for voice cloning and TTS with a reference audio
-// Default: lucataco/xtts-v2 - popular voice cloning model (4.7M runs)
-const VOICE_TTS_MODEL = process.env.VOICE_TTS_MODEL || 'lucataco/xtts-v2';
+// VOICE_TTS_MODEL: Used for voice cloning and TTS with a reference audio.
+// Default: x-lance/f5-tts — SOTA open-source clone, materially better than
+// XTTS-v2 (Coqui is defunct). Override to the legacy model via env if needed.
+const VOICE_TTS_MODEL = process.env.VOICE_TTS_MODEL || 'x-lance/f5-tts';
 
 // Official models (like stability-ai) use a different endpoint than community models
 const OFFICIAL_MODEL_PREFIXES = ['stability-ai', 'meta', 'openai', 'mistralai', 'resemble-ai'];
@@ -438,11 +439,11 @@ export function createVoiceServices(config: {
       const outputUrl = await runReplicatePrediction(
         replicateKey,
         VOICE_TTS_MODEL,
-        {
+        buildVoiceCloneInput(VOICE_TTS_MODEL, {
           text: params.text,
-          speaker: accessibleSeedUrl, // XTTS-v2 uses 'speaker' not 'speaker_wav'
+          referenceUrl: accessibleSeedUrl,
           language: 'en',
-        },
+        }),
         { pollIntervalMs: config.replicatePollIntervalMs }
       );
 
@@ -502,11 +503,11 @@ export function createVoiceServices(config: {
       const outputUrl = await runReplicatePrediction(
         replicateKey,
         VOICE_TTS_MODEL,
-        {
+        buildVoiceCloneInput(VOICE_TTS_MODEL, {
           text: params.text,
-          speaker: accessibleSeedUrl, // XTTS-v2 uses 'speaker' not 'speaker_wav'
+          referenceUrl: accessibleSeedUrl,
           language: 'en',
-        },
+        }),
         { pollIntervalMs: config.replicatePollIntervalMs }
       );
 

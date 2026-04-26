@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { formatContinuationAsSystemMessage } from './continuation.js';
-import type { MediaFailedContinuation } from './continuation.js';
+import type { MediaFailedContinuation, MediaGeneratedContinuation, ResumeContext } from './continuation.js';
 
 const BASE = {
   avatarId: 'avatar-1',
@@ -16,6 +16,19 @@ function makeMediaFailed(error: string): MediaFailedContinuation {
     data: {
       mediaType: 'image',
       error,
+      prompt: 'a beautiful sunset',
+    },
+  };
+}
+
+function makeMediaGenerated(): MediaGeneratedContinuation {
+  return {
+    ...BASE,
+    type: 'media_generated',
+    jobId: 'job-123',
+    data: {
+      mediaType: 'image',
+      mediaUrl: 'https://example.com/image.png',
       prompt: 'a beautiful sunset',
     },
   };
@@ -72,6 +85,89 @@ describe('formatContinuationAsSystemMessage', () => {
       // Should have the generic retry message, not the content filter message
       expect(result).toContain('offer to retry');
       expect(result).not.toContain('content filter');
+    });
+  });
+
+  describe('Resume prefix for loop-triggering continuations', () => {
+    it('includes resume prefix when resumeContext is provided', () => {
+      const msg = makeMediaGenerated();
+      const resumeContext: ResumeContext = {
+        triggeringMessageId: 'msg-456',
+        triggeringMessagePreview: 'can you generate a sunset image?',
+        elapsedSeconds: 45,
+        jobType: 'image_generation',
+        resultStatus: 'success',
+      };
+
+      const result = formatContinuationAsSystemMessage(msg, resumeContext);
+
+      expect(result).toContain('[Resuming agent loop]');
+      expect(result).toContain('msg-456');
+      expect(result).toContain('can you generate a sunset image?');
+      expect(result).toContain('45s');
+      expect(result).toContain('image_generation');
+      expect(result).toContain('success');
+    });
+
+    it('handles missing triggering message by saying "[trigger no longer in buffer]"', () => {
+      const msg = makeMediaGenerated();
+      const resumeContext: ResumeContext = {
+        // We have the message ID but preview was rolled out
+        triggeringMessageId: 'msg-old-123',
+        triggeringMessagePreview: undefined,
+        elapsedSeconds: 300,
+        jobType: 'image_generation',
+        resultStatus: 'success',
+      };
+
+      const result = formatContinuationAsSystemMessage(msg, resumeContext);
+
+      expect(result).toContain('[Resuming agent loop]');
+      expect(result).toContain('msg-old-123');
+      expect(result).toContain('[trigger no longer in buffer]');
+      expect(result).toContain('300s');
+    });
+
+    it('does not include trigger line when no triggering message ID', () => {
+      const msg = makeMediaGenerated();
+      const resumeContext: ResumeContext = {
+        elapsedSeconds: 45,
+        jobType: 'image_generation',
+        resultStatus: 'success',
+      };
+
+      const result = formatContinuationAsSystemMessage(msg, resumeContext);
+
+      expect(result).toContain('[Resuming agent loop]');
+      expect(result).toContain('45s');
+      // Without a triggering message ID, we don't include the trigger line
+      expect(result).not.toContain('Trigger:');
+    });
+
+    it('includes failure class for failed continuations', () => {
+      const msg = makeMediaFailed('Connection timeout');
+      const resumeContext: ResumeContext = {
+        triggeringMessageId: 'msg-789',
+        triggeringMessagePreview: 'generate an image',
+        elapsedSeconds: 60,
+        jobType: 'image_generation',
+        resultStatus: 'failure',
+        failureClass: 'timeout',
+      };
+
+      const result = formatContinuationAsSystemMessage(msg, resumeContext);
+
+      expect(result).toContain('[Resuming agent loop]');
+      expect(result).toContain('failure');
+      expect(result).toContain('timeout');
+    });
+
+    it('does not include resume prefix when resumeContext is not provided', () => {
+      const msg = makeMediaGenerated();
+      const result = formatContinuationAsSystemMessage(msg);
+
+      expect(result).not.toContain('[Resuming agent loop]');
+      expect(result).toContain('[ASYNC RESULT @');
     });
   });
 });

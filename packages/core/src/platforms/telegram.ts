@@ -9,6 +9,7 @@ import { PlatformAdapter } from './base.js';
 import { fetchWithRetry } from '../utils/fetch-retry.js';
 import { PlatformError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
+import { classifyError } from '../errors/classify.js';
 import { logger } from '../utils/logger.js';
 import { markdownToTelegramHtml, stripMarkdown } from '../utils/telegram-html.js';
 import {
@@ -134,11 +135,17 @@ export function buildTelegramEnvelope(
   const mentions = extractMentions(message);
   const forwardMetadata = extractForwardMetadata(message);
 
-  // Detect direct engagement
+  // Detect direct engagement by checking:
+  // 1. Text-based @botusername mention (most common)
+  // 2. text_mention entity pointing to the bot (inline mention)
   const text = message.text || message.caption || '';
-  const isMention = config.botUsername
+  const isMentionByText = config.botUsername
     ? new RegExp(`@${config.botUsername}\\b`, 'i').test(text)
     : false;
+
+  // Check if bot is mentioned via text_mention entity (inline mention without @)
+  const isMentionByEntity = config.botId != null && mentions.some(m => m.userId === config.botId?.toString());
+  const isMention = isMentionByText || isMentionByEntity;
 
   const isReplyToBot = !!(
     (config.botId && message.reply_to_message?.from?.id === config.botId) ||
@@ -847,25 +854,41 @@ export class TelegramAdapter extends PlatformAdapter {
       
       return true;
     } catch (error) {
-      const status = (error as { status?: number }).status
-        ?? (error as { error_code?: number }).error_code;
+      // If an inner layer already classified this as a PlatformError
+      // (e.g. reply_target_deleted from sendTextWithFallback / sendMedia),
+      // preserve its `retryable` flag. The old code re-read `.status` off
+      // the error, but PlatformError exposes `.statusCode`, so the outer
+      // re-wrap silently flipped `retryable: false` back to `true` — the
+      // exact bug that left CHOPPA in an infinite SQS retry loop
+      // (aws-swarm#1538).
+      if (error instanceof PlatformError) {
+        logger.error('Failed to execute Telegram action', error, {
+          subsystem: 'platform',
+          platform: 'telegram',
+          ...(typeof error.statusCode === 'number' ? { statusCode: error.statusCode } : {}),
+          retryable: error.retryable,
+        });
+        throw error;
+      }
 
-      // Telegram 4xx errors (except 429 rate limit) are permanent — do not retry.
-      const isNonRetryable = typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
+      // Canonical classification — handles 4xx/5xx, rate-limit, network,
+      // timeout, and explicit-retryable hints in one place (aws-swarm#1550).
+      const c = classifyError(error, { platform: 'telegram' });
 
       logger.error('Failed to execute Telegram action', error, {
         subsystem: 'platform',
         platform: 'telegram',
-        ...(typeof status === 'number' ? { statusCode: status } : {}),
-        retryable: !isNonRetryable,
+        ...(typeof c.statusCode === 'number' ? { statusCode: c.statusCode } : {}),
+        retryable: c.retryable,
+        reason: c.reason,
       });
 
       throw new PlatformError(
         error instanceof Error ? error.message : String(error),
         {
           platform: 'telegram',
-          statusCode: typeof status === 'number' ? status : undefined,
-          retryable: !isNonRetryable,
+          statusCode: c.statusCode,
+          retryable: c.retryable,
           cause: error,
           code: SwarmErrorCode.PLATFORM_API_ERROR,
         },
