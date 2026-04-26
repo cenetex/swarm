@@ -118,6 +118,21 @@ When storing messages in `ChannelState.recentMessages`, each message must be uni
 
 When querying `recentMessages` in triggers or response selection, you can safely assume each `messageId` appears exactly once, even if the underlying transport (SQS) might redeliver the same update multiple times.
 
+## Lambda log levels by environment
+
+| Lambda | Prod | Dev/Staging |
+|--------|------|-------------|
+| Shared Handlers (message-processor, chat-worker, response-sender, media-processor, etc.) | `info` | `info` |
+| Admin API | `warn` | `info` |
+
+**Shared Handlers** run at `info` level in both prod and staging to ensure lifecycle events are visible for debugging the chat-worker → response-sender path in CloudWatch. These Lambdas have low frequency (not on the noisy webhook path), so the additional log volume is acceptable. Key events that rely on `info` level:
+
+- `chat_worker_started`, `chat_worker_complete`, `response_generated` (chat-worker diagnostics)
+- `response_sent`, `response_failed` (response-sender diagnostics — canonical "message reached user" signal)
+- Tool-call loop metrics and individual tool results
+
+**Admin API** runs at `warn` in prod to reduce log volume from the high-throughput chat endpoint, and `info` in dev/staging for local development convenience. Note: this is external to the handlers stack and configured separately.
+
 ## What this doc doesn't cover
 
 - **OpenTelemetry / distributed tracing.** Deferred in #1363; when it lands it'll live in its own doc.
