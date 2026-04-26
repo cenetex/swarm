@@ -2,7 +2,7 @@
  * Embedding Service Tests
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getEmbeddingService, _resetEmbeddingService } from './embeddings.js';
 
 describe('Embedding Service', () => {
