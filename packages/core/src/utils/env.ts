@@ -153,6 +153,9 @@ export const MessageProcessorEnvSchema = BaseEnvSchema.extend({
   /** Feature flag: brain context injection */
   BRAIN_INJECT_CONTEXT: booleanFlag,
 
+  /** Feature flag: identity snapshot injection */
+  IDENTITY_INJECT_SNAPSHOT: booleanFlag,
+
   /** Brain read/write mode overrides */
   BRAIN_READ_MODE: optionalString,
   BRAIN_WRITE_MODE: optionalString,

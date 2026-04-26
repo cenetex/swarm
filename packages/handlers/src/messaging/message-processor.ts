@@ -50,12 +50,13 @@ import {
 import { ensureReplicateKey } from '../utils/system-replicate-key.js';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { createRuntimeBrainService } from '../services/brain.js';
+import { getLatestIdentitySnapshot } from '../services/identity-snapshot.js';
 
 // Extracted modules
 import { callLLM, stripAvatarNamePrefix, type LLMMessage } from './llm-client.js';
 import { maybeTranscribeAudio } from './tool-executor.js';
 import { executeToolLoop, buildResponseFromToolLoop } from './tool-loop.js';
-import { buildSystemPrompt, formatBrainMemoryContext } from './context-builder.js';
+import { buildSystemPrompt, formatBrainMemoryContext, formatIdentitySnapshotContext } from './context-builder.js';
 import { extractMediaContext, buildUserMessageContent, type MediaExtractionConfig } from './media-extractor.js';
 import type { ChatWorkerMessage } from './chat-worker.js';
 import {
@@ -524,6 +525,38 @@ async function generateResponse(
       logger.warn('Failed to inject memory context, continuing without it', {
         event: 'brain_context_injection_failed',
         subsystem: 'brain',
+        avatarId: avatarRuntime.avatarId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // Inject identity snapshot into system prompt (gated by IDENTITY_INJECT_SNAPSHOT flag, default true)
+  const identityInjectFlag = process.env.IDENTITY_INJECT_SNAPSHOT ?? 'true';
+  if (identityInjectFlag === 'true') {
+    try {
+      const snapshot = await getLatestIdentitySnapshot(avatarRuntime.avatarId);
+      if (snapshot) {
+        const snapshotContext = formatIdentitySnapshotContext(snapshot.statement);
+        if (snapshotContext) {
+          enrichedSystemPrompt = enrichedSystemPrompt + '\n\n' + snapshotContext;
+          const snapshotAgeHours = Math.floor((Date.now() - snapshot.createdAt) / (1000 * 60 * 60));
+          logger.info('Identity snapshot injected into system prompt', {
+            event: 'identity_snapshot_injected',
+            avatarId: avatarRuntime.avatarId,
+            snapshotAge: snapshotAgeHours,
+            chars: snapshot.statement.length,
+          });
+        }
+      } else {
+        logger.debug('No identity snapshot found for avatar', {
+          event: 'identity_snapshot_missing',
+          avatarId: avatarRuntime.avatarId,
+        });
+      }
+    } catch (error) {
+      logger.warn('Failed to inject identity snapshot, continuing without it', {
+        event: 'identity_snapshot_injection_failed',
         avatarId: avatarRuntime.avatarId,
         error: error instanceof Error ? error.message : String(error),
       });

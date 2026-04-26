@@ -20,8 +20,9 @@ import {
   getMemoryCounts,
   pruneGraph,
   DEFAULT_CONFIG,
+  getIdentityHistory,
 } from './memory.js';
-import type { AvatarMemory } from '../types.js';
+import type { AvatarMemory, AvatarIdentitySnapshot } from '../types.js';
 import type { GraphPruneConfig } from '../types.js';
 
 // ============================================================================
@@ -49,6 +50,59 @@ export function createConsolidationMetrics(): MetricsLogger {
     namespace: METRICS_NAMESPACE,
     dimensions: { Environment: getEnvironmentDimension() },
   });
+}
+
+// ============================================================================
+// Identity Snapshot Cache (5-minute TTL)
+// ============================================================================
+
+interface CacheEntry {
+  snapshot: AvatarIdentitySnapshot | null;
+  timestamp: number;
+}
+
+const SNAPSHOT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const snapshotCache = new Map<string, CacheEntry>();
+
+/**
+ * Get the latest identity snapshot for an avatar, with 5-minute caching
+ * to reduce DynamoDB reads since snapshots only change during consolidation
+ * (daily).
+ *
+ * @param avatarId - The avatar's unique identifier
+ * @returns The latest snapshot, or null if no snapshot exists yet
+ */
+export async function getLatestIdentitySnapshot(
+  avatarId: string
+): Promise<AvatarIdentitySnapshot | null> {
+  const now = Date.now();
+  const cached = snapshotCache.get(avatarId);
+
+  // Return cached result if still valid
+  if (cached && now - cached.timestamp < SNAPSHOT_CACHE_TTL_MS) {
+    return cached.snapshot;
+  }
+
+  try {
+    // Query the most recent snapshot
+    const snapshots = await getIdentityHistory(avatarId, 1);
+    const snapshot = snapshots.length > 0 ? snapshots[0] : null;
+
+    // Cache the result (even null results are cached)
+    snapshotCache.set(avatarId, {
+      snapshot,
+      timestamp: now,
+    });
+
+    return snapshot;
+  } catch (error) {
+    logger.error('Failed to fetch latest identity snapshot', {
+      event: 'identity_snapshot_fetch_error',
+      avatarId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return null;
+  }
 }
 
 // ============================================================================

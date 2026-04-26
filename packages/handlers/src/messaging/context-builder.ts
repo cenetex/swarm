@@ -315,3 +315,12 @@ export function formatBrainMemoryContext(facts: BrainMemoryFact[], maxChars = 16
   const out = lines.join('\n');
   return out.length > maxChars ? out.slice(0, maxChars) : out;
 }
+
+/**
+ * Format identity snapshot for system prompt injection.
+ */
+export function formatIdentitySnapshotContext(statement: string, maxChars = 600): string {
+  if (!statement || !statement.trim()) return '';
+  const truncated = truncateForPrompt(statement, maxChars);
+  return `## Who You Are Becoming\n${truncated}`;
+}

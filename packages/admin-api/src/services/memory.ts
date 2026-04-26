@@ -16,3 +16,4 @@ export * from './memory/tiers.js';
 export * from './memory/facts.js';
 export * from './memory/graph.js';
 export * from './memory/graph-search.js';
+export { getLatestIdentitySnapshot } from './memory-consolidation.js';
