@@ -302,6 +302,64 @@ describe('buildTelegramEnvelope', () => {
       expect(mentionEnvelope!.metadata.priority).toBe('high');
       expect(regularEnvelope!.metadata.priority).toBe('normal');
     });
+
+    it('should consistently detect mention regardless of entity type', () => {
+      // Both @mention and text_mention should result in isMention: true
+      const textMentionUpdate = createTelegramUpdate({
+        text: 'Hey TestBot can you help?',
+        entities: [
+          {
+            type: 'text_mention',
+            offset: 4,
+            length: 7, // length of "TestBot"
+            user: {
+              id: 12345, // This is the botId from defaultConfig
+              is_bot: true,
+              first_name: 'TestBot',
+              username: 'TestBot'
+            }
+          }
+        ]
+      });
+
+      // Also test the traditional @mention format
+      const atMentionUpdate = createTelegramUpdate({
+        text: 'Hey @TestBot can you help?',
+      });
+
+      const textMentionEnvelope = buildTelegramEnvelope(textMentionUpdate, defaultConfig);
+      const atMentionEnvelope = buildTelegramEnvelope(atMentionUpdate, defaultConfig);
+
+      // Both should set isMention to true for the bot
+      expect(atMentionEnvelope!.metadata.isMention).toBe(true);
+      expect(textMentionEnvelope!.metadata.isMention).toBe(true); // text_mention should also be detected
+      expect(textMentionEnvelope!.metadata.priority).toBe('high');
+    });
+
+    it('should not flag non-bot text_mention as isMention', () => {
+      const textMentionUpdate = createTelegramUpdate({
+        text: 'Hey OtherUser can you help?',
+        entities: [
+          {
+            type: 'text_mention',
+            offset: 4,
+            length: 9, // length of "OtherUser"
+            user: {
+              id: 99999, // Different from defaultConfig botId (12345)
+              is_bot: false,
+              first_name: 'OtherUser',
+              username: 'otheruser'
+            }
+          }
+        ]
+      });
+
+      const envelope = buildTelegramEnvelope(textMentionUpdate, defaultConfig);
+
+      // Should not be flagged as mention since text_mention is for a different user
+      expect(envelope!.metadata.isMention).toBe(false);
+      expect(envelope!.metadata.priority).toBe('normal');
+    });
   });
 
   describe('Media Handling', () => {

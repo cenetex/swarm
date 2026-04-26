@@ -65,6 +65,11 @@ class InMemoryStateService extends DynamoDBStateService {
       };
     }
 
+    // Idempotency guard: skip if messageId already in buffer (mirrors channel-state.ts)
+    if (message.messageId && state.recentMessages.some(m => m.messageId === message.messageId)) {
+      return state;
+    }
+
     // Add message to buffer
     state.recentMessages.push(message);
     if (state.recentMessages.length > maxMessages) {
@@ -864,6 +869,93 @@ describe('Channel State Machine Logic', () => {
       expect(updated?.recentMessages.length).toBe(2);
       expect(updated?.lastResponseMessageId).toBe('resp-1');
       expect(updated?.lastResponseAt).toBeDefined();
+    });
+
+    it('addMessageToChannel is idempotent: redelivered envelope without double-append (issue #1552)', async () => {
+      const svc = new InMemoryStateService();
+      const message = createTestMessage({
+        messageId: 'msg-abc-123',
+        sender: 'Alice',
+        isMention: true,
+        content: '@TestBot help!',
+      });
+
+      // First append
+      const firstResult = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        message
+      );
+
+      expect(firstResult.recentMessages).toHaveLength(1);
+      expect(firstResult.messageCount).toBe(1);
+
+      // Simulate SQS redelivery: same messageId, but possibly recomputed with different isMention
+      // This should be detected as idempotent and NOT double-append
+      const redeliveredMessage = createTestMessage({
+        messageId: 'msg-abc-123', // Same messageId (platform)
+        sender: 'Alice',
+        isMention: true,
+        content: '@TestBot help!',
+      });
+
+      const secondResult = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        redeliveredMessage
+      );
+
+      // The second append should be skipped; recentMessages.length should remain 1
+      expect(secondResult.recentMessages).toHaveLength(1);
+      expect(secondResult.messageCount).toBe(1);
+      // Content and flags should match the first append
+      expect(secondResult.recentMessages[0]?.messageId).toBe('msg-abc-123');
+      expect(secondResult.recentMessages[0]?.isMention).toBe(true);
+    });
+
+    it('addMessageToChannel idempotency works even with differing isMention flags', async () => {
+      const svc = new InMemoryStateService();
+
+      // Scenario: SQS delivers the same message twice, but due to re-computation
+      // of isMention, second call might have different isMention value.
+      // The idempotency guard should prevent double-append regardless.
+      const firstMessage = createTestMessage({
+        messageId: 'dedup-test-1',
+        sender: 'Bob',
+        isMention: true,
+        content: '@TestBot hello',
+      });
+
+      const firstResult = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        firstMessage
+      );
+
+      expect(firstResult.recentMessages).toHaveLength(1);
+
+      // Second delivery with isMention: false (hypothetically, due to re-computation issue)
+      const secondMessage = createTestMessage({
+        messageId: 'dedup-test-1', // Same messageId
+        sender: 'Bob',
+        isMention: false, // Different flag
+        content: '@TestBot hello',
+      });
+
+      const secondResult = await svc.addMessageToChannel(
+        'avatar',
+        'channel',
+        'telegram' as Platform,
+        secondMessage
+      );
+
+      // Should not double-append, and should return the original state
+      expect(secondResult.recentMessages).toHaveLength(1);
+      // The first append's isMention value should be preserved
+      expect(secondResult.recentMessages[0]?.isMention).toBe(true);
     });
   });
 

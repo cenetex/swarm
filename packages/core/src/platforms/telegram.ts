@@ -135,11 +135,17 @@ export function buildTelegramEnvelope(
   const mentions = extractMentions(message);
   const forwardMetadata = extractForwardMetadata(message);
 
-  // Detect direct engagement
+  // Detect direct engagement by checking:
+  // 1. Text-based @botusername mention (most common)
+  // 2. text_mention entity pointing to the bot (inline mention)
   const text = message.text || message.caption || '';
-  const isMention = config.botUsername
+  const isMentionByText = config.botUsername
     ? new RegExp(`@${config.botUsername}\\b`, 'i').test(text)
     : false;
+
+  // Check if bot is mentioned via text_mention entity (inline mention without @)
+  const isMentionByEntity = config.botId != null && mentions.some(m => m.userId === config.botId?.toString());
+  const isMention = isMentionByText || isMentionByEntity;
 
   const isReplyToBot = !!(
     (config.botId && message.reply_to_message?.from?.id === config.botId) ||
