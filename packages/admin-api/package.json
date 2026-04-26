@@ -9,7 +9,7 @@
     "typecheck": "tsc -b",
     "watch": "tsc --build --watch",
     "test": "bun test",
-    "lint": "eslint src/",
+    "lint": "eslint --max-warnings 70 src/",
     "test:tools": "tsx src/test-tool-calling.ts --direct --aws",
     "test:tools:verbose": "tsx src/test-tool-calling.ts --direct --aws --verbose"
   },

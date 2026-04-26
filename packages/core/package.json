@@ -48,7 +48,7 @@
     "typecheck": "tsc --noEmit",
     "watch": "tsc --build --watch",
     "test": "bun test",
-    "lint": "eslint src/"
+    "lint": "eslint --max-warnings 70 src/"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
