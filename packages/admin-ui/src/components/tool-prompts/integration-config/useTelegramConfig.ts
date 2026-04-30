@@ -100,7 +100,10 @@ export function useTelegramConfig(
         method: 'GET',
         credentials: 'include',
       });
-      const payload = await resp.json().catch(() => ({}));
+      const payload = await resp.json().catch((err) => {
+        console.error('[useTelegramConfig] Failed to parse response JSON:', err);
+        return {};
+      });
       if (!resp.ok) {
         const message =
           (payload as { error?: string; message?: string }).error ||
@@ -138,7 +141,10 @@ export function useTelegramConfig(
           repairOnLastError: true,
         }),
       });
-      const payload = await resp.json().catch(() => ({}));
+      const payload = await resp.json().catch((err) => {
+        console.error('[useTelegramConfig] Failed to parse response JSON:', err);
+        return {};
+      });
       if (!resp.ok) {
         const message =
           (payload as { error?: string; message?: string }).error ||
@@ -177,7 +183,10 @@ export function useTelegramConfig(
       }),
     });
     if (!policyResponse.ok) {
-      const payload = await policyResponse.json().catch(() => ({}));
+      const payload = await policyResponse.json().catch((err) => {
+        console.error('[useTelegramConfig] Failed to parse response JSON:', err);
+        return {};
+      });
       throw new Error(
         (payload as { error?: string; message?: string }).error ||
           (payload as { error?: string; message?: string }).message ||
@@ -245,7 +254,10 @@ export function useTelegramConfig(
           setPolicyLoadError(`Failed to load current Telegram settings (HTTP ${response.status})`);
           return;
         }
-        const payload = (await response.json().catch(() => ({}))) as {
+        const payload = (await response.json().catch((err) => {
+        console.error('[useTelegramConfig] Failed to parse response JSON:', err);
+        return {};
+      })) as {
           platforms?: {
             telegram?: {
               allowedDmUserIds?: string[];

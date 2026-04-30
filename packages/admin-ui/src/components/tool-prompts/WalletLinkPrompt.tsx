@@ -155,8 +155,14 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
       });
 
       if (!challengeResponse.ok) {
-        const errorData = await challengeResponse.json().catch(() => ({})) as { error?: string };
-        throw new Error(errorData.error || `Challenge request failed (${challengeResponse.status})`);
+        let errorMsg = `Challenge request failed (${challengeResponse.status})`;
+        try {
+          const errorData = (await challengeResponse.json()) as { error?: string };
+          if (errorData.error) errorMsg = errorData.error;
+        } catch {
+          // JSON parsing failed, use default error message
+        }
+        throw new Error(errorMsg);
       }
 
       const { nonce, message, expiresAt } = await challengeResponse.json() as {
@@ -207,8 +213,14 @@ export function WalletLinkPrompt({ toolCall, onSubmit, disabled }: ToolPromptPro
       });
 
       if (!verifyResponse.ok) {
-        const errorData = await verifyResponse.json().catch(() => ({})) as { error?: string };
-        throw new Error(errorData.error || `Verification failed (${verifyResponse.status})`);
+        let errorMsg = `Verification failed (${verifyResponse.status})`;
+        try {
+          const errorData = (await verifyResponse.json()) as { error?: string };
+          if (errorData.error) errorMsg = errorData.error;
+        } catch {
+          // JSON parsing failed, use default error message
+        }
+        throw new Error(errorMsg);
       }
 
       // Success - refresh account to pick up the new identity

@@ -64,8 +64,14 @@ export function ApiKeyManagementPrompt({ disabled }: ToolPromptProps) {
       });
 
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error((payload as { error?: string }).error || `Failed to fetch API keys (HTTP ${response.status})`);
+        let errorMsg = `Failed to fetch API keys (HTTP ${response.status})`;
+        try {
+          const payload = (await response.json()) as { error?: string };
+          if (payload.error) errorMsg = payload.error;
+        } catch {
+          // JSON parsing failed, use default error message
+        }
+        throw new Error(errorMsg);
       }
 
       const payload = (await response.json()) as { keys: ApiKey[] };
@@ -97,8 +103,14 @@ export function ApiKeyManagementPrompt({ disabled }: ToolPromptProps) {
       });
 
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error((payload as { error?: string }).error || `Failed to create API key (HTTP ${response.status})`);
+        let errorMsg = `Failed to create API key (HTTP ${response.status})`;
+        try {
+          const payload = (await response.json()) as { error?: string };
+          if (payload.error) errorMsg = payload.error;
+        } catch {
+          // JSON parsing failed, use default error message
+        }
+        throw new Error(errorMsg);
       }
 
       const payload = (await response.json()) as { apiKey: string; keyPrefix: string };
@@ -143,8 +155,14 @@ export function ApiKeyManagementPrompt({ disabled }: ToolPromptProps) {
       });
 
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error((payload as { error?: string }).error || `Failed to revoke API key (HTTP ${response.status})`);
+        let errorMsg = `Failed to revoke API key (HTTP ${response.status})`;
+        try {
+          const payload = (await response.json()) as { error?: string };
+          if (payload.error) errorMsg = payload.error;
+        } catch {
+          // JSON parsing failed, use default error message
+        }
+        throw new Error(errorMsg);
       }
 
       // Refresh the list

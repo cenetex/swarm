@@ -268,7 +268,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         credentials: 'include',
       });
 
-      const payload = await resp.json().catch(() => ({}));
+      const payload = await resp.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      });
       if (!resp.ok) {
         const message = (payload as { error?: string; message?: string }).error
           || (payload as { error?: string; message?: string }).message
@@ -308,7 +311,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         }),
       });
 
-      const payload = await resp.json().catch(() => ({}));
+      const payload = await resp.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      });
       if (!resp.ok) {
         const message = (payload as { error?: string; message?: string }).error
           || (payload as { error?: string; message?: string }).message
@@ -381,7 +387,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         return null;
       }
 
-      const payload = await resp.json().catch(() => ({}));
+      const payload = await resp.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      });
       if (!resp.ok) {
         const message = (payload as { error?: string; message?: string }).error
           || (payload as { error?: string; message?: string }).message
@@ -425,7 +434,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
           credentials: 'include',
         });
         if (!response.ok) return;
-        const payload = (await response.json().catch(() => ({}))) as {
+        const payload = (await response.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      })) as {
           platforms?: {
             twitter?: {
               features?: string[];
@@ -639,7 +651,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
           credentials: 'include',
         });
         if (!response.ok) return;
-        const payload = (await response.json().catch(() => ({}))) as {
+        const payload = (await response.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      })) as {
           platforms?: {
             telegram?: {
               allowedDmUserIds?: string[];
@@ -702,7 +717,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
           return;
         }
 
-        const payload = (await response.json().catch(() => ({}))) as {
+        const payload = (await response.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      })) as {
           integration?: string;
           modelsByCapability?: Record<string, ModelOption[]>;
         };
@@ -742,7 +760,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         });
         if (!response.ok) return;
 
-        const payload = (await response.json().catch(() => ({}))) as {
+        const payload = (await response.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      })) as {
           integrations?: Array<{
             type: string;
             hasApiKey: boolean;
@@ -865,7 +886,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         }),
       });
 
-      const result = await response.json().catch(() => ({}));
+      const result = await response.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      });
 
       if (!response.ok) {
         setStatus('error');
@@ -915,7 +939,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
           credentials: 'include',
           body: JSON.stringify({ type: config.secretType, value: token.trim() }),
         });
-        const valResult = await valResponse.json().catch(() => ({}));
+        const valResult = await valResponse.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      });
         if (!valResponse.ok || !valResult.valid) {
           setStatus('error');
           setTestResult({
@@ -951,7 +978,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
           }),
         });
 
-        const payload = await response.json().catch(() => ({}));
+        const payload = await response.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      });
 
         if (!response.ok) {
           throw new Error(payload.error || payload.message || 'Failed to save');
@@ -984,7 +1014,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         });
 
         if (!policyResponse.ok) {
-          const payload = await policyResponse.json().catch(() => ({}));
+          const payload = await policyResponse.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      });
           throw new Error(payload.error || payload.message || `Failed to save Telegram policy (HTTP ${policyResponse.status})`);
         }
         initialPolicyRef.current = {
@@ -1050,7 +1083,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         });
 
         if (!twitterResponse.ok) {
-          const payload = await twitterResponse.json().catch(() => ({}));
+          const payload = await twitterResponse.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      });
           throw new Error(payload.error || payload.message || `Failed to save Twitter config (HTTP ${twitterResponse.status})`);
         }
 
@@ -1167,7 +1203,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         credentials: 'include',
         body: JSON.stringify({ type: config.secretType, value: token.trim() }),
       });
-      const valResult = await valResponse.json().catch(() => ({}));
+      const valResult = await valResponse.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      });
 
       if (!valResponse.ok || !valResult.valid) {
         setStatus('error');
@@ -1185,7 +1224,10 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
         credentials: 'include',
         body: JSON.stringify({ key: config.secretType, value: token.trim() }),
       });
-      const savePayload = await saveResponse.json().catch(() => ({}));
+      const savePayload = await saveResponse.json().catch((err) => {
+        console.error('[IntegrationConfigPrompt] Failed to parse response JSON:', err);
+        return {};
+      });
       if (!saveResponse.ok) {
         throw new Error(savePayload.error || savePayload.message || 'Failed to save');
       }
