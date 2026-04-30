@@ -910,5 +910,120 @@ export function createTwitterServices(avatarId: string): AllServices['twitter'] 
         return null;
       }
     },
+
+    // =========================================================================
+    // Social Graph Methods
+    // =========================================================================
+
+    follow: async (userId: string, username?: string, accountAge?: number, mutualCount?: number) => {
+      try {
+        // Import social graph service
+        const { getDefaultContainer } = await import('../service-container.js');
+        const container = getDefaultContainer();
+        const socialGraph = container.twitterSocialGraph;
+
+        await socialGraph.addFollow(avatarId, userId, {
+          username,
+          accountAge,
+          mutualCount,
+          source: 'agent',
+        });
+        return true;
+      } catch (error) {
+        log.error('social', 'follow_failed', {
+          avatarId,
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      }
+    },
+
+    unfollow: async (userId: string) => {
+      try {
+        const { getDefaultContainer } = await import('../service-container.js');
+        const container = getDefaultContainer();
+        const socialGraph = container.twitterSocialGraph;
+
+        await socialGraph.removeFollow(avatarId, userId);
+        return true;
+      } catch (error) {
+        log.error('social', 'unfollow_failed', {
+          avatarId,
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      }
+    },
+
+    block: async (userId: string, username?: string) => {
+      try {
+        const { getDefaultContainer } = await import('../service-container.js');
+        const container = getDefaultContainer();
+        const socialGraph = container.twitterSocialGraph;
+
+        await socialGraph.addBlock(avatarId, userId, {
+          username,
+          source: 'agent',
+        });
+        return true;
+      } catch (error) {
+        log.error('social', 'block_failed', {
+          avatarId,
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      }
+    },
+
+    unblock: async (userId: string) => {
+      try {
+        const { getDefaultContainer } = await import('../service-container.js');
+        const container = getDefaultContainer();
+        const socialGraph = container.twitterSocialGraph;
+
+        await socialGraph.removeBlock(avatarId, userId);
+        return true;
+      } catch (error) {
+        log.error('social', 'unblock_failed', {
+          avatarId,
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      }
+    },
+
+    canReply: async (userId: string, heuristicContext?: {
+      accountAge?: number;
+      mutualCount?: number;
+      hasCryptoTickers?: boolean;
+      verificationStatus?: string;
+    }) => {
+      try {
+        const { getDefaultContainer } = await import('../service-container.js');
+        const container = getDefaultContainer();
+        const socialGraph = container.twitterSocialGraph;
+
+        const result = await socialGraph.canReply(avatarId, userId, heuristicContext);
+        return {
+          eligible: result.eligible,
+          reason: result.reason,
+          score: result.heuristicScore,
+        };
+      } catch (error) {
+        log.error('social', 'can_reply_check_failed', {
+          avatarId,
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return {
+          eligible: false,
+          reason: 'unknown',
+        };
+      }
+    },
   };
 }

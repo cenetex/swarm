@@ -42,6 +42,8 @@ import { createMcpAdminServices } from './mcp-config.js';
 import { validateReplicateApiKey } from './replicate.js';
 import { getModelsForCapability, AVAILABLE_MODELS } from './models-registry.js';
 import { createTwitterServices } from './mcp-twitter-adapter.js';
+import { createTwitterSocialGraphService } from './twitter/social-graph.js';
+import { getDynamoClient } from './dynamo-client.js';
 import {
   createStripeCheckoutSession,
   createStripeCustomerPortalSession,
@@ -104,6 +106,7 @@ export interface ServiceContainer {
   createMcpAdminServices: typeof createMcpAdminServices;
   createTwitterServices: typeof createTwitterServices;
   createStickerServices: typeof stickersService.createStickerServices;
+  twitterSocialGraph: ReturnType<typeof createTwitterSocialGraphService>;
 }
 
 // ── Factory ────────────────────────────────────────────────────────────────
@@ -175,6 +178,10 @@ export function createServiceContainer(
     createMcpAdminServices,
     createTwitterServices,
     createStickerServices: stickersService.createStickerServices,
+    twitterSocialGraph: createTwitterSocialGraphService(
+      getDynamoClient(),
+      process.env.STATE_TABLE || 'swarm-state'
+    ),
 
     // Apply overrides last so they win
     ...overrides,

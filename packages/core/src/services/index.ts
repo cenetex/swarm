@@ -1,6 +1,13 @@
 /**
  * Services barrel export
  */
+export {
+  DynamoRepository,
+  type CompositeKey,
+  type ConditionalPutOptions,
+  type QueryOptions,
+  type PaginatedResult,
+} from './dynamo-repository.js';
 export { BedrockLLMService, OpenRouterLLMService, createLLMService } from './llm/index.js';
 export {
   SwarmMediaService,
@@ -245,3 +252,12 @@ export {
   type EmbeddingService,
   type EmbeddingResult,
 } from './embeddings.js';
+export {
+  TwitterSocialGraphService,
+  scoreHeuristic,
+  passesHeuristicThreshold,
+  type SocialGraphRecord,
+  type GlobalBlockRecord,
+  type CanReplyResult,
+  type HeuristicContext,
+} from './twitter-social-graph.js';

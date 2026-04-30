@@ -219,6 +219,43 @@ export interface TwitterServices {
    * Get simulated feed (for simulation mode)
    */
   getSimulatedFeed?: (limit?: number) => Promise<ContentStorePost[]>;
+
+  // =========================================================================
+  // Social Graph / Reply Gating Services
+  // =========================================================================
+
+  /**
+   * Follow a Twitter user
+   */
+  follow?: (userId: string, username?: string, accountAge?: number, mutualCount?: number) => Promise<boolean>;
+
+  /**
+   * Unfollow a Twitter user
+   */
+  unfollow?: (userId: string) => Promise<boolean>;
+
+  /**
+   * Block a Twitter user locally (per-avatar)
+   */
+  block?: (userId: string, username?: string) => Promise<boolean>;
+
+  /**
+   * Unblock a Twitter user locally
+   */
+  unblock?: (userId: string) => Promise<boolean>;
+
+  /**
+   * Check if the avatar can reply to a mention
+   * @param userId Twitter user ID of the mention author
+   * @param heuristicContext Optional metadata for heuristic evaluation
+   * @returns Eligibility decision with reasoning
+   */
+  canReply?: (userId: string, heuristicContext?: {
+    accountAge?: number;
+    mutualCount?: number;
+    hasCryptoTickers?: boolean;
+    verificationStatus?: string;
+  }) => Promise<{ eligible: boolean; reason: string; score?: number }>;
 }
 
 /**
@@ -1007,6 +1044,137 @@ export function createTwitterTools(services: TwitterServices) {
               hasMedia: (p.media?.length ?? 0) > 0,
               createdAt: new Date(p.createdAt).toISOString(),
             })),
+          },
+        };
+      },
+    }),
+
+    // =========================================================================
+    // Social Graph Tools
+    // =========================================================================
+
+    defineTool({
+      name: 'twitter_follow',
+      description: 'Follow a Twitter user. This is how you curate your social graph and reply eligibility. When you follow someone, you can always reply to their mentions.',
+      category: 'config',
+      toolset: 'twitter',
+      inputSchema: z.object({
+        userId: z.string().describe('The Twitter user ID to follow'),
+        username: z.string().optional().describe('The username (for reference)'),
+        accountAge: z.number().optional().describe('Account age in days (helps with scoring)'),
+        mutualCount: z.number().optional().describe('Number of mutual followers (helps with scoring)'),
+      }),
+      shouldShow: async (_context) => !!services.follow,
+      execute: async (input, _context): Promise<ToolResult> => {
+        if (!services.follow) {
+          return { success: false, error: 'Follow service is not available.' };
+        }
+
+        const success = await services.follow(
+          input.userId,
+          input.username,
+          input.accountAge,
+          input.mutualCount
+        );
+
+        if (!success) {
+          return { success: false, error: 'Failed to follow user.' };
+        }
+
+        return {
+          success: true,
+          data: {
+            message: `Now following @${input.username || input.userId}. You can always reply to their mentions.`,
+          },
+        };
+      },
+    }),
+
+    defineTool({
+      name: 'twitter_unfollow',
+      description: 'Unfollow a Twitter user. This removes them from your curated social graph.',
+      category: 'config',
+      toolset: 'twitter',
+      inputSchema: z.object({
+        userId: z.string().describe('The Twitter user ID to unfollow'),
+        username: z.string().optional().describe('The username (for reference)'),
+      }),
+      shouldShow: async (_context) => !!services.unfollow,
+      execute: async (input, _context): Promise<ToolResult> => {
+        if (!services.unfollow) {
+          return { success: false, error: 'Unfollow service is not available.' };
+        }
+
+        const success = await services.unfollow(input.userId);
+
+        if (!success) {
+          return { success: false, error: 'Failed to unfollow user.' };
+        }
+
+        return {
+          success: true,
+          data: {
+            message: `Unfollowed @${input.username || input.userId}.`,
+          },
+        };
+      },
+    }),
+
+    defineTool({
+      name: 'twitter_block',
+      description: 'Block a Twitter user due to spam or abuse. Blocked accounts cannot mention you, and if ≥2 avatars block the same account, they become globally blocked.',
+      category: 'config',
+      toolset: 'twitter',
+      inputSchema: z.object({
+        userId: z.string().describe('The Twitter user ID to block'),
+        username: z.string().optional().describe('The username (for reference)'),
+      }),
+      shouldShow: async (_context) => !!services.block,
+      execute: async (input, _context): Promise<ToolResult> => {
+        if (!services.block) {
+          return { success: false, error: 'Block service is not available.' };
+        }
+
+        const success = await services.block(input.userId, input.username);
+
+        if (!success) {
+          return { success: false, error: 'Failed to block user.' };
+        }
+
+        return {
+          success: true,
+          data: {
+            message: `Blocked @${input.username || input.userId}. If 2+ avatars block them, they'll be added to the global blocklist.`,
+          },
+        };
+      },
+    }),
+
+    defineTool({
+      name: 'twitter_unblock',
+      description: 'Unblock a Twitter user. Note: globally blocked accounts can only be unblocked by admins.',
+      category: 'config',
+      toolset: 'twitter',
+      inputSchema: z.object({
+        userId: z.string().describe('The Twitter user ID to unblock'),
+        username: z.string().optional().describe('The username (for reference)'),
+      }),
+      shouldShow: async (_context) => !!services.unblock,
+      execute: async (input, _context): Promise<ToolResult> => {
+        if (!services.unblock) {
+          return { success: false, error: 'Unblock service is not available.' };
+        }
+
+        const success = await services.unblock(input.userId);
+
+        if (!success) {
+          return { success: false, error: 'Failed to unblock user.' };
+        }
+
+        return {
+          success: true,
+          data: {
+            message: `Unblocked @${input.username || input.userId}.`,
           },
         };
       },
