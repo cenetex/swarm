@@ -320,6 +320,83 @@ export async function deleteEdges(avatarId: string, edges: Array<{ source: strin
 }
 
 // ============================================================================
+// Graph RAG: Helper Functions
+// ============================================================================
+
+/**
+ * Create or reinforce an edge between two memories.
+ * If edge exists, increments weight by boost (default 0.1), capped at 1.0.
+ * If edge doesn't exist, creates it with the given weight.
+ */
+export async function createOrReinforceEdge(
+  avatarId: string,
+  sourceMemoryId: string,
+  targetMemoryId: string,
+  edgeType: MemoryEdgeType,
+  params: {
+    weight?: number;
+    boost?: number;
+    metadata?: Record<string, unknown>;
+    retentionDays?: number;
+  } = {}
+): Promise<MemoryEdge> {
+  const { weight = 0.5, boost = 0.1, metadata, retentionDays } = params;
+  const validAvatarId = validateAvatarId(avatarId);
+  const sk = `${sourceMemoryId}#${targetMemoryId}`;
+
+  // Try to get existing edge
+  const result = await getDynamoClient().send(new QueryCommand({
+    TableName: ADMIN_TABLE,
+    KeyConditionExpression: 'pk = :pk AND sk = :sk',
+    ExpressionAttributeValues: {
+      ':pk': `EDGE#${validAvatarId}`,
+      ':sk': sk,
+    },
+  }));
+
+  if (result.Items && result.Items.length > 0) {
+    // Edge exists, reinforce it
+    const existing = result.Items[0] as MemoryEdge;
+    const newWeight = Math.min(existing.weight + boost, 1.0);
+
+    await getDynamoClient().send(new UpdateCommand({
+      TableName: ADMIN_TABLE,
+      Key: {
+        pk: `EDGE#${validAvatarId}`,
+        sk,
+      },
+      UpdateExpression: 'SET weight = :newWeight, updatedAt = :now',
+      ExpressionAttributeValues: {
+        ':newWeight': newWeight,
+        ':now': Date.now(),
+      },
+    }));
+
+    logger.info('Edge reinforced', {
+      event: 'edge_reinforced',
+      avatarId: validAvatarId,
+      source: sourceMemoryId,
+      target: targetMemoryId,
+      edgeType,
+      previousWeight: existing.weight,
+      newWeight,
+    });
+
+    return { ...existing, weight: newWeight, updatedAt: Date.now() };
+  }
+
+  // Edge doesn't exist, create it
+  return createEdge(validAvatarId, {
+    sourceMemoryId,
+    targetMemoryId,
+    edgeType,
+    weight,
+    metadata,
+    retentionDays,
+  });
+}
+
+// ============================================================================
 // Graph RAG: Auto-Linking
 // ============================================================================
 

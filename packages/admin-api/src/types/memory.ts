@@ -125,7 +125,9 @@ export type MemoryEdgeType =
   | 'contradicts'     // Conflicting information
   | 'elaborates'      // B provides more detail about A
   | 'temporal_next'   // B happened after A in sequence
-  | 'promoted_from';  // B was promoted/consolidated from A
+  | 'promoted_from'   // B was promoted/consolidated from A
+  | 'co_occurred'     // A and B were mentioned/learned together
+  | 'recalled_with';  // A and B were recalled in the same query
 
 /**
  * An edge in the memory graph connecting two memories.

@@ -24,7 +24,36 @@ import { createMemory, reinforceMemory } from './crud.js';
 import { getMemories, getMemoryCounts } from './search.js';
 import { recallAbout, searchMemories, getCoreMemories, getIdentity } from './search.js';
 import { promoteImmediateToRecent } from './tiers.js';
-import { autoLinkMemory } from './graph.js';
+import { autoLinkMemory, createOrReinforceEdge } from './graph.js';
+
+// ============================================================================
+// Per-Turn Edge Rate Limiting
+// ============================================================================
+
+const edgeCreationTracker = new Map<string, { count: number; windowStart: number }>();
+const EDGE_WINDOW_MS = 60_000; // 60-second window
+const MAX_EDGES_PER_WINDOW = 10;
+
+/**
+ * Check if we can create an edge for this avatar within the current window
+ */
+function canCreateEdge(avatarId: string): boolean {
+  const now = Date.now();
+  const entry = edgeCreationTracker.get(avatarId);
+
+  if (!entry || now - entry.windowStart > EDGE_WINDOW_MS) {
+    // New window
+    edgeCreationTracker.set(avatarId, { count: 1, windowStart: now });
+    return true;
+  }
+
+  if (entry.count < MAX_EDGES_PER_WINDOW) {
+    entry.count += 1;
+    return true;
+  }
+
+  return false;
+}
 
 // ============================================================================
 // High-Level Memory API (for MCP tools)
@@ -84,6 +113,60 @@ export async function remember(
     retentionDays,
   });
 
+  // Create co_occurred edges to similar memories (async, don't block)
+  if (about) {
+    (async () => {
+      try {
+        const similarMemories = await recallAbout(validAvatarId, about, 5);
+        const factLower = validFact.toLowerCase();
+
+        for (const similar of similarMemories) {
+          if (!canCreateEdge(validAvatarId)) {
+            logger.info('Edge creation rate limit reached', {
+              event: 'edge_rate_limit',
+              avatarId: validAvatarId,
+              limit: MAX_EDGES_PER_WINDOW,
+            });
+            break;
+          }
+
+          const contentLower = similar.content.toLowerCase();
+          const shorter = Math.min(factLower.length, contentLower.length);
+          const overlapThreshold = Math.floor(shorter * 0.5);
+          const isSimilar =
+            contentLower.includes(factLower.slice(0, overlapThreshold)) ||
+            factLower.includes(contentLower.slice(0, overlapThreshold));
+
+          if (isSimilar) {
+            try {
+              await createOrReinforceEdge(
+                validAvatarId,
+                memory.id,
+                similar.id,
+                'co_occurred',
+                { weight: 0.5, retentionDays }
+              );
+            } catch (err) {
+              logger.warn('Failed to create co_occurred edge', {
+                event: 'co_occurred_edge_failed',
+                avatarId: validAvatarId,
+                sourceId: memory.id,
+                targetId: similar.id,
+                error: err instanceof Error ? err.message : 'Unknown error',
+              });
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn('Failed to create co_occurred edges', {
+          event: 'co_occurred_batch_failed',
+          avatarId: validAvatarId,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }
+    })();
+  }
+
   // Auto-link to related memories via graph edges (async, don't block)
   autoLinkMemory(validAvatarId, memory, { retentionDays }).catch(err => {
     logger.warn('Background auto-link failed', {
@@ -127,6 +210,52 @@ export async function recall(
   const filtered = userId
     ? memories.filter(m => !m.userId || m.userId === userId)
     : memories;
+
+  // Create pairwise recalled_with edges if 2+ facts are returned (async, don't block)
+  if (filtered.length >= 2) {
+    (async () => {
+      try {
+        const retentionDays = await getRetentionDaysForAvatar(validAvatarId);
+
+        for (let i = 0; i < filtered.length; i++) {
+          for (let j = i + 1; j < filtered.length; j++) {
+            if (!canCreateEdge(validAvatarId)) {
+              logger.info('Edge creation rate limit reached', {
+                event: 'edge_rate_limit',
+                avatarId: validAvatarId,
+                limit: MAX_EDGES_PER_WINDOW,
+              });
+              break;
+            }
+
+            try {
+              await createOrReinforceEdge(
+                validAvatarId,
+                filtered[i].id,
+                filtered[j].id,
+                'recalled_with',
+                { weight: 0.3, retentionDays }
+              );
+            } catch (err) {
+              logger.warn('Failed to create recalled_with edge', {
+                event: 'recalled_with_edge_failed',
+                avatarId: validAvatarId,
+                sourceId: filtered[i].id,
+                targetId: filtered[j].id,
+                error: err instanceof Error ? err.message : 'Unknown error',
+              });
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn('Failed to create recalled_with edges', {
+          event: 'recalled_with_batch_failed',
+          avatarId: validAvatarId,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }
+    })();
+  }
 
   logger.info('Recall completed', {
     event: 'memory_recall',
