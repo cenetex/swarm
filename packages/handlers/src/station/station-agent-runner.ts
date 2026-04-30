@@ -457,6 +457,7 @@ async function processStationAvatar(
     },
     avatarId,
     avatarName: avatarConfig.name,
+    avatar: avatarConfig,
     llmConfig: avatarConfig.llm,
     secrets,
     envelope,

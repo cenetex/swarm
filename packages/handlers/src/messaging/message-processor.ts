@@ -824,6 +824,7 @@ async function generateResponse(
     toolContext,
     avatarId: envelope.avatarId,
     avatarName: avatarRuntime.avatarConfig.name,
+    avatar: avatarRuntime.avatarConfig,
     llmConfig: avatarRuntime.avatarConfig.llm,
     secrets: avatarRuntime.secrets,
     envelope,

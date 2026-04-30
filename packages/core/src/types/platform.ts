@@ -315,6 +315,10 @@ export interface LLMConfig {
   temperature: number;
   maxTokens: number;
   timeoutMs?: number;
+  tier?: 'fast' | 'standard' | 'heavy' | 'auto';
+  fastModel?: string;
+  heavyModel?: string;
+  heavyForIntents?: string[];
 }
 
 export interface VoiceConfig {

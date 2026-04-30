@@ -77,3 +77,10 @@ export {
   createOutboundSender,
   type ActionError,
 } from './outbound-sender.js';
+
+// === LLM Tier Router ===
+export {
+  selectModel,
+  type TierSelectionResult,
+  type LLMTier,
+} from './llm-tier-router.js';

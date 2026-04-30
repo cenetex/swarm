@@ -311,6 +311,7 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           toolContext,
           avatarId,
           avatarName: avatarRuntime.avatarConfig.name,
+          avatar: avatarRuntime.avatarConfig,
           llmConfig: avatarRuntime.avatarConfig.llm,
           secrets: avatarRuntime.secrets,
           envelope,

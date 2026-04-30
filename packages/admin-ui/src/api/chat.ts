@@ -130,6 +130,7 @@ export interface ActiveTaskMeta {
 
 /**
  * Send a chat message to the admin API
+ * @param tierOverride Optional tier override ('fast' | 'standard' | 'heavy') for A/B testing
  */
 export async function sendChatMessage(
   message: string,
@@ -137,14 +138,21 @@ export async function sendChatMessage(
   avatar?: AvatarContext,
   sender?: SenderContext,
   activeTask?: ActiveTaskMeta,
+  tierOverride?: 'fast' | 'standard' | 'heavy',
 ): Promise<ChatResponse> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    // Ask the API to return immediately with a jobId (avoids Lambda/API Gateway timeouts)
+    'Prefer': 'respond-async',
+  };
+
+  if (tierOverride) {
+    headers['X-LLM-Tier-Override'] = tierOverride;
+  }
+
   const response = await fetch(getChatUrl(), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // Ask the API to return immediately with a jobId (avoids Lambda/API Gateway timeouts)
-      'Prefer': 'respond-async',
-    },
+    headers,
     credentials: 'include',
     body: JSON.stringify({
       message,

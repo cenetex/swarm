@@ -8,10 +8,12 @@
 import {
   extractThinking,
   logger,
+  selectModel,
   type LLMConfig,
   type ResponseAction,
   type SwarmEnvelope,
   type SwarmResponse,
+  type AvatarConfig,
 } from '@swarm/core';
 import type { createToolClient, ToolContext } from '@swarm/mcp-server';
 import { callLLM, stripAvatarNamePrefix, type LLMMessage } from './llm-client.js';
@@ -31,6 +33,7 @@ export interface ToolLoopParams {
   toolContext: ToolContext;
   avatarId: string;
   avatarName: string;
+  avatar: AvatarConfig;
   llmConfig: LLMConfig;
   secrets: Record<string, string>;
   envelope: SwarmEnvelope;
@@ -40,6 +43,8 @@ export interface ToolLoopParams {
   initialToolResultCount?: number;
   /** Starting iteration (for continuity when worker picks up after first LLM call) */
   startIteration?: number;
+  /** Optional tier override header for A/B testing */
+  tierOverrideHeader?: 'fast' | 'standard' | 'heavy';
 }
 
 export interface ToolLoopResult {
@@ -68,6 +73,7 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
     toolClient,
     toolContext,
     avatarName,
+    avatar,
     llmConfig,
     secrets,
     envelope,
@@ -75,6 +81,7 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
     refreshTyping,
     initialToolResultCount = 0,
     startIteration = 0,
+    tierOverrideHeader,
   } = params;
 
   const allToolResults: ToolLoopResult['allToolResults'] = [];
@@ -89,8 +96,29 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
     // Refresh typing indicator before each LLM round-trip (expires after ~5s)
     if (refreshTyping) await refreshTyping();
 
+    // Select appropriate model based on tier routing
+    let effectiveLlmConfig = llmConfig;
+    let selectedTier = 'standard';
+    let tierReason = 'default';
+
+    if (tierOverrideHeader) {
+      selectedTier = tierOverrideHeader;
+      tierReason = 'header_override';
+      const tierModelMap: Record<string, string> = {
+        fast: (llmConfig as unknown as Record<string, unknown>)?.fastModel as string || 'claude-3-5-haiku-20241022',
+        standard: llmConfig.model,
+        heavy: (llmConfig as unknown as Record<string, unknown>)?.heavyModel as string || 'claude-opus-4-1-20250805',
+      };
+      effectiveLlmConfig = { ...llmConfig, model: tierModelMap[tierOverrideHeader] };
+    } else {
+      const tierSelection = selectModel(avatar, envelope, messages);
+      selectedTier = tierSelection.tier;
+      tierReason = tierSelection.reason;
+      effectiveLlmConfig = { ...llmConfig, model: tierSelection.modelId };
+    }
+
     const llmStart = Date.now();
-    const llmResponse = await callLLM(messages, enabledTools, llmConfig, secrets);
+    const llmResponse = await callLLM(messages, enabledTools, effectiveLlmConfig, secrets);
     totalTokens += 100; // Approximate
 
     // #1551 — structured telemetry for each LLM round-trip. No message text,
@@ -100,11 +128,22 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
       event: 'llm_round',
       subsystem: 'chat',
       iteration: iterations,
-      modelId: llmConfig.model,
+      modelId: effectiveLlmConfig.model,
+      tier: selectedTier,
+      tierReason,
       toolCallCount: llmResponse.toolCalls?.length ?? 0,
       toolNames: (llmResponse.toolCalls ?? []).map(tc => tc.name),
       latencyMs: Date.now() - llmStart,
       hasFinalContent: !!llmResponse.content,
+    });
+
+    logger.info('llm_tier_selected', {
+      event: 'llm_tier_selected',
+      subsystem: 'chat',
+      tier: selectedTier,
+      modelId: effectiveLlmConfig.model,
+      reason: tierReason,
+      iteration: iterations,
     });
 
     if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
@@ -256,6 +295,7 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
 
 /**
  * Build a SwarmResponse from tool loop results.
+ * @param llmModel The model actually used in the final round (after tier selection)
  */
 export function buildResponseFromToolLoop(
   envelope: SwarmEnvelope,
