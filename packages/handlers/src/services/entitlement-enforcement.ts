@@ -9,8 +9,8 @@
  * entitlement daily limit is exhausted, acting as a "burst" mechanism.
  * Higher-tier avatars with large limits rarely exhaust their entitlement pool.
  */
-import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { logger } from '@swarm/core';
+import { GetCommand, UpdateCommand, PutCommand, DeleteCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { logger, createRuntimeMetricsLogger } from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
 
 // Use STATE_TABLE for usage tracking (handlers don't have ADMIN_TABLE)
@@ -183,8 +183,287 @@ function getTodayString(): string {
 }
 
 /**
- * Track and check message limit
- * Returns true if the message can be processed
+ * Reserve message quota before generating a response
+ * Two-phase quota: reserve before LLM call, commit after send succeeds
+ * Reserved items auto-release after 60min via TTL if commit/release doesn't fire
+ */
+export async function reserveMessageUsage(
+  avatarId: string,
+  messageId: string,
+): Promise<EnforcementResult> {
+  const stateTable = process.env.STATE_TABLE;
+  if (!stateTable) {
+    return { allowed: true };
+  }
+
+  const contract = await getRuntimeContract(avatarId);
+
+  // Unlimited quota (-1)
+  if (contract.dailyMessageLimit === -1) {
+    return { allowed: true, limit: -1 };
+  }
+
+  try {
+    // Get current consumed count
+    const dateStr = getTodayString();
+    const consumed = await getUsageCounter(avatarId, 'messages', dateStr);
+
+    // Count in-flight reservations (pending items)
+    const reserved = await getReservationCount(avatarId);
+
+    // Check: reserved + consumed >= limit → deny
+    if (reserved + consumed >= contract.dailyMessageLimit) {
+      logger.warn('Message reservation rejected: quota exhausted', {
+        avatarId,
+        consumed,
+        reserved,
+        limit: contract.dailyMessageLimit,
+        messageId,
+      });
+      return {
+        allowed: false,
+        reason: 'Daily message limit reached',
+        limit: contract.dailyMessageLimit,
+        current: reserved + consumed,
+      };
+    }
+
+    // Create reservation item with 60-min TTL
+    const ttl = Math.floor(Date.now() / 1000) + (60 * 60); // 60 minutes
+    const now = Date.now();
+
+    await dynamoClient.send(new PutCommand({
+      TableName: stateTable,
+      Item: {
+        pk: `QUOTA#${avatarId}`,
+        sk: `RESV#${messageId}`,
+        amount: 1,
+        status: 'pending',
+        createdAt: now,
+        expiresAt: now + (60 * 60 * 1000), // 60 minutes in milliseconds
+        ttl,
+        avatarId,
+        messageId,
+      },
+      ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)',
+    }));
+
+    logger.info('Message quota reserved', {
+      avatarId,
+      messageId,
+      consumed,
+      reserved: reserved + 1,
+      limit: contract.dailyMessageLimit,
+    });
+
+    // Emit metric
+    const metrics = createRuntimeMetricsLogger('Quota');
+    metrics.incrementCounter('QuotaReserved');
+    metrics.flush();
+
+    return {
+      allowed: true,
+      limit: contract.dailyMessageLimit,
+      current: reserved + consumed + 1, // Include the new reservation we just made
+    };
+  } catch (err) {
+    const name = (err as { name?: string }).name;
+
+    // Conditional check failed (item already exists) - treat as already reserved, allow it
+    if (name === 'ConditionalCheckFailedException') {
+      logger.warn('Reservation already exists for messageId', {
+        avatarId,
+        messageId,
+      });
+      return { allowed: true };
+    }
+
+    logger.warn('Failed to reserve quota; allowing request with warning', {
+      avatarId,
+      messageId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { allowed: true }; // Fail open on operational errors
+  }
+}
+
+/**
+ * Commit reserved quota to consumed after successful send
+ * Idempotent: safe to call multiple times (second call is no-op if RESV gone)
+ */
+export async function commitMessageUsage(
+  avatarId: string,
+  messageId: string,
+): Promise<void> {
+  const stateTable = process.env.STATE_TABLE;
+  if (!stateTable) return;
+
+  const dateStr = getTodayString();
+
+  try {
+    // Check if reservation exists
+    const resvResult = await dynamoClient.send(new GetCommand({
+      TableName: stateTable,
+      Key: {
+        pk: `QUOTA#${avatarId}`,
+        sk: `RESV#${messageId}`,
+      },
+    }));
+
+    if (!resvResult.Item) {
+      logger.warn('Reservation not found for commit (may have auto-released via TTL)', {
+        avatarId,
+        messageId,
+      });
+      // Idempotent: treat missing RESV as already committed
+      return;
+    }
+
+    const ttl = Math.floor(Date.now() / 1000) + (35 * 24 * 60 * 60); // 35 days for consumed counter
+
+    // Atomic transaction: delete RESV + increment consumed counter
+    await dynamoClient.send(new TransactWriteCommand({
+      TransactItems: [
+        // Delete reservation
+        {
+          Delete: {
+            TableName: stateTable,
+            Key: {
+              pk: `QUOTA#${avatarId}`,
+              sk: `RESV#${messageId}`,
+            },
+          },
+        },
+        // Increment consumed counter
+        {
+          Update: {
+            TableName: stateTable,
+            Key: {
+              pk: `USAGE#${avatarId}`,
+              sk: `MESSAGES#${dateStr}`,
+            },
+            UpdateExpression: `
+              SET #count = if_not_exists(#count, :zero) + :one,
+                  avatarId = :avatarId,
+                  #date = :date,
+                  #ttl = :ttl,
+                  updatedAt = :now
+            `,
+            ExpressionAttributeNames: {
+              '#count': 'count',
+              '#date': 'date',
+              '#ttl': 'ttl',
+            },
+            ExpressionAttributeValues: {
+              ':zero': 0,
+              ':one': 1,
+              ':avatarId': avatarId,
+              ':date': dateStr,
+              ':ttl': ttl,
+              ':now': Date.now(),
+            },
+          },
+        },
+      ],
+    }));
+
+    logger.info('Message quota committed', {
+      avatarId,
+      messageId,
+    });
+
+    // Emit metric
+    const metrics = createRuntimeMetricsLogger('Quota');
+    metrics.incrementCounter('QuotaCommitted');
+    metrics.flush();
+  } catch (err) {
+    logger.error('Failed to commit message quota', {
+      avatarId,
+      messageId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    // Don't throw - let quota eventually auto-release via TTL
+  }
+}
+
+/**
+ * Release reserved quota without consuming it
+ * Called on terminal failures (LLM error, send error, platform rejection)
+ */
+export async function releaseMessageUsage(
+  avatarId: string,
+  messageId: string,
+  reason: 'llm_error' | 'send_failed' | 'platform_drop' = 'send_failed',
+): Promise<void> {
+  const stateTable = process.env.STATE_TABLE;
+  if (!stateTable) return;
+
+  try {
+    // Delete reservation item
+    await dynamoClient.send(new DeleteCommand({
+      TableName: stateTable,
+      Key: {
+        pk: `QUOTA#${avatarId}`,
+        sk: `RESV#${messageId}`,
+      },
+    }));
+
+    logger.info('Message quota released', {
+      avatarId,
+      messageId,
+      reason,
+    });
+
+    // Emit metric with reason dimension
+    const metrics = createRuntimeMetricsLogger('Quota');
+    metrics.incrementCounter('QuotaReleased');
+    metrics.setProperty('ReleaseReason', reason);
+    metrics.flush();
+  } catch (err) {
+    logger.warn('Failed to release message quota (may auto-release via TTL)', {
+      avatarId,
+      messageId,
+      reason,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    // Don't throw - reservation will auto-delete via TTL
+  }
+}
+
+/**
+ * Count in-flight message reservations for today
+ * Used by limit check to include reserved quota in decision
+ */
+async function getReservationCount(avatarId: string): Promise<number> {
+  const stateTable = process.env.STATE_TABLE;
+  if (!stateTable) return 0;
+
+  try {
+    // Query all RESV items for this avatar (all are for today due to prefix)
+    const result = await dynamoClient.send(new QueryCommand({
+      TableName: stateTable,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :sk)',
+      ExpressionAttributeValues: {
+        ':pk': `QUOTA#${avatarId}`,
+        ':sk': 'RESV#',
+      },
+      Select: 'COUNT',
+    }));
+
+    return result.Count ?? 0;
+  } catch (err) {
+    logger.warn('Failed to count reservations; assuming 0', {
+      avatarId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return 0;
+  }
+}
+
+/**
+ * Track and check message limit (legacy for backwards compatibility)
+ * New code should use reserveMessageUsage instead
+ * @deprecated Use reserveMessageUsage for two-phase quota
  */
 export async function checkAndIncrementMessageUsage(avatarId: string): Promise<EnforcementResult> {
   const contract = await getRuntimeContract(avatarId);

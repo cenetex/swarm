@@ -25,6 +25,7 @@ import {
 } from '@swarm/core';
 import { isAllowedDmUserById } from '../telegram/telegram-webhook-shared.js';
 import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../services/sqs-send.js';
+import { commitMessageUsage, releaseMessageUsage } from '../services/entitlement-enforcement.js';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
 import { RaticrossAdapter } from './adapters/raticross-adapter.js';
@@ -697,6 +698,20 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
           totalActionCount: actionsToSend?.length ?? 0,
         });
 
+        // #1547 — commit reserved quota (two-phase quota system)
+        const messageIdForQuota = response.replyToMessageId || response.generatedAt?.toString();
+        if (messageIdForQuota) {
+          try {
+            await commitMessageUsage(avatarId, messageIdForQuota);
+          } catch (error) {
+            logger.warn('Failed to commit quota', {
+              error: error instanceof Error ? error.message : String(error),
+              avatarId,
+              messageId: messageIdForQuota,
+            });
+          }
+        }
+
         metrics.incrementCounter('ResponsesAccepted');
       }
 
@@ -736,6 +751,20 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             errorCount: sendErrors.length,
             actionTypes: actionsToSend?.map(a => a.type) ?? [],
           });
+
+          // #1547 — release reserved quota on platform failure (two-phase quota system)
+          const messageIdForQuota = response.replyToMessageId || response.generatedAt?.toString();
+          if (messageIdForQuota) {
+            try {
+              await releaseMessageUsage(avatarId, messageIdForQuota, 'platform_drop');
+            } catch (error) {
+              logger.warn('Failed to release quota on platform drop', {
+                error: error instanceof Error ? error.message : String(error),
+                avatarId,
+                messageId: messageIdForQuota,
+              });
+            }
+          }
 
           metrics.incrementCounter('ResponsesDropped');
           metrics.setProperty('DropReason', primaryReason);

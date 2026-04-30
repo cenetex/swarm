@@ -19,6 +19,7 @@ import { toolResultsToActions } from './tool-executor.js';
 import {
   checkToolCallLimit,
   isMemoryWriteAllowed,
+  releaseMessageUsage,
 } from '../services/entitlement-enforcement.js';
 import type { createRuntimeBrainService } from '../services/brain.js';
 
@@ -90,7 +91,28 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
     if (refreshTyping) await refreshTyping();
 
     const llmStart = Date.now();
-    const llmResponse = await callLLM(messages, enabledTools, llmConfig, secrets);
+    let llmResponse;
+    try {
+      llmResponse = await callLLM(messages, enabledTools, llmConfig, secrets);
+    } catch (err) {
+      // #1547 — LLM error: release reserved quota (terminal failure, no response)
+      logger.warn('LLM call failed during tool loop', {
+        error: err instanceof Error ? err.message : String(err),
+        avatarId: params.avatarId,
+        messageId: envelope.messageId,
+        iteration: iterations,
+      });
+      try {
+        await releaseMessageUsage(params.avatarId, envelope.messageId, 'llm_error');
+      } catch (releaseErr) {
+        logger.warn('Failed to release quota on LLM error', {
+          error: releaseErr instanceof Error ? releaseErr.message : String(releaseErr),
+          avatarId: params.avatarId,
+          messageId: envelope.messageId,
+        });
+      }
+      throw err;
+    }
     totalTokens += 100; // Approximate
 
     // #1551 — structured telemetry for each LLM round-trip. No message text,

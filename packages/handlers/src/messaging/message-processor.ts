@@ -44,7 +44,7 @@ import {
 import { createPlatformMCPServices } from '../services/platform-mcp-adapter.js';
 import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../services/sqs-send.js';
 import {
-  checkAndIncrementMessageUsage,
+  reserveMessageUsage,
   isMemoryWriteAllowed,
 } from '../services/entitlement-enforcement.js';
 import { ensureReplicateKey } from '../utils/system-replicate-key.js';
@@ -1066,11 +1066,12 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       // =========================================================
       // ENTITLEMENT ENFORCEMENT
       // =========================================================
-      // Debit ONLY when we have committed to responding (#1509). Previously
-      // this fired before evaluateResponseTrigger, so every ignored ambient
+      // Two-phase quota: reserve quota before LLM/send (will commit on success)
+      // This prevents charging for responses that never reach the user (#1547).
+      // Previously this fired before evaluateResponseTrigger, so every ignored ambient
       // message in a group still consumed quota — meaningful waste after
       // #1505 disabled ambient triggers.
-      const usageCheck = await checkAndIncrementMessageUsage(avatarId);
+      const usageCheck = await reserveMessageUsage(avatarId, envelope.messageId);
       if (!usageCheck.allowed) {
         logger.warn('Message rejected due to limit', {
           event: 'limit_exceeded',
