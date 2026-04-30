@@ -28,6 +28,7 @@ import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../service
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
 import { RaticrossAdapter } from './adapters/raticross-adapter.js';
+import * as anomalyDetector from '../services/anomaly-detector.js';
 
 const dynamo = getDynamoClient();
 
@@ -573,6 +574,55 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
       }
 
       if (actionsToSend && actionsToSend.length > 0) {
+        // Check for anomalies before sending
+        const sendMessageActions = actionsToSend.filter((a: ResponseAction) => a.type === 'send_message');
+        if (sendMessageActions.length > 0) {
+          for (const action of sendMessageActions) {
+            if (typeof action.text === 'string') {
+              await anomalyDetector.recordResponse(avatarId, response.conversationId, action.text);
+            }
+          }
+
+          const anomalyCheck = await anomalyDetector.shouldPauseAvatar(avatarId, response.conversationId);
+
+          if (anomalyCheck.paused) {
+            logger.warn('Avatar paused due to anomaly detection', {
+              event: 'anomaly_paused',
+              subsystem: 'anomaly',
+              avatarId,
+              conversationId: response.conversationId,
+              platform: response.platform,
+              reason: anomalyCheck.reason,
+              metrics: anomalyCheck.metrics,
+            });
+
+            metrics.incrementCounter('AnomalyDetected');
+
+            try {
+              const cfg = outboundRuntime.avatarConfig;
+              if (cfg.platforms && cfg.platforms[response.platform]) {
+                cfg.platforms[response.platform]!.enabled = false;
+                await stateService.saveAvatarConfig(cfg);
+
+                logger.info('Avatar platform disabled due to anomaly', {
+                  event: 'anomaly_platform_disabled',
+                  subsystem: 'anomaly',
+                  avatarId,
+                  platform: response.platform,
+                });
+              }
+            } catch (error) {
+              logger.error('Failed to disable platform for anomaly', error, {
+                avatarId,
+                platform: response.platform,
+              });
+            }
+
+            await clearResponseHandled(avatarId, responseKey);
+            continue;
+          }
+        }
+
         try {
           const result = await outboundRuntime.outboundSender.send({ ...response, actions: actionsToSend });
           sentMessages = result.sentMessages;
