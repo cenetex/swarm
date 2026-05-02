@@ -95,12 +95,12 @@ Handlers log structured JSON for queryability:
 For testing API endpoints directly (bypassing upstream auth layers):
 ```bash
 # Use the test script (requires AWS credentials)
-./scripts/test-api.sh staging chat '{"message":"hello","history":[]}'
-./scripts/test-api.sh staging avatars GET
+./scripts/test-api.sh prod chat '{"message":"hello","history":[]}'
+./scripts/test-api.sh prod avatars GET
 
 # Or manually with the internal test key from Lambda env:
 INTERNAL_TEST_KEY=$(aws lambda get-function-configuration \
-  --function-name "SwarmStack-staging-AdminApiChatHandler..." \
+  --function-name "SwarmApi-prod-prod00-AdminApiChatHandler..." \
   --query "Environment.Variables.INTERNAL_TEST_KEY" --output text)
 
 curl "https://g5wetlu97i.execute-api.us-east-1.amazonaws.com/chat" \
@@ -112,11 +112,11 @@ curl "https://g5wetlu97i.execute-api.us-east-1.amazonaws.com/chat" \
 ### AWS CLI Log Commands
 ```bash
 # List log groups for admin API
-aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/SwarmStack-staging-AdminApi"
+aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/SwarmApi-prod-prod00-AdminApi"
 
 # Tail recent logs
 aws logs filter-log-events \
-  --log-group-name "/aws/lambda/SwarmStack-staging-AdminApiChatHandler..." \
+  --log-group-name "/aws/lambda/SwarmApi-prod-prod00-AdminApiChatHandler..." \
   --start-time $(($(date +%s) * 1000 - 300000)) \
   --query 'events[*].message' --output text
 
@@ -193,8 +193,8 @@ If any item is missing, the agent must request clarification on the issue before
 4. Reproduce in the smallest scope possible:
   - package-specific tests first (see “Targeted Test Commands”)
 5. If issue is integration/runtime (not unit-level), gather logs and API evidence:
-  - `./scripts/avatar-logs.sh staging <avatarId> --since 2h --level ERROR`
-  - `./scripts/test-api.sh staging chat '{"message":"debug","history":[]}'`
+  - `./scripts/avatar-logs.sh prod <avatarId> --since 2h --level ERROR`
+  - `./scripts/test-api.sh prod chat '{"message":"debug","history":[]}'`
 
 ### 2) Where to Look First (by symptom)
 

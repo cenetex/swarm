@@ -12,7 +12,7 @@ on:
         required: false
         default: 'production'
         type: choice
-        options: [staging, production]
+        options: [production]
 
 permissions:
   issues: read
