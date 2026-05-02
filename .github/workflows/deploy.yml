@@ -1,27 +1,13 @@
 name: Deploy
 
+# Staging was decommissioned 2026-05-01 (#1642). main pushes no longer
+# trigger a deploy; only tag pushes (vX.Y.Z) deploy to production.
+
 run-name: >-
-  Deploy ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (startsWith(github.ref, 'refs/tags/') && 'Production' || 'Staging') }}
+  Deploy ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'Production' }}
 
 on:
   push:
-    branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/workflows/ticket-health.yml'
-      - '.github/workflows/security-exceptions.yml'
-      - '.github/workflows/gtm-kpi-report.yml'
-      - '.github/workflows/leadership-scorecard.yml'
-      - '.github/workflows/access-review.yml'
-      - 'issues/**'
-      - 'scripts/ticket-health-report.sh'
-      - 'scripts/leadership-scorecard.sh'
-      - 'scripts/access-review.sh'
-      - 'scripts/generate-gtm-kpi-report.mjs'
-      - 'LICENSE'
-      - '.editorconfig'
     tags: ['v*']
 
   workflow_dispatch:
@@ -29,9 +15,9 @@ on:
       environment:
         description: 'Environment to deploy to'
         required: true
-        default: 'staging'
+        default: 'production'
         type: choice
-        options: [staging, production]
+        options: [production]
       stack:
         description: 'Stack to deploy (leave empty for all)'
         required: false
@@ -129,25 +115,22 @@ jobs:
             ENV="${{ inputs.environment }}"
           else
             REF="${{ github.ref }}"
-            BRANCH="${REF#refs/heads/}"
 
-            if [ "$BRANCH" = "main" ]; then
-              ENV="staging"
-            elif [[ "$REF" == refs/tags/v* ]]; then
+            if [[ "$REF" == refs/tags/v* ]]; then
               ENV="production"
             else
-              echo "::error::Unsupported ref for deployment (ref='$REF')"
+              echo "::error::Unsupported ref for deployment (ref='$REF'). Staging was decommissioned (#1642); only tag pushes deploy."
               exit 1
             fi
           fi
 
-          CDK_ENV="${ENV/production/prod}"
-
-          if [ "$CDK_ENV" = "staging" ]; then
-            ADMIN_HOST="staging-swarm.rati.chat"
-          else
-            ADMIN_HOST="swarm.rati.chat"
+          if [ "$ENV" != "production" ]; then
+            echo "::error::Unsupported environment '$ENV'. Only 'production' is valid post-staging-shutdown (#1642)."
+            exit 1
           fi
+
+          CDK_ENV="prod"
+          ADMIN_HOST="swarm.rati.chat"
 
           API_URL="https://${ADMIN_HOST}/api"
           ADMIN_URL="https://${ADMIN_HOST}"
@@ -171,21 +154,13 @@ jobs:
               echo "::notice::Auto-enabled useExistingBuckets for production (S3 buckets have RETAIN policy)"
             fi
           else
-            # For push/tag triggers, set safe defaults per environment.
-            # Both staging and production use useExistingResources=true (set in
-            # cdk.context.json). The -c flag matches the committed context.
+            # Tag pushes deploy production. Production buckets have
+            # DeletionPolicy: Retain so useExistingBuckets must be true.
             USE_EXISTING_RESOURCES="true"
-            if [ "$ENV" = "production" ]; then
-              USE_EXISTING_BUCKETS="true"
-              SKIP_DOMAIN_ALIASES="false"
-              RUN_PROD_SMOKE="true"
-              USE_HOTSWAP="true"
-            else
-              USE_EXISTING_BUCKETS="false"
-              SKIP_DOMAIN_ALIASES="false"
-              RUN_PROD_SMOKE="false"
-              USE_HOTSWAP="true"
-            fi
+            USE_EXISTING_BUCKETS="true"
+            SKIP_DOMAIN_ALIASES="false"
+            RUN_PROD_SMOKE="true"
+            USE_HOTSWAP="true"
             STACK_HASH=""
             STACK=""
             RUN_BROWSER_TESTS="false"
@@ -275,7 +250,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [setup, admin-ui-deploy]
     environment: ${{ needs.setup.outputs.environment }}
-    if: needs.setup.outputs.environment == 'staging'
+    # Disabled — staging decommissioned (#1642). Job retained pending
+    # decision in #1643 (re-target / replace / delete).
+    if: false
     env:
       AWS_REGION: us-east-1
       E2E_TELEGRAM_AVATAR_ID: ${{ secrets.E2E_TELEGRAM_AVATAR_ID }}
@@ -365,10 +342,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [setup, admin-ui-deploy, e2e]
     environment: ${{ needs.setup.outputs.environment }}
-    if: |
-      needs.setup.outputs.environment == 'staging' &&
-      github.event_name == 'workflow_dispatch' &&
-      inputs.run_browser_tests == true
+    # Disabled — staging decommissioned (#1642). Job retained pending
+    # decision in #1643 (re-target / replace / delete).
+    if: false
     env:
       AWS_REGION: us-east-1
       CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
