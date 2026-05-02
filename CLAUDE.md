@@ -76,16 +76,16 @@ files that call `mock.module(` or `vi.mock(` are picked up automatically by the 
 | **pre-commit** | branch guard, issue hygiene check, lockfile check, `pnpm lint` | `SKIP_PRECOMMIT=1` |
 | **pre-push** | branch name validation, `pnpm lint`, `pnpm build`, admin-ui build, smoke test, `bun test` | `SKIP_PREPUSH=1` |
 
-All deploys go through GitHub Actions (push to main → staging auto-deploy; tags → production deploy). Never run `cdk deploy` locally.
+All deploys go through GitHub Actions. Tag pushes (`vX.Y.Z`) deploy to production; `main` pushes do not auto-deploy (staging was decommissioned 2026-05-01, see #1642). Never run `cdk deploy` locally.
 
 ## AWS Profiles
 
 | Profile | Account | Use |
 |---------|---------|-----|
-| `default` / `staging` | `022118847419` | Staging account (default) |
-| `prod` | `332730082708` | Production account |
+| `default` / `staging` | `022118847419` | Secondary account (formerly staging — kept for ratibot prod, FireHorse, GitHub agent, future preview env) |
+| `prod` | `332730082708` | Production account (swarm) |
 
-Use `--profile prod` for production AWS CLI commands (ECS logs, CloudFormation, etc.).
+Use `--profile prod` for production AWS CLI commands (ECS logs, CloudFormation, etc.). The SSO profile is still named `staging` for historical reasons even though no Swarm staging stacks exist there anymore.
 
 ---
 

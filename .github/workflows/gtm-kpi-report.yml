@@ -10,9 +10,9 @@ on:
       environment:
         description: 'Environment to query'
         required: true
-        default: 'staging'
+        default: 'production'
         type: choice
-        options: [staging, production]
+        options: [production]
       days:
         description: 'Report window in days'
         required: false
@@ -31,7 +31,7 @@ jobs:
   report:
     name: Generate GTM KPI Report
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}
 
     steps:
       - name: Checkout
@@ -47,7 +47,7 @@ jobs:
       - name: Resolve admin table name
         id: config
         run: |
-          ENV="${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}"
+          ENV="${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'production' }}"
           CDK_ENV="${ENV/production/prod}"
           ADMIN_TABLE="SwarmAdmin-${CDK_ENV}"
           DAYS="${{ github.event_name == 'workflow_dispatch' && inputs.days || '7' }}"

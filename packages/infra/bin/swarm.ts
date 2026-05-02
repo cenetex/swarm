@@ -52,12 +52,9 @@ function computeStackDomain(args: { environment: string; stackSubdomain: string;
     return `${args.stackSubdomain}.${args.baseDomain}`;
   }
 
-  // Common pattern: <env>-<stack>.<base>
-  if (environment === 'staging') {
-    return `${environment}-${args.stackSubdomain}.${args.baseDomain}`;
-  }
-
-  return undefined;
+  // Non-prod envs (preview, dev, etc.): <env>-<stack>.<base>
+  // e.g. preview01-swarm.rati.chat
+  return `${environment}-${args.stackSubdomain}.${args.baseDomain}`;
 }
 
 function getContextValue<T>(key: string, envConfig: EnvConfig): T | undefined {
@@ -171,15 +168,18 @@ const stackEnv = {
 // Deploy Validation
 // ============================================
 
-// Persistent environments (prod, staging) have pre-existing shared resources
-// (DynamoDB tables, S3 buckets, ECS clusters) from the legacy monolith stack.
-// Deploying without useExistingResources=true would attempt to create duplicate
-// resources and fail with "already exists" errors.
-if ((environment === 'prod' || environment === 'staging') && !useExistingResources) {
+// Production has pre-existing shared resources (DynamoDB tables, S3 buckets,
+// ECS clusters) from the legacy SwarmStack-prod monolith. Deploying without
+// useExistingResources=true would attempt to create duplicate resources and
+// fail with "already exists" errors.
+//
+// Preview and other ephemeral envs deploy fresh — they do NOT need the import
+// flag (and setting it without pre-existing resources would fail with
+// "resource not found").
+if (environment === 'prod' && !useExistingResources) {
   console.warn(
     `⚠️  WARNING: Deploying to '${environment}' without useExistingResources=true. ` +
-    `This will attempt to create DynamoDB tables, S3 buckets, and ECS clusters that ` +
-    `may already exist from the legacy SwarmStack-${environment}. ` +
+    `Production has imported DynamoDB/S3/ECS resources from the legacy SwarmStack-prod. ` +
     `Set -c useExistingResources=true or configure it in cdk.context.json.`
   );
 }

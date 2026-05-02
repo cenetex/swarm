@@ -6,9 +6,9 @@ on:
       environment:
         description: 'Environment to deploy to'
         required: true
-        default: 'staging'
+        default: 'production'
         type: choice
-        options: [staging, production]
+        options: [production]
       functions:
         description: 'Functions to update (comma-separated, or "all")'
         required: false
@@ -55,7 +55,7 @@ jobs:
 
       - name: Bundle and deploy functions
         env:
-          CDK_ENV: ${{ inputs.environment == 'production' && 'prod' || 'staging' }}
+          CDK_ENV: prod
           FUNCTIONS: ${{ inputs.functions }}
         run: |
           set -e
