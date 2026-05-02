@@ -23,7 +23,6 @@ import { WelcomeMessage } from './WelcomeMessage';
 import { UpgradeNudge } from './UpgradeNudge';
 
 // Lazy-load heavy panel components that are behind user interactions
-const PlanUsagePanel = lazy(() => import('./PlanUsagePanel').then(m => ({ default: m.PlanUsagePanel })));
 const UsageMeterPanel = lazy(() => import('./UsageMeterPanel').then(m => ({ default: m.UsageMeterPanel })));
 const ActivationChecklist = lazy(() => import('./ActivationChecklist').then(m => ({ default: m.ActivationChecklist })));
 const TaskWorkspace = lazy(() => import('./TaskWorkspace').then(m => ({ default: m.TaskWorkspace })));
@@ -50,7 +49,6 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const { user: user, isAuthenticated, gateStatus, account } = useAuth();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [planUsagePanelOpen, setPlanUsagePanelOpen] = useState(!!initialInviteCode);
   const [isCreatingAvatar, setIsCreatingAvatar] = useState(false);
   const [showHint, setShowHint] = useState(true);
   const [activationLoading, setActivationLoading] = useState(false);
@@ -59,8 +57,18 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const galleryOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'gallery');
   const promptOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'prompt');
   const settingsOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'settings');
+  const activityOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'activity');
   // Track which limit types have already shown an upgrade nudge this session
   const shownNudgesRef = useRef(new Set<string>());
+
+  // Auto-open the Activity tab when arriving via ?invite=DP-XXXX-XXXX so the
+  // user lands on the redemption form. Replaces the legacy
+  // `planUsagePanelOpen` auto-open behavior (#1639).
+  useEffect(() => {
+    if (initialInviteCode) {
+      useWorkspaceStore.getState().setTab('activity');
+    }
+  }, [initialInviteCode]);
 
   const formatUserFacingError = useCallback((raw: unknown): string => {
     const rawMessage = raw instanceof Error ? raw.message : typeof raw === 'string' ? raw : t('chat.errors.failedToSendMessage');
@@ -1228,9 +1236,9 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               </p>
             </div>
             {/* Compact usage meter — always visible for authenticated users */}
-            {isAuthenticated && activeAvatar && !planUsagePanelOpen && (
+            {isAuthenticated && activeAvatar && !activityOpen && (
               <button
-                onClick={() => setPlanUsagePanelOpen(true)}
+                onClick={() => useWorkspaceStore.getState().setTab('activity')}
                 className="hidden md:block flex-shrink-0 min-w-[160px] max-w-[200px] hover:opacity-80 transition-opacity"
                 title={t('chat.panel.clickToViewPlanUsageDetails')}
               >
@@ -1292,8 +1300,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                   </button>
                 )}
                 <button
-                  onClick={() => setPlanUsagePanelOpen(!planUsagePanelOpen)}
-                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${planUsagePanelOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
+                  onClick={() => useWorkspaceStore.getState().setTab('activity')}
+                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${activityOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
                   title={t('chat.panel.viewPlanAndUsage')}
                 >
                   {t('chat.panel.planAndUsage')}
@@ -1406,20 +1414,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         </div>
       )}
 
-      {/* Inline Plan & Usage Panel (chat-first) */}
-      {planUsagePanelOpen && activeAvatar && (
-        <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 lg:px-6 py-3">
-          <div className="max-w-3xl mx-auto">
-            <Suspense fallback={null}><PlanUsagePanel
-              avatarId={activeAvatar.id}
-              avatarName={activeAvatar.name}
-              canEdit={account?.role === 'admin'}
-              onClose={() => setPlanUsagePanelOpen(false)}
-              initialInviteCode={initialInviteCode}
-            /></Suspense>
-          </div>
-        </div>
-      )}
+      {/* Plan & Usage now lives in the workspace Activity tab (#1639). */}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 lg:px-6 py-4">
@@ -1513,7 +1508,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
     </div>
 
     {/* Task Workspace Panel (gallery + task content) */}
-    <Suspense fallback={null}><TaskWorkspace onToolSubmit={handleToolSubmit} /></Suspense>
+    <Suspense fallback={null}><TaskWorkspace onToolSubmit={handleToolSubmit} initialInviteCode={initialInviteCode} /></Suspense>
 
     </div>
   );

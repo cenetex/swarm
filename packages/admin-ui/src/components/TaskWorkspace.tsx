@@ -22,11 +22,17 @@ import type { ToolSubmitResult } from './tool-prompts/types';
 import { GalleryContent } from './GalleryPanel';
 import { PromptPreviewPanel } from './PromptPreviewPanel';
 import { AvatarConfigModal } from './AvatarConfigModal';
+import { ActivityHealthTab } from './ActivityHealthTab';
 import { useActiveAvatar } from '../store';
 
 interface TaskWorkspaceProps {
   /** Callback when a tool prompt is submitted from within the workspace. */
   onToolSubmit?: (toolCallId: string, result: unknown) => Promise<ToolSubmitResult>;
+  /**
+   * Pre-filled invite code (from ?invite=DP-XXXX-XXXX query param). Forwarded
+   * to ActivityHealthTab → PlanUsagePanel for one-shot redemption pre-fill (#1639).
+   */
+  initialInviteCode?: string;
 }
 
 interface TabDef {
@@ -59,41 +65,7 @@ function TabIcon({ d }: { d: string }) {
   );
 }
 
-interface PlaceholderProps {
-  tab: WorkspaceTab;
-  issueNumber: number;
-}
-
-function PlaceholderTab({ tab, issueNumber }: PlaceholderProps) {
-  const labels: Record<WorkspaceTab, { title: string; description: string }> = {
-    gallery: { title: 'Gallery', description: '' },
-    prompt: { title: 'Prompt editor', description: 'System prompt + persona editing surface lands here.' },
-    tools: { title: 'Tools', description: '' },
-    settings: { title: 'Settings', description: 'Persistent avatar config (model, media, voice, integrations) lands here.' },
-    activity: { title: 'Activity & health', description: 'Plan, usage, activation checklist, and recent errors land here.' },
-  };
-  const { title, description } = labels[tab];
-  return (
-    <div className="flex flex-col items-center justify-center h-full text-center gap-3 px-6">
-      <div className="w-10 h-10 rounded-full bg-[var(--color-bg-tertiary)] flex items-center justify-center">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-[var(--color-text-muted)]">
-          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5zM10 15a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-        </svg>
-      </div>
-      <p className="text-sm font-medium text-[var(--color-text-secondary)]">
-        {title} — coming soon
-      </p>
-      {description && (
-        <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
-      )}
-      <p className="text-[11px] text-[var(--color-text-tertiary)]">
-        Tracked in #{issueNumber}
-      </p>
-    </div>
-  );
-}
-
-export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
+export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspaceProps) {
   const { t } = useTranslation();
   const isOpen = useWorkspaceStore((s) => s.isOpen);
   const title = useWorkspaceStore((s) => s.title);
@@ -290,7 +262,7 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
             </div>
           );
       case 'activity':
-        return <PlaceholderTab tab="activity" issueNumber={1639} />;
+        return <ActivityHealthTab onClose={close} initialInviteCode={initialInviteCode} />;
     }
   };
 
