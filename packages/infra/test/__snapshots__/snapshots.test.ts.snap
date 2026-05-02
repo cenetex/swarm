@@ -1524,7 +1524,7 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
     "DependencyLayerArnParamF1428BC4": {
       "Properties": {
         "Description": "Dependency layer ARN for swarm handlers",
-        "Name": "/swarm/staging/dependency-layer-arn",
+        "Name": "/swarm/staging/dependency-layer-arn/split",
         "Type": "String",
         "Value": {
           "Ref": "SharedDependencyLayer4A51C7E0",
@@ -1710,7 +1710,7 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
     "DependencyLayerArnParamF1428BC4": {
       "Properties": {
         "Description": "Dependency layer ARN for swarm handlers",
-        "Name": "/swarm/staging/dependency-layer-arn",
+        "Name": "/swarm/staging/dependency-layer-arn/split",
         "Type": "String",
         "Value": {
           "Ref": "SharedDependencyLayer4A51C7E0",

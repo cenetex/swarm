@@ -108,8 +108,18 @@ export class CoreInfraStack extends cdk.Stack {
     } = props;
     const suffix = nameSuffix ?? '';
 
-    // SSM parameter name for dependency layer ARN - consistent across all code paths
-    this.dependencyLayerArnParamName = `/swarm/${environment}${suffix}/dependency-layer-arn`;
+    // SSM parameter name for dependency layer ARN.
+    //
+    // Migration note (#1654): the legacy SwarmStack-* monolith owns the
+    // canonical path `/swarm/<env>/dependency-layer-arn` and CloudFormation
+    // refuses to let two stacks own the same physical resource. While
+    // `useExistingResources=true` (the import flag for prod), this domain-
+    // aligned stack writes to a sibling `/split` path so both can coexist
+    // until the monolith is decommissioned. Admin-api-stack reads via the
+    // property accessor below, so consumers automatically pick up the
+    // right path with no code change.
+    const ssmPathSuffix = useExistingResources ? '/split' : '';
+    this.dependencyLayerArnParamName = `/swarm/${environment}${suffix}/dependency-layer-arn${ssmPathSuffix}`;
 
     // Create shared infrastructure
     this.shared = new SharedInfrastructure(this, 'Shared', {
