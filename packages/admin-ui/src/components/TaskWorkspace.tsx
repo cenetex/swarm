@@ -11,7 +11,7 @@
  * Gallery and Tools are wired today; Prompt / Settings / Activity show
  * placeholders that will be replaced by #1636 / #1638 / #1639.
  */
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore, type WorkspaceTab } from '../store/workspace';
 import { useTaskCardStore, type TaskCard } from '../store/task-cards';
@@ -115,6 +115,106 @@ export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspace
     if (!mq.matches) return;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
+  }, [isOpen]);
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Mobile gestures (#1640)
+  //
+  // - Drag-down on the drag handle: closes the drawer when drop > 90px
+  // - Horizontal swipe on the tab body: switches to neighbor tab
+  // - Visual viewport: clip drawer height when iOS keyboard appears
+  // ──────────────────────────────────────────────────────────────────────
+
+  const TAB_ORDER: WorkspaceTab[] = ['gallery', 'prompt', 'tools', 'settings', 'activity'];
+  const CLOSE_THRESHOLD_PX = 90;
+  const SWIPE_THRESHOLD_PX = 75;
+  const AXIS_LOCK_THRESHOLD_PX = 10;
+
+  const dragStartYRef = useRef<number | null>(null);
+  const [dragOffsetY, setDragOffsetY] = useState(0);
+
+  const swipeStartRef = useRef<{ x: number; y: number; axis: 'x' | 'y' | null } | null>(null);
+  const [swipeOffsetX, setSwipeOffsetX] = useState(0);
+
+  const isMobileViewport = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches;
+
+  const onDragHandlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMobileViewport() || isFullscreen) return;
+    dragStartYRef.current = e.clientY;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const onDragHandlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStartYRef.current === null) return;
+    const delta = e.clientY - dragStartYRef.current;
+    setDragOffsetY(Math.max(0, delta));
+  };
+
+  const onDragHandlePointerEnd = () => {
+    if (dragStartYRef.current === null) return;
+    const finalOffset = dragOffsetY;
+    dragStartYRef.current = null;
+    setDragOffsetY(0);
+    if (finalOffset > CLOSE_THRESHOLD_PX) close();
+  };
+
+  const onTabBodyPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMobileViewport() || isFullscreen) return;
+    // Only handle direct touch — ignore mouse to avoid hijacking desktop UX.
+    if (e.pointerType !== 'touch') return;
+    swipeStartRef.current = { x: e.clientX, y: e.clientY, axis: null };
+  };
+
+  const onTabBodyPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const start = swipeStartRef.current;
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (start.axis === null) {
+      if (Math.abs(dx) < AXIS_LOCK_THRESHOLD_PX && Math.abs(dy) < AXIS_LOCK_THRESHOLD_PX) return;
+      start.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      // Once we lock vertical, let the inner scroll container own it.
+      if (start.axis === 'y') swipeStartRef.current = null;
+    }
+    if (start.axis === 'x') setSwipeOffsetX(dx);
+  };
+
+  const onTabBodyPointerEnd = () => {
+    const start = swipeStartRef.current;
+    if (!start) return;
+    const final = swipeOffsetX;
+    swipeStartRef.current = null;
+    setSwipeOffsetX(0);
+    if (start.axis !== 'x' || Math.abs(final) < SWIPE_THRESHOLD_PX) return;
+    const idx = TAB_ORDER.indexOf(activeTab);
+    if (idx === -1) return;
+    // Swipe right (positive dx) → previous tab; swipe left → next tab
+    const nextIdx = final > 0 ? idx - 1 : idx + 1;
+    if (nextIdx < 0 || nextIdx >= TAB_ORDER.length) return;
+    setTab(TAB_ORDER[nextIdx]);
+  };
+
+  // Visual viewport: when the on-screen keyboard appears (iOS Safari, etc.),
+  // visualViewport.height shrinks. Clip the drawer max-height accordingly so
+  // text inputs in the workspace don't get covered.
+  const [keyboardClipHeight, setKeyboardClipHeight] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const update = () => {
+      const inset = window.innerHeight - vv.height - vv.offsetTop;
+      // Only clip when keyboard adds non-trivial inset (≥ 50px filters noise)
+      setKeyboardClipHeight(inset > 50 ? inset : null);
+    };
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+      setKeyboardClipHeight(null);
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -279,7 +379,8 @@ export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspace
       />
 
       {/* Panel — right side on desktop, bottom drawer on mobile, full
-          viewport when size === 'fullscreen' (#1636). */}
+          viewport when size === 'fullscreen' (#1636). Mobile gestures
+          (drag-to-close, tab swipe, keyboard avoidance) layered on (#1640). */}
       <div
         ref={panelRef}
         role="complementary"
@@ -297,16 +398,30 @@ export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspace
                 'max-h-[70vh] lg:max-h-none',
                 'rounded-t-2xl lg:rounded-none',
                 'border-t lg:border-t-0',
-                'animate-slide-up lg:animate-none',
+                dragOffsetY === 0 ? 'animate-slide-up lg:animate-none transition-transform' : '',
               ].join(' '),
         ].join(' ')}
         style={{
           // iOS safe area for bottom drawer
           paddingBottom: isFullscreen ? undefined : 'env(safe-area-inset-bottom, 0px)',
+          // Drag-to-close visual feedback (mobile, pane mode only)
+          transform: dragOffsetY > 0 ? `translateY(${dragOffsetY}px)` : undefined,
+          // Visual viewport keyboard clip (#1640): shrink drawer when keyboard is up
+          maxHeight: !isFullscreen && keyboardClipHeight !== null
+            ? `calc(70vh - ${keyboardClipHeight}px)`
+            : undefined,
         }}
       >
-        {/* Drag handle — mobile only */}
-        <div className="flex justify-center pt-2 pb-1 lg:hidden">
+        {/* Drag handle — mobile only; doubles as drag-to-close affordance */}
+        <div
+          className="flex justify-center pt-2 pb-1 lg:hidden touch-none cursor-grab active:cursor-grabbing"
+          onPointerDown={onDragHandlePointerDown}
+          onPointerMove={onDragHandlePointerMove}
+          onPointerUp={onDragHandlePointerEnd}
+          onPointerCancel={onDragHandlePointerEnd}
+          aria-label="Drag down to close"
+          role="button"
+        >
           <div className="w-10 h-1 rounded-full bg-[var(--color-border)]" />
         </div>
 
@@ -375,11 +490,19 @@ export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspace
           })}
         </nav>
 
-        {/* Content area */}
+        {/* Content area — touch handlers drive horizontal tab swipe (#1640) */}
         <div
           id={`workspace-panel-${activeTab}`}
           role="tabpanel"
           className="flex-1 overflow-y-auto px-4 py-4 flex flex-col"
+          onPointerDown={onTabBodyPointerDown}
+          onPointerMove={onTabBodyPointerMove}
+          onPointerUp={onTabBodyPointerEnd}
+          onPointerCancel={onTabBodyPointerEnd}
+          style={{
+            transform: swipeOffsetX !== 0 ? `translateX(${swipeOffsetX * 0.3}px)` : undefined,
+            transition: swipeOffsetX === 0 ? 'transform 200ms ease-out' : undefined,
+          }}
         >
           {renderBody()}
         </div>
