@@ -167,52 +167,64 @@ export class CoreInfraStack extends cdk.Stack {
       description: 'Dependency layer ARN for swarm handlers',
     });
 
-    // Export values for cross-stack references
+    // Export values for cross-stack references.
+    //
+    // Migration note (#1656): the legacy / intermediate `SwarmShared-*`
+    // stack already publishes these export names. CFN export names are
+    // globally unique within the region, so the new domain-aligned stack
+    // would collide on every export. While `useExistingResources=true`
+    // (the migration import flag), append a `-split` suffix so the new
+    // stack publishes its own exports instead of clashing with the
+    // orphan stack. There are no `Fn.importValue` consumers of these in
+    // our infra source — cross-stack refs go through CDK property
+    // accessors, not exportName lookups — so renaming is invisible to
+    // dependents.
+    const exportSuffix = useExistingResources ? '-split' : '';
     new cdk.CfnOutput(this, 'StateTableArnExport', {
       value: this.stateTableArn,
-      exportName: `swarm-state-table-arn-${environment}${suffix}`,
+      exportName: `swarm-state-table-arn-${environment}${suffix}${exportSuffix}`,
     });
 
     new cdk.CfnOutput(this, 'StateTableNameExport', {
       value: this.stateTableName,
-      exportName: `swarm-state-table-name-${environment}${suffix}`,
+      exportName: `swarm-state-table-name-${environment}${suffix}${exportSuffix}`,
     });
 
     new cdk.CfnOutput(this, 'ActivityTableArnExport', {
       value: this.activityTableArn,
-      exportName: `swarm-activity-table-arn-${environment}${suffix}`,
+      exportName: `swarm-activity-table-arn-${environment}${suffix}${exportSuffix}`,
     });
 
     new cdk.CfnOutput(this, 'MediaBucketArnExport', {
       value: this.mediaBucketArn,
-      exportName: `swarm-media-bucket-arn-${environment}${suffix}`,
+      exportName: `swarm-media-bucket-arn-${environment}${suffix}${exportSuffix}`,
     });
 
     new cdk.CfnOutput(this, 'MediaBucketNameExport', {
       value: this.mediaBucketName,
-      exportName: `swarm-media-bucket-name-${environment}${suffix}`,
+      exportName: `swarm-media-bucket-name-${environment}${suffix}${exportSuffix}`,
     });
 
     new cdk.CfnOutput(this, 'DependencyLayerArnExport', {
       value: this.dependencyLayerArn,
-      exportName: `swarm-dependency-layer-arn-${environment}${suffix}`,
+      exportName: `swarm-dependency-layer-arn-${environment}${suffix}${exportSuffix}`,
     });
 
     if (this.cdnDistributionId) {
       new cdk.CfnOutput(this, 'CdnDistributionIdExport', {
         value: this.cdnDistributionId,
-        exportName: `swarm-cdn-distribution-id-${environment}${suffix}`,
+        exportName: `swarm-cdn-distribution-id-${environment}${suffix}${exportSuffix}`,
       });
     }
 
     new cdk.CfnOutput(this, 'DiscordClusterArnExport', {
       value: this.discordClusterArn,
-      exportName: `swarm-discord-cluster-arn-${environment}${suffix}`,
+      exportName: `swarm-discord-cluster-arn-${environment}${suffix}${exportSuffix}`,
     });
 
     new cdk.CfnOutput(this, 'AlarmTopicArnExport', {
       value: this.alarmTopicArn,
-      exportName: `swarm-alarm-topic-arn-${environment}${suffix}`,
+      exportName: `swarm-alarm-topic-arn-${environment}${suffix}${exportSuffix}`,
     });
   }
 }
