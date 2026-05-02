@@ -1,10 +1,10 @@
 /**
- * Workspace Store — controls the task workspace panel visibility and content.
+ * Workspace Store — controls the right-pane workspace visibility, tab, and content.
  *
  * The workspace is a secondary focus surface (right panel on desktop,
- * bottom drawer on mobile) that opens from task card actions. The
- * transcript remains the primary surface; the workspace is for
- * focused interaction with a single task.
+ * bottom drawer on mobile) with five tabs: Gallery, Prompt, Tools,
+ * Settings, Activity. The transcript remains the primary surface; the
+ * workspace is for focused interaction.
  *
  * State is enriched with task lifecycle metadata so that system prompt
  * and request metadata can reflect what the user is currently focused on.
@@ -21,27 +21,50 @@ export interface ActiveTaskContext {
   openedAt: number;
 }
 
-/** What type of content the workspace is showing. */
+/**
+ * Tabs surfaced in the workspace header.
+ *
+ * - 'gallery'  — avatar media gallery (existing)
+ * - 'prompt'   — system-prompt / persona editor (#1636)
+ * - 'tools'    — pending tool prompts (#1637)
+ * - 'settings' — persistent avatar config (#1638)
+ * - 'activity' — usage, plan, health, activation (#1639)
+ */
+export type WorkspaceTab = 'gallery' | 'prompt' | 'tools' | 'settings' | 'activity';
+
+/**
+ * Legacy content selector for the tools/task body. Kept distinct from
+ * `activeTab` because a focused task card is internal state ("which card
+ * fills the Tools body"), not a tab selection. Removed once #1637 lands.
+ */
 export type WorkspaceContentType = 'task' | 'gallery';
 
 export interface WorkspaceState {
   /** Whether the workspace panel is open */
   isOpen: boolean;
-  /** What content the workspace is displaying */
+  /** Which tab is currently selected */
+  activeTab: WorkspaceTab;
+  /**
+   * @deprecated retained for callers that still discriminate task vs
+   * gallery body without consulting `activeTab`. Will be removed once
+   * #1637 (auto-open tool prompts) lands.
+   */
   contentType: WorkspaceContentType;
-  /** The task card ID currently displayed in the workspace (if any) */
+  /** The task card ID currently displayed in the Tools tab (if any) */
   activeTaskCardId: string | null;
-  /** Avatar ID for gallery content (when contentType is 'gallery') */
+  /** Avatar ID for gallery content (when Gallery tab is active) */
   galleryAvatarId: string | null;
   /** Human-readable title shown in the workspace header */
   title: string;
   /** When the workspace was opened (ms since epoch) */
   openedAt: number | null;
 
-  /** Open the workspace for a specific task card */
+  /** Open the workspace for a specific task card (selects Tools tab) */
   openForTask: (taskCardId: string, title: string) => void;
-  /** Open the workspace showing gallery content */
+  /** Open the workspace showing gallery content (toggles closed if Gallery tab is already active) */
   openGallery: (avatarId: string) => void;
+  /** Switch to a tab, opening the workspace if closed. Preserves task / gallery state. */
+  setTab: (tab: WorkspaceTab) => void;
   /** Close the workspace (user dismiss) */
   close: () => void;
   /** Dismiss the active task (closes workspace + marks card dismissed/cancelled) */
@@ -54,8 +77,17 @@ export interface WorkspaceState {
   getActiveTaskContext: () => ActiveTaskContext | null;
 }
 
+const TAB_TITLES: Record<WorkspaceTab, string> = {
+  gallery: 'Gallery',
+  prompt: 'Prompt',
+  tools: 'Tools',
+  settings: 'Settings',
+  activity: 'Activity',
+};
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   isOpen: false,
+  activeTab: 'tools',
   contentType: 'task',
   activeTaskCardId: null,
   galleryAvatarId: null,
@@ -72,6 +104,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     useTaskCardStore.getState().setWorkspaceState(taskCardId, 'open');
     set({
       isOpen: true,
+      activeTab: 'tools',
       contentType: 'task',
       activeTaskCardId: taskCardId,
       galleryAvatarId: null,
@@ -86,18 +119,40 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (prev) {
       useTaskCardStore.getState().setWorkspaceState(prev, 'available');
     }
-    // Toggle: if gallery is already open, close the workspace
-    if (get().isOpen && get().contentType === 'gallery') {
-      set({ isOpen: false, contentType: 'task', activeTaskCardId: null, galleryAvatarId: null, title: '', openedAt: null });
+    // Toggle: if Gallery tab is already showing, close the workspace
+    if (get().isOpen && get().activeTab === 'gallery') {
+      set({
+        isOpen: false,
+        activeTab: 'tools',
+        contentType: 'task',
+        activeTaskCardId: null,
+        galleryAvatarId: null,
+        title: '',
+        openedAt: null,
+      });
       return;
     }
     set({
       isOpen: true,
+      activeTab: 'gallery',
       contentType: 'gallery',
       activeTaskCardId: null,
       galleryAvatarId: avatarId,
-      title: 'Gallery',
+      title: TAB_TITLES.gallery,
       openedAt: Date.now(),
+    });
+  },
+
+  setTab: (tab) => {
+    const prevOpen = get().isOpen;
+    const prevTab = get().activeTab;
+    // Pure tab switch — preserve task / gallery state so users can switch
+    // tabs without losing their focused card or gallery scroll.
+    set({
+      isOpen: true,
+      activeTab: tab,
+      title: TAB_TITLES[tab],
+      openedAt: prevOpen && prevTab === tab ? get().openedAt : Date.now(),
     });
   },
 
@@ -106,7 +161,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (cardId) {
       useTaskCardStore.getState().setWorkspaceState(cardId, 'available');
     }
-    set({ isOpen: false, contentType: 'task', activeTaskCardId: null, galleryAvatarId: null, title: '', openedAt: null });
+    set({
+      isOpen: false,
+      activeTab: 'tools',
+      contentType: 'task',
+      activeTaskCardId: null,
+      galleryAvatarId: null,
+      title: '',
+      openedAt: null,
+    });
   },
 
   dismissTask: () => {
@@ -118,12 +181,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
       useTaskCardStore.getState().setWorkspaceState(cardId, 'hidden');
     }
-    set({ isOpen: false, contentType: 'task', activeTaskCardId: null, galleryAvatarId: null, title: '', openedAt: null });
+    set({
+      isOpen: false,
+      activeTab: 'tools',
+      contentType: 'task',
+      activeTaskCardId: null,
+      galleryAvatarId: null,
+      title: '',
+      openedAt: null,
+    });
   },
 
   getActiveTaskContext: () => {
-    const { activeTaskCardId, isOpen, contentType } = get();
-    if (!activeTaskCardId || contentType !== 'task') return null;
+    const { activeTaskCardId, isOpen, activeTab } = get();
+    if (!activeTaskCardId || activeTab !== 'tools') return null;
     const card = useTaskCardStore.getState().getCard(activeTaskCardId);
     if (!card) return null;
     return {
