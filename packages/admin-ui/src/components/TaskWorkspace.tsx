@@ -21,6 +21,7 @@ import { getToolLabel } from './tool-prompts/tool-labels';
 import type { ToolSubmitResult } from './tool-prompts/types';
 import { GalleryContent } from './GalleryPanel';
 import { PromptPreviewPanel } from './PromptPreviewPanel';
+import { AvatarConfigModal } from './AvatarConfigModal';
 import { useActiveAvatar } from '../store';
 
 interface TaskWorkspaceProps {
@@ -281,7 +282,13 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
       case 'prompt':
         return <PromptPreviewPanel embedded isOpen={true} onClose={close} />;
       case 'settings':
-        return <PlaceholderTab tab="settings" issueNumber={1638} />;
+        return activeAvatar
+          ? <AvatarConfigModal avatar={activeAvatar} embedded isOpen={true} onClose={close} />
+          : (
+            <div className="flex items-center justify-center h-full text-sm text-[var(--color-text-muted)]">
+              No avatar selected.
+            </div>
+          );
       case 'activity':
         return <PlaceholderTab tab="activity" issueNumber={1639} />;
     }

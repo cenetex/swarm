@@ -17,6 +17,13 @@ interface AvatarConfigModalProps {
   avatar: Avatar;
   isOpen: boolean;
   onClose: () => void;
+  /**
+   * When true, render without the fixed-overlay backdrop / oversized
+   * branded header — the panel becomes a content body suitable for
+   * embedding inside the workspace Settings tab body (#1638). Defaults to
+   * false (legacy modal mode).
+   */
+  embedded?: boolean;
 }
 
 // Predefined secret templates
@@ -33,7 +40,7 @@ const SECRET_TEMPLATES: { key: string; nameKey: string; descriptionKey: string }
 
 type SecretTemplate = (typeof SECRET_TEMPLATES)[number];
 
-export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModalProps) {
+export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }: AvatarConfigModalProps) {
   const { t } = useTranslation();
   const { updateAvatar, deleteAvatar } = useAvatarStore();
   const { gateStatus } = useAuth();
@@ -149,45 +156,68 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
+  // The modal chrome (fixed-overlay backdrop + oversized header with avatar
+  // display and close button) is bypassed when `embedded` is true — the
+  // workspace tab body becomes the host. The inner sections (tab strip,
+  // tab content, footer) are identical in both modes.
+  const containerClass = embedded
+    ? 'flex flex-col h-full -mx-4 -my-4'
+    : 'relative bg-[var(--color-bg-secondary)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-[var(--color-border)]';
 
-      {/* Modal */}
-      <div className="relative bg-[var(--color-bg-secondary)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-[var(--color-border)]">
-        {/* Header */}
-        <div className="flex items-center gap-4 p-6 border-b border-[var(--color-border)]">
-          <AvatarDisplay avatar={{ ...avatar, name }} size="lg" showStatus={false} />
-          <div className="flex-1">
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="text-xl font-semibold bg-transparent border-none outline-none text-[var(--color-text)] w-full"
-              placeholder={t('avatar.avatarNamePlaceholder')}
-              name="avatarName"
-              id="avatarName"
-              data-testid="avatar-name-input"
-              aria-label={t('avatar.avatarNameLabel')}
-            />
-            <p className="text-sm text-[var(--color-text-tertiary)]">
-              {avatar.status === 'shell' ? t('avatar.unconfiguredAvatarShell') : t('avatar.configuredAvatar')}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] transition-colors"
-            aria-label={t('avatar.closeModal')}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-            </svg>
-          </button>
-        </div>
+  const header = embedded ? (
+    <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)] flex-shrink-0">
+      <AvatarDisplay avatar={{ ...avatar, name }} size="md" showStatus={false} />
+      <div className="flex-1 min-w-0">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="text-base font-semibold bg-transparent border-none outline-none text-[var(--color-text)] w-full"
+          placeholder={t('avatar.avatarNamePlaceholder')}
+          name="avatarName"
+          id="avatarName"
+          data-testid="avatar-name-input"
+          aria-label={t('avatar.avatarNameLabel')}
+        />
+        <p className="text-xs text-[var(--color-text-tertiary)] truncate">
+          {avatar.status === 'shell' ? t('avatar.unconfiguredAvatarShell') : t('avatar.configuredAvatar')}
+        </p>
+      </div>
+    </div>
+  ) : (
+    <div className="flex items-center gap-4 p-6 border-b border-[var(--color-border)]">
+      <AvatarDisplay avatar={{ ...avatar, name }} size="lg" showStatus={false} />
+      <div className="flex-1">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="text-xl font-semibold bg-transparent border-none outline-none text-[var(--color-text)] w-full"
+          placeholder={t('avatar.avatarNamePlaceholder')}
+          name="avatarName"
+          id="avatarName"
+          data-testid="avatar-name-input"
+          aria-label={t('avatar.avatarNameLabel')}
+        />
+        <p className="text-sm text-[var(--color-text-tertiary)]">
+          {avatar.status === 'shell' ? t('avatar.unconfiguredAvatarShell') : t('avatar.configuredAvatar')}
+        </p>
+      </div>
+      <button
+        onClick={onClose}
+        className="p-2 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] transition-colors"
+        aria-label={t('avatar.closeModal')}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+          <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+        </svg>
+      </button>
+    </div>
+  );
+
+  const body = (
+    <>
+      {header}
 
         {/* Tabs */}
         <div className="flex border-b border-[var(--color-border)]">
@@ -439,7 +469,20 @@ export function AvatarConfigModal({ avatar, isOpen, onClose }: AvatarConfigModal
             </button>
           </div>
         </div>
-      </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div className={containerClass}>{body}</div>;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className={containerClass}>{body}</div>
     </div>
   );
 }
