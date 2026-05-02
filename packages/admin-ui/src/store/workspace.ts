@@ -10,7 +10,8 @@
  * and request metadata can reflect what the user is currently focused on.
  */
 import { create } from 'zustand';
-import { useTaskCardStore } from './task-cards';
+import { useTaskCardStore, onTaskCardCreated } from './task-cards';
+import { getToolLabel, isInlineOnly } from '../components/tool-prompts/tool-labels';
 
 /** Concise snapshot of the active task for request metadata / system prompt. */
 export interface ActiveTaskContext {
@@ -206,3 +207,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     };
   },
 }));
+
+/**
+ * Auto-open the workspace Tools tab whenever a non-trivial pending task
+ * card is registered (#1637). `confirm_action` and similar small inline
+ * tools are exempt — they keep their inline UX.
+ *
+ * Subscribed at module-init so the hook is live for the full session
+ * regardless of which component first imports the store.
+ *
+ * Deferred via microtask so synchronous follow-ups (e.g. taskAction cards
+ * that immediately resolve to 'completed') can land first — we only open
+ * for cards that are still pending after the current tick, and skip ones
+ * the caller already directed somewhere via setWorkspaceState.
+ */
+onTaskCardCreated((card) => {
+  if (isInlineOnly(card.toolName)) return;
+  queueMicrotask(() => {
+    const current = useTaskCardStore.getState().getCard(card.id);
+    if (!current || current.status !== 'pending') return;
+    if (current.workspaceState === 'open') return;
+    useWorkspaceStore.getState().openForTask(card.id, getToolLabel(card));
+  });
+});
+

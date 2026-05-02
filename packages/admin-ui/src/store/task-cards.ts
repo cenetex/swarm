@@ -25,6 +25,20 @@ export interface TaskCard {
   workspaceState: 'hidden' | 'available' | 'open';
 }
 
+/**
+ * Listeners notified when a brand-new task card is registered (idempotent
+ * skip does NOT fire). Used by the workspace store to auto-open the Tools
+ * tab for non-trivial tools (#1637). Indirection avoids a circular module
+ * dependency between task-cards and workspace stores.
+ */
+type CardCreatedListener = (card: TaskCard) => void;
+const cardCreatedListeners: Set<CardCreatedListener> = new Set();
+
+export function onTaskCardCreated(listener: CardCreatedListener): () => void {
+  cardCreatedListeners.add(listener);
+  return () => { cardCreatedListeners.delete(listener); };
+}
+
 interface TaskCardState {
   cards: Record<string, TaskCard>; // keyed by toolCall.id
 
@@ -45,20 +59,23 @@ export const useTaskCardStore = create<TaskCardState>((set, get) => ({
     // Don't overwrite if already registered (idempotent)
     if (get().cards[card.id]) return;
     const now = Date.now();
+    const newCard: TaskCard = {
+      ...card,
+      toolCallId: card.toolCallId ?? card.id,
+      createdAt: now,
+      updatedAt: now,
+      status: 'pending',
+      // Inline view stays collapsed by default — full prompt UX lives in
+      // the workspace Tools tab (#1637). Resolved cards expand on click.
+      inlineExpanded: false,
+      workspaceState: 'hidden',
+    };
     set((state) => ({
-      cards: {
-        ...state.cards,
-        [card.id]: {
-          ...card,
-          toolCallId: card.toolCallId ?? card.id,
-          createdAt: now,
-          updatedAt: now,
-          status: 'pending',
-          inlineExpanded: true,
-          workspaceState: 'hidden',
-        },
-      },
+      cards: { ...state.cards, [card.id]: newCard },
     }));
+    for (const listener of cardCreatedListeners) {
+      try { listener(newCard); } catch { /* listener errors must not break registration */ }
+    }
   },
 
   updateStatus: (id, status, result) => {
@@ -73,7 +90,8 @@ export const useTaskCardStore = create<TaskCardState>((set, get) => ({
             status,
             result: result ?? existing.result,
             updatedAt: Date.now(),
-            inlineExpanded: status === 'pending',
+            // Resolved cards collapse to summary; user can expand via toggle.
+            inlineExpanded: status === 'pending' ? existing.inlineExpanded : false,
           },
         },
       };

@@ -11,14 +11,16 @@
  * Gallery and Tools are wired today; Prompt / Settings / Activity show
  * placeholders that will be replaced by #1636 / #1638 / #1639.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWorkspaceStore, type WorkspaceTab } from '../store/workspace';
-import { useTaskCardStore } from '../store/task-cards';
+import { useTaskCardStore, type TaskCard } from '../store/task-cards';
 import { ToolPrompt } from './tool-prompts';
 import { PromptSuccess, PromptError } from './tool-prompts/PromptStatus';
+import { getToolLabel } from './tool-prompts/tool-labels';
 import type { ToolSubmitResult } from './tool-prompts/types';
 import { GalleryContent } from './GalleryPanel';
+import { useActiveAvatar } from '../store';
 
 interface TaskWorkspaceProps {
   /** Callback when a tool prompt is submitted from within the workspace. */
@@ -98,8 +100,20 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
   const setTab = useWorkspaceStore((s) => s.setTab);
   const activeTaskCardId = useWorkspaceStore((s) => s.activeTaskCardId);
   const galleryAvatarId = useWorkspaceStore((s) => s.galleryAvatarId);
+  const openForTask = useWorkspaceStore((s) => s.openForTask);
   const card = useTaskCardStore((s) => activeTaskCardId ? s.cards[activeTaskCardId] : undefined);
+  const allCards = useTaskCardStore((s) => s.cards);
+  const activeAvatar = useActiveAvatar();
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Pending cards for the active avatar — most recent first. Drives the
+  // queue list at the top of the Tools tab (#1637).
+  const pendingCards = useMemo<TaskCard[]>(() => {
+    if (!activeAvatar?.id) return [];
+    return Object.values(allCards)
+      .filter((c) => c.avatarId === activeAvatar.id && c.status === 'pending')
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }, [allCards, activeAvatar?.id]);
 
   // Close on Escape key
   useEffect(() => {
@@ -130,19 +144,54 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
     status: 'pending' as const,
   } : null;
 
+  const renderPendingQueue = () => {
+    if (pendingCards.length <= 1) return null;
+    return (
+      <div className="mb-4 -mx-1">
+        <div className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-tertiary)]">
+          Pending ({pendingCards.length})
+        </div>
+        <div className="flex flex-col gap-1">
+          {pendingCards.map((c) => {
+            const selected = c.id === activeTaskCardId;
+            return (
+              <button
+                key={c.id}
+                onClick={() => openForTask(c.id, getToolLabel(c))}
+                className={[
+                  'flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors text-xs',
+                  selected
+                    ? 'bg-brand-500/15 text-[var(--color-text)]'
+                    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]',
+                ].join(' ')}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-400 flex-shrink-0 animate-pulse" aria-hidden />
+                <span className="truncate">{getToolLabel(c)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const renderToolsBody = () => {
     if (toolCallForPrompt && onToolSubmit) {
       return (
-        <ToolPrompt
-          toolCall={toolCallForPrompt}
-          onSubmit={onToolSubmit}
-          disabled={false}
-        />
+        <>
+          {renderPendingQueue()}
+          <ToolPrompt
+            toolCall={toolCallForPrompt}
+            onSubmit={onToolSubmit}
+            disabled={false}
+          />
+        </>
       );
     }
     if (card && card.status === 'completed') {
       return (
         <div className="space-y-3">
+          {renderPendingQueue()}
           <PromptSuccess message={card.summary || t('workspace.completed')} />
         </div>
       );
@@ -150,6 +199,7 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
     if (card && card.status === 'failed') {
       return (
         <div className="space-y-3">
+          {renderPendingQueue()}
           <PromptError
             message={
               typeof (card.result as Record<string, unknown>)?.error === 'string'
@@ -162,8 +212,33 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
     }
     if (card && card.status === 'cancelled') {
       return (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-sm text-[var(--color-text-secondary)]">
-          {card.summary || t('workspace.cancelled')}
+        <div className="space-y-3">
+          {renderPendingQueue()}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-sm text-[var(--color-text-secondary)]">
+            {card.summary || t('workspace.cancelled')}
+          </div>
+        </div>
+      );
+    }
+    // No active card. If there's a pending queue, render the list as the
+    // primary content so the user can pick one.
+    if (pendingCards.length > 0) {
+      return (
+        <div className="space-y-1">
+          <div className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-tertiary)]">
+            Pending ({pendingCards.length})
+          </div>
+          {pendingCards.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => openForTask(c.id, getToolLabel(c))}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-left text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+            >
+              <span className="w-2 h-2 rounded-full bg-brand-400 flex-shrink-0 animate-pulse" aria-hidden />
+              <span className="truncate flex-1">{getToolLabel(c)}</span>
+              <span className="text-xs text-[var(--color-text-muted)]">Open</span>
+            </button>
+          ))}
         </div>
       );
     }

@@ -215,6 +215,50 @@ describe('WorkspaceStore', () => {
     expect(state.galleryAvatarId).toBe('avatar-123'); // preserved
   });
 
+  test('auto-opens workspace Tools tab when a non-trivial pending card is registered (#1637)', async () => {
+    expect(useWorkspaceStore.getState().isOpen).toBe(false);
+
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-auto-1',
+      avatarId: 'a1',
+      toolName: 'request_secret',
+      arguments: {},
+    });
+
+    // Listener defers via microtask
+    await Promise.resolve();
+
+    const state = useWorkspaceStore.getState();
+    expect(state.isOpen).toBe(true);
+    expect(state.activeTab).toBe('tools');
+    expect(state.activeTaskCardId).toBe('tc-auto-1');
+    expect(state.title).toBe('Secret Input');
+  });
+
+  test('does NOT auto-open for confirm_action (inline-only tool)', async () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-confirm-1',
+      avatarId: 'a1',
+      toolName: 'confirm_action',
+      arguments: {},
+    });
+    await Promise.resolve();
+    expect(useWorkspaceStore.getState().isOpen).toBe(false);
+  });
+
+  test('does NOT auto-open for cards that resolve before the microtask fires', async () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-resolved-1',
+      avatarId: 'a1',
+      toolName: 'get_my_wallets',
+      arguments: {},
+    });
+    // Synchronously complete (taskAction pattern)
+    useTaskCardStore.getState().updateStatus('tc-resolved-1', 'completed', { wallets: [] });
+    await Promise.resolve();
+    expect(useWorkspaceStore.getState().isOpen).toBe(false);
+  });
+
   test('setTab to all five tabs sets the corresponding title', () => {
     const cases: Array<{ tab: 'gallery' | 'prompt' | 'tools' | 'settings' | 'activity'; title: string }> = [
       { tab: 'gallery', title: 'Gallery' },
