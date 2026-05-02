@@ -23,7 +23,6 @@ import { WelcomeMessage } from './WelcomeMessage';
 import { UpgradeNudge } from './UpgradeNudge';
 
 // Lazy-load heavy panel components that are behind user interactions
-const PromptPreviewPanel = lazy(() => import('./PromptPreviewPanel').then(m => ({ default: m.PromptPreviewPanel })));
 const PlanUsagePanel = lazy(() => import('./PlanUsagePanel').then(m => ({ default: m.PlanUsagePanel })));
 const UsageMeterPanel = lazy(() => import('./UsageMeterPanel').then(m => ({ default: m.UsageMeterPanel })));
 const ActivationChecklist = lazy(() => import('./ActivationChecklist').then(m => ({ default: m.ActivationChecklist })));
@@ -51,14 +50,14 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const { user: user, isAuthenticated, gateStatus, account } = useAuth();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
   const [planUsagePanelOpen, setPlanUsagePanelOpen] = useState(!!initialInviteCode);
   const [isCreatingAvatar, setIsCreatingAvatar] = useState(false);
   const [showHint, setShowHint] = useState(true);
   const [activationLoading, setActivationLoading] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
   const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
-  const galleryOpen = useWorkspaceStore((s) => s.isOpen && s.contentType === 'gallery');
+  const galleryOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'gallery');
+  const promptOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'prompt');
   // Track which limit types have already shown an upgrade nudge this session
   const shownNudgesRef = useRef(new Set<string>());
 
@@ -1309,8 +1308,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                   </svg>
                 </button>
                 <button
-                  onClick={() => setPromptPreviewOpen(true)}
-                  className="px-2 lg:px-3 py-1.5 text-xs lg:text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
+                  onClick={() => useWorkspaceStore.getState().setTab('prompt')}
+                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${promptOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
                   title={t('chat.panel.previewPrompt')}
                 >
                   <span className="hidden sm:inline">{t('chat.panel.preview')}</span>
@@ -1497,11 +1496,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         </div>
       )}
 
-      {/* Prompt Preview Panel */}
-      <Suspense fallback={null}><PromptPreviewPanel
-        isOpen={promptPreviewOpen}
-        onClose={() => setPromptPreviewOpen(false)}
-      /></Suspense>
+      {/* Prompt preview is now mounted inside the workspace Prompt tab (#1636). */}
 
     </div>
 

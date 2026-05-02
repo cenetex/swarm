@@ -20,6 +20,7 @@ import { PromptSuccess, PromptError } from './tool-prompts/PromptStatus';
 import { getToolLabel } from './tool-prompts/tool-labels';
 import type { ToolSubmitResult } from './tool-prompts/types';
 import { GalleryContent } from './GalleryPanel';
+import { PromptPreviewPanel } from './PromptPreviewPanel';
 import { useActiveAvatar } from '../store';
 
 interface TaskWorkspaceProps {
@@ -101,6 +102,10 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
   const activeTaskCardId = useWorkspaceStore((s) => s.activeTaskCardId);
   const galleryAvatarId = useWorkspaceStore((s) => s.galleryAvatarId);
   const openForTask = useWorkspaceStore((s) => s.openForTask);
+  const size = useWorkspaceStore((s) => s.size);
+  const setSize = useWorkspaceStore((s) => s.setSize);
+  const toggleSize = useWorkspaceStore((s) => s.toggleSize);
+  const isFullscreen = size === 'fullscreen';
   const card = useTaskCardStore((s) => activeTaskCardId ? s.cards[activeTaskCardId] : undefined);
   const allCards = useTaskCardStore((s) => s.cards);
   const activeAvatar = useActiveAvatar();
@@ -115,15 +120,20 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
       .sort((a, b) => b.createdAt - a.createdAt);
   }, [allCards, activeAvatar?.id]);
 
-  // Close on Escape key
+  // Escape: in fullscreen, restore to pane; otherwise close (#1636).
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key !== 'Escape') return;
+      if (isFullscreen) {
+        setSize('pane');
+      } else {
+        close();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, close]);
+  }, [isOpen, close, isFullscreen, setSize]);
 
   // Prevent body scroll on mobile when drawer is open
   useEffect(() => {
@@ -269,7 +279,7 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
       case 'tools':
         return renderToolsBody();
       case 'prompt':
-        return <PlaceholderTab tab="prompt" issueNumber={1636} />;
+        return <PromptPreviewPanel embedded isOpen={true} onClose={close} />;
       case 'settings':
         return <PlaceholderTab tab="settings" issueNumber={1638} />;
       case 'activity':
@@ -279,34 +289,41 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
 
   return (
     <>
-      {/* Mobile backdrop */}
+      {/* Backdrop — mobile drawer (always) + desktop fullscreen (#1636) */}
       <div
-        className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-        onClick={close}
+        className={[
+          'fixed inset-0 bg-black/50 z-40',
+          isFullscreen ? '' : 'lg:hidden',
+        ].join(' ')}
+        onClick={isFullscreen ? () => setSize('pane') : close}
         aria-hidden="true"
       />
 
-      {/* Panel — right side on desktop, bottom drawer on mobile */}
+      {/* Panel — right side on desktop, bottom drawer on mobile, full
+          viewport when size === 'fullscreen' (#1636). */}
       <div
         ref={panelRef}
         role="complementary"
         aria-label="Workspace"
         className={[
-          // Shared styles
           'bg-[var(--color-bg-secondary)] border-[var(--color-border)] flex flex-col',
-          // Desktop: right panel beside chat
-          'lg:relative lg:w-96 lg:border-l lg:h-full',
-          // Mobile: bottom drawer
-          'fixed inset-x-0 bottom-0 z-50 lg:z-auto',
-          'max-h-[70vh] lg:max-h-none',
-          'rounded-t-2xl lg:rounded-none',
-          'border-t lg:border-t-0',
-          // Animation
-          'animate-slide-up lg:animate-none',
+          isFullscreen
+            ? // Fullscreen: fills viewport on every breakpoint
+              'fixed inset-0 z-50 max-h-none rounded-none border-0'
+            : [
+                // Desktop: right panel beside chat
+                'lg:relative lg:w-96 lg:border-l lg:h-full',
+                // Mobile: bottom drawer
+                'fixed inset-x-0 bottom-0 z-50 lg:z-auto',
+                'max-h-[70vh] lg:max-h-none',
+                'rounded-t-2xl lg:rounded-none',
+                'border-t lg:border-t-0',
+                'animate-slide-up lg:animate-none',
+              ].join(' '),
         ].join(' ')}
         style={{
           // iOS safe area for bottom drawer
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          paddingBottom: isFullscreen ? undefined : 'env(safe-area-inset-bottom, 0px)',
         }}
       >
         {/* Drag handle — mobile only */}
@@ -320,17 +337,23 @@ export function TaskWorkspace({ onToolSubmit }: TaskWorkspaceProps) {
             {title || t('workspace.title')}
           </h2>
           <div className="flex items-center gap-1">
-            {/* Maximize placeholder — wired in #1636 */}
+            {/* Maximize / restore (#1636) */}
             <button
               type="button"
-              disabled
-              className="p-1.5 rounded-lg text-[var(--color-text-tertiary)] opacity-40 cursor-not-allowed"
-              aria-label="Maximize (coming in #1636)"
-              title="Fullscreen — coming in #1636"
+              onClick={toggleSize}
+              className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+              aria-label={isFullscreen ? 'Restore' : 'Maximize'}
+              title={isFullscreen ? 'Restore (Esc)' : 'Maximize'}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 015.25 2h2a.75.75 0 010 1.5h-2a.75.75 0 00-.75.75v2a.75.75 0 01-1.5 0v-2zM12.75 2a.75.75 0 010 1.5h2a.75.75 0 01.75.75v2a.75.75 0 001.5 0v-2A2.25 2.25 0 0014.75 2h-2zM3.75 12a.75.75 0 01.75.75v2c0 .414.336.75.75.75h2a.75.75 0 010 1.5h-2A2.25 2.25 0 013 14.75v-2a.75.75 0 01.75-.75zM16.25 12a.75.75 0 01.75.75v2A2.25 2.25 0 0114.75 17h-2a.75.75 0 010-1.5h2a.75.75 0 00.75-.75v-2a.75.75 0 01.75-.75z" clipRule="evenodd" />
-              </svg>
+              {isFullscreen ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M8 3a.75.75 0 01.75.75v3.5a.75.75 0 01-.75.75h-3.5a.75.75 0 010-1.5h2.69L3.22 3.28a.75.75 0 011.06-1.06L7.25 5.19V2.5A.75.75 0 018 3zM12 3a.75.75 0 01.75.75v2.69l2.97-2.97a.75.75 0 011.06 1.06L13.81 7.5h2.69a.75.75 0 010 1.5h-3.5a.75.75 0 01-.75-.75v-3.5A.75.75 0 0112 3zM4.75 12.5a.75.75 0 010 1.5H7.44l-2.97 2.97a.75.75 0 01-1.06-1.06L6.38 13H4.75a.75.75 0 010-.5zM12.56 13l2.97 2.97a.75.75 0 11-1.06 1.06L11.5 14.06v2.69a.75.75 0 01-1.5 0v-3.5a.75.75 0 01.75-.75h3.5a.75.75 0 010 1.5h-1.69z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 015.25 2h2a.75.75 0 010 1.5h-2a.75.75 0 00-.75.75v2a.75.75 0 01-1.5 0v-2zM12.75 2a.75.75 0 010 1.5h2a.75.75 0 01.75.75v2a.75.75 0 001.5 0v-2A2.25 2.25 0 0014.75 2h-2zM3.75 12a.75.75 0 01.75.75v2c0 .414.336.75.75.75h2a.75.75 0 010 1.5h-2A2.25 2.25 0 013 14.75v-2a.75.75 0 01.75-.75zM16.25 12a.75.75 0 01.75.75v2A2.25 2.25 0 0114.75 17h-2a.75.75 0 010-1.5h2a.75.75 0 00.75-.75v-2a.75.75 0 01.75-.75z" clipRule="evenodd" />
+                </svg>
+              )}
             </button>
             <button
               onClick={close}

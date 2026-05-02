@@ -34,6 +34,16 @@ export interface ActiveTaskContext {
 export type WorkspaceTab = 'gallery' | 'prompt' | 'tools' | 'settings' | 'activity';
 
 /**
+ * Workspace size mode (#1636).
+ *
+ * - 'pane' (default): right side panel on desktop, bottom drawer on mobile;
+ *   chat transcript stays visible.
+ * - 'fullscreen': fills the viewport, hides chat. Auto-engaged when entering
+ *   prompt edit mode; restorable via the maximize/restore button or `Esc`.
+ */
+export type WorkspaceSize = 'pane' | 'fullscreen';
+
+/**
  * Legacy content selector for the tools/task body. Kept distinct from
  * `activeTab` because a focused task card is internal state ("which card
  * fills the Tools body"), not a tab selection. Removed once #1637 lands.
@@ -45,6 +55,8 @@ export interface WorkspaceState {
   isOpen: boolean;
   /** Which tab is currently selected */
   activeTab: WorkspaceTab;
+  /** Pane vs fullscreen layout (#1636) */
+  size: WorkspaceSize;
   /**
    * @deprecated retained for callers that still discriminate task vs
    * gallery body without consulting `activeTab`. Will be removed once
@@ -66,6 +78,10 @@ export interface WorkspaceState {
   openGallery: (avatarId: string) => void;
   /** Switch to a tab, opening the workspace if closed. Preserves task / gallery state. */
   setTab: (tab: WorkspaceTab) => void;
+  /** Set pane vs fullscreen layout (#1636). Idempotent. */
+  setSize: (size: WorkspaceSize) => void;
+  /** Toggle between pane and fullscreen (#1636). */
+  toggleSize: () => void;
   /** Close the workspace (user dismiss) */
   close: () => void;
   /** Dismiss the active task (closes workspace + marks card dismissed/cancelled) */
@@ -89,6 +105,7 @@ const TAB_TITLES: Record<WorkspaceTab, string> = {
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   isOpen: false,
   activeTab: 'tools',
+  size: 'pane',
   contentType: 'task',
   activeTaskCardId: null,
   galleryAvatarId: null,
@@ -157,6 +174,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
 
+  setSize: (size) => {
+    if (get().size === size) return;
+    set({ size });
+  },
+
+  toggleSize: () => {
+    set((state) => ({ size: state.size === 'fullscreen' ? 'pane' : 'fullscreen' }));
+  },
+
   close: () => {
     const cardId = get().activeTaskCardId;
     if (cardId) {
@@ -165,6 +191,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({
       isOpen: false,
       activeTab: 'tools',
+      size: 'pane',
       contentType: 'task',
       activeTaskCardId: null,
       galleryAvatarId: null,
@@ -185,6 +212,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({
       isOpen: false,
       activeTab: 'tools',
+      size: 'pane',
       contentType: 'task',
       activeTaskCardId: null,
       galleryAvatarId: null,

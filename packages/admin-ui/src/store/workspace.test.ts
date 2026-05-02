@@ -7,6 +7,7 @@ describe('WorkspaceStore', () => {
     useWorkspaceStore.setState({
       isOpen: false,
       activeTab: 'tools',
+      size: 'pane',
       contentType: 'task',
       activeTaskCardId: null,
       galleryAvatarId: null,
@@ -257,6 +258,38 @@ describe('WorkspaceStore', () => {
     useTaskCardStore.getState().updateStatus('tc-resolved-1', 'completed', { wallets: [] });
     await Promise.resolve();
     expect(useWorkspaceStore.getState().isOpen).toBe(false);
+  });
+
+  test('size defaults to pane', () => {
+    expect(useWorkspaceStore.getState().size).toBe('pane');
+  });
+
+  test('setSize switches between pane and fullscreen', () => {
+    useWorkspaceStore.getState().setSize('fullscreen');
+    expect(useWorkspaceStore.getState().size).toBe('fullscreen');
+    useWorkspaceStore.getState().setSize('pane');
+    expect(useWorkspaceStore.getState().size).toBe('pane');
+  });
+
+  test('setSize is idempotent', () => {
+    useWorkspaceStore.getState().setSize('fullscreen');
+    const before = useWorkspaceStore.getState();
+    useWorkspaceStore.getState().setSize('fullscreen');
+    expect(useWorkspaceStore.getState()).toBe(before);
+  });
+
+  test('toggleSize flips between pane and fullscreen', () => {
+    useWorkspaceStore.getState().toggleSize();
+    expect(useWorkspaceStore.getState().size).toBe('fullscreen');
+    useWorkspaceStore.getState().toggleSize();
+    expect(useWorkspaceStore.getState().size).toBe('pane');
+  });
+
+  test('close resets size back to pane', () => {
+    useWorkspaceStore.getState().setTab('prompt');
+    useWorkspaceStore.getState().setSize('fullscreen');
+    useWorkspaceStore.getState().close();
+    expect(useWorkspaceStore.getState().size).toBe('pane');
   });
 
   test('setTab to all five tabs sets the corresponding title', () => {
