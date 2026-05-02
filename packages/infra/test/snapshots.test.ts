@@ -381,10 +381,9 @@ describe('CDK Infrastructure - Resource Assertions', () => {
     // No WAF WebACL
     template.resourceCountIs('AWS::WAFv2::WebACL', 0);
 
-    // Should still create SNS topic (alarm topic is always fresh)
-    template.hasResourceProperties('AWS::SNS::Topic', {
-      TopicName: 'swarm-alarms-prod',
-    });
+    // SNS alarm topic is imported (not created) when useExistingResources=true
+    // — the legacy / intermediate stack already owns it. (#1658)
+    template.resourceCountIs('AWS::SNS::Topic', 0);
 
     // Should still create Lambda layer
     template.resourceCountIs('AWS::Lambda::LayerVersion', 1);

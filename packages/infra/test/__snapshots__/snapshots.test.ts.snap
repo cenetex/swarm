@@ -1425,7 +1425,24 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
         "Name": "swarm-alarm-topic-arn-staging",
       },
       "Value": {
-        "Ref": "SharedAlarmTopicAE74B6D1",
+        "Fn::Join": [
+          "",
+          [
+            "arn:",
+            {
+              "Ref": "AWS::Partition",
+            },
+            ":sns:",
+            {
+              "Ref": "AWS::Region",
+            },
+            ":",
+            {
+              "Ref": "AWS::AccountId",
+            },
+            ":swarm-alarms-staging",
+          ],
+        ],
       },
     },
     "DependencyLayerArnExport": {
@@ -1531,13 +1548,6 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
         },
       },
       "Type": "AWS::SSM::Parameter",
-    },
-    "SharedAlarmTopicAE74B6D1": {
-      "Properties": {
-        "DisplayName": "Swarm Alarms (staging)",
-        "TopicName": "swarm-alarms-staging",
-      },
-      "Type": "AWS::SNS::Topic",
     },
     "SharedDependencyLayer4A51C7E0": {
       "DeletionPolicy": "Retain",
@@ -1611,7 +1621,24 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
         "Name": "swarm-alarm-topic-arn-staging",
       },
       "Value": {
-        "Ref": "SharedAlarmTopicAE74B6D1",
+        "Fn::Join": [
+          "",
+          [
+            "arn:",
+            {
+              "Ref": "AWS::Partition",
+            },
+            ":sns:",
+            {
+              "Ref": "AWS::Region",
+            },
+            ":",
+            {
+              "Ref": "AWS::AccountId",
+            },
+            ":swarm-alarms-staging",
+          ],
+        ],
       },
     },
     "DependencyLayerArnExport": {
@@ -1717,13 +1744,6 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
         },
       },
       "Type": "AWS::SSM::Parameter",
-    },
-    "SharedAlarmTopicAE74B6D1": {
-      "Properties": {
-        "DisplayName": "Swarm Alarms (staging)",
-        "TopicName": "swarm-alarms-staging",
-      },
-      "Type": "AWS::SNS::Topic",
     },
     "SharedDependencyLayer4A51C7E0": {
       "DeletionPolicy": "Retain",
