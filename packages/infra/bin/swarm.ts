@@ -12,9 +12,6 @@ import * as cdk from 'aws-cdk-lib';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { CoreInfraStack } from '../src/stacks/core-infra-stack.js';
-import { MessagingStack } from '../src/stacks/messaging-stack.js';
-import { MediaStack } from '../src/stacks/media-stack.js';
-import { StationStack } from '../src/stacks/station-stack.js';
 import { AdminApiStack } from '../src/stacks/admin-api-stack.js';
 import { FrontendStack } from '../src/stacks/frontend-stack.js';
 import { ProfilePageStack } from '../src/stacks/profile-page-stack.js';
@@ -189,6 +186,7 @@ if (environment === 'prod' && !useExistingResources) {
 // ============================================
 
 // 1. Core Infrastructure Stack (deploys first, rarely changes)
+// Data plane: DynamoDB tables, S3 bucket, Lambda layer, CDN, SNS alarms
 const coreInfraStack = new CoreInfraStack(app, `SwarmCore-${environment}${nameSuffix}`, {
   environment,
   nameSuffix,
@@ -204,44 +202,8 @@ const coreInfraStack = new CoreInfraStack(app, `SwarmCore-${environment}${nameSu
   description: `Swarm Core Infrastructure (${environment})`,
 });
 
-// 2. Messaging Stack (depends on core, contains Telegram/Discord/Twitter)
-const messagingStack = new MessagingStack(app, `SwarmMessaging-${environment}${nameSuffix}`, {
-  environment,
-  nameSuffix: nonSharedResourceSuffix,
-  coreInfraStack,
-  handlersPath,
-  secretPrefix,
-  dependencyLayer: undefined,
-  messagingNameSuffix: nonSharedResourceSuffix,
-  enableDiscordGateway,
-  env: stackEnv,
-  description: `Swarm Messaging (${environment})`,
-});
-messagingStack.addDependency(coreInfraStack);
-
-// 3. Media Stack (depends on core, contains image/voice/media processing)
-const mediaStack = new MediaStack(app, `SwarmMedia-${environment}${nameSuffix}`, {
-  environment,
-  nameSuffix: nonSharedResourceSuffix,
-  coreInfraStack,
-  env: stackEnv,
-  description: `Swarm Media Processing (${environment})`,
-});
-mediaStack.addDependency(coreInfraStack);
-
-// 4. Station Stack (depends on core + messaging, contains agent runner/tweet poster)
-const stationStack = new StationStack(app, `SwarmStation-${environment}${nameSuffix}`, {
-  environment,
-  nameSuffix: nonSharedResourceSuffix,
-  coreInfraStack,
-  messagingStack,
-  env: stackEnv,
-  description: `Swarm Station Services (${environment})`,
-});
-stationStack.addDependency(coreInfraStack);
-stationStack.addDependency(messagingStack);
-
-// 5. Admin API Stack (depends on core, changes with code updates)
+// 2. Admin API Stack (depends on core, application plane)
+// Contains: API Gateway, Lambda handlers, messaging handlers, Discord gateway, SQS queues
 const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffix}`, {
   environment,
   nameSuffix: nonSharedResourceSuffix,
@@ -266,7 +228,7 @@ const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffi
   signalApiTokenSecretArn,
   anthropicApiKeyArn,
   enableClaudeCode,
-  enableDiscordGateway: false,
+  enableDiscordGateway,
   claudeCodeUseOpenRouter,
   secretPrefix,
   useExistingResources,
@@ -278,8 +240,9 @@ const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffi
 });
 adminApiStack.addDependency(coreInfraStack);
 
-// 6. Frontend Stack (depends on Admin API, changes with UI updates)
-const frontendStack = new FrontendStack(app, `SwarmFrontend-${environment}${nameSuffix}`, {
+// 3. Frontend Stack (depends on Admin API, UI plane)
+// Contains: CloudFront for Admin UI, edge functions
+const frontendStack = new FrontendStack(app, `SwarmUi-${environment}${nameSuffix}`, {
   environment,
   nameSuffix: nonSharedResourceSuffix,
   adminApiStack,
@@ -289,11 +252,11 @@ const frontendStack = new FrontendStack(app, `SwarmFrontend-${environment}${name
   useExistingBuckets,
   skipDomainAliases,
   env: stackEnv,
-  description: `Swarm Frontend (${environment})`,
+  description: `Swarm Admin UI (${environment})`,
 });
 frontendStack.addDependency(adminApiStack);
 
-// 4. Profile Page Stack (independent, changes with profile page updates)
+// Optional: Profile Page Stack (independent, changes with profile page updates)
 // Hosts public avatar profile pages at *.rati.chat subdomains
 if (profileDomain || app.node.tryGetContext('deployProfilePage')) {
   new ProfilePageStack(app, `SwarmProfilePage-${environment}${nameSuffix}`, {
@@ -309,7 +272,7 @@ if (profileDomain || app.node.tryGetContext('deployProfilePage')) {
   });
 }
 
-// 5. Docs Site Stack (independent, changes with docs updates)
+// Optional: Docs Site Stack (independent, changes with docs updates)
 // Hosts API documentation at docs.rati.chat
 if (docsDomain || app.node.tryGetContext('deployDocsSite')) {
   new DocsSiteStack(app, `SwarmDocsSite-${environment}${nameSuffix}`, {

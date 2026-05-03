@@ -204,6 +204,23 @@ export interface AdminApiStackProps extends cdk.StackProps {
    * tools to avatars that opt into the `signal-station` toolset.
    */
   signalApiTokenSecretArn?: string;
+
+  /**
+   * Twitter API tier: 'free' (100 tweets/month) or 'basic' (15,000 tweets/month)
+   * @default 'basic'
+   */
+  twitterApiTier?: 'free' | 'basic';
+
+  /**
+   * Override the monthly Twitter API budget (reads)
+   */
+  twitterMonthlyBudget?: number;
+
+  /**
+   * Percentage of daily budget to reserve for spikes (0-100)
+   * @default 20
+   */
+  twitterDailyReservePct?: number;
 }
 
 export class AdminApiStack extends cdk.Stack {
@@ -252,6 +269,9 @@ export class AdminApiStack extends cdk.Stack {
       nameSuffix,
       enableDiscordGateway = false,
       raticrossInboundKey,
+      twitterApiTier,
+      twitterMonthlyBudget,
+      twitterDailyReservePct,
     } = props;
 
     // Read CDK context for NFT ownership enforcement flag
@@ -351,6 +371,9 @@ export class AdminApiStack extends cdk.Stack {
       cdnUrl: sharedInfraStack.cdnUrl,
       replicateApiKeyArn,
       secretPrefix,
+      twitterApiTier,
+      twitterMonthlyBudget,
+      twitterDailyReservePct,
       internalTestKey,
       alarmTopic,
       raticrossInboundKey,
