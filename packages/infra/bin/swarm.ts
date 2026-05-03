@@ -205,19 +205,22 @@ const coreInfraStack = new CoreInfraStack(app, `SwarmCore-${environment}${nameSu
 });
 
 // 2. Messaging Stack (depends on core, contains Telegram/Discord/Twitter)
-const messagingStack = new MessagingStack(app, `SwarmMessaging-${environment}${nameSuffix}`, {
-  environment,
-  nameSuffix: nonSharedResourceSuffix,
-  coreInfraStack,
-  handlersPath,
-  secretPrefix,
-  dependencyLayer: undefined,
-  messagingNameSuffix: nonSharedResourceSuffix,
-  enableDiscordGateway,
-  env: stackEnv,
-  description: `Swarm Messaging (${environment})`,
-});
-messagingStack.addDependency(coreInfraStack);
+let messagingStack: MessagingStack | undefined;
+if (app.node.tryGetContext('deployMessagingStack') !== false) {
+  messagingStack = new MessagingStack(app, `SwarmMessaging-${environment}${nameSuffix}`, {
+    environment,
+    nameSuffix: nonSharedResourceSuffix,
+    coreInfraStack,
+    handlersPath,
+    secretPrefix,
+    dependencyLayer: undefined,
+    messagingNameSuffix: nonSharedResourceSuffix,
+    enableDiscordGateway,
+    env: stackEnv,
+    description: `Swarm Messaging (${environment})`,
+  });
+  messagingStack.addDependency(coreInfraStack);
+}
 
 // 3. Media Stack (depends on core, contains image/voice/media processing)
 const mediaStack = new MediaStack(app, `SwarmMedia-${environment}${nameSuffix}`, {
@@ -230,16 +233,18 @@ const mediaStack = new MediaStack(app, `SwarmMedia-${environment}${nameSuffix}`,
 mediaStack.addDependency(coreInfraStack);
 
 // 4. Station Stack (depends on core + messaging, contains agent runner/tweet poster)
-const stationStack = new StationStack(app, `SwarmStation-${environment}${nameSuffix}`, {
-  environment,
-  nameSuffix: nonSharedResourceSuffix,
-  coreInfraStack,
-  messagingStack,
-  env: stackEnv,
-  description: `Swarm Station Services (${environment})`,
-});
-stationStack.addDependency(coreInfraStack);
-stationStack.addDependency(messagingStack);
+if (messagingStack && app.node.tryGetContext('deployStationStack') !== false) {
+  const stationStack = new StationStack(app, `SwarmStation-${environment}${nameSuffix}`, {
+    environment,
+    nameSuffix: nonSharedResourceSuffix,
+    coreInfraStack,
+    messagingStack,
+    env: stackEnv,
+    description: `Swarm Station Services (${environment})`,
+  });
+  stationStack.addDependency(coreInfraStack);
+  stationStack.addDependency(messagingStack);
+}
 
 // 5. Admin API Stack (depends on core, changes with code updates)
 const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffix}`, {
@@ -279,19 +284,21 @@ const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffi
 adminApiStack.addDependency(coreInfraStack);
 
 // 6. Frontend Stack (depends on Admin API, changes with UI updates)
-const frontendStack = new FrontendStack(app, `SwarmFrontend-${environment}${nameSuffix}`, {
-  environment,
-  nameSuffix: nonSharedResourceSuffix,
-  adminApiStack,
-  adminDomain,
-  adminCertificateArn,
-  enableWaf,
-  useExistingBuckets,
-  skipDomainAliases,
-  env: stackEnv,
-  description: `Swarm Frontend (${environment})`,
-});
-frontendStack.addDependency(adminApiStack);
+if (app.node.tryGetContext('deployFrontendStack') !== false) {
+  const frontendStack = new FrontendStack(app, `SwarmFrontend-${environment}${nameSuffix}`, {
+    environment,
+    nameSuffix: nonSharedResourceSuffix,
+    adminApiStack,
+    adminDomain,
+    adminCertificateArn,
+    enableWaf,
+    useExistingBuckets,
+    skipDomainAliases,
+    env: stackEnv,
+    description: `Swarm Frontend (${environment})`,
+  });
+  frontendStack.addDependency(adminApiStack);
+}
 
 // 4. Profile Page Stack (independent, changes with profile page updates)
 // Hosts public avatar profile pages at *.rati.chat subdomains
