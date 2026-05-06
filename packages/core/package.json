@@ -51,7 +51,7 @@
     "lint": "eslint --max-warnings 70 src/"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "@aws-sdk/client-bedrock-runtime": "^3.1032.0",
     "@aws-sdk/client-dynamodb": "^3.1032.0",
     "@aws-sdk/client-s3": "^3.1032.0",
