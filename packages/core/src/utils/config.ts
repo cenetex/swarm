@@ -161,14 +161,14 @@ const LLMConfigFileSchema = z.object({
 
 const MediaConfigFileSchema = z.object({
   image: z.object({
-    provider: z.enum(['openrouter', 'replicate', 'dalle']).default('replicate'),
+    provider: z.enum(['openrouter', 'replicate', 'dalle']).default('openrouter'),
     model: z.string().default(DEFAULT_MODELS.image_generation),
-  }).default({ provider: 'replicate', model: DEFAULT_MODELS.image_generation }),
+  }).default({ provider: 'openrouter', model: DEFAULT_MODELS.image_generation }),
   video: z.object({
-    provider: z.literal('replicate').default('replicate'),
-    model: z.string().default('minimax/video-01'),
+    provider: z.enum(['openrouter', 'replicate']).default('openrouter'),
+    model: z.string().default(DEFAULT_MODELS.video_generation),
   }).optional(),
-}).default({ image: { provider: 'replicate', model: DEFAULT_MODELS.image_generation } });
+}).default({ image: { provider: 'openrouter', model: DEFAULT_MODELS.image_generation } });
 
 const ScheduledTweetFileSchema = z.object({
   cron: z.string(),
@@ -353,8 +353,12 @@ export function loadAvatarConfigFromEnv(avatarId: string): AvatarConfig {
     },
     media: {
       image: {
-        provider: (process.env.IMAGE_PROVIDER as 'openrouter' | 'replicate' | 'dalle') || 'replicate',
+        provider: (process.env.IMAGE_PROVIDER as 'openrouter' | 'replicate' | 'dalle') || 'openrouter',
         model: process.env.IMAGE_MODEL || DEFAULT_MODELS.image_generation,
+      },
+      video: {
+        provider: (process.env.VIDEO_PROVIDER as 'openrouter' | 'replicate') || 'openrouter',
+        model: process.env.VIDEO_MODEL || DEFAULT_MODELS.video_generation,
       },
     },
     scheduling: {},

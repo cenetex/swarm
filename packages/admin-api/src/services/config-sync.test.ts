@@ -138,7 +138,7 @@ describe('config-sync convertToAvatarConfig', () => {
     expect(config.platforms.telegram?.allowedDmUserIds).toBeUndefined();
   });
 
-  it('defaults image generation model to FLUX 1.1 Pro when unset', () => {
+  it('defaults image generation model to OpenRouter FLUX 2 Pro when unset', () => {
     const record = {
       pk: 'AVATAR#test-avatar',
       sk: 'CONFIG',
@@ -166,7 +166,10 @@ describe('config-sync convertToAvatarConfig', () => {
     } satisfies Partial<AvatarRecord> as AvatarRecord;
 
     const config = convertToAvatarConfig(record);
-    expect(config.media.image.model).toBe('black-forest-labs/flux-1.1-pro');
+    expect(config.media.image.provider).toBe('openrouter');
+    expect(config.media.image.model).toBe('black-forest-labs/flux.2-pro');
+    expect(config.media.video?.provider).toBe('openrouter');
+    expect(config.media.video?.model).toBe('bytedance/seedance-2.0-fast');
   });
 
   it('syncs Twitter features and autonomous posts settings', () => {

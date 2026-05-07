@@ -42,6 +42,42 @@ function createDocClient(region: string = 'us-east-1'): DynamoDBDocumentClient {
   });
 }
 
+const VALID_PROVIDERS = ['replicate', 'openai', 'openrouter', 'anthropic'] as const;
+type ValidProvider = typeof VALID_PROVIDERS[number];
+
+function isValidProvider(value: unknown): value is ValidProvider {
+  return typeof value === 'string' && VALID_PROVIDERS.includes(value as ValidProvider);
+}
+
+function getDefaultProvider(capability: AICapability): ValidProvider {
+  if (capability === 'image_generation' || capability === 'video_generation') {
+    return 'openrouter';
+  }
+  if (capability === 'transcription') {
+    return 'openai';
+  }
+  if (capability === 'llm') {
+    return 'anthropic';
+  }
+  return 'replicate';
+}
+
+function getPreferredProviders(capability: AICapability): ValidProvider[] {
+  if (capability === 'image_generation' || capability === 'video_generation') {
+    return ['openrouter', 'replicate'];
+  }
+  if (capability === 'llm') {
+    return ['openrouter', 'anthropic', 'openai'];
+  }
+  if (capability === 'text_to_speech') {
+    return ['replicate', 'openai'];
+  }
+  if (capability === 'transcription') {
+    return ['openai', 'replicate'];
+  }
+  return ['replicate'];
+}
+
 // ============================================================================
 // MODEL RESOLUTION
 // ============================================================================
@@ -60,7 +96,7 @@ export function createModelResolver(config: ResolverConfig): MediaServiceDepende
         Key: { pk: `AVATAR#${avatarId}`, sk: 'CONFIG' },
       }));
 
-      // Check integrations.replicate.models.{capability} (admin-api format)
+      // Check integrations.<provider>.models.{capability} (admin-api format)
       // Then check synced config format (STATE_TABLE) for the matching capability.
       const item = result.Item;
       const syncedConfigModel =
@@ -76,18 +112,24 @@ export function createModelResolver(config: ResolverConfig): MediaServiceDepende
             ? item?.config?.media?.video?.provider
             : undefined;
 
-      const configuredModel = item?.integrations?.replicate?.models?.[capability]
-        || syncedConfigModel;
+      for (const provider of getPreferredProviders(capability)) {
+        const configuredModel = item?.integrations?.[provider]?.models?.[capability];
+        if (configuredModel) {
+          console.log(`[MediaResolver] Using configured ${capability} model for ${avatarId}: ${configuredModel} (${provider})`);
+          return {
+            model: configuredModel,
+            provider,
+          };
+        }
+      }
 
-      if (configuredModel) {
-        // Use the stored provider if valid, otherwise default to replicate
-        const validProviders = ['replicate', 'openai', 'openrouter', 'anthropic'] as const;
-        const resolvedProvider = validProviders.includes(syncedConfigProvider as typeof validProviders[number])
-          ? (syncedConfigProvider as typeof validProviders[number])
-          : 'replicate';
-        console.log(`[MediaResolver] Using configured ${capability} model for ${avatarId}: ${configuredModel} (${resolvedProvider})`);
+      if (syncedConfigModel) {
+        const resolvedProvider = isValidProvider(syncedConfigProvider)
+          ? syncedConfigProvider
+          : getDefaultProvider(capability);
+        console.log(`[MediaResolver] Using synced ${capability} model for ${avatarId}: ${syncedConfigModel} (${resolvedProvider})`);
         return {
-          model: configuredModel,
+          model: syncedConfigModel,
           provider: resolvedProvider,
         };
       }
@@ -97,10 +139,11 @@ export function createModelResolver(config: ResolverConfig): MediaServiceDepende
 
     // Fall back to default
     const defaultModel = DEFAULT_MODELS[capability];
-    console.log(`[MediaResolver] Using default ${capability} model: ${defaultModel}`);
+    const defaultProvider = getDefaultProvider(capability);
+    console.log(`[MediaResolver] Using default ${capability} model: ${defaultModel} (${defaultProvider})`);
     return {
       model: defaultModel,
-      provider: 'replicate',
+      provider: defaultProvider,
     };
   };
 }

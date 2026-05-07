@@ -12,6 +12,7 @@ import { jsonResponse, parseSinceQueryParam } from './shared.js';
 import * as observabilityService from '../../services/observability.js';
 import * as integrationsService from '../../services/integrations.js';
 import { searchReplicateModels } from '../../services/media/replicate-schema.js';
+import { searchOpenRouterModels } from '../../services/openrouter-models.js';
 import { AVAILABLE_MODELS, type ModelInfo } from '../../services/models-registry.js';
 
 // Module-level cache for the Replicate API key resolved from Secrets Manager.
@@ -102,17 +103,20 @@ export async function handleSystemRoutes(
     return jsonResponse(corsHeaders, 200, { integrations });
   }
 
-  // GET /integrations/models/search — Search Replicate model catalog
+  // GET /integrations/models/search — Search media model catalogs
   if (method === 'GET' && path === '/integrations/models/search') {
     const params = event.queryStringParameters || {};
     const query = params.q?.trim();
     const capability = params.capability;
-    const integration = params.integration;
+    const integration = params.integration || (
+      capability === 'image_generation' || capability === 'video_generation'
+        ? 'openrouter'
+        : 'replicate'
+    );
 
-    // Currently only Replicate supports live search
-    if (integration && integration !== 'replicate') {
+    if (!['openrouter', 'replicate'].includes(integration)) {
       return jsonResponse(corsHeaders, 400, {
-        error: 'Model search is currently only supported for Replicate',
+        error: 'Model search is currently only supported for OpenRouter and Replicate',
       });
     }
 
@@ -122,12 +126,22 @@ export async function handleSystemRoutes(
       });
     }
 
+    if (integration === 'openrouter') {
+      const results = await searchOpenRouterModels(query, {
+        capability: capability as ModelInfo['capabilities'][number] | undefined,
+      });
+      return jsonResponse(corsHeaders, 200, {
+        results,
+        source: 'openrouter_api',
+      });
+    }
+
     // Get system Replicate API key from env or Secrets Manager
     const apiKey = await resolveReplicateApiKey();
 
     if (!apiKey) {
       // Fall back to hardcoded models filtered by query
-      const filtered = filterHardcodedModels(query, capability);
+      const filtered = filterHardcodedModels(query, capability, 'replicate');
       return jsonResponse(corsHeaders, 200, {
         results: filtered,
         source: 'hardcoded',
@@ -165,7 +179,7 @@ export async function handleSystemRoutes(
       });
     } catch {
       // On API failure, fall back to hardcoded models
-      const filtered = filterHardcodedModels(query, capability);
+      const filtered = filterHardcodedModels(query, capability, 'replicate');
       return jsonResponse(corsHeaders, 200, {
         results: filtered,
         source: 'hardcoded',
@@ -241,7 +255,11 @@ export function inferCapabilities(
 /**
  * Filter hardcoded models by query string and optional capability.
  */
-function filterHardcodedModels(query: string, capability?: string): ModelInfo[] {
+function filterHardcodedModels(
+  query: string,
+  capability?: string,
+  provider?: ModelInfo['provider'],
+): ModelInfo[] {
   const q = query.toLowerCase();
   return AVAILABLE_MODELS.filter((m) => {
     const matchesQuery =
@@ -249,7 +267,7 @@ function filterHardcodedModels(query: string, capability?: string): ModelInfo[] 
       m.name.toLowerCase().includes(q) ||
       m.description.toLowerCase().includes(q);
     const matchesCap = !capability || m.capabilities.includes(capability as ModelInfo['capabilities'][number]);
-    const isReplicate = m.provider === 'replicate';
-    return matchesQuery && matchesCap && isReplicate;
+    const matchesProvider = !provider || m.provider === provider;
+    return matchesQuery && matchesCap && matchesProvider;
   });
 }

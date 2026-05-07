@@ -56,7 +56,7 @@ export interface AvatarRecord {
       model: string;
     };
     video?: {
-      provider: 'replicate';
+      provider: 'openrouter' | 'replicate';
       model: string;
     };
     // Use profile image as reference for character consistency

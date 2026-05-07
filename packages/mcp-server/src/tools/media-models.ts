@@ -1,7 +1,7 @@
 /**
  * Media Model Discovery & Configuration Tools
  *
- * Tools for browsing available Replicate image/video models
+ * Tools for browsing available image/video models
  * and setting media model preferences for avatars.
  */
 import { z } from 'zod';
@@ -11,8 +11,8 @@ import { defineTool, type ToolResult } from '../registry.js';
 // Service Interface
 // ============================================================================
 
-export interface ReplicateModelSearchResult {
-  id: string; // owner/name
+export interface MediaModelSearchResult {
+  id: string; // provider-native model ID
   name: string;
   description: string;
   runCount: number;
@@ -20,20 +20,26 @@ export interface ReplicateModelSearchResult {
 }
 
 export interface MediaModelServices {
-  /** Search Replicate for image/video models */
-  browseReplicateModels: (query: string, capability?: 'image' | 'video') => Promise<ReplicateModelSearchResult[]>;
+  /** Search configured media model providers for image/video models */
+  browseMediaModels: (
+    query: string,
+    capability?: 'image' | 'video',
+    provider?: 'openrouter' | 'replicate',
+  ) => Promise<MediaModelSearchResult[]>;
 
   /** Set the media model preference for an avatar */
   setMediaModel: (
     avatarId: string,
     capability: 'image_generation' | 'video_generation',
     modelId: string,
+    provider?: 'openrouter' | 'replicate',
   ) => Promise<void>;
 
   /** Get the currently configured media model for an avatar */
   getMediaModel: (
     avatarId: string,
     capability: 'image_generation' | 'video_generation',
+    provider?: 'openrouter' | 'replicate',
   ) => Promise<{ model: string; provider: string }>;
 }
 
@@ -45,7 +51,7 @@ export const createMediaModelTools = (services: MediaModelServices) => [
   defineTool({
     name: 'browse_image_models',
     description:
-      'Search for available image or video generation models on Replicate. ' +
+      'Search for available image or video generation models. ' +
       'Use this to discover models before setting one with set_media_model. ' +
       'Returns model IDs, descriptions, and popularity.',
     category: 'config',
@@ -60,9 +66,14 @@ export const createMediaModelTools = (services: MediaModelServices) => [
         .optional()
         .default('image')
         .describe('"image" for image generation models, "video" for video generation models'),
+      provider: z
+        .enum(['openrouter', 'replicate'])
+        .optional()
+        .default('openrouter')
+        .describe('Model provider to search; defaults to OpenRouter for image/video generation'),
     }),
     execute: async (input, _context): Promise<ToolResult> => {
-      const results = await services.browseReplicateModels(input.query, input.capability);
+      const results = await services.browseMediaModels(input.query, input.capability, input.provider);
 
       if (results.length === 0) {
         return {
@@ -84,7 +95,8 @@ export const createMediaModelTools = (services: MediaModelServices) => [
             runs: m.runCount > 1_000_000 ? `${(m.runCount / 1_000_000).toFixed(1)}M` : `${Math.round(m.runCount / 1000)}K`,
           })),
           total: results.length,
-          hint: 'Use set_media_model to change your model. Model ID format: "owner/name".',
+          provider: input.provider,
+          hint: 'Use set_media_model to change your model. Model ID format is provider-native, usually "owner/name".',
         },
       };
     },
@@ -94,7 +106,7 @@ export const createMediaModelTools = (services: MediaModelServices) => [
     name: 'set_media_model',
     description:
       'Set the image or video generation model for this avatar. ' +
-      'Accepts any Replicate model in "owner/name" format. ' +
+      'Accepts provider-native model IDs, usually in "owner/name" format. ' +
       'Use browse_image_models to find available models first.',
     category: 'config',
     toolset: 'models',
@@ -102,23 +114,29 @@ export const createMediaModelTools = (services: MediaModelServices) => [
     inputSchema: z.object({
       model: z
         .string()
-        .regex(/^[a-z0-9_-]+\/[a-z0-9_-]+$/i, 'Model must be in "owner/name" format')
-        .describe('Replicate model ID (e.g., "black-forest-labs/flux-1.1-pro")'),
+        .regex(/^[a-z0-9_.-]+\/[a-z0-9_.:-]+$/i, 'Model must be in provider-native "owner/name" format')
+        .describe('Model ID (e.g., "black-forest-labs/flux.2-pro")'),
       capability: z
         .enum(['image_generation', 'video_generation'])
         .optional()
         .default('image_generation')
         .describe('"image_generation" or "video_generation"'),
+      provider: z
+        .enum(['openrouter', 'replicate'])
+        .optional()
+        .default('openrouter')
+        .describe('Provider to store this model under; defaults to OpenRouter'),
     }),
     execute: async (input, context): Promise<ToolResult> => {
-      await services.setMediaModel(context.avatarId, input.capability, input.model);
+      await services.setMediaModel(context.avatarId, input.capability, input.model, input.provider);
 
       return {
         success: true,
         data: {
-          message: `${input.capability === 'image_generation' ? 'Image' : 'Video'} model set to ${input.model}`,
+          message: `${input.capability === 'image_generation' ? 'Image' : 'Video'} model set to ${input.model} on ${input.provider}`,
           model: input.model,
           capability: input.capability,
+          provider: input.provider,
         },
       };
     },
@@ -137,9 +155,14 @@ export const createMediaModelTools = (services: MediaModelServices) => [
         .optional()
         .default('image_generation')
         .describe('"image_generation" or "video_generation"'),
+      provider: z
+        .enum(['openrouter', 'replicate'])
+        .optional()
+        .default('openrouter')
+        .describe('Provider to read; defaults to OpenRouter'),
     }),
     execute: async (input, context): Promise<ToolResult> => {
-      const config = await services.getMediaModel(context.avatarId, input.capability);
+      const config = await services.getMediaModel(context.avatarId, input.capability, input.provider);
 
       return {
         success: true,

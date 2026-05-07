@@ -46,7 +46,8 @@ export const DEFAULT_AVATAR_CONFIG: import('./types/index.js').AvatarConfig = {
     maxTokens: DEFAULT_LLM_MAX_TOKENS,
   },
   media: {
-    image: { provider: 'replicate' as const, model: DEFAULT_MODELS.image_generation },
+    image: { provider: 'openrouter' as const, model: DEFAULT_MODELS.image_generation },
+    video: { provider: 'openrouter' as const, model: DEFAULT_MODELS.video_generation },
   },
   scheduling: {},
   behavior: {

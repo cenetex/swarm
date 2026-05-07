@@ -185,15 +185,22 @@ export function createAgentServices(
         let pendingJobs = await mediaJobs.getPendingJobs(avatarId);
 
         if (pendingJobs.length > 0) {
-          const replicateKey = await media.getProviderApiKey(avatarId, 'replicate');
-          if (replicateKey) {
-            for (const job of pendingJobs) {
-              if ((job.status === 'processing' || job.status === 'pending') && job.externalId) {
-                await mediaJobs.pollAndCompleteJob(job.jobId, replicateKey);
+          for (const job of pendingJobs) {
+            if ((job.status === 'processing' || job.status === 'pending') && job.externalId) {
+              if (job.provider === 'openrouter') {
+                const openRouterKey = await media.getProviderApiKey(avatarId, 'openrouter');
+                if (openRouterKey) {
+                  await mediaJobs.pollAndCompleteOpenRouterJob(job.jobId, openRouterKey);
+                }
+              } else {
+                const replicateKey = await media.getProviderApiKey(avatarId, 'replicate');
+                if (replicateKey) {
+                  await mediaJobs.pollAndCompleteJob(job.jobId, replicateKey);
+                }
               }
             }
-            pendingJobs = await mediaJobs.getPendingJobs(avatarId);
           }
+          pendingJobs = await mediaJobs.getPendingJobs(avatarId);
         }
 
         return pendingJobs.map(job => ({
@@ -216,9 +223,12 @@ export function createAgentServices(
         }
 
         if ((job.status === 'processing' || job.status === 'pending') && job.externalId) {
-          const replicateKey = await media.getProviderApiKey(job.avatarId, 'replicate');
-          if (replicateKey) {
-            const polledJob = await mediaJobs.pollAndCompleteJob(job.jobId, replicateKey);
+          const provider = job.provider === 'openrouter' ? 'openrouter' : 'replicate';
+          const apiKey = await media.getProviderApiKey(job.avatarId, provider);
+          if (apiKey) {
+            const polledJob = provider === 'openrouter'
+              ? await mediaJobs.pollAndCompleteOpenRouterJob(job.jobId, apiKey)
+              : await mediaJobs.pollAndCompleteJob(job.jobId, apiKey);
             if (polledJob) job = polledJob;
           }
         }

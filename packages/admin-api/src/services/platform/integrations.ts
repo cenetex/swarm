@@ -144,12 +144,12 @@ export const INTEGRATION_METADATA: Record<IntegrationType, IntegrationMetadata> 
   replicate: {
     type: 'replicate',
     name: 'Replicate',
-    description: 'AI models for image, video, audio, and voice generation',
+    description: 'AI models for audio and voice generation',
     icon: 'replicate',
     category: 'ai_provider',
     requiredSecrets: ['replicate_api_key'],
     optionalSecrets: [],
-    capabilities: ['image_generation', 'video_generation', 'audio_generation', 'voice_clone', 'text_to_speech'],
+    capabilities: ['audio_generation', 'voice_clone', 'text_to_speech'],
     configurable: true,
   },
   openai: {
@@ -177,12 +177,12 @@ export const INTEGRATION_METADATA: Record<IntegrationType, IntegrationMetadata> 
   openrouter: {
     type: 'openrouter',
     name: 'OpenRouter',
-    description: 'Access multiple AI models through a unified API',
+    description: 'Access LLM, image, and video models through a unified API',
     icon: 'openrouter',
     category: 'ai_provider',
     requiredSecrets: ['openrouter_api_key'],
     optionalSecrets: [],
-    capabilities: ['llm', 'image_generation'],
+    capabilities: ['llm', 'image_generation', 'video_generation'],
     configurable: true,
   },
 

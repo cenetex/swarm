@@ -20,7 +20,7 @@ import * as mediaJobs from './media-jobs.js';
 import * as gallery from './gallery.js';
 import * as credits from '../billing/credits.js';
 import { _getSecretValueInternal } from '../secrets.js';
-import { getReplicateVersion } from '../models-registry.js';
+import { getModelById, getReplicateVersion } from '../models-registry.js';
 import { validateReplicateInputWithSchema } from './replicate-schema.js';
 import type { MediaJob, GalleryItem, SecretType, AICapability } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
@@ -159,8 +159,14 @@ async function makeUrlsAccessible(urls: string[]): Promise<string[]> {
 
 // Provider configuration
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
+const OPENROUTER_CHAT_COMPLETIONS_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_VIDEOS_ENDPOINT = 'https://openrouter.ai/api/v1/videos';
+const OPENROUTER_SITE_URL = process.env.OPENROUTER_SITE_URL || process.env.PUBLIC_SITE_URL || 'https://swarm.rati.chat';
+const OPENROUTER_APP_TITLE = process.env.OPENROUTER_APP_TITLE || 'aws-swarm';
 const IMAGE_GENERATION_MAX_REFERENCE_IMAGES = 14;
 const MATCH_INPUT_IMAGE_ASPECT_RATIO_MODELS = new Set(['google/nano-banana-pro']);
+const SUPPORTED_MEDIA_PROVIDERS = ['openrouter', 'replicate'] as const;
+type SupportedMediaProvider = typeof SUPPORTED_MEDIA_PROVIDERS[number];
 
 function getImageGenerationAspectRatio(
   modelId: string,
@@ -182,6 +188,138 @@ function addReferenceImageInputs(input: Record<string, unknown>, referenceImageU
   input.image_input = references;
   input.image = primaryReference;
   input.image_prompt = primaryReference;
+}
+
+function isSupportedMediaProvider(provider: string): provider is SupportedMediaProvider {
+  return SUPPORTED_MEDIA_PROVIDERS.includes(provider as SupportedMediaProvider);
+}
+
+function getOpenRouterHeaders(apiKey: string): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${apiKey}`,
+    'HTTP-Referer': OPENROUTER_SITE_URL,
+    'X-Title': OPENROUTER_APP_TITLE,
+  };
+}
+
+function buildReferenceGuidancePrompt(prompt: string, referenceImageCount: number): string {
+  if (referenceImageCount === 0) return prompt;
+  return [
+    prompt,
+    'Use the provided reference images as visual identity and style guidance only.',
+    'Create the requested new scene; do not copy the reference sheet layout or reconstruct the reference image directly.',
+  ].join(' ');
+}
+
+function getContentTypeExtension(contentType: string | null | undefined, fallback: string): string {
+  const normalized = (contentType || '').toLowerCase();
+  if (normalized.includes('jpeg') || normalized.includes('jpg')) return 'jpg';
+  if (normalized.includes('webp')) return 'webp';
+  if (normalized.includes('mp4')) return 'mp4';
+  if (normalized.includes('png')) return 'png';
+  return fallback;
+}
+
+function decodeDataUrl(dataUrl: string, fallbackContentType: string): { buffer: Buffer; contentType: string } | null {
+  const match = dataUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+  if (!match) return null;
+
+  const contentType = match[1] || fallbackContentType;
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] || '';
+  const buffer = isBase64
+    ? Buffer.from(payload, 'base64')
+    : Buffer.from(decodeURIComponent(payload), 'utf8');
+
+  return { buffer, contentType };
+}
+
+async function readMediaOutput(
+  outputUrl: string,
+  fallbackContentType: string,
+): Promise<{ buffer: Buffer; contentType: string }> {
+  const dataUrl = decodeDataUrl(outputUrl, fallbackContentType);
+  if (dataUrl) return dataUrl;
+
+  const response = await fetchWithTimeout(outputUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download generated media: ${response.status} ${response.statusText}`);
+  }
+
+  return {
+    buffer: Buffer.from(await response.arrayBuffer()),
+    contentType: response.headers.get('content-type') || fallbackContentType,
+  };
+}
+
+function extractOpenRouterImageUrl(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+
+  const response = payload as {
+    choices?: Array<{
+      message?: {
+        images?: Array<{
+          image_url?: { url?: string };
+          url?: string;
+        }>;
+        content?: unknown;
+      };
+    }>;
+    data?: Array<{ url?: string; b64_json?: string }>;
+  };
+
+  const image = response.choices?.[0]?.message?.images?.[0];
+  if (image?.image_url?.url) return image.image_url.url;
+  if (image?.url) return image.url;
+
+  const data = response.data?.[0];
+  if (data?.url) return data.url;
+  if (data?.b64_json) return `data:image/png;base64,${data.b64_json}`;
+
+  const content = response.choices?.[0]?.message?.content;
+  if (Array.isArray(content)) {
+    for (const part of content) {
+      if (!part || typeof part !== 'object') continue;
+      const candidate = part as { image_url?: { url?: string }; url?: string };
+      if (candidate.image_url?.url) return candidate.image_url.url;
+      if (candidate.url) return candidate.url;
+    }
+  }
+
+  return undefined;
+}
+
+function extractOpenRouterVideoId(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const response = payload as { id?: string; data?: { id?: string } };
+  return response.id || response.data?.id;
+}
+
+function summarizeOpenRouterError(errorText: string, status?: number): string {
+  const raw = (errorText || '').trim();
+  if (!raw) return status ? `OpenRouter request failed (HTTP ${status}).` : 'OpenRouter request failed.';
+
+  if (raw.startsWith('{') || raw.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === 'object') {
+        const obj = parsed as Record<string, unknown>;
+        const error = obj.error;
+        if (error && typeof error === 'object') {
+          const message = (error as Record<string, unknown>).message;
+          if (typeof message === 'string' && message.trim()) return message.trim();
+        }
+        const message = obj.message;
+        if (typeof message === 'string' && message.trim()) return message.trim();
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  if (raw.length > 240) return `${raw.slice(0, 240)}…`;
+  return raw;
 }
 
 function summarizeReplicateError(errorText: string, status?: number): string {
@@ -270,14 +408,25 @@ async function consumeTrialCreditAfterSuccess(avatarId: string): Promise<number>
 }
 
 /**
- * Get the configured model for an avatar's capability using core resolver
+ * Resolve the configured model/provider for an avatar's media capability.
  */
-async function getConfiguredModel(
+async function resolveMediaModel(
   avatarId: string,
-  capability: AICapability
-): Promise<string> {
+  capability: AICapability,
+  modelOverride?: string,
+): Promise<{ modelId: string; provider: SupportedMediaProvider }> {
   const resolved = await coreModelResolver(avatarId, capability);
-  return resolved.model;
+  const registryProvider = modelOverride ? getModelById(modelOverride)?.provider : undefined;
+  const provider = registryProvider || resolved.provider;
+
+  if (!isSupportedMediaProvider(provider)) {
+    throw new Error(`Unsupported media provider for ${capability}: ${provider}`);
+  }
+
+  return {
+    modelId: modelOverride || resolved.model,
+    provider,
+  };
 }
 
 interface GenerateImageOptions {
@@ -306,6 +455,129 @@ interface GenerateStickerOptions {
   avatarId: string;
   platform?: string;
   sourceImageId?: string; // Convert existing image to sticker
+}
+
+async function generateImageWithOpenRouter(params: {
+  prompt: string;
+  avatarId: string;
+  platform?: string;
+  modelId: string;
+  apiKey: string;
+  referenceImageUrls: string[];
+  resolution: GenerateImageOptions['resolution'];
+  aspectRatio: GenerateImageOptions['aspectRatio'];
+}): Promise<GalleryItem> {
+  const {
+    prompt,
+    avatarId,
+    platform,
+    modelId,
+    apiKey,
+    referenceImageUrls,
+    resolution,
+    aspectRatio,
+  } = params;
+
+  const accessibleReferenceUrls = referenceImageUrls.length > 0
+    ? await makeUrlsAccessible(referenceImageUrls)
+    : [];
+  const finalPrompt = buildReferenceGuidancePrompt(prompt, accessibleReferenceUrls.length);
+  const normalizedAspectRatio = aspectRatio === 'match_input_image' ? '1:1' : aspectRatio;
+
+  const content: Array<Record<string, unknown>> = [
+    { type: 'text', text: finalPrompt },
+    ...accessibleReferenceUrls.slice(0, IMAGE_GENERATION_MAX_REFERENCE_IMAGES).map((url) => ({
+      type: 'image_url',
+      image_url: { url },
+    })),
+  ];
+
+  const requestBody: Record<string, unknown> = {
+    model: modelId,
+    messages: [
+      {
+        role: 'user',
+        content,
+      },
+    ],
+    modalities: ['image', 'text'],
+    image_config: {
+      aspect_ratio: normalizedAspectRatio || '1:1',
+      image_size: resolution || '2K',
+      output_format: 'png',
+    },
+  };
+
+  log.info('image_gen', 'openrouter_image_gen_started', {
+    avatarId,
+    modelId,
+    refs: accessibleReferenceUrls.length,
+    promptPreview: prompt.slice(0, 50),
+  });
+
+  const response = await fetch(OPENROUTER_CHAT_COMPLETIONS_ENDPOINT, {
+    method: 'POST',
+    headers: getOpenRouterHeaders(apiKey),
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const summary = summarizeOpenRouterError(errorText, response.status);
+    log.error('image_gen', 'openrouter_api_error', {
+      avatarId,
+      modelId,
+      status: response.status,
+      error: summary,
+    });
+    throw new Error(`Image generation failed: ${summary}`);
+  }
+
+  const payload = await response.json() as unknown;
+  const outputUrl = extractOpenRouterImageUrl(payload);
+  if (!outputUrl) {
+    log.error('image_gen', 'openrouter_no_output_url', {
+      avatarId,
+      modelId,
+      responsePreview: JSON.stringify(payload).slice(0, 500),
+    });
+    throw new Error('No image returned from OpenRouter');
+  }
+
+  const { buffer, contentType } = await readMediaOutput(outputUrl, 'image/png');
+  const extension = getContentTypeExtension(contentType, 'png');
+  const imageId = gallery.generateGalleryId();
+  const s3Key = `avatars/${avatarId}/images/${imageId}.${extension}`;
+
+  await s3Client.send(new PutObjectCommand({
+    Bucket: MEDIA_BUCKET,
+    Key: s3Key,
+    Body: buffer,
+    ContentType: contentType,
+  }));
+
+  const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
+  const galleryItem = await gallery.addToGallery(avatarId, {
+    id: imageId,
+    type: 'image',
+    url: publicUrl,
+    s3Key,
+    prompt,
+    model: modelId,
+    platform,
+    metadata: {
+      provider: 'openrouter',
+      referenceImageCount: accessibleReferenceUrls.length,
+    },
+  });
+
+  log.info('image_gen', 'openrouter_gallery_item_created', {
+    avatarId,
+    modelId,
+    galleryItemId: galleryItem.id,
+  });
+
+  return galleryItem;
 }
 
 /**
@@ -462,6 +734,29 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     }
   }
 
+  const { modelId, provider } = await resolveMediaModel(avatarId, 'image_generation', model);
+
+  if (provider === 'openrouter') {
+    const apiKey = await getProviderApiKey(avatarId, 'openrouter');
+    if (!apiKey) {
+      throw new Error('No OpenRouter API key configured. Please set up an API key first.');
+    }
+
+    const galleryItem = await generateImageWithOpenRouter({
+      prompt,
+      avatarId,
+      platform,
+      modelId,
+      apiKey,
+      referenceImageUrls,
+      resolution,
+      aspectRatio,
+    });
+
+    await credits.consumeCredit(avatarId, 'generate_image');
+    return galleryItem;
+  }
+
   // Get Replicate API key (avatar key or system trial)
   // Note: For trial usage, credits are checked but NOT consumed yet
   const { key: apiKey, isTrialUsage, source: apiKeySource } = await getImageGenerationApiKey(avatarId);
@@ -472,8 +767,6 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
     finalPrompt = `${prompt}. Use the provided reference images to maintain visual consistency with the character's appearance, style, and features.`;
   }
 
-  // Get model - use provided model, avatar's configured model, or system default
-  const modelId = model || await getConfiguredModel(avatarId, 'image_generation');
   const version = getReplicateVersion(modelId);
 
   log.info('image_gen', 'image_model_selected', {
@@ -796,6 +1089,53 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     }
   }
 
+  const { modelId, provider } = await resolveMediaModel(avatarId, 'image_generation', model);
+
+  if (provider === 'openrouter') {
+    const apiKey = apiKeyOverride || await getProviderApiKey(avatarId, 'openrouter');
+    if (!apiKey) {
+      throw new Error('No OpenRouter API key configured. Please set up an API key first.');
+    }
+
+    const jobId = uuid();
+    const job = await mediaJobs.createJob({
+      jobId,
+      avatarId,
+      type: 'image',
+      prompt,
+      conversationId,
+      platform: platform || 'unknown',
+      replyToMessageId,
+      provider: 'openrouter',
+      purpose,
+    });
+
+    try {
+      const galleryItem = await generateImageWithOpenRouter({
+        prompt,
+        avatarId,
+        platform,
+        modelId,
+        apiKey,
+        referenceImageUrls,
+        resolution,
+        aspectRatio,
+      });
+
+      await mediaJobs.updateJobStatus(jobId, 'completed', {
+        resultUrl: galleryItem.url,
+        resultS3Key: galleryItem.s3Key,
+      });
+      await credits.consumeCredit(avatarId, 'generate_image');
+
+      return await mediaJobs.getJob(jobId) || job;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await mediaJobs.updateJobStatus(jobId, 'failed', { error: message });
+      throw error;
+    }
+  }
+
   // Get Replicate API key
   // Note: For async jobs, we consume trial credits at job start (not ideal, but webhook
   // handler would need significant changes to consume on completion)
@@ -815,8 +1155,6 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     finalPrompt = `${prompt}. Use the provided reference images to maintain visual consistency with the character's appearance, style, and features.`;
   }
 
-  // Get model - use provided model, avatar's configured model, or system default
-  const modelId = model || await getConfiguredModel(avatarId, 'image_generation');
   const version = getReplicateVersion(modelId);
 
   log.info('async_image', 'async_image_model_selected', {
@@ -1009,6 +1347,90 @@ export async function generateVideo(options: GenerateVideoOptions): Promise<Medi
     throw new Error(videoBurstCheck.reason || 'Video generation not allowed');
   }
 
+  const { modelId: videoModel, provider } = await resolveMediaModel(avatarId, 'video_generation', model);
+
+  if (provider === 'openrouter') {
+    const apiKey = await getProviderApiKey(avatarId, 'openrouter');
+    if (!apiKey) {
+      throw new Error('No OpenRouter API key configured. Please set up an API key first.');
+    }
+
+    const jobId = uuid();
+    const job = await mediaJobs.createJob({
+      jobId,
+      avatarId,
+      type: 'video',
+      prompt,
+      conversationId,
+      platform: platform || 'unknown',
+      replyToMessageId,
+      provider: 'openrouter',
+    });
+
+    const accessibleReferenceImageUrl = referenceImageUrl
+      ? await makeUrlAccessible(referenceImageUrl)
+      : undefined;
+    const requestBody: Record<string, unknown> = {
+      model: videoModel,
+      prompt,
+      parameters: {
+        aspect_ratio: '16:9',
+        duration: 4,
+        resolution: '720p',
+      },
+    };
+
+    if (accessibleReferenceImageUrl) {
+      requestBody.input_references = [
+        {
+          type: 'image_url',
+          image_url: { url: accessibleReferenceImageUrl },
+        },
+      ];
+    }
+
+    const response = await fetch(OPENROUTER_VIDEOS_ENDPOINT, {
+      method: 'POST',
+      headers: getOpenRouterHeaders(apiKey),
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      const summary = summarizeOpenRouterError(errorText, response.status);
+      await mediaJobs.updateJobStatus(jobId, 'failed', { error: summary });
+      log.error('video_gen', 'openrouter_video_generation_failed', {
+        avatarId,
+        videoModel,
+        httpStatus: response.status,
+        error: summary,
+      });
+      throw new Error(
+        `Video generation rejected by OpenRouter (HTTP ${response.status}) for model "${videoModel}": ${summary}`,
+      );
+    }
+
+    const payload = await response.json() as unknown;
+    const externalId = extractOpenRouterVideoId(payload);
+    if (!externalId) {
+      const summary = 'OpenRouter did not return a video job id';
+      await mediaJobs.updateJobStatus(jobId, 'failed', { error: summary });
+      throw new Error(summary);
+    }
+
+    await mediaJobs.updateJobStatus(jobId, 'processing', { externalId });
+    await credits.consumeCredit(avatarId, 'generate_video');
+
+    log.info('video_gen', 'openrouter_video_job_submitted', {
+      avatarId,
+      jobId,
+      videoModel,
+      externalId,
+    });
+
+    return job;
+  }
+
   // Get Replicate API key
   const apiKey = await getProviderApiKey(avatarId, 'replicate');
   if (!apiKey) {
@@ -1031,8 +1453,6 @@ export async function generateVideo(options: GenerateVideoOptions): Promise<Medi
   // Start Replicate prediction with webhook
   const webhookUrl = process.env.REPLICATE_WEBHOOK_URL;
 
-  // Get model - use provided model, avatar's configured model, or system default
-  const videoModel = model || await getConfiguredModel(avatarId, 'video_generation');
   log.info('video_gen', 'video_model_selected', { avatarId, videoModel });
 
   // Use the models API endpoint (video models typically don't use version hashes)

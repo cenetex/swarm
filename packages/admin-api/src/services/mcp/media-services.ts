@@ -9,6 +9,7 @@ import type { UserSession } from '../../types.js';
 import type { ServiceContainer } from '../service-container.js';
 import { searchReplicateModels } from '../replicate-schema.js';
 import { DEFAULT_MODELS } from '../models-registry.js';
+import { searchOpenRouterModels } from '../openrouter-models.js';
 
 type MediaServices = Pick<
   AllServices,
@@ -41,6 +42,12 @@ export function createMediaServices(
           conversationId: params.conversationId || `admin-ui-${Date.now()}`,
           replyToMessageId: params.replyToMessageId,
         });
+        if (job.status === 'completed' && job.resultUrl) {
+          return {
+            id: job.resultS3Key?.split('/').pop()?.split('.')[0] || job.jobId,
+            url: job.resultUrl,
+          };
+        }
         return { jobId: job.jobId, status: job.status };
       },
 
@@ -216,10 +223,27 @@ export function createMediaServices(
     stickers: svc.createStickerServices(),
 
     // =========================================================================
-    // Media Model Discovery & Configuration (Replicate)
+    // Media Model Discovery & Configuration
     // =========================================================================
     mediaModels: {
-      browseReplicateModels: async (query, capability) => {
+      browseMediaModels: async (query, capability, provider = 'openrouter') => {
+        if (provider === 'openrouter') {
+          let apiKey: string | undefined;
+          try {
+            apiKey = await media.getProviderApiKey(avatarId, 'openrouter') ?? undefined;
+          } catch {
+            apiKey = process.env.OPENROUTER_API_KEY;
+          }
+
+          const results = await searchOpenRouterModels(query, { capability, apiKey });
+          return results.map(r => ({
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            runCount: 0,
+          }));
+        }
+
         let apiKey: string | undefined;
         try {
           apiKey = await media.getProviderApiKey(avatarId, 'replicate') ?? undefined;
@@ -245,21 +269,21 @@ export function createMediaServices(
         }));
       },
 
-      setMediaModel: async (targetAvatarId, capability, modelId) => {
+      setMediaModel: async (targetAvatarId, capability, modelId, provider = 'openrouter') => {
         await integrations.setModelPreference(
           targetAvatarId,
-          'replicate',
+          provider,
           capability,
           modelId,
           session,
         );
       },
 
-      getMediaModel: async (targetAvatarId, capability) => {
-        const model = await integrations.getConfiguredModel(targetAvatarId, capability, 'replicate');
+      getMediaModel: async (targetAvatarId, capability, provider = 'openrouter') => {
+        const model = await integrations.getConfiguredModel(targetAvatarId, capability, provider);
         return {
-          model: model || DEFAULT_MODELS.image_generation,
-          provider: 'replicate',
+          model: model || DEFAULT_MODELS[capability],
+          provider,
         };
       },
     },

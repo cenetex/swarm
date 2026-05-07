@@ -158,6 +158,29 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
     format: 'ogg' as const,
     ...record.voiceConfig,
   };
+  const integrationOpenRouterImageModel = record.integrations?.openrouter?.models?.image_generation;
+  const integrationReplicateImageModel = record.integrations?.replicate?.models?.image_generation;
+  const mediaImageProvider = integrationOpenRouterImageModel
+    ? 'openrouter'
+    : integrationReplicateImageModel
+      ? 'replicate'
+      : record.mediaConfig?.image?.provider || 'openrouter';
+  const mediaImageModel = integrationOpenRouterImageModel
+    || integrationReplicateImageModel
+    || record.mediaConfig?.image?.model
+    || DEFAULT_MODELS.image_generation;
+
+  const integrationOpenRouterVideoModel = record.integrations?.openrouter?.models?.video_generation;
+  const integrationReplicateVideoModel = record.integrations?.replicate?.models?.video_generation;
+  const mediaVideoProvider = integrationOpenRouterVideoModel
+    ? 'openrouter'
+    : integrationReplicateVideoModel
+      ? 'replicate'
+      : record.mediaConfig?.video?.provider || 'openrouter';
+  const mediaVideoModel = integrationOpenRouterVideoModel
+    || integrationReplicateVideoModel
+    || record.mediaConfig?.video?.model
+    || DEFAULT_MODELS.video_generation;
 
   const config: AvatarConfig = {
     id: record.avatarId,
@@ -197,18 +220,14 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
     },
     media: {
       image: {
-        // Priority: integrations config > mediaConfig > default
-        provider: 'replicate',
-        model: record.integrations?.replicate?.models?.image_generation
-          || record.mediaConfig?.image?.model
-          || DEFAULT_MODELS.image_generation,
+        // Priority: OpenRouter integration > legacy Replicate integration > mediaConfig > default
+        provider: mediaImageProvider,
+        model: mediaImageModel,
       },
-      video: (record.integrations?.replicate?.models?.video_generation || record.mediaConfig?.video?.model) ? {
-        provider: 'replicate' as const,
-        model: record.integrations?.replicate?.models?.video_generation
-          || record.mediaConfig?.video?.model
-          || 'minimax/video-01',
-      } : undefined,
+      video: {
+        provider: mediaVideoProvider,
+        model: mediaVideoModel,
+      },
     },
     scheduling: {},
     behavior: {

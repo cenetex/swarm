@@ -200,9 +200,16 @@ describe('Models Registry', () => {
 
   describe('getModelById', () => {
     it('should find model by exact ID', () => {
+      const model = getModelById('black-forest-labs/flux.2-pro');
+      expect(model).toBeTruthy();
+      expect(model?.name).toBe('FLUX 2 Pro');
+      expect(model?.provider).toBe('openrouter');
+    });
+
+    it('keeps FLUX 1.1 Pro as a selectable legacy Replicate image model', () => {
       const model = getModelById('black-forest-labs/flux-1.1-pro');
       expect(model).toBeTruthy();
-      expect(model?.name).toBe('FLUX 1.1 Pro');
+      expect(model?.capabilities).toContain('image_generation');
       expect(model?.provider).toBe('replicate');
     });
 
@@ -290,9 +297,9 @@ describe('Model Selection Logic', () => {
 
   describe('Tier and quality attributes', () => {
     it('should have premium tier for compute-intensive models', () => {
-      const videoModel = getModelById('minimax/video-01');
+      const videoModel = getModelById('bytedance/seedance-2.0-fast');
       expect(videoModel?.tier).toBe('premium');
-      expect(videoModel?.speed).toBe('slow');
+      expect(videoModel?.speed).toBe('medium');
     });
 
     it('should have standard tier for common models', () => {
