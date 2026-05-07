@@ -103,7 +103,7 @@ export const createMediaModelTools = (services: MediaModelServices) => [
       model: z
         .string()
         .regex(/^[a-z0-9_-]+\/[a-z0-9_-]+$/i, 'Model must be in "owner/name" format')
-        .describe('Replicate model ID (e.g., "black-forest-labs/flux-schnell")'),
+        .describe('Replicate model ID (e.g., "black-forest-labs/flux-1.1-pro")'),
       capability: z
         .enum(['image_generation', 'video_generation'])
         .optional()

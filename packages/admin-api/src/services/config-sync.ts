@@ -11,6 +11,7 @@ import {
 import type { AvatarRecord } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { createSystemLogger } from './structured-logger.js';
+import { DEFAULT_MODELS } from './models-registry.js';
 
 const log = createSystemLogger('config-sync');
 
@@ -200,7 +201,7 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
         provider: 'replicate',
         model: record.integrations?.replicate?.models?.image_generation
           || record.mediaConfig?.image?.model
-          || 'google/nano-banana-pro',
+          || DEFAULT_MODELS.image_generation,
       },
       video: (record.integrations?.replicate?.models?.video_generation || record.mediaConfig?.video?.model) ? {
         provider: 'replicate' as const,

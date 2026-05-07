@@ -73,10 +73,12 @@ describe('Models Registry', () => {
     it('should have all featured models in the versions map', () => {
       expect('black-forest-labs/flux-schnell' in REPLICATE_MODEL_VERSIONS).toBe(true);
       expect('black-forest-labs/flux-1.1-pro' in REPLICATE_MODEL_VERSIONS).toBe(true);
+      expect('google/nano-banana-pro' in REPLICATE_MODEL_VERSIONS).toBe(true);
     });
 
     it('should have undefined for models using /models API', () => {
       expect(REPLICATE_MODEL_VERSIONS['black-forest-labs/flux-1.1-pro']).toBeUndefined();
+      expect(REPLICATE_MODEL_VERSIONS['google/nano-banana-pro']).toBeUndefined();
       expect(REPLICATE_MODEL_VERSIONS['minimax/video-01']).toBeUndefined();
       expect(REPLICATE_MODEL_VERSIONS['stability-ai/stable-audio-2.5']).toBeUndefined();
     });
@@ -201,6 +203,13 @@ describe('Models Registry', () => {
       const model = getModelById('black-forest-labs/flux-1.1-pro');
       expect(model).toBeTruthy();
       expect(model?.name).toBe('FLUX 1.1 Pro');
+      expect(model?.provider).toBe('replicate');
+    });
+
+    it('should expose Nano Banana Pro as a selectable Replicate image model', () => {
+      const model = getModelById('google/nano-banana-pro');
+      expect(model).toBeTruthy();
+      expect(model?.capabilities).toContain('image_generation');
       expect(model?.provider).toBe('replicate');
     });
 

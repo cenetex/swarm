@@ -8,6 +8,7 @@ import type { AllServices } from '@swarm/mcp-server';
 import type { UserSession } from '../../types.js';
 import type { ServiceContainer } from '../service-container.js';
 import { searchReplicateModels } from '../replicate-schema.js';
+import { DEFAULT_MODELS } from '../models-registry.js';
 
 type MediaServices = Pick<
   AllServices,
@@ -257,7 +258,7 @@ export function createMediaServices(
       getMediaModel: async (targetAvatarId, capability) => {
         const model = await integrations.getConfiguredModel(targetAvatarId, capability, 'replicate');
         return {
-          model: model || 'black-forest-labs/flux-schnell',
+          model: model || DEFAULT_MODELS.image_generation,
           provider: 'replicate',
         };
       },

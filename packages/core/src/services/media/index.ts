@@ -17,6 +17,27 @@ export * from './types.js';
 export * from './resolvers.js';
 export { buildVoiceCloneInput, type VoiceCloneInput } from './voice-input.js';
 
+const IMAGE_GENERATION_MAX_REFERENCE_IMAGES = 14;
+const MATCH_INPUT_IMAGE_ASPECT_RATIO_MODELS = new Set(['google/nano-banana-pro']);
+
+function getReferenceAwareAspectRatio(model: string, aspectRatio?: string, hasReferenceImages = false): string {
+  if (hasReferenceImages && MATCH_INPUT_IMAGE_ASPECT_RATIO_MODELS.has(model)) {
+    return 'match_input_image';
+  }
+  return aspectRatio || '1:1';
+}
+
+function addReferenceImageInputs(input: Record<string, unknown>, referenceImageUrls?: string[]): void {
+  if (!referenceImageUrls?.length) return;
+
+  const references = referenceImageUrls.slice(0, IMAGE_GENERATION_MAX_REFERENCE_IMAGES);
+  const primaryReference = references[0];
+
+  input.image_input = references;
+  input.image = primaryReference;
+  input.image_prompt = primaryReference;
+}
+
 /**
  * Extended result that includes gallery info
  */
@@ -263,12 +284,12 @@ export class SwarmMediaService implements MediaService {
       prompt,
       num_outputs: 1,
       output_format: 'png',
-      aspect_ratio: aspectRatio || '1:1',
+      aspect_ratio: getReferenceAwareAspectRatio(model, aspectRatio, Boolean(referenceImageUrls?.length)),
     };
 
-    // Add image_input if reference images provided (for nano-banana-pro and similar models)
+    // Add reference images using the aliases supported by current Replicate image models.
+    addReferenceImageInputs(input, referenceImageUrls);
     if (referenceImageUrls && referenceImageUrls.length > 0) {
-      input.image_input = referenceImageUrls.slice(0, 14); // Max 14 reference images
       console.log(`[MediaService] Using ${referenceImageUrls.length} reference image(s) for generation`);
     }
 

@@ -2,6 +2,7 @@
  * Core Constants
  * Centralized configuration values used across the swarm
  */
+import { DEFAULT_MODELS } from './services/media/types.js';
 
 /**
  * Default LLM model for new avatars and fallback scenarios.
@@ -45,7 +46,7 @@ export const DEFAULT_AVATAR_CONFIG: import('./types/index.js').AvatarConfig = {
     maxTokens: DEFAULT_LLM_MAX_TOKENS,
   },
   media: {
-    image: { provider: 'replicate' as const, model: 'black-forest-labs/flux-schnell' },
+    image: { provider: 'replicate' as const, model: DEFAULT_MODELS.image_generation },
   },
   scheduling: {},
   behavior: {

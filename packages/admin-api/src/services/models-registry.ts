@@ -30,6 +30,7 @@ export interface ModelInfo {
 export const REPLICATE_MODEL_VERSIONS: Record<string, string | undefined> = {
   // All featured image models use the model endpoint to avoid stale version hashes
   'black-forest-labs/flux-1.1-pro': undefined,
+  'google/nano-banana-pro': undefined,
   'black-forest-labs/flux-schnell': undefined,
   'stability-ai/sdxl': undefined,
   'ideogram-ai/ideogram-v2': undefined,
@@ -59,6 +60,17 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     speed: 'fast',
     quality: 'high',
     isDefault: true,
+  },
+  {
+    id: 'google/nano-banana-pro',
+    name: 'Nano Banana Pro',
+    provider: 'replicate',
+    capabilities: ['image_generation'],
+    description: 'Reference-image aware image generation and editing with support for multiple input images.',
+    version: REPLICATE_MODEL_VERSIONS['google/nano-banana-pro'],
+    tier: 'premium',
+    speed: 'medium',
+    quality: 'high',
   },
   {
     id: 'black-forest-labs/flux-schnell',

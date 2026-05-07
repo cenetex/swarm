@@ -159,6 +159,30 @@ async function makeUrlsAccessible(urls: string[]): Promise<string[]> {
 
 // Provider configuration
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
+const IMAGE_GENERATION_MAX_REFERENCE_IMAGES = 14;
+const MATCH_INPUT_IMAGE_ASPECT_RATIO_MODELS = new Set(['google/nano-banana-pro']);
+
+function getImageGenerationAspectRatio(
+  modelId: string,
+  hasReferenceImages: boolean,
+  aspectRatio: GenerateImageOptions['aspectRatio'],
+): GenerateImageOptions['aspectRatio'] {
+  if (hasReferenceImages && MATCH_INPUT_IMAGE_ASPECT_RATIO_MODELS.has(modelId)) {
+    return 'match_input_image';
+  }
+  return aspectRatio;
+}
+
+function addReferenceImageInputs(input: Record<string, unknown>, referenceImageUrls: string[]): void {
+  if (referenceImageUrls.length === 0) return;
+
+  const references = referenceImageUrls.slice(0, IMAGE_GENERATION_MAX_REFERENCE_IMAGES);
+  const primaryReference = references[0];
+
+  input.image_input = references;
+  input.image = primaryReference;
+  input.image_prompt = primaryReference;
+}
 
 function summarizeReplicateError(errorText: string, status?: number): string {
   const raw = (errorText || '').trim();
@@ -477,18 +501,15 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gall
   const hasReferenceImages = accessibleReferenceUrls.length > 0;
   const genericInput: Record<string, unknown> = {
     prompt: finalPrompt,
-    aspect_ratio: hasReferenceImages ? 'match_input_image' : aspectRatio,
+    aspect_ratio: getImageGenerationAspectRatio(modelId, hasReferenceImages, aspectRatio),
     output_format: 'png',
     num_outputs: 1,
     resolution,
     safety_filter_level: 'block_only_high',
   };
 
-  // Add reference images (models that support it accept image_input or image)
-  if (hasReferenceImages) {
-    genericInput.image_input = accessibleReferenceUrls.slice(0, 14);
-    genericInput.image = accessibleReferenceUrls[0];
-  }
+  // Schema validation will keep the reference alias supported by the selected model.
+  addReferenceImageInputs(genericInput, accessibleReferenceUrls);
 
   // Add width/height for models that use pixel dimensions instead of aspect_ratio
   const widthMap = { '4K': 2048, '2K': 1024, '1K': 512 } as const;
@@ -821,17 +842,14 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
   const hasReferenceImages = accessibleReferenceUrls.length > 0;
   const asyncGenericInput: Record<string, unknown> = {
     prompt: finalPrompt,
-    aspect_ratio: hasReferenceImages ? 'match_input_image' : aspectRatio,
+    aspect_ratio: getImageGenerationAspectRatio(modelId, hasReferenceImages, aspectRatio),
     output_format: 'png',
     num_outputs: 1,
     resolution,
     safety_filter_level: 'block_only_high',
   };
 
-  if (hasReferenceImages) {
-    asyncGenericInput.image_input = accessibleReferenceUrls.slice(0, 14);
-    asyncGenericInput.image = accessibleReferenceUrls[0];
-  }
+  addReferenceImageInputs(asyncGenericInput, accessibleReferenceUrls);
 
   const asyncWidthMap = { '4K': 2048, '2K': 1024, '1K': 512 } as const;
   asyncGenericInput.width = asyncWidthMap[resolution as keyof typeof asyncWidthMap] ?? 1024;

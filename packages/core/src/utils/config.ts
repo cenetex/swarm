@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { AvatarConfig } from '../types/index.js';
 import { ConfigError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
+import { DEFAULT_MODELS } from '../services/media/types.js';
 
 // =============================================================================
 // CONFIG FILE SCHEMAS (with defaults and snake_case support)
@@ -161,13 +162,13 @@ const LLMConfigFileSchema = z.object({
 const MediaConfigFileSchema = z.object({
   image: z.object({
     provider: z.enum(['openrouter', 'replicate', 'dalle']).default('replicate'),
-    model: z.string().default('black-forest-labs/flux-schnell'),
-  }).default({ provider: 'replicate', model: 'black-forest-labs/flux-schnell' }),
+    model: z.string().default(DEFAULT_MODELS.image_generation),
+  }).default({ provider: 'replicate', model: DEFAULT_MODELS.image_generation }),
   video: z.object({
     provider: z.literal('replicate').default('replicate'),
     model: z.string().default('minimax/video-01'),
   }).optional(),
-}).default({ image: { provider: 'replicate', model: 'black-forest-labs/flux-schnell' } });
+}).default({ image: { provider: 'replicate', model: DEFAULT_MODELS.image_generation } });
 
 const ScheduledTweetFileSchema = z.object({
   cron: z.string(),
@@ -353,7 +354,7 @@ export function loadAvatarConfigFromEnv(avatarId: string): AvatarConfig {
     media: {
       image: {
         provider: (process.env.IMAGE_PROVIDER as 'openrouter' | 'replicate' | 'dalle') || 'replicate',
-        model: process.env.IMAGE_MODEL || 'black-forest-labs/flux-schnell',
+        model: process.env.IMAGE_MODEL || DEFAULT_MODELS.image_generation,
       },
     },
     scheduling: {},

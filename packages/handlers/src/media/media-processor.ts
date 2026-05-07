@@ -13,6 +13,7 @@ import {
   createGallerySaver,
   createSecretsService,
   createStateService,
+  DEFAULT_MODELS,
 } from '@swarm/core/services';
 import {
   ResponseActionSchema,
@@ -220,7 +221,7 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarMediaRuntime> {
     media: {
       image: {
         provider: 'replicate',
-        model: 'black-forest-labs/flux-schnell',
+        model: DEFAULT_MODELS.image_generation,
       },
     },
     scheduling: {},
@@ -280,6 +281,11 @@ function buildImagePrompt(action: { prompt: string; style?: string }, avatar: Av
     prompt = `${avatar.name}: ${prompt}`;
   }
   return prompt;
+}
+
+function getAvatarReferenceImageUrls(avatar: AvatarConfig): string[] {
+  const url = avatar.characterReference?.url || avatar.profileImage?.url;
+  return url ? [url] : [];
 }
 
 export const handler = async (event: SQSEvent, context: Context): Promise<{ batchItemFailures: { itemIdentifier: string }[] } | void> => {
@@ -406,6 +412,7 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           platform: item.response.platform,
           saveToGallery: true,
           checkCredits: false,
+          referenceImageUrls: getAvatarReferenceImageUrls(avatarConfig),
         });
         mediaAction = {
           type: 'send_media',
@@ -430,7 +437,9 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           platform: item.response.platform,
           saveToGallery: true,
           checkCredits: false,
-          referenceImageUrls: item.action.referenceImageUrls,
+          referenceImageUrls: item.action.referenceImageUrls?.length
+            ? item.action.referenceImageUrls
+            : getAvatarReferenceImageUrls(avatarConfig),
         });
         mediaAction = {
           type: 'send_media',
