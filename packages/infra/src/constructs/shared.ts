@@ -307,19 +307,33 @@ export class SharedInfrastructure extends Construct {
       console.warn('WARNING: enableCdn is false! Media files will NOT be accessible.');
     }
 
-    // ───── SNS alarm topic (always created fresh, not in legacy monolith) ─────
-    this.alarmTopic = new sns.Topic(this, 'AlarmTopic', {
-      topicName: `swarm-alarms-${environment}${suffix}`,
-      displayName: `Swarm Alarms (${environment})`,
-    });
+    // ───── SNS alarm topic ─────
+    // Migration note (#1658): when `useExistingResources=true`, the topic
+    // already exists in the legacy / intermediate `SwarmShared-*` stack
+    // (CFN refuses duplicate topic names). Import it by ARN instead of
+    // creating a new one. Skip subscriptions — the existing topic already
+    // owns them; adding more would duplicate emails per alert.
+    const alarmTopicName = `swarm-alarms-${environment}${suffix}`;
+    if (useExistingResources) {
+      this.alarmTopic = sns.Topic.fromTopicArn(
+        this,
+        'AlarmTopic',
+        `arn:${cdk.Aws.PARTITION}:sns:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:${alarmTopicName}`,
+      );
+    } else {
+      this.alarmTopic = new sns.Topic(this, 'AlarmTopic', {
+        topicName: alarmTopicName,
+        displayName: `Swarm Alarms (${environment})`,
+      });
 
-    if (alarmNotificationEmail) {
-      // Support comma-separated email lists (e.g., from adminEmails fallback)
-      const emails = alarmNotificationEmail.split(',').map((e) => e.trim()).filter(Boolean);
-      for (const email of emails) {
-        this.alarmTopic.addSubscription(
-          new snsSubscriptions.EmailSubscription(email)
-        );
+      if (alarmNotificationEmail) {
+        // Support comma-separated email lists (e.g., from adminEmails fallback)
+        const emails = alarmNotificationEmail.split(',').map((e) => e.trim()).filter(Boolean);
+        for (const email of emails) {
+          this.alarmTopic.addSubscription(
+            new snsSubscriptions.EmailSubscription(email)
+          );
+        }
       }
     }
 

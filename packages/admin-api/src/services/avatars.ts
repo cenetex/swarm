@@ -543,7 +543,7 @@ export async function deleteAvatar(
   deps: DeleteAvatarDeps = _defaultDeleteDeps,
 ): Promise<void> {
   const existing = await getAvatar(avatarId);
-  if (existing?.creatorWallet && existing.status !== 'deleted') {
+  if (existing?.creatorWallet && existing.status !== 'deleted' && existing.slotType !== 'nft') {
     await deps.decrementCreatorCount(existing.creatorWallet);
   }
 
@@ -745,9 +745,18 @@ export interface CreateAvatarFromNFTResult {
   error?: 'no_gate_slot' | 'nft_already_claimed' | 'nft_not_in_collection' | 'nft_not_owned';
 }
 
+export interface CreateAvatarFromNFTOptions {
+  /**
+   * Collection NFT-backed avatars use the NFT itself as the entitlement.
+   * Leave true for legacy/manual claim behavior that consumes normal creator slots.
+   */
+  reserveCreatorSlot?: boolean;
+}
+
 /**
  * Create a new avatar from an NFT in a whitelisted collection
- * Uses the normal slot system (free + Orb NFTs)
+ * Uses the normal slot system by default. Bulk collection scans can bypass
+ * creator slots because the source NFT is the entitlement.
  *
  * Atomicity guarantees:
  * - Slot reservation uses DynamoDB ConditionExpression (prevents oversubscription)
@@ -755,8 +764,11 @@ export interface CreateAvatarFromNFTResult {
  */
 export async function createAvatarFromNFT(
   nft: ClaimableNFT,
-  creatorWallet: string
+  creatorWallet: string,
+  options: CreateAvatarFromNFTOptions = {}
 ): Promise<CreateAvatarFromNFTResult> {
+  const reserveSlot = options.reserveCreatorSlot !== false;
+
   // 1. Verify collection is whitelisted
   if (!isCollectionWhitelisted(nft.collection)) {
     log.info('create_from_nft', 'collection_not_whitelisted', {
@@ -780,32 +792,38 @@ export async function createAvatarFromNFT(
     };
   }
 
-  // 3. Atomically reserve a gate slot (prevents slot oversubscription)
-  const nftResult = await checkNFTGate(creatorWallet);
-  const totalSlots = 1 + nftResult.ownedCount;
+  // 3. Atomically reserve a creator slot when using legacy/manual claim behavior.
+  // Bulk scans bypass this because each whitelisted collection NFT is its own slot.
+  let previousCreated = 0;
+  if (reserveSlot) {
+    const nftResult = await checkNFTGate(creatorWallet);
+    const totalSlots = 1 + nftResult.ownedCount;
 
-  const reservation = await reserveCreatorSlot(creatorWallet, totalSlots);
-  if (!reservation.reserved) {
-    const gateStatus = await getGateStatus(creatorWallet);
-    log.info('create_from_nft', 'no_gate_slot', {
-      walletPrefix: creatorWallet.slice(0, 8),
-      nftsHeld: gateStatus.nftsHeld,
-      avatarsCreated: gateStatus.avatarsCreated,
-    });
-    emitAvatarCreationFailed(creatorWallet, 'no_gate_slot', { nftsHeld: gateStatus.nftsHeld, avatarsCreated: gateStatus.avatarsCreated });
-    return {
-      success: false,
-      error: 'no_gate_slot',
-      gateStatus,
-    };
+    const reservation = await reserveCreatorSlot(creatorWallet, totalSlots);
+    if (!reservation.reserved) {
+      const gateStatus = await getGateStatus(creatorWallet);
+      log.info('create_from_nft', 'no_gate_slot', {
+        walletPrefix: creatorWallet.slice(0, 8),
+        nftsHeld: gateStatus.nftsHeld,
+        avatarsCreated: gateStatus.avatarsCreated,
+      });
+      emitAvatarCreationFailed(creatorWallet, 'no_gate_slot', { nftsHeld: gateStatus.nftsHeld, avatarsCreated: gateStatus.avatarsCreated });
+      return {
+        success: false,
+        error: 'no_gate_slot',
+        gateStatus,
+      };
+    }
+    previousCreated = reservation.previousCreated;
   }
 
   // 4. Generate avatar ID from NFT name
   const avatarId = generateAvatarId(nft.name);
   const now = Date.now();
 
-  // Determine slot type: first avatar = free, subsequent = orb
-  const slotType: 'free' | 'orb' = reservation.previousCreated === 0 ? 'free' : 'orb';
+  const slotType: 'free' | 'orb' | 'nft' = reserveSlot
+    ? previousCreated === 0 ? 'free' : 'orb'
+    : 'nft';
 
   // Build description from NFT metadata
   const description = nft.description || `Avatar created from NFT: ${nft.name}`;
@@ -902,7 +920,9 @@ export async function createAvatarFromNFT(
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'TransactionCanceledException') {
       // Roll back the reserved slot since avatar creation failed
-      await decrementCreatorCount(creatorWallet);
+      if (reserveSlot) {
+        await decrementCreatorCount(creatorWallet);
+      }
 
       // Check which condition failed by inspecting the cancellation reasons
       const cancelReasons = (err as { CancellationReasons?: Array<{ Code?: string }> }).CancellationReasons;
@@ -932,7 +952,9 @@ export async function createAvatarFromNFT(
       return { success: false, error: 'nft_already_claimed' };
     }
     // Non-transaction error: roll back slot and re-throw
-    await decrementCreatorCount(creatorWallet);
+    if (reserveSlot) {
+      await decrementCreatorCount(creatorWallet);
+    }
     throw err;
   }
 

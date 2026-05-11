@@ -7,7 +7,7 @@ export { createMediaTools, type MediaServices, type CreditServices as MediaCredi
 export { createGalleryTools, type GalleryServices, type GalleryItem } from './gallery.js';
 export { createWalletTools, type WalletServices, type WalletInfo } from './wallet.js';
 export { createModelTools, type ModelServices, type ModelInfo } from './models.js';
-export { createMediaModelTools, type MediaModelServices, type ReplicateModelSearchResult } from './media-models.js';
+export { createMediaModelTools, type MediaModelServices, type MediaModelSearchResult } from './media-models.js';
 export { createProfileTools, type ProfileServices } from './profile.js';
 export { createSecretTools, type SecretServices, type SecretType, type SecretInfo } from './secrets.js';
 export {

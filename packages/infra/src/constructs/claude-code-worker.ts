@@ -126,8 +126,8 @@ export class ClaudeCodeWorker extends Construct {
     const secretPrefix = props.secretPrefix ?? 'swarm';
     const isProd = environment === 'prod' || environment === 'production';
     const logRetention = isProd
-      ? logs.RetentionDays.TWO_WEEKS
-      : logs.RetentionDays.THREE_DAYS;
+      ? logs.RetentionDays.ONE_MONTH
+      : logs.RetentionDays.ONE_WEEK;
 
     // FIFO queue for ordered processing per avatar
     this.queue = new sqs.Queue(this, 'ClaudeCodeQueue', {

@@ -1425,7 +1425,24 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
         "Name": "swarm-alarm-topic-arn-staging",
       },
       "Value": {
-        "Ref": "SharedAlarmTopicAE74B6D1",
+        "Fn::Join": [
+          "",
+          [
+            "arn:",
+            {
+              "Ref": "AWS::Partition",
+            },
+            ":sns:",
+            {
+              "Ref": "AWS::Region",
+            },
+            ":",
+            {
+              "Ref": "AWS::AccountId",
+            },
+            ":swarm-alarms-staging",
+          ],
+        ],
       },
     },
     "DependencyLayerArnExport": {
@@ -1524,20 +1541,13 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
     "DependencyLayerArnParamF1428BC4": {
       "Properties": {
         "Description": "Dependency layer ARN for swarm handlers",
-        "Name": "/swarm/staging/dependency-layer-arn",
+        "Name": "/swarm/staging/dependency-layer-arn/split",
         "Type": "String",
         "Value": {
           "Ref": "SharedDependencyLayer4A51C7E0",
         },
       },
       "Type": "AWS::SSM::Parameter",
-    },
-    "SharedAlarmTopicAE74B6D1": {
-      "Properties": {
-        "DisplayName": "Swarm Alarms (staging)",
-        "TopicName": "swarm-alarms-staging",
-      },
-      "Type": "AWS::SNS::Topic",
     },
     "SharedDependencyLayer4A51C7E0": {
       "DeletionPolicy": "Retain",
@@ -1611,7 +1621,24 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
         "Name": "swarm-alarm-topic-arn-staging",
       },
       "Value": {
-        "Ref": "SharedAlarmTopicAE74B6D1",
+        "Fn::Join": [
+          "",
+          [
+            "arn:",
+            {
+              "Ref": "AWS::Partition",
+            },
+            ":sns:",
+            {
+              "Ref": "AWS::Region",
+            },
+            ":",
+            {
+              "Ref": "AWS::AccountId",
+            },
+            ":swarm-alarms-staging",
+          ],
+        ],
       },
     },
     "DependencyLayerArnExport": {
@@ -1710,20 +1737,13 @@ exports[`CDK Infrastructure Snapshots SharedInfraStack snapshot (useExistingReso
     "DependencyLayerArnParamF1428BC4": {
       "Properties": {
         "Description": "Dependency layer ARN for swarm handlers",
-        "Name": "/swarm/staging/dependency-layer-arn",
+        "Name": "/swarm/staging/dependency-layer-arn/split",
         "Type": "String",
         "Value": {
           "Ref": "SharedDependencyLayer4A51C7E0",
         },
       },
       "Type": "AWS::SSM::Parameter",
-    },
-    "SharedAlarmTopicAE74B6D1": {
-      "Properties": {
-        "DisplayName": "Swarm Alarms (staging)",
-        "TopicName": "swarm-alarms-staging",
-      },
-      "Type": "AWS::SNS::Topic",
     },
     "SharedDependencyLayer4A51C7E0": {
       "DeletionPolicy": "Retain",

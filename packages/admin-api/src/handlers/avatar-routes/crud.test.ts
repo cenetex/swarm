@@ -24,6 +24,12 @@ let reassignAvatarResult: unknown = {};
 let integrationStatusesResult: unknown = [];
 let galleryProfileResult: unknown = null;
 let recordAuditEventCalls: unknown[] = [];
+let scanNftAvatarsResult: unknown = {
+  created: [],
+  skippedAlreadyClaimed: 0,
+  available: 0,
+  capped: false,
+};
 let onboardingRoutingDecision: unknown = {
   onboardingVersion: 'v1',
   reason: 'disabled',
@@ -106,6 +112,10 @@ vi.mock('../../services/audit-log.js', () => ({
   },
 }));
 
+vi.mock('../../services/scan-nft-avatars.js', () => ({
+  scanNftAvatarsForWallet: async () => scanNftAvatarsResult,
+}));
+
 vi.mock('@swarm/core', () => ({
   ...RealSwarmCore,
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
@@ -130,6 +140,12 @@ beforeEach(() => {
   integrationStatusesResult = [];
   galleryProfileResult = null;
   recordAuditEventCalls = [];
+  scanNftAvatarsResult = {
+    created: [],
+    skippedAlreadyClaimed: 0,
+    available: 0,
+    capped: false,
+  };
   onboardingRoutingDecision = {
     onboardingVersion: 'v1',
     reason: 'disabled',
@@ -146,6 +162,44 @@ beforeEach(() => {
       readAt: 0,
     },
   };
+});
+
+// =========================================================================
+// POST /avatars/scan-nft
+// =========================================================================
+describe('POST /avatars/scan-nft', () => {
+  it('requires wallet sign-in', async () => {
+    const ctx = makeCtx({
+      method: 'POST',
+      path: '/avatars/scan-nft',
+      walletAddress: null,
+      effectiveIsAdmin: false,
+    });
+
+    const result = await handleCrudRoutes(ctx);
+    expect(result).not.toBeNull();
+    expect(result!.statusCode).toBe(403);
+  });
+
+  it('returns scan result for wallet sessions', async () => {
+    scanNftAvatarsResult = {
+      created: [{ avatarId: 'nolan-rift', name: 'Nolan Rift', status: 'draft' }],
+      skippedAlreadyClaimed: 0,
+      available: 3,
+      capped: false,
+    };
+    const ctx = makeCtx({
+      method: 'POST',
+      path: '/avatars/scan-nft',
+      walletAddress: 'wallet-1',
+      effectiveIsAdmin: false,
+    });
+
+    const result = await handleCrudRoutes(ctx);
+    expect(result).not.toBeNull();
+    expect(result!.statusCode).toBe(200);
+    expect(parseBody(result!)).toEqual(scanNftAvatarsResult);
+  });
 });
 
 // =========================================================================

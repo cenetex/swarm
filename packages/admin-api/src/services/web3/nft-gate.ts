@@ -161,14 +161,17 @@ export async function reserveCreatorSlot(
 async function recalculateCreatorCount(walletAddress: string): Promise<number> {
   const result = await dynamoClient.send(new ScanCommand({
     TableName: ADMIN_TABLE,
-    FilterExpression: 'sk = :sk AND creatorWallet = :wallet AND #status <> :deleted',
+    FilterExpression:
+      'sk = :sk AND creatorWallet = :wallet AND #status <> :deleted AND (attribute_not_exists(#slotType) OR #slotType <> :nftSlot)',
     ExpressionAttributeNames: {
       '#status': 'status',
+      '#slotType': 'slotType',
     },
     ExpressionAttributeValues: {
       ':sk': 'CONFIG',
       ':wallet': walletAddress,
       ':deleted': 'deleted',
+      ':nftSlot': 'nft',
     },
     Select: 'COUNT',
   }));

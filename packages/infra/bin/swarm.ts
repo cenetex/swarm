@@ -11,9 +11,10 @@ import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { SharedInfraStack } from '../src/stacks/shared-infra-stack.js';
+import { CoreInfraStack } from '../src/stacks/core-infra-stack.js';
+import { MediaStack } from '../src/stacks/media-stack.js';
 import { AdminApiStack } from '../src/stacks/admin-api-stack.js';
-import { AdminUiStack } from '../src/stacks/admin-ui-stack.js';
+import { FrontendStack } from '../src/stacks/frontend-stack.js';
 import { ProfilePageStack } from '../src/stacks/profile-page-stack.js';
 import { DocsSiteStack } from '../src/stacks/docs-site-stack.js';
 
@@ -49,12 +50,9 @@ function computeStackDomain(args: { environment: string; stackSubdomain: string;
     return `${args.stackSubdomain}.${args.baseDomain}`;
   }
 
-  // Common pattern: <env>-<stack>.<base>
-  if (environment === 'staging') {
-    return `${environment}-${args.stackSubdomain}.${args.baseDomain}`;
-  }
-
-  return undefined;
+  // Non-prod envs (preview, dev, etc.): <env>-<stack>.<base>
+  // e.g. preview01-swarm.rati.chat
+  return `${environment}-${args.stackSubdomain}.${args.baseDomain}`;
 }
 
 function getContextValue<T>(key: string, envConfig: EnvConfig): T | undefined {
@@ -117,7 +115,6 @@ const monthlyBudgetUsd = getContextValue<number>('monthlyBudgetUsd', envConfig);
 const enableWaf = parseBoolean(getContextValue<unknown>('enableWaf', envConfig)) ?? true;
 const enableClaudeCode = parseBoolean(getContextValue<unknown>('enableClaudeCode', envConfig)) ?? false;
 const claudeCodeUseOpenRouter = parseBoolean(getContextValue<unknown>('claudeCodeUseOpenRouter', envConfig)) ?? false;
-const enableDiscordGateway = parseBoolean(getContextValue<unknown>('enableDiscordGateway', envConfig)) ?? false;
 const useExistingResources = parseBoolean(getContextValue<unknown>('useExistingResources', envConfig)) ?? false;
 const useExistingBuckets = parseBoolean(getContextValue<unknown>('useExistingBuckets', envConfig)) ?? false;
 const skipDomainAliases = parseBoolean(getContextValue<unknown>('skipDomainAliases', envConfig)) ?? false;
@@ -168,25 +165,28 @@ const stackEnv = {
 // Deploy Validation
 // ============================================
 
-// Persistent environments (prod, staging) have pre-existing shared resources
-// (DynamoDB tables, S3 buckets, ECS clusters) from the legacy monolith stack.
-// Deploying without useExistingResources=true would attempt to create duplicate
-// resources and fail with "already exists" errors.
-if ((environment === 'prod' || environment === 'staging') && !useExistingResources) {
+// Production has pre-existing shared resources (DynamoDB tables, S3 buckets,
+// ECS clusters) from the legacy SwarmStack-prod monolith. Deploying without
+// useExistingResources=true would attempt to create duplicate resources and
+// fail with "already exists" errors.
+//
+// Preview and other ephemeral envs deploy fresh — they do NOT need the import
+// flag (and setting it without pre-existing resources would fail with
+// "resource not found").
+if (environment === 'prod' && !useExistingResources) {
   console.warn(
     `⚠️  WARNING: Deploying to '${environment}' without useExistingResources=true. ` +
-    `This will attempt to create DynamoDB tables, S3 buckets, and ECS clusters that ` +
-    `may already exist from the legacy SwarmStack-${environment}. ` +
+    `Production has imported DynamoDB/S3/ECS resources from the legacy SwarmStack-prod. ` +
     `Set -c useExistingResources=true or configure it in cdk.context.json.`
   );
 }
 
 // ============================================
-// Split Stacks for Parallel Deployment
+// Domain-Aligned Stacks for Parallel Deployment
 // ============================================
 
-// 1. Shared Infrastructure Stack (deploys first, rarely changes)
-const sharedInfraStack = new SharedInfraStack(app, `SwarmShared-${environment}${nameSuffix}`, {
+// 1. Core Infrastructure Stack (deploys first, rarely changes)
+const coreInfraStack = new CoreInfraStack(app, `SwarmCore-${environment}${nameSuffix}`, {
   environment,
   nameSuffix,
   enableCdn: true,
@@ -198,14 +198,24 @@ const sharedInfraStack = new SharedInfraStack(app, `SwarmShared-${environment}${
   monthlyBudgetUsd,
   useExistingResources,
   env: stackEnv,
-  description: `Swarm Shared Infrastructure (${environment})`,
+  description: `Swarm Core Infrastructure (${environment})`,
 });
 
-// 2. Admin API Stack (depends on shared, changes with code updates)
+// 2. Media Stack (depends on core, contains image/voice/media processing)
+const mediaStack = new MediaStack(app, `SwarmMedia-${environment}${nameSuffix}`, {
+  environment,
+  nameSuffix: nonSharedResourceSuffix,
+  coreInfraStack,
+  env: stackEnv,
+  description: `Swarm Media Processing (${environment})`,
+});
+mediaStack.addDependency(coreInfraStack);
+
+// 3. Admin API Stack (depends on core, changes with code updates)
 const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffix}`, {
   environment,
   nameSuffix: nonSharedResourceSuffix,
-  sharedInfraStack,
+  sharedInfraStack: coreInfraStack,
   handlersPath,
   adminDomain,
   adminEmails,
@@ -226,7 +236,7 @@ const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffi
   signalApiTokenSecretArn,
   anthropicApiKeyArn,
   enableClaudeCode,
-  enableDiscordGateway,
+  enableDiscordGateway: false,
   claudeCodeUseOpenRouter,
   secretPrefix,
   useExistingResources,
@@ -236,10 +246,10 @@ const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffi
   env: stackEnv,
   description: `Swarm Admin API (${environment})`,
 });
-adminApiStack.addDependency(sharedInfraStack);
+adminApiStack.addDependency(coreInfraStack);
 
-// 3. Admin UI Stack (depends on API for origin, changes with UI updates)
-const adminUiStack = new AdminUiStack(app, `SwarmUi-${environment}${nameSuffix}`, {
+// 4. Frontend Stack (depends on Admin API, changes with UI updates)
+const frontendStack = new FrontendStack(app, `SwarmUi-${environment}${nameSuffix}`, {
   environment,
   nameSuffix: nonSharedResourceSuffix,
   adminApiStack,
@@ -251,9 +261,9 @@ const adminUiStack = new AdminUiStack(app, `SwarmUi-${environment}${nameSuffix}`
   env: stackEnv,
   description: `Swarm Admin UI (${environment})`,
 });
-adminUiStack.addDependency(adminApiStack);
+frontendStack.addDependency(adminApiStack);
 
-// 4. Profile Page Stack (independent, changes with profile page updates)
+// 5. Profile Page Stack (independent, changes with profile page updates)
 // Hosts public avatar profile pages at *.rati.chat subdomains
 if (profileDomain || app.node.tryGetContext('deployProfilePage')) {
   new ProfilePageStack(app, `SwarmProfilePage-${environment}${nameSuffix}`, {
@@ -269,7 +279,7 @@ if (profileDomain || app.node.tryGetContext('deployProfilePage')) {
   });
 }
 
-// 5. Docs Site Stack (independent, changes with docs updates)
+// 6. Docs Site Stack (independent, changes with docs updates)
 // Hosts API documentation at docs.rati.chat
 if (docsDomain || app.node.tryGetContext('deployDocsSite')) {
   new DocsSiteStack(app, `SwarmDocsSite-${environment}${nameSuffix}`, {

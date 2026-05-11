@@ -696,6 +696,8 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
           deliveredActionCount: sentMessages.length,
           totalActionCount: actionsToSend?.length ?? 0,
         });
+
+        metrics.incrementCounter('ResponsesAccepted');
       }
 
       if (actionsToSend && actionsToSend.length > 0 && !sendSuccess) {
@@ -734,6 +736,9 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
             errorCount: sendErrors.length,
             actionTypes: actionsToSend?.map(a => a.type) ?? [],
           });
+
+          metrics.incrementCounter('ResponsesDropped');
+          metrics.setProperty('DropReason', primaryReason);
           // Non-retryable errors: keep the idempotency record so we don't retry forever.
           // The mark already happened before send, so it's safe.
         } else {

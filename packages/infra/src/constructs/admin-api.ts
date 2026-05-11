@@ -346,8 +346,8 @@ export class AdminApiConstruct extends Construct {
     }
     const logLevel = isProd ? 'warn' : 'info';
     const logRetention = isProd
-      ? logs.RetentionDays.TWO_WEEKS
-      : logs.RetentionDays.THREE_DAYS;
+      ? logs.RetentionDays.ONE_MONTH
+      : logs.RetentionDays.ONE_WEEK;
 
     // In production, cap non-Orb authenticated access to the top N most recent logins.
     // Orb holders bypass this limit (enforced in the admin-api auth layer).

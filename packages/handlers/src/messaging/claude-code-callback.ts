@@ -15,6 +15,7 @@ import {
   createSecretsService,
   logger,
   DEFAULT_LLM_MODEL,
+  DEFAULT_MODELS,
   type AvatarConfig,
   type ResponseAction,
 } from '@swarm/core';
@@ -85,7 +86,7 @@ async function getAvatarContext(avatarId: string) {
       temperature: 0.8,
       maxTokens: 1024,
     },
-    media: { image: { provider: 'replicate', model: 'black-forest-labs/flux-schnell' } },
+    media: { image: { provider: 'replicate', model: DEFAULT_MODELS.image_generation } },
     scheduling: {},
     behavior: {
       responseDelayMs: [1000, 3000],

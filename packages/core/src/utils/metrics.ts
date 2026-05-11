@@ -29,14 +29,29 @@
  * | ToolIterations           | Count        | LLM ↔ tool-call round-trips per message  |
  * | EntitlementRejections    | Count        | Messages blocked by entitlement limits    |
  *
+ * ### ChatWorker (Subsystem = "ChatWorker")
+ * | Metric                   | Unit         | Description                              |
+ * |--------------------------|--------------|------------------------------------------|
+ * | ToolLoopsProcessed       | Count        | Tool-loop executions completed           |
+ * | ResponsesGenerated       | Count        | Responses generated (enqueued)           |
+ * | ProcessingLatency        | Milliseconds | Wall time per tool-loop execution         |
+ * | ProcessingErrors         | Count        | Tool-loop executions that threw          |
+ *
  * ### ResponseSender (Subsystem = "ResponseSender")
  * | Metric                   | Unit         | Description                              |
  * |--------------------------|--------------|------------------------------------------|
  * | ResponsesReceived        | Count        | SQS records entering the handler         |
  * | SendLatency              | Milliseconds | Wall time per response (dequeue → sent)   |
  * | ResponsesSent            | Count        | Successfully delivered responses          |
+ * | ResponsesAccepted        | Count        | Platform confirmed response delivery     |
+ * | ResponsesDropped         | Count        | Terminal failures (non-retryable errors) |
  * | SendErrors               | Count        | Responses that failed outbound delivery   |
  * | DuplicatesSkipped        | Count        | Idempotent duplicates dropped             |
+ *
+ * ### Dimensions for ResponsesDropped
+ * | Dimension                | Values                                   |
+ * |--------------------------|------------------------------------------|
+ * | DropReason               | error message from adapter               |
  *
  * ### AdminChat (Subsystem = "AdminChat")
  * | Metric                   | Unit         | Description                              |

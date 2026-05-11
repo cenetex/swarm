@@ -6,6 +6,8 @@ describe('WorkspaceStore', () => {
   beforeEach(() => {
     useWorkspaceStore.setState({
       isOpen: false,
+      activeTab: 'tools',
+      size: 'pane',
       contentType: 'task',
       activeTaskCardId: null,
       galleryAvatarId: null,
@@ -18,6 +20,7 @@ describe('WorkspaceStore', () => {
   test('starts closed with no active task', () => {
     const state = useWorkspaceStore.getState();
     expect(state.isOpen).toBe(false);
+    expect(state.activeTab).toBe('tools');
     expect(state.contentType).toBe('task');
     expect(state.activeTaskCardId).toBeNull();
     expect(state.galleryAvatarId).toBeNull();
@@ -25,7 +28,7 @@ describe('WorkspaceStore', () => {
     expect(state.openedAt).toBeNull();
   });
 
-  test('openForTask sets isOpen, activeTaskCardId, title, and openedAt', () => {
+  test('openForTask sets isOpen, activeTaskCardId, title, openedAt, and selects Tools tab', () => {
     useTaskCardStore.getState().registerTaskCard({
       id: 'tc-123', avatarId: 'a1', toolName: 'request_secret', arguments: {},
     });
@@ -33,6 +36,7 @@ describe('WorkspaceStore', () => {
     useWorkspaceStore.getState().openForTask('tc-123', 'Secret Input');
     const state = useWorkspaceStore.getState();
     expect(state.isOpen).toBe(true);
+    expect(state.activeTab).toBe('tools');
     expect(state.contentType).toBe('task');
     expect(state.activeTaskCardId).toBe('tc-123');
     expect(state.title).toBe('Secret Input');
@@ -59,6 +63,7 @@ describe('WorkspaceStore', () => {
 
     const state = useWorkspaceStore.getState();
     expect(state.isOpen).toBe(false);
+    expect(state.activeTab).toBe('tools');
     expect(state.activeTaskCardId).toBeNull();
     expect(state.openedAt).toBeNull();
 
@@ -117,23 +122,33 @@ describe('WorkspaceStore', () => {
     expect(ctx!.openedAt).toBeGreaterThan(0);
   });
 
-  test('openGallery sets contentType to gallery with avatarId', () => {
+  test('openGallery selects Gallery tab and sets avatarId', () => {
     useWorkspaceStore.getState().openGallery('avatar-123');
     const state = useWorkspaceStore.getState();
     expect(state.isOpen).toBe(true);
+    expect(state.activeTab).toBe('gallery');
     expect(state.contentType).toBe('gallery');
     expect(state.galleryAvatarId).toBe('avatar-123');
     expect(state.activeTaskCardId).toBeNull();
     expect(state.title).toBe('Gallery');
   });
 
-  test('openGallery toggles off when gallery is already open', () => {
+  test('openGallery toggles off when Gallery tab is already open', () => {
     useWorkspaceStore.getState().openGallery('avatar-123');
     expect(useWorkspaceStore.getState().isOpen).toBe(true);
 
     useWorkspaceStore.getState().openGallery('avatar-123');
     expect(useWorkspaceStore.getState().isOpen).toBe(false);
     expect(useWorkspaceStore.getState().galleryAvatarId).toBeNull();
+  });
+
+  test('openGallery from a non-gallery tab switches without toggling closed', () => {
+    useWorkspaceStore.getState().setTab('settings');
+    expect(useWorkspaceStore.getState().activeTab).toBe('settings');
+
+    useWorkspaceStore.getState().openGallery('avatar-123');
+    expect(useWorkspaceStore.getState().isOpen).toBe(true);
+    expect(useWorkspaceStore.getState().activeTab).toBe('gallery');
   });
 
   test('openGallery releases any active task card', () => {
@@ -146,12 +161,12 @@ describe('WorkspaceStore', () => {
 
     useWorkspaceStore.getState().openGallery('avatar-123');
     expect(useTaskCardStore.getState().getCard('tc-1')?.workspaceState).toBe('available');
-    expect(useWorkspaceStore.getState().contentType).toBe('gallery');
+    expect(useWorkspaceStore.getState().activeTab).toBe('gallery');
   });
 
   test('openForTask clears gallery state', () => {
     useWorkspaceStore.getState().openGallery('avatar-123');
-    expect(useWorkspaceStore.getState().contentType).toBe('gallery');
+    expect(useWorkspaceStore.getState().activeTab).toBe('gallery');
 
     useTaskCardStore.getState().registerTaskCard({
       id: 'tc-1', avatarId: 'a1', toolName: 'confirm_action', arguments: {},
@@ -159,7 +174,7 @@ describe('WorkspaceStore', () => {
     useWorkspaceStore.getState().openForTask('tc-1', 'Task');
 
     const state = useWorkspaceStore.getState();
-    expect(state.contentType).toBe('task');
+    expect(state.activeTab).toBe('tools');
     expect(state.galleryAvatarId).toBeNull();
     expect(state.activeTaskCardId).toBe('tc-1');
   });
@@ -167,5 +182,128 @@ describe('WorkspaceStore', () => {
   test('getActiveTaskContext returns null when gallery is open', () => {
     useWorkspaceStore.getState().openGallery('avatar-123');
     expect(useWorkspaceStore.getState().getActiveTaskContext()).toBeNull();
+  });
+
+  test('setTab opens the workspace and switches tab', () => {
+    useWorkspaceStore.getState().setTab('settings');
+    const state = useWorkspaceStore.getState();
+    expect(state.isOpen).toBe(true);
+    expect(state.activeTab).toBe('settings');
+    expect(state.title).toBe('Settings');
+    expect(state.openedAt).toBeGreaterThan(0);
+  });
+
+  test('setTab preserves an active task card across tab switches', () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-1', avatarId: 'a1', toolName: 'confirm_action', arguments: {},
+    });
+
+    useWorkspaceStore.getState().openForTask('tc-1', 'Task');
+    useWorkspaceStore.getState().setTab('settings');
+
+    const state = useWorkspaceStore.getState();
+    expect(state.activeTab).toBe('settings');
+    expect(state.activeTaskCardId).toBe('tc-1'); // preserved
+    expect(useTaskCardStore.getState().getCard('tc-1')?.workspaceState).toBe('open');
+  });
+
+  test('setTab preserves galleryAvatarId across tab switches', () => {
+    useWorkspaceStore.getState().openGallery('avatar-123');
+    useWorkspaceStore.getState().setTab('prompt');
+
+    const state = useWorkspaceStore.getState();
+    expect(state.activeTab).toBe('prompt');
+    expect(state.galleryAvatarId).toBe('avatar-123'); // preserved
+  });
+
+  test('auto-opens workspace Tools tab when a non-trivial pending card is registered (#1637)', async () => {
+    expect(useWorkspaceStore.getState().isOpen).toBe(false);
+
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-auto-1',
+      avatarId: 'a1',
+      toolName: 'request_secret',
+      arguments: {},
+    });
+
+    // Listener defers via microtask
+    await Promise.resolve();
+
+    const state = useWorkspaceStore.getState();
+    expect(state.isOpen).toBe(true);
+    expect(state.activeTab).toBe('tools');
+    expect(state.activeTaskCardId).toBe('tc-auto-1');
+    expect(state.title).toBe('Secret Input');
+  });
+
+  test('does NOT auto-open for confirm_action (inline-only tool)', async () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-confirm-1',
+      avatarId: 'a1',
+      toolName: 'confirm_action',
+      arguments: {},
+    });
+    await Promise.resolve();
+    expect(useWorkspaceStore.getState().isOpen).toBe(false);
+  });
+
+  test('does NOT auto-open for cards that resolve before the microtask fires', async () => {
+    useTaskCardStore.getState().registerTaskCard({
+      id: 'tc-resolved-1',
+      avatarId: 'a1',
+      toolName: 'get_my_wallets',
+      arguments: {},
+    });
+    // Synchronously complete (taskAction pattern)
+    useTaskCardStore.getState().updateStatus('tc-resolved-1', 'completed', { wallets: [] });
+    await Promise.resolve();
+    expect(useWorkspaceStore.getState().isOpen).toBe(false);
+  });
+
+  test('size defaults to pane', () => {
+    expect(useWorkspaceStore.getState().size).toBe('pane');
+  });
+
+  test('setSize switches between pane and fullscreen', () => {
+    useWorkspaceStore.getState().setSize('fullscreen');
+    expect(useWorkspaceStore.getState().size).toBe('fullscreen');
+    useWorkspaceStore.getState().setSize('pane');
+    expect(useWorkspaceStore.getState().size).toBe('pane');
+  });
+
+  test('setSize is idempotent', () => {
+    useWorkspaceStore.getState().setSize('fullscreen');
+    const before = useWorkspaceStore.getState();
+    useWorkspaceStore.getState().setSize('fullscreen');
+    expect(useWorkspaceStore.getState()).toBe(before);
+  });
+
+  test('toggleSize flips between pane and fullscreen', () => {
+    useWorkspaceStore.getState().toggleSize();
+    expect(useWorkspaceStore.getState().size).toBe('fullscreen');
+    useWorkspaceStore.getState().toggleSize();
+    expect(useWorkspaceStore.getState().size).toBe('pane');
+  });
+
+  test('close resets size back to pane', () => {
+    useWorkspaceStore.getState().setTab('prompt');
+    useWorkspaceStore.getState().setSize('fullscreen');
+    useWorkspaceStore.getState().close();
+    expect(useWorkspaceStore.getState().size).toBe('pane');
+  });
+
+  test('setTab to all five tabs sets the corresponding title', () => {
+    const cases: Array<{ tab: 'gallery' | 'prompt' | 'tools' | 'settings' | 'activity'; title: string }> = [
+      { tab: 'gallery', title: 'Gallery' },
+      { tab: 'prompt', title: 'Prompt' },
+      { tab: 'tools', title: 'Tools' },
+      { tab: 'settings', title: 'Settings' },
+      { tab: 'activity', title: 'Activity' },
+    ];
+    for (const { tab, title } of cases) {
+      useWorkspaceStore.getState().setTab(tab);
+      expect(useWorkspaceStore.getState().activeTab).toBe(tab);
+      expect(useWorkspaceStore.getState().title).toBe(title);
+    }
   });
 });

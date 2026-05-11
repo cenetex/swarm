@@ -55,6 +55,9 @@ function getAvatarStatusColor(avatar: Avatar, t: TFunction): { color: string; ti
   if (avatar.slotType === 'orb') {
     return { color: 'bg-green-500', title: t('avatar.activeOrb') };
   }
+  if (avatar.slotType === 'nft') {
+    return { color: 'bg-cyan-500', title: t('avatar.activeNft') };
+  }
 
   // Free slot or unknown slot type
   if (avatar.slotType === 'free') {
@@ -357,6 +360,9 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
   const { isAuthenticated, user, gateStatus, account } = useAuth();
   const [reassignAvatarData, setReassignAvatarData] = React.useState<Avatar | null>(null);
   const [showHealth, setShowHealth] = React.useState(false);
+  const [isScanningNfts, setIsScanningNfts] = React.useState(false);
+  const [scanMessage, setScanMessage] = React.useState<string | null>(null);
+  const [scanError, setScanError] = React.useState<string | null>(null);
 
   const isAdmin = account?.role === 'admin';
 
@@ -399,6 +405,31 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
     } catch (e) {
       // Error is already set in store
       console.error('Failed to create avatar:', e);
+    }
+  };
+
+  const handleScanNftAvatars = async () => {
+    setIsScanningNfts(true);
+    setScanMessage(null);
+    setScanError(null);
+
+    try {
+      const result = await avatarApi.scanNftAvatars();
+      await fetchAvatars();
+
+      if (result.created.length > 0) {
+        setScanMessage(
+          result.capped
+            ? t('sidebar.scanNftCapped', { count: result.created.length, available: result.available })
+            : t('sidebar.scanNftCreated', { count: result.created.length }),
+        );
+      } else {
+        setScanMessage(t('sidebar.scanNftNone'));
+      }
+    } catch (e) {
+      setScanError(e instanceof Error ? e.message : t('sidebar.scanNftFailed'));
+    } finally {
+      setIsScanningNfts(false);
     }
   };
 
@@ -624,6 +655,50 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
               </span>
             )}
           </button>
+        )}
+
+        {isAuthenticated && (
+          <>
+            <button
+              onClick={handleScanNftAvatars}
+              disabled={isScanningNfts || isLoading}
+              className={`w-full flex items-center gap-3 px-3 py-2 mb-2 rounded-lg border transition-all ${
+                isScanningNfts || isLoading
+                  ? 'opacity-50 cursor-wait border-gray-500/30 text-gray-500'
+                  : 'border-cyan-500/40 hover:border-cyan-500 hover:bg-cyan-500/10 text-cyan-300'
+              }`}
+              data-testid="scan-nft-avatars-button"
+            >
+              {isScanningNfts ? (
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="w-5 h-5"
+                >
+                  <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 103.473 9.765l3.131 3.131a.75.75 0 101.061-1.061l-3.131-3.131A5.5 5.5 0 009 3.5zM5 9a4 4 0 118 0 4 4 0 01-8 0z" clipRule="evenodd" />
+                </svg>
+              )}
+              <span className="font-medium">
+                {isScanningNfts ? t('sidebar.scanningNftAvatars') : t('sidebar.scanNftAvatars')}
+              </span>
+            </button>
+
+            {(scanMessage || scanError) && (
+              <div className={`mb-2 rounded px-3 py-2 text-xs ${
+                scanError
+                  ? 'bg-red-900/20 text-red-300'
+                  : 'bg-cyan-500/10 text-cyan-200'
+              }`}>
+                {scanError || scanMessage}
+              </div>
+            )}
+          </>
         )}
 
         {isLoading && avatars.length === 0 ? (

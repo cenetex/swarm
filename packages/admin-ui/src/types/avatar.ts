@@ -37,7 +37,7 @@ export interface AvatarConfig {
   // Creator tracking (permanent - who created this avatar)
   creatorWallet?: string;
   // Slot type - how this avatar was created
-  slotType?: 'free' | 'orb';
+  slotType?: 'free' | 'orb' | 'nft';
   // Orb slotting - optional explicit Orb NFT backing
   orbMint?: string;
   orbWallet?: string;

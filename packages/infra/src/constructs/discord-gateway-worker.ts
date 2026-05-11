@@ -82,8 +82,8 @@ export class DiscordGatewayWorker extends Construct {
     const secretPrefix = props.secretPrefix ?? 'swarm';
     const isProd = environment === 'prod' || environment === 'production';
     const logRetention = isProd
-      ? logs.RetentionDays.TWO_WEEKS
-      : logs.RetentionDays.THREE_DAYS;
+      ? logs.RetentionDays.ONE_MONTH
+      : logs.RetentionDays.ONE_WEEK;
 
     // Task definition — lightweight: WebSocket connections are I/O-bound, not CPU
     this.taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDef', {

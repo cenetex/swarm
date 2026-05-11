@@ -62,8 +62,9 @@ describe('useTaskCardStore', () => {
     expect(card).toBeDefined();
     expect(card.status).toBe('pending');
     expect(card.toolCallId).toBe('tc-1');
-    expect(card.inlineExpanded).toBe(true);
-    expect(card.workspaceState).toBe('hidden');
+    // Cards default to inline-collapsed; full prompt UX lives in the
+    // workspace Tools tab (#1637).
+    expect(card.inlineExpanded).toBe(false);
     expect(card.createdAt).toBeGreaterThan(0);
     expect(card.updatedAt).toBe(card.createdAt);
   });
@@ -119,11 +120,12 @@ describe('useTaskCardStore', () => {
     const { registerTaskCard, toggleExpanded } = useTaskCardStore.getState();
     registerTaskCard({ id: 'tc-1', avatarId: 'a', toolName: 'confirm_action', arguments: {} });
 
-    expect(useTaskCardStore.getState().cards['tc-1'].inlineExpanded).toBe(true);
-    toggleExpanded('tc-1');
+    // Default is collapsed (#1637).
     expect(useTaskCardStore.getState().cards['tc-1'].inlineExpanded).toBe(false);
     toggleExpanded('tc-1');
     expect(useTaskCardStore.getState().cards['tc-1'].inlineExpanded).toBe(true);
+    toggleExpanded('tc-1');
+    expect(useTaskCardStore.getState().cards['tc-1'].inlineExpanded).toBe(false);
   });
 
   it('clears cards for a specific avatar only', () => {

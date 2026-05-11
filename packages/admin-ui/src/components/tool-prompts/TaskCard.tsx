@@ -1,47 +1,20 @@
 /**
- * TaskCard — standalone transcript item for tool interactions.
+ * TaskCard — compact transcript reference for a tool interaction.
  *
  * Renders as its own item in the transcript timeline (not inside a message
- * bubble). Reads from the task card store for authoritative state so it
- * survives setChat() / syncChatHistory() replacing the message array.
+ * bubble). The full prompt UX lives in the workspace Tools tab — this card
+ * is just a label + status + "Open" affordance pointing there (#1637).
+ *
+ * Exception: `confirm_action` keeps an inline-expanded yes/no prompt so
+ * tiny confirmations don't force a workspace context switch.
  */
 import { useTaskCardStore, type TaskCard as TaskCardType } from '../../store/task-cards';
 import { useWorkspaceStore } from '../../store/workspace';
 import { ToolPrompt } from './index';
-import { PromptSuccess, PromptError } from './PromptStatus';
+import { PromptError } from './PromptStatus';
 import type { ToolSubmitResult } from './types';
 import type { ToolCall } from '../../types';
-
-/** Human-readable labels for tool names. */
-const TOOL_LABELS: Record<string, string> = {
-  request_secret: 'Secret Input',
-  prompt_secret: 'Secret Input',
-  confirm_action: 'Confirmation',
-  request_wallet_link: 'Wallet Link',
-  request_twitter_connection: 'Twitter Connect',
-  twitter_request_integration: 'Twitter Connect',
-  request_feature_toggle: 'Feature Toggle',
-  request_property_research: 'Property Auth',
-  configure_integration: 'Integration Setup',
-  set_profile_image: 'Profile Upload',
-  get_profile_upload_url: 'Image Upload',
-  get_reference_image_upload_url: 'Reference Upload',
-  set_character_reference: 'Character Reference',
-  get_my_gallery: 'Media Gallery',
-  search_gallery: 'Gallery Search',
-  get_my_wallets: 'Wallet Overview',
-  report_issue: 'Issue Report',
-  report_user_feedback: 'User Feedback',
-};
-
-function getToolLabel(card: TaskCardType): string {
-  const args = card.arguments;
-  if (args?.type === 'model_selector') return 'Model Selection';
-  if (args?.type === 'feature_toggle') return 'Feature Toggle';
-  if (args?.type === 'upload_url') return 'File Upload';
-  if (args?.type === 'twitter_connect') return 'Twitter Connect';
-  return TOOL_LABELS[card.toolName] || 'Action Required';
-}
+import { getToolLabel, isInlineOnly } from './tool-labels';
 
 /** Success-specific summary for completed cards. */
 function getSuccessMessage(card: TaskCardType): string {
@@ -81,8 +54,7 @@ function getSuccessMessage(card: TaskCardType): string {
  */
 function humanizeTaskError(raw: string, toolName: string): string {
   if (/Unknown or expired toolCallId/i.test(raw)) {
-    const label = TOOL_LABELS[toolName] ?? 'this form';
-    return `${label} expired before you submitted it. Ask again to get a fresh one.`;
+    return `${getToolLabel({ toolName, arguments: {} })} expired before you submitted it. Ask again to get a fresh one.`;
   }
   return raw;
 }
@@ -96,7 +68,9 @@ function getResolvedSummary(card: TaskCardType): string {
       return 'Cancelled';
     case 'failed': {
       const result = card.result as Record<string, unknown> | undefined;
-      return typeof result?.error === 'string' ? result.error as string : 'Failed';
+      return typeof result?.error === 'string'
+        ? humanizeTaskError(result.error as string, card.toolName)
+        : 'Failed';
     }
     default:
       return '';
@@ -110,6 +84,13 @@ const STATUS_COLORS = {
   cancelled: 'border-l-gray-500',
 } as const;
 
+const STATUS_DOT = {
+  pending: 'bg-brand-400 animate-pulse',
+  completed: 'bg-green-500',
+  failed: 'bg-red-500',
+  cancelled: 'bg-gray-500',
+} as const;
+
 interface TaskCardProps {
   cardId: string;
   onSubmit: (toolCallId: string, result: unknown) => Promise<ToolSubmitResult>;
@@ -118,91 +99,81 @@ interface TaskCardProps {
 
 export function TaskCard({ cardId, onSubmit, disabled }: TaskCardProps) {
   const card = useTaskCardStore((s) => s.cards[cardId]);
-  const toggleExpanded = useTaskCardStore((s) => s.toggleExpanded);
   const openForTask = useWorkspaceStore((s) => s.openForTask);
 
   if (!card) return null;
 
-  const isResolved = card.status !== 'pending';
+  const isPending = card.status === 'pending';
+  const isResolved = !isPending;
   const label = getToolLabel(card);
-  const summary = card.summary || (isResolved ? getResolvedSummary(card) : undefined);
+  const summary = card.summary || (isResolved ? getResolvedSummary(card) : '');
+  const inlineOnly = isInlineOnly(card.toolName);
 
-  // Build a ToolCall object for the pending ToolPrompt component
-  const toolCallForPrompt: ToolCall = {
-    id: card.id,
-    name: card.toolName,
-    arguments: card.arguments,
-    status: 'pending',
-  };
-
-  return (
-    <div className={`flex justify-start mb-3 lg:mb-4`}>
-      <div className={`max-w-[85%] lg:max-w-[75%] w-full border-l-2 ${STATUS_COLORS[card.status]} rounded-lg bg-[var(--color-bg-secondary)] overflow-hidden`}>
-        {/* Header — always shown for resolved, acts as collapse toggle */}
-        <button
-          onClick={() => toggleExpanded(card.id)}
-          className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--color-bg-tertiary)] transition-colors"
-        >
-          <svg
-            className={`w-3 h-3 text-[var(--color-text-muted)] transition-transform ${card.inlineExpanded ? 'rotate-90' : ''}`}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          <span className="text-xs font-medium text-[var(--color-text-secondary)]">{label}</span>
-          {isResolved && summary && (
-            <span className="ml-auto text-xs text-[var(--color-text-muted)]">{summary}</span>
-          )}
-          {!isResolved && (
-            <span className="ml-auto text-xs text-brand-400">Waiting for input</span>
-          )}
-          {/* Open in workspace button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              openForTask(card.id, label);
-            }}
-            className="flex-shrink-0 p-1 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
-            title="Open in workspace"
-            aria-label="Open in workspace"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-              <path d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" />
-              <path d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" />
-            </svg>
-          </button>
-        </button>
-
-        {/* Body */}
-        {card.inlineExpanded && (
-          <div className="px-3 pb-3">
-            {card.status === 'completed' && (
-              <PromptSuccess message={getSuccessMessage(card)} />
-            )}
-            {card.status === 'failed' && (
-              <PromptError
-                message={humanizeTaskError(
-                  typeof (card.result as Record<string, unknown>)?.error === 'string'
-                    ? (card.result as Record<string, unknown>).error as string
-                    : 'Action failed',
-                  card.toolName,
-                )}
-              />
-            )}
-            {card.status === 'cancelled' && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-sm">
-                <span className="text-[var(--color-text-secondary)]">Cancelled</span>
-              </div>
-            )}
-            {card.status === 'pending' && (
-              <ToolPrompt
-                toolCall={toolCallForPrompt}
-                onSubmit={onSubmit}
-                disabled={disabled}
-              />
-            )}
+  // Inline-only tools (e.g. confirm_action) keep the legacy expanded form
+  // since they're tiny enough that a workspace switch is overkill.
+  if (inlineOnly && isPending) {
+    const toolCallForPrompt: ToolCall = {
+      id: card.id,
+      name: card.toolName,
+      arguments: card.arguments,
+      status: 'pending',
+    };
+    return (
+      <div className="flex justify-start mb-3 lg:mb-4">
+        <div className={`max-w-[85%] lg:max-w-[75%] w-full border-l-2 ${STATUS_COLORS[card.status]} rounded-lg bg-[var(--color-bg-secondary)] overflow-hidden`}>
+          <div className="px-3 py-2 flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${STATUS_DOT[card.status]}`} aria-hidden />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">{label}</span>
           </div>
-        )}
+          <div className="px-3 pb-3">
+            <ToolPrompt toolCall={toolCallForPrompt} onSubmit={onSubmit} disabled={disabled} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Resolved card with a failure: surface the error inline (small, helpful)
+  if (card.status === 'failed') {
+    return (
+      <div className="flex justify-start mb-3 lg:mb-4">
+        <div className={`max-w-[85%] lg:max-w-[75%] w-full border-l-2 ${STATUS_COLORS[card.status]} rounded-lg bg-[var(--color-bg-secondary)] overflow-hidden`}>
+          <div className="px-3 py-2 flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${STATUS_DOT[card.status]}`} aria-hidden />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">{label}</span>
+          </div>
+          <div className="px-3 pb-3">
+            <PromptError message={summary || 'Action failed'} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Default compact view: tool label + status dot + Open / summary
+  return (
+    <div className="flex justify-start mb-3 lg:mb-4">
+      <div className={`max-w-[85%] lg:max-w-[75%] w-full border-l-2 ${STATUS_COLORS[card.status]} rounded-lg bg-[var(--color-bg-secondary)]`}>
+        <div className="flex items-center gap-2 px-3 py-2">
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_DOT[card.status]}`} aria-hidden />
+          <span className="text-xs font-medium text-[var(--color-text-secondary)] truncate">{label}</span>
+          {isResolved && summary && (
+            <span className="ml-auto text-xs text-[var(--color-text-muted)] truncate">{summary}</span>
+          )}
+          {isPending && (
+            <button
+              onClick={() => openForTask(card.id, label)}
+              className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-brand-500/10 text-brand-400 hover:bg-brand-500/20 transition-colors"
+              aria-label={`Open ${label} in workspace`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                <path d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" />
+                <path d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" />
+              </svg>
+              Open
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

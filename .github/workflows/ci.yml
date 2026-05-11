@@ -169,7 +169,9 @@ jobs:
   smoke:
     name: Smoke Test (Admin UI)
     runs-on: ubuntu-latest
-    environment: staging
+    # No GitHub Environment binding — falls back to the mock VITE_PRIVY_APP_ID
+    # in the build step (#1394, #1645). Smoke verifies the UI shell boots,
+    # not real auth.
     needs: changes
     if: needs.changes.outputs.code == 'true'
 

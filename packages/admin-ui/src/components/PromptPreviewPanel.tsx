@@ -9,10 +9,17 @@ import { useTranslation } from 'react-i18next';
 import { fetchPromptPreview, type PromptPreviewResponse, type ToolPreview, type SystemPromptOverride } from '../api/prompt-preview';
 import { updateAvatar } from '../api/avatars';
 import { useActiveAvatar, useActiveChat } from '../store';
+import { useWorkspaceStore } from '../store/workspace';
 
 interface PromptPreviewPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  /**
+   * When true, render without the fixed-overlay backdrop / close button —
+   * the panel becomes a content body suitable for embedding inside the
+   * workspace tab body (#1636). Defaults to false (legacy modal mode).
+   */
+  embedded?: boolean;
 }
 
 type TabId = 'prompt' | 'tools' | 'messages';
@@ -73,7 +80,7 @@ function ToolCard({ tool, isExpanded, onToggle }: {
   );
 }
 
-export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps) {
+export function PromptPreviewPanel({ isOpen, onClose, embedded = false }: PromptPreviewPanelProps) {
   const { t } = useTranslation();
   const activeAgent = useActiveAvatar();
   const messages = useActiveChat();
@@ -202,6 +209,17 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
     }
   }, [isOpen, activeAgent, loadPreview]);
 
+  // Auto-engage fullscreen when entering prompt-edit mode in embedded mode.
+  // Editor needs the room (#1636). Restore to pane when leaving edit mode.
+  useEffect(() => {
+    if (!embedded) return;
+    if (isEditing) {
+      useWorkspaceStore.getState().setSize('fullscreen');
+    } else {
+      useWorkspaceStore.getState().setSize('pane');
+    }
+  }, [embedded, isEditing]);
+
   const toggleTool = useCallback((toolName: string) => {
     setExpandedTools(prev => {
       const next = new Set(prev);
@@ -224,57 +242,79 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center lg:items-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
+  // The modal chrome (fixed-overlay backdrop + max-width panel + branded
+  // header) is bypassed when `embedded` is true — the workspace tab body
+  // becomes the host. The inner sections (token breakdown, sub-tab strip,
+  // tab content) are identical in both modes.
+  const panelClass = embedded
+    ? 'flex flex-col h-full -mx-4 -my-4'
+    : 'relative w-full max-w-4xl max-h-[85vh] lg:max-h-[80vh] bg-[var(--color-bg)] rounded-t-2xl lg:rounded-2xl shadow-xl flex flex-col overflow-hidden animate-slide-up';
 
-      {/* Panel */}
-      <div className="relative w-full max-w-4xl max-h-[85vh] lg:max-h-[80vh] bg-[var(--color-bg)] rounded-t-2xl lg:rounded-2xl shadow-xl flex flex-col overflow-hidden animate-slide-up">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-brand-900/50 flex items-center justify-center">
-              <svg className="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-[var(--color-text)]">{t('promptPreview.title')}</h2>
-              <p className="text-xs text-[var(--color-text-tertiary)]">
-                {error
-                  ? t('promptPreview.errorLoadingPreview')
-                  : preview
-                    ? `~${formatTokenCount(preview.tokenEstimate.total)} tokens`
-                    : isLoading
-                      ? t('common.loading')
-                      : t('promptPreview.noData')}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={loadPreview}
-              disabled={isLoading}
-              className="px-3 py-1.5 text-xs rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] transition-colors disabled:opacity-50"
-            >
-              {isLoading ? t('common.loading') : t('promptPreview.refresh')}
-            </button>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-lg hover:bg-[var(--color-bg-tertiary)] flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+  const header = embedded ? (
+    <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/50 flex-shrink-0">
+      <p className="text-xs text-[var(--color-text-tertiary)]">
+        {error
+          ? t('promptPreview.errorLoadingPreview')
+          : preview
+            ? `~${formatTokenCount(preview.tokenEstimate.total)} tokens`
+            : isLoading
+              ? t('common.loading')
+              : t('promptPreview.noData')}
+      </p>
+      <button
+        onClick={loadPreview}
+        disabled={isLoading}
+        className="px-2 py-1 text-xs rounded-md bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] transition-colors disabled:opacity-50"
+      >
+        {isLoading ? t('common.loading') : t('promptPreview.refresh')}
+      </button>
+    </div>
+  ) : (
+    <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-brand-900/50 flex items-center justify-center">
+          <svg className="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
         </div>
+        <div>
+          <h2 className="text-sm font-semibold text-[var(--color-text)]">{t('promptPreview.title')}</h2>
+          <p className="text-xs text-[var(--color-text-tertiary)]">
+            {error
+              ? t('promptPreview.errorLoadingPreview')
+              : preview
+                ? `~${formatTokenCount(preview.tokenEstimate.total)} tokens`
+                : isLoading
+                  ? t('common.loading')
+                  : t('promptPreview.noData')}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={loadPreview}
+          disabled={isLoading}
+          className="px-3 py-1.5 text-xs rounded-lg bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] transition-colors disabled:opacity-50"
+        >
+          {isLoading ? t('common.loading') : t('promptPreview.refresh')}
+        </button>
+        <button
+          onClick={onClose}
+          className="w-8 h-8 rounded-lg hover:bg-[var(--color-bg-tertiary)] flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+
+  const body = (
+    <>
+      {header}
 
         {/* Token breakdown */}
         {preview && (
@@ -579,7 +619,20 @@ export function PromptPreviewPanel({ isOpen, onClose }: PromptPreviewPanelProps)
             </div>
           )}
         </div>
-      </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div className={panelClass}>{body}</div>;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center lg:items-center">
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className={panelClass}>{body}</div>
     </div>
   );
 }

@@ -14,7 +14,7 @@ import type { Platform, ResponseAction } from '../types/index.js';
 export interface ActivityEvent {
   avatarId: string;
   timestamp: number;
-  eventType: 'message_received' | 'response_sent' | 'media_generated' | 'error';
+  eventType: 'message_received' | 'response_sent' | 'response_generated' | 'response_accepted_by_platform' | 'response_dropped' | 'media_generated' | 'error';
   platform: Platform;
   summary: string;
   details?: Record<string, unknown>;
@@ -69,7 +69,64 @@ export class ActivityService {
   }
 
   /**
-   * Log a sent response
+   * Log a generated response (LLM produced content, enqueued to response queue)
+   */
+  async logResponseGenerated(
+    avatarId: string,
+    platform: Platform,
+    actionCount: number,
+    actionTypes: string[]
+  ): Promise<void> {
+    await this.log({
+      avatarId,
+      timestamp: Date.now(),
+      eventType: 'response_generated',
+      platform,
+      summary: `Response generated: ${actionCount} action(s)`,
+      details: { actionCount, actionTypes },
+    });
+  }
+
+  /**
+   * Log a response accepted by platform (adapter confirmed delivery)
+   */
+  async logResponseAcceptedByPlatform(
+    avatarId: string,
+    platform: Platform,
+    deliveredActionCount: number,
+    totalActionCount: number
+  ): Promise<void> {
+    await this.log({
+      avatarId,
+      timestamp: Date.now(),
+      eventType: 'response_accepted_by_platform',
+      platform,
+      summary: `Response accepted by platform: ${deliveredActionCount}/${totalActionCount} actions`,
+      details: { deliveredActionCount, totalActionCount },
+    });
+  }
+
+  /**
+   * Log a dropped response (terminal failure, all actions non-retryable)
+   */
+  async logResponseDropped(
+    avatarId: string,
+    platform: Platform,
+    reason: string,
+    actionTypes: string[]
+  ): Promise<void> {
+    await this.log({
+      avatarId,
+      timestamp: Date.now(),
+      eventType: 'response_dropped',
+      platform,
+      summary: `Response dropped: ${reason}`,
+      details: { reason, actionTypes },
+    });
+  }
+
+  /**
+   * Log a sent response (backward-compat alias for response_accepted_by_platform)
    */
   async logResponseSent(
     avatarId: string,
@@ -78,7 +135,7 @@ export class ActivityService {
   ): Promise<void> {
     const actionTypes = actions.map(a => a.type).join(', ');
     const messageAction = actions.find(a => a.type === 'send_message');
-    const preview = messageAction && 'text' in messageAction 
+    const preview = messageAction && 'text' in messageAction
       ? messageAction.text.slice(0, 50)
       : actionTypes;
 

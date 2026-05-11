@@ -23,8 +23,6 @@ import { WelcomeMessage } from './WelcomeMessage';
 import { UpgradeNudge } from './UpgradeNudge';
 
 // Lazy-load heavy panel components that are behind user interactions
-const PromptPreviewPanel = lazy(() => import('./PromptPreviewPanel').then(m => ({ default: m.PromptPreviewPanel })));
-const PlanUsagePanel = lazy(() => import('./PlanUsagePanel').then(m => ({ default: m.PlanUsagePanel })));
 const UsageMeterPanel = lazy(() => import('./UsageMeterPanel').then(m => ({ default: m.UsageMeterPanel })));
 const ActivationChecklist = lazy(() => import('./ActivationChecklist').then(m => ({ default: m.ActivationChecklist })));
 const TaskWorkspace = lazy(() => import('./TaskWorkspace').then(m => ({ default: m.TaskWorkspace })));
@@ -51,16 +49,26 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const { user: user, isAuthenticated, gateStatus, account } = useAuth();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
-  const [planUsagePanelOpen, setPlanUsagePanelOpen] = useState(!!initialInviteCode);
   const [isCreatingAvatar, setIsCreatingAvatar] = useState(false);
   const [showHint, setShowHint] = useState(true);
   const [activationLoading, setActivationLoading] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
   const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
-  const galleryOpen = useWorkspaceStore((s) => s.isOpen && s.contentType === 'gallery');
+  const galleryOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'gallery');
+  const promptOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'prompt');
+  const settingsOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'settings');
+  const activityOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'activity');
   // Track which limit types have already shown an upgrade nudge this session
   const shownNudgesRef = useRef(new Set<string>());
+
+  // Auto-open the Activity tab when arriving via ?invite=DP-XXXX-XXXX so the
+  // user lands on the redemption form. Replaces the legacy
+  // `planUsagePanelOpen` auto-open behavior (#1639).
+  useEffect(() => {
+    if (initialInviteCode) {
+      useWorkspaceStore.getState().setTab('activity');
+    }
+  }, [initialInviteCode]);
 
   const formatUserFacingError = useCallback((raw: unknown): string => {
     const rawMessage = raw instanceof Error ? raw.message : typeof raw === 'string' ? raw : t('chat.errors.failedToSendMessage');
@@ -1228,9 +1236,9 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               </p>
             </div>
             {/* Compact usage meter — always visible for authenticated users */}
-            {isAuthenticated && activeAvatar && !planUsagePanelOpen && (
+            {isAuthenticated && activeAvatar && !activityOpen && (
               <button
-                onClick={() => setPlanUsagePanelOpen(true)}
+                onClick={() => useWorkspaceStore.getState().setTab('activity')}
                 className="hidden md:block flex-shrink-0 min-w-[160px] max-w-[200px] hover:opacity-80 transition-opacity"
                 title={t('chat.panel.clickToViewPlanUsageDetails')}
               >
@@ -1292,8 +1300,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                   </button>
                 )}
                 <button
-                  onClick={() => setPlanUsagePanelOpen(!planUsagePanelOpen)}
-                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${planUsagePanelOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
+                  onClick={() => useWorkspaceStore.getState().setTab('activity')}
+                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${activityOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
                   title={t('chat.panel.viewPlanAndUsage')}
                 >
                   {t('chat.panel.planAndUsage')}
@@ -1309,14 +1317,25 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                   </svg>
                 </button>
                 <button
-                  onClick={() => setPromptPreviewOpen(true)}
-                  className="px-2 lg:px-3 py-1.5 text-xs lg:text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
+                  onClick={() => useWorkspaceStore.getState().setTab('prompt')}
+                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${promptOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
                   title={t('chat.panel.previewPrompt')}
                 >
                   <span className="hidden sm:inline">{t('chat.panel.preview')}</span>
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
                     <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
                     <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => useWorkspaceStore.getState().setTab('settings')}
+                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${settingsOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
+                  title="Avatar settings"
+                  aria-label="Avatar settings"
+                >
+                  <span className="hidden sm:inline">Settings</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
+                    <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
                   </svg>
                 </button>
                 <button
@@ -1395,20 +1414,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         </div>
       )}
 
-      {/* Inline Plan & Usage Panel (chat-first) */}
-      {planUsagePanelOpen && activeAvatar && (
-        <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 px-3 lg:px-6 py-3">
-          <div className="max-w-3xl mx-auto">
-            <Suspense fallback={null}><PlanUsagePanel
-              avatarId={activeAvatar.id}
-              avatarName={activeAvatar.name}
-              canEdit={account?.role === 'admin'}
-              onClose={() => setPlanUsagePanelOpen(false)}
-              initialInviteCode={initialInviteCode}
-            /></Suspense>
-          </div>
-        </div>
-      )}
+      {/* Plan & Usage now lives in the workspace Activity tab (#1639). */}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 lg:px-6 py-4">
@@ -1497,16 +1503,12 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         </div>
       )}
 
-      {/* Prompt Preview Panel */}
-      <Suspense fallback={null}><PromptPreviewPanel
-        isOpen={promptPreviewOpen}
-        onClose={() => setPromptPreviewOpen(false)}
-      /></Suspense>
+      {/* Prompt preview is now mounted inside the workspace Prompt tab (#1636). */}
 
     </div>
 
     {/* Task Workspace Panel (gallery + task content) */}
-    <Suspense fallback={null}><TaskWorkspace onToolSubmit={handleToolSubmit} /></Suspense>
+    <Suspense fallback={null}><TaskWorkspace onToolSubmit={handleToolSubmit} initialInviteCode={initialInviteCode} /></Suspense>
 
     </div>
   );
