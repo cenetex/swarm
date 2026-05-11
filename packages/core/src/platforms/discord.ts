@@ -590,7 +590,12 @@ export class DiscordAdapter extends PlatformAdapter {
     });
     }
 
-    const chunks = splitForDiscord(content, DISCORD_MESSAGE_LIMIT);
+    const textChunks = splitForDiscord(content, DISCORD_MESSAGE_LIMIT);
+    const chunks = textChunks.length > 0
+      ? textChunks
+      : media && media.length > 0
+        ? ['']
+        : [];
 
     for (let i = 0; i < chunks.length; i++) {
       const payload: Record<string, unknown> = { content: chunks[i] };

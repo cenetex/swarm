@@ -6,18 +6,20 @@
  * replies would disappear entirely.
  *
  * Strategy: prefer sentence breaks, then word breaks, then hard-cut.
- * Each chunk is returned as raw text.
+ * Each chunk is returned as raw text, preserving whitespace from the input.
  */
 
 /** Discord's hard cap for message content. */
 export const DISCORD_MESSAGE_LIMIT = 2000;
 
 /**
- * Split `text` into pieces each no longer than `maxLen`. If the input fits,
- * returns `[text]` unchanged.
+ * Split `text` into pieces each no longer than `maxLen`. If nonblank input
+ * fits, returns `[text]` unchanged. Blank input returns no chunks so callers do
+ * not attempt to send invalid empty Discord messages.
  */
 export function splitForDiscord(text: string, maxLen = DISCORD_MESSAGE_LIMIT): string[] {
   if (maxLen <= 0) throw new Error('maxLen must be positive');
+  if (text.trim().length === 0) return [];
   if (text.length <= maxLen) return [text];
 
   const chunks: string[] = [];
@@ -26,12 +28,13 @@ export function splitForDiscord(text: string, maxLen = DISCORD_MESSAGE_LIMIT): s
   while (remaining.length > maxLen) {
     const slice = remaining.slice(0, maxLen);
     const cut = findCut(slice);
-    chunks.push(remaining.slice(0, cut).trimEnd());
-    remaining = remaining.slice(cut).replace(/^\s+/, '');
+    const chunk = remaining.slice(0, cut);
+    if (chunk.trim().length > 0) chunks.push(chunk);
+    remaining = remaining.slice(cut);
   }
 
-  if (remaining.length > 0) chunks.push(remaining);
-  return chunks.filter(c => c.length > 0);
+  if (remaining.trim().length > 0) chunks.push(remaining);
+  return chunks;
 }
 
 /**

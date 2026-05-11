@@ -67,14 +67,14 @@ describe('splitForDiscord', () => {
     expect(chunks[2].length).toBe(1000);
   });
 
-  it('should trim whitespace at chunk boundaries', () => {
+  it('should preserve whitespace at chunk boundaries', () => {
     const text = 'First part.   \n\n   Second part.   \n\n   Third part.'.repeat(50);
     const chunks = splitForDiscord(text);
 
     for (const chunk of chunks) {
-      expect(chunk).not.toMatch(/^\s+/);
-      expect(chunk).not.toMatch(/\s+$/);
+      expect(chunk.length).toBeLessThanOrEqual(DISCORD_MESSAGE_LIMIT);
     }
+    expect(chunks.join('')).toBe(text);
   });
 
   it('should handle text with multiple sentence terminators', () => {

@@ -1124,6 +1124,24 @@ describe('DiscordAdapter', () => {
       expect(Array.isArray(capturedBody.embeds)).toBe(true);
     });
 
+    it('should send media embeds without a caption', async () => {
+      let capturedBody: Record<string, unknown> = {};
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        capturedBody = JSON.parse(init!.body as string);
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const result = await adapter.executeAction(
+        { type: 'send_media', mediaType: 'animation', url: 'https://img.com/anim.gif' },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(capturedBody.content).toBe('');
+      expect(Array.isArray(capturedBody.embeds)).toBe(true);
+    });
+
     it('should handle send_sticker by downgrading to emoji text', async () => {
       let capturedBody: Record<string, unknown> = {};
       globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
