@@ -83,4 +83,48 @@ describe('auth bootstrap reliability', () => {
     expect(state.isAuthenticated).toBe(false);
     expect(state.user).toBe(null);
   });
+
+  test('force sync refreshes backend session even when local auth is already set', async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({
+        success: true,
+        user: {
+          walletAddress: 'So11111111111111111111111111111111111111112',
+          email: 'user@example.com',
+        },
+        account: null,
+        gateStatus: null,
+        gateWallet: null,
+        gateStatusByWallet: null,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    globalThis.fetch = fetchMock;
+
+    const { useAuthStore } = await import('../store/auth');
+
+    useAuthStore.setState({
+      isAuthenticated: true,
+      isLoading: false,
+      user: {
+        id: 'u1',
+        walletAddress: 'So11111111111111111111111111111111111111112',
+        email: 'user@example.com',
+      },
+    } as never);
+
+    await useAuthStore.getState().syncWithBackend('fresh-token', {
+      id: 'privy-1',
+      email: 'user@example.com',
+      walletAddress: 'So11111111111111111111111111111111111111112',
+    }, { force: true });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const request = fetchMock.mock.calls[0];
+    expect(request[0]).toContain('/auth/privy/verify');
+    expect(JSON.parse((request[1] as RequestInit).body as string).accessToken).toBe('fresh-token');
+    expect((request[1] as RequestInit).credentials).toBe('include');
+  });
 });
