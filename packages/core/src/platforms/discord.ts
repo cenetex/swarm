@@ -20,6 +20,7 @@ import { fetchWithRetry } from '../utils/fetch-retry.js';
 import { PlatformError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
 import { logger } from '../utils/logger.js';
+import { splitForDiscord, DISCORD_MESSAGE_LIMIT } from '../utils/discord-chunk.js';
 import type { DiscordWebhookManager } from './discord-webhook-manager.js';
 
 // Discord API types (minimal, to avoid dependency on discord.js in core)
@@ -589,35 +590,47 @@ export class DiscordAdapter extends PlatformAdapter {
     });
     }
 
-    const payload: Record<string, unknown> = { content };
+    const textChunks = splitForDiscord(content, DISCORD_MESSAGE_LIMIT);
+    const chunks = textChunks.length > 0
+      ? textChunks
+      : media && media.length > 0
+        ? ['']
+        : [];
 
-    if (replyToMessageId) {
-      payload.message_reference = { message_id: replyToMessageId };
-    }
+    for (let i = 0; i < chunks.length; i++) {
+      const payload: Record<string, unknown> = { content: chunks[i] };
 
-    // Add embeds for media
-    if (media && media.length > 0) {
-      payload.embeds = media.map(m => ({
-        image: m.type === 'image' ? { url: m.url } : undefined,
-      })).filter((e: Record<string, unknown>) => e.image);
-    }
+      // Only add message_reference and embeds to the first chunk
+      if (i === 0) {
+        if (replyToMessageId) {
+          payload.message_reference = { message_id: replyToMessageId };
+        }
 
-    const response = await fetchWithRetry(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bot ${this.credentials.botToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    }, { maxRetries: 2, timeoutMs: 15_000 });
+        // Add embeds for media to first chunk only
+        if (media && media.length > 0) {
+          payload.embeds = media.map(m => ({
+            image: m.type === 'image' ? { url: m.url } : undefined,
+          })).filter((e: Record<string, unknown>) => e.image);
+        }
+      }
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new PlatformError(`Bot API request failed: ${error}`, {
-      code: SwarmErrorCode.PLATFORM_API_ERROR,
-      platform: 'discord',
-      retryable: true,
-    });
+      const response = await fetchWithRetry(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bot ${this.credentials.botToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }, { maxRetries: 2, timeoutMs: 15_000 });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new PlatformError(`Bot API request failed: ${error}`, {
+        code: SwarmErrorCode.PLATFORM_API_ERROR,
+        platform: 'discord',
+        retryable: true,
+      });
+      }
     }
   }
 

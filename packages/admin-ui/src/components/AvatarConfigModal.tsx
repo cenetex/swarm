@@ -42,7 +42,7 @@ type SecretTemplate = (typeof SECRET_TEMPLATES)[number];
 
 export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }: AvatarConfigModalProps) {
   const { t } = useTranslation();
-  const { updateAvatar, deleteAvatar } = useAvatarStore();
+  const { updateAvatar, deleteAvatar, clearChat } = useAvatarStore();
   const { gateStatus } = useAuth();
 
   const [name, setName] = useState(avatar.name);
@@ -52,14 +52,17 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
   const [newSecretKey, setNewSecretKey] = useState('');
   const [activeTab, setActiveTab] = useState<'general' | 'persona' | 'secrets'>('general');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmClearChat, setConfirmClearChat] = useState(false);
   const [selectedOrbMint, setSelectedOrbMint] = useState('');
   const [orbBusy, setOrbBusy] = useState(false);
   const [orbError, setOrbError] = useState<string | null>(null);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearChatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+      if (clearChatTimerRef.current) clearTimeout(clearChatTimerRef.current);
     };
   }, []);
 
@@ -70,6 +73,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
     setSecrets(avatar.secrets || []);
     setSelectedOrbMint('');
     setOrbError(null);
+    setConfirmClearChat(false);
   }, [avatar]);
 
   if (!isOpen) return null;
@@ -113,6 +117,17 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
       if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
       deleteTimerRef.current = setTimeout(() => setConfirmDelete(false), 3000);
     }
+  };
+
+  const handleClearChat = () => {
+    if (confirmClearChat) {
+      void clearChat(avatar.id);
+      setConfirmClearChat(false);
+      return;
+    }
+    setConfirmClearChat(true);
+    if (clearChatTimerRef.current) clearTimeout(clearChatTimerRef.current);
+    clearChatTimerRef.current = setTimeout(() => setConfirmClearChat(false), 3000);
   };
 
   const availableTemplates = SECRET_TEMPLATES.filter(
@@ -319,6 +334,30 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
                 {orbError && (
                   <div className="mt-3 text-xs text-red-300">{orbError}</div>
                 )}
+              </div>
+
+              <div className="p-4 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-xl">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-[var(--color-text-secondary)]">
+                      {t('avatar.conversationTitle')}
+                    </div>
+                    <div className="text-xs text-[var(--color-text-muted)]">
+                      {t('avatar.clearChatDescription')}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClearChat}
+                    className={`px-3 py-2 rounded-lg text-sm transition-colors ${
+                      confirmClearChat
+                        ? 'bg-red-600 text-white hover:bg-red-500'
+                        : 'text-red-300 bg-red-900/20 hover:bg-red-900/35'
+                    }`}
+                  >
+                    {confirmClearChat ? t('avatar.clearChatConfirm') : t('chat.panel.clearChat')}
+                  </button>
+                </div>
               </div>
 
               {/* Energy Panel */}

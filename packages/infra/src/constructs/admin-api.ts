@@ -1311,6 +1311,12 @@ export class AdminApiConstruct extends Construct {
     });
 
     this.api.addRoutes({
+      path: '/avatars/scan-nft',
+      methods: [apigateway.HttpMethod.POST],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
       path: '/avatars/{avatarId}',
       methods: [apigateway.HttpMethod.GET, apigateway.HttpMethod.PUT, apigateway.HttpMethod.DELETE],
       integration: avatarsIntegration,
