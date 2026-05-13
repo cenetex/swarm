@@ -406,6 +406,7 @@
     "deleteAvatarConfirm": "再次点击以确认",
     "deleteAvatar": "删除头像",
     "saveChanges": "保存更改",
+    "savedChanges": "已保存",
     "saving": "保存中...",
     "reassignTitle": "重新分配头像",
     "idLabel": "ID：",
