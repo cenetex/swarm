@@ -260,10 +260,10 @@
     "redeem": "Redeem",
     "redeeming": "Redeeming...",
     "benefits": {
-      "upTo3Bots": "Up to 3 bots",
+      "upTo3Bots": "Telegram, Discord, X",
       "persistentMemory": "Persistent memory",
-      "models300": "300+ models",
-      "noBranding": "No branding",
+      "models300": "OpenRouter model catalog",
+      "noBranding": "No Swarm footer",
       "unlimitedBots": "Unlimited bots/server",
       "sharedMemory": "Shared memory",
       "adminDashboard": "Admin dashboard",
@@ -332,10 +332,10 @@
     "teamMonthlyPrice": "$299/month",
     "planCardBullets": {
       "pro": {
-        "messages": "5,000 messages/month",
-        "mediaCredits": "1,000 media credits/month",
-        "memory": "Persistent memory",
-        "platforms": "3+ platform integrations"
+        "messages": "500 messages/day",
+        "mediaCredits": "50 media credits/day",
+        "memory": "30-day memory",
+        "platforms": "Telegram, Discord, X"
       },
       "team": {
         "unlimitedBots": "Unlimited bots/agents",
@@ -474,9 +474,9 @@
     "comparison1": "Persistent memory per user per platform — your bot remembers the regulars across sessions",
     "comparison2": "One persona, three platforms — Telegram, Discord, and X with the same voice",
     "comparison3": "Hosted on AWS, scales to zero — no servers, daily spend caps prevent runaway bills",
-    "comparison4": "Bring your own model — OpenRouter, Anthropic, or Amazon Bedrock per avatar",
+    "comparison4": "Choose any model in OpenRouter's catalog per avatar",
     "pricingTitle": "Start free. Upgrade for expanded limits.",
-    "pricingSubtitle": "Free is enough to run one small Telegram group. $9 unlocks Discord, X, higher daily limits, model choice, and longer memory.",
+    "pricingSubtitle": "Free is enough to run one small Telegram group. $9 unlocks Discord, X, higher daily limits, OpenRouter model choice, and longer memory.",
     "socialProof": "Free tier included — no credit card required",
     "monthly": "Monthly",
     "annual": "Annual",
@@ -492,7 +492,7 @@
     "tierCreatorDesc": "Expanded limits, all three platforms",
     "tierCreatorFeature1": "1 avatar across Telegram, Discord, X",
     "tierCreatorFeature2": "500 messages per day",
-    "tierCreatorFeature3": "BYO model: OpenRouter, Anthropic, Bedrock",
+    "tierCreatorFeature3": "Choose any model in OpenRouter's catalog",
     "tierCreatorFeature4": "30-day memory, no Swarm footer",
     "tierCreatorButton": "Subscribe",
     "footerDiscord": "Discord",

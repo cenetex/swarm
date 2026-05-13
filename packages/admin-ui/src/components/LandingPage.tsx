@@ -258,9 +258,11 @@ function PricingTiers() {
             <li>{t('landing.tierFreeFeature3')}</li>
             <li>{t('landing.tierFreeFeature4')}</li>
           </ul>
-          <div className="text-xs text-[var(--color-text-muted)] font-medium py-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
-            {t('landing.tierFreeButton')}
-          </div>
+          <PrivyLoginButton
+            label={t('landing.tierFreeButton')}
+            showIcon={false}
+            className="w-full justify-center py-2"
+          />
         </div>
 
         {/* Creator ($9) */}
@@ -310,4 +312,3 @@ function MultiPlatformIcon() {
     </svg>
   );
 }
-

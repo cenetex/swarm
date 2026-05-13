@@ -260,10 +260,10 @@
     "redeem": "兑换",
     "redeeming": "兑换中...",
     "benefits": {
-      "upTo3Bots": "最多 3 个机器人",
+      "upTo3Bots": "Telegram、Discord、X",
       "persistentMemory": "持久记忆",
-      "models300": "300+ 模型",
-      "noBranding": "无品牌标识",
+      "models300": "OpenRouter 模型目录",
+      "noBranding": "无 Swarm 页脚",
       "unlimitedBots": "无限机器人/服务器",
       "sharedMemory": "共享记忆",
       "adminDashboard": "管理面板",
@@ -332,10 +332,10 @@
     "teamMonthlyPrice": "$299/月",
     "planCardBullets": {
       "pro": {
-        "messages": "5,000 条消息/月",
-        "mediaCredits": "1,000 媒体额度/月",
-        "memory": "持久记忆",
-        "platforms": "3+ 平台集成"
+        "messages": "每天 500 条消息",
+        "mediaCredits": "每天 50 个媒体额度",
+        "memory": "30 天记忆",
+        "platforms": "Telegram、Discord、X"
       },
       "team": {
         "unlimitedBots": "无限机器人/代理",
@@ -474,9 +474,9 @@
     "comparison1": "按用户、按平台的持久记忆 —— 机器人会跨会话记住群里的常客",
     "comparison2": "一种人格，三个平台 —— 在 Telegram、Discord 和 X 上是同一种声音",
     "comparison3": "托管在 AWS 上，自动 scale to zero —— 没有服务器，每日花费上限防止账单失控",
-    "comparison4": "自带模型 —— 每个头像可选 OpenRouter、Anthropic 或 Amazon Bedrock",
+    "comparison4": "每个头像都可选择 OpenRouter 目录中的任意模型",
     "pricingTitle": "从免费开始，需要更高配额时再升级。",
-    "pricingSubtitle": "免费档足以运行一个小型 Telegram 群。9 美元解锁 Discord、X、更高的每日上限、模型选择，以及更长的记忆。",
+    "pricingSubtitle": "免费档足以运行一个小型 Telegram 群。9 美元解锁 Discord、X、更高的每日上限、OpenRouter 模型选择，以及更长的记忆。",
     "socialProof": "包含免费方案 — 无需信用卡",
     "monthly": "月付",
     "annual": "年付",
@@ -492,7 +492,7 @@
     "tierCreatorDesc": "更高配额，覆盖三个平台",
     "tierCreatorFeature1": "1 个头像，覆盖 Telegram、Discord、X",
     "tierCreatorFeature2": "每天 500 条消息",
-    "tierCreatorFeature3": "自带模型：OpenRouter、Anthropic、Bedrock",
+    "tierCreatorFeature3": "可选择 OpenRouter 目录中的任意模型",
     "tierCreatorFeature4": "30 天记忆，无 Swarm 页脚",
     "tierCreatorButton": "订阅",
     "footerDiscord": "Discord",

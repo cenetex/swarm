@@ -9,6 +9,8 @@ import { useAuth, useAuthStore } from '../store/auth';
 
 interface PrivyLoginButtonProps {
   className?: string;
+  label?: string;
+  showIcon?: boolean;
 }
 
 interface WalletLike {
@@ -80,7 +82,7 @@ function getSolanaWalletAddressFromPrivyUser(user: unknown): string | null {
   return null;
 }
 
-export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
+export function PrivyLoginButton({ className = '', label, showIcon = true }: PrivyLoginButtonProps) {
   const { t } = useTranslation();
   const { login, logout: privyLogout, ready, authenticated, user: privyUser, getAccessToken } = usePrivy();
   const { isAuthenticated, isLoading, user, logout: authLogout } = useAuth();
@@ -285,10 +287,12 @@ export function PrivyLoginButton({ className = '' }: PrivyLoginButtonProps) {
       onClick={handleLogin}
       className={`flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-700 text-white font-medium text-sm transition-all shadow-lg shadow-brand-500/25 ${className}`}
     >
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-      </svg>
-      <span>{t('auth.loginWithPrivy')}</span>
+      {showIcon && (
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      )}
+      <span>{label ?? t('auth.loginWithPrivy')}</span>
     </button>
   );
 }

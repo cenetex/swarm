@@ -88,9 +88,9 @@ Below the fold, the existing "How it works" chat demo stays — it's the cleanes
 
 You can, and if you enjoy that, you should. Swarm trades flexibility for operational sanity: no Docker, no Postgres babysitting, no key rotation, no surprise bill when someone tries to abuse your bot. Per-avatar daily quotas and a per-message tool-call cap are wired into the message processor (`packages/handlers/src/messaging/tool-loop.ts`). If those guardrails don't matter to you, Swarm isn't worth $9/mo.
 
-**2. "Your front page says '300+ models.' Which ones actually work?"**
+**2. "Your front page used to say '300+ models.' Which ones actually work?"**
 
-That line was overselling. Under the hood, Swarm calls three providers — Amazon Bedrock, OpenRouter, and Anthropic direct — and the default model is `google/gemini-3-flash-preview`. You can set any OpenRouter-routed model string per avatar (which is where the "300+" came from — OpenRouter's catalogue). We're fixing the copy. We don't support fine-tuned private models today.
+That line was overselling. Under the hood, Swarm calls three providers — Amazon Bedrock, OpenRouter, and Anthropic direct — and the default model is `google/gemini-3-flash-preview`. You can set any OpenRouter-routed model string per avatar (which is where the "300+" came from — OpenRouter's catalog). The page now describes this as OpenRouter catalog model choice. We don't support fine-tuned private models today.
 
 **3. "Does the bot actually remember a user across Telegram and Discord?"**
 
@@ -122,14 +122,14 @@ For a crypto/creator community operator:
 | Tier | Price | Who it's for | Gated on |
 |---|---|---|---|
 | **Free** | $0 | "Let me see if this even works for my group" | 1 avatar, 1 platform (Telegram), 50 msgs/day, default Gemini Flash model, "powered by Swarm" in `/start` reply |
-| **Creator** | $9/mo | A single community, one persona, three platforms | 1 avatar, Telegram + Discord + X, 500 msgs/day, full model selection, 30-day memory, no Swarm footer |
+| **Creator** | $9/mo | A single community, one persona, three platforms | 1 avatar, Telegram + Discord + X, 500 msgs/day, OpenRouter catalog model choice, 30-day memory, no Swarm footer |
 | **Operator** | $29/mo *(rename from current Pro)* | A serious solo operator with several brands | Up to 3 avatars, autonomous-runner schedules (`packages/handlers/src/station/station-agent-runner.ts`), 90-day memory, per-avatar logs export |
 | **Team** | "Contact us" | Communities that actually need multi-seat, audit, SOC-2 conversation | Hide on landing page until there's a real product behind it. Don't show $299 to an audience that can't sanity-check it. |
 
 What changes from today:
 - Drop the $299 tier from the public page. It's there to be aspirational; for a $0-paying-user starting point it just adds noise.
 - Make $29 distinct from $9 by giving it the autonomous-runner feature — that's the actual operational upgrade and it's already shipped.
-- Replace "300+ models" in the Creator tier with "Bring your own model (OpenRouter, Anthropic, Bedrock)." Honest, technical, defensible.
+- Replace "300+ models" in the Creator tier with "Choose any model in OpenRouter's catalog." Honest, technical, defensible.
 - Replace "CosyWorld branding" in the Free tier with "Swarm footer in bot replies." (And remove CosyWorld from the page entirely — it's a separate product.)
 
 ### Add-on rather than a tier

@@ -260,10 +260,10 @@
     "redeem": "Utiliser",
     "redeeming": "Utilisation...",
     "benefits": {
-      "upTo3Bots": "Jusqu'à 3 bots",
+      "upTo3Bots": "Telegram, Discord, X",
       "persistentMemory": "Mémoire persistante",
-      "models300": "Plus de 300 modèles",
-      "noBranding": "Sans marque",
+      "models300": "Catalogue de modèles OpenRouter",
+      "noBranding": "Sans pied de page Swarm",
       "unlimitedBots": "Bots illimités/serveur",
       "sharedMemory": "Mémoire partagée",
       "adminDashboard": "Tableau de bord admin",
@@ -332,10 +332,10 @@
     "teamMonthlyPrice": "299 $/mois",
     "planCardBullets": {
       "pro": {
-        "messages": "5 000 messages/mois",
-        "mediaCredits": "1 000 crédits média/mois",
-        "memory": "Mémoire persistante",
-        "platforms": "3+ intégrations de plateformes"
+        "messages": "500 messages/jour",
+        "mediaCredits": "50 crédits média/jour",
+        "memory": "Mémoire 30 jours",
+        "platforms": "Telegram, Discord, X"
       },
       "team": {
         "unlimitedBots": "Bots/agents illimités",
@@ -474,9 +474,9 @@
     "comparison1": "Mémoire persistante par utilisateur et par plateforme — votre bot se souvient des habitués d'une session à l'autre",
     "comparison2": "Une seule persona, trois plateformes — Telegram, Discord et X avec la même voix",
     "comparison3": "Hébergé sur AWS, scale to zero — pas de serveurs, plafonds de dépense quotidiens contre les dérives de facture",
-    "comparison4": "Apportez votre propre modèle — OpenRouter, Anthropic ou Amazon Bedrock par avatar",
+    "comparison4": "Choisissez n'importe quel modèle du catalogue OpenRouter par avatar",
     "pricingTitle": "Commencez gratuitement. Passez à l'offre payante pour des limites étendues.",
-    "pricingSubtitle": "L'offre gratuite suffit pour un petit groupe Telegram. 9 $ ouvre Discord, X, des limites quotidiennes plus hautes, le choix du modèle et une mémoire plus longue.",
+    "pricingSubtitle": "L'offre gratuite suffit pour un petit groupe Telegram. 9 $ ouvre Discord, X, des limites quotidiennes plus hautes, le choix du modèle OpenRouter et une mémoire plus longue.",
     "socialProof": "Offre gratuite incluse — aucune carte de crédit requise",
     "monthly": "Mensuel",
     "annual": "Annuel",
@@ -492,7 +492,7 @@
     "tierCreatorDesc": "Limites étendues, sur les trois plateformes",
     "tierCreatorFeature1": "1 avatar sur Telegram, Discord et X",
     "tierCreatorFeature2": "500 messages par jour",
-    "tierCreatorFeature3": "BYO model : OpenRouter, Anthropic, Bedrock",
+    "tierCreatorFeature3": "Choisissez n'importe quel modèle du catalogue OpenRouter",
     "tierCreatorFeature4": "Mémoire 30 jours, sans pied de page Swarm",
     "tierCreatorButton": "S'abonner",
     "footerDiscord": "Discord",
