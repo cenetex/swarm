@@ -11,6 +11,7 @@ import * as avatarService from '../../services/avatars.js';
 import * as galleryService from '../../services/gallery.js';
 import * as integrationsService from '../../services/integrations.js';
 import * as auditLogService from '../../services/audit-log.js';
+import { scanNftAvatarsForWallet } from '../../services/scan-nft-avatars.js';
 import type { ActorType } from '../../services/audit-log.js';
 import { parseJsonBody } from '../../http/request-body.js';
 import {
@@ -229,6 +230,16 @@ export async function handleCrudRoutes(
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify(hydrated),
     };
+  }
+
+  // ── POST /avatars/scan-nft — Create draft avatars from held collection NFTs ─
+  if (method === 'POST' && path === '/avatars/scan-nft') {
+    if (!walletAddress) {
+      return jsonResponse(corsHeaders, 403, { error: 'Wallet sign-in required' });
+    }
+
+    const result = await scanNftAvatarsForWallet(walletAddress);
+    return jsonResponse(corsHeaders, 200, result);
   }
 
   // ── PUT /avatars/{id}/reassign — Admin-only: Reassign avatar ownership ───

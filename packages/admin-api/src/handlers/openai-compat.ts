@@ -29,6 +29,12 @@ import { createHash, randomBytes } from 'crypto';
 import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { logger, detectEnabledCategories } from '@swarm/core';
 import { processChat } from './chat.js';
+import {
+  LLM_TIMEOUT_MS,
+  getLlmApiKey,
+  normalizeUsage,
+  type LlmUsage,
+} from './chat-llm.js';
 import type { UserSession } from '../types.js';
 import * as avatars from '../services/avatars.js';
 import * as voice from '../services/voice.js';
@@ -50,11 +56,41 @@ const docClient = getDynamoClient();
 // OpenAI-Compatible Types
 // =============================================================================
 
-const OpenAIMessageSchema = z.object({
-  role: z.enum(['system', 'user', 'assistant']),
-  content: z.string(),
-  name: z.string().optional(),
+export const OpenAIToolCallSchema = z.object({
+  id: z.string(),
+  type: z.literal('function'),
+  function: z.object({
+    name: z.string(),
+    arguments: z.string(),
+  }),
 });
+
+export const OpenAIMessageSchema = z.object({
+  role: z.enum(['system', 'user', 'assistant', 'tool']),
+  content: z.string().nullish().transform(v => v ?? ''),
+  name: z.string().optional(),
+  tool_calls: z.array(OpenAIToolCallSchema).optional(),
+  tool_call_id: z.string().optional(),
+});
+
+export const OpenAIToolSchema = z.object({
+  type: z.literal('function'),
+  function: z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    parameters: z.unknown().optional(),
+  }).passthrough(),
+}).passthrough();
+
+export const OpenAIToolChoiceSchema = z.union([
+  z.enum(['none', 'auto', 'required']),
+  z.object({
+    type: z.literal('function'),
+    function: z.object({
+      name: z.string(),
+    }).passthrough(),
+  }).passthrough(),
+]);
 
 const ChatCompletionRequestSchema = z.object({
   model: z.string().optional(), // Will be parsed as avatar ID, optional for scoped keys
@@ -63,17 +99,22 @@ const ChatCompletionRequestSchema = z.object({
   max_tokens: z.number().int().positive().optional(),
   stream: z.boolean().optional().default(false),
   user: z.string().optional(), // Optional user identifier for tracking
+  tools: z.array(OpenAIToolSchema).optional(),
+  tool_choice: OpenAIToolChoiceSchema.optional(),
   // Non-standard extensions for avatar features
   include_audio: z.boolean().optional().default(false), // Generate voice audio for response
 });
 
 type ChatCompletionRequest = z.infer<typeof ChatCompletionRequestSchema>;
+export type OpenAIChatMessage = z.infer<typeof OpenAIMessageSchema>;
+export type OpenAIToolCall = z.infer<typeof OpenAIToolCallSchema>;
 
 interface ChatCompletionChoice {
   index: number;
   message: {
     role: 'assistant';
-    content: string;
+    content: string | null;
+    tool_calls?: OpenAIToolCall[];
     audio?: {
       url: string;
       format: string;
@@ -378,6 +419,172 @@ export function resolveModel(
   if (requestModel) return { model: requestModel };
   if (validation.avatarId) return { model: `avatar:${validation.avatarId}` };
   return { error: 'model parameter is required for wildcard API keys' };
+}
+
+export function normalizeOpenAIMessageForProvider(message: OpenAIChatMessage): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {
+    role: message.role,
+    content: message.role === 'assistant' && message.tool_calls?.length && !message.content
+      ? null
+      : message.content,
+  };
+
+  if (message.name) {
+    normalized.name = message.name;
+  }
+  if (message.role === 'assistant' && message.tool_calls && message.tool_calls.length > 0) {
+    normalized.tool_calls = message.tool_calls;
+  }
+  if (message.role === 'tool' && message.tool_call_id) {
+    normalized.tool_call_id = message.tool_call_id;
+  }
+
+  return normalized;
+}
+
+export function usesExternalToolMode(request: {
+  tools?: unknown[];
+  tool_choice?: unknown;
+  messages: Array<{ role: string; tool_calls?: unknown[] }>;
+}): boolean {
+  return Boolean(
+    request.tools !== undefined ||
+    request.tool_choice !== undefined ||
+    request.messages.some(message =>
+      message.role === 'tool' ||
+      (message.role === 'assistant' && Array.isArray(message.tool_calls) && message.tool_calls.length > 0)
+    )
+  );
+}
+
+export function normalizeOpenAIToolCalls(value: unknown): OpenAIToolCall[] {
+  const parsed = z.array(OpenAIToolCallSchema).safeParse(value);
+  return parsed.success ? parsed.data : [];
+}
+
+function normalizeFinishReason(
+  value: unknown,
+  toolCalls: OpenAIToolCall[],
+): ChatCompletionChoice['finish_reason'] {
+  if (
+    value === 'stop' ||
+    value === 'length' ||
+    value === 'tool_calls' ||
+    value === 'content_filter'
+  ) {
+    return value;
+  }
+  return toolCalls.length > 0 ? 'tool_calls' : 'stop';
+}
+
+function buildExternalToolPromptText(request: Pick<ChatCompletionRequest, 'messages' | 'tools' | 'tool_choice'>): string {
+  const parts = request.messages.map(message => {
+    if (message.role === 'assistant' && message.tool_calls?.length) {
+      return `${message.content}\n${JSON.stringify(message.tool_calls)}`;
+    }
+    if (message.role === 'tool') {
+      return `${message.tool_call_id || ''}\n${message.content}`;
+    }
+    return message.content;
+  });
+
+  if (request.tools?.length) {
+    parts.push(JSON.stringify(request.tools));
+  }
+  if (request.tool_choice !== undefined) {
+    parts.push(JSON.stringify(request.tool_choice));
+  }
+
+  return parts.join('\n');
+}
+
+async function callExternalToolModel(params: {
+  llmModel: string;
+  systemPrompt: string;
+  messages: ChatCompletionRequest['messages'];
+  maxTokens?: number;
+  temperature?: number;
+  tools?: ChatCompletionRequest['tools'];
+  toolChoice?: ChatCompletionRequest['tool_choice'];
+}): Promise<{
+  content: string | null;
+  toolCalls: OpenAIToolCall[];
+  usage?: LlmUsage;
+  finishReason: ChatCompletionChoice['finish_reason'];
+  latencyMs: number;
+}> {
+  const apiKey = await getLlmApiKey();
+  const start = Date.now();
+  const providerMessages = [
+    { role: 'system', content: params.systemPrompt },
+    ...params.messages.map(normalizeOpenAIMessageForProvider),
+  ];
+
+  const body: Record<string, unknown> = {
+    model: params.llmModel,
+    messages: providerMessages,
+    max_tokens: params.maxTokens,
+    temperature: params.temperature,
+    stream: false,
+  };
+
+  if (params.tools && params.tools.length > 0) {
+    body.tools = params.tools;
+  }
+  if (params.toolChoice !== undefined) {
+    body.tool_choice = params.toolChoice;
+  }
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://swarm.rati.chat',
+      'X-Title': 'Swarm API',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter external-tool error: ${response.status} ${errorText.slice(0, 1000)}`);
+  }
+
+  const data = await response.json() as {
+    choices?: Array<{
+      finish_reason?: string | null;
+      message?: {
+        content?: string | null;
+        tool_calls?: unknown;
+      };
+    }>;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+      input_tokens?: number;
+      output_tokens?: number;
+    };
+  };
+
+  const choice = data.choices?.[0];
+  const toolCalls = normalizeOpenAIToolCalls(choice?.message?.tool_calls);
+  const rawContent = choice?.message?.content;
+  const content = typeof rawContent === 'string'
+    ? rawContent
+    : toolCalls.length > 0
+      ? null
+      : '';
+
+  return {
+    content,
+    toolCalls,
+    usage: normalizeUsage(data.usage),
+    finishReason: normalizeFinishReason(choice?.finish_reason, toolCalls),
+    latencyMs: Date.now() - start,
+  };
 }
 
 // =============================================================================
@@ -812,6 +1019,7 @@ async function handleChatCompletions(
 
   // Resolve model for logging
   const llmModel = avatarRecord.llmConfig?.model || 'anthropic/claude-3-5-sonnet-latest';
+  const externalToolMode = usesExternalToolMode(request);
 
   logger.info('Processing chat completion', {
     event: 'chat_completion_start',
@@ -821,9 +1029,103 @@ async function handleChatCompletions(
     requestId,
     model: llmModel,
     enabledCategoryCount: enabledCategories.length,
+    externalToolMode,
+    externalToolCount: request.tools?.length || 0,
   });
 
   try {
+    if (externalToolMode) {
+      const externalResult = await callExternalToolModel({
+        llmModel,
+        systemPrompt: avatarRecord.persona || `You are ${avatarRecord.name || 'an AI assistant'}.`,
+        messages: request.messages,
+        maxTokens: request.max_tokens,
+        temperature: request.temperature,
+        tools: request.tools,
+        toolChoice: request.tool_choice,
+      });
+
+      const completionId = `chatcmpl-${requestId}`;
+      const created = Math.floor(Date.now() / 1000);
+      const promptText = buildExternalToolPromptText(request);
+      const completionText = externalResult.content ?? JSON.stringify(externalResult.toolCalls);
+      const tokenUsage = resolveTokenUsage(
+        externalResult.usage,
+        promptText,
+        completionText,
+        llmModel,
+      );
+
+      const keyHash = hashApiKey(apiKey);
+      recordTokenUsage({
+        requestId,
+        keyHash,
+        avatarId,
+        model: llmModel,
+        usage: tokenUsage,
+      }).catch(err => {
+        logger.warn('Token accounting recording failed', {
+          event: 'token_accounting_error',
+          subsystem: 'openai-compat',
+          requestId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+
+      if (request.stream) {
+        return formatStreamingResponse(
+          completionId,
+          created,
+          model,
+          externalResult.content ?? '',
+          tokenUsage,
+          corsHeaders,
+          {
+            toolCalls: externalResult.toolCalls,
+            finishReason: externalResult.finishReason,
+          },
+        );
+      }
+
+      const response: ChatCompletionResponse = {
+        id: completionId,
+        object: 'chat.completion',
+        created,
+        model,
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: externalResult.content,
+            ...(externalResult.toolCalls.length > 0 && { tool_calls: externalResult.toolCalls }),
+          },
+          finish_reason: externalResult.finishReason,
+        }],
+        usage: {
+          prompt_tokens: tokenUsage.promptTokens,
+          completion_tokens: tokenUsage.completionTokens,
+          total_tokens: tokenUsage.totalTokens,
+          usage_source: tokenUsage.usageSource,
+        },
+      };
+
+      logger.info('External-tool chat completion successful', {
+        event: 'external_tool_chat_completion_success',
+        subsystem: 'openai-compat',
+        avatarId,
+        model: llmModel,
+        responseLength: externalResult.content?.length || 0,
+        toolCallCount: externalResult.toolCalls.length,
+        finishReason: externalResult.finishReason,
+        totalTokens: tokenUsage.totalTokens,
+        usageSource: tokenUsage.usageSource,
+        latencyMs: externalResult.latencyMs,
+        requestId,
+      });
+
+      return jsonResponse(200, response, corsHeaders);
+    }
+
     // Process the chat
     const result = await processChat(
       userMessage,
@@ -992,6 +1294,15 @@ interface StreamChunkChoice {
   delta: {
     role?: 'assistant';
     content?: string;
+    tool_calls?: Array<{
+      index: number;
+      id?: string;
+      type?: 'function';
+      function?: {
+        name?: string;
+        arguments?: string;
+      };
+    }>;
   };
   finish_reason: string | null;
 }
@@ -1029,8 +1340,14 @@ export function formatStreamingResponse(
   content: string,
   tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number },
   corsHeaders: Record<string, string>,
+  options?: {
+    toolCalls?: OpenAIToolCall[];
+    finishReason?: ChatCompletionChoice['finish_reason'];
+  },
 ): APIGatewayProxyResultV2 {
   let sseBody = '';
+  const toolCalls = options?.toolCalls || [];
+  const finishReason = options?.finishReason || (toolCalls.length > 0 ? 'tool_calls' : 'stop');
 
   // First chunk: role announcement
   const roleChunk: ChatCompletionChunk = {
@@ -1064,6 +1381,28 @@ export function formatStreamingResponse(
     sseBody += `data: ${JSON.stringify(contentChunk)}\n\n`;
   }
 
+  if (toolCalls.length > 0) {
+    const toolCallChunk: ChatCompletionChunk = {
+      id: completionId,
+      object: 'chat.completion.chunk',
+      created,
+      model,
+      choices: [{
+        index: 0,
+        delta: {
+          tool_calls: toolCalls.map((toolCall, index) => ({
+            index,
+            id: toolCall.id,
+            type: toolCall.type,
+            function: toolCall.function,
+          })),
+        },
+        finish_reason: null,
+      }],
+    };
+    sseBody += `data: ${JSON.stringify(toolCallChunk)}\n\n`;
+  }
+
   // Final chunk: finish_reason + usage
   const finalChunk: ChatCompletionChunk = {
     id: completionId,
@@ -1073,7 +1412,7 @@ export function formatStreamingResponse(
     choices: [{
       index: 0,
       delta: {},
-      finish_reason: 'stop',
+      finish_reason: finishReason,
     }],
     usage: {
       prompt_tokens: tokenUsage.promptTokens,

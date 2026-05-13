@@ -25,6 +25,7 @@ const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
 const CDN_URL = process.env.CDN_URL;
 const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
+const OPENROUTER_VIDEOS_ENDPOINT = 'https://openrouter.ai/api/v1/videos';
 
 // TTL: 24 hours for job records
 const JOB_TTL_SECONDS = 24 * 60 * 60;
@@ -255,6 +256,108 @@ function extractOutputUrl(output: ReplicatePrediction['output']): string | undef
   return undefined;
 }
 
+function getContentTypeExtension(contentType: string | null | undefined, fallback: string): string {
+  const normalized = (contentType || '').toLowerCase();
+  if (normalized.includes('jpeg') || normalized.includes('jpg')) return 'jpg';
+  if (normalized.includes('webp')) return 'webp';
+  if (normalized.includes('mp4')) return 'mp4';
+  if (normalized.includes('png')) return 'png';
+  return fallback;
+}
+
+async function downloadMediaOutput(
+  outputUrl: string,
+  apiKey?: string,
+): Promise<{ buffer: Buffer; contentType: string }> {
+  const fetchOutput = (withAuth: boolean) => fetch(outputUrl, {
+    headers: withAuth && apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+  });
+
+  let mediaResponse = await fetchOutput(false);
+  if (!mediaResponse.ok && apiKey) {
+    mediaResponse = await fetchOutput(true);
+  }
+  if (!mediaResponse.ok) {
+    throw new Error(`Download failed: ${mediaResponse.statusText}`);
+  }
+
+  return {
+    buffer: Buffer.from(await mediaResponse.arrayBuffer()),
+    contentType: mediaResponse.headers.get('content-type') || 'application/octet-stream',
+  };
+}
+
+function extractOpenRouterVideoStatus(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const response = payload as {
+    status?: string;
+    data?: { status?: string };
+  };
+  return response.status || response.data?.status;
+}
+
+function extractOpenRouterVideoError(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const response = payload as {
+    error?: string | { message?: string };
+    data?: { error?: string | { message?: string } };
+  };
+  const error = response.error || response.data?.error;
+  if (typeof error === 'string') return error;
+  return error?.message;
+}
+
+function extractOpenRouterVideoUrl(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+
+  const response = payload as {
+    url?: string;
+    video_url?: string;
+    video?: { url?: string };
+    output?: unknown;
+    outputs?: unknown;
+    data?: {
+      url?: string;
+      video_url?: string;
+      video?: { url?: string };
+      output?: unknown;
+      outputs?: unknown;
+    };
+  };
+
+  const candidates: unknown[] = [
+    response.url,
+    response.video_url,
+    response.video?.url,
+    response.output,
+    response.outputs,
+    response.data?.url,
+    response.data?.video_url,
+    response.data?.video?.url,
+    response.data?.output,
+    response.data?.outputs,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') return candidate;
+    if (Array.isArray(candidate)) {
+      for (const entry of candidate) {
+        if (typeof entry === 'string') return entry;
+        if (entry && typeof entry === 'object') {
+          const url = (entry as { url?: string; uri?: string }).url || (entry as { url?: string; uri?: string }).uri;
+          if (url) return url;
+        }
+      }
+    }
+    if (candidate && typeof candidate === 'object') {
+      const url = (candidate as { url?: string; uri?: string }).url || (candidate as { url?: string; uri?: string }).uri;
+      if (url) return url;
+    }
+  }
+
+  return undefined;
+}
+
 function getMediaTypeInfo(jobType: MediaJob['type']): { extension: string; contentType: string; folder: string } {
   switch (jobType) {
     case 'image': return { extension: 'png', contentType: 'image/png', folder: 'images' };
@@ -366,6 +469,98 @@ export async function pollAndCompleteJob(
     return job;
   } catch (error) {
     log.error('poll', 'poll_error', {
+      jobId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return job;
+  }
+}
+
+/**
+ * Poll OpenRouter for async video job status and complete if done.
+ */
+export async function pollAndCompleteOpenRouterJob(
+  jobId: string,
+  openRouterApiKey: string
+): Promise<MediaJob | null> {
+  const job = await getJob(jobId);
+  if (!job) return null;
+
+  if (job.status !== 'processing' && job.status !== 'pending') {
+    return job;
+  }
+
+  if (!job.externalId) {
+    log.warn('poll', 'no_external_id', { jobId, provider: 'openrouter' });
+    return job;
+  }
+
+  try {
+    const response = await fetch(`${OPENROUTER_VIDEOS_ENDPOINT}/${job.externalId}`, {
+      headers: {
+        'Authorization': `Bearer ${openRouterApiKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      log.error('poll', 'openrouter_poll_request_failed', { jobId, status: response.status });
+      return job;
+    }
+
+    const payload = await response.json() as unknown;
+    const status = extractOpenRouterVideoStatus(payload);
+    log.info('poll', 'openrouter_poll_status', { jobId, status });
+
+    if (status === 'completed' || status === 'succeeded' || (!status && extractOpenRouterVideoUrl(payload))) {
+      const outputUrl = extractOpenRouterVideoUrl(payload);
+      if (!outputUrl) {
+        await updateJobStatus(jobId, 'failed', { error: 'No output URL' });
+        return await getJob(jobId);
+      }
+
+      const { extension: fallbackExtension, folder } = getMediaTypeInfo(job.type);
+      const { buffer, contentType } = await downloadMediaOutput(outputUrl, openRouterApiKey);
+      const extension = getContentTypeExtension(contentType, fallbackExtension);
+      const mediaId = gallery.generateGalleryId();
+      const s3Key = `avatars/${job.avatarId}/${folder}/${mediaId}.${extension}`;
+
+      await s3Client.send(new PutObjectCommand({
+        Bucket: MEDIA_BUCKET,
+        Key: s3Key,
+        Body: buffer,
+        ContentType: contentType,
+      }));
+
+      const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
+
+      await updateJobStatus(jobId, 'completed', { resultUrl: publicUrl, resultS3Key: s3Key });
+
+      await gallery.addToGallery(job.avatarId, {
+        id: mediaId,
+        type: job.type,
+        url: publicUrl,
+        s3Key,
+        prompt: job.prompt,
+        model: `openrouter-${job.type}`,
+        platform: job.platform,
+        metadata: { jobId, externalId: job.externalId, provider: 'openrouter', polled: true },
+      });
+
+      log.info('poll', 'openrouter_job_completed_via_poll', { jobId, publicUrl });
+      return await getJob(jobId);
+    }
+
+    if (status === 'failed' || status === 'canceled' || status === 'cancelled') {
+      await updateJobStatus(jobId, 'failed', {
+        error: extractOpenRouterVideoError(payload) || `OpenRouter video job ${status}`,
+      });
+      return await getJob(jobId);
+    }
+
+    return job;
+  } catch (error) {
+    log.error('poll', 'openrouter_poll_error', {
       jobId,
       error: error instanceof Error ? error.message : String(error),
     });

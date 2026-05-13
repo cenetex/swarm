@@ -1124,6 +1124,24 @@ describe('DiscordAdapter', () => {
       expect(Array.isArray(capturedBody.embeds)).toBe(true);
     });
 
+    it('should send media embeds without a caption', async () => {
+      let capturedBody: Record<string, unknown> = {};
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        capturedBody = JSON.parse(init!.body as string);
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const result = await adapter.executeAction(
+        { type: 'send_media', mediaType: 'animation', url: 'https://img.com/anim.gif' },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(capturedBody.content).toBe('');
+      expect(Array.isArray(capturedBody.embeds)).toBe(true);
+    });
+
     it('should handle send_sticker by downgrading to emoji text', async () => {
       let capturedBody: Record<string, unknown> = {};
       globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
@@ -1170,6 +1188,121 @@ describe('DiscordAdapter', () => {
 
       expect(result).toBe(true);
       expect(capturedBody.content).toBe('Listen\nhttps://audio.com/voice.ogg');
+    });
+
+    it('should split messages over 2000 chars into multiple sends', async () => {
+      const capturedBodies: Array<Record<string, unknown>> = [];
+      let fetchCount = 0;
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        fetchCount++;
+        const body = JSON.parse(init!.body as string);
+        capturedBodies.push(body);
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const longContent = 'x'.repeat(5000);
+      const result = await adapter.executeAction(
+        { type: 'send_message', text: longContent },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(fetchCount).toBe(3);
+      expect(capturedBodies.length).toBe(3);
+      expect(capturedBodies[0].content).toBeDefined();
+      expect((capturedBodies[0].content as string).length).toBeLessThanOrEqual(2000);
+      expect((capturedBodies[1].content as string).length).toBeLessThanOrEqual(2000);
+      expect((capturedBodies[2].content as string).length).toBeLessThanOrEqual(2000);
+    });
+
+    it('should only attach message_reference to first chunk when replying', async () => {
+      const capturedBodies: Array<Record<string, unknown>> = [];
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(init!.body as string);
+        capturedBodies.push(body);
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const longContent = 'x'.repeat(5000);
+      const result = await adapter.executeAction(
+        { type: 'send_message', text: longContent },
+        'chan-1',
+        'reply-to-msg-id',
+      );
+
+      expect(result).toBe(true);
+      expect(capturedBodies.length).toBe(3);
+      expect(capturedBodies[0].message_reference).toEqual({ message_id: 'reply-to-msg-id' });
+      expect(capturedBodies[1].message_reference).toBeUndefined();
+      expect(capturedBodies[2].message_reference).toBeUndefined();
+    });
+
+    it('should only attach embeds to first chunk when replying with media', async () => {
+      const capturedBodies: Array<Record<string, unknown>> = [];
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(init!.body as string);
+        capturedBodies.push(body);
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const longContent = 'x'.repeat(5000);
+      const media = [{ type: 'image', url: 'https://example.com/img.png' }];
+      const result = await adapter.executeAction(
+        { type: 'send_message', text: longContent, media },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(capturedBodies.length).toBe(3);
+      expect(Array.isArray(capturedBodies[0].embeds)).toBe(true);
+      expect(capturedBodies[1].embeds).toBeUndefined();
+      expect(capturedBodies[2].embeds).toBeUndefined();
+    });
+
+    it('should not chunk messages under 2000 chars', async () => {
+      let fetchCount = 0;
+      globalThis.fetch = (async (_input: string | URL | Request, _init?: RequestInit) => {
+        fetchCount++;
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      const shortContent = 'x'.repeat(1000);
+      const result = await adapter.executeAction(
+        { type: 'send_message', text: shortContent },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(fetchCount).toBe(1);
+    });
+
+    it('should chunk on sentence boundaries when possible', async () => {
+      const capturedBodies: Array<Record<string, unknown>> = [];
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(init!.body as string);
+        capturedBodies.push(body);
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
+
+      const adapter = createDiscordAdapter({ mode: 'bot' });
+      // Create content with sentences that will naturally split on boundaries
+      const sentence = 'This is a test sentence. ';
+      const longContent = sentence.repeat(100); // ~2500 chars
+      const result = await adapter.executeAction(
+        { type: 'send_message', text: longContent },
+        'chan-1',
+      );
+
+      expect(result).toBe(true);
+      expect(capturedBodies.length).toBeGreaterThan(1);
+      // Each chunk should respect the 2000 char limit
+      for (const body of capturedBodies) {
+        expect((body.content as string).length).toBeLessThanOrEqual(2000);
+      }
     });
   });
 

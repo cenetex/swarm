@@ -216,6 +216,16 @@ describe('WorkspaceStore', () => {
     expect(state.galleryAvatarId).toBe('avatar-123'); // preserved
   });
 
+  test('setTab can seed gallery avatar context for tab navigation', () => {
+    useWorkspaceStore.getState().setTab('settings', 'avatar-123');
+    useWorkspaceStore.getState().setTab('gallery');
+
+    const state = useWorkspaceStore.getState();
+    expect(state.activeTab).toBe('gallery');
+    expect(state.galleryAvatarId).toBe('avatar-123');
+    expect(state.contentType).toBe('gallery');
+  });
+
   test('auto-opens workspace Tools tab when a non-trivial pending card is registered (#1637)', async () => {
     expect(useWorkspaceStore.getState().isOpen).toBe(false);
 

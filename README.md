@@ -90,9 +90,10 @@ Run persistent AI avatars across Telegram, Discord, and the web — with the gua
 ```bash
 git clone https://github.com/cenetex/aws-swarm.git
 cd aws-swarm
+nvm use
 pnpm install
 pnpm build
-bun test
+pnpm test
 ```
 
 ## Commands
@@ -101,7 +102,7 @@ bun test
 pnpm build        # Build all packages
 pnpm lint         # Lint configured packages
 pnpm typecheck    # Type-check all packages
-bun test          # Run tests
+pnpm test         # Run isolated workspace tests
 pnpm cdk diff     # Preview infra changes
 ```
 

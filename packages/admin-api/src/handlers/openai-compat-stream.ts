@@ -17,6 +17,10 @@ import {
   parseAvatarId,
   resolveModel,
   hashApiKey,
+  OpenAIMessageSchema,
+  OpenAIToolSchema,
+  OpenAIToolChoiceSchema,
+  normalizeOpenAIMessageForProvider,
 } from './openai-compat.js';
 import * as avatars from '../services/avatars.js';
 import {
@@ -25,12 +29,6 @@ import {
 } from './chat-llm.js';
 import { resolveTokenUsage, recordTokenUsage } from '../services/token-accounting.js';
 
-// Schema (same as openai-compat.ts)
-const OpenAIMessageSchema = z.object({
-  role: z.enum(['system', 'user', 'assistant']),
-  content: z.string(),
-});
-
 const StreamRequestSchema = z.object({
   model: z.string().optional(), // Optional for scoped keys
   messages: z.array(OpenAIMessageSchema).min(1),
@@ -38,11 +36,27 @@ const StreamRequestSchema = z.object({
   max_tokens: z.number().int().positive().optional(),
   stream: z.literal(true),
   user: z.string().optional(),
+  tools: z.array(OpenAIToolSchema).optional(),
+  tool_choice: OpenAIToolChoiceSchema.optional(),
 });
+
+interface StreamToolCallDelta {
+  index?: number;
+  id?: string;
+  type?: 'function';
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+}
 
 interface StreamChunk {
   choices?: Array<{
-    delta?: { role?: string; content?: string };
+    delta?: {
+      role?: string;
+      content?: string;
+      tool_calls?: StreamToolCallDelta[];
+    };
     finish_reason?: string | null;
   }>;
   usage?: {
@@ -175,7 +189,7 @@ async function handleStreamingRequest(
   const systemPrompt = avatarRecord.persona || `You are ${avatarRecord.name || 'an AI assistant'}.`;
   const messages = [
     { role: 'system' as const, content: systemPrompt },
-    ...request.messages,
+    ...request.messages.map(normalizeOpenAIMessageForProvider),
   ];
 
   logger.info('Starting streaming chat completion', {
@@ -184,6 +198,8 @@ async function handleStreamingRequest(
     avatarId,
     model: llmModel,
     requestId,
+    externalToolCount: request.tools?.length || 0,
+    hasToolChoice: request.tool_choice !== undefined,
   });
 
   // Get OpenRouter API key
@@ -203,6 +219,21 @@ async function handleStreamingRequest(
   stream.write(`data: ${JSON.stringify(roleChunk)}\n\n`);
 
   // Call OpenRouter with streaming
+  const requestBody: Record<string, unknown> = {
+    model: llmModel,
+    messages,
+    max_tokens: request.max_tokens,
+    temperature: request.temperature,
+    stream: true,
+  };
+
+  if (request.tools && request.tools.length > 0) {
+    requestBody.tools = request.tools;
+  }
+  if (request.tool_choice !== undefined) {
+    requestBody.tool_choice = request.tool_choice;
+  }
+
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -211,13 +242,7 @@ async function handleStreamingRequest(
       'HTTP-Referer': 'https://swarm.rati.chat',
       'X-Title': 'Swarm API',
     },
-    body: JSON.stringify({
-      model: llmModel,
-      messages,
-      max_tokens: request.max_tokens,
-      temperature: request.temperature,
-      stream: true,
-    }),
+    body: JSON.stringify(requestBody),
     signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   });
 
@@ -237,6 +262,9 @@ async function handleStreamingRequest(
   const decoder = new TextDecoder();
   let buffer = '';
   let fullContent = '';
+  let toolCallText = '';
+  let toolCallCount = 0;
+  let finishReason: string | null = null;
   let providerUsage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
 
   try {
@@ -255,7 +283,8 @@ async function handleStreamingRequest(
 
         try {
           const chunk = JSON.parse(trimmed.slice(6)) as StreamChunk;
-          const delta = chunk.choices?.[0]?.delta;
+          const choice = chunk.choices?.[0];
+          const delta = choice?.delta;
           const content = delta?.content;
 
           if (content) {
@@ -271,6 +300,30 @@ async function handleStreamingRequest(
             stream.write(`data: ${JSON.stringify(clientChunk)}\n\n`);
           }
 
+          if (delta?.tool_calls && delta.tool_calls.length > 0) {
+            toolCallText += JSON.stringify(delta.tool_calls);
+            for (const toolCall of delta.tool_calls) {
+              if (typeof toolCall.index === 'number') {
+                toolCallCount = Math.max(toolCallCount, toolCall.index + 1);
+              } else {
+                toolCallCount = Math.max(toolCallCount, 1);
+              }
+            }
+
+            const clientChunk = {
+              id: completionId,
+              object: 'chat.completion.chunk',
+              created,
+              model,
+              choices: [{ index: 0, delta: { tool_calls: delta.tool_calls }, finish_reason: null }],
+            };
+            stream.write(`data: ${JSON.stringify(clientChunk)}\n\n`);
+          }
+
+          if (choice?.finish_reason) {
+            finishReason = choice.finish_reason;
+          }
+
           if (chunk.usage) {
             providerUsage = chunk.usage;
           }
@@ -284,7 +337,23 @@ async function handleStreamingRequest(
   }
 
   // Resolve token usage
-  const promptText = request.messages.map(m => m.content).join('\n');
+  const promptParts = request.messages.map(m => {
+    if (m.role === 'assistant' && m.tool_calls?.length) {
+      return `${m.content}\n${JSON.stringify(m.tool_calls)}`;
+    }
+    if (m.role === 'tool') {
+      return `${m.tool_call_id || ''}\n${m.content}`;
+    }
+    return m.content;
+  });
+  if (request.tools?.length) {
+    promptParts.push(JSON.stringify(request.tools));
+  }
+  if (request.tool_choice !== undefined) {
+    promptParts.push(JSON.stringify(request.tool_choice));
+  }
+  const promptText = promptParts.join('\n');
+  const completionText = fullContent || toolCallText;
   const tokenUsage = resolveTokenUsage(
     providerUsage ? {
       promptTokens: providerUsage.prompt_tokens || 0,
@@ -292,7 +361,7 @@ async function handleStreamingRequest(
       totalTokens: providerUsage.total_tokens || 0,
     } : undefined,
     promptText,
-    fullContent,
+    completionText,
     llmModel,
   );
 
@@ -302,7 +371,7 @@ async function handleStreamingRequest(
     object: 'chat.completion.chunk',
     created,
     model,
-    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    choices: [{ index: 0, delta: {}, finish_reason: finishReason || (toolCallCount > 0 ? 'tool_calls' : 'stop') }],
     usage: {
       prompt_tokens: tokenUsage.promptTokens,
       completion_tokens: tokenUsage.completionTokens,
@@ -321,6 +390,8 @@ async function handleStreamingRequest(
     model: llmModel,
     latencyMs,
     contentLength: fullContent.length,
+    toolCallCount,
+    finishReason: finishReason || (toolCallCount > 0 ? 'tool_calls' : 'stop'),
     requestId,
   });
 

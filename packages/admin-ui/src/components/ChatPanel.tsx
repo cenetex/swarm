@@ -14,7 +14,7 @@ import { useWorkspaceStore } from '../store/workspace';
 import { TaskCard as TaskCardComponent } from './tool-prompts/TaskCard';
 import type { ToolSubmitResult } from './tool-prompts/types';
 import { useAuth } from '../store/auth';
-import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion, updateAvatar as updateAvatarApi, getAvatar, toggleFeature, transcribeAudio, activateAvatar as apiActivateAvatar, deactivateAvatar as apiDeactivateAvatar, type JobStatus } from '../api';
+import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion, updateAvatar as updateAvatarApi, getAvatar, toggleFeature, transcribeAudio, type JobStatus } from '../api';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { AvatarDisplay } from './AvatarSidebar';
@@ -23,7 +23,6 @@ import { WelcomeMessage } from './WelcomeMessage';
 import { UpgradeNudge } from './UpgradeNudge';
 
 // Lazy-load heavy panel components that are behind user interactions
-const UsageMeterPanel = lazy(() => import('./UsageMeterPanel').then(m => ({ default: m.UsageMeterPanel })));
 const ActivationChecklist = lazy(() => import('./ActivationChecklist').then(m => ({ default: m.ActivationChecklist })));
 const TaskWorkspace = lazy(() => import('./TaskWorkspace').then(m => ({ default: m.TaskWorkspace })));
 
@@ -45,19 +44,13 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const timeline = useTranscriptTimeline(messages, activeAvatar?.id);
   // Extract action functions directly — they're stable references and don't
   // need reactive subscriptions, avoiding full-store re-renders.
-  const { addMessage, updateMessage, removeMessage, clearChat, updateAvatar, setLoading, setError, createAvatar } = useAvatarStore.getState();
+  const { addMessage, updateMessage, removeMessage, updateAvatar, setLoading, setError, createAvatar } = useAvatarStore.getState();
   const { user: user, isAuthenticated, gateStatus, account } = useAuth();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isCreatingAvatar, setIsCreatingAvatar] = useState(false);
   const [showHint, setShowHint] = useState(true);
-  const [activationLoading, setActivationLoading] = useState(false);
-  const [activationError, setActivationError] = useState<string | null>(null);
-  const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
-  const galleryOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'gallery');
-  const promptOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'prompt');
   const settingsOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'settings');
-  const activityOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'activity');
   // Track which limit types have already shown an upgrade nudge this session
   const shownNudgesRef = useRef(new Set<string>());
 
@@ -198,57 +191,6 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
     
     return 'chat'; // Can chat but no admin tools
   }, [isAuthenticated, user, activeAvatar, hasOrb, account?.role]);
-
-  // Activation toggle handler
-  const handleActivationToggle = useCallback(async () => {
-    if (!activeAvatar || activationLoading) return;
-
-    const isCurrentlyActive = activeAvatar.status === 'active';
-
-    // If deactivating, require confirmation first
-    if (isCurrentlyActive && !showDeactivateConfirm) {
-      setShowDeactivateConfirm(true);
-      return;
-    }
-
-    setActivationLoading(true);
-    setActivationError(null);
-    setShowDeactivateConfirm(false);
-
-    try {
-      if (isCurrentlyActive) {
-        await apiDeactivateAvatar(activeAvatar.id);
-        updateAvatar(activeAvatar.id, { status: 'paused' });
-      } else {
-        await apiActivateAvatar(activeAvatar.id);
-        updateAvatar(activeAvatar.id, { status: 'active' });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : t('chat.errors.failedToUpdateAvatarStatus');
-      setActivationError(message);
-      // Auto-clear error after 5 seconds
-      setTimeout(() => setActivationError(null), 5000);
-    } finally {
-      setActivationLoading(false);
-    }
-  }, [activeAvatar, activationLoading, showDeactivateConfirm, updateAvatar, t]);
-
-  // Cancel deactivation confirmation
-  const handleCancelDeactivate = useCallback(() => {
-    setShowDeactivateConfirm(false);
-  }, []);
-
-  // Determine if platforms are configured but avatar is not active (warning state)
-  const hasConfiguredPlatformsButInactive = useMemo(() => {
-    if (!activeAvatar) return false;
-    if (activeAvatar.status === 'active') return false;
-    const p = activeAvatar.platforms;
-    return Boolean(
-      p?.telegram?.enabled ||
-      p?.twitter?.enabled ||
-      p?.discord?.enabled
-    );
-  }, [activeAvatar]);
 
   // Auto-scroll to bottom — depend on length, not reference, to avoid
   // scroll-jacking when polling updates mutate the messages array.
@@ -1235,184 +1177,33 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                 )}
               </p>
             </div>
-            {/* Compact usage meter — always visible for authenticated users */}
-            {isAuthenticated && activeAvatar && !activityOpen && (
-              <button
-                onClick={() => useWorkspaceStore.getState().setTab('activity')}
-                className="hidden md:block flex-shrink-0 min-w-[160px] max-w-[200px] hover:opacity-80 transition-opacity"
-                title={t('chat.panel.clickToViewPlanUsageDetails')}
-              >
-                <Suspense fallback={null}><UsageMeterPanel avatarId={activeAvatar.id} compact /></Suspense>
-              </button>
-            )}
           </div>
           <div className="flex items-center gap-2">
             {/* Language selector - always visible */}
             <LanguageSelector />
             {accessMode === 'admin' && (
-              <>
-                {/* Activation toggle button */}
-                {activeAvatar.status === 'active' ? (
-                  <button
-                    onClick={handleActivationToggle}
-                    disabled={activationLoading}
-                    className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
-                      activationLoading
-                        ? 'opacity-50 cursor-not-allowed text-[var(--color-text-tertiary)]'
-                        : 'text-amber-400 hover:bg-amber-900/20 hover:text-amber-300'
-                    }`}
-                    title={t('chat.panel.pauseAvatarTitle')}
-                  >
-                    {activationLoading ? (
-                      <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                    ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                        <path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75A.75.75 0 007.25 3h-1.5zM12.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-1.5z" />
-                      </svg>
-                    )}
-                    <span className="hidden sm:inline">{t('chat.panel.pause')}</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleActivationToggle}
-                    disabled={activationLoading}
-                    className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
-                      activationLoading
-                        ? 'opacity-50 cursor-not-allowed text-[var(--color-text-tertiary)]'
-                        : 'text-green-400 bg-green-500/10 hover:bg-green-500/20 hover:text-green-300 border border-green-500/30'
-                    }`}
-                    title={t('chat.panel.activateAvatarTitle')}
-                  >
-                    {activationLoading ? (
-                      <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                    ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                      </svg>
-                    )}
-                    <span className="hidden sm:inline">{t('chat.panel.activate')}</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => useWorkspaceStore.getState().setTab('activity')}
-                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${activityOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
-                  title={t('chat.panel.viewPlanAndUsage')}
-                >
-                  {t('chat.panel.planAndUsage')}
-                </button>
-                <button
-                  onClick={() => useWorkspaceStore.getState().openGallery(activeAvatar.id)}
-                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${galleryOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
-                  title={t('chat.panel.viewGallery')}
-                >
-                  <span className="hidden sm:inline">{t('chat.panel.gallery')}</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
-                    <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 013.25 3h13.5A2.25 2.25 0 0119 5.25v9.5A2.25 2.25 0 0116.75 17H3.25A2.25 2.25 0 011 14.75v-9.5zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 00.75-.75v-2.69l-2.22-2.219a.75.75 0 00-1.06 0l-1.91 1.909-4.97-4.969a.75.75 0 00-1.06 0L1.5 11.06zm12.22-5.81a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" clipRule="evenodd" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => useWorkspaceStore.getState().setTab('prompt')}
-                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${promptOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
-                  title={t('chat.panel.previewPrompt')}
-                >
-                  <span className="hidden sm:inline">{t('chat.panel.preview')}</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
-                    <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
-                    <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => useWorkspaceStore.getState().setTab('settings')}
-                  className={`px-2 lg:px-3 py-1.5 text-xs lg:text-sm transition-colors rounded-lg ${settingsOpen ? "text-brand-400 bg-brand-900/20" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"}`}
-                  title="Avatar settings"
-                  aria-label="Avatar settings"
-                >
-                  <span className="hidden sm:inline">Settings</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
-                    <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => clearChat(activeAvatar.id)}
-                  className="px-2 lg:px-3 py-1.5 text-xs lg:text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] rounded-lg transition-colors"
-                >
-                  <span className="hidden sm:inline">{t('chat.panel.clearChat')}</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 sm:hidden">
-                    <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              </>
+              <button
+                onClick={() => useWorkspaceStore.getState().setTab('settings', activeAvatar.id)}
+                className={[
+                  'h-10 sm:h-auto flex items-center justify-center gap-1.5 rounded-lg transition-colors',
+                  'w-10 sm:w-auto sm:px-3 sm:py-1.5 text-sm',
+                  settingsOpen
+                    ? 'text-brand-400 bg-brand-900/20'
+                    : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]',
+                ].join(' ')}
+                title={t('chat.panel.avatarSettings')}
+                aria-label={t('chat.panel.avatarSettings')}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+                </svg>
+                <span className="hidden sm:inline">{t('chat.panel.settings')}</span>
+              </button>
             )}
           </div>
           </div>
         </header>
       ) : null}
-
-      {/* Deactivation confirmation banner */}
-      {showDeactivateConfirm && activeAvatar && (
-        <div className="border-b border-amber-500/30 bg-amber-500/10 px-3 lg:px-6 py-3">
-          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm text-amber-300">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0">
-                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-              </svg>
-              <span>{t('chat.panel.pauseWarning')}</span>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={handleCancelDeactivate}
-                className="px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-elevated)] rounded-lg transition-colors"
-              >
-                {t('chat.panel.cancel')}
-              </button>
-              <button
-                onClick={handleActivationToggle}
-                disabled={activationLoading}
-                className="px-3 py-1.5 text-xs text-amber-100 bg-amber-600 hover:bg-amber-500 rounded-lg transition-colors disabled:opacity-50"
-              >
-                {activationLoading ? t('chat.panel.pausing') : t('chat.panel.confirmPause')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Activation error banner */}
-      {activationError && (
-        <div className="border-b border-red-500/30 bg-red-500/10 px-3 lg:px-6 py-2">
-          <div className="max-w-3xl mx-auto flex items-center gap-2 text-sm text-red-400">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 flex-shrink-0">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-            </svg>
-            <span>{activationError}</span>
-            <button onClick={() => setActivationError(null)} className="ml-auto p-1 hover:bg-red-500/20 rounded">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Warning: platforms configured but avatar not active */}
-      {hasConfiguredPlatformsButInactive && accessMode === 'admin' && !showDeactivateConfirm && (
-        <div className="border-b border-amber-500/20 bg-amber-500/5 px-3 lg:px-6 py-2">
-          <div className="max-w-3xl mx-auto flex items-center gap-2 text-xs text-amber-400">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 flex-shrink-0">
-              <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-            </svg>
-            <span>
-              {t('chat.panel.platformIntegrationsConfiguredButInactive')}
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Plan & Usage now lives in the workspace Activity tab (#1639). */}
 

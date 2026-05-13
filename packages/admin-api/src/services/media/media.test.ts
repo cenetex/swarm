@@ -123,11 +123,34 @@ describe('Image Generation Options', () => {
 
     if (referenceImageUrls.length > 0) {
       nanoBananaInput.image_input = referenceImageUrls.slice(0, 14);
+      nanoBananaInput.image = referenceImageUrls[0];
+      nanoBananaInput.image_prompt = referenceImageUrls[0];
       nanoBananaInput.aspect_ratio = 'match_input_image';
     }
 
     expect(nanoBananaInput.image_input).toEqual(['https://example.com/ref1.png']);
+    expect(nanoBananaInput.image).toBe('https://example.com/ref1.png');
+    expect(nanoBananaInput.image_prompt).toBe('https://example.com/ref1.png');
     expect(nanoBananaInput.aspect_ratio).toBe('match_input_image');
+  });
+
+  it('should build Flux input with image_prompt for reference images', () => {
+    const prompt = 'A self portrait';
+    const referenceImageUrls = ['https://example.com/ref-sheet.png'];
+    const aspectRatio = '1:1';
+
+    const fluxInput: Record<string, unknown> = {
+      prompt: `${prompt}. Use the provided reference images to maintain visual consistency with the character's appearance, style, and features.`,
+      aspect_ratio: aspectRatio,
+      output_format: 'png',
+      num_outputs: 1,
+      image_input: referenceImageUrls.slice(0, 14),
+      image: referenceImageUrls[0],
+      image_prompt: referenceImageUrls[0],
+    };
+
+    expect(fluxInput.image_prompt).toBe('https://example.com/ref-sheet.png');
+    expect(fluxInput.aspect_ratio).toBe('1:1');
   });
 
   it('should build correct Nano Banana Pro input without reference images', () => {

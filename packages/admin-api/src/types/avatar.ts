@@ -56,7 +56,7 @@ export interface AvatarRecord {
       model: string;
     };
     video?: {
-      provider: 'replicate';
+      provider: 'openrouter' | 'replicate';
       model: string;
     };
     // Use profile image as reference for character consistency
@@ -151,8 +151,8 @@ export interface AvatarRecord {
   inhabitedAt?: number;
 
   // Slot type - tracks how this avatar was created
-  // 'free' = first avatar (free slot), 'orb' = NFT-backed slot
-  slotType?: 'free' | 'orb';
+  // 'free' = first avatar, 'orb' = Orb-backed slot, 'nft' = collection NFT-backed avatar
+  slotType?: 'free' | 'orb' | 'nft';
 
   // Orb slotting - optional explicit Orb NFT backing for this avatar
   orbMint?: string;
