@@ -79,6 +79,8 @@
       "viewGallery": "查看图库",
       "preview": "预览",
       "previewPrompt": "预览系统提示",
+      "settings": "设置",
+      "avatarSettings": "虚拟形象设置",
       "platformIntegrationsConfiguredButInactive": "您已配置平台集成。激活您的虚拟形象以使用它们。",
       "clearChat": "清除聊天"
     },
@@ -175,7 +177,14 @@
     "completed": "已完成",
     "cancelled": "已取消",
     "actionFailed": "操作失败",
-    "openInWorkspace": "在工作区中打开"
+    "openInWorkspace": "在工作区中打开",
+    "tabs": {
+      "gallery": "图库",
+      "prompt": "提示",
+      "tools": "工具",
+      "settings": "设置",
+      "activity": "活动"
+    }
   },
   "taskCard": {
     "secretInput": "密钥输入",
@@ -378,6 +387,9 @@
     "selectOrbPlaceholder": "选择一个 Orb…",
     "slotOrb": "绑定",
     "noOrbsDetected": "在您当前的 gate 钱包中未检测到 Orb。",
+    "conversationTitle": "会话",
+    "clearChatDescription": "清除此虚拟形象在您账户中的聊天记录。",
+    "clearChatConfirm": "确认清除",
     "systemPersonaLabel": "系统人设",
     "systemPersonaDescription": "定义该头像的个性、专长和行为。",
     "systemPersonaPlaceholder": "你是一个乐于助人的 AI 助手，专注于……\n\n你擅长：\n- 主题 1\n- 主题 2\n\n你的沟通风格是……",
@@ -580,6 +592,8 @@
     "zh-CN": "中文"
   },
   "sidebar": {
+    "activeAvatar": "当前虚拟形象",
+    "activating": "正在激活...",
     "options": "选项",
     "viewDetails": "查看详情",
     "reassignOwner": "重新分配所有者",

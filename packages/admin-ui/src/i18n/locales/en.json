@@ -79,6 +79,8 @@
       "viewGallery": "View gallery",
       "preview": "Preview",
       "previewPrompt": "Preview system prompt",
+      "settings": "Settings",
+      "avatarSettings": "Avatar settings",
       "platformIntegrationsConfiguredButInactive": "You have platform integrations configured. Activate your avatar to use them.",
       "clearChat": "Clear Chat"
     },
@@ -175,7 +177,14 @@
     "completed": "Completed",
     "cancelled": "Cancelled",
     "actionFailed": "Action failed",
-    "openInWorkspace": "Open in workspace"
+    "openInWorkspace": "Open in workspace",
+    "tabs": {
+      "gallery": "Gallery",
+      "prompt": "Prompt",
+      "tools": "Tools",
+      "settings": "Settings",
+      "activity": "Activity"
+    }
   },
   "taskCard": {
     "secretInput": "Secret Input",
@@ -378,6 +387,9 @@
     "selectOrbPlaceholder": "Select an Orb…",
     "slotOrb": "Slot",
     "noOrbsDetected": "No Orbs detected in your current gate wallet.",
+    "conversationTitle": "Conversation",
+    "clearChatDescription": "Clear this avatar's chat history for your account.",
+    "clearChatConfirm": "Confirm clear",
     "systemPersonaLabel": "System Persona",
     "systemPersonaDescription": "Define the avatar's personality, expertise, and behavior.",
     "systemPersonaPlaceholder": "You are a helpful AI assistant that specializes in...\n\nYou have expertise in:\n- Topic 1\n- Topic 2\n\nYour communication style is...",
@@ -580,6 +592,8 @@
     "zh-CN": "中文"
   },
   "sidebar": {
+    "activeAvatar": "Active avatar",
+    "activating": "Activating...",
     "options": "Options",
     "viewDetails": "View Details",
     "reassignOwner": "Reassign Owner",

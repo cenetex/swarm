@@ -13,6 +13,8 @@ import { useAuth } from '../store/auth';
 import { ThemeToggle } from './ThemeToggle';
 import { PrivyLoginButton } from './PrivyLoginButton';
 import { AvatarReassignModal } from './AvatarReassignModal';
+import { useAvatarActivation } from '../hooks/useAvatarActivation';
+import { useWorkspaceStore } from '../store/workspace';
 
 // Lazy-load HealthDashboard — only shown when admin toggles the health panel
 const HealthDashboard = lazy(() => import('./HealthDashboard').then(m => ({ default: m.HealthDashboard })));
@@ -348,6 +350,136 @@ function AvatarListItem({ avatar, isActive, onClick, isAdmin, onReassign }: Avat
   );
 }
 
+function ActiveAvatarControls({ avatar }: { avatar: Avatar }) {
+  const { t } = useTranslation();
+  const activation = useAvatarActivation(avatar);
+  const isActive = avatar.status === 'active';
+  const status = getAvatarStatusColor(avatar, t);
+  const openWorkspaceTab = (tab: 'settings' | 'activity') => {
+    useWorkspaceStore.getState().setTab(tab, avatar.id);
+  };
+
+  return (
+    <div className="mx-2 mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-3">
+      <div className="flex items-start gap-3">
+        <AvatarDisplay avatar={avatar} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+            {t('sidebar.activeAvatar')}
+          </div>
+          <div className="truncate text-sm font-semibold text-[var(--color-text)]">
+            {avatar.name}
+          </div>
+          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
+            <span className={`h-2 w-2 rounded-full ${status.color}`} aria-hidden />
+            <span className="truncate">{getStatusDescription(avatar, t)}</span>
+          </div>
+        </div>
+      </div>
+
+      {activation.hasConfiguredPlatformsButInactive && !activation.showPauseConfirm && (
+        <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-300">
+          {t('chat.panel.platformIntegrationsConfiguredButInactive')}
+        </div>
+      )}
+
+      {activation.error && (
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-red-500/25 bg-red-500/10 px-2 py-1.5 text-xs text-red-300">
+          <span className="min-w-0 flex-1">{activation.error}</span>
+          <button
+            type="button"
+            onClick={activation.clearError}
+            className="rounded p-0.5 text-red-300 hover:bg-red-500/20 hover:text-red-200"
+            aria-label={t('common.close')}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      <div className="mt-3 space-y-2">
+        {activation.showPauseConfirm ? (
+          <div className="space-y-2">
+            <div className="rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-300">
+              {t('chat.panel.pauseWarning')}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={activation.cancelPause}
+                className="h-9 rounded-lg bg-[var(--color-bg-secondary)] text-xs font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text)]"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={activation.toggleActivation}
+                disabled={activation.isLoading}
+                className="h-9 rounded-lg bg-amber-600 px-3 text-xs font-semibold text-amber-50 hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {activation.isLoading ? t('chat.panel.pausing') : t('chat.panel.confirmPause')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={activation.toggleActivation}
+            disabled={activation.isLoading}
+            className={[
+              'h-9 w-full rounded-lg px-3 text-sm font-semibold transition-colors',
+              'flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50',
+              isActive
+                ? 'text-amber-300 hover:bg-amber-900/20'
+                : 'border border-green-500/30 bg-green-500/10 text-green-300 hover:bg-green-500/20',
+            ].join(' ')}
+            title={isActive ? t('chat.panel.pauseAvatarTitle') : t('chat.panel.activateAvatarTitle')}
+          >
+            {activation.isLoading ? (
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            ) : isActive ? (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75A.75.75 0 007.25 3h-1.5zM12.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-1.5z" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+              </svg>
+            )}
+            <span>
+              {activation.isLoading
+                ? isActive ? t('chat.panel.pausing') : t('sidebar.activating')
+                : isActive ? t('chat.panel.pause') : t('chat.panel.activate')}
+            </span>
+          </button>
+        )}
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => openWorkspaceTab('settings')}
+            className="h-8 rounded-lg bg-[var(--color-bg-secondary)] px-2 text-xs font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text)]"
+          >
+            {t('chat.panel.settings')}
+          </button>
+          <button
+            type="button"
+            onClick={() => openWorkspaceTab('activity')}
+            className="h-8 rounded-lg bg-[var(--color-bg-secondary)] px-2 text-xs font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text)]"
+          >
+            {t('workspace.tabs.activity')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface AvatarSidebarProps {
   className?: string;
   onClose?: () => void;
@@ -386,6 +518,12 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
   const canCreate = gateStatus?.canCreate || false;
 
   const bypassRestrictions = isAdmin;
+  const activeAvatar = avatars.find((avatar) => avatar.id === activeAvatarId) ?? null;
+  const canManageActiveAvatar = Boolean(
+    activeAvatar &&
+      isAuthenticated &&
+      (isAdmin || activeAvatar.creatorWallet === walletAddress)
+  );
 
   const filteredAvatars = avatars;
 
@@ -699,6 +837,10 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
               </div>
             )}
           </>
+        )}
+
+        {activeAvatar && canManageActiveAvatar && (
+          <ActiveAvatarControls avatar={activeAvatar} />
         )}
 
         {isLoading && avatars.length === 0 ? (

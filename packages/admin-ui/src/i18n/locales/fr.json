@@ -79,6 +79,8 @@
       "viewGallery": "Afficher la galerie",
       "preview": "Aperçu",
       "previewPrompt": "Aperçu de l'invite du système",
+      "settings": "Paramètres",
+      "avatarSettings": "Paramètres de l'avatar",
       "platformIntegrationsConfiguredButInactive": "Vous avez des intégrations de plateforme configurées. Activez votre avatar pour les utiliser.",
       "clearChat": "Effacer le chat"
     },
@@ -175,7 +177,14 @@
     "completed": "Terminé",
     "cancelled": "Annulé",
     "actionFailed": "L'action a échoué",
-    "openInWorkspace": "Ouvrir dans l'espace de travail"
+    "openInWorkspace": "Ouvrir dans l'espace de travail",
+    "tabs": {
+      "gallery": "Galerie",
+      "prompt": "Invite",
+      "tools": "Outils",
+      "settings": "Paramètres",
+      "activity": "Activité"
+    }
   },
   "taskCard": {
     "secretInput": "Saisie secrète",
@@ -378,6 +387,9 @@
     "selectOrbPlaceholder": "Sélectionner un Orb…",
     "slotOrb": "Lier",
     "noOrbsDetected": "Aucun Orb détecté dans votre portefeuille de gate actuel.",
+    "conversationTitle": "Conversation",
+    "clearChatDescription": "Effacer l'historique de chat de cet avatar pour votre compte.",
+    "clearChatConfirm": "Confirmer",
     "systemPersonaLabel": "Persona système",
     "systemPersonaDescription": "Définissez la personnalité, l'expertise et le comportement de l'avatar.",
     "systemPersonaPlaceholder": "Vous êtes un assistant IA utile, spécialisé dans...\n\nVous avez de l'expertise dans :\n- Sujet 1\n- Sujet 2\n\nVotre style de communication est...",
@@ -580,6 +592,8 @@
     "zh-CN": "中文"
   },
   "sidebar": {
+    "activeAvatar": "Avatar actif",
+    "activating": "Activation...",
     "options": "Options",
     "viewDetails": "Voir les détails",
     "reassignOwner": "Réattribuer le propriétaire",
