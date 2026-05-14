@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/github-action",
   "description": "Approved GitHub Actions allowlist. All third-party actions must be SHA-pinned and listed here before use in any workflow.",
-  "updated": "2026-02-21",
+  "updated": "2026-05-14",
   "actions": [
     {
       "name": "actions/checkout",
@@ -55,8 +55,8 @@
     {
       "name": "aws-actions/configure-aws-credentials",
       "owner": "aws-actions",
-      "version": "v4",
-      "sha": "7474bc4690e29a8392af63c5b98e7449536d5c3a",
+      "version": "v6.1.1",
+      "sha": "d979d5b3a71173a29b74b5b88418bfda9437d885",
       "purpose": "Configure AWS credentials via OIDC for deployment"
     },
     {
