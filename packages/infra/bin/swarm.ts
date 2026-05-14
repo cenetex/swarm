@@ -115,6 +115,7 @@ const monthlyBudgetUsd = getContextValue<number>('monthlyBudgetUsd', envConfig);
 const enableWaf = parseBoolean(getContextValue<unknown>('enableWaf', envConfig)) ?? true;
 const enableClaudeCode = parseBoolean(getContextValue<unknown>('enableClaudeCode', envConfig)) ?? false;
 const claudeCodeUseOpenRouter = parseBoolean(getContextValue<unknown>('claudeCodeUseOpenRouter', envConfig)) ?? false;
+const enableDiscordGateway = parseBoolean(getContextValue<unknown>('enableDiscordGateway', envConfig)) ?? false;
 const useExistingResources = parseBoolean(getContextValue<unknown>('useExistingResources', envConfig)) ?? false;
 const useExistingBuckets = parseBoolean(getContextValue<unknown>('useExistingBuckets', envConfig)) ?? false;
 const skipDomainAliases = parseBoolean(getContextValue<unknown>('skipDomainAliases', envConfig)) ?? false;
@@ -236,7 +237,7 @@ const adminApiStack = new AdminApiStack(app, `SwarmApi-${environment}${nameSuffi
   signalApiTokenSecretArn,
   anthropicApiKeyArn,
   enableClaudeCode,
-  enableDiscordGateway: false,
+  enableDiscordGateway,
   claudeCodeUseOpenRouter,
   secretPrefix,
   useExistingResources,
