@@ -22,6 +22,11 @@ import { searchMemories, reinforceMemory } from './memory.js';
 import { enqueueDreamJob } from './dream-jobs.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { createSystemLogger } from './structured-logger.js';
+import {
+  DEFAULT_MODELS,
+  executeWithFallback,
+  withOpenRouterFallbackRouting,
+} from './models-registry.js';
 
 const log = createSystemLogger('dreams');
 
@@ -251,7 +256,7 @@ export async function generateDreamContent(
   model?: string
 ): Promise<string> {
   const llmApiKey = apiKey || process.env.LLM_API_KEY || process.env.OPENROUTER_API_KEY;
-  const llmModel = model || process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
+  const llmModel = model || process.env.LLM_MODEL || DEFAULT_MODELS.llm;
 
   if (!llmApiKey) {
     throw new Error('No LLM API key configured for dream generation');
@@ -281,29 +286,38 @@ ${persona}
 
 Generate your first dream state.`;
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${llmApiKey}`,
-      'HTTP-Referer': 'https://swarm.rati.chat',
-      'X-Title': 'Swarm Dream Generator',
-    },
-    body: JSON.stringify({
-      model: llmModel,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent },
-      ],
-      max_tokens: DREAM_MAX_TOKENS,
-      temperature: 0.9,
-    }),
-  });
+  const requestBody = {
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userContent },
+    ],
+    max_tokens: DREAM_MAX_TOKENS,
+    temperature: 0.9,
+  };
+  const fallbackResult = await executeWithFallback(async (candidateModel) => {
+    const body = withOpenRouterFallbackRouting(requestBody, candidateModel);
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${llmApiKey}`,
+        'HTTP-Referer': 'https://swarm.rati.chat',
+        'X-Title': 'Swarm Dream Generator',
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Dream generation failed: ${response.status} - ${error}`);
-  }
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Dream generation failed: ${response.status} - ${error}`);
+    }
+
+    return response;
+  }, {
+    primaryModel: llmModel,
+    avatarId: 'dreams',
+  });
+  const response = fallbackResult.result;
 
   const data = await response.json() as { choices: Array<{ message: { content: string } }> };
   const rawDream = data.choices[0]?.message?.content?.trim() || '';

@@ -28,6 +28,7 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
+import { DEFAULT_LLM_MODEL } from '@swarm/core';
 
 export interface AdminApiConstructProps {
   /**
@@ -601,7 +602,7 @@ export class AdminApiConstruct extends Construct {
         SECRET_PREFIX: secretPrefix,
         ADMIN_EMAILS: adminEmails,
         LLM_ENDPOINT: 'https://openrouter.ai/api/v1/chat/completions',
-        LLM_MODEL: 'anthropic/claude-haiku-4.5',
+        LLM_MODEL: DEFAULT_LLM_MODEL,
         // Keep /chat under API Gateway/CloudFront response time limits.
         // These can be overridden per-environment via Lambda env vars if needed.
         LLM_TIMEOUT_MS: '27000',
@@ -836,7 +837,7 @@ export class AdminApiConstruct extends Construct {
         SECRET_PREFIX: secretPrefix,
         // LLM config (worker is not API-gateway constrained)
         LLM_ENDPOINT: 'https://openrouter.ai/api/v1/chat/completions',
-        LLM_MODEL: 'anthropic/claude-haiku-4.5',
+        LLM_MODEL: DEFAULT_LLM_MODEL,
         LLM_TIMEOUT_MS: '120000',
         LLM_MAX_RETRIES: '1',
         LLM_MAX_STEPS: '6',
@@ -1841,7 +1842,7 @@ export class AdminApiConstruct extends Construct {
         STATE_TABLE: stateTable?.tableName || '',
         SECRET_PREFIX: secretPrefix,
         LLM_ENDPOINT: 'https://openrouter.ai/api/v1/chat/completions',
-        LLM_MODEL: 'anthropic/claude-haiku-4.5',
+        LLM_MODEL: DEFAULT_LLM_MODEL,
         LLM_TIMEOUT_MS: '60000', // More generous timeout for public API
         LLM_MAX_RETRIES: '1',
         LLM_MAX_STEPS: '4',
@@ -2284,7 +2285,7 @@ export class AdminApiConstruct extends Construct {
         STATE_TABLE: stateTable?.tableName || '',
         LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
         // Match chat/telegram model unless overridden at runtime
-        LLM_MODEL: 'anthropic/claude-haiku-4.5',
+        LLM_MODEL: DEFAULT_LLM_MODEL,
         NODE_ENV: environment,
         LOG_LEVEL: logLevel,
         NODE_OPTIONS: '--enable-source-maps',

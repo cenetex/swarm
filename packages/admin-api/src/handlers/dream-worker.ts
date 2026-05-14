@@ -26,9 +26,10 @@ import {
   processDreamMemoryResonance,
   saveDreamState,
 } from '../services/dreams.js';
+import { DEFAULT_MODELS } from '../services/models-registry.js';
 
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
-const LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
+const LLM_MODEL = process.env.LLM_MODEL || DEFAULT_MODELS.llm;
 
 // Cache for API key (lives for duration of Lambda container)
 let cachedApiKey: string | null = null;

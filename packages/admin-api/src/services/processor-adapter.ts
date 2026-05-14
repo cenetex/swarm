@@ -7,6 +7,7 @@
  */
 
 import {
+  DEFAULT_LLM_MODEL as CORE_DEFAULT_LLM_MODEL,
   MessageProcessor,
   createMessageProcessor,
   type MessageProcessorDependencies,
@@ -17,6 +18,7 @@ import {
   type ToolExecutionResult,
   detectEnabledCategories,
   filterTools,
+  logger,
 } from '@swarm/core';
 import {
   ToolRegistry,
@@ -30,13 +32,17 @@ import * as memory from './memory.js';
 import { createMCPServices, createTelegramMCPServices } from './mcp-adapter.js';
 import { formatDreamForPrompt, getDreamForResponse } from './dreams.js';
 import * as voice from './voice.js';
+import {
+  executeWithFallback,
+  withOpenRouterFallbackRouting,
+} from './models-registry.js';
 
 // =============================================================================
 // LLM CONFIGURATION
 // =============================================================================
 
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
-const DEFAULT_LLM_MODEL = process.env.LLM_MODEL || 'anthropic/claude-sonnet-4';
+const DEFAULT_LLM_MODEL = process.env.LLM_MODEL || CORE_DEFAULT_LLM_MODEL;
 const DEFAULT_LLM_MAX_TOKENS = 2048;
 const DEFAULT_LLM_TEMPERATURE = 0.7;
 // Allow slow providers/models without tripping AbortController too aggressively.
@@ -331,30 +337,44 @@ async function callLLM(params: {
       };
     });
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://swarm.rati.chat',
-        'X-Title': 'AWS Swarm',
-      },
-      body: JSON.stringify({
-        model: params.model || DEFAULT_LLM_MODEL,
-        messages: openRouterMessages,
-        tools: params.tools.length > 0 ? params.tools : undefined,
-        max_tokens: params.maxTokens || DEFAULT_LLM_MAX_TOKENS,
-        temperature: params.temperature ?? DEFAULT_LLM_TEMPERATURE,
-      }),
-      signal: controller.signal,
-    });
+    const primaryModel = params.model || DEFAULT_LLM_MODEL;
+    const requestBody = {
+      messages: openRouterMessages,
+      tools: params.tools.length > 0 ? params.tools : undefined,
+      max_tokens: params.maxTokens || DEFAULT_LLM_MAX_TOKENS,
+      temperature: params.temperature ?? DEFAULT_LLM_TEMPERATURE,
+    };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`LLM API error: ${response.status} ${errorText}`);
-    }
+    const fallbackResult = await executeWithFallback(async (candidateModel) => {
+      const body = withOpenRouterFallbackRouting(requestBody, candidateModel, {
+        requireParameters: params.tools.length > 0,
+      });
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://swarm.rati.chat',
+          'X-Title': 'AWS Swarm',
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`LLM API error: ${response.status} ${errorText}`);
+      }
+
+      return response;
+    }, {
+      primaryModel,
+      avatarId: 'processor-adapter',
+    });
+    const response = fallbackResult.result;
 
     const data = await response.json() as {
+      model?: string;
       choices: Array<{
         message: {
           content: string | null;
@@ -381,6 +401,15 @@ async function callLLM(params: {
     const choice = data.choices[0];
     if (!choice) {
       throw new Error('No response from LLM');
+    }
+
+    if (fallbackResult.usedFallback || (data.model && data.model !== primaryModel)) {
+      logger.info('Processor LLM fallback used', {
+        event: 'processor_llm_fallback_used',
+        requestedModel: primaryModel,
+        responseModel: data.model || fallbackResult.model,
+        attemptedModels: fallbackResult.attemptedModels,
+      });
     }
 
     return {

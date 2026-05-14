@@ -28,6 +28,12 @@ import {
   getLlmApiKey,
 } from './chat-llm.js';
 import { resolveTokenUsage, recordTokenUsage } from '../services/token-accounting.js';
+import {
+  DEFAULT_MODELS,
+  executeWithFallback,
+  resolveChatModel,
+  withOpenRouterFallbackRouting,
+} from '../services/models-registry.js';
 
 const StreamRequestSchema = z.object({
   model: z.string().optional(), // Optional for scoped keys
@@ -51,6 +57,7 @@ interface StreamToolCallDelta {
 }
 
 interface StreamChunk {
+  model?: string;
   choices?: Array<{
     delta?: {
       role?: string;
@@ -185,7 +192,11 @@ async function handleStreamingRequest(
   const keyHash = hashApiKey(apiKey);
 
   // Build messages
-  const llmModel = avatarRecord.llmConfig?.model || 'anthropic/claude-3-5-sonnet-latest';
+  const llmModel = resolveChatModel({
+    requestModel: undefined,
+    avatarModel: avatarRecord.llmConfig?.model,
+    defaultModel: DEFAULT_MODELS.llm,
+  });
   const systemPrompt = avatarRecord.persona || `You are ${avatarRecord.name || 'an AI assistant'}.`;
   const messages = [
     { role: 'system' as const, content: systemPrompt },
@@ -220,7 +231,6 @@ async function handleStreamingRequest(
 
   // Call OpenRouter with streaming
   const requestBody: Record<string, unknown> = {
-    model: llmModel,
     messages,
     max_tokens: request.max_tokens,
     temperature: request.temperature,
@@ -234,23 +244,33 @@ async function handleStreamingRequest(
     requestBody.tool_choice = request.tool_choice;
   }
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${llmApiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://swarm.rati.chat',
-      'X-Title': 'Swarm API',
-    },
-    body: JSON.stringify(requestBody),
-    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-  });
+  const fallbackResult = await executeWithFallback(async (candidateModel) => {
+    const routedBody = withOpenRouterFallbackRouting(requestBody, candidateModel, {
+      requireParameters: !!request.tools && request.tools.length > 0,
+    });
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${llmApiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://swarm.rati.chat',
+        'X-Title': 'Swarm API',
+      },
+      body: JSON.stringify(routedBody),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    writeErrorAndEnd(stream, requestId, `LLM error: ${response.status} ${errorText.slice(0, 200)}`);
-    return;
-  }
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`LLM error: ${response.status} ${errorText.slice(0, 1000)}`);
+    }
+
+    return response;
+  }, {
+    primaryModel: llmModel,
+    avatarId,
+  });
+  const response = fallbackResult.result;
 
   if (!response.body) {
     writeErrorAndEnd(stream, requestId, 'No response body from LLM');
@@ -265,6 +285,7 @@ async function handleStreamingRequest(
   let toolCallText = '';
   let toolCallCount = 0;
   let finishReason: string | null = null;
+  let upstreamModel = fallbackResult.model;
   let providerUsage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
 
   try {
@@ -283,6 +304,9 @@ async function handleStreamingRequest(
 
         try {
           const chunk = JSON.parse(trimmed.slice(6)) as StreamChunk;
+          if (typeof chunk.model === 'string' && chunk.model.length > 0) {
+            upstreamModel = chunk.model;
+          }
           const choice = chunk.choices?.[0];
           const delta = choice?.delta;
           const content = delta?.content;
@@ -362,7 +386,7 @@ async function handleStreamingRequest(
     } : undefined,
     promptText,
     completionText,
-    llmModel,
+    upstreamModel,
   );
 
   // Write final chunk with finish_reason and usage
@@ -388,6 +412,8 @@ async function handleStreamingRequest(
     subsystem: 'openai-compat-stream',
     avatarId,
     model: llmModel,
+    upstreamModel,
+    usedFallback: fallbackResult.usedFallback || upstreamModel !== llmModel,
     latencyMs,
     contentLength: fullContent.length,
     toolCallCount,
@@ -400,7 +426,7 @@ async function handleStreamingRequest(
     requestId,
     keyHash,
     avatarId,
-    model: llmModel,
+    model: upstreamModel,
     usage: tokenUsage,
   }).catch(() => {});
 }

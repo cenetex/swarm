@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'bun:test';
-import { resolveChatModel, normalizeModel, getValidModelId, MODEL_ALIASES, DEFAULT_MODELS } from './models-registry.js';
+import {
+  DEFAULT_MODELS,
+  MODEL_ALIASES,
+  getValidModelId,
+  isOpenRouterCatalogModelId,
+  normalizeModel,
+  resolveChatModel,
+  withOpenRouterFallbackRouting,
+} from './models-registry.js';
 
 describe('resolveChatModel', () => {
   it('prefers request model over avatar model', () => {
@@ -42,14 +50,24 @@ describe('resolveChatModel', () => {
     ).toBe('anthropic/claude-3-5-sonnet-latest');
   });
 
-  it('falls back to registry default when configured defaults are stale', () => {
+  it('falls back to registry default when configured models are malformed', () => {
+    expect(
+      resolveChatModel({
+        requestModel: undefined,
+        avatarModel: 'not-a-model',
+        defaultModel: 'unknown/nonexistent-model',
+      })
+    ).toBe(DEFAULT_MODELS.llm);
+  });
+
+  it('allows OpenRouter catalog-shaped model IDs outside the local curated list', () => {
     expect(
       resolveChatModel({
         requestModel: undefined,
         avatarModel: 'google/gemini-3-flash-preview',
-        defaultModel: 'anthropic/claude-haiku-4.5',
+        defaultModel: DEFAULT_MODELS.llm,
       })
-    ).toBe(DEFAULT_MODELS.llm);
+    ).toBe('google/gemini-3-flash-preview');
   });
 });
 
@@ -93,8 +111,41 @@ describe('getValidModelId', () => {
     expect(getValidModelId('unknown/nonexistent-model')).toBeUndefined();
   });
 
+  it('returns catalog-shaped OpenRouter model IDs even before local curation', () => {
+    expect(getValidModelId('google/gemini-3-flash-preview')).toBe('google/gemini-3-flash-preview');
+  });
+
   it('returns the ID for a known model', () => {
     expect(getValidModelId('anthropic/claude-3-5-sonnet-latest')).toBe('anthropic/claude-3-5-sonnet-latest');
+  });
+});
+
+describe('OpenRouter fallback routing', () => {
+  it('adds model fallback routing without dropping request fields', () => {
+    const routed = withOpenRouterFallbackRouting(
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [{ type: 'function', function: { name: 'search', parameters: { type: 'object' } } }],
+      },
+      'google/gemini-3-flash-preview',
+      { requireParameters: true },
+    );
+
+    expect(routed.model).toBe('google/gemini-3-flash-preview');
+    expect(routed.route).toBe('fallback');
+    expect(routed.models).toContain('google/gemini-3-flash-preview');
+    expect(routed.models).toContain('openrouter/auto');
+    expect(routed.provider).toMatchObject({
+      allow_fallbacks: true,
+      require_parameters: true,
+    });
+    expect(routed.messages).toEqual([{ role: 'user', content: 'hello' }]);
+  });
+
+  it('recognizes supported OpenRouter catalog ID shapes', () => {
+    expect(isOpenRouterCatalogModelId('openrouter/auto')).toBe(true);
+    expect(isOpenRouterCatalogModelId('google/gemini-3-flash-preview')).toBe(true);
+    expect(isOpenRouterCatalogModelId('unknown/nonexistent-model')).toBe(false);
   });
 });
 

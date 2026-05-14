@@ -376,10 +376,51 @@ export function getModelById(id: string): ModelInfo | undefined {
   return AVAILABLE_MODELS.find((m) => m.id === id);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const OPENROUTER_MODEL_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/;
+const OPENROUTER_CATALOG_PROVIDER_PREFIXES = new Set([
+  'anthropic',
+  'deepseek',
+  'google',
+  'meta-llama',
+  'mistralai',
+  'moonshotai',
+  'openai',
+  'openrouter',
+  'qwen',
+  'x-ai',
+  'z-ai',
+]);
+
+function isKnownFallbackModel(id: string): boolean {
+  if (id in LLM_FALLBACK_CHAINS) return true;
+  if (DEFAULT_FALLBACK_CHAIN.includes(id)) return true;
+  return Object.values(LLM_FALLBACK_CHAINS).some((fallbacks) => fallbacks.includes(id));
+}
+
+/**
+ * Accepts catalog-shaped OpenRouter model IDs that are not curated in the
+ * local registry yet. Runtime OpenRouter fallback routing handles stale or
+ * unavailable IDs instead of silently replacing valid catalog choices.
+ */
+export function isOpenRouterCatalogModelId(value: string): boolean {
+  if (!OPENROUTER_MODEL_ID_PATTERN.test(value)) return false;
+  const [provider] = value.split('/');
+  return OPENROUTER_CATALOG_PROVIDER_PREFIXES.has(provider);
+}
+
 export function getValidModelId(value: unknown): string | undefined {
   const normalized = normalizeModel(value);
   if (!normalized) return undefined;
   if (getModelById(normalized)) return normalized;
+  if (isKnownFallbackModel(normalized)) return normalized;
+  if (isOpenRouterCatalogModelId(normalized)) {
+    logger.info('Using OpenRouter catalog model outside local registry', { model: normalized });
+    return normalized;
+  }
   logger.warn('Unknown LLM model configured, falling back to default', { model: normalized });
   return undefined;
 }
@@ -470,6 +511,7 @@ export const LLM_FALLBACK_CHAINS: Record<string, string[]> = {
 export const DEFAULT_FALLBACK_CHAIN: string[] = [
   'deepseek/deepseek-r1',        // Fast, cheap, reliable
   'anthropic/claude-3-5-haiku-latest',  // Claude fallback
+  'openrouter/auto',             // Let OpenRouter pick from the live catalog
 ];
 
 /**
@@ -492,10 +534,12 @@ export function isFallbackTriggerError(error: unknown): boolean {
 
   // Model unavailable
   if (msg.includes('model not found') || msg.includes('model_not_found')) return true;
+  if (msg.includes('invalid model') || msg.includes('unsupported model')) return true;
   if (msg.includes('no endpoints found')) return true;
   if (msg.includes('does not support')) return true;
 
   // Service unavailable
+  if (msg.includes('500') || msg.includes('504')) return true;
   if (msg.includes('503') || msg.includes('service unavailable')) return true;
   if (msg.includes('502') || msg.includes('bad gateway')) return true;
 
@@ -512,7 +556,33 @@ export function isFallbackTriggerError(error: unknown): boolean {
  * Get the complete model chain (primary + fallbacks) for resolution
  */
 export function getModelChain(primaryModel: string): string[] {
-  return [primaryModel, ...getFallbackModels(primaryModel)];
+  return Array.from(new Set([primaryModel, ...getFallbackModels(primaryModel)]));
+}
+
+export interface OpenRouterFallbackRoutingOptions {
+  /** Require providers to support every parameter in the request, e.g. tools. */
+  requireParameters?: boolean;
+}
+
+export function withOpenRouterFallbackRouting(
+  body: Record<string, unknown>,
+  primaryModel: string,
+  options: OpenRouterFallbackRoutingOptions = {}
+): Record<string, unknown> {
+  const modelChain = getModelChain(primaryModel);
+  const provider = isRecord(body.provider) ? { ...body.provider } : {};
+
+  return {
+    ...body,
+    model: primaryModel,
+    models: modelChain,
+    route: 'fallback',
+    provider: {
+      ...provider,
+      allow_fallbacks: true,
+      ...(options.requireParameters ? { require_parameters: true } : {}),
+    },
+  };
 }
 
 // ============================================================================

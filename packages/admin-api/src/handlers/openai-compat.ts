@@ -43,6 +43,12 @@ import { getCorsHeaders } from '../http/cors.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
 import { resolveTokenUsage, recordTokenUsage } from '../services/token-accounting.js';
 import type { UsageSource } from '../services/token-accounting.js';
+import {
+  DEFAULT_MODELS,
+  executeWithFallback,
+  resolveChatModel,
+  withOpenRouterFallbackRouting,
+} from '../services/models-registry.js';
 
 // =============================================================================
 // Configuration
@@ -512,6 +518,9 @@ async function callExternalToolModel(params: {
   usage?: LlmUsage;
   finishReason: ChatCompletionChoice['finish_reason'];
   latencyMs: number;
+  model: string;
+  attemptedModels: string[];
+  usedFallback: boolean;
 }> {
   const apiKey = await getLlmApiKey();
   const start = Date.now();
@@ -520,8 +529,7 @@ async function callExternalToolModel(params: {
     ...params.messages.map(normalizeOpenAIMessageForProvider),
   ];
 
-  const body: Record<string, unknown> = {
-    model: params.llmModel,
+  const baseBody: Record<string, unknown> = {
     messages: providerMessages,
     max_tokens: params.maxTokens,
     temperature: params.temperature,
@@ -529,30 +537,42 @@ async function callExternalToolModel(params: {
   };
 
   if (params.tools && params.tools.length > 0) {
-    body.tools = params.tools;
+    baseBody.tools = params.tools;
   }
   if (params.toolChoice !== undefined) {
-    body.tool_choice = params.toolChoice;
+    baseBody.tool_choice = params.toolChoice;
   }
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://swarm.rati.chat',
-      'X-Title': 'Swarm API',
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+  const fallbackResult = await executeWithFallback(async (candidateModel) => {
+    const body = withOpenRouterFallbackRouting(baseBody, candidateModel, {
+      requireParameters: !!params.tools && params.tools.length > 0,
+    });
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://swarm.rati.chat',
+        'X-Title': 'Swarm API',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenRouter external-tool error: ${response.status} ${errorText.slice(0, 1000)}`);
+    }
+
+    return response;
+  }, {
+    primaryModel: params.llmModel,
+    avatarId: 'openai-compat',
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenRouter external-tool error: ${response.status} ${errorText.slice(0, 1000)}`);
-  }
+  const response = fallbackResult.result;
 
   const data = await response.json() as {
+    model?: string;
     choices?: Array<{
       finish_reason?: string | null;
       message?: {
@@ -584,6 +604,9 @@ async function callExternalToolModel(params: {
     usage: normalizeUsage(data.usage),
     finishReason: normalizeFinishReason(choice?.finish_reason, toolCalls),
     latencyMs: Date.now() - start,
+    model: data.model || fallbackResult.model,
+    attemptedModels: fallbackResult.attemptedModels,
+    usedFallback: fallbackResult.usedFallback || (data.model !== undefined && data.model !== params.llmModel),
   };
 }
 
@@ -1017,8 +1040,13 @@ async function handleChatCompletions(
     enabledCategories,
   };
 
-  // Resolve model for logging
-  const llmModel = avatarRecord.llmConfig?.model || 'anthropic/claude-3-5-sonnet-latest';
+  // Resolve provider model for logging and execution. The OpenAI-compatible
+  // `model` field above identifies the avatar, not the upstream LLM.
+  const llmModel = resolveChatModel({
+    requestModel: undefined,
+    avatarModel: avatarRecord.llmConfig?.model,
+    defaultModel: DEFAULT_MODELS.llm,
+  });
   const externalToolMode = usesExternalToolMode(request);
 
   logger.info('Processing chat completion', {
@@ -1053,7 +1081,7 @@ async function handleChatCompletions(
         externalResult.usage,
         promptText,
         completionText,
-        llmModel,
+        externalResult.model,
       );
 
       const keyHash = hashApiKey(apiKey);
@@ -1061,7 +1089,7 @@ async function handleChatCompletions(
         requestId,
         keyHash,
         avatarId,
-        model: llmModel,
+        model: externalResult.model,
         usage: tokenUsage,
       }).catch(err => {
         logger.warn('Token accounting recording failed', {
@@ -1114,6 +1142,8 @@ async function handleChatCompletions(
         subsystem: 'openai-compat',
         avatarId,
         model: llmModel,
+        upstreamModel: externalResult.model,
+        usedFallback: externalResult.usedFallback,
         responseLength: externalResult.content?.length || 0,
         toolCallCount: externalResult.toolCalls.length,
         finishReason: externalResult.finishReason,
@@ -1133,6 +1163,7 @@ async function handleChatCompletions(
       validation.session,
       avatarContext,
       {
+        model: llmModel,
         maxTokens: request.max_tokens,
       }
     );

@@ -4,10 +4,10 @@
  * Uses a cheap/fast model to decide which mentions warrant a full response.
  * This saves cost by avoiding full LLM calls for mentions the avatar would ignore.
  */
-import { logger, type SwarmEnvelope, type AvatarConfig } from '@swarm/core';
+import { DEFAULT_LLM_MODEL, logger, type SwarmEnvelope, type AvatarConfig } from '@swarm/core';
 
 // Triage model - use a cheap, fast model
-const TRIAGE_MODEL = process.env.TRIAGE_MODEL || 'openai/gpt-4o-mini';
+const TRIAGE_MODEL = process.env.TRIAGE_MODEL || DEFAULT_LLM_MODEL;
 const TRIAGE_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const TRIAGE_TIMEOUT_MS = 15_000; // 15 seconds max for triage
 

@@ -10,6 +10,10 @@ import {
   logger,
 } from '@swarm/core';
 import { z } from 'zod';
+import {
+  executeWithFallback,
+  withOpenRouterFallbackRouting,
+} from '../services/models-registry.js';
 
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 export const LLM_MODEL = process.env.LLM_MODEL || DEFAULT_LLM_MODEL;
@@ -423,6 +427,9 @@ export async function callLlmDirectFallback(
   toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
   usage?: LlmUsage;
   latencyMs: number;
+  model: string;
+  attemptedModels: string[];
+  usedFallback: boolean;
 }> {
   const apiKey = await getLlmApiKey();
   const start = Date.now();
@@ -449,8 +456,7 @@ export async function callLlmDirectFallback(
     return { role: msg.role, content: msg.content };
   });
 
-  const body: Record<string, unknown> = {
-    model,
+  const baseBody: Record<string, unknown> = {
     messages: normalizedMessages,
     max_tokens: maxTokens,
     stream: false, // Disable streaming to avoid SDK validation issues
@@ -458,7 +464,7 @@ export async function callLlmDirectFallback(
 
   if (tools && tools.length > 0) {
     // Convert SDK tools to OpenAI format with sanitized schemas
-    body.tools = tools.map((t: unknown, index: number) => {
+    baseBody.tools = tools.map((t: unknown, index: number) => {
       const tool = t as FallbackTool;
       const toolName = tool.function?.name ?? `tool[${index}]`;
       const parameters = resolveFallbackToolParameters(tool, index);
@@ -483,130 +489,143 @@ export async function callLlmDirectFallback(
     });
   }
 
-  let response: Response | null = null;
-  let lastError: unknown;
-  let creditRetried = false;
+  const fetchCompletion = async (candidateModel: string): Promise<Response> => {
+    const body = withOpenRouterFallbackRouting(baseBody, candidateModel, {
+      requireParameters: !!tools && tools.length > 0,
+    });
+    let response: Response | null = null;
+    let lastError: unknown;
+    let creditRetried = false;
 
-  for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
-    try {
-      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://swarm.admin',
-          'X-Title': 'Swarm Admin',
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-      });
-
-      if (response.ok) {
-        break;
-      }
-
-      // 402 = insufficient credits — attempt one adaptive retry with reduced max_tokens
-      if (response.status === 402) {
-        const errorText = await response.text();
-        const reducedTokens = Math.max(
-          CREDIT_RETRY_MIN_TOKENS,
-          Math.floor(maxTokens * CREDIT_RETRY_TOKEN_FRACTION)
-        );
-        const canRetryWithLess = reducedTokens < maxTokens && !creditRetried;
-
-        logger.error('OpenRouter credits exhausted (402)', undefined, {
-          event: 'provider_credit_exhausted',
-          subsystem: 'llm',
-          statusCode: 402,
-          model,
-          requestedMaxTokens: maxTokens,
-          reducedMaxTokens: canRetryWithLess ? reducedTokens : undefined,
-          willRetry: canRetryWithLess,
-          responseBody: errorText.slice(0, 500),
+    for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
+      try {
+        response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://swarm.admin',
+            'X-Title': 'Swarm Admin',
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
         });
 
-        if (canRetryWithLess) {
-          // Retry once with a reduced token budget (separate from normal retry loop)
-          creditRetried = true;
-          logger.info('Retrying with reduced max_tokens after 402', {
-            event: 'provider_credit_retry',
-            subsystem: 'llm',
-            model,
-            originalMaxTokens: maxTokens,
-            reducedMaxTokens: reducedTokens,
-          });
-
-          const retryBody = { ...body, max_tokens: reducedTokens };
-          const retryResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'Content-Type': 'application/json',
-              'HTTP-Referer': 'https://swarm.admin',
-              'X-Title': 'Swarm Admin',
-            },
-            body: JSON.stringify(retryBody),
-            signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-          });
-
-          if (retryResponse.ok) {
-            response = retryResponse;
-            break;
-          }
-
-          // Still 402 or other error — fall through to throw
-          const retryErrorText = retryResponse.status === 402
-            ? await retryResponse.text()
-            : errorText;
-          logger.error('Adaptive retry still failed (402)', undefined, {
-            event: 'provider_credit_exhausted',
-            subsystem: 'llm',
-            statusCode: retryResponse.status,
-            model,
-            requestedMaxTokens: maxTokens,
-            reducedMaxTokens: reducedTokens,
-            responseBody: retryErrorText.slice(0, 500),
-          });
+        if (response.ok) {
+          return response;
         }
 
-        throw new LlmCreditsExhaustedError(
-          `OpenRouter API error: 402 ${errorText}`,
-          { model, requestedMaxTokens: maxTokens, reducedMaxTokens: creditRetried ? reducedTokens : undefined }
-        );
+        // 402 = insufficient credits — attempt one adaptive retry with reduced max_tokens
+        if (response.status === 402) {
+          const errorText = await response.text();
+          const reducedTokens = Math.max(
+            CREDIT_RETRY_MIN_TOKENS,
+            Math.floor(maxTokens * CREDIT_RETRY_TOKEN_FRACTION)
+          );
+          const canRetryWithLess = reducedTokens < maxTokens && !creditRetried;
+
+          logger.error('OpenRouter credits exhausted (402)', undefined, {
+            event: 'provider_credit_exhausted',
+            subsystem: 'llm',
+            statusCode: 402,
+            model: candidateModel,
+            requestedMaxTokens: maxTokens,
+            reducedMaxTokens: canRetryWithLess ? reducedTokens : undefined,
+            willRetry: canRetryWithLess,
+            responseBody: errorText.slice(0, 500),
+          });
+
+          if (canRetryWithLess) {
+            // Retry once with a reduced token budget (separate from normal retry loop)
+            creditRetried = true;
+            logger.info('Retrying with reduced max_tokens after 402', {
+              event: 'provider_credit_retry',
+              subsystem: 'llm',
+              model: candidateModel,
+              originalMaxTokens: maxTokens,
+              reducedMaxTokens: reducedTokens,
+            });
+
+            const retryBody = { ...body, max_tokens: reducedTokens };
+            const retryResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': 'https://swarm.admin',
+                'X-Title': 'Swarm Admin',
+              },
+              body: JSON.stringify(retryBody),
+              signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+            });
+
+            if (retryResponse.ok) {
+              return retryResponse;
+            }
+
+            // Still 402 or other error — fall through to throw
+            const retryErrorText = retryResponse.status === 402
+              ? await retryResponse.text()
+              : errorText;
+            logger.error('Adaptive retry still failed (402)', undefined, {
+              event: 'provider_credit_exhausted',
+              subsystem: 'llm',
+              statusCode: retryResponse.status,
+              model: candidateModel,
+              requestedMaxTokens: maxTokens,
+              reducedMaxTokens: reducedTokens,
+              responseBody: retryErrorText.slice(0, 500),
+            });
+          }
+
+          throw new LlmCreditsExhaustedError(
+            `OpenRouter API error: 402 ${errorText}`,
+            { model: candidateModel, requestedMaxTokens: maxTokens, reducedMaxTokens: creditRetried ? reducedTokens : undefined }
+          );
+        }
+
+        const shouldRetry = response.status === 429 || response.status >= 500;
+        if (!shouldRetry || attempt >= LLM_MAX_RETRIES) {
+          const errorText = await response.text();
+          logger.error(`OpenRouter API non-retryable error: ${response.status}`, undefined, {
+            event: 'provider_api_error',
+            subsystem: 'llm',
+            statusCode: response.status,
+            model: candidateModel,
+            responseBody: errorText.slice(0, 1000),
+            messageCount: normalizedMessages.length,
+            toolMessageCount: normalizedMessages.filter(m => m.role === 'tool').length,
+            hasTools: !!tools && tools.length > 0,
+          });
+          throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
+        }
+
+        lastError = new Error(`OpenRouter API retryable error: HTTP ${response.status}`);
+      } catch (err) {
+        lastError = err;
+        if (!isRetryableLlmError(err) || attempt >= LLM_MAX_RETRIES) {
+          throw err;
+        }
       }
 
-      const shouldRetry = response.status === 429 || response.status >= 500;
-      if (!shouldRetry || attempt >= LLM_MAX_RETRIES) {
-        const errorText = await response.text();
-        logger.error(`OpenRouter API non-retryable error: ${response.status}`, undefined, {
-          event: 'provider_api_error',
-          subsystem: 'llm',
-          statusCode: response.status,
-          model,
-          responseBody: errorText.slice(0, 1000),
-          messageCount: normalizedMessages.length,
-          toolMessageCount: normalizedMessages.filter(m => m.role === 'tool').length,
-          hasTools: !!tools && tools.length > 0,
-        });
-        throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
-      }
-
-      lastError = new Error(`OpenRouter API retryable error: HTTP ${response.status}`);
-    } catch (err) {
-      lastError = err;
-      if (!isRetryableLlmError(err) || attempt >= LLM_MAX_RETRIES) {
-        throw err;
-      }
+      await sleep(getRetryDelayMs(attempt + 1));
     }
 
-    await sleep(getRetryDelayMs(attempt + 1));
-  }
+    if (!response || !response.ok) {
+      throw (lastError instanceof Error ? lastError : new Error('OpenRouter API request failed'));
+    }
 
-  if (!response || !response.ok) {
-    throw (lastError instanceof Error ? lastError : new Error('OpenRouter API request failed'));
-  }
+    return response;
+  };
+
+  const fallbackResult = await executeWithFallback(fetchCompletion, {
+    primaryModel: model,
+    avatarId: 'admin-chat',
+  });
+  const response = fallbackResult.result;
 
   const data = await response.json() as {
+    model?: string;
     choices?: Array<{
       message?: {
         content?: string;
@@ -633,5 +652,14 @@ export async function callLlmDirectFallback(
     arguments: JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>,
   }));
 
-  return { content, toolCalls, usage: normalizeUsage(data.usage), latencyMs: Date.now() - start };
+  const selectedModel = data.model || fallbackResult.model;
+  return {
+    content,
+    toolCalls,
+    usage: normalizeUsage(data.usage),
+    latencyMs: Date.now() - start,
+    model: selectedModel,
+    attemptedModels: fallbackResult.attemptedModels,
+    usedFallback: fallbackResult.usedFallback || selectedModel !== model,
+  };
 }

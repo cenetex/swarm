@@ -23,13 +23,18 @@ import {
 } from './memory.js';
 import type { AvatarMemory } from '../types.js';
 import type { GraphPruneConfig } from '../types.js';
+import {
+  DEFAULT_MODELS,
+  executeWithFallback,
+  withOpenRouterFallbackRouting,
+} from './models-registry.js';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
 const LLM_API_KEY = process.env.OPENROUTER_API_KEY || process.env.LLM_API_KEY;
-const LLM_MODEL = process.env.CONSOLIDATION_MODEL || 'anthropic/claude-3-5-haiku-latest';
+const LLM_MODEL = process.env.CONSOLIDATION_MODEL || DEFAULT_MODELS.llm;
 
 /** Minimum memories required to attempt identity evolution */
 const MIN_MEMORIES_FOR_IDENTITY = 5;
@@ -153,34 +158,44 @@ Based on these memories, generate a single "I am becoming..." statement that cap
 Respond with ONLY the statement, nothing else.`;
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${llmApiKey}`,
-        'HTTP-Referer': 'https://swarm.rati.chat',
-        'X-Title': 'AWS Swarm Memory Consolidation',
-      },
-      body: JSON.stringify({
-        model: LLM_MODEL,
-        messages: [
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 100,
-        temperature: 0.7,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error('Identity evolution LLM call failed', {
-        event: 'identity_evolution_llm_error',
-        avatarId,
-        status: response.status,
-        error: errorText.slice(0, 200),
+    const requestBody = {
+      messages: [
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 100,
+      temperature: 0.7,
+    };
+    const fallbackResult = await executeWithFallback(async (candidateModel) => {
+      const body = withOpenRouterFallbackRouting(requestBody, candidateModel);
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${llmApiKey}`,
+          'HTTP-Referer': 'https://swarm.rati.chat',
+          'X-Title': 'AWS Swarm Memory Consolidation',
+        },
+        body: JSON.stringify(body),
       });
-      return { error: `LLM call failed: ${response.status}` };
-    }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error('Identity evolution LLM call failed', {
+          event: 'identity_evolution_llm_error',
+          avatarId,
+          status: response.status,
+          model: candidateModel,
+          error: errorText.slice(0, 200),
+        });
+        throw new Error(`LLM call failed: ${response.status} ${errorText.slice(0, 500)}`);
+      }
+
+      return response;
+    }, {
+      primaryModel: LLM_MODEL,
+      avatarId,
+    });
+    const response = fallbackResult.result;
 
     const data = await response.json() as {
       choices?: Array<{ message?: { content?: string } }>;
