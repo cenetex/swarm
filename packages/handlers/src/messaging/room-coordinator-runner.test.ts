@@ -35,6 +35,24 @@ describe('buildTurnCandidates — mention scoring', () => {
     const c = buildTurnCandidates(ROOM, '@NyxRatiBot, are you there?', 'telegram');
     expect(c.find((x) => x.avatarId === 'agent-6-1cc5')?.isMentioned).toBe(true);
   });
+
+  it('matches Discord user mention tokens by bot id', () => {
+    const room = [
+      { avatarId: 'shoggothe', avatarName: 'shoggothé', platformHandle: '1504126043693387796' },
+      { avatarId: 'snarkle', avatarName: 'Snarkle', platformHandle: '1477745469756014734' },
+    ];
+    const c = buildTurnCandidates(room, '<@1504126043693387796> are you online?', 'discord');
+    expect(c.find((x) => x.avatarId === 'shoggothe')?.isMentioned).toBe(true);
+    expect(c.find((x) => x.avatarId === 'snarkle')?.isMentioned).toBe(false);
+  });
+
+  it('matches Discord nickname mention tokens by bot id', () => {
+    const room = [
+      { avatarId: 'phantom', avatarName: 'Continuum Phantom', platformHandle: '1481443912869478420' },
+    ];
+    const c = buildTurnCandidates(room, '<@!1481443912869478420> hello', 'discord');
+    expect(c[0].isMentioned).toBe(true);
+  });
 });
 
 describe('buildTurnCandidates — name-hit scoring', () => {

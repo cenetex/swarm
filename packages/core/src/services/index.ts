@@ -116,6 +116,7 @@ export {
   type TierEvaluationOptions,
 } from './brain/memory-tiers.js';
 export {
+  claimRoomMessage,
   appendMessage,
   getRecentMessages,
   updateOverlay,

@@ -438,7 +438,10 @@ export class SharedHandlers extends Construct {
       timeout: cdk.Duration.seconds(180),
       memorySize: 1024,
       reservedConcurrentExecutions: 20,
-      environment: commonEnv,
+      environment: {
+        ...commonEnv,
+        ROOM_COORDINATOR_ENABLED: 'true',
+      },
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
       logGroup: messageProcessorLogGroup.logGroup,

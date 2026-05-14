@@ -34,6 +34,7 @@ import {
   type ChannelAvatarMeta,
 } from '../services/room-ingress.js';
 import { getChannelRegisteredAvatars } from '../telegram/webhook-home-channel.js';
+import { getDiscordChannelAvatarIds } from '../discord/discord-home-channel.js';
 
 /**
  * Minimal state-service surface needed by the meta resolver. Declared here
@@ -58,14 +59,22 @@ export function buildTurnCandidates(
     const handle = m.platformHandle?.toLowerCase();
     const name = m.avatarName?.toLowerCase();
 
-    // @-mention: requires a `@<handle>` substring with a word boundary after.
+    // @-mention: Telegram uses visible @handles; Discord message content uses
+    // `<@userId>` mention tokens when the handle is a bot user id.
     let isMentioned = false;
     if (handle) {
-      const needle = `@${handle}`;
-      const idx = lower.indexOf(needle);
-      if (idx !== -1) {
-        const after = lower[idx + needle.length];
-        isMentioned = after === undefined || !/[a-z0-9_]/.test(after);
+      if (platform === 'discord') {
+        isMentioned =
+          lower.includes(`<@${handle}>`) ||
+          lower.includes(`<@!${handle}>`);
+      }
+      if (!isMentioned) {
+        const needle = `@${handle}`;
+        const idx = lower.indexOf(needle);
+        if (idx !== -1) {
+          const after = lower[idx + needle.length];
+          isMentioned = after === undefined || !/[a-z0-9_]/.test(after);
+        }
       }
     }
 
@@ -122,6 +131,43 @@ export function registerTelegramRoomMetaResolver(
           avatarId: r.avatarId,
           avatarName: name,
           platformHandle: r.botUsername,
+        };
+      }),
+    );
+    return metas;
+  });
+}
+
+/**
+ * Register the Discord-side meta resolver for the Lambda message processor.
+ *
+ * The gateway process can resolve Discord shared-room membership in memory,
+ * but the message processor runs in Lambda, so it must reconstruct candidates
+ * from the persisted Discord home-channel registry and avatar configs.
+ */
+export function registerDiscordRoomMetaResolver(
+  stateService: AvatarConfigReader,
+): void {
+  registerChannelAvatarMetaResolver('discord', async (channelId: string) => {
+    const avatarIds = await getDiscordChannelAvatarIds(channelId);
+    if (avatarIds.length === 0) return [];
+
+    const metas = await Promise.all(
+      avatarIds.map(async (avatarId) => {
+        let name = avatarId;
+        let platformHandle: string | undefined;
+        try {
+          const cfg = await stateService.getAvatarConfig(avatarId);
+          if (cfg?.name) name = cfg.name;
+          platformHandle = cfg?.platforms?.discord?.botId || cfg?.platforms?.discord?.botUsername;
+        } catch {
+          // Tolerate config read failures — this candidate can still be
+          // considered by id, but direct mention matching may not fire.
+        }
+        return {
+          avatarId,
+          avatarName: name,
+          platformHandle,
         };
       }),
     );

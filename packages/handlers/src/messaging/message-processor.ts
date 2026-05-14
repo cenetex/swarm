@@ -59,6 +59,7 @@ import { buildSystemPrompt, formatBrainMemoryContext } from './context-builder.j
 import { extractMediaContext, buildUserMessageContent, type MediaExtractionConfig } from './media-extractor.js';
 import type { ChatWorkerMessage } from './chat-worker.js';
 import {
+  registerDiscordRoomMetaResolver,
   registerTelegramRoomMetaResolver,
   runRoomCoordinator,
 } from './room-coordinator-runner.js';
@@ -298,6 +299,7 @@ async function initialize(): Promise<void> {
   // turns by display name + @-handle. The resolver reads HOME_CHANNELS and
   // joins each registered avatar's name from its CONFIG record.
   registerTelegramRoomMetaResolver(stateService);
+  registerDiscordRoomMetaResolver(stateService);
 }
 
 async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
