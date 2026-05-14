@@ -553,7 +553,8 @@ export function resolveChatModel(params: {
   return (
     getValidModelId(params.requestModel) ??
     getValidModelId(params.avatarModel) ??
-    params.defaultModel
+    getValidModelId(params.defaultModel) ??
+    DEFAULT_MODELS.llm
   );
 }
 

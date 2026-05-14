@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { resolveChatModel, normalizeModel, getValidModelId, MODEL_ALIASES } from './models-registry.js';
+import { resolveChatModel, normalizeModel, getValidModelId, MODEL_ALIASES, DEFAULT_MODELS } from './models-registry.js';
 
 describe('resolveChatModel', () => {
   it('prefers request model over avatar model', () => {
@@ -40,6 +40,16 @@ describe('resolveChatModel', () => {
         defaultModel: 'openai/gpt-4o',
       })
     ).toBe('anthropic/claude-3-5-sonnet-latest');
+  });
+
+  it('falls back to registry default when configured defaults are stale', () => {
+    expect(
+      resolveChatModel({
+        requestModel: undefined,
+        avatarModel: 'google/gemini-3-flash-preview',
+        defaultModel: 'anthropic/claude-haiku-4.5',
+      })
+    ).toBe(DEFAULT_MODELS.llm);
   });
 });
 
