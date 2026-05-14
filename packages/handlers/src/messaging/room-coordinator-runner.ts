@@ -47,6 +47,7 @@ interface AvatarConfigReader {
 }
 
 interface BuildTurnCandidateOptions {
+  mentionedAvatarId?: string;
   replyTargetAvatarId?: string;
   replyTargetPlatformHandles?: string[];
 }
@@ -74,10 +75,11 @@ export function buildTurnCandidates(
 
     // @-mention: Telegram uses visible @handles; Discord message content uses
     // `<@userId>` mention tokens when the handle is a bot user id.
-    let isMentioned = false;
+    let isMentioned = options.mentionedAvatarId === m.avatarId;
     if (handle) {
       if (platform === 'discord') {
         isMentioned =
+          isMentioned ||
           lower.includes(`<@${handle}>`) ||
           lower.includes(`<@!${handle}>`);
       }
@@ -238,6 +240,8 @@ export async function runRoomCoordinator(
 
   const text = envelope.content?.text ?? '';
   const candidates = buildTurnCandidates(meta, text, envelope.platform, {
+    mentionedAvatarId: envelope.metadata.isMention ? envelope.avatarId : undefined,
+    replyTargetAvatarId: envelope.metadata.isReplyToBot ? envelope.avatarId : undefined,
     replyTargetPlatformHandles: getDiscordReplyTargetHandles(envelope),
   });
 

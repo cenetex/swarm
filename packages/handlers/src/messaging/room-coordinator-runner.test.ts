@@ -46,6 +46,19 @@ describe('buildTurnCandidates — mention scoring', () => {
     expect(c.find((x) => x.avatarId === 'snarkle')?.isMentioned).toBe(false);
   });
 
+  it('can flag the envelope-addressed avatar as mentioned without a platform handle', () => {
+    const room = [
+      { avatarId: 'shoggothe', avatarName: 'shoggothé' },
+      { avatarId: 'phantom', avatarName: 'Continuum Phantom' },
+    ];
+    const c = buildTurnCandidates(room, '<@1504126043693387796> hello', 'discord', {
+      mentionedAvatarId: 'shoggothe',
+    });
+
+    expect(c.find((x) => x.avatarId === 'shoggothe')?.isMentioned).toBe(true);
+    expect(c.find((x) => x.avatarId === 'phantom')?.isMentioned).toBe(false);
+  });
+
   it('matches Discord nickname mention tokens by bot id', () => {
     const room = [
       { avatarId: 'phantom', avatarName: 'Continuum Phantom', platformHandle: '1481443912869478420' },
@@ -108,6 +121,20 @@ describe('buildTurnCandidates — reply-target scoring', () => {
 
     expect(c.find((x) => x.avatarId === 'agent-6-1cc5')?.isReplyTarget).toBe(true);
     expect(c.find((x) => x.avatarId === 'avatar-4-txcl')?.isReplyTarget).toBe(false);
+  });
+
+  it('can flag a reply target by avatar id without a platform handle', () => {
+    const room = [
+      { avatarId: 'shoggothe', avatarName: 'shoggothé' },
+      { avatarId: 'phantom', avatarName: 'Continuum Phantom' },
+    ];
+    const c = buildTurnCandidates(room, 'hello', 'discord', {
+      replyTargetAvatarId: 'shoggothe',
+    });
+
+    expect(c.find((x) => x.avatarId === 'shoggothe')?.isReplyTarget).toBe(true);
+    expect(c.find((x) => x.avatarId === 'shoggothe')?.replyConfidence).toBe(1);
+    expect(c.find((x) => x.avatarId === 'phantom')?.isReplyTarget).toBe(false);
   });
 });
 
