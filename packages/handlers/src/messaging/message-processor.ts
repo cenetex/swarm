@@ -905,12 +905,16 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       // that's the wrong avatar when the user mentioned (or named) someone
       // else. Off by default — flip via env var on the deploying lambda
       // after staging validation. See #1571.
+      let shouldRunRoomCoordinator = false;
       if (
         process.env.ROOM_COORDINATOR_ENABLED === 'true' &&
         envelope.platform &&
-        envelope.conversationId &&
-        await isSharedRoom(envelope.platform, envelope.conversationId)
+        envelope.conversationId
       ) {
+        shouldRunRoomCoordinator = await isSharedRoom(envelope.platform, envelope.conversationId);
+      }
+
+      if (shouldRunRoomCoordinator) {
         try {
           const result = await runRoomCoordinator(envelope);
           if (result) {
@@ -925,6 +929,13 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
               });
               continue;
             }
+            if (decision.decisionReason === 'direct-mention') {
+              envelope.metadata.isMention = true;
+              envelope.metadata.priority = 'high';
+            } else if (decision.decisionReason === 'reply-to-avatar') {
+              envelope.metadata.isReplyToBot = true;
+              envelope.metadata.priority = 'high';
+            }
             if (decision.primary.avatarId !== avatarId) {
               logger.info('Room coordinator: routing to chosen primary', {
                 event: 'room_coordinator_override',
@@ -936,12 +947,6 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
               });
               avatarId = decision.primary.avatarId;
               envelope.avatarId = decision.primary.avatarId;
-              if (
-                decision.decisionReason === 'direct-mention' ||
-                decision.decisionReason === 'reply-to-avatar'
-              ) {
-                envelope.metadata.isMention = true;
-              }
             }
           }
         } catch (coordErr) {

@@ -12,10 +12,10 @@
  * Scope (v1):
  *   - Mention scoring (`@<platformHandle>`)
  *   - Name-hit scoring (avatar display name in text)
+ *   - Discord reply-target scoring from referenced message author id
  *
  * Deferred:
  *   - sticky-affinity (needs activity-table lookup for last-responder)
- *   - reply-target (needs activity-table lookup for replyTo author)
  *   - thread-owner (Discord threads / Telegram topics)
  */
 import {
@@ -29,6 +29,7 @@ import {
 } from '@swarm/core';
 import {
   buildRoomKey,
+  registerChannelAvatarResolver,
   registerChannelAvatarMetaResolver,
   resolveChannelAvatarsWithMeta,
   type ChannelAvatarMeta,
@@ -45,6 +46,11 @@ interface AvatarConfigReader {
   getAvatarConfig(avatarId: string): Promise<AvatarConfig | null>;
 }
 
+interface BuildTurnCandidateOptions {
+  replyTargetAvatarId?: string;
+  replyTargetPlatformHandles?: string[];
+}
+
 /**
  * Build the candidate list from a room's avatar metadata + the inbound text.
  * Pure: no I/O, just scoring of presence flags.
@@ -53,8 +59,15 @@ export function buildTurnCandidates(
   meta: ChannelAvatarMeta[],
   text: string,
   platform: SwarmEnvelope['platform'],
+  options: BuildTurnCandidateOptions = {},
 ): TurnCandidate[] {
   const lower = text.toLowerCase();
+  const replyTargetHandles = new Set(
+    (options.replyTargetPlatformHandles ?? [])
+      .map((h) => h.toLowerCase())
+      .filter(Boolean),
+  );
+
   return meta.map((m) => {
     const handle = m.platformHandle?.toLowerCase();
     const name = m.avatarName?.toLowerCase();
@@ -78,6 +91,11 @@ export function buildTurnCandidates(
       }
     }
 
+    const isReplyTarget = Boolean(
+      options.replyTargetAvatarId === m.avatarId ||
+      (handle && replyTargetHandles.has(handle)),
+    );
+
     // Name-hit: avatar's display name appears as a standalone token.
     let isNameHit = false;
     if (name && name.length >= 2) {
@@ -90,11 +108,12 @@ export function buildTurnCandidates(
       avatarName: m.avatarName,
       platform,
       isMentioned,
-      isReplyTarget: false,
+      isReplyTarget,
       isThreadOwner: false,
       isNameHit,
       hasStickyAffinity: false,
       isBot: false,
+      replyConfidence: isReplyTarget ? 1 : undefined,
     };
   });
 }
@@ -148,6 +167,7 @@ export function registerTelegramRoomMetaResolver(
 export function registerDiscordRoomMetaResolver(
   stateService: AvatarConfigReader,
 ): void {
+  registerChannelAvatarResolver('discord', getDiscordChannelAvatarIds);
   registerChannelAvatarMetaResolver('discord', async (channelId: string) => {
     const avatarIds = await getDiscordChannelAvatarIds(channelId);
     if (avatarIds.length === 0) return [];
@@ -175,6 +195,27 @@ export function registerDiscordRoomMetaResolver(
   });
 }
 
+function getDiscordReplyTargetHandles(envelope: SwarmEnvelope): string[] {
+  if (envelope.platform !== 'discord') return [];
+
+  const raw = envelope.raw as {
+    referenced_message?: {
+      author?: {
+        id?: string;
+        username?: string;
+        global_name?: string;
+      };
+    } | null;
+  } | null;
+
+  const author = raw?.referenced_message?.author;
+  return [
+    author?.id,
+    author?.username,
+    author?.global_name,
+  ].filter((v): v is string => Boolean(v));
+}
+
 /**
  * Run the coordinator for an inbound shared-room envelope.
  *
@@ -196,7 +237,9 @@ export async function runRoomCoordinator(
   }
 
   const text = envelope.content?.text ?? '';
-  const candidates = buildTurnCandidates(meta, text, envelope.platform);
+  const candidates = buildTurnCandidates(meta, text, envelope.platform, {
+    replyTargetPlatformHandles: getDiscordReplyTargetHandles(envelope),
+  });
 
   const event: RoomEvent = {
     roomKey: buildRoomKey(envelope.platform, envelope.conversationId),
