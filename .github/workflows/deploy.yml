@@ -160,7 +160,10 @@ jobs:
             USE_EXISTING_BUCKETS="true"
             SKIP_DOMAIN_ALIASES="false"
             RUN_PROD_SMOKE="true"
-            USE_HOTSWAP="true"
+            # Production tag deploys should use full CloudFormation deploys.
+            # Hotswap requires extra CloudFormation resource permissions and
+            # can drift from the deployed template after emergency fixes.
+            USE_HOTSWAP="false"
             STACK_HASH=""
             STACK=""
             RUN_BROWSER_TESTS="false"
