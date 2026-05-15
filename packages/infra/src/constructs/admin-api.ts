@@ -611,6 +611,9 @@ export class AdminApiConstruct extends Construct {
         LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
         WEB_SEARCH_PROVIDER: webSearchProvider || 'serpapi',
         WEB_SEARCH_API_KEY_SECRET_ARN: webSearchApiKey?.secretArn || '',
+        // NFT-backed avatar chat access uses current ownership checks.
+        HELIUS_API_KEY_ARN: heliusApiKeySecret?.secretArn || '',
+        HELIUS_API_KEY: props.heliusApiKey || '',
         API_DOMAIN: props.apiDomain || '',
         NODE_ENV: environment,
         LOG_LEVEL: logLevel,
@@ -662,6 +665,9 @@ export class AdminApiConstruct extends Construct {
     // Grant permissions
     this.table.grantReadWriteData(this.chatHandler);
     llmApiKey.grantRead(this.chatHandler);
+    if (heliusApiKeySecret) {
+      heliusApiKeySecret.grantRead(this.chatHandler);
+    }
     dreamQueue.grantSendMessages(this.chatHandler);
     if (replicateApiKey) {
       replicateApiKey.grantRead(this.chatHandler);
@@ -844,6 +850,9 @@ export class AdminApiConstruct extends Construct {
         LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
         WEB_SEARCH_PROVIDER: webSearchProvider || 'serpapi',
         WEB_SEARCH_API_KEY_SECRET_ARN: webSearchApiKey?.secretArn || '',
+        // NFT-backed avatar chat access uses current ownership checks.
+        HELIUS_API_KEY_ARN: heliusApiKeySecret?.secretArn || '',
+        HELIUS_API_KEY: props.heliusApiKey || '',
         API_DOMAIN: props.apiDomain || '',
         NODE_ENV: environment,
         LOG_LEVEL: logLevel,
@@ -889,6 +898,9 @@ export class AdminApiConstruct extends Construct {
       })
     );
     llmApiKey.grantRead(this.chatWorkerHandler);
+    if (heliusApiKeySecret) {
+      heliusApiKeySecret.grantRead(this.chatWorkerHandler);
+    }
     dreamQueue.grantSendMessages(this.chatWorkerHandler);
     if (replicateApiKey) {
       replicateApiKey.grantRead(this.chatWorkerHandler);
