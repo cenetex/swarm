@@ -17,6 +17,8 @@ import { ScanCommand } from '@aws-sdk/lib-dynamodb';
 import {
   createSecretsService,
   createLLMService,
+  DEFAULT_LLM_MODEL,
+  DEFAULT_LLM_PROVIDER,
   logger,
   getLastHeartbeat,
   setLastHeartbeat,
@@ -131,8 +133,8 @@ async function decideEngagement(
   }
 
   const llmConfig: LLMConfig = {
-    provider: (avatar.llmConfig?.provider as 'bedrock' | 'openrouter' | 'anthropic') || 'bedrock',
-    model: avatar.llmConfig?.model || 'anthropic.claude-3-5-haiku-20241022-v1:0',
+    provider: (avatar.llmConfig?.provider as 'bedrock' | 'openrouter' | 'anthropic') || DEFAULT_LLM_PROVIDER,
+    model: avatar.llmConfig?.model || DEFAULT_LLM_MODEL,
     temperature: avatar.llmConfig?.temperature ?? 0.7,
     maxTokens: avatar.llmConfig?.maxTokens ?? 1000,
   };

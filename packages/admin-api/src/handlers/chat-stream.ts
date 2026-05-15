@@ -34,7 +34,11 @@ import {
 } from '../types.js';
 import { createAvatarAccessChecker } from '../services/chat-access.js';
 import * as avatars from '../services/avatars.js';
-import { resolveChatModel } from '../services/models-registry.js';
+import {
+  executeWithFallback,
+  withOpenRouterFallbackRouting,
+} from '../services/models-registry.js';
+import { resolveOpenRouterChatModelPlan } from '../services/openrouter-chat-models.js';
 import { resolvePublicAvatarIdFromRequest } from './chat-public-access.js';
 import {
   LLM_MODEL,
@@ -109,27 +113,43 @@ async function* streamLlmResponse(
     ...toSdkMessages(sanitizeMessages(options.messages)),
   ];
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://swarm.admin',
-      'X-Title': 'Swarm Admin',
-    },
-    body: JSON.stringify({
-      model: options.model,
-      messages: apiMessages,
-      max_tokens: options.maxTokens,
-      stream: true,
-    }),
-    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+  const baseBody: Record<string, unknown> = {
+    messages: apiMessages,
+    max_tokens: options.maxTokens,
+    stream: true,
+  };
+
+  const modelPlan = await resolveOpenRouterChatModelPlan({
+    requestModel: options.model,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenRouter streaming error: ${response.status} ${errorText}`);
-  }
+  const fallbackResult = await executeWithFallback(async (candidateModel) => {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://swarm.admin',
+        'X-Title': 'Swarm Admin',
+      },
+      body: JSON.stringify(withOpenRouterFallbackRouting(baseBody, candidateModel, {
+        fallbackModels: modelPlan.fallbackModels,
+      })),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenRouter streaming error: ${response.status} ${errorText}`);
+    }
+
+    return response;
+  }, {
+    primaryModel: modelPlan.primaryModel,
+    avatarId: options.avatarId,
+    fallbackModels: modelPlan.fallbackModels,
+  });
+  const response = fallbackResult.result;
 
   if (!response.body) {
     throw new Error('No response body from OpenRouter streaming API');
@@ -187,7 +207,7 @@ async function* streamLlmResponse(
 
   logLlmMetrics({
     avatarId: options.avatarId,
-    model: options.model,
+    model: fallbackResult.model,
     latencyMs: Date.now() - startTime,
     usage,
     toolCalls: 0,
@@ -332,11 +352,11 @@ export async function handler(
       const { injectUserIdentityContext } = await import('./chat-tools/context-builder.js');
       systemPrompt = await injectUserIdentityContext(systemPrompt, session.accountId);
     }
-    const resolvedModel = resolveChatModel({
+    const resolvedModel = (await resolveOpenRouterChatModelPlan({
       requestModel: model,
       avatarModel: avatarRecord?.llmConfig?.model,
       defaultModel: LLM_MODEL,
-    });
+    })).primaryModel;
 
     const avatarMaxTokens = avatarRecord?.llmConfig?.maxTokens;
     const maxTokens = typeof avatarMaxTokens === 'number' ? avatarMaxTokens : LLM_MAX_TOKENS;

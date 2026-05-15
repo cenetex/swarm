@@ -90,7 +90,7 @@ You can, and if you enjoy that, you should. Swarm trades flexibility for operati
 
 **2. "Your front page used to say '300+ models.' Which ones actually work?"**
 
-That line was overselling. Under the hood, Swarm calls three providers — Amazon Bedrock, OpenRouter, and Anthropic direct — and the default model is `google/gemini-3-flash-preview`. You can set any OpenRouter-routed model string per avatar (which is where the "300+" came from — OpenRouter's catalog). The page now describes this as OpenRouter catalog model choice. We don't support fine-tuned private models today.
+That line was overselling. Under the hood, Swarm calls OpenRouter for avatar chat by default and keeps provider integrations for media and legacy paths. You can set any OpenRouter-routed model string per avatar (which is where the catalog claim came from), and runtime requests use OpenRouter fallback routing plus a local fallback chain when a selected model is unavailable. The page now describes this as OpenRouter catalog model choice. We don't support fine-tuned private models today.
 
 **3. "Does the bot actually remember a user across Telegram and Discord?"**
 

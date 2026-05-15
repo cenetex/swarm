@@ -37,6 +37,10 @@ export async function getCachedNFTOwner(mint: string): Promise<string | null> {
   return cache.getCachedNFTOwner(mint);
 }
 
+export async function primeNFTOwnerCache(mint: string, owner: string | null): Promise<void> {
+  return cache.primeNFTOwnerCache(mint, owner);
+}
+
 export async function invalidateNFTOwnerCache(mint: string): Promise<void> {
   return cache.invalidateNFTOwnerCache(mint);
 }
