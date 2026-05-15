@@ -620,6 +620,76 @@ async function handleDiscordMessage(
   });
 }
 
+function buildDiscordAccessContext(message: DiscordMessage): DiscordAccessContext {
+  return {
+    channelId: message.channel_id,
+    guildId: message.guild_id,
+    isDm: !message.guild_id,
+    senderId: message.author.id,
+    senderUsername: message.author.username,
+    senderRoleIds: message.member?.roles,
+  };
+}
+
+function canBindingReceiveDiscordMessage(
+  message: DiscordMessage,
+  binding: DiscordAvatarBinding,
+): boolean {
+  const discordConfig = binding.config.platforms?.discord;
+  if (!discordConfig?.enabled) return false;
+  if (binding.botUserId && message.author.id === binding.botUserId) return false;
+  if (message.webhook_id) return false;
+
+  return isDiscordChatAllowed(
+    buildDiscordAccessContext(message),
+    discordConfig,
+  ).allowed;
+}
+
+function getActiveDiscordBindings(): DiscordAvatarBinding[] {
+  const bindingsById = new Map<string, DiscordAvatarBinding>();
+  for (const conn of connections.values()) {
+    for (const binding of conn.avatarBindings.values()) {
+      bindingsById.set(binding.avatarId, binding);
+    }
+  }
+  for (const binding of avatarBindings.values()) {
+    if (!bindingsById.has(binding.avatarId)) {
+      bindingsById.set(binding.avatarId, binding);
+    }
+  }
+  return [...bindingsById.values()];
+}
+
+function findBindingByBotUserId(
+  userId: string | undefined,
+  message: DiscordMessage,
+): DiscordAvatarBinding | undefined {
+  if (!userId) return undefined;
+  return getActiveDiscordBindings().find(
+    (binding) => binding.botUserId === userId && canBindingReceiveDiscordMessage(message, binding),
+  );
+}
+
+function selectSharedRoomEnvelopeBinding(
+  message: DiscordMessage,
+  fallback: DiscordAvatarBinding | undefined,
+): { binding: DiscordAvatarBinding; reason: 'reply-target' | 'mention' | 'fallback' } | null {
+  const replyTarget = findBindingByBotUserId(message.referenced_message?.author.id, message);
+  if (replyTarget) {
+    return { binding: replyTarget, reason: 'reply-target' };
+  }
+
+  for (const mention of message.mentions) {
+    const mentioned = findBindingByBotUserId(mention.id, message);
+    if (mentioned) {
+      return { binding: mentioned, reason: 'mention' };
+    }
+  }
+
+  return fallback ? { binding: fallback, reason: 'fallback' } : null;
+}
+
 // ─── Gateway Connection ──────────────────────────────────────────────────────
 
 interface GatewayPayload {
@@ -985,8 +1055,20 @@ class GatewayConnection {
           });
 
           if (ingressResult.isNew) {
-            // Build envelope from the first eligible binding for the SQS payload
-            const firstBinding = eligible[0];
+            // Build the SQS envelope from the bot being addressed, not
+            // necessarily the gateway connection that won the dedup claim.
+            const selected = selectSharedRoomEnvelopeBinding(message, eligible[0]);
+            if (!selected) {
+              logger.warn('Discord shared room message had no eligible envelope binding', {
+                event: 'room_message_no_binding',
+                subsystem: 'discord',
+                channelId: message.channel_id,
+                messageId: message.id,
+              });
+              return;
+            }
+
+            const firstBinding = selected.binding;
             const discordConfig = firstBinding.config.platforms.discord!;
             const envelope = buildDiscordEnvelope(message, {
               avatarId: firstBinding.avatarId,
@@ -1021,6 +1103,8 @@ class GatewayConnection {
                 roomKey,
                 messageId: message.id,
                 eligibleAvatars: eligible.map(b => b.avatarId),
+                selectedAvatarId: firstBinding.avatarId,
+                selectionReason: selected.reason,
               });
             }
           }

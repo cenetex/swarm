@@ -8,8 +8,9 @@
  */
 import React, { lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
+import { usePrivy } from '@privy-io/react-auth';
 import { useAvatarStore } from '../store/avatars';
-import { useAuth } from '../store/auth';
+import { useAuth, useAuthStore } from '../store/auth';
 import { ThemeToggle } from './ThemeToggle';
 import { PrivyLoginButton } from './PrivyLoginButton';
 import { AvatarReassignModal } from './AvatarReassignModal';
@@ -490,6 +491,13 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
   const { t } = useTranslation();
   const { avatars, activeAvatarId, createAvatar, setActiveAvatar, isLoading, error, fetchAvatars } = useAvatarStore();
   const { isAuthenticated, user, gateStatus, account } = useAuth();
+  const syncWithBackend = useAuthStore((state) => state.syncWithBackend);
+  const {
+    ready: privyReady,
+    authenticated: privyAuthenticated,
+    user: privyUser,
+    getAccessToken,
+  } = usePrivy();
   const [reassignAvatarData, setReassignAvatarData] = React.useState<Avatar | null>(null);
   const [showHealth, setShowHealth] = React.useState(false);
   const [isScanningNfts, setIsScanningNfts] = React.useState(false);
@@ -546,12 +554,33 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
     }
   };
 
+  const refreshBackendSession = React.useCallback(async () => {
+    if (!privyReady || !privyAuthenticated || !privyUser || !walletAddress) return;
+
+    const token = await getAccessToken();
+    if (!token) return;
+
+    await syncWithBackend(token, {
+      id: (privyUser as { id: string }).id,
+      email: (privyUser as { email?: string })?.email,
+      walletAddress,
+    }, { force: true });
+  }, [getAccessToken, privyAuthenticated, privyReady, privyUser, syncWithBackend, walletAddress]);
+
   const handleScanNftAvatars = async () => {
     setIsScanningNfts(true);
     setScanMessage(null);
     setScanError(null);
 
     try {
+      try {
+        await refreshBackendSession();
+      } catch (sessionError) {
+        console.warn(
+          '[AvatarSidebar] Backend session refresh before NFT scan failed:',
+          sessionError instanceof Error ? sessionError.message : String(sessionError),
+        );
+      }
       const result = await avatarApi.scanNftAvatars();
       await fetchAvatars();
 

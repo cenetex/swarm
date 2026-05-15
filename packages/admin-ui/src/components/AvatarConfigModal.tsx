@@ -56,13 +56,16 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
   const [selectedOrbMint, setSelectedOrbMint] = useState('');
   const [orbBusy, setOrbBusy] = useState(false);
   const [orbError, setOrbError] = useState<string | null>(null);
+  const [saveSucceeded, setSaveSucceeded] = useState(false);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearChatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
       if (clearChatTimerRef.current) clearTimeout(clearChatTimerRef.current);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, []);
 
@@ -74,9 +77,31 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
     setSelectedOrbMint('');
     setOrbError(null);
     setConfirmClearChat(false);
+    setSaveSucceeded(false);
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
   }, [avatar]);
 
   if (!isOpen) return null;
+
+  const clearSaveFeedback = () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    setSaveSucceeded(false);
+  };
+
+  const markSaveSucceeded = () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSaveSucceeded(true);
+    saveTimerRef.current = setTimeout(() => {
+      setSaveSucceeded(false);
+      saveTimerRef.current = null;
+    }, 2500);
+  };
 
   const handleSave = () => {
     updateAvatar(avatar.id, {
@@ -85,6 +110,10 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
       persona,
       secrets,
     });
+    if (embedded) {
+      markSaveSucceeded();
+      return;
+    }
     onClose();
   };
 
@@ -92,6 +121,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
     const key = template?.key || newSecretKey.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
     if (!key || secrets.some(s => s.key === key)) return;
 
+    clearSaveFeedback();
     setSecrets([
       ...secrets,
       {
@@ -105,6 +135,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
   };
 
   const handleRemoveSecret = (key: string) => {
+    clearSaveFeedback();
     setSecrets(secrets.filter(s => s.key !== key));
   };
 
@@ -186,7 +217,10 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
         <input
           type="text"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            clearSaveFeedback();
+            setName(e.target.value);
+          }}
           className="text-base font-semibold bg-transparent border-none outline-none text-[var(--color-text)] w-full"
           placeholder={t('avatar.avatarNamePlaceholder')}
           name="avatarName"
@@ -206,7 +240,10 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
         <input
           type="text"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            clearSaveFeedback();
+            setName(e.target.value);
+          }}
           className="text-xl font-semibold bg-transparent border-none outline-none text-[var(--color-text)] w-full"
           placeholder={t('avatar.avatarNamePlaceholder')}
           name="avatarName"
@@ -266,7 +303,10 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
                 </label>
                 <textarea
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => {
+                    clearSaveFeedback();
+                    setDescription(e.target.value);
+                  }}
                   placeholder={t('avatar.descriptionPlaceholder')}
                   rows={3}
                   className="w-full px-4 py-3 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-brand-500"
@@ -304,7 +344,10 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
                   <div className="mt-3 flex items-center gap-2">
                     <select
                       value={selectedOrbMint}
-                      onChange={(e) => setSelectedOrbMint(e.target.value)}
+                      onChange={(e) => {
+                        clearSaveFeedback();
+                        setSelectedOrbMint(e.target.value);
+                      }}
                       className="flex-1 px-3 py-2 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]"
                       disabled={orbBusy}
                     >
@@ -379,7 +422,10 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
                 </p>
                 <textarea
                   value={persona}
-                  onChange={(e) => setPersona(e.target.value)}
+                  onChange={(e) => {
+                    clearSaveFeedback();
+                    setPersona(e.target.value);
+                  }}
                   placeholder={t('avatar.systemPersonaPlaceholder')}
                   rows={12}
                   className="w-full px-4 py-3 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono text-sm"
@@ -457,7 +503,10 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
                   <input
                     type="text"
                     value={newSecretKey}
-                    onChange={(e) => setNewSecretKey(e.target.value)}
+                    onChange={(e) => {
+                      clearSaveFeedback();
+                      setNewSecretKey(e.target.value);
+                    }}
                     placeholder={t('avatar.customSecretPlaceholder')}
                     className="flex-1 px-4 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                     onKeyDown={(e) => e.key === 'Enter' && handleAddSecret()}
@@ -500,11 +549,15 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
             </button>
             <button
               onClick={handleSave}
-              className="px-6 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors"
+              className={`min-w-32 px-6 py-2 text-white rounded-lg font-medium transition-colors ${
+                saveSucceeded
+                  ? 'bg-green-600 hover:bg-green-500'
+                  : 'bg-brand-600 hover:bg-brand-500'
+              }`}
               data-testid="save-avatar-button"
-              aria-label={t('avatar.saveChanges')}
+              aria-label={saveSucceeded ? t('avatar.savedChanges') : t('avatar.saveChanges')}
             >
-              {t('avatar.saveChanges')}
+              {saveSucceeded ? t('avatar.savedChanges') : t('avatar.saveChanges')}
             </button>
           </div>
         </div>

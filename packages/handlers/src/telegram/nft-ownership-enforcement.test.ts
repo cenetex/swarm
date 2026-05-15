@@ -49,6 +49,7 @@ interface MockAvatarConfig {
 // ── Mock state ──────────────────────────────────────────────────────────────
 let mockAvatarConfig: MockAvatarConfig | null = null;
 let mockAvatarStatus: 'active' | 'draft' | 'paused' | 'deleted' = 'active';
+let mockAvatarStatusError: Error | null = null;
 let mockNFTOwnershipCheck: (() => Promise<string | null>) | null = null;
 let messagesSentToSqs: unknown[] = [];
 
@@ -86,10 +87,14 @@ vi.mock('../services/sqs-send.js', () => ({
 
 vi.mock('./webhook-security.js', () => ({
   initialize: async () => {},
+  getAvatarConfig: async () => mockAvatarConfig,
   getStateService: () => ({
     getAvatarConfig: async () => mockAvatarConfig,
   }),
-  getAvatarStatus: async () => mockAvatarStatus,
+  getAvatarStatus: async () => {
+    if (mockAvatarStatusError) throw mockAvatarStatusError;
+    return mockAvatarStatus;
+  },
   getWebhookSecret: async () => 'test-secret',
   verifySecretToken: () => true,
   getTelegramAdapter: async () => ({ botUsername: 'test_bot' }),
@@ -113,14 +118,112 @@ vi.mock('@swarm/core', () => ({
 // ── Import AFTER mocks ──────────────────────────────────────────────────────
 import { handler } from './telegram-webhook-shared.js';
 
+function makeTelegramEvent(avatarId: string) {
+  return {
+    version: '2.0',
+    routeKey: 'POST /webhook/{avatarId}',
+    rawPath: `/webhook/${avatarId}`,
+    rawQueryString: '',
+    headers: {
+      'x-telegram-bot-api-secret-token': 'test-secret',
+    },
+    requestContext: {
+      http: {
+        method: 'POST',
+        path: `/webhook/${avatarId}`,
+        protocol: 'HTTP/1.1',
+        sourceIp: '127.0.0.1',
+        userAgent: 'Telegram',
+      },
+      routeKey: 'POST /{proxy+}',
+      timeEpoch: Date.now(),
+      domainName: 'example.com',
+      apiId: 'test-api',
+      requestId: 'test-request-id',
+      requestTime: new Date().toISOString(),
+      requestTimeEpoch: Date.now(),
+      stage: 'test',
+      accountId: '123456789',
+    },
+    pathParameters: {
+      avatarId,
+    },
+    body: JSON.stringify({
+      update_id: 1,
+      message: {
+        message_id: 1,
+        date: Math.floor(Date.now() / 1000),
+        chat: {
+          id: 123,
+          type: 'private',
+          first_name: 'Test',
+        },
+        from: {
+          id: 456,
+          is_bot: false,
+          first_name: 'Test',
+        },
+        text: 'Hello bot',
+      },
+    }),
+    isBase64Encoded: false,
+  };
+}
+
 describe('Telegram NFT ownership enforcement (#1416)', () => {
   beforeEach(() => {
     mockAvatarConfig = null;
     mockAvatarStatus = 'active';
+    mockAvatarStatusError = null;
     mockNFTOwnershipCheck = null;
     messagesSentToSqs = [];
     // Enable NFT enforcement for tests
     process.env.NFT_OWNERSHIP_ENFORCEMENT = 'on';
+  });
+
+  it('fails closed when avatar status lookup errors', async () => {
+    const testAvatarId = 'status-error-avatar';
+    mockAvatarConfig = {
+      id: testAvatarId,
+      name: 'Status Error Avatar',
+      version: '1',
+      persona: 'Test persona',
+      platforms: {
+        telegram: {
+          enabled: true,
+          botUsername: 'test_bot',
+          webhookPath: '/avatar/test',
+        },
+      },
+      behavior: {
+        responseDelayMs: [100, 500],
+        typingIndicator: true,
+        ignoreBots: true,
+        cooldownMinutes: 0,
+        maxContextMessages: 20,
+      },
+      llm: {
+        provider: 'bedrock',
+        model: 'claude-3-sonnet',
+        temperature: 0.7,
+        maxTokens: 1024,
+      },
+      media: {
+        image: {
+          provider: 'dalle',
+          model: 'dall-e-3',
+        },
+      },
+      scheduling: {},
+      tools: [],
+      secrets: [],
+    };
+    mockAvatarStatusError = new Error('DDB unavailable');
+
+    const result = await handler(makeTelegramEvent(testAvatarId) as Parameters<typeof handler>[0]);
+
+    expect(result.statusCode).toBe(503);
+    expect(messagesSentToSqs.length).toBe(0);
   });
 
   it('silently drops (200 OK) webhook message when NFT is transferred', async () => {

@@ -88,7 +88,9 @@ export interface NFTOwnershipCache {
    *   - throws — Helius was required and was unavailable (fail closed)
    */
   getCachedNFTOwner(mint: string): Promise<string | null>;
-  /** Drop any cached owner for `mint`. Call after a fresh claim. */
+  /** Write a verified owner into both cache layers without another Helius read. */
+  primeNFTOwnerCache(mint: string, owner: string | null): Promise<void>;
+  /** Drop any cached owner for `mint` when it is known stale. */
   invalidateNFTOwnerCache(mint: string): Promise<void>;
   /** @internal Test-only: swap the DynamoDB client. Pass `null` to restore the original. */
   _setDynamoClient(client: DynamoDBDocumentClient | null): void;
@@ -113,7 +115,6 @@ function defaultEmitCacheMissMetric(namespace: string) {
       NFTOwnershipCacheMiss: 1,
       mintPrefix: mint.slice(0, 8),
     };
-    // eslint-disable-next-line no-console -- EMF must be written to stdout for CloudWatch
     console.log(JSON.stringify(payload));
   };
 }
@@ -209,10 +210,20 @@ export function createNFTOwnershipCache(deps: NFTOwnershipCacheDeps): NFTOwnersh
     emit(mint);
     const owner = await fetchNFTOwnerFromHelius(mint);
 
-    const ttlSeconds = Math.floor(nowMs / 1000) + DYNAMO_TTL_SECONDS;
+    await primeNFTOwnerCache(mint, owner, nowMs);
+
+    return owner;
+  }
+
+  async function primeNFTOwnerCache(
+    mint: string,
+    owner: string | null,
+    checkedAtMs = Date.now(),
+  ): Promise<void> {
+    const ttlSeconds = Math.floor(checkedAtMs / 1000) + DYNAMO_TTL_SECONDS;
     memCache.set(mint, {
       owner,
-      expiresAt: nowMs + IN_MEMORY_TTL_MS,
+      expiresAt: checkedAtMs + IN_MEMORY_TTL_MS,
     });
 
     try {
@@ -222,7 +233,7 @@ export function createNFTOwnershipCache(deps: NFTOwnershipCacheDeps): NFTOwnersh
           Item: {
             ...nftOwnerCacheKey(mint),
             owner,
-            checkedAt: nowMs,
+            checkedAt: checkedAtMs,
             ttl: ttlSeconds,
           },
         }),
@@ -233,8 +244,6 @@ export function createNFTOwnershipCache(deps: NFTOwnershipCacheDeps): NFTOwnersh
         error: err instanceof Error ? err.message : String(err),
       });
     }
-
-    return owner;
   }
 
   async function invalidateNFTOwnerCache(mint: string): Promise<void> {
@@ -256,6 +265,7 @@ export function createNFTOwnershipCache(deps: NFTOwnershipCacheDeps): NFTOwnersh
 
   return {
     getCachedNFTOwner,
+    primeNFTOwnerCache,
     invalidateNFTOwnerCache,
     _setDynamoClient(client) {
       dynamoClient = client ?? originalClient;

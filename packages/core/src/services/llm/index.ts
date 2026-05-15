@@ -22,6 +22,31 @@ import type {
 
 const OPENROUTER_DEFAULT_TIMEOUT_MS = 20_000;
 const OPENROUTER_RETRY_COUNT = 2;
+const OPENROUTER_MODELS_ENDPOINT = 'https://openrouter.ai/api/v1/models?output_modalities=text';
+const OPENROUTER_MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
+
+interface OpenRouterCatalogModel {
+  id?: string;
+  context_length?: number;
+  architecture?: {
+    modality?: string;
+    output_modalities?: string[];
+  };
+  supported_parameters?: string[];
+}
+
+interface OpenRouterChatModel {
+  id: string;
+  contextLength: number;
+  supportedParameters: string[];
+}
+
+export interface OpenRouterChatModelPlan {
+  primaryModel: string;
+  fallbackModels: string[];
+}
+
+let openRouterModelCache: { expiresAt: number; models: OpenRouterChatModel[] } | null = null;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -76,6 +101,102 @@ async function fetchWithRetry(
   }
 
   throw lastError instanceof Error ? lastError : new Error('Fetch failed');
+}
+
+function isTextOutputModel(model: OpenRouterCatalogModel): boolean {
+  const outputModalities = model.architecture?.output_modalities || [];
+  if (outputModalities.length > 0) {
+    return outputModalities.some((modality) => modality.toLowerCase() === 'text');
+  }
+  return !model.architecture?.modality || model.architecture.modality.toLowerCase().includes('text');
+}
+
+function supportsTools(model: OpenRouterChatModel): boolean {
+  return model.supportedParameters.includes('tools') || model.supportedParameters.includes('tool_choice');
+}
+
+function scoreOpenRouterModel(model: OpenRouterChatModel, requireTools: boolean): number {
+  let score = Math.min(model.contextLength, 1_000_000) / 1_000;
+  if (supportsTools(model)) score += 1_000;
+  if (requireTools && !supportsTools(model)) score -= 10_000;
+  if (model.id.toLowerCase().includes('free')) score -= 500;
+  return score;
+}
+
+async function listOpenRouterChatModels(apiKey: string): Promise<OpenRouterChatModel[]> {
+  const now = Date.now();
+  if (openRouterModelCache && openRouterModelCache.expiresAt > now) {
+    return openRouterModelCache.models;
+  }
+
+  const response = await fetchWithRetry(
+    OPENROUTER_MODELS_ENDPOINT,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    },
+    OPENROUTER_DEFAULT_TIMEOUT_MS,
+    OPENROUTER_RETRY_COUNT,
+  );
+
+  if (!response.ok) {
+    throw new Error(`OpenRouter model catalog unavailable: HTTP ${response.status}`);
+  }
+
+  const payload = await response.json() as { data?: OpenRouterCatalogModel[] };
+  const models = (payload.data || [])
+    .filter((model): model is OpenRouterCatalogModel & { id: string } => Boolean(model.id) && isTextOutputModel(model))
+    .map((model) => ({
+      id: model.id,
+      contextLength: model.context_length || 0,
+      supportedParameters: model.supported_parameters || [],
+    }));
+
+  if (models.length === 0) {
+    throw new Error('OpenRouter model catalog returned no chat-capable models');
+  }
+
+  openRouterModelCache = { expiresAt: now + OPENROUTER_MODEL_CACHE_TTL_MS, models };
+  return models;
+}
+
+export async function resolveOpenRouterChatModelPlan(
+  apiKey: string,
+  configuredModel: string | undefined,
+  requireTools = false,
+  fallbackCount = 2,
+): Promise<OpenRouterChatModelPlan> {
+  const models = await listOpenRouterChatModels(apiKey);
+  const ranked = [...models]
+    .filter((model) => !requireTools || supportsTools(model))
+    .sort((a, b) => {
+      const scoreDelta = scoreOpenRouterModel(b, requireTools) - scoreOpenRouterModel(a, requireTools);
+      if (scoreDelta !== 0) return scoreDelta;
+      return a.id.localeCompare(b.id);
+    });
+
+  const configured = configuredModel?.trim();
+  const configuredEntry = configured
+    ? models.find((model) => model.id === configured && (!requireTools || supportsTools(model)))
+    : undefined;
+  const primaryModel = configuredEntry?.id || ranked[0]?.id;
+  if (!primaryModel) {
+    throw new Error('OpenRouter model catalog has no model matching the request requirements');
+  }
+
+  return {
+    primaryModel,
+    fallbackModels: ranked
+      .map((model) => model.id)
+      .filter((id) => id !== primaryModel)
+      .slice(0, fallbackCount),
+  };
+}
+
+export function _resetOpenRouterChatModelCache(): void {
+  openRouterModelCache = null;
 }
 
 /**
@@ -212,11 +333,20 @@ export class OpenRouterLLMService implements LLMService {
       },
     }));
 
+    const modelPlan = await resolveOpenRouterChatModelPlan(this.apiKey, config.model, Boolean(apiTools?.length));
+
     const body: Record<string, unknown> = {
-      model: config.model,
+      model: modelPlan.primaryModel,
       messages: apiMessages,
       temperature: config.temperature,
       max_tokens: config.maxTokens,
+      ...(modelPlan.fallbackModels.length > 0
+        ? { models: [modelPlan.primaryModel, ...modelPlan.fallbackModels], route: 'fallback' }
+        : {}),
+      provider: {
+        allow_fallbacks: true,
+        ...(apiTools && apiTools.length > 0 ? { require_parameters: true } : {}),
+      },
     };
 
     if (apiTools && apiTools.length > 0) {
@@ -296,7 +426,7 @@ export class OpenRouterLLMService implements LLMService {
     return {
       content: choice.message.content || '',
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-      model: config.model,
+      model: modelPlan.primaryModel,
       tokensUsed: data.usage?.total_tokens || 0,
       finishReason,
     };
