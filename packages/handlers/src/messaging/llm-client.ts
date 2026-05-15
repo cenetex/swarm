@@ -17,10 +17,108 @@ const LLM_ENDPOINT = process.env.LLM_ENDPOINT || 'https://openrouter.ai/api/v1/c
 // NOTE: The message processor Lambda timeout is set in infra; keep this below that value.
 // Default increased to better handle slow OpenRouter responses in multi-agent channels.
 const LLM_TIMEOUT_MS = Number.parseInt(process.env.LLM_TIMEOUT_MS || '', 10) || 90_000;
+const OPENROUTER_MODELS_ENDPOINT = 'https://openrouter.ai/api/v1/models?output_modalities=text';
+const OPENROUTER_MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Circuit breaker for LLM calls — trips after 3 consecutive failures,
 // half-opens after 30s. Prevents burning Lambda concurrency on a down provider.
 const llmCircuitBreaker = createCircuitBreaker({ failureThreshold: 3, cooldownMs: 30_000 });
+
+interface OpenRouterCatalogModel {
+  id?: string;
+  name?: string;
+  context_length?: number;
+  architecture?: {
+    output_modalities?: string[];
+  };
+  supported_parameters?: string[];
+}
+
+interface OpenRouterChatModel {
+  id: string;
+  contextLength: number;
+  supportedParameters: string[];
+}
+
+let openRouterModelCache: { expiresAt: number; models: OpenRouterChatModel[] } | null = null;
+
+function isTextModel(model: OpenRouterCatalogModel): boolean {
+  const modalities = model.architecture?.output_modalities || [];
+  return modalities.length === 0 || modalities.some((modality) => modality.toLowerCase() === 'text');
+}
+
+function supportsTools(model: OpenRouterChatModel): boolean {
+  return model.supportedParameters.includes('tools') ||
+    model.supportedParameters.includes('tool_choice');
+}
+
+function scoreModel(model: OpenRouterChatModel, requireTools: boolean): number {
+  let score = Math.min(model.contextLength, 1_000_000) / 1_000;
+  if (supportsTools(model)) score += 1_000;
+  if (requireTools && !supportsTools(model)) score -= 10_000;
+  if (model.id.toLowerCase().includes('free')) score -= 500;
+  return score;
+}
+
+async function listOpenRouterChatModels(apiKey: string): Promise<OpenRouterChatModel[]> {
+  const now = Date.now();
+  if (openRouterModelCache && openRouterModelCache.expiresAt > now) return openRouterModelCache.models;
+
+  const response = await fetch(OPENROUTER_MODELS_ENDPOINT, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!response.ok) {
+    throw new Error(`OpenRouter model catalog unavailable: HTTP ${response.status}`);
+  }
+
+  const data = await response.json() as { data?: OpenRouterCatalogModel[] };
+  const models = (data.data || [])
+    .filter((model): model is OpenRouterCatalogModel & { id: string } => Boolean(model.id) && isTextModel(model))
+    .map((model) => ({
+      id: model.id,
+      contextLength: model.context_length || 0,
+      supportedParameters: model.supported_parameters || [],
+    }));
+
+  if (models.length === 0) {
+    throw new Error('OpenRouter model catalog returned no chat-capable models');
+  }
+
+  openRouterModelCache = { expiresAt: now + OPENROUTER_MODEL_CACHE_TTL_MS, models };
+  return models;
+}
+
+async function resolveLiveOpenRouterModel(
+  configuredModel: string,
+  apiKey: string,
+  requireTools: boolean,
+): Promise<{ primaryModel: string; fallbackModels: string[] }> {
+  const models = await listOpenRouterChatModels(apiKey);
+  const ranked = [...models]
+    .filter((model) => !requireTools || supportsTools(model))
+    .sort((a, b) => {
+      const scoreDelta = scoreModel(b, requireTools) - scoreModel(a, requireTools);
+      if (scoreDelta !== 0) return scoreDelta;
+      return a.id.localeCompare(b.id);
+    });
+
+  const configured = configuredModel.trim();
+  const configuredModelEntry = configured
+    ? models.find((model) => model.id === configured && (!requireTools || supportsTools(model)))
+    : undefined;
+  const primaryModel = configuredModelEntry?.id || ranked[0]?.id;
+  if (!primaryModel) {
+    throw new Error('OpenRouter model catalog has no model matching the request requirements');
+  }
+
+  return {
+    primaryModel,
+    fallbackModels: ranked
+      .map((model) => model.id)
+      .filter((id) => id !== primaryModel)
+      .slice(0, 2),
+  };
+}
 
 /**
  * LLM Message format
@@ -236,11 +334,18 @@ export async function callLLM(
     });
   }
 
+  const modelPlan = await resolveLiveOpenRouterModel(config.model || '', apiKey, tools.length > 0);
+
   const requestBody: Record<string, unknown> = {
-    model: config.model,
+    model: modelPlan.primaryModel,
     messages,
     temperature: config.temperature,
     max_tokens: config.maxTokens,
+    ...(modelPlan.fallbackModels.length > 0 ? { models: [modelPlan.primaryModel, ...modelPlan.fallbackModels], route: 'fallback' } : {}),
+    provider: {
+      allow_fallbacks: true,
+      ...(tools.length > 0 ? { require_parameters: true } : {}),
+    },
   };
 
   if (tools.length > 0) {

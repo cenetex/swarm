@@ -36,3 +36,23 @@ describe('AdminApiConstruct entitlement fallback alarm (issue #232)', () => {
     expect(alarmArrayMatch).not.toBeNull();
   });
 });
+
+describe('AdminApiConstruct NFT ownership wiring', () => {
+  it('passes Helius secret config to NFT-backed chat request paths', () => {
+    const heliusEnvCount = [...src.matchAll(/HELIUS_API_KEY_ARN: heliusApiKeySecret\?\.secretArn \|\| ''/g)].length;
+
+    expect(heliusEnvCount).toBeGreaterThanOrEqual(4);
+  });
+
+  it('grants Helius secret read access to chat handler and chat worker', () => {
+    const chatHandlerGrantMatch = src.match(
+      /llmApiKey\.grantRead\(this\.chatHandler\);\s*if \(heliusApiKeySecret\) \{\s*heliusApiKeySecret\.grantRead\(this\.chatHandler\);\s*\}/
+    );
+    const chatWorkerGrantMatch = src.match(
+      /llmApiKey\.grantRead\(this\.chatWorkerHandler\);\s*if \(heliusApiKeySecret\) \{\s*heliusApiKeySecret\.grantRead\(this\.chatWorkerHandler\);\s*\}/
+    );
+
+    expect(chatHandlerGrantMatch).not.toBeNull();
+    expect(chatWorkerGrantMatch).not.toBeNull();
+  });
+});

@@ -77,7 +77,7 @@ export interface WorkspaceState {
   /** Open the workspace showing gallery content (toggles closed if Gallery tab is already active) */
   openGallery: (avatarId: string) => void;
   /** Switch to a tab, opening the workspace if closed. Preserves task / gallery state. */
-  setTab: (tab: WorkspaceTab) => void;
+  setTab: (tab: WorkspaceTab, avatarId?: string) => void;
   /** Set pane vs fullscreen layout (#1636). Idempotent. */
   setSize: (size: WorkspaceSize) => void;
   /** Toggle between pane and fullscreen (#1636). */
@@ -161,14 +161,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
 
-  setTab: (tab) => {
+  setTab: (tab, avatarId) => {
     const prevOpen = get().isOpen;
     const prevTab = get().activeTab;
+    const nextGalleryAvatarId = avatarId ?? get().galleryAvatarId;
     // Pure tab switch — preserve task / gallery state so users can switch
     // tabs without losing their focused card or gallery scroll.
     set({
       isOpen: true,
       activeTab: tab,
+      contentType: tab === 'gallery' ? 'gallery' : get().contentType,
+      galleryAvatarId: nextGalleryAvatarId,
       title: TAB_TITLES[tab],
       openedAt: prevOpen && prevTab === tab ? get().openedAt : Date.now(),
     });
@@ -258,4 +261,3 @@ onTaskCardCreated((card) => {
     useWorkspaceStore.getState().openForTask(card.id, getToolLabel(card));
   });
 });
-

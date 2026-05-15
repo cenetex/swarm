@@ -179,6 +179,9 @@ export async function loadAvatarSecrets(
     // Media (common)
     { secretName: 'replicate_api_key', envKey: 'REPLICATE_API_KEY' },
     { secretName: 'replicate_api_token', envKey: 'REPLICATE_API_TOKEN' },
+
+    // Signal (shared game server token)
+    { secretName: 'signal_api_token', envKey: 'SIGNAL_API_TOKEN' },
   ];
 
   const result: LoadedAvatarSecrets = {};

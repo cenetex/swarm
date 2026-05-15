@@ -140,7 +140,7 @@ const PlatformConfigsFileSchema = z.object({
 
 const LLMConfigFileSchema = z.object({
   provider: z.enum(['bedrock', 'openrouter', 'anthropic']).default('openrouter'),
-  model: z.string().default('anthropic/claude-sonnet-4'),
+  model: z.string().default(DEFAULT_MODELS.llm),
   fallback_model: z.string().optional(),
   fallbackModel: z.string().optional(),
   temperature: z.number().default(0.8),
@@ -346,7 +346,7 @@ export function loadAvatarConfigFromEnv(avatarId: string): AvatarConfig {
     },
     llm: {
       provider: (process.env.LLM_PROVIDER as 'bedrock' | 'openrouter' | 'anthropic') || 'openrouter',
-      model: process.env.LLM_MODEL || 'anthropic/claude-sonnet-4',
+      model: process.env.LLM_MODEL || DEFAULT_MODELS.llm,
       temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.8'),
       maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '1024', 10),
       ...(process.env.LLM_TIMEOUT_MS ? { timeoutMs: parseInt(process.env.LLM_TIMEOUT_MS, 10) } : {}),

@@ -24,14 +24,18 @@ const WEBHOOK_SECRET_TTL_MS = 5 * 60_000;
 // Lazy-initialized services
 let stateService: ReturnType<typeof createStateService>;
 
+type AvatarStatus = 'draft' | 'active' | 'paused' | 'deleted';
+type CachedAvatarConfig = {
+  value: AvatarConfig;
+  status?: AvatarStatus;
+  expiresAt: number;
+};
+
 // Per-avatar caches
-export const avatarConfigCache = new Map<string, { value: AvatarConfig; expiresAt: number }>();
+export const avatarConfigCache = new Map<string, CachedAvatarConfig>();
 const telegramAdapterCache = new Map<string, { value: TelegramAdapter; expiresAt: number }>();
 const botTokenCache = new Map<string, { value: string; expiresAt: number }>();
 const webhookSecretCache = new Map<string, { value: string; expiresAt: number }>();
-
-type AvatarStatus = 'draft' | 'active' | 'paused' | 'deleted';
-const avatarStatusCache = new Map<string, { value: AvatarStatus; expiresAt: number }>();
 
 export async function initialize(): Promise<void> {
   if (stateService) return;
@@ -40,6 +44,10 @@ export async function initialize(): Promise<void> {
 
 export function getStateService(): ReturnType<typeof createStateService> {
   return stateService;
+}
+
+export function setWebhookSecurityStateServiceForTest(service: ReturnType<typeof createStateService>): void {
+  stateService = service;
 }
 
 export async function getWebhookSecret(avatarId: string): Promise<string | null> {
@@ -70,11 +78,15 @@ export async function getAvatarConfig(avatarId: string): Promise<AvatarConfig | 
   const cached = avatarConfigCache.get(avatarId);
   if (cached && cached.expiresAt > now) return cached.value;
 
-  const config = await stateService.getAvatarConfig(avatarId);
-  if (!config) return null;
+  const result = await stateService.getAvatarConfigWithStatus(avatarId);
+  if (!result) return null;
 
-  avatarConfigCache.set(avatarId, { value: config, expiresAt: now + CONFIG_TTL_MS });
-  return config;
+  avatarConfigCache.set(avatarId, {
+    value: result.config,
+    status: result.status,
+    expiresAt: now + CONFIG_TTL_MS,
+  });
+  return result.config;
 }
 
 export function invalidateAvatarConfigCache(avatarId: string): void {
@@ -83,14 +95,18 @@ export function invalidateAvatarConfigCache(avatarId: string): void {
 
 export async function getAvatarStatus(avatarId: string): Promise<AvatarStatus> {
   const now = Date.now();
-  const cached = avatarStatusCache.get(avatarId);
-  if (cached && cached.expiresAt > now) return cached.value;
+  const cached = avatarConfigCache.get(avatarId);
+  if (cached && cached.expiresAt > now && cached.status) return cached.status;
 
   const result = await stateService.getAvatarConfigWithStatus(avatarId);
-  const status = result?.status || 'draft';
+  if (!result) return 'draft';
 
-  avatarStatusCache.set(avatarId, { value: status, expiresAt: now + CONFIG_TTL_MS });
-  return status;
+  avatarConfigCache.set(avatarId, {
+    value: result.config,
+    status: result.status,
+    expiresAt: now + CONFIG_TTL_MS,
+  });
+  return result.status;
 }
 
 export async function getBotToken(avatarId: string): Promise<string | null> {

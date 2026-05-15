@@ -69,6 +69,10 @@ function messageSk(timestamp: number, messageId: string): string {
   return `MSG#${String(timestamp).padStart(15, '0')}#${messageId}`;
 }
 
+function dedupSk(messageId: string): string {
+  return `DEDUP#${messageId}`;
+}
+
 function overlaySk(avatarId: string): string {
   return `OVERLAY#${avatarId}`;
 }
@@ -78,6 +82,45 @@ const META_SK = 'META';
 // =============================================================================
 // SERVICE FUNCTIONS
 // =============================================================================
+
+/**
+ * Atomically claim a room message before appending/enqueueing it.
+ *
+ * Discord can deliver the same guild message to every bot connection in a
+ * shared room. A read-before-write recent-message check races under that
+ * fanout, so this conditional put is the cross-connection idempotency gate.
+ */
+export async function claimRoomMessage(
+  roomId: string,
+  messageId: string,
+  tableName?: string,
+): Promise<boolean> {
+  const client = getDynamoClient();
+  const table = tableName || getTableName();
+
+  try {
+    await client.send(
+      new PutCommand({
+        TableName: table,
+        Item: {
+          pk: roomPk(roomId),
+          sk: dedupSk(messageId),
+          roomId,
+          messageId,
+          createdAt: Date.now(),
+          ttl: computeTtl(MESSAGE_TTL_DAYS),
+        },
+        ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)',
+      }),
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ConditionalCheckFailedException') {
+      return false;
+    }
+    throw error;
+  }
+}
 
 /**
  * Append a message to the shared room ledger.

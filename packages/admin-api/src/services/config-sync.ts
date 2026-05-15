@@ -273,6 +273,21 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
         tools.push('send_voice_message', 'create_my_voice', 'transcribe_audio');
       }
 
+      // Signal station governance tools (for autonomous station runners)
+      if (record.mcpConfig?.enabledToolsets?.includes('signal-station')) {
+        tools.push(
+          'signal_station_state',
+          'signal_set_hail',
+          'signal_set_price',
+          'signal_build_module',
+          'signal_channel_read',
+          'signal_channel_post',
+          'signal_set_miner_chatter',
+          'signal_set_hauler_chatter',
+          'signal_set_rati_hail'
+        );
+      }
+
       // De-dupe in case config-sync is called repeatedly.
       return Array.from(new Set(tools));
     })(),
@@ -389,6 +404,11 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
     } else if (record.llmConfig.provider === 'anthropic') {
       config.secrets.push('ANTHROPIC_API_KEY');
     }
+  }
+
+  // Add Signal API token for station governance
+  if (record.mcpConfig?.enabledToolsets?.includes('signal-station')) {
+    config.secrets.push('SIGNAL_API_TOKEN');
   }
 
   return config;

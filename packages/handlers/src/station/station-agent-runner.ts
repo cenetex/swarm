@@ -59,7 +59,11 @@ function createSignalStationServices(apiToken: string): SignalStationServices {
 
   return {
     getStationState: async (stationId) => {
-      const res = await fetch(`${SIGNAL_API_BASE}/api/station/${stationId}/state`, { headers });
+      const params = new URLSearchParams();
+      params.append('include', 'activity_history,chain_history');
+      const queryString = params.toString();
+      const url = `${SIGNAL_API_BASE}/api/station/${stationId}/state${queryString ? '?' + queryString : ''}`;
+      const res = await fetch(url, { headers });
       if (!res.ok) {
         const body = await res.text();
         throw new Error(`Station state failed (${res.status}): ${body}`);
@@ -153,15 +157,25 @@ async function fetchChannelContext(
 
 const GOVERNANCE_PROMPT = `\
 Check your station's current state using signal_station_state.
-Based on what you observe:
-- Update your hail message if conditions have changed (signal_set_hail)
-- Adjust commodity prices if inventory levels warrant it (signal_set_price)
-- Consider building a module if resources allow (signal_build_module)
+Review activity_history and chain_history to understand recent events and operator posts.
 
-Reference the recent station-band chatter to stay in character with the ensemble.
+Based on what you observe, maintain station content in your voice:
+- Hail message: general station status (signal_set_hail)
+- Miner chatter: direct communication to ore miners (signal_set_miner_chatter)
+- Hauler chatter: messages for cargo operators (signal_set_hauler_chatter)
+- RATi hail: premium-ore delivery incentives (signal_set_rati_hail)
+- Station-band messages: posts to the ensemble channel (signal_channel_post)
+- Prices: commodity pricing when warranted (signal_set_price)
+- Modules: construction decisions (signal_build_module)
 
-Only take actions that make sense given current conditions.
-If nothing needs changing, just observe and report briefly.`;
+Reference recent station-band chatter to stay in character with Prospect, Kepler, and Helios.
+
+Prioritize:
+1. Hail and chatter that reflect current conditions
+2. Price/module decisions only when state justifies change
+3. Station-band messages where appropriate
+
+Keep actions purposeful and in character. If nothing needs changing, just observe and report briefly.`;
 
 let stateService: ReturnType<typeof createStateService>;
 let activityService: ReturnType<typeof createActivityService>;

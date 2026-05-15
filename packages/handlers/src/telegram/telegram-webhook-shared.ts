@@ -145,7 +145,17 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     // Check avatar status - only active avatars should process messages
-    const avatarStatus = await getAvatarStatus(avatarId);
+    let avatarStatus: Awaited<ReturnType<typeof getAvatarStatus>>;
+    try {
+      avatarStatus = await getAvatarStatus(avatarId);
+    } catch (err) {
+      logger.error('Failed to read avatar status', err, {
+        event: 'avatar_status_error',
+        avatarId,
+      });
+      return { statusCode: 503, body: 'Avatar status unavailable' };
+    }
+
     if (avatarStatus !== 'active') {
       logger.info('Avatar not active, skipping message processing', {
         event: 'avatar_inactive',

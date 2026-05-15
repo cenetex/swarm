@@ -47,6 +47,11 @@ export interface DiscordGatewayWorkerProps {
   activityTable: dynamodb.ITable;
 
   /**
+   * Admin/shared-room table — read/write shared room ledger records.
+   */
+  adminTable?: dynamodb.ITable;
+
+  /**
    * Shared FIFO message queue — inbound Discord messages are enqueued here
    */
   messageQueue: sqs.IQueue;
@@ -76,6 +81,7 @@ export class DiscordGatewayWorker extends Construct {
       cluster,
       stateTable,
       activityTable,
+      adminTable,
       messageQueue,
     } = props;
     const suffix = props.nameSuffix ?? '';
@@ -123,6 +129,12 @@ export class DiscordGatewayWorker extends Construct {
         NODE_ENV: 'production',
         STATE_TABLE: stateTable.tableName,
         ACTIVITY_TABLE: activityTable.tableName,
+        ...(adminTable
+          ? {
+              ADMIN_TABLE: adminTable.tableName,
+              SHARED_ROOM_TABLE: adminTable.tableName,
+            }
+          : {}),
         MESSAGE_QUEUE_URL: messageQueue.queueUrl,
         SECRET_PREFIX: secretPrefix,
         ENVIRONMENT: environment,
@@ -139,6 +151,7 @@ export class DiscordGatewayWorker extends Construct {
     // IAM — read/write state (idempotency + channel history), write activity, send messages, read secrets
     stateTable.grantReadWriteData(this.taskDefinition.taskRole);
     activityTable.grantReadWriteData(this.taskDefinition.taskRole);
+    adminTable?.grantReadWriteData(this.taskDefinition.taskRole);
     messageQueue.grantSendMessages(this.taskDefinition.taskRole);
 
     this.taskDefinition.taskRole.addToPrincipalPolicy(
