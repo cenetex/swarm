@@ -58,6 +58,7 @@ import { executeToolLoop, buildResponseFromToolLoop } from './tool-loop.js';
 import { buildSystemPrompt, formatBrainMemoryContext } from './context-builder.js';
 import { extractMediaContext, buildUserMessageContent, type MediaExtractionConfig } from './media-extractor.js';
 import type { ChatWorkerMessage } from './chat-worker.js';
+import { createTypingSender } from './typing-indicator.js';
 import {
   registerDiscordRoomMetaResolver,
   registerTelegramRoomMetaResolver,
@@ -66,29 +67,6 @@ import {
 import { isSharedRoom } from '../services/room-ingress.js';
 
 const REPLY_CONTEXT_MAX_LENGTH = 200;
-
-/**
- * Lightweight Telegram typing indicator via raw HTTP (no Grammy dependency).
- * Returns a callback that can be called repeatedly to refresh the indicator
- * (Telegram typing expires after ~5 seconds).
- */
-function createTelegramTypingSender(
-  secrets: Record<string, string>,
-  chatId: string,
-): (() => Promise<void>) | undefined {
-  const botToken = secrets.TELEGRAM_BOT_TOKEN || secrets.telegram_bot_token;
-  if (!botToken) return undefined;
-
-  return async () => {
-    try {
-      await fetch(`https://api.telegram.org/bot${botToken}/sendChatAction`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
-      });
-    } catch { /* non-critical */ }
-  };
-}
 
 /**
  * Build a reply-to annotation for a message that references another message via replyToMessageId.
@@ -1115,9 +1093,11 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       // Send typing indicator before LLM call so the user sees feedback
       // during the slowest phase of processing.  The callback is also passed
       // to generateResponse() to refresh between tool iterations.
-      const refreshTyping = envelope.platform === 'telegram'
-        ? createTelegramTypingSender(avatarRuntime.secrets, envelope.conversationId)
-        : undefined;
+      const refreshTyping = createTypingSender(
+        envelope.platform,
+        avatarRuntime.secrets,
+        envelope.conversationId,
+      );
       if (refreshTyping) await refreshTyping();
 
       const result = await generateResponse(

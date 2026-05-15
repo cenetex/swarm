@@ -57,6 +57,20 @@ export interface StationState {
     age: number;
   }>;
   hail: string;
+  miner_chatter?: string;
+  hauler_chatter?: string;
+  rati_hail?: string;
+  activity_history?: Array<{
+    timestamp: number;
+    event: string;
+    description?: string;
+  }>;
+  chain_history?: Array<{
+    timestamp: number;
+    operator: string;
+    action: string;
+    details?: string;
+  }>;
 }
 
 export interface CommandResult {
@@ -303,6 +317,93 @@ export const createSignalStationTools = (services: SignalStationServices) => [
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to post to channel',
+        };
+      }
+    },
+  }),
+
+  defineTool({
+    name: 'signal_set_miner_chatter',
+    description:
+      'Set the miner chatter broadcast by a station. This message communicates to ore miners ' +
+      'about mining conditions, ore availability, or operational notes.',
+    category: 'signal-station',
+    inputSchema: z.object({
+      station_id: z.number().int().min(0).max(7).describe('Station index (0-7)'),
+      message: z.string().min(1).max(200).describe('Miner chatter message (max 200 chars)'),
+    }),
+    execute: async (input, _context): Promise<ToolResult> => {
+      try {
+        const result = await services.sendCommand(input.station_id, {
+          action: 'set_miner_chatter',
+          miner_chatter: input.message,
+        });
+        if (!result.ok) {
+          return { success: false, error: result.error || 'Command failed' };
+        }
+        return { success: true, data: { miner_chatter: input.message } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to set miner chatter',
+        };
+      }
+    },
+  }),
+
+  defineTool({
+    name: 'signal_set_hauler_chatter',
+    description:
+      'Set the hauler chatter broadcast by a station. This message communicates to cargo haulers ' +
+      'about delivery opportunities, hauling conditions, or trade information.',
+    category: 'signal-station',
+    inputSchema: z.object({
+      station_id: z.number().int().min(0).max(7).describe('Station index (0-7)'),
+      message: z.string().min(1).max(200).describe('Hauler chatter message (max 200 chars)'),
+    }),
+    execute: async (input, _context): Promise<ToolResult> => {
+      try {
+        const result = await services.sendCommand(input.station_id, {
+          action: 'set_hauler_chatter',
+          hauler_chatter: input.message,
+        });
+        if (!result.ok) {
+          return { success: false, error: result.error || 'Command failed' };
+        }
+        return { success: true, data: { hauler_chatter: input.message } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to set hauler chatter',
+        };
+      }
+    },
+  }),
+
+  defineTool({
+    name: 'signal_set_rati_hail',
+    description:
+      'Set a custom RATi-grade ore delivery hail. This message is shown to haulers delivering ' +
+      'premium RATi-grade ore and can include special offers or delivery instructions.',
+    category: 'signal-station',
+    inputSchema: z.object({
+      station_id: z.number().int().min(0).max(7).describe('Station index (0-7)'),
+      message: z.string().min(1).max(200).describe('RATi hail message (max 200 chars)'),
+    }),
+    execute: async (input, _context): Promise<ToolResult> => {
+      try {
+        const result = await services.sendCommand(input.station_id, {
+          action: 'set_rati_hail',
+          rati_hail: input.message,
+        });
+        if (!result.ok) {
+          return { success: false, error: result.error || 'Command failed' };
+        }
+        return { success: true, data: { rati_hail: input.message } };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to set RATi hail',
         };
       }
     },
