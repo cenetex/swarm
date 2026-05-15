@@ -34,6 +34,7 @@ import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { createRuntimeBrainService } from '../services/brain.js';
 import { executeToolLoop, buildResponseFromToolLoop } from './tool-loop.js';
 import type { LLMMessage } from './llm-client.js';
+import { createTypingSender } from './typing-indicator.js';
 
 // ─── SQS Message Schema ─────────────────────────────────────────────────────
 
@@ -157,26 +158,6 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
   return runtime;
 }
 
-// ─── Typing Indicator ────────────────────────────────────────────────────────
-
-function createTelegramTypingSender(
-  secrets: Record<string, string>,
-  chatId: string,
-): (() => Promise<void>) | undefined {
-  const botToken = secrets.TELEGRAM_BOT_TOKEN || secrets.telegram_bot_token;
-  if (!botToken) return undefined;
-
-  return async () => {
-    try {
-      await fetch(`https://api.telegram.org/bot${botToken}/sendChatAction`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
-      });
-    } catch { /* non-critical */ }
-  };
-}
-
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 export const handler = async (event: SQSEvent, context: Context): Promise<{ batchItemFailures: { itemIdentifier: string }[] }> => {
@@ -244,9 +225,11 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       };
 
       // Set up typing indicator
-      const refreshTyping = envelope.platform === 'telegram'
-        ? createTelegramTypingSender(avatarRuntime.secrets, envelope.conversationId)
-        : undefined;
+      const refreshTyping = createTypingSender(
+        envelope.platform,
+        avatarRuntime.secrets,
+        envelope.conversationId,
+      );
 
       // Start typing interval (refresh every 4s during processing)
       let typingInterval: ReturnType<typeof setInterval> | undefined;
