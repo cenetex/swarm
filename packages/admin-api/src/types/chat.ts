@@ -79,7 +79,7 @@ export const ChatRequestSchema = z.object({
     data: z.string(), // base64 data URL or public URL for audio
     name: z.string().optional(),
   })).optional(),
-  model: z.string().optional(), // Override default LLM model (e.g., 'anthropic/claude-3-5-haiku-20241022')
+  model: z.string().optional(), // Optional OpenRouter catalog model override
 });
 
 // Infer types from schemas

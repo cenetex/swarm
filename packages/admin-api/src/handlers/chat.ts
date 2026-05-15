@@ -39,7 +39,7 @@ import {
 import type { ToolContext } from '@swarm/mcp-server';
 import { createMCPServices } from '../services/mcp-adapter.js';
 import * as avatars from '../services/avatars.js';
-import { resolveChatModel } from '../services/models-registry.js';
+import { resolveOpenRouterChatModelPlan } from '../services/openrouter-chat-models.js';
 import { mapAdminChatHandlerError } from './chat-error-mapping.js';
 import { getGateStatus } from '../services/web3/nft-gate.js';
 
@@ -163,7 +163,12 @@ export async function processChat(
 
   // Sanitize and truncate messages for the LLM context window
   const preparedMessages = buildModelInput(systemPrompt, messagesWithAttachments);
-  const effectiveModel = options?.model || LLM_MODEL;
+  const modelPlan = await resolveOpenRouterChatModelPlan({
+    requestModel: options?.model,
+    defaultModel: LLM_MODEL,
+    requireTools: tools.length > 0,
+  });
+  const effectiveModel = modelPlan.primaryModel;
   const maxOutputTokens = clampInt(options?.maxTokens ?? LLM_MAX_TOKENS, 1, 8192);
   const effectiveMaxOutputTokens = tools.length > 0 ? Math.min(maxOutputTokens, LLM_TOOL_MAX_TOKENS) : maxOutputTokens;
 
@@ -384,7 +389,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     } : undefined;
 
     const avatarMaxTokens = avatarRecord?.llmConfig?.maxTokens;
-    const resolvedModel = resolveChatModel({ requestModel: model, avatarModel: avatarRecord?.llmConfig?.model, defaultModel: LLM_MODEL });
+    const resolvedModel = (await resolveOpenRouterChatModelPlan({
+      requestModel: model,
+      avatarModel: avatarRecord?.llmConfig?.model,
+      defaultModel: LLM_MODEL,
+    })).primaryModel;
 
     // Async response path
     if (prefersAsyncResponse(event) && CHAT_QUEUE_URL && sqsClient) {

@@ -12,10 +12,10 @@
  * Scope (v1):
  *   - Mention scoring (`@<platformHandle>`)
  *   - Name-hit scoring (avatar display name in text)
+ *   - Discord reply-target scoring from referenced message author id
  *
  * Deferred:
  *   - sticky-affinity (needs activity-table lookup for last-responder)
- *   - reply-target (needs activity-table lookup for replyTo author)
  *   - thread-owner (Discord threads / Telegram topics)
  */
 import {
@@ -29,11 +29,13 @@ import {
 } from '@swarm/core';
 import {
   buildRoomKey,
+  registerChannelAvatarResolver,
   registerChannelAvatarMetaResolver,
   resolveChannelAvatarsWithMeta,
   type ChannelAvatarMeta,
 } from '../services/room-ingress.js';
 import { getChannelRegisteredAvatars } from '../telegram/webhook-home-channel.js';
+import { getDiscordChannelAvatarIds } from '../discord/discord-home-channel.js';
 
 /**
  * Minimal state-service surface needed by the meta resolver. Declared here
@@ -44,6 +46,12 @@ interface AvatarConfigReader {
   getAvatarConfig(avatarId: string): Promise<AvatarConfig | null>;
 }
 
+interface BuildTurnCandidateOptions {
+  mentionedAvatarId?: string;
+  replyTargetAvatarId?: string;
+  replyTargetPlatformHandles?: string[];
+}
+
 /**
  * Build the candidate list from a room's avatar metadata + the inbound text.
  * Pure: no I/O, just scoring of presence flags.
@@ -52,22 +60,43 @@ export function buildTurnCandidates(
   meta: ChannelAvatarMeta[],
   text: string,
   platform: SwarmEnvelope['platform'],
+  options: BuildTurnCandidateOptions = {},
 ): TurnCandidate[] {
   const lower = text.toLowerCase();
+  const replyTargetHandles = new Set(
+    (options.replyTargetPlatformHandles ?? [])
+      .map((h) => h.toLowerCase())
+      .filter(Boolean),
+  );
+
   return meta.map((m) => {
     const handle = m.platformHandle?.toLowerCase();
     const name = m.avatarName?.toLowerCase();
 
-    // @-mention: requires a `@<handle>` substring with a word boundary after.
-    let isMentioned = false;
+    // @-mention: Telegram uses visible @handles; Discord message content uses
+    // `<@userId>` mention tokens when the handle is a bot user id.
+    let isMentioned = options.mentionedAvatarId === m.avatarId;
     if (handle) {
-      const needle = `@${handle}`;
-      const idx = lower.indexOf(needle);
-      if (idx !== -1) {
-        const after = lower[idx + needle.length];
-        isMentioned = after === undefined || !/[a-z0-9_]/.test(after);
+      if (platform === 'discord') {
+        isMentioned =
+          isMentioned ||
+          lower.includes(`<@${handle}>`) ||
+          lower.includes(`<@!${handle}>`);
+      }
+      if (!isMentioned) {
+        const needle = `@${handle}`;
+        const idx = lower.indexOf(needle);
+        if (idx !== -1) {
+          const after = lower[idx + needle.length];
+          isMentioned = after === undefined || !/[a-z0-9_]/.test(after);
+        }
       }
     }
+
+    const isReplyTarget = Boolean(
+      options.replyTargetAvatarId === m.avatarId ||
+      (handle && replyTargetHandles.has(handle)),
+    );
 
     // Name-hit: avatar's display name appears as a standalone token.
     let isNameHit = false;
@@ -81,11 +110,12 @@ export function buildTurnCandidates(
       avatarName: m.avatarName,
       platform,
       isMentioned,
-      isReplyTarget: false,
+      isReplyTarget,
       isThreadOwner: false,
       isNameHit,
       hasStickyAffinity: false,
       isBot: false,
+      replyConfidence: isReplyTarget ? 1 : undefined,
     };
   });
 }
@@ -130,6 +160,65 @@ export function registerTelegramRoomMetaResolver(
 }
 
 /**
+ * Register the Discord-side meta resolver for the Lambda message processor.
+ *
+ * The gateway process can resolve Discord shared-room membership in memory,
+ * but the message processor runs in Lambda, so it must reconstruct candidates
+ * from the persisted Discord home-channel registry and avatar configs.
+ */
+export function registerDiscordRoomMetaResolver(
+  stateService: AvatarConfigReader,
+): void {
+  registerChannelAvatarResolver('discord', getDiscordChannelAvatarIds);
+  registerChannelAvatarMetaResolver('discord', async (channelId: string) => {
+    const avatarIds = await getDiscordChannelAvatarIds(channelId);
+    if (avatarIds.length === 0) return [];
+
+    const metas = await Promise.all(
+      avatarIds.map(async (avatarId) => {
+        let name = avatarId;
+        let platformHandle: string | undefined;
+        try {
+          const cfg = await stateService.getAvatarConfig(avatarId);
+          if (cfg?.name) name = cfg.name;
+          platformHandle = cfg?.platforms?.discord?.botId || cfg?.platforms?.discord?.botUsername;
+        } catch {
+          // Tolerate config read failures — this candidate can still be
+          // considered by id, but direct mention matching may not fire.
+        }
+        return {
+          avatarId,
+          avatarName: name,
+          platformHandle,
+        };
+      }),
+    );
+    return metas;
+  });
+}
+
+function getDiscordReplyTargetHandles(envelope: SwarmEnvelope): string[] {
+  if (envelope.platform !== 'discord') return [];
+
+  const raw = envelope.raw as {
+    referenced_message?: {
+      author?: {
+        id?: string;
+        username?: string;
+        global_name?: string;
+      };
+    } | null;
+  } | null;
+
+  const author = raw?.referenced_message?.author;
+  return [
+    author?.id,
+    author?.username,
+    author?.global_name,
+  ].filter((v): v is string => Boolean(v));
+}
+
+/**
  * Run the coordinator for an inbound shared-room envelope.
  *
  * Returns the decision plus the candidate list it considered. The caller
@@ -150,7 +239,11 @@ export async function runRoomCoordinator(
   }
 
   const text = envelope.content?.text ?? '';
-  const candidates = buildTurnCandidates(meta, text, envelope.platform);
+  const candidates = buildTurnCandidates(meta, text, envelope.platform, {
+    mentionedAvatarId: envelope.metadata.isMention ? envelope.avatarId : undefined,
+    replyTargetAvatarId: envelope.metadata.isReplyToBot ? envelope.avatarId : undefined,
+    replyTargetPlatformHandles: getDiscordReplyTargetHandles(envelope),
+  });
 
   const event: RoomEvent = {
     roomKey: buildRoomKey(envelope.platform, envelope.conversationId),

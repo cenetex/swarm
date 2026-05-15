@@ -164,7 +164,7 @@ describe('resolveTokenUsage', () => {
       { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
       'Hello world',
       'Hi there',
-      'anthropic/claude-3-5-sonnet-latest',
+      'anthropic/live-model',
     );
 
     expect(result.usageSource).toBe('provider');
@@ -178,7 +178,7 @@ describe('resolveTokenUsage', () => {
       undefined,
       'Hello world',
       'Hi there',
-      'anthropic/claude-3-5-sonnet-latest',
+      'anthropic/live-model',
     );
 
     expect(result.usageSource).toBe('estimated');
@@ -228,7 +228,7 @@ describe('resolveTokenUsage', () => {
 describe('estimateTokens', () => {
   it('uses model-aware character ratio for Anthropic models', () => {
     const text = 'A'.repeat(350);
-    const tokens = estimateTokens(text, 'anthropic/claude-3-5-sonnet-latest');
+    const tokens = estimateTokens(text, 'anthropic/live-model');
     expect(tokens).toBe(100);
   });
 
@@ -246,7 +246,7 @@ describe('estimateTokens', () => {
 
   it('rounds up fractional tokens', () => {
     const text = 'A'.repeat(3);
-    const tokens = estimateTokens(text, 'anthropic/claude-3-5-sonnet-latest');
+    const tokens = estimateTokens(text, 'anthropic/live-model');
     expect(tokens).toBe(1);
   });
 });
@@ -271,7 +271,7 @@ describe('recordTokenUsage', () => {
         requestId: 'req-001',
         keyHash: 'abc123hash',
         avatarId: 'my-bot',
-        model: 'anthropic/claude-3-5-sonnet-latest',
+        model: 'anthropic/live-model',
         usage,
       },
       deps,
@@ -285,7 +285,7 @@ describe('recordTokenUsage', () => {
     expect(logItem!.completionTokens).toBe(50);
     expect(logItem!.totalTokens).toBe(150);
     expect(logItem!.usageSource).toBe('provider');
-    expect(logItem!.model).toBe('anthropic/claude-3-5-sonnet-latest');
+    expect(logItem!.model).toBe('anthropic/live-model');
     expect(logItem!.avatarId).toBe('my-bot');
     expect(logItem!.totalCostMicroUsd).toBeGreaterThan(0);
     expect(logItem!.pricingVersion).toBeGreaterThan(0);

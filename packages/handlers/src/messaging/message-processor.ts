@@ -60,6 +60,7 @@ import { extractMediaContext, buildUserMessageContent, type MediaExtractionConfi
 import type { ChatWorkerMessage } from './chat-worker.js';
 import { createTypingSender } from './typing-indicator.js';
 import {
+  registerDiscordRoomMetaResolver,
   registerTelegramRoomMetaResolver,
   runRoomCoordinator,
 } from './room-coordinator-runner.js';
@@ -276,6 +277,7 @@ async function initialize(): Promise<void> {
   // turns by display name + @-handle. The resolver reads HOME_CHANNELS and
   // joins each registered avatar's name from its CONFIG record.
   registerTelegramRoomMetaResolver(stateService);
+  registerDiscordRoomMetaResolver(stateService);
 }
 
 async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
@@ -881,12 +883,16 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       // that's the wrong avatar when the user mentioned (or named) someone
       // else. Off by default — flip via env var on the deploying lambda
       // after staging validation. See #1571.
+      let shouldRunRoomCoordinator = false;
       if (
         process.env.ROOM_COORDINATOR_ENABLED === 'true' &&
         envelope.platform &&
-        envelope.conversationId &&
-        await isSharedRoom(envelope.platform, envelope.conversationId)
+        envelope.conversationId
       ) {
+        shouldRunRoomCoordinator = await isSharedRoom(envelope.platform, envelope.conversationId);
+      }
+
+      if (shouldRunRoomCoordinator) {
         try {
           const result = await runRoomCoordinator(envelope);
           if (result) {
@@ -901,6 +907,13 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
               });
               continue;
             }
+            if (decision.decisionReason === 'direct-mention') {
+              envelope.metadata.isMention = true;
+              envelope.metadata.priority = 'high';
+            } else if (decision.decisionReason === 'reply-to-avatar') {
+              envelope.metadata.isReplyToBot = true;
+              envelope.metadata.priority = 'high';
+            }
             if (decision.primary.avatarId !== avatarId) {
               logger.info('Room coordinator: routing to chosen primary', {
                 event: 'room_coordinator_override',
@@ -912,12 +925,6 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
               });
               avatarId = decision.primary.avatarId;
               envelope.avatarId = decision.primary.avatarId;
-              if (
-                decision.decisionReason === 'direct-mention' ||
-                decision.decisionReason === 'reply-to-avatar'
-              ) {
-                envelope.metadata.isMention = true;
-              }
             }
           }
         } catch (coordErr) {

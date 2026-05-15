@@ -27,7 +27,7 @@ export const DEFAULT_MODELS: Record<AICapability, string> = {
   voice_clone: 'x-lance/f5-tts',
   text_to_speech: 'x-lance/f5-tts',
   transcription: 'whisper-1',
-  llm: 'anthropic/claude-3-5-sonnet-latest',
+  llm: '',
 };
 
 /**

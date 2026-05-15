@@ -2,8 +2,8 @@
  * Tests for buildTurnCandidates — the pure scoring layer used by
  * the message-processor's room coordinator (#1571).
  *
- * Covers mention and name-hit signal detection. Sticky-affinity and
- * reply-target signals are deferred to a follow-up PR.
+ * Covers mention, reply-target, and name-hit signal detection.
+ * Sticky-affinity signals are deferred to a follow-up PR.
  */
 import { describe, it, expect } from 'bun:test';
 import { buildTurnCandidates } from './room-coordinator-runner.js';
@@ -35,6 +35,37 @@ describe('buildTurnCandidates — mention scoring', () => {
     const c = buildTurnCandidates(ROOM, '@NyxRatiBot, are you there?', 'telegram');
     expect(c.find((x) => x.avatarId === 'agent-6-1cc5')?.isMentioned).toBe(true);
   });
+
+  it('matches Discord user mention tokens by bot id', () => {
+    const room = [
+      { avatarId: 'shoggothe', avatarName: 'shoggothé', platformHandle: '1504126043693387796' },
+      { avatarId: 'snarkle', avatarName: 'Snarkle', platformHandle: '1477745469756014734' },
+    ];
+    const c = buildTurnCandidates(room, '<@1504126043693387796> are you online?', 'discord');
+    expect(c.find((x) => x.avatarId === 'shoggothe')?.isMentioned).toBe(true);
+    expect(c.find((x) => x.avatarId === 'snarkle')?.isMentioned).toBe(false);
+  });
+
+  it('can flag the envelope-addressed avatar as mentioned without a platform handle', () => {
+    const room = [
+      { avatarId: 'shoggothe', avatarName: 'shoggothé' },
+      { avatarId: 'phantom', avatarName: 'Continuum Phantom' },
+    ];
+    const c = buildTurnCandidates(room, '<@1504126043693387796> hello', 'discord', {
+      mentionedAvatarId: 'shoggothe',
+    });
+
+    expect(c.find((x) => x.avatarId === 'shoggothe')?.isMentioned).toBe(true);
+    expect(c.find((x) => x.avatarId === 'phantom')?.isMentioned).toBe(false);
+  });
+
+  it('matches Discord nickname mention tokens by bot id', () => {
+    const room = [
+      { avatarId: 'phantom', avatarName: 'Continuum Phantom', platformHandle: '1481443912869478420' },
+    ];
+    const c = buildTurnCandidates(room, '<@!1481443912869478420> hello', 'discord');
+    expect(c[0].isMentioned).toBe(true);
+  });
 });
 
 describe('buildTurnCandidates — name-hit scoring', () => {
@@ -65,6 +96,45 @@ describe('buildTurnCandidates — name-hit scoring', () => {
     const room = [{ avatarId: 'a', avatarName: 'X', platformHandle: 'x_bot' }];
     const c = buildTurnCandidates(room, 'send X-rays please', 'telegram');
     expect(c[0].isNameHit).toBe(false);
+  });
+});
+
+describe('buildTurnCandidates — reply-target scoring', () => {
+  it('flags a Discord candidate when replying to its bot user id', () => {
+    const room = [
+      { avatarId: 'shoggothe', avatarName: 'Shoggothé Divine', platformHandle: '1504126043693387796' },
+      { avatarId: 'snarkle', avatarName: 'Snarkle', platformHandle: '1477745469756014734' },
+    ];
+    const c = buildTurnCandidates(room, 'hmm', 'discord', {
+      replyTargetPlatformHandles: ['1504126043693387796'],
+    });
+
+    expect(c.find((x) => x.avatarId === 'shoggothe')?.isReplyTarget).toBe(true);
+    expect(c.find((x) => x.avatarId === 'shoggothe')?.replyConfidence).toBe(1);
+    expect(c.find((x) => x.avatarId === 'snarkle')?.isReplyTarget).toBe(false);
+  });
+
+  it('can flag a reply target by avatar id', () => {
+    const c = buildTurnCandidates(ROOM, 'following up', 'telegram', {
+      replyTargetAvatarId: 'agent-6-1cc5',
+    });
+
+    expect(c.find((x) => x.avatarId === 'agent-6-1cc5')?.isReplyTarget).toBe(true);
+    expect(c.find((x) => x.avatarId === 'avatar-4-txcl')?.isReplyTarget).toBe(false);
+  });
+
+  it('can flag a reply target by avatar id without a platform handle', () => {
+    const room = [
+      { avatarId: 'shoggothe', avatarName: 'shoggothé' },
+      { avatarId: 'phantom', avatarName: 'Continuum Phantom' },
+    ];
+    const c = buildTurnCandidates(room, 'hello', 'discord', {
+      replyTargetAvatarId: 'shoggothe',
+    });
+
+    expect(c.find((x) => x.avatarId === 'shoggothe')?.isReplyTarget).toBe(true);
+    expect(c.find((x) => x.avatarId === 'shoggothe')?.replyConfidence).toBe(1);
+    expect(c.find((x) => x.avatarId === 'phantom')?.isReplyTarget).toBe(false);
   });
 });
 

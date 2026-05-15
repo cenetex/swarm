@@ -196,25 +196,25 @@ describe('getAvailableModelsForIntegration', () => {
   it('should return media models for OpenRouter capabilities', () => {
     const models = getAvailableModelsForIntegration('openrouter');
 
+    expect(models.llm).toEqual([]);
     expect(models.image_generation).toBeTruthy();
     expect(models.video_generation).toBeTruthy();
     expect(models.image_generation.length).toBeGreaterThan(0);
     expect(models.video_generation.length).toBeGreaterThan(0);
   });
 
-  it('should return models for OpenAI capabilities', () => {
+  it('should not return static LLM models for OpenAI capabilities', () => {
     const models = getAvailableModelsForIntegration('openai');
 
-    expect(models.llm).toBeTruthy();
+    expect(models.llm).toEqual([]);
     expect(models.text_to_speech).toBeTruthy();
     expect(models.transcription).toBeTruthy();
   });
 
-  it('should return models for Anthropic capabilities', () => {
+  it('should not return static LLM models for Anthropic capabilities', () => {
     const models = getAvailableModelsForIntegration('anthropic');
 
-    expect(models.llm).toBeTruthy();
-    expect(models.llm.length).toBeGreaterThan(0);
+    expect(models.llm).toEqual([]);
   });
 
   it('should only return models for that provider', () => {
