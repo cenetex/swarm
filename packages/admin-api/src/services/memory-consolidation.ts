@@ -28,6 +28,7 @@ import {
   executeWithFallback,
   withOpenRouterFallbackRouting,
 } from './models-registry.js';
+import { resolveOpenRouterChatModelPlan } from './openrouter-chat-models.js';
 
 // ============================================================================
 // Configuration
@@ -165,8 +166,15 @@ Respond with ONLY the statement, nothing else.`;
       max_tokens: 100,
       temperature: 0.7,
     };
+    const modelPlan = await resolveOpenRouterChatModelPlan({
+      requestModel: LLM_MODEL,
+      apiKey: llmApiKey,
+    });
+
     const fallbackResult = await executeWithFallback(async (candidateModel) => {
-      const body = withOpenRouterFallbackRouting(requestBody, candidateModel);
+      const body = withOpenRouterFallbackRouting(requestBody, candidateModel, {
+        fallbackModels: modelPlan.fallbackModels,
+      });
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -192,8 +200,9 @@ Respond with ONLY the statement, nothing else.`;
 
       return response;
     }, {
-      primaryModel: LLM_MODEL,
+      primaryModel: modelPlan.primaryModel,
       avatarId,
+      fallbackModels: modelPlan.fallbackModels,
     });
     const response = fallbackResult.result;
 

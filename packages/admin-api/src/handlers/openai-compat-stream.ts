@@ -31,9 +31,9 @@ import { resolveTokenUsage, recordTokenUsage } from '../services/token-accountin
 import {
   DEFAULT_MODELS,
   executeWithFallback,
-  resolveChatModel,
   withOpenRouterFallbackRouting,
 } from '../services/models-registry.js';
+import { resolveOpenRouterChatModelPlan } from '../services/openrouter-chat-models.js';
 
 const StreamRequestSchema = z.object({
   model: z.string().optional(), // Optional for scoped keys
@@ -192,11 +192,11 @@ async function handleStreamingRequest(
   const keyHash = hashApiKey(apiKey);
 
   // Build messages
-  const llmModel = resolveChatModel({
+  const llmModel = (await resolveOpenRouterChatModelPlan({
     requestModel: undefined,
     avatarModel: avatarRecord.llmConfig?.model,
     defaultModel: DEFAULT_MODELS.llm,
-  });
+  })).primaryModel;
   const systemPrompt = avatarRecord.persona || `You are ${avatarRecord.name || 'an AI assistant'}.`;
   const messages = [
     { role: 'system' as const, content: systemPrompt },
@@ -244,9 +244,16 @@ async function handleStreamingRequest(
     requestBody.tool_choice = request.tool_choice;
   }
 
+  const modelPlan = await resolveOpenRouterChatModelPlan({
+    requestModel: llmModel,
+    apiKey: llmApiKey,
+    requireTools: !!request.tools && request.tools.length > 0,
+  });
+
   const fallbackResult = await executeWithFallback(async (candidateModel) => {
     const routedBody = withOpenRouterFallbackRouting(requestBody, candidateModel, {
       requireParameters: !!request.tools && request.tools.length > 0,
+      fallbackModels: modelPlan.fallbackModels,
     });
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -267,8 +274,9 @@ async function handleStreamingRequest(
 
     return response;
   }, {
-    primaryModel: llmModel,
+    primaryModel: modelPlan.primaryModel,
     avatarId,
+    fallbackModels: modelPlan.fallbackModels,
   });
   const response = fallbackResult.result;
 

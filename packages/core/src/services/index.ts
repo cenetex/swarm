@@ -1,7 +1,13 @@
 /**
  * Services barrel export
  */
-export { BedrockLLMService, OpenRouterLLMService, createLLMService } from './llm/index.js';
+export {
+  BedrockLLMService,
+  OpenRouterLLMService,
+  createLLMService,
+  resolveOpenRouterChatModelPlan,
+  type OpenRouterChatModelPlan,
+} from './llm/index.js';
 export {
   SwarmMediaService,
   createMediaService,

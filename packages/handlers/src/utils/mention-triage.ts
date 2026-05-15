@@ -4,7 +4,13 @@
  * Uses a cheap/fast model to decide which mentions warrant a full response.
  * This saves cost by avoiding full LLM calls for mentions the avatar would ignore.
  */
-import { DEFAULT_LLM_MODEL, logger, type SwarmEnvelope, type AvatarConfig } from '@swarm/core';
+import {
+  DEFAULT_LLM_MODEL,
+  logger,
+  resolveOpenRouterChatModelPlan,
+  type SwarmEnvelope,
+  type AvatarConfig,
+} from '@swarm/core';
 
 // Triage model - use a cheap, fast model
 const TRIAGE_MODEL = process.env.TRIAGE_MODEL || DEFAULT_LLM_MODEL;
@@ -178,8 +184,11 @@ export async function triageMentions(
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TRIAGE_TIMEOUT_MS);
+  let attemptedModel = TRIAGE_MODEL || 'openrouter_catalog';
 
   try {
+    const modelPlan = await resolveOpenRouterChatModelPlan(apiKey, TRIAGE_MODEL);
+    attemptedModel = modelPlan.primaryModel;
     const response = await fetch(TRIAGE_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -189,7 +198,13 @@ export async function triageMentions(
         'X-Title': 'Swarm Platform - Mention Triage',
       },
       body: JSON.stringify({
-        model: TRIAGE_MODEL,
+        model: modelPlan.primaryModel,
+        ...(modelPlan.fallbackModels.length > 0
+          ? { models: [modelPlan.primaryModel, ...modelPlan.fallbackModels], route: 'fallback' }
+          : {}),
+        provider: {
+          allow_fallbacks: true,
+        },
         messages: [
           { role: 'user', content: prompt },
         ],
@@ -236,13 +251,13 @@ export async function triageMentions(
       replyCount,
       ignoreCount,
       triageTimeMs: Date.now() - startTime,
-      model: TRIAGE_MODEL,
+      model: modelPlan.primaryModel,
     });
 
     return {
       decisions,
       triageTimeMs: Date.now() - startTime,
-      modelUsed: TRIAGE_MODEL,
+      modelUsed: modelPlan.primaryModel,
     };
   } catch (error) {
     clearTimeout(timeoutId);
@@ -252,6 +267,7 @@ export async function triageMentions(
       subsystem: 'twitter',
       error: error instanceof Error ? error.message : String(error),
       avatarId: avatarConfig.id,
+      model: attemptedModel,
     });
 
     // On failure, default to replying to all (safer than ignoring)
@@ -268,7 +284,7 @@ export async function triageMentions(
     return {
       decisions,
       triageTimeMs: Date.now() - startTime,
-      modelUsed: `${TRIAGE_MODEL} (failed)`,
+      modelUsed: `${attemptedModel} (failed)`,
     };
   }
 }

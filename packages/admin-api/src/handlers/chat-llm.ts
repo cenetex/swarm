@@ -14,6 +14,7 @@ import {
   executeWithFallback,
   withOpenRouterFallbackRouting,
 } from '../services/models-registry.js';
+import { resolveOpenRouterChatModelPlan } from '../services/openrouter-chat-models.js';
 
 const LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN;
 export const LLM_MODEL = process.env.LLM_MODEL || DEFAULT_LLM_MODEL;
@@ -489,9 +490,16 @@ export async function callLlmDirectFallback(
     });
   }
 
+  const modelPlan = await resolveOpenRouterChatModelPlan({
+    requestModel: model,
+    apiKey,
+    requireTools: !!tools && tools.length > 0,
+  });
+
   const fetchCompletion = async (candidateModel: string): Promise<Response> => {
     const body = withOpenRouterFallbackRouting(baseBody, candidateModel, {
       requireParameters: !!tools && tools.length > 0,
+      fallbackModels: modelPlan.fallbackModels,
     });
     let response: Response | null = null;
     let lastError: unknown;
@@ -619,8 +627,9 @@ export async function callLlmDirectFallback(
   };
 
   const fallbackResult = await executeWithFallback(fetchCompletion, {
-    primaryModel: model,
+    primaryModel: modelPlan.primaryModel,
     avatarId: 'admin-chat',
+    fallbackModels: modelPlan.fallbackModels,
   });
   const response = fallbackResult.result;
 
@@ -660,6 +669,6 @@ export async function callLlmDirectFallback(
     latencyMs: Date.now() - start,
     model: selectedModel,
     attemptedModels: fallbackResult.attemptedModels,
-    usedFallback: fallbackResult.usedFallback || selectedModel !== model,
+    usedFallback: fallbackResult.usedFallback || selectedModel !== modelPlan.primaryModel,
   };
 }

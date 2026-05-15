@@ -46,9 +46,9 @@ import type { UsageSource } from '../services/token-accounting.js';
 import {
   DEFAULT_MODELS,
   executeWithFallback,
-  resolveChatModel,
   withOpenRouterFallbackRouting,
 } from '../services/models-registry.js';
+import { resolveOpenRouterChatModelPlan } from '../services/openrouter-chat-models.js';
 
 // =============================================================================
 // Configuration
@@ -543,9 +543,16 @@ async function callExternalToolModel(params: {
     baseBody.tool_choice = params.toolChoice;
   }
 
+  const modelPlan = await resolveOpenRouterChatModelPlan({
+    requestModel: params.llmModel,
+    apiKey,
+    requireTools: !!params.tools && params.tools.length > 0,
+  });
+
   const fallbackResult = await executeWithFallback(async (candidateModel) => {
     const body = withOpenRouterFallbackRouting(baseBody, candidateModel, {
       requireParameters: !!params.tools && params.tools.length > 0,
+      fallbackModels: modelPlan.fallbackModels,
     });
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -566,8 +573,9 @@ async function callExternalToolModel(params: {
 
     return response;
   }, {
-    primaryModel: params.llmModel,
+    primaryModel: modelPlan.primaryModel,
     avatarId: 'openai-compat',
+    fallbackModels: modelPlan.fallbackModels,
   });
   const response = fallbackResult.result;
 
@@ -606,7 +614,7 @@ async function callExternalToolModel(params: {
     latencyMs: Date.now() - start,
     model: data.model || fallbackResult.model,
     attemptedModels: fallbackResult.attemptedModels,
-    usedFallback: fallbackResult.usedFallback || (data.model !== undefined && data.model !== params.llmModel),
+    usedFallback: fallbackResult.usedFallback || (data.model !== undefined && data.model !== modelPlan.primaryModel),
   };
 }
 
@@ -1042,11 +1050,11 @@ async function handleChatCompletions(
 
   // Resolve provider model for logging and execution. The OpenAI-compatible
   // `model` field above identifies the avatar, not the upstream LLM.
-  const llmModel = resolveChatModel({
+  const llmModel = (await resolveOpenRouterChatModelPlan({
     requestModel: undefined,
     avatarModel: avatarRecord.llmConfig?.model,
     defaultModel: DEFAULT_MODELS.llm,
-  });
+  })).primaryModel;
   const externalToolMode = usesExternalToolMode(request);
 
   logger.info('Processing chat completion', {

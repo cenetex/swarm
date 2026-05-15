@@ -36,6 +36,7 @@ import {
   executeWithFallback,
   withOpenRouterFallbackRouting,
 } from './models-registry.js';
+import { resolveOpenRouterChatModelPlan } from './openrouter-chat-models.js';
 
 // =============================================================================
 // LLM CONFIGURATION
@@ -337,17 +338,23 @@ async function callLLM(params: {
       };
     });
 
-    const primaryModel = params.model || DEFAULT_LLM_MODEL;
     const requestBody = {
       messages: openRouterMessages,
       tools: params.tools.length > 0 ? params.tools : undefined,
       max_tokens: params.maxTokens || DEFAULT_LLM_MAX_TOKENS,
       temperature: params.temperature ?? DEFAULT_LLM_TEMPERATURE,
     };
+    const modelPlan = await resolveOpenRouterChatModelPlan({
+      requestModel: params.model,
+      defaultModel: DEFAULT_LLM_MODEL,
+      apiKey,
+      requireTools: params.tools.length > 0,
+    });
 
     const fallbackResult = await executeWithFallback(async (candidateModel) => {
       const body = withOpenRouterFallbackRouting(requestBody, candidateModel, {
         requireParameters: params.tools.length > 0,
+        fallbackModels: modelPlan.fallbackModels,
       });
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -368,8 +375,9 @@ async function callLLM(params: {
 
       return response;
     }, {
-      primaryModel,
+      primaryModel: modelPlan.primaryModel,
       avatarId: 'processor-adapter',
+      fallbackModels: modelPlan.fallbackModels,
     });
     const response = fallbackResult.result;
 
@@ -403,10 +411,10 @@ async function callLLM(params: {
       throw new Error('No response from LLM');
     }
 
-    if (fallbackResult.usedFallback || (data.model && data.model !== primaryModel)) {
+    if (fallbackResult.usedFallback || (data.model && data.model !== modelPlan.primaryModel)) {
       logger.info('Processor LLM fallback used', {
         event: 'processor_llm_fallback_used',
-        requestedModel: primaryModel,
+        requestedModel: modelPlan.primaryModel,
         responseModel: data.model || fallbackResult.model,
         attemptedModels: fallbackResult.attemptedModels,
       });

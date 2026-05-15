@@ -2333,7 +2333,7 @@ export class AdminApiConstruct extends Construct {
         STATE_TABLE: stateTable?.tableName || '',
         LLM_API_KEY_SECRET_ARN: llmApiKey.secretArn,
         OPENROUTER_API_KEY: '', // Populated from secret at runtime
-        CONSOLIDATION_MODEL: 'anthropic/claude-3-5-haiku-latest',
+        CONSOLIDATION_MODEL: '',
         NODE_ENV: environment,
         LOG_LEVEL: logLevel,
         CDN_URL: cdnUrl || '',

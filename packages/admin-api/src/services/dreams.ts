@@ -27,6 +27,7 @@ import {
   executeWithFallback,
   withOpenRouterFallbackRouting,
 } from './models-registry.js';
+import { resolveOpenRouterChatModelPlan } from './openrouter-chat-models.js';
 
 const log = createSystemLogger('dreams');
 
@@ -294,8 +295,15 @@ Generate your first dream state.`;
     max_tokens: DREAM_MAX_TOKENS,
     temperature: 0.9,
   };
+  const modelPlan = await resolveOpenRouterChatModelPlan({
+    requestModel: llmModel,
+    apiKey: llmApiKey,
+  });
+
   const fallbackResult = await executeWithFallback(async (candidateModel) => {
-    const body = withOpenRouterFallbackRouting(requestBody, candidateModel);
+    const body = withOpenRouterFallbackRouting(requestBody, candidateModel, {
+      fallbackModels: modelPlan.fallbackModels,
+    });
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -314,8 +322,9 @@ Generate your first dream state.`;
 
     return response;
   }, {
-    primaryModel: llmModel,
+    primaryModel: modelPlan.primaryModel,
     avatarId: 'dreams',
+    fallbackModels: modelPlan.fallbackModels,
   });
   const response = fallbackResult.result;
 
