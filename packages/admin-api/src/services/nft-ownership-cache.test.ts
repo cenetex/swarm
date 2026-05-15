@@ -6,6 +6,7 @@ process.env.ADMIN_TABLE = process.env.ADMIN_TABLE || 'test-admin-table';
 
 import {
   getCachedNFTOwner,
+  primeNFTOwnerCache,
   invalidateNFTOwnerCache,
   _setNFTOwnershipDynamoClient,
   _resetNFTOwnershipMemoryCache,
@@ -117,6 +118,19 @@ describe('nft-ownership-cache', () => {
     expect(row?.owner).toBe(OWNER_A);
     expect(typeof row?.ttl).toBe('number');
     expect(row!.ttl! * 1000).toBeGreaterThan(Date.now());
+  });
+
+  it('priming writes both cache tiers without calling Helius', async () => {
+    await primeNFTOwnerCache(MINT, OWNER_A);
+    expect(heliusFetchCount).toBe(0);
+
+    const owner = await getCachedNFTOwner(MINT);
+    expect(owner).toBe(OWNER_A);
+    expect(heliusFetchCount).toBe(0);
+
+    const row = store.get(keyFor(`NFT_OWNER#${MINT}`, 'CURRENT'));
+    expect(row).toBeDefined();
+    expect(row?.owner).toBe(OWNER_A);
   });
 
   it('in-memory cache hit skips both DynamoDB and Helius', async () => {

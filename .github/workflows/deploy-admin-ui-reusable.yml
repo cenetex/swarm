@@ -90,7 +90,7 @@ jobs:
       distribution: ${{ steps.outputs.outputs.distribution }}
 
     steps:
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+      - uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -144,7 +144,6 @@ jobs:
       (needs.admin-ui-build.result == 'success' || needs.admin-ui-build.result == 'skipped') &&
       needs.stack-outputs.result == 'success'
     environment: ${{ inputs.environment }}
-
     steps:
       - name: Download Admin UI build
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -152,7 +151,7 @@ jobs:
           name: admin-ui-dist
           path: dist
 
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+      - uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}

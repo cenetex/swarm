@@ -53,7 +53,7 @@ export interface AIProviderConfig {
     voice_clone?: string;          // e.g., 'lucataco/xtts-v2'
     text_to_speech?: string;       // e.g., 'lucataco/xtts-v2' or 'gpt-4o-mini-tts'
     transcription?: string;        // e.g., 'openai/whisper'
-    llm?: string;                  // e.g., 'anthropic/claude-3-opus'
+    llm?: string;                  // OpenRouter catalog model ID
   };
 
   // Provider-specific settings

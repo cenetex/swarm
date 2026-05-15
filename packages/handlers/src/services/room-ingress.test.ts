@@ -10,15 +10,20 @@ import {
 } from './room-ingress.js';
 
 describe('room-ingress', () => {
+  const mockClaimRoomMessage = mock(() => Promise.resolve(true));
   const mockAppendMessage = mock(() => Promise.resolve());
   const mockGetRecentMessages = mock(() => Promise.resolve([] as unknown[]));
   const mockGetChannelAvatarIds = mock(() => Promise.resolve([] as string[]));
 
   beforeEach(() => {
+    mockClaimRoomMessage.mockClear();
+    mockClaimRoomMessage.mockResolvedValue(true);
     mockAppendMessage.mockClear();
     mockGetRecentMessages.mockClear();
+    mockGetRecentMessages.mockResolvedValue([]);
     mockGetChannelAvatarIds.mockClear();
     _setDeps({
+      claimRoomMessage: mockClaimRoomMessage as never,
       appendMessage: mockAppendMessage as never,
       getRecentMessages: mockGetRecentMessages as never,
       getChannelAvatarIds: mockGetChannelAvatarIds as never,
@@ -53,6 +58,7 @@ describe('room-ingress', () => {
       expect(result.isNew).toBe(true);
       expect(result.roomKey).toBe('telegram:-100123');
       expect(result.messageId).toBe('msg-001');
+      expect(mockClaimRoomMessage).toHaveBeenCalledWith('-100123', 'msg-001');
       expect(mockAppendMessage).toHaveBeenCalledTimes(1);
       expect(mockAppendMessage).toHaveBeenCalledWith('-100123', {
         messageId: 'msg-001',
@@ -73,6 +79,17 @@ describe('room-ingress', () => {
 
       expect(result.isNew).toBe(false);
       expect(result.roomKey).toBe('telegram:-100123');
+      expect(mockAppendMessage).not.toHaveBeenCalled();
+    });
+
+    it('deduplicates when the atomic room message claim already exists', async () => {
+      mockClaimRoomMessage.mockResolvedValueOnce(false);
+
+      const result = await processSharedRoomMessage('discord', 'chan-123', baseMessage);
+
+      expect(result.isNew).toBe(false);
+      expect(result.roomKey).toBe('discord:chan-123');
+      expect(mockGetRecentMessages).not.toHaveBeenCalled();
       expect(mockAppendMessage).not.toHaveBeenCalled();
     });
 

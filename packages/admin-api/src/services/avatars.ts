@@ -28,7 +28,7 @@ import { storeSecret, deleteAllAvatarSecrets, _getSecretValueInternal } from './
 import { deleteTelegramWebhook } from './platform/telegram.js';
 import {
   getCachedNFTOwner,
-  invalidateNFTOwnerCache,
+  primeNFTOwnerCache,
 } from './nft-ownership-cache.js';
 import { recordAuditEvent } from './audit-log.js';
 import { registerTelegramWebhook, generateWebhookSecret } from './telegram.js';
@@ -961,12 +961,13 @@ export async function createAvatarFromNFT(
   // Sync to state table
   await syncAvatarConfig(avatar);
 
-  // #1385: a fresh claim guarantees the NFT just moved — bust any cached
-  // owner row so the first access goes to Helius instead of serving stale.
+  // #1385 follow-up: the claim path just verified ownership through Helius.
+  // Seed the shared owner cache so the immediate post-scan GET/chat calls do
+  // not fail closed when Helius rate-limits the burst of follow-up requests.
   try {
-    await invalidateNFTOwnerCache(nft.mint);
+    await primeNFTOwnerCache(nft.mint, creatorWallet);
   } catch (err) {
-    log.warn('create_from_nft', 'invalidate_nft_owner_cache_failed', {
+    log.warn('create_from_nft', 'prime_nft_owner_cache_failed', {
       mintPrefix: nft.mint.slice(0, 8),
       error: err instanceof Error ? err.message : String(err),
     });

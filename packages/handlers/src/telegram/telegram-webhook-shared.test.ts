@@ -433,6 +433,43 @@ describe('webhook-security invalidateAvatarConfigCache', () => {
     invalidateAvatarConfigCache('nonexistent-avatar');
     expect(avatarConfigCache.size).toBe(sizeBefore);
   });
+
+  it('uses the shared config cache for avatar status', async () => {
+    const { avatarConfigCache, getAvatarStatus } = await securityModPromise;
+    const avatarConfig = { name: 'Test' } as unknown as import('@swarm/core').AvatarConfig;
+
+    avatarConfigCache.set('test-avatar', {
+      value: avatarConfig,
+      status: 'draft',
+      expiresAt: Date.now() + 60_000,
+    });
+    expect(await getAvatarStatus('test-avatar')).toBe('draft');
+
+    avatarConfigCache.set('test-avatar', {
+      value: avatarConfig,
+      status: 'active',
+      expiresAt: Date.now() + 60_000,
+    });
+    expect(await getAvatarStatus('test-avatar')).toBe('active');
+  });
+
+  it('does not cache draft when status lookup fails', async () => {
+    const {
+      avatarConfigCache,
+      getAvatarStatus,
+      setWebhookSecurityStateServiceForTest,
+    } = await securityModPromise;
+
+    avatarConfigCache.delete('error-avatar');
+    setWebhookSecurityStateServiceForTest({
+      getAvatarConfigWithStatus: async () => {
+        throw new Error('DDB unavailable');
+      },
+    } as unknown as ReturnType<typeof import('@swarm/core').createStateService>);
+
+    await expect(getAvatarStatus('error-avatar')).rejects.toThrow('DDB unavailable');
+    expect(avatarConfigCache.has('error-avatar')).toBe(false);
+  });
 });
 
 // =============================================================================
