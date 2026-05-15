@@ -68,6 +68,7 @@ export async function runLlmCallLoop(params: {
   let lastLlmMode: 'direct' | null = null;
   let lastFallbackUsage: LlmUsage | undefined;
   let lastFallbackLatency: number | undefined;
+  let lastFallbackModel = effectiveModel;
 
   const runLlmAttempt = async (): Promise<void> => {
     if (!llmCircuitBreaker.canExecute()) {
@@ -77,6 +78,7 @@ export async function runLlmCallLoop(params: {
     fallbackResponse = '';
     lastLlmStart = 0; lastLlmMode = null;
     lastFallbackUsage = undefined; lastFallbackLatency = undefined;
+    lastFallbackModel = effectiveModel;
 
     try {
       lastLlmStart = Date.now();
@@ -97,6 +99,7 @@ export async function runLlmCallLoop(params: {
       fallbackResponse = result.content;
       lastFallbackUsage = result.usage;
       lastFallbackLatency = result.latencyMs;
+      lastFallbackModel = result.model;
 
       adminToolCalls = result.toolCalls.map(tc => ({
         id: tc.id, type: 'function' as const,
@@ -108,7 +111,7 @@ export async function runLlmCallLoop(params: {
 
       if (toolCalls.length > 0) {
         logLlmMetrics({
-          avatarId, model: effectiveModel,
+          avatarId, model: result.model,
           latencyMs: result.latencyMs, usage: result.usage,
           toolCalls: toolCalls.length, mode: 'direct',
         });
@@ -132,7 +135,7 @@ export async function runLlmCallLoop(params: {
       response = fallbackResponse;
       if (typeof lastFallbackLatency === 'number') {
         logLlmMetrics({
-          avatarId, model: effectiveModel,
+          avatarId, model: lastFallbackModel,
           latencyMs: lastFallbackLatency, usage: lastFallbackUsage,
           toolCalls: 0, mode: 'direct',
         });

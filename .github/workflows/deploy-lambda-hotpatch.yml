@@ -45,7 +45,7 @@ jobs:
       - name: Build handlers
         run: pnpm --filter @swarm/core --filter @swarm/mcp-server --filter @swarm/handlers build
 
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+      - uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           # Use dedicated hotpatch role (least-privilege: Lambda code updates only).
           # Falls back to deploy role if hotpatch role secret is not yet configured.
@@ -59,7 +59,7 @@ jobs:
           FUNCTIONS: ${{ inputs.functions }}
         run: |
           set -e
-          
+
           # Define function mappings: handler file -> Lambda function name pattern
           declare -A FUNCTION_MAP=(
             ["message-processor"]="swarm-${CDK_ENV}-message-processor"
@@ -69,18 +69,18 @@ jobs:
             ["twitter-mention-poller"]="swarm-${CDK_ENV}-twitter-mention-poller"
             ["autonomous-tweet-poster"]="swarm-${CDK_ENV}-autonomous-tweet-poster"
           )
-          
+
           cd packages/handlers
-          
+
           # Determine which functions to deploy
           if [ "$FUNCTIONS" = "all" ]; then
             DEPLOY_FUNCTIONS="${!FUNCTION_MAP[@]}"
           else
             DEPLOY_FUNCTIONS=$(echo "$FUNCTIONS" | tr ',' ' ')
           fi
-          
+
           echo "🚀 Fast deploying to ${CDK_ENV}: ${DEPLOY_FUNCTIONS}"
-          
+
           for handler in $DEPLOY_FUNCTIONS; do
             LAMBDA_NAME="${FUNCTION_MAP[$handler]}"
             if [ -z "$LAMBDA_NAME" ]; then
@@ -123,7 +123,7 @@ jobs:
             echo "✅ ${LAMBDA_NAME} updated"
             cd - > /dev/null
           done
-          
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## ⚡ Fast Deploy Complete" >> $GITHUB_STEP_SUMMARY
           echo "Environment: **${CDK_ENV}**" >> $GITHUB_STEP_SUMMARY

@@ -17,6 +17,7 @@
  */
 import {
   appendMessage as _appendMessage,
+  claimRoomMessage as _claimRoomMessage,
   getRecentMessages as _getRecentMessages,
   logger,
   type Platform,
@@ -64,12 +65,14 @@ export type ChannelAvatarMetaResolver = (channelId: string) => Promise<ChannelAv
 
 /** Overridable dependencies for testing without process-global mock.module. */
 export interface RoomIngressDeps {
+  claimRoomMessage: typeof _claimRoomMessage;
   appendMessage: typeof _appendMessage;
   getRecentMessages: typeof _getRecentMessages;
   getChannelAvatarIds: ChannelAvatarResolver;
 }
 
 const defaultDeps: RoomIngressDeps = {
+  claimRoomMessage: _claimRoomMessage,
   appendMessage: _appendMessage,
   getRecentMessages: _getRecentMessages,
   getChannelAvatarIds: _getChannelAvatarIds,
@@ -136,6 +139,7 @@ export function _setDeps(deps: Partial<RoomIngressDeps>): void {
 
 /** Reset dependencies to originals. */
 export function _resetDeps(): void {
+  defaultDeps.claimRoomMessage = _claimRoomMessage;
   defaultDeps.appendMessage = _appendMessage;
   defaultDeps.getRecentMessages = _getRecentMessages;
   defaultDeps.getChannelAvatarIds = _getChannelAvatarIds;
@@ -169,7 +173,20 @@ export async function processSharedRoomMessage(
 ): Promise<RoomIngressResult> {
   const roomKey = buildRoomKey(platform, channelId);
 
-  // Dedup: check recent messages for this messageId
+  // Atomic dedup: Discord delivers the same channel message to each bot
+  // connection, so one process can receive concurrent duplicates.
+  const claimed = await defaultDeps.claimRoomMessage(channelId, message.messageId);
+  if (!claimed) {
+    logger.info('Room ingress dedup: message already claimed', {
+      event: 'room_ingress_dedup',
+      subsystem: 'room-ingress',
+      roomKey,
+      messageId: message.messageId,
+    });
+    return { roomKey, messageId: message.messageId, isNew: false };
+  }
+
+  // Compatibility fallback: old ledger rows may predate the claim record.
   const recent = await defaultDeps.getRecentMessages(channelId, 50);
   const alreadyExists = recent.some((m) => m.messageId === message.messageId);
 

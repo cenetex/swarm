@@ -20,7 +20,7 @@ import type { AICapability } from '../types.js';
 
 describe('Models Registry', () => {
   describe('AVAILABLE_MODELS catalog', () => {
-    it('should contain models for all core capabilities', () => {
+    it('should contain local models for non-LLM capabilities', () => {
       const capabilities: AICapability[] = [
         'image_generation',
         'video_generation',
@@ -28,7 +28,6 @@ describe('Models Registry', () => {
         'voice_clone',
         'text_to_speech',
         'transcription',
-        'llm',
       ];
 
       for (const capability of capabilities) {
@@ -57,7 +56,6 @@ describe('Models Registry', () => {
         'audio_generation',
         'voice_clone',
         'transcription',
-        'llm',
       ];
 
       for (const capability of capabilities) {
@@ -105,7 +103,18 @@ describe('Models Registry', () => {
       ];
 
       for (const capability of capabilities) {
-        expect(DEFAULT_MODELS[capability]).toBeTruthy();
+        expect(DEFAULT_MODELS[capability]).toBeDefined();
+      }
+    });
+
+    it('does not hard-code a default LLM model ID', () => {
+      expect(DEFAULT_MODELS.llm).toBe('');
+    });
+
+    it('should have concrete defaults for non-LLM capabilities', () => {
+      for (const [capability, modelId] of Object.entries(DEFAULT_MODELS)) {
+        if (capability === 'llm') continue;
+        expect(modelId).toBeTruthy();
       }
     });
 
@@ -185,16 +194,14 @@ describe('Models Registry', () => {
       expect(model?.capabilities).toContain('voice_clone');
     });
 
-    it('should return first model when no default is marked', () => {
-      // Even if no isDefault is set, should return first available
+    it('does not return a static default LLM model', () => {
       const model = getDefaultModel('llm');
-      expect(model).toBeTruthy();
-      expect(model?.capabilities).toContain('llm');
+      expect(model).toBeUndefined();
     });
 
-    it('should filter by provider when specified', () => {
+    it('does not return static provider-filtered LLM models', () => {
       const model = getDefaultModel('llm', 'anthropic');
-      expect(model?.provider).toBe('anthropic');
+      expect(model).toBeUndefined();
     });
   });
 
@@ -246,10 +253,9 @@ describe('Models Registry', () => {
       expect(models.every(m => m.provider === 'openai')).toBe(true);
     });
 
-    it('should return all Anthropic models', () => {
+    it('does not keep Anthropic LLM models in the static registry', () => {
       const models = getModelsForProvider('anthropic');
-      expect(models.length).toBeGreaterThan(0);
-      expect(models.every(m => m.provider === 'anthropic')).toBe(true);
+      expect(models).toEqual([]);
     });
 
     it('should return empty array for non-existent provider', () => {

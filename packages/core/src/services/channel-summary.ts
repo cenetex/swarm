@@ -5,6 +5,8 @@
  * Summaries are cached and used for cross-platform presence awareness.
  */
 import type { ContextMessage, ChannelState } from '../types/index.js';
+import { DEFAULT_MODELS } from './media/types.js';
+import { resolveOpenRouterChatModelPlan } from './llm/index.js';
 import type { ChannelInfo, PresenceService } from './presence.js';
 
 // =============================================================================
@@ -13,7 +15,7 @@ import type { ChannelInfo, PresenceService } from './presence.js';
 
 export const SUMMARY_CONFIG = {
   // Model settings
-  MODEL: 'anthropic/claude-haiku-4.5', // Fast, cheap model for summaries (Haiku 4.5)
+  MODEL: process.env.SUMMARY_MODEL || DEFAULT_MODELS.llm,
   MAX_TOKENS: 100,
   TEMPERATURE: 0.3,
 
@@ -194,6 +196,7 @@ Overview:`;
     const timeoutId = setTimeout(() => controller.abort(), SUMMARY_CONFIG.TIMEOUT_MS);
 
     try {
+      const modelPlan = await resolveOpenRouterChatModelPlan(this.apiKey, SUMMARY_CONFIG.MODEL);
       const response = await fetch(SUMMARY_CONFIG.OPENROUTER_URL, {
         method: 'POST',
         headers: {
@@ -203,7 +206,13 @@ Overview:`;
           'X-Title': 'Swarm Channel Summary',
         },
         body: JSON.stringify({
-          model: SUMMARY_CONFIG.MODEL,
+          model: modelPlan.primaryModel,
+          ...(modelPlan.fallbackModels.length > 0
+            ? { models: [modelPlan.primaryModel, ...modelPlan.fallbackModels], route: 'fallback' }
+            : {}),
+          provider: {
+            allow_fallbacks: true,
+          },
           messages: [{ role: 'user', content: prompt }],
           temperature: SUMMARY_CONFIG.TEMPERATURE,
           max_tokens: SUMMARY_CONFIG.MAX_TOKENS,

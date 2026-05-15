@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   _setDynamoClient,
+  claimRoomMessage,
   appendMessage,
   getRecentMessages,
   updateOverlay,
@@ -24,6 +25,52 @@ describe('SharedRoomService', () => {
   afterEach(() => {
     _setDynamoClient(null);
     delete process.env.SHARED_ROOM_TABLE;
+  });
+
+  // ===========================================================================
+  // claimRoomMessage
+  // ===========================================================================
+
+  describe('claimRoomMessage', () => {
+    it('writes a conditional dedup claim for a room message', async () => {
+      const claimed = await claimRoomMessage('room-1', 'msg-1');
+
+      expect(claimed).toBe(true);
+      expect(mockSend).toHaveBeenCalledTimes(1);
+
+      const putInput = mockSend.mock.calls[0][0].input;
+      expect(putInput.TableName).toBe('test-shared-room');
+      expect(putInput.Item.pk).toBe('ROOM#room-1');
+      expect(putInput.Item.sk).toBe('DEDUP#msg-1');
+      expect(putInput.Item.roomId).toBe('room-1');
+      expect(putInput.Item.messageId).toBe('msg-1');
+      expect(putInput.Item.ttl).toBeGreaterThan(0);
+      expect(putInput.ConditionExpression).toBe(
+        'attribute_not_exists(pk) AND attribute_not_exists(sk)',
+      );
+    });
+
+    it('returns false when the dedup claim already exists', async () => {
+      const duplicateError = new Error('duplicate');
+      duplicateError.name = 'ConditionalCheckFailedException';
+      mockSend = mock(() => Promise.reject(duplicateError));
+      const mockDocClient = { send: mockSend } as unknown as DynamoDBDocumentClient;
+      _setDynamoClient(mockDocClient);
+
+      const claimed = await claimRoomMessage('room-1', 'msg-1');
+
+      expect(claimed).toBe(false);
+    });
+
+    it('throws non-conditional DynamoDB errors', async () => {
+      const accessError = new Error('denied');
+      accessError.name = 'AccessDeniedException';
+      mockSend = mock(() => Promise.reject(accessError));
+      const mockDocClient = { send: mockSend } as unknown as DynamoDBDocumentClient;
+      _setDynamoClient(mockDocClient);
+
+      await expect(claimRoomMessage('room-1', 'msg-1')).rejects.toThrow('denied');
+    });
   });
 
   // ===========================================================================

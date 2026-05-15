@@ -112,8 +112,9 @@ const CHARS_PER_TOKEN: Record<string, number> = {
 const DEFAULT_CHARS_PER_TOKEN = 4.0;
 
 function getCharsPerToken(model: string): number {
+  const normalizedModel = model.replace(/^~/, '');
   for (const [prefix, ratio] of Object.entries(CHARS_PER_TOKEN)) {
-    if (model.startsWith(prefix)) {
+    if (normalizedModel.startsWith(prefix)) {
       return ratio;
     }
   }

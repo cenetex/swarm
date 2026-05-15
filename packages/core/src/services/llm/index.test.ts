@@ -73,6 +73,51 @@ function openRouterJsonResponse(
   });
 }
 
+function openRouterCatalogResponse(): Response {
+  return new Response(JSON.stringify({
+    data: [
+      {
+        id: 'openai/gpt-4',
+        context_length: 128000,
+        architecture: { output_modalities: ['text'] },
+        supported_parameters: ['tools'],
+      },
+      {
+        id: 'openai/gpt-4-fallback',
+        context_length: 64000,
+        architecture: { output_modalities: ['text'] },
+        supported_parameters: ['tools'],
+      },
+    ],
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function mockOpenRouterChatResponses(...responses: Array<Response | Error>): void {
+  let chatCall = 0;
+  mockFetch.mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/models')) {
+      return openRouterCatalogResponse();
+    }
+
+    const response = responses[chatCall++];
+    if (response instanceof Error) {
+      throw response;
+    }
+    if (response) {
+      return response;
+    }
+    throw new Error(`Unexpected OpenRouter chat call ${chatCall}`);
+  });
+}
+
+function expectFetchCalls(chatCalls: number): void {
+  expect(mockFetch).toHaveBeenCalledTimes(chatCalls + 1);
+}
+
 // ---------------------------------------------------------------------------
 // Tests for fetchWithRetry (exercised through OpenRouterLLMService)
 // ---------------------------------------------------------------------------
@@ -82,11 +127,12 @@ describe('OpenRouterLLMService', () => {
   async function createService() {
     // Clear module cache to pick up mocked fetch
     const mod = await import('./index.js');
+    mod._resetOpenRouterChatModelCache();
     return new mod.OpenRouterLLMService('test-api-key');
   }
 
   it('returns a successful response on first attempt', async () => {
-    mockFetch.mockResolvedValueOnce(openRouterJsonResponse('Hello there!'));
+    mockOpenRouterChatResponses(openRouterJsonResponse('Hello there!'));
 
     const service = await createService();
     const result = await service.generateResponse(makeParams());
@@ -95,38 +141,40 @@ describe('OpenRouterLLMService', () => {
     expect(result.model).toBe('openai/gpt-4');
     expect(result.tokensUsed).toBe(42);
     expect(result.finishReason).toBe('end_turn');
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expectFetchCalls(1);
   });
 
   it('retries on 429 and eventually succeeds', async () => {
-    mockFetch
-      .mockResolvedValueOnce(new Response('Rate limited', { status: 429 }))
-      .mockResolvedValueOnce(openRouterJsonResponse('Retry succeeded'));
+    mockOpenRouterChatResponses(
+      new Response('Rate limited', { status: 429 }),
+      openRouterJsonResponse('Retry succeeded'),
+    );
 
     const service = await createService();
     const result = await service.generateResponse(makeParams());
 
     expect(result.content).toBe('Retry succeeded');
     // 1 failed + 1 success = 2 total calls
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expectFetchCalls(2);
   });
 
   it('retries on 500 server errors', async () => {
-    mockFetch
-      .mockResolvedValueOnce(new Response('Server Error', { status: 500 }))
-      .mockResolvedValueOnce(new Response('Server Error', { status: 502 }))
-      .mockResolvedValueOnce(openRouterJsonResponse('Finally ok'));
+    mockOpenRouterChatResponses(
+      new Response('Server Error', { status: 500 }),
+      new Response('Server Error', { status: 502 }),
+      openRouterJsonResponse('Finally ok'),
+    );
 
     const service = await createService();
     const result = await service.generateResponse(makeParams());
 
     expect(result.content).toBe('Finally ok');
-    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expectFetchCalls(3);
   });
 
   it('does NOT retry on 400 client errors', async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response('Bad Request', { status: 400, statusText: 'Bad Request' })
+    mockOpenRouterChatResponses(
+      new Response('Bad Request', { status: 400, statusText: 'Bad Request' }),
     );
 
     const service = await createService();
@@ -134,12 +182,12 @@ describe('OpenRouterLLMService', () => {
     await expect(service.generateResponse(makeParams())).rejects.toThrow(
       /OpenRouter API error: 400/
     );
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expectFetchCalls(1);
   });
 
   it('does NOT retry on 401 unauthorized', async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' })
+    mockOpenRouterChatResponses(
+      new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }),
     );
 
     const service = await createService();
@@ -147,12 +195,12 @@ describe('OpenRouterLLMService', () => {
     await expect(service.generateResponse(makeParams())).rejects.toThrow(
       /OpenRouter API error: 401/
     );
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expectFetchCalls(1);
   });
 
   it('does NOT retry on 403 forbidden', async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response('Forbidden', { status: 403, statusText: 'Forbidden' })
+    mockOpenRouterChatResponses(
+      new Response('Forbidden', { status: 403, statusText: 'Forbidden' }),
     );
 
     const service = await createService();
@@ -160,44 +208,47 @@ describe('OpenRouterLLMService', () => {
     await expect(service.generateResponse(makeParams())).rejects.toThrow(
       /OpenRouter API error: 403/
     );
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expectFetchCalls(1);
   });
 
   it('throws after exhausting all retries on persistent 500', async () => {
     // OPENROUTER_RETRY_COUNT = 2, so 3 total attempts (0, 1, 2)
-    mockFetch
-      .mockResolvedValueOnce(new Response('Error', { status: 500 }))
-      .mockResolvedValueOnce(new Response('Error', { status: 500 }))
-      .mockResolvedValueOnce(new Response('Error', { status: 500 }));
+    mockOpenRouterChatResponses(
+      new Response('Error', { status: 500 }),
+      new Response('Error', { status: 500 }),
+      new Response('Error', { status: 500 }),
+    );
 
     const service = await createService();
 
     await expect(service.generateResponse(makeParams())).rejects.toThrow(/HTTP 500/);
-    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expectFetchCalls(3);
   });
 
   it('throws after exhausting all retries on persistent 429', async () => {
-    mockFetch
-      .mockResolvedValueOnce(new Response('Rate limited', { status: 429 }))
-      .mockResolvedValueOnce(new Response('Rate limited', { status: 429 }))
-      .mockResolvedValueOnce(new Response('Rate limited', { status: 429 }));
+    mockOpenRouterChatResponses(
+      new Response('Rate limited', { status: 429 }),
+      new Response('Rate limited', { status: 429 }),
+      new Response('Rate limited', { status: 429 }),
+    );
 
     const service = await createService();
 
     await expect(service.generateResponse(makeParams())).rejects.toThrow(/HTTP 429/);
-    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expectFetchCalls(3);
   });
 
   it('retries on network errors (fetch rejects)', async () => {
-    mockFetch
-      .mockRejectedValueOnce(new Error('ECONNRESET'))
-      .mockResolvedValueOnce(openRouterJsonResponse('Network recovered'));
+    mockOpenRouterChatResponses(
+      new Error('ECONNRESET'),
+      openRouterJsonResponse('Network recovered'),
+    );
 
     const service = await createService();
     const result = await service.generateResponse(makeParams());
 
     expect(result.content).toBe('Network recovered');
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expectFetchCalls(2);
   });
 
   it('parses tool calls from the response', async () => {
@@ -210,9 +261,7 @@ describe('OpenRouterLLMService', () => {
         },
       },
     ];
-    mockFetch.mockResolvedValueOnce(
-      openRouterJsonResponse('', 'tool_calls', toolCalls)
-    );
+    mockOpenRouterChatResponses(openRouterJsonResponse('', 'tool_calls', toolCalls));
 
     const service = await createService();
     const result = await service.generateResponse(makeParams());
@@ -236,9 +285,7 @@ describe('OpenRouterLLMService', () => {
     // Suppress console.warn during this test
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    mockFetch.mockResolvedValueOnce(
-      openRouterJsonResponse('', 'tool_calls', toolCalls)
-    );
+    mockOpenRouterChatResponses(openRouterJsonResponse('', 'tool_calls', toolCalls));
 
     const service = await createService();
     const result = await service.generateResponse(makeParams());
@@ -260,9 +307,7 @@ describe('OpenRouterLLMService', () => {
       ],
       usage: { total_tokens: 100 },
     };
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify(body), { status: 200 })
-    );
+    mockOpenRouterChatResponses(new Response(JSON.stringify(body), { status: 200 }));
 
     const service = await createService();
     const result = await service.generateResponse(makeParams());
@@ -271,12 +316,14 @@ describe('OpenRouterLLMService', () => {
   });
 
   it('sends correct headers including API key', async () => {
-    mockFetch.mockResolvedValueOnce(openRouterJsonResponse('ok'));
+    mockOpenRouterChatResponses(openRouterJsonResponse('ok'));
 
     const service = await createService();
     await service.generateResponse(makeParams());
 
-    const callArgs = mockFetch.mock.calls[0];
+    const callArgs = mockFetch.mock.calls.find(([input]) => String(input).includes('/chat/completions'));
+    expect(callArgs).toBeTruthy();
+    if (!callArgs) throw new Error('Expected chat completions call');
     const options = callArgs[1] as RequestInit;
     const headers = options.headers as Record<string, string>;
 

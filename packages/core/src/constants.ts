@@ -8,7 +8,7 @@ import { DEFAULT_MODELS } from './services/media/types.js';
  * Default LLM model for new avatars and fallback scenarios.
  * Each avatar stores their own model in llmConfig.model - this is just the default.
  */
-export const DEFAULT_LLM_MODEL = 'google/gemini-3-flash-preview';
+export const DEFAULT_LLM_MODEL = DEFAULT_MODELS.llm;
 
 /**
  * Default LLM provider

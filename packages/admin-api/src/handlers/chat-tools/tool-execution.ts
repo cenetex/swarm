@@ -200,7 +200,7 @@ export async function executeFallbackToolLoop(params: {
 
     logLlmMetrics({
       avatarId,
-      model: effectiveModel,
+      model: next.model,
       latencyMs: next.latencyMs,
       usage: next.usage,
       toolCalls: next.toolCalls.length,

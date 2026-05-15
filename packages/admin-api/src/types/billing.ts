@@ -41,7 +41,7 @@ export interface PlanLimits {
  *
  * Tier pricing:
  *   free     = $0/mo   — 1 bot, basic model access, CosyWorld branding
- *   pro      = $9/mo   — up to 3 bots, full model access, persistent memory (renamed from "Creator")
+ *   pro      = $9/mo   — one paid avatar, three platforms, OpenRouter model choice, persistent memory (renamed from "Creator")
  *   team     = $299/mo — unlimited bots, shared memory, admin dashboard, priority access
  *   enterprise (legacy $29/mo) — kept for backward compat; migrated subscribers move to pro
  */

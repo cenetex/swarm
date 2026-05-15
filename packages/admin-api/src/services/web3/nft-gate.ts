@@ -30,7 +30,8 @@ const WHITELISTED_NFT_COLLECTIONS = (process.env.WHITELISTED_NFT_COLLECTIONS || 
 // Helius API key - can come from env var or Secrets Manager
 let HELIUS_API_KEY_ARN = process.env.HELIUS_API_KEY_ARN;
 let heliusApiKey: string | null = process.env.HELIUS_API_KEY || null;
-let heliusApiKeyFetched = false;
+let heliusApiKeyRetryAfter = 0;
+const HELIUS_API_KEY_RETRY_MS = 30_000;
 
 /**
  * Reset cached Helius state - ONLY for testing
@@ -40,7 +41,7 @@ let heliusApiKeyFetched = false;
 export function _resetNftGateForTesting(): void {
   HELIUS_API_KEY_ARN = process.env.HELIUS_API_KEY_ARN;
   heliusApiKey = process.env.HELIUS_API_KEY || null;
-  heliusApiKeyFetched = false;
+  heliusApiKeyRetryAfter = 0;
 }
 
 const secretsClient = new SecretsManagerClient({});
@@ -49,25 +50,28 @@ async function getHeliusApiKey(): Promise<string | null> {
   // If we already have it from env, use it
   if (heliusApiKey) return heliusApiKey;
   
-  // If we've already tried fetching, don't retry
-  if (heliusApiKeyFetched) return null;
-  heliusApiKeyFetched = true;
+  if (!HELIUS_API_KEY_ARN) return null;
+
+  const now = Date.now();
+  if (heliusApiKeyRetryAfter > now) return null;
   
   // Try to fetch from Secrets Manager
-  if (HELIUS_API_KEY_ARN) {
-    try {
-      const response = await secretsClient.send(new GetSecretValueCommand({
-        SecretId: HELIUS_API_KEY_ARN,
-      }));
-      heliusApiKey = response.SecretString || null;
+  try {
+    const response = await secretsClient.send(new GetSecretValueCommand({
+      SecretId: HELIUS_API_KEY_ARN,
+    }));
+    heliusApiKey = response.SecretString?.trim() || null;
+    if (heliusApiKey) {
+      heliusApiKeyRetryAfter = 0;
       return heliusApiKey;
-    } catch (error) {
-      log.error('config', 'helius_key_fetch_failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
     }
+  } catch (error) {
+    log.error('config', 'helius_key_fetch_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
   
+  heliusApiKeyRetryAfter = now + HELIUS_API_KEY_RETRY_MS;
   return null;
 }
 
