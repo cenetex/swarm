@@ -274,8 +274,12 @@ export class AdminApiStack extends cdk.Stack {
       twitterDailyReservePct,
     } = props;
 
-    // Read CDK context for NFT ownership enforcement flag
-    const nftOwnershipEnforcement = (this.node.tryGetContext('nftOwnershipEnforcement') || 'off') as 'on' | 'off';
+    // Read CDK context for NFT ownership enforcement flag. In prod, default
+    // to enforcement when Helius is configured so NFT revocation cannot be
+    // silently left dormant.
+    const nftOwnershipEnforcementContext = this.node.tryGetContext('nftOwnershipEnforcement') as 'on' | 'off' | undefined;
+    const nftOwnershipEnforcement = nftOwnershipEnforcementContext
+      ?? (environment === 'prod' && heliusApiKeyArn ? 'on' : 'off');
 
     // SSM parameter name for the API endpoint URL — used by AdminUiStack
     // to avoid CloudFormation cross-stack export dependencies.
@@ -351,13 +355,10 @@ export class AdminApiStack extends cdk.Stack {
     const adminTableName = props.useExistingResources
       ? `SwarmAdmin-${environment}`
       : `SwarmAdmin-${environment}${nameSuffix ?? ''}`;
-    const sharedAdminTable = adminEmails
-      ? dynamodb.Table.fromTableName(
-          this,
-          'SharedAdminTableRef',
-          adminTableName
-        )
-      : undefined;
+    const sharedAdminTable =
+      adminEmails || enableDiscordGateway
+        ? dynamodb.Table.fromTableName(this, 'SharedAdminTableRef', adminTableName)
+        : undefined;
 
     // Create SharedHandlers for shared multi-tenant ingress
     this.sharedHandlers = new SharedHandlers(this, 'SharedHandlers', {
@@ -482,6 +483,7 @@ export class AdminApiStack extends cdk.Stack {
         cluster: discordCluster,
         stateTable,
         activityTable,
+        adminTable: sharedAdminTable,
         messageQueue: this.sharedHandlers.messageQueue,
         secretPrefix,
         desiredCount: isProd ? 1 : 0,

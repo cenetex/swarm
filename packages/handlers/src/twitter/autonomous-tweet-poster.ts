@@ -29,6 +29,7 @@ import {
   type PostMedia,
 } from '@swarm/core';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
+import { ensureOpenRouterKey } from '../utils/system-openrouter-key.js';
 import { checkMediaWithEnergyFallback } from '../services/entitlement-enforcement.js';
 import { createRuntimeBrainService } from '../services/brain.js';
 import {
@@ -624,6 +625,7 @@ export const handler: ScheduledHandler = async (_event, context: Context) => {
       }
 
       const secrets = await loadAvatarSecrets(secretsService, avatarId, SECRET_PREFIX);
+      await ensureOpenRouterKey(secrets, secretsService);
 
       const result = await processAvatar(avatarId, avatarConfig, secrets);
       avatarsProcessed++;

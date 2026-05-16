@@ -248,4 +248,65 @@ describe('validateReplicateInput', () => {
     expect(cleanedInput.height).toBeUndefined();    // Stripped
     expect(adjustments).toHaveLength(3); // 1 corrected + 2 removed
   });
+
+  it('keeps Flux image_prompt and strips unsupported reference aliases', () => {
+    const fluxSchema: ModelSupportedParams = {
+      modelId: 'black-forest-labs/flux-1.1-pro',
+      params: {
+        prompt: { type: 'string' },
+        image_prompt: { type: 'string' },
+        aspect_ratio: {
+          type: 'string',
+          enum: ['1:1', '16:9'],
+          default: '1:1',
+        },
+      },
+      fetchedAt: Date.now(),
+    };
+
+    const input = {
+      prompt: 'self portrait',
+      image_input: ['https://example.com/ref.png'],
+      image: 'https://example.com/ref.png',
+      image_prompt: 'https://example.com/ref.png',
+      aspect_ratio: '1:1',
+    };
+
+    const { cleanedInput, adjustments } = validateReplicateInput('black-forest-labs/flux-1.1-pro', input, fluxSchema);
+
+    expect(cleanedInput.image_prompt).toBe('https://example.com/ref.png');
+    expect(cleanedInput.image_input).toBeUndefined();
+    expect(cleanedInput.image).toBeUndefined();
+    expect(adjustments).toHaveLength(2);
+  });
+
+  it('keeps Nano Banana image_input and strips unsupported Flux alias', () => {
+    const nanoSchema: ModelSupportedParams = {
+      modelId: 'google/nano-banana-pro',
+      params: {
+        prompt: { type: 'string' },
+        image_input: { type: 'array' },
+        aspect_ratio: {
+          type: 'string',
+          enum: ['match_input_image', '1:1'],
+          default: 'match_input_image',
+        },
+      },
+      fetchedAt: Date.now(),
+    };
+
+    const input = {
+      prompt: 'self portrait',
+      image_input: ['https://example.com/ref.png'],
+      image_prompt: 'https://example.com/ref.png',
+      aspect_ratio: 'match_input_image',
+    };
+
+    const { cleanedInput, adjustments } = validateReplicateInput('google/nano-banana-pro', input, nanoSchema);
+
+    expect(cleanedInput.image_input).toEqual(['https://example.com/ref.png']);
+    expect(cleanedInput.image_prompt).toBeUndefined();
+    expect(cleanedInput.aspect_ratio).toBe('match_input_image');
+    expect(adjustments).toHaveLength(1);
+  });
 });

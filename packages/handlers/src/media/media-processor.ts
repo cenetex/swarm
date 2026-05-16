@@ -13,6 +13,7 @@ import {
   createGallerySaver,
   createSecretsService,
   createStateService,
+  DEFAULT_MODELS,
 } from '@swarm/core/services';
 import {
   ResponseActionSchema,
@@ -22,6 +23,7 @@ import {
   type SwarmResponse,
 } from '@swarm/core/types';
 import { ensureReplicateKey } from '../utils/system-replicate-key.js';
+import { ensureOpenRouterKey } from '../utils/system-openrouter-key.js';
 import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../services/sqs-send.js';
 import { checkMediaWithEnergyFallback } from '../services/entitlement-enforcement.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
@@ -220,7 +222,7 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarMediaRuntime> {
     media: {
       image: {
         provider: 'replicate',
-        model: 'black-forest-labs/flux-schnell',
+        model: DEFAULT_MODELS.image_generation,
       },
     },
     scheduling: {},
@@ -236,6 +238,26 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarMediaRuntime> {
   };
 
   const secrets = await loadAvatarSecrets(secretsService, avatarId, SECRET_PREFIX);
+
+  try {
+    const ok = await ensureOpenRouterKey(secrets, secretsService);
+    if (ok && secrets.OPENROUTER_API_KEY) {
+      logger.info('Loaded system OpenRouter key for media processor', { subsystem: 'media', avatarId });
+    } else if (!ok) {
+      logger.warn('System OpenRouter key not configured for media processor', {
+        subsystem: 'media',
+        avatarId,
+        hasEnvKey: Boolean(process.env.OPENROUTER_API_KEY || process.env.LLM_API_KEY),
+        hasSecretArn: Boolean(process.env.OPENROUTER_API_KEY_SECRET_ARN || process.env.LLM_API_KEY_SECRET_ARN),
+      });
+    }
+  } catch (err) {
+    logger.warn('Failed to load system OpenRouter key for media processor', {
+      subsystem: 'media',
+      avatarId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   try {
     const ok = await ensureReplicateKey(secrets, secretsService);
@@ -280,6 +302,11 @@ function buildImagePrompt(action: { prompt: string; style?: string }, avatar: Av
     prompt = `${avatar.name}: ${prompt}`;
   }
   return prompt;
+}
+
+function getAvatarReferenceImageUrls(avatar: AvatarConfig): string[] {
+  const url = avatar.characterReference?.url || avatar.profileImage?.url;
+  return url ? [url] : [];
 }
 
 export const handler = async (event: SQSEvent, context: Context): Promise<{ batchItemFailures: { itemIdentifier: string }[] } | void> => {
@@ -406,6 +433,7 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           platform: item.response.platform,
           saveToGallery: true,
           checkCredits: false,
+          referenceImageUrls: getAvatarReferenceImageUrls(avatarConfig),
         });
         mediaAction = {
           type: 'send_media',
@@ -430,7 +458,9 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           platform: item.response.platform,
           saveToGallery: true,
           checkCredits: false,
-          referenceImageUrls: item.action.referenceImageUrls,
+          referenceImageUrls: item.action.referenceImageUrls?.length
+            ? item.action.referenceImageUrls
+            : getAvatarReferenceImageUrls(avatarConfig),
         });
         mediaAction = {
           type: 'send_media',

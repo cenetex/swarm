@@ -9,15 +9,40 @@
  * - issue #1353 (original resource-count pressure)
  * - issue #1435 (phased migration to nested stack)
  */
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, mock } from 'bun:test';
 
-// AdminApiStack synthesis bundles Lambda code via NodejsFunction which is
-// too slow for unit tests. Skip SwarmApi tests until we wire a bundling
-// stub; SharedInfraStack tests run cheaply.
 import * as cdk from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
-import { AdminApiStack } from '../src/stacks/admin-api-stack.js';
-import { SharedInfraStack } from '../src/stacks/shared-infra-stack.js';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import type { Construct } from 'constructs';
+
+class ResourceCountNodejsFunction extends lambda.Function {
+  constructor(scope: Construct, id: string, props: Record<string, unknown>) {
+    const {
+      entry: _entry,
+      bundling: _bundling,
+      depsLockFilePath: _depsLockFilePath,
+      projectRoot: _projectRoot,
+      awsSdkConnectionReuse: _awsSdkConnectionReuse,
+      ...functionProps
+    } = props;
+
+    super(scope, id, {
+      ...functionProps,
+      runtime: (props.runtime as lambda.Runtime | undefined) ?? lambda.Runtime.NODEJS_20_X,
+      handler: (props.handler as string | undefined) ?? 'handler',
+      code: lambda.Code.fromInline('exports.handler = async () => undefined;'),
+    });
+  }
+}
+
+mock.module('aws-cdk-lib/aws-lambda-nodejs', () => ({
+  NodejsFunction: ResourceCountNodejsFunction,
+  OutputFormat: { CJS: 'cjs' },
+}));
+
+const { Template } = await import('aws-cdk-lib/assertions');
+const { AdminApiStack } = await import('../src/stacks/admin-api-stack.js');
+const { SharedInfraStack } = await import('../src/stacks/shared-infra-stack.js');
 
 /**
  * Dummy VPC context that CDK needs when Vpc.fromLookup is used.
@@ -55,15 +80,16 @@ const TEST_ENV = {
   account: '123456789012',
   region: 'us-east-1',
 };
+const TEST_SECRET_ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:swarm/test/openrouter-api-key-abcdef';
 
 describe('CloudFormation Resource Counts', () => {
-  test.skip('SwarmApi-staging resource count ≤ 450', () => {
+  test('SwarmApi-staging resource count ≤ 500', () => {
     const app = new cdk.App({ context: DUMMY_VPC_CONTEXT });
 
     // Create SharedInfraStack
     const sharedInfra = new SharedInfraStack(app, 'TestSharedInfraStaging', {
       environment: 'staging',
-      enableCdn: true,
+      enableCdn: false,
       env: TEST_ENV,
     });
 
@@ -73,6 +99,7 @@ describe('CloudFormation Resource Counts', () => {
       sharedInfraStack: sharedInfra,
       handlersPath: '/tmp/handlers', // Dummy path; resources won't be accessed
       adminEmails: 'admin@example.com',
+      openRouterApiKeyArn: TEST_SECRET_ARN,
       env: TEST_ENV,
     });
 
@@ -84,15 +111,15 @@ describe('CloudFormation Resource Counts', () => {
     // parent still instantiates SharedHandlers directly. Cap at 500 (CFN hard limit).
     expect(resourceCount).toBeLessThanOrEqual(500);
     console.log(`SwarmApi-staging resource count: ${resourceCount}/500`);
-  });
+  }, 60_000);
 
-  test.skip('SwarmApi-prod resource count ≤ 450', () => {
+  test('SwarmApi-prod resource count ≤ 500', () => {
     const app = new cdk.App({ context: DUMMY_VPC_CONTEXT });
 
     // Create SharedInfraStack
     const sharedInfra = new SharedInfraStack(app, 'TestSharedInfraProd', {
       environment: 'prod',
-      enableCdn: true,
+      enableCdn: false,
       env: TEST_ENV,
     });
 
@@ -102,6 +129,7 @@ describe('CloudFormation Resource Counts', () => {
       sharedInfraStack: sharedInfra,
       handlersPath: '/tmp/handlers', // Dummy path; resources won't be accessed
       adminEmails: 'admin@example.com',
+      openRouterApiKeyArn: TEST_SECRET_ARN,
       env: TEST_ENV,
     });
 
@@ -113,7 +141,7 @@ describe('CloudFormation Resource Counts', () => {
     // parent still instantiates SharedHandlers directly. Cap at 500 (CFN hard limit).
     expect(resourceCount).toBeLessThanOrEqual(500);
     console.log(`SwarmApi-prod resource count: ${resourceCount}/500`);
-  });
+  }, 60_000);
 
   test('SharedInfraStack-staging resource count ≤ 200', () => {
     const app = new cdk.App({ context: DUMMY_VPC_CONTEXT });

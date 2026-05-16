@@ -51,6 +51,7 @@ export {
   type ToolContext,
   type ToolResult,
   type ToolDefinition,
+  type PromptGuidance,
 } from './registry.js';
 
 export {

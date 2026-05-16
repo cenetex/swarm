@@ -29,6 +29,12 @@ import { createHash, randomBytes } from 'crypto';
 import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { logger, detectEnabledCategories } from '@swarm/core';
 import { processChat } from './chat.js';
+import {
+  LLM_TIMEOUT_MS,
+  getLlmApiKey,
+  normalizeUsage,
+  type LlmUsage,
+} from './chat-llm.js';
 import type { UserSession } from '../types.js';
 import * as avatars from '../services/avatars.js';
 import * as voice from '../services/voice.js';
@@ -37,6 +43,12 @@ import { getCorsHeaders } from '../http/cors.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
 import { resolveTokenUsage, recordTokenUsage } from '../services/token-accounting.js';
 import type { UsageSource } from '../services/token-accounting.js';
+import {
+  DEFAULT_MODELS,
+  executeWithFallback,
+  withOpenRouterFallbackRouting,
+} from '../services/models-registry.js';
+import { resolveOpenRouterChatModelPlan } from '../services/openrouter-chat-models.js';
 
 // =============================================================================
 // Configuration
@@ -50,11 +62,41 @@ const docClient = getDynamoClient();
 // OpenAI-Compatible Types
 // =============================================================================
 
-const OpenAIMessageSchema = z.object({
-  role: z.enum(['system', 'user', 'assistant']),
-  content: z.string(),
-  name: z.string().optional(),
+export const OpenAIToolCallSchema = z.object({
+  id: z.string(),
+  type: z.literal('function'),
+  function: z.object({
+    name: z.string(),
+    arguments: z.string(),
+  }),
 });
+
+export const OpenAIMessageSchema = z.object({
+  role: z.enum(['system', 'user', 'assistant', 'tool']),
+  content: z.string().nullish().transform(v => v ?? ''),
+  name: z.string().optional(),
+  tool_calls: z.array(OpenAIToolCallSchema).optional(),
+  tool_call_id: z.string().optional(),
+});
+
+export const OpenAIToolSchema = z.object({
+  type: z.literal('function'),
+  function: z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    parameters: z.unknown().optional(),
+  }).passthrough(),
+}).passthrough();
+
+export const OpenAIToolChoiceSchema = z.union([
+  z.enum(['none', 'auto', 'required']),
+  z.object({
+    type: z.literal('function'),
+    function: z.object({
+      name: z.string(),
+    }).passthrough(),
+  }).passthrough(),
+]);
 
 const ChatCompletionRequestSchema = z.object({
   model: z.string().optional(), // Will be parsed as avatar ID, optional for scoped keys
@@ -63,17 +105,22 @@ const ChatCompletionRequestSchema = z.object({
   max_tokens: z.number().int().positive().optional(),
   stream: z.boolean().optional().default(false),
   user: z.string().optional(), // Optional user identifier for tracking
+  tools: z.array(OpenAIToolSchema).optional(),
+  tool_choice: OpenAIToolChoiceSchema.optional(),
   // Non-standard extensions for avatar features
   include_audio: z.boolean().optional().default(false), // Generate voice audio for response
 });
 
 type ChatCompletionRequest = z.infer<typeof ChatCompletionRequestSchema>;
+export type OpenAIChatMessage = z.infer<typeof OpenAIMessageSchema>;
+export type OpenAIToolCall = z.infer<typeof OpenAIToolCallSchema>;
 
 interface ChatCompletionChoice {
   index: number;
   message: {
     role: 'assistant';
-    content: string;
+    content: string | null;
+    tool_calls?: OpenAIToolCall[];
     audio?: {
       url: string;
       format: string;
@@ -120,6 +167,8 @@ interface ApiKeyRecord {
   name: string; // Human-readable name for the key
   createdAt: number;
   createdBy: string; // Email or userId of creator
+  createdByWallet?: string; // Wallet that created the key, used for NFT transfer revocation
+  adminBypass?: boolean; // True for keys minted by admins; preserves admin bypass semantics
   lastUsedAt?: number;
   usageCount: number;
   rateLimit?: {
@@ -129,10 +178,12 @@ interface ApiKeyRecord {
   enabled: boolean;
 }
 
-interface ApiKeyValidationResult {
+export interface ApiKeyValidationResult {
   valid: boolean;
   session?: UserSession;
   avatarId?: string;
+  createdByWallet?: string;
+  adminBypass?: boolean;
   error?: string;
   statusCode?: number;
   retryAfterSeconds?: number;
@@ -340,6 +391,8 @@ export async function validateApiKey(apiKey: string): Promise<ApiKeyValidationRe
       valid: true,
       session,
       avatarId: keyRecord.avatarId === '*' ? undefined : keyRecord.avatarId,
+      createdByWallet: keyRecord.createdByWallet,
+      adminBypass: keyRecord.adminBypass === true || keyRecord.avatarId === '*',
     };
   } catch (err) {
     logger.error('API key validation error', err);
@@ -378,6 +431,197 @@ export function resolveModel(
   if (requestModel) return { model: requestModel };
   if (validation.avatarId) return { model: `avatar:${validation.avatarId}` };
   return { error: 'model parameter is required for wildcard API keys' };
+}
+
+export function normalizeOpenAIMessageForProvider(message: OpenAIChatMessage): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {
+    role: message.role,
+    content: message.role === 'assistant' && message.tool_calls?.length && !message.content
+      ? null
+      : message.content,
+  };
+
+  if (message.name) {
+    normalized.name = message.name;
+  }
+  if (message.role === 'assistant' && message.tool_calls && message.tool_calls.length > 0) {
+    normalized.tool_calls = message.tool_calls;
+  }
+  if (message.role === 'tool' && message.tool_call_id) {
+    normalized.tool_call_id = message.tool_call_id;
+  }
+
+  return normalized;
+}
+
+export function usesExternalToolMode(request: {
+  tools?: unknown[];
+  tool_choice?: unknown;
+  messages: Array<{ role: string; tool_calls?: unknown[] }>;
+}): boolean {
+  return Boolean(
+    request.tools !== undefined ||
+    request.tool_choice !== undefined ||
+    request.messages.some(message =>
+      message.role === 'tool' ||
+      (message.role === 'assistant' && Array.isArray(message.tool_calls) && message.tool_calls.length > 0)
+    )
+  );
+}
+
+export function normalizeOpenAIToolCalls(value: unknown): OpenAIToolCall[] {
+  const parsed = z.array(OpenAIToolCallSchema).safeParse(value);
+  return parsed.success ? parsed.data : [];
+}
+
+function normalizeFinishReason(
+  value: unknown,
+  toolCalls: OpenAIToolCall[],
+): ChatCompletionChoice['finish_reason'] {
+  if (
+    value === 'stop' ||
+    value === 'length' ||
+    value === 'tool_calls' ||
+    value === 'content_filter'
+  ) {
+    return value;
+  }
+  return toolCalls.length > 0 ? 'tool_calls' : 'stop';
+}
+
+function buildExternalToolPromptText(request: Pick<ChatCompletionRequest, 'messages' | 'tools' | 'tool_choice'>): string {
+  const parts = request.messages.map(message => {
+    if (message.role === 'assistant' && message.tool_calls?.length) {
+      return `${message.content}\n${JSON.stringify(message.tool_calls)}`;
+    }
+    if (message.role === 'tool') {
+      return `${message.tool_call_id || ''}\n${message.content}`;
+    }
+    return message.content;
+  });
+
+  if (request.tools?.length) {
+    parts.push(JSON.stringify(request.tools));
+  }
+  if (request.tool_choice !== undefined) {
+    parts.push(JSON.stringify(request.tool_choice));
+  }
+
+  return parts.join('\n');
+}
+
+async function callExternalToolModel(params: {
+  llmModel: string;
+  systemPrompt: string;
+  messages: ChatCompletionRequest['messages'];
+  maxTokens?: number;
+  temperature?: number;
+  tools?: ChatCompletionRequest['tools'];
+  toolChoice?: ChatCompletionRequest['tool_choice'];
+}): Promise<{
+  content: string | null;
+  toolCalls: OpenAIToolCall[];
+  usage?: LlmUsage;
+  finishReason: ChatCompletionChoice['finish_reason'];
+  latencyMs: number;
+  model: string;
+  attemptedModels: string[];
+  usedFallback: boolean;
+}> {
+  const apiKey = await getLlmApiKey();
+  const start = Date.now();
+  const providerMessages = [
+    { role: 'system', content: params.systemPrompt },
+    ...params.messages.map(normalizeOpenAIMessageForProvider),
+  ];
+
+  const baseBody: Record<string, unknown> = {
+    messages: providerMessages,
+    max_tokens: params.maxTokens,
+    temperature: params.temperature,
+    stream: false,
+  };
+
+  if (params.tools && params.tools.length > 0) {
+    baseBody.tools = params.tools;
+  }
+  if (params.toolChoice !== undefined) {
+    baseBody.tool_choice = params.toolChoice;
+  }
+
+  const modelPlan = await resolveOpenRouterChatModelPlan({
+    requestModel: params.llmModel,
+    apiKey,
+    requireTools: !!params.tools && params.tools.length > 0,
+  });
+
+  const fallbackResult = await executeWithFallback(async (candidateModel) => {
+    const body = withOpenRouterFallbackRouting(baseBody, candidateModel, {
+      requireParameters: !!params.tools && params.tools.length > 0,
+      fallbackModels: modelPlan.fallbackModels,
+    });
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://swarm.rati.chat',
+        'X-Title': 'Swarm API',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenRouter external-tool error: ${response.status} ${errorText.slice(0, 1000)}`);
+    }
+
+    return response;
+  }, {
+    primaryModel: modelPlan.primaryModel,
+    avatarId: 'openai-compat',
+    fallbackModels: modelPlan.fallbackModels,
+  });
+  const response = fallbackResult.result;
+
+  const data = await response.json() as {
+    model?: string;
+    choices?: Array<{
+      finish_reason?: string | null;
+      message?: {
+        content?: string | null;
+        tool_calls?: unknown;
+      };
+    }>;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+      input_tokens?: number;
+      output_tokens?: number;
+    };
+  };
+
+  const choice = data.choices?.[0];
+  const toolCalls = normalizeOpenAIToolCalls(choice?.message?.tool_calls);
+  const rawContent = choice?.message?.content;
+  const content = typeof rawContent === 'string'
+    ? rawContent
+    : toolCalls.length > 0
+      ? null
+      : '';
+
+  return {
+    content,
+    toolCalls,
+    usage: normalizeUsage(data.usage),
+    finishReason: normalizeFinishReason(choice?.finish_reason, toolCalls),
+    latencyMs: Date.now() - start,
+    model: data.model || fallbackResult.model,
+    attemptedModels: fallbackResult.attemptedModels,
+    usedFallback: fallbackResult.usedFallback || (data.model !== undefined && data.model !== modelPlan.primaryModel),
+  };
 }
 
 // =============================================================================
@@ -441,6 +685,81 @@ function apiKeyValidationErrorResponse(
     'invalid_api_key',
     corsHeaders
   );
+}
+
+export type CompatAvatarRecord = NonNullable<Awaited<ReturnType<typeof avatars.getAvatar>>>;
+
+export type ApiKeyAvatarAccessResult =
+  | { ok: true; avatarRecord: CompatAvatarRecord }
+  | {
+      ok: false;
+      statusCode: number;
+      message: string;
+      type: string;
+      code: string;
+    };
+
+function getAvatarOwnershipErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+export async function resolveApiKeyAvatarAccess(
+  avatarId: string,
+  validation: ApiKeyValidationResult,
+): Promise<ApiKeyAvatarAccessResult> {
+  const avatarRecord = await avatars.getAvatar(avatarId);
+  if (!avatarRecord) {
+    return {
+      ok: false,
+      statusCode: 404,
+      message: `Avatar not found: ${avatarId}`,
+      type: 'not_found',
+      code: 'avatar_not_found',
+    };
+  }
+
+  if (!avatarRecord.nftMint || validation.adminBypass) {
+    return { ok: true, avatarRecord };
+  }
+
+  if (!validation.createdByWallet) {
+    return {
+      ok: false,
+      statusCode: 403,
+      message: 'API key owner wallet is required for NFT-backed avatar access. Reissue this API key from the current owner wallet.',
+      type: 'permission_error',
+      code: 'api_key_owner_wallet_required',
+    };
+  }
+
+  try {
+    const ownedAvatar = await avatars.assertAvatarOwnership(
+      avatarId,
+      validation.createdByWallet,
+      { isAdmin: false },
+    );
+    return { ok: true, avatarRecord: ownedAvatar };
+  } catch (error) {
+    const code = getAvatarOwnershipErrorCode(error);
+    if (code === 'verification_unavailable') {
+      return {
+        ok: false,
+        statusCode: 503,
+        message: 'Ownership verification temporarily unavailable',
+        type: 'server_error',
+        code,
+      };
+    }
+    return {
+      ok: false,
+      statusCode: 403,
+      message: 'API key is no longer authorized for this NFT-backed avatar. Reissue the key from the current owner wallet.',
+      type: 'permission_error',
+      code: code || 'nft_ownership_required',
+    };
+  }
 }
 
 // =============================================================================
@@ -759,17 +1078,17 @@ async function handleChatCompletions(
     return errorResponse(403, `API key not authorized for avatar: ${avatarId}`, 'permission_error', 'unauthorized_avatar', corsHeaders);
   }
 
-  // The scoped API key check above (`validation.avatarId !== avatarId`) is
-  // the auth grant for this endpoint. API-key sessions don't carry a wallet
-  // address — `session.userId` is a synthetic `api-key:<hash-prefix>` string
-  // — so calling `assertAvatarOwnership` here always returned not_owner and
-  // collapsed to 404 regardless of the real NFT state. NFT-transfer
-  // revocation on this path should be driven by revoking the API key itself
-  // (UI exposes this), or by a future flag-gated gate analogous to #1416.
-  const avatarRecord = await avatars.getAvatar(avatarId);
-  if (!avatarRecord) {
-    return errorResponse(404, `Avatar not found: ${avatarId}`, 'not_found', 'avatar_not_found', corsHeaders);
+  const access = await resolveApiKeyAvatarAccess(avatarId, validation);
+  if (!access.ok) {
+    return errorResponse(
+      access.statusCode,
+      access.message,
+      access.type,
+      access.code,
+      corsHeaders,
+    );
   }
+  const avatarRecord = access.avatarRecord;
 
   // Reject unsupported stream + audio combination
   if (request.stream && request.include_audio) {
@@ -810,8 +1129,14 @@ async function handleChatCompletions(
     enabledCategories,
   };
 
-  // Resolve model for logging
-  const llmModel = avatarRecord.llmConfig?.model || 'anthropic/claude-3-5-sonnet-latest';
+  // Resolve provider model for logging and execution. The OpenAI-compatible
+  // `model` field above identifies the avatar, not the upstream LLM.
+  const llmModel = (await resolveOpenRouterChatModelPlan({
+    requestModel: undefined,
+    avatarModel: avatarRecord.llmConfig?.model,
+    defaultModel: DEFAULT_MODELS.llm,
+  })).primaryModel;
+  const externalToolMode = usesExternalToolMode(request);
 
   logger.info('Processing chat completion', {
     event: 'chat_completion_start',
@@ -821,9 +1146,105 @@ async function handleChatCompletions(
     requestId,
     model: llmModel,
     enabledCategoryCount: enabledCategories.length,
+    externalToolMode,
+    externalToolCount: request.tools?.length || 0,
   });
 
   try {
+    if (externalToolMode) {
+      const externalResult = await callExternalToolModel({
+        llmModel,
+        systemPrompt: avatarRecord.persona || `You are ${avatarRecord.name || 'an AI assistant'}.`,
+        messages: request.messages,
+        maxTokens: request.max_tokens,
+        temperature: request.temperature,
+        tools: request.tools,
+        toolChoice: request.tool_choice,
+      });
+
+      const completionId = `chatcmpl-${requestId}`;
+      const created = Math.floor(Date.now() / 1000);
+      const promptText = buildExternalToolPromptText(request);
+      const completionText = externalResult.content ?? JSON.stringify(externalResult.toolCalls);
+      const tokenUsage = resolveTokenUsage(
+        externalResult.usage,
+        promptText,
+        completionText,
+        externalResult.model,
+      );
+
+      const keyHash = hashApiKey(apiKey);
+      recordTokenUsage({
+        requestId,
+        keyHash,
+        avatarId,
+        model: externalResult.model,
+        usage: tokenUsage,
+      }).catch(err => {
+        logger.warn('Token accounting recording failed', {
+          event: 'token_accounting_error',
+          subsystem: 'openai-compat',
+          requestId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+
+      if (request.stream) {
+        return formatStreamingResponse(
+          completionId,
+          created,
+          model,
+          externalResult.content ?? '',
+          tokenUsage,
+          corsHeaders,
+          {
+            toolCalls: externalResult.toolCalls,
+            finishReason: externalResult.finishReason,
+          },
+        );
+      }
+
+      const response: ChatCompletionResponse = {
+        id: completionId,
+        object: 'chat.completion',
+        created,
+        model,
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: externalResult.content,
+            ...(externalResult.toolCalls.length > 0 && { tool_calls: externalResult.toolCalls }),
+          },
+          finish_reason: externalResult.finishReason,
+        }],
+        usage: {
+          prompt_tokens: tokenUsage.promptTokens,
+          completion_tokens: tokenUsage.completionTokens,
+          total_tokens: tokenUsage.totalTokens,
+          usage_source: tokenUsage.usageSource,
+        },
+      };
+
+      logger.info('External-tool chat completion successful', {
+        event: 'external_tool_chat_completion_success',
+        subsystem: 'openai-compat',
+        avatarId,
+        model: llmModel,
+        upstreamModel: externalResult.model,
+        usedFallback: externalResult.usedFallback,
+        responseLength: externalResult.content?.length || 0,
+        toolCallCount: externalResult.toolCalls.length,
+        finishReason: externalResult.finishReason,
+        totalTokens: tokenUsage.totalTokens,
+        usageSource: tokenUsage.usageSource,
+        latencyMs: externalResult.latencyMs,
+        requestId,
+      });
+
+      return jsonResponse(200, response, corsHeaders);
+    }
+
     // Process the chat
     const result = await processChat(
       userMessage,
@@ -831,6 +1252,7 @@ async function handleChatCompletions(
       validation.session,
       avatarContext,
       {
+        model: llmModel,
         maxTokens: request.max_tokens,
       }
     );
@@ -992,6 +1414,15 @@ interface StreamChunkChoice {
   delta: {
     role?: 'assistant';
     content?: string;
+    tool_calls?: Array<{
+      index: number;
+      id?: string;
+      type?: 'function';
+      function?: {
+        name?: string;
+        arguments?: string;
+      };
+    }>;
   };
   finish_reason: string | null;
 }
@@ -1029,8 +1460,14 @@ export function formatStreamingResponse(
   content: string,
   tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number },
   corsHeaders: Record<string, string>,
+  options?: {
+    toolCalls?: OpenAIToolCall[];
+    finishReason?: ChatCompletionChoice['finish_reason'];
+  },
 ): APIGatewayProxyResultV2 {
   let sseBody = '';
+  const toolCalls = options?.toolCalls || [];
+  const finishReason = options?.finishReason || (toolCalls.length > 0 ? 'tool_calls' : 'stop');
 
   // First chunk: role announcement
   const roleChunk: ChatCompletionChunk = {
@@ -1064,6 +1501,28 @@ export function formatStreamingResponse(
     sseBody += `data: ${JSON.stringify(contentChunk)}\n\n`;
   }
 
+  if (toolCalls.length > 0) {
+    const toolCallChunk: ChatCompletionChunk = {
+      id: completionId,
+      object: 'chat.completion.chunk',
+      created,
+      model,
+      choices: [{
+        index: 0,
+        delta: {
+          tool_calls: toolCalls.map((toolCall, index) => ({
+            index,
+            id: toolCall.id,
+            type: toolCall.type,
+            function: toolCall.function,
+          })),
+        },
+        finish_reason: null,
+      }],
+    };
+    sseBody += `data: ${JSON.stringify(toolCallChunk)}\n\n`;
+  }
+
   // Final chunk: finish_reason + usage
   const finalChunk: ChatCompletionChunk = {
     id: completionId,
@@ -1073,7 +1532,7 @@ export function formatStreamingResponse(
     choices: [{
       index: 0,
       delta: {},
-      finish_reason: 'stop',
+      finish_reason: finishReason,
     }],
     usage: {
       prompt_tokens: tokenUsage.promptTokens,
@@ -1186,6 +1645,8 @@ export async function createApiKey(params: {
   avatarId?: string;
   name: string;
   createdBy: string;
+  createdByWallet?: string | null;
+  adminBypass?: boolean;
   rateLimit?: { requestsPerMinute: number; requestsPerDay: number };
 }): Promise<{ fullKey: string; keyPrefix: string }> {
   const { fullKey, record } = generateApiKey();
@@ -1198,6 +1659,8 @@ export async function createApiKey(params: {
     name: params.name,
     createdAt: Date.now(),
     createdBy: params.createdBy,
+    createdByWallet: params.createdByWallet || undefined,
+    adminBypass: params.adminBypass === true,
     usageCount: 0,
     enabled: true,
     rateLimit: params.rateLimit,
@@ -1216,6 +1679,8 @@ export async function createApiKey(params: {
           #name = :name,
           createdAt = :createdAt,
           createdBy = :createdBy,
+          createdByWallet = :createdByWallet,
+          adminBypass = :adminBypass,
           usageCount = :usageCount,
           enabled = :enabled
           ${params.rateLimit ? ', rateLimit = :rateLimit' : ''}
@@ -1230,6 +1695,8 @@ export async function createApiKey(params: {
       ':name': fullRecord.name,
       ':createdAt': fullRecord.createdAt,
       ':createdBy': fullRecord.createdBy,
+      ':createdByWallet': fullRecord.createdByWallet ?? null,
+      ':adminBypass': fullRecord.adminBypass ?? false,
       ':usageCount': fullRecord.usageCount,
       ':enabled': fullRecord.enabled,
       ...(params.rateLimit ? { ':rateLimit': params.rateLimit } : {}),
@@ -1243,7 +1710,7 @@ export async function createApiKey(params: {
       pk: params.avatarId ? `AVATAR#${params.avatarId}` : 'GLOBAL',
       sk: `API_KEY#${record.keyHash.slice(0, 16)}`,
     },
-    UpdateExpression: 'SET keyPrefix = :keyPrefix, keyHash = :keyHash, #name = :name, createdAt = :createdAt, createdBy = :createdBy',
+    UpdateExpression: 'SET keyPrefix = :keyPrefix, keyHash = :keyHash, #name = :name, createdAt = :createdAt, createdBy = :createdBy, createdByWallet = :createdByWallet, adminBypass = :adminBypass',
     ExpressionAttributeNames: {
       '#name': 'name',
     },
@@ -1253,6 +1720,8 @@ export async function createApiKey(params: {
       ':name': fullRecord.name,
       ':createdAt': fullRecord.createdAt,
       ':createdBy': fullRecord.createdBy,
+      ':createdByWallet': fullRecord.createdByWallet ?? null,
+      ':adminBypass': fullRecord.adminBypass ?? false,
     },
   }));
 

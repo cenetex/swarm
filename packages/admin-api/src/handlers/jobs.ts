@@ -53,8 +53,9 @@ export async function handler(
         };
       }
 
-      const avatar = await avatars.getAvatar(avatarId);
-      if (!avatar) {
+      const walletAddress = session.userId;
+      if (!walletAddress) {
+        // Hide existence when the user doesn't have access.
         return {
           statusCode: 404,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -62,8 +63,19 @@ export async function handler(
         };
       }
 
-      const walletAddress = session.userId;
-      if (!walletAddress || avatar.creatorWallet !== walletAddress) {
+      try {
+        await avatars.assertAvatarOwnership(avatarId, walletAddress, { isAdmin: false });
+      } catch (err) {
+        if (err instanceof avatars.AvatarOwnershipError && err.code === 'verification_unavailable') {
+          return {
+            statusCode: 503,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              error: 'Ownership verification temporarily unavailable',
+              code: err.code,
+            }),
+          };
+        }
         // Hide existence when the user doesn't have access.
         return {
           statusCode: 404,

@@ -17,7 +17,7 @@ export function LandingPage() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-[var(--color-bg)] flex flex-col relative overflow-hidden">
+    <div className="h-[100dvh] bg-[var(--color-bg)] flex flex-col relative overflow-y-auto overflow-x-hidden">
       {/* Background gradients */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(122,99,149,0.3),transparent)]" />
@@ -50,6 +50,16 @@ export function LandingPage() {
         <p className="text-sm text-[var(--color-text-secondary)] text-center mb-10 max-w-md leading-relaxed">
           {t('landing.subtitle')}
         </p>
+
+        <div className="w-full max-w-sm mb-10 flex flex-col items-center gap-3">
+          <PrivyLoginButton
+            label={t('landing.primaryCta')}
+            className="w-full justify-center"
+          />
+          <p className="text-xs text-[var(--color-text-muted)] text-center">
+            {t('landing.socialProof')}
+          </p>
+        </div>
 
         {/* How it works — chat demo */}
         <div className="w-full max-w-sm mb-10">
@@ -86,11 +96,6 @@ export function LandingPage() {
             title={t('landing.featureMultiTitle')}
             description={t('landing.featureMultiDesc')}
           />
-          <FeatureCard
-            icon={<CollaborateIcon />}
-            title={t('landing.featureCollabTitle')}
-            description={t('landing.featureCollabDesc')}
-          />
         </div>
 
         {/* Why Swarm */}
@@ -112,26 +117,15 @@ export function LandingPage() {
         </div>
 
         {/* Pricing */}
-        <div className="w-full max-w-2xl mb-10">
-          <h3 className="text-lg sm:text-xl font-bold text-[var(--color-text)] text-center mb-1">
+        <section className="w-full max-w-2xl mb-10" aria-labelledby="landing-pricing-title">
+          <h3 id="landing-pricing-title" className="text-lg sm:text-xl font-bold text-[var(--color-text)] text-center mb-1">
             {t('landing.pricingTitle')}
           </h3>
           <p className="text-sm text-[var(--color-text-secondary)] text-center mb-5">
             {t('landing.pricingSubtitle')}
           </p>
           <PricingTiers />
-          <p className="text-xs text-[var(--color-text-muted)] text-center mt-4">
-            {t('landing.pricingLegacy')}
-          </p>
-        </div>
-
-        {/* CTA */}
-        <PrivyLoginButton className="w-full max-w-sm justify-center" />
-
-        {/* Social proof hint */}
-        <p className="mt-4 text-xs text-[var(--color-text-muted)] text-center">
-          {t('landing.socialProof')}
-        </p>
+        </section>
       </div>
 
       {/* Footer with ecosystem links */}
@@ -228,8 +222,8 @@ function FeatureCard({ icon, title, description }: FeatureCardProps) {
 
 /* ---- Pricing Tiers ---- */
 
-const MONTHLY_PRICES = { free: 0, creator: 9, team: 299 };
-const ANNUAL_PRICES = { free: 0, creator: 90, team: 2990 };
+const MONTHLY_PRICES = { free: 0, creator: 9 };
+const ANNUAL_PRICES = { free: 0, creator: 90 };
 
 function PricingTiers() {
   const [annual, setAnnual] = useState(false);
@@ -254,7 +248,7 @@ function PricingTiers() {
         </span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto">
         {/* Free */}
         <div className="rounded-xl p-4 border bg-[var(--color-bg-secondary)]/40 border-[var(--color-border)] text-center flex flex-col">
           <div className="text-xs font-semibold uppercase tracking-wider mb-1 text-[var(--color-text-muted)]">{t('landing.tierFreeName')}</div>
@@ -266,9 +260,11 @@ function PricingTiers() {
             <li>{t('landing.tierFreeFeature3')}</li>
             <li>{t('landing.tierFreeFeature4')}</li>
           </ul>
-          <div className="text-xs text-[var(--color-text-muted)] font-medium py-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
-            {t('landing.tierFreeButton')}
-          </div>
+          <PrivyLoginButton
+            label={t('landing.tierFreeButton')}
+            showIcon={false}
+            className="w-full justify-center py-2"
+          />
         </div>
 
         {/* Creator ($9) */}
@@ -284,33 +280,11 @@ function PricingTiers() {
             <li>{t('landing.tierCreatorFeature3')}</li>
             <li>{t('landing.tierCreatorFeature4')}</li>
           </ul>
-          <div className="text-xs font-medium py-2 rounded-lg bg-blue-600 text-white">
-            {t('landing.tierCreatorButton')}
-          </div>
-        </div>
-
-        {/* Team ($299) */}
-        <div className="rounded-xl p-4 border-2 bg-purple-900/15 border-purple-500/40 text-center flex flex-col relative">
-          <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-purple-600 text-white text-[10px] font-semibold uppercase tracking-wide">
-            {t('landing.tierTeamBadge')}
-          </div>
-          <div className="text-xs font-semibold uppercase tracking-wider mb-1 text-purple-400 mt-1">{t('landing.tierTeamName')}</div>
-          <div className="text-sm text-[var(--color-text-secondary)] mb-3">{t('landing.tierTeamDesc')}</div>
-          <div className="text-2xl font-bold text-[var(--color-text)] mb-3">
-            ${prices.team.toLocaleString()}<span className="text-xs font-normal text-[var(--color-text-muted)]">{period}</span>
-          </div>
-          <ul className="space-y-1.5 text-xs text-[var(--color-text-secondary)] mb-4 flex-1">
-            <li>{t('landing.tierTeamFeature1')}</li>
-            <li>{t('landing.tierTeamFeature2')}</li>
-            <li>{t('landing.tierTeamFeature3')}</li>
-            <li>{t('landing.tierTeamFeature4')}</li>
-          </ul>
-          <a
-            href="mailto:sales@rati.chat?subject=CosyWorld%20Team%20Plan"
-            className="block text-xs font-medium py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-colors"
-          >
-            {t('landing.tierTeamButton')}
-          </a>
+          <PrivyLoginButton
+            label={t('landing.tierCreatorButton')}
+            showIcon={false}
+            className="w-full justify-center py-2"
+          />
         </div>
       </div>
     </div>
@@ -339,14 +313,6 @@ function MultiPlatformIcon() {
   return (
     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
       <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
-    </svg>
-  );
-}
-
-function CollaborateIcon() {
-  return (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
     </svg>
   );
 }

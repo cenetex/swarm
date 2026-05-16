@@ -54,7 +54,7 @@ export interface AvatarResponse {
   createdBy: string;
   // Wallet ownership (present for wallet-created avatars)
   creatorWallet?: string;
-  slotType?: 'free' | 'orb';
+  slotType?: 'free' | 'orb' | 'nft';
   orbMint?: string;
   orbWallet?: string;
   orbSlottedAt?: number;
@@ -88,6 +88,22 @@ export interface AvatarResponse {
     enabled: boolean;
   };
   llmConfig?: LlmConfig;
+}
+
+export interface ScanNftAvatarSummary {
+  avatarId: string;
+  name: string;
+  status: AvatarResponse['status'];
+  profileImage?: AvatarResponse['profileImage'];
+  nftMint?: string;
+  nftCollection?: string;
+}
+
+export interface ScanNftAvatarsResponse {
+  created: ScanNftAvatarSummary[];
+  skippedAlreadyClaimed: number;
+  available: number;
+  capped: boolean;
 }
 
 export async function slotOrb(avatarId: string, mintAddress: string): Promise<{ success: boolean }>{
@@ -131,6 +147,23 @@ export async function createAvatar(name: string, description?: string): Promise<
     },
     credentials: 'include',
     body: JSON.stringify({ name, description }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Scan held collection NFTs and create draft avatars.
+ */
+export async function scanNftAvatars(): Promise<ScanNftAvatarsResponse> {
+  const response = await fetch(`${API_BASE}/avatars/scan-nft`, {
+    method: 'POST',
+    credentials: 'include',
   });
 
   if (!response.ok) {

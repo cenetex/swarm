@@ -89,11 +89,61 @@ describe('Registry - MCP Format Conversion', () => {
       name: 'media_tool',
       description: 'Media',
     });
-    expect(result[0].metadata).toEqual({
+    expect(result[0].metadata).toMatchObject({
       toolset: 'media',
       tags: ['image', 'upload'],
       category: 'media',
+      promptGuidance: {
+        category: 'media',
+      },
     });
+  });
+
+  it('toMCPFormatWithMetadata preserves explicit prompt guidance', () => {
+    const registry = new ToolRegistry();
+    registry.register(defineTool({
+      name: 'guided_tool',
+      description: 'Guided',
+      promptGuidance: {
+        category: 'custom',
+        summary: 'Custom prompt guidance',
+        whenToUse: 'When custom guidance is needed',
+        examples: ['guided_tool({})'],
+      },
+      inputSchema: z.object({}),
+      execute: async () => ({ success: true }),
+    }));
+
+    const result = registry.toMCPFormatWithMetadata();
+    expect(result[0].metadata.promptGuidance).toEqual({
+      category: 'custom',
+      summary: 'Custom prompt guidance',
+      whenToUse: 'When custom guidance is needed',
+      examples: ['guided_tool({})'],
+    });
+  });
+
+  it('adds prompt guidance to registered tools by toolset and tool name', () => {
+    const registry = new ToolRegistry();
+    registry.registerAll([
+      defineTool({
+        name: 'twitter_post',
+        description: 'Post',
+        toolset: 'twitter',
+        inputSchema: z.object({}),
+        execute: async () => ({ success: true }),
+      }),
+      defineTool({
+        name: 'set_profile_image',
+        description: 'Set profile image',
+        category: 'profile',
+        inputSchema: z.object({}),
+        execute: async () => ({ success: true }),
+      }),
+    ]);
+
+    expect(registry.get('twitter_post')?.promptGuidance?.category).toBe('twitter');
+    expect(registry.get('set_profile_image')?.promptGuidance?.category).toBe('media');
   });
 
   it('toMCPFormatWithMetadata defaults toolset to core when not specified', () => {

@@ -117,6 +117,13 @@ Resources:
                   - cloudformation:GetTemplateSummary
                   - cloudformation:ValidateTemplate
                 Resource: '*'
+              - Sid: CFNResourceHotswap
+                Effect: Allow
+                Action:
+                  - cloudformation:GetResource
+                  - cloudformation:UpdateResource
+                Resource:
+                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:resource/*'
               - Sid: SSMBootstrapRead
                 Effect: Allow
                 Action:

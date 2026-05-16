@@ -328,7 +328,7 @@ describe('POST /avatars/{id}/activate', () => {
     expect(result!.statusCode).toBe(409);
   });
 
-  it('non-owner gets 403', async () => {
+  it('non-owner gets 404', async () => {
     getAvatarResult = { ...MOCK_AVATAR, creatorWallet: 'wallet-1' };
     const ctx = makeCtx({
       method: 'POST',
@@ -337,7 +337,7 @@ describe('POST /avatars/{id}/activate', () => {
       effectiveIsAdmin: false,
     });
     const result = await handleEntitlementRoutes(ctx);
-    expect(result!.statusCode).toBe(403);
+    expect(result!.statusCode).toBe(404);
   });
 });
 

@@ -30,6 +30,7 @@ export interface ModelInfo {
 export const REPLICATE_MODEL_VERSIONS: Record<string, string | undefined> = {
   // All featured image models use the model endpoint to avoid stale version hashes
   'black-forest-labs/flux-1.1-pro': undefined,
+  'google/nano-banana-pro': undefined,
   'black-forest-labs/flux-schnell': undefined,
   'stability-ai/sdxl': undefined,
   'ideogram-ai/ideogram-v2': undefined,
@@ -49,6 +50,57 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   // IMAGE GENERATION
   // ==========================================================================
   {
+    id: 'black-forest-labs/flux.2-pro',
+    name: 'FLUX 2 Pro',
+    provider: 'openrouter',
+    capabilities: ['image_generation'],
+    description: 'High-quality OpenRouter image generation with good reference-image guidance.',
+    tier: 'premium',
+    speed: 'medium',
+    quality: 'high',
+    isDefault: true,
+  },
+  {
+    id: 'black-forest-labs/flux.2-flex',
+    name: 'FLUX 2 Flex',
+    provider: 'openrouter',
+    capabilities: ['image_generation'],
+    description: 'Flexible FLUX image generation via OpenRouter for broader prompt and reference workflows.',
+    tier: 'premium',
+    speed: 'medium',
+    quality: 'high',
+  },
+  {
+    id: 'google/gemini-3-pro-image-preview',
+    name: 'Gemini 3 Pro Image Preview',
+    provider: 'openrouter',
+    capabilities: ['image_generation'],
+    description: 'Gemini image generation with strong instruction following and image configuration support.',
+    tier: 'premium',
+    speed: 'medium',
+    quality: 'high',
+  },
+  {
+    id: 'google/gemini-2.5-flash-image',
+    name: 'Gemini 2.5 Flash Image',
+    provider: 'openrouter',
+    capabilities: ['image_generation'],
+    description: 'Fast multimodal image generation through OpenRouter.',
+    tier: 'standard',
+    speed: 'fast',
+    quality: 'standard',
+  },
+  {
+    id: 'openai/gpt-5-image-mini',
+    name: 'GPT-5 Image Mini',
+    provider: 'openrouter',
+    capabilities: ['image_generation'],
+    description: 'OpenAI image generation through OpenRouter for compact image workflows.',
+    tier: 'standard',
+    speed: 'medium',
+    quality: 'high',
+  },
+  {
     id: 'black-forest-labs/flux-1.1-pro',
     name: 'FLUX 1.1 Pro',
     provider: 'replicate',
@@ -58,7 +110,17 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     tier: 'premium',
     speed: 'fast',
     quality: 'high',
-    isDefault: true,
+  },
+  {
+    id: 'google/nano-banana-pro',
+    name: 'Nano Banana Pro',
+    provider: 'replicate',
+    capabilities: ['image_generation'],
+    description: 'Reference-image aware image generation and editing with support for multiple input images.',
+    version: REPLICATE_MODEL_VERSIONS['google/nano-banana-pro'],
+    tier: 'premium',
+    speed: 'medium',
+    quality: 'high',
   },
   {
     id: 'black-forest-labs/flux-schnell',
@@ -109,6 +171,47 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   // VIDEO GENERATION
   // ==========================================================================
   {
+    id: 'bytedance/seedance-2.0-fast',
+    name: 'Seedance 2.0 Fast',
+    provider: 'openrouter',
+    capabilities: ['video_generation'],
+    description: 'Fast OpenRouter video generation with broad aspect-ratio and reference-image support.',
+    tier: 'premium',
+    speed: 'medium',
+    quality: 'high',
+    isDefault: true,
+  },
+  {
+    id: 'google/veo-3.1-fast',
+    name: 'Veo 3.1 Fast',
+    provider: 'openrouter',
+    capabilities: ['video_generation'],
+    description: 'Google Veo video generation through OpenRouter, optimized for lower latency.',
+    tier: 'premium',
+    speed: 'medium',
+    quality: 'high',
+  },
+  {
+    id: 'google/veo-3.1',
+    name: 'Veo 3.1',
+    provider: 'openrouter',
+    capabilities: ['video_generation'],
+    description: 'High-quality Google Veo video generation through OpenRouter.',
+    tier: 'premium',
+    speed: 'slow',
+    quality: 'high',
+  },
+  {
+    id: 'kwaivgi/kling-v3.0-std',
+    name: 'Kling v3.0 Standard',
+    provider: 'openrouter',
+    capabilities: ['video_generation'],
+    description: 'Kling video generation through OpenRouter for motion-heavy clips.',
+    tier: 'premium',
+    speed: 'slow',
+    quality: 'high',
+  },
+  {
     id: 'minimax/video-01',
     name: 'Minimax Video',
     provider: 'replicate',
@@ -117,7 +220,6 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     tier: 'premium',
     speed: 'slow',
     quality: 'high',
-    isDefault: true,
   },
   {
     id: 'luma/ray',
@@ -206,41 +308,16 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     quality: 'high',
   },
 
-  // ==========================================================================
-  // LLM (for reference, typically configured separately)
-  // ==========================================================================
-  {
-    id: 'anthropic/claude-3-5-sonnet-latest',
-    name: 'Claude 3.5 Sonnet',
-    provider: 'anthropic',
-    capabilities: ['llm'],
-    description: 'Fast, intelligent model for most tasks.',
-    tier: 'standard',
-    speed: 'fast',
-    quality: 'high',
-    isDefault: true,
-  },
-  {
-    id: 'anthropic/claude-3-opus-latest',
-    name: 'Claude 3 Opus',
-    provider: 'anthropic',
-    capabilities: ['llm'],
-    description: 'Most capable model for complex reasoning.',
-    tier: 'premium',
-    speed: 'medium',
-    quality: 'high',
-  },
-  {
-    id: 'openai/gpt-4o',
-    name: 'GPT-4o',
-    provider: 'openai',
-    capabilities: ['llm'],
-    description: 'OpenAI multimodal model.',
-    tier: 'standard',
-    speed: 'fast',
-    quality: 'high',
-  },
+  // LLM models are intentionally not curated here. Runtime chat paths resolve
+  // them from OpenRouter's live /models catalog before sending a request.
 ];
+
+export function isRetiredReplicateMediaModel(model: Pick<ModelInfo, 'provider' | 'capabilities'>): boolean {
+  return model.provider === 'replicate' && (
+    model.capabilities.includes('image_generation') ||
+    model.capabilities.includes('video_generation')
+  );
+}
 
 /**
  * Get models for a specific capability
@@ -251,6 +328,7 @@ export function getModelsForCapability(
 ): ModelInfo[] {
   return AVAILABLE_MODELS.filter(
     (model) =>
+      !isRetiredReplicateMediaModel(model) &&
       model.capabilities.includes(capability) &&
       (!provider || model.provider === provider)
   );
@@ -274,10 +352,53 @@ export function getModelById(id: string): ModelInfo | undefined {
   return AVAILABLE_MODELS.find((m) => m.id === id);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const OPENROUTER_MODEL_ID_PATTERN = /^~?[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/;
+const OPENROUTER_CATALOG_PROVIDER_PREFIXES = new Set([
+  'anthropic',
+  'deepseek',
+  'google',
+  'meta-llama',
+  'mistralai',
+  'moonshotai',
+  'openai',
+  'openrouter',
+  'qwen',
+  'x-ai',
+  'z-ai',
+]);
+
+function isKnownFallbackModel(id: string): boolean {
+  if (id in LLM_FALLBACK_CHAINS) return true;
+  if (DEFAULT_FALLBACK_CHAIN.includes(id)) return true;
+  return Object.values(LLM_FALLBACK_CHAINS).some((fallbacks) => fallbacks.includes(id));
+}
+
+/**
+ * Accepts catalog-shaped OpenRouter model IDs that are not curated in the
+ * local registry yet. Runtime OpenRouter fallback routing handles stale or
+ * unavailable IDs instead of silently replacing valid catalog choices.
+ */
+export function isOpenRouterCatalogModelId(value: string): boolean {
+  if (!OPENROUTER_MODEL_ID_PATTERN.test(value)) return false;
+  const [rawProvider] = value.split('/');
+  const provider = rawProvider?.replace(/^~/, '');
+  if (!provider) return false;
+  return OPENROUTER_CATALOG_PROVIDER_PREFIXES.has(provider);
+}
+
 export function getValidModelId(value: unknown): string | undefined {
   const normalized = normalizeModel(value);
   if (!normalized) return undefined;
   if (getModelById(normalized)) return normalized;
+  if (isKnownFallbackModel(normalized)) return normalized;
+  if (isOpenRouterCatalogModelId(normalized)) {
+    logger.info('Using OpenRouter catalog model outside local registry', { model: normalized });
+    return normalized;
+  }
   logger.warn('Unknown LLM model configured, falling back to default', { model: normalized });
   return undefined;
 }
@@ -286,7 +407,7 @@ export function getValidModelId(value: unknown): string | undefined {
  * Get all models for a provider
  */
 export function getModelsForProvider(provider: string): ModelInfo[] {
-  return AVAILABLE_MODELS.filter((m) => m.provider === provider);
+  return AVAILABLE_MODELS.filter((m) => m.provider === provider && !isRetiredReplicateMediaModel(m));
 }
 
 /**
@@ -300,13 +421,13 @@ export function getReplicateVersion(modelId: string): string | undefined {
  * Default model IDs by capability
  */
 export const DEFAULT_MODELS: Record<AICapability, string> = {
-  image_generation: 'black-forest-labs/flux-1.1-pro',
-  video_generation: 'minimax/video-01',
+  image_generation: 'black-forest-labs/flux.2-pro',
+  video_generation: 'bytedance/seedance-2.0-fast',
   audio_generation: 'stability-ai/stable-audio-2.5',
   voice_clone: 'x-lance/f5-tts',
   text_to_speech: 'x-lance/f5-tts',
   transcription: 'whisper-1',
-  llm: 'anthropic/claude-3-5-sonnet-latest',
+  llm: '',
 };
 
 // ============================================================================
@@ -325,50 +446,10 @@ export const DEFAULT_MODELS: Record<AICapability, string> = {
  *
  * @see https://openrouter.ai/models for current model availability
  */
-export const LLM_FALLBACK_CHAINS: Record<string, string[]> = {
-  // -------------------------------------------------------------------------
-  // Claude 4.x models (2026)
-  // -------------------------------------------------------------------------
-  'anthropic/claude-sonnet-4.5': ['anthropic/claude-sonnet-4', 'deepseek/deepseek-r1'],
-  'anthropic/claude-sonnet-4': ['anthropic/claude-3-5-sonnet-latest', 'deepseek/deepseek-r1'],
-  'anthropic/claude-opus-4.5': ['anthropic/claude-sonnet-4.5', 'anthropic/claude-sonnet-4'],
+export const LLM_FALLBACK_CHAINS: Record<string, string[]> = {};
 
-  // -------------------------------------------------------------------------
-  // Claude 3.x models (legacy but still used)
-  // -------------------------------------------------------------------------
-  'anthropic/claude-3-5-sonnet-latest': ['anthropic/claude-3-5-haiku-latest', 'deepseek/deepseek-r1'],
-  'anthropic/claude-3-opus-latest': ['anthropic/claude-3-5-sonnet-latest', 'anthropic/claude-sonnet-4'],
-  'anthropic/claude-3-5-haiku-latest': ['deepseek/deepseek-r1', 'openai/gpt-4o-mini'],
-  'anthropic/claude-haiku-4': ['anthropic/claude-3-5-haiku-latest', 'deepseek/deepseek-r1'],
-
-  // -------------------------------------------------------------------------
-  // OpenAI models
-  // -------------------------------------------------------------------------
-  'openai/gpt-5.1': ['openai/gpt-4o', 'anthropic/claude-sonnet-4'],
-  'openai/gpt-4o': ['openai/gpt-4o-mini', 'deepseek/deepseek-r1'],
-  'openai/gpt-4o-mini': ['deepseek/deepseek-r1', 'anthropic/claude-3-5-haiku-latest'],
-  'openai/gpt-4-turbo': ['openai/gpt-4o', 'anthropic/claude-sonnet-4'],
-
-  // -------------------------------------------------------------------------
-  // DeepSeek models (cheap, fast, good fallback)
-  // -------------------------------------------------------------------------
-  'deepseek/deepseek-r1': ['deepseek/deepseek-v3.2', 'anthropic/claude-3-5-haiku-latest'],
-  'deepseek/deepseek-v3.2': ['deepseek/deepseek-r1', 'openai/gpt-4o-mini'],
-
-  // -------------------------------------------------------------------------
-  // Other models that may have availability issues
-  // -------------------------------------------------------------------------
-  'minimax/minimax-01': ['anthropic/claude-3-5-haiku-latest', 'deepseek/deepseek-r1'],
-  'minimax/minimax-m2-her': ['anthropic/claude-3-5-haiku-latest', 'deepseek/deepseek-r1'],
-  'x-ai/grok-4': ['anthropic/claude-sonnet-4', 'deepseek/deepseek-r1'],
-  'google/gemini-3-pro-preview': ['anthropic/claude-sonnet-4', 'openai/gpt-4o'],
-};
-
-/** Default fallback chain when model not in registry */
-export const DEFAULT_FALLBACK_CHAIN: string[] = [
-  'deepseek/deepseek-r1',        // Fast, cheap, reliable
-  'anthropic/claude-3-5-haiku-latest',  // Claude fallback
-];
+/** Runtime fallback chains come from OpenRouter's live catalog. */
+export const DEFAULT_FALLBACK_CHAIN: string[] = [];
 
 /**
  * Get fallback models for a given primary model
@@ -390,10 +471,13 @@ export function isFallbackTriggerError(error: unknown): boolean {
 
   // Model unavailable
   if (msg.includes('model not found') || msg.includes('model_not_found')) return true;
+  if (msg.includes('not found') || msg.includes('unknown model')) return true;
+  if (msg.includes('invalid model') || msg.includes('unsupported model')) return true;
   if (msg.includes('no endpoints found')) return true;
   if (msg.includes('does not support')) return true;
 
   // Service unavailable
+  if (msg.includes('500') || msg.includes('504')) return true;
   if (msg.includes('503') || msg.includes('service unavailable')) return true;
   if (msg.includes('502') || msg.includes('bad gateway')) return true;
 
@@ -410,7 +494,34 @@ export function isFallbackTriggerError(error: unknown): boolean {
  * Get the complete model chain (primary + fallbacks) for resolution
  */
 export function getModelChain(primaryModel: string): string[] {
-  return [primaryModel, ...getFallbackModels(primaryModel)];
+  return Array.from(new Set([primaryModel, ...getFallbackModels(primaryModel)]));
+}
+
+export interface OpenRouterFallbackRoutingOptions {
+  /** Require providers to support every parameter in the request, e.g. tools. */
+  requireParameters?: boolean;
+  /** Live OpenRouter catalog fallback models. */
+  fallbackModels?: string[];
+}
+
+export function withOpenRouterFallbackRouting(
+  body: Record<string, unknown>,
+  primaryModel: string,
+  options: OpenRouterFallbackRoutingOptions = {}
+): Record<string, unknown> {
+  const modelChain = Array.from(new Set([primaryModel, ...(options.fallbackModels ?? getFallbackModels(primaryModel))]));
+  const provider = isRecord(body.provider) ? { ...body.provider } : {};
+
+  return {
+    ...body,
+    model: primaryModel,
+    ...(modelChain.length > 1 ? { models: modelChain, route: 'fallback' } : {}),
+    provider: {
+      ...provider,
+      allow_fallbacks: true,
+      ...(options.requireParameters ? { require_parameters: true } : {}),
+    },
+  };
 }
 
 // ============================================================================
@@ -422,15 +533,7 @@ export function getModelChain(primaryModel: string): string[] {
  * Applied during normalizeModel() so stored config values resolve without
  * triggering "Unknown LLM model" warnings.
  */
-export const MODEL_ALIASES: Record<string, string> = {
-  // Claude 3.x shorthand (missing -latest suffix)
-  'anthropic/claude-3-5-sonnet': 'anthropic/claude-3-5-sonnet-latest',
-  'anthropic/claude-3-opus': 'anthropic/claude-3-opus-latest',
-  // Claude 3.x dated snapshots → latest
-  'anthropic/claude-3-5-sonnet-20241022': 'anthropic/claude-3-5-sonnet-latest',
-  'anthropic/claude-3-5-sonnet-20240620': 'anthropic/claude-3-5-sonnet-latest',
-  'anthropic/claude-3-opus-20240229': 'anthropic/claude-3-opus-latest',
-};
+export const MODEL_ALIASES: Record<string, string> = {};
 
 // ============================================================================
 // MODEL RESOLUTION
@@ -451,7 +554,8 @@ export function resolveChatModel(params: {
   return (
     getValidModelId(params.requestModel) ??
     getValidModelId(params.avatarModel) ??
-    params.defaultModel
+    getValidModelId(params.defaultModel) ??
+    DEFAULT_MODELS.llm
   );
 }
 
@@ -473,6 +577,8 @@ export interface ModelExecutionOptions {
   avatarId?: string;
   /** Maximum number of fallback attempts (default: 2) */
   maxFallbackAttempts?: number;
+  /** Live OpenRouter catalog fallback models. */
+  fallbackModels?: string[];
 }
 
 /**
@@ -486,9 +592,10 @@ export async function executeWithFallback<T>(
     primaryModel,
     avatarId = 'unknown',
     maxFallbackAttempts = 2,
+    fallbackModels,
   } = options;
 
-  const modelChain = getModelChain(primaryModel);
+  const modelChain = Array.from(new Set([primaryModel, ...(fallbackModels ?? getFallbackModels(primaryModel))]));
   const modelsToTry = modelChain.slice(0, 1 + maxFallbackAttempts);
   const attemptedModels: string[] = [];
   let lastError: Error | undefined;

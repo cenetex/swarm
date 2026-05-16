@@ -23,8 +23,9 @@ const prevHeliusApiKey = process.env.HELIUS_API_KEY;
 process.env.HELIUS_API_KEY = 'test-helius-key';
 
 // ── Import AFTER env setup ──────────────────────────────────────────────────
+const avatarService = await import('./avatars.js');
 const avatarAscendModule = await import('./avatar-ascend.js');
-const { grantAscensionEntitlement } = avatarAscendModule;
+const { executeAscension, grantAscensionEntitlement, preflightAscend } = avatarAscendModule;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function makeEntitlement(
@@ -197,6 +198,62 @@ describe('grantAscensionEntitlement', () => {
     expect(runtimeLimitsVal.dailyMessageLimit).toBe(500);
     expect(runtimeLimitsVal.dailyMediaCredits).toBe(50);
     expect(runtimeLimitsVal.autonomousPostsEnabled).toBe(true);
+  });
+});
+
+describe('ascension avatar ownership enforcement', () => {
+  let dynamoSendMock: ReturnType<typeof spyOn>;
+  let assertOwnershipSpy: ReturnType<typeof spyOn> | null = null;
+
+  beforeEach(() => {
+    const mockClient = { send: async () => ({}) };
+    dynamoSendMock = spyOn(mockClient, 'send');
+    _setDynamoClient(mockClient as unknown as DynamoDBDocumentClient);
+    dynamoSendMock.mockResolvedValue({
+      Item: {
+        avatarId: 'avatar-1',
+        name: 'Avatar One',
+        creatorWallet: 'old-owner',
+        nftMint: 'mint-1',
+      },
+    });
+  });
+
+  afterEach(() => {
+    _setDynamoClient(null);
+    if (assertOwnershipSpy) assertOwnershipSpy.mockRestore();
+    assertOwnershipSpy = null;
+  });
+
+  it('preflight denies NFT-backed avatars after ownership is revoked', async () => {
+    assertOwnershipSpy = spyOn(avatarService, 'assertAvatarOwnership').mockRejectedValue(
+      new avatarService.AvatarOwnershipError({ code: 'nft_revoked' }),
+    );
+
+    const result = await preflightAscend('avatar-1', 'old-owner');
+
+    expect(result.canAscend).toBe(false);
+    expect(result.errorCode).toBe('NOT_INHABITANT');
+    expect(result.error).toBe('Only the current avatar owner can ascend this avatar');
+  });
+
+  it('executeAscension checks avatar ownership before mutating state', async () => {
+    assertOwnershipSpy = spyOn(avatarService, 'assertAvatarOwnership').mockRejectedValue(
+      new avatarService.AvatarOwnershipError({ code: 'nft_revoked' }),
+    );
+
+    const result = await executeAscension(
+      'avatar-1',
+      'old-owner',
+      'ascension-mint',
+      'orb-sig',
+      'rati-sig',
+      100,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('NOT_INHABITANT');
+    expect(dynamoSendMock).not.toHaveBeenCalled();
   });
 });
 

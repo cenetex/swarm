@@ -46,19 +46,8 @@ export async function handleEnergyRoutes(
   if (method === 'POST' && energyBurnMatch) {
     const avatarId = energyBurnMatch[1];
 
-    if (!walletAddress && !effectiveIsAdmin) {
-      return jsonResponse(corsHeaders, 403, { error: 'Authentication required' });
-    }
-
-    if (!effectiveIsAdmin) {
-      const existing = await avatarService.getAvatar(avatarId);
-      if (
-        !existing ||
-        existing.creatorWallet !== walletAddress
-      ) {
-        return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
-      }
-    }
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
 
     const body = parseJsonBody<{ mint?: unknown }>(event);
     const mint = typeof body?.mint === 'string' ? body.mint : undefined;

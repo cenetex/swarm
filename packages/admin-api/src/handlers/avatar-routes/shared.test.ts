@@ -117,4 +117,67 @@ describe('requireOwnerOrAdmin', () => {
     expect(result).not.toBeNull();
     expect(result!.statusCode).toBe(404);
   });
+
+  it('uses centralized ownership authorizer when provided', async () => {
+    let legacyGetAvatarCalled = false;
+    let authorizerArgs: unknown[] | null = null;
+    const ctx = makeCtx({
+      effectiveIsAdmin: false,
+      walletAddress: 'current-nft-owner',
+      assertAvatarOwnership: async (...args) => {
+        authorizerArgs = args;
+      },
+    });
+
+    const result = await requireOwnerOrAdmin(ctx, 'nft-avatar', async () => {
+      legacyGetAvatarCalled = true;
+      return { creatorWallet: 'stale-creator' };
+    });
+
+    expect(result).toBeNull();
+    expect(legacyGetAvatarCalled).toBe(false);
+    expect(authorizerArgs).toEqual(['nft-avatar', 'current-nft-owner', { isAdmin: false }]);
+  });
+
+  it('maps centralized ownership revocation to 404', async () => {
+    const ctx = makeCtx({
+      effectiveIsAdmin: false,
+      walletAddress: 'stale-creator',
+      assertAvatarOwnership: async () => {
+        const error = new Error('revoked') as Error & { code: string };
+        error.code = 'nft_revoked';
+        throw error;
+      },
+    });
+
+    const result = await requireOwnerOrAdmin(ctx, 'nft-avatar', async () => ({
+      creatorWallet: 'stale-creator',
+    }));
+
+    expect(result).not.toBeNull();
+    expect(result!.statusCode).toBe(404);
+  });
+
+  it('maps centralized ownership outages to 503', async () => {
+    const ctx = makeCtx({
+      effectiveIsAdmin: false,
+      walletAddress: 'owner',
+      assertAvatarOwnership: async () => {
+        const error = new Error('helius down') as Error & { code: string };
+        error.code = 'verification_unavailable';
+        throw error;
+      },
+    });
+
+    const result = await requireOwnerOrAdmin(ctx, 'nft-avatar', async () => ({
+      creatorWallet: 'owner',
+    }));
+
+    expect(result).not.toBeNull();
+    expect(result!.statusCode).toBe(503);
+    expect(JSON.parse(result!.body as string)).toEqual({
+      error: 'Ownership verification temporarily unavailable',
+      code: 'verification_unavailable',
+    });
+  });
 });

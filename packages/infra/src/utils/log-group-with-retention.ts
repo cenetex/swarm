@@ -1,23 +1,9 @@
 /**
  * Utility construct to create or adopt a CloudWatch log group with retention.
  *
- * Background:
- * CDK's `logRetention` Lambda property uses a custom resource to call
- * `CreateLogGroup` + `PutRetentionPolicy` via the CloudWatch Logs API.
- * The log group is NOT modeled as a CloudFormation `AWS::Logs::LogGroup`
- * resource, so CloudFormation doesn't track it.
- *
- * When migrating away from `logRetention` to an explicit `logGroup`,
- * creating an `AWS::Logs::LogGroup` CloudFormation resource with the same
- * name will fail with "Resource already exists" because the orphaned log
- * group from the old custom resource still exists.
- *
- * This construct uses `AwsCustomResource` to:
- * 1. Create the log group if it doesn't exist (idempotent)
- * 2. Set the retention policy
- * 3. Return an `ILogGroup` reference for the Lambda `logGroup` property
- *
- * This is safe for both fresh deployments and migrations from `logRetention`.
+ * This avoids CloudFormation "already exists" errors for Lambda log groups
+ * that may have been created by the Lambda runtime or older log-retention
+ * custom resources before they were explicitly managed by the stack.
  */
 import * as cdk from 'aws-cdk-lib';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -26,22 +12,8 @@ import * as cr from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
 
 export interface LogGroupWithRetentionProps {
-  /**
-   * The name of the log group (e.g. `/aws/lambda/my-function`).
-   */
   logGroupName: string;
-
-  /**
-   * Retention period for log events.
-   * @default logs.RetentionDays.ONE_MONTH
-   */
   retention?: logs.RetentionDays;
-
-  /**
-   * Removal policy for the log group.
-   * RETAIN means the log group persists after stack deletion.
-   * @default cdk.RemovalPolicy.RETAIN
-   */
   removalPolicy?: cdk.RemovalPolicy;
 }
 
@@ -56,33 +28,21 @@ export class LogGroupWithRetention extends Construct {
       retention = logs.RetentionDays.ONE_MONTH,
       removalPolicy = cdk.RemovalPolicy.RETAIN,
     } = props;
-
-    // RetentionDays enum values are the integer days (e.g. ONE_MONTH = 30)
     const retentionDays = retention as number;
 
-    // Use AwsCustomResource to idempotently create-or-adopt the log group
-    // and set retention. The CreateLogGroup API is idempotent when the log
-    // group already exists (returns ResourceAlreadyExistsException which we
-    // ignore). PutRetentionPolicy is always idempotent.
     const createLogGroup = new cr.AwsCustomResource(this, 'CreateLogGroup', {
       resourceType: 'Custom::LogGroupCreate',
       onCreate: {
         service: 'CloudWatchLogs',
         action: 'createLogGroup',
-        parameters: {
-          logGroupName,
-        },
-        // Ignore ResourceAlreadyExistsException — log group may already exist
-        // from Lambda auto-creation or previous logRetention custom resource
+        parameters: { logGroupName },
         ignoreErrorCodesMatching: 'ResourceAlreadyExistsException',
         physicalResourceId: cr.PhysicalResourceId.of(`${logGroupName}-create`),
       },
       onUpdate: {
         service: 'CloudWatchLogs',
         action: 'createLogGroup',
-        parameters: {
-          logGroupName,
-        },
+        parameters: { logGroupName },
         ignoreErrorCodesMatching: 'ResourceAlreadyExistsException',
         physicalResourceId: cr.PhysicalResourceId.of(`${logGroupName}-create`),
       },
@@ -91,9 +51,7 @@ export class LogGroupWithRetention extends Construct {
             onDelete: {
               service: 'CloudWatchLogs',
               action: 'deleteLogGroup',
-              parameters: {
-                logGroupName,
-              },
+              parameters: { logGroupName },
               ignoreErrorCodesMatching: 'ResourceNotFoundException',
             },
           }
@@ -148,10 +106,7 @@ export class LogGroupWithRetention extends Construct {
       ]),
     });
 
-    // Retention must be set after the log group exists
     setRetention.node.addDependency(createLogGroup);
-
-    // Return an ILogGroup reference for the Lambda logGroup property
     this.logGroup = logs.LogGroup.fromLogGroupName(this, 'LogGroupRef', logGroupName);
   }
 }

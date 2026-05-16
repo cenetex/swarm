@@ -430,6 +430,7 @@ export interface UserCooldown {
 
 export type {
   ToolDefinition,
+  PromptGuidance,
   ToolContext,
   ToolResult,
   ServiceContainer,
@@ -595,7 +596,7 @@ export const MediaConfigSchema = z.object({
     model: z.string(),
   }),
   video: z.object({
-    provider: z.literal('replicate'),
+    provider: z.enum(['openrouter', 'replicate']),
     model: z.string(),
   }).optional(),
 });

@@ -5,12 +5,13 @@
  */
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 import type { RouteContext } from './types.js';
-import { jsonResponse } from './shared.js';
+import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { logger } from '@swarm/core';
 import * as avatarService from '../../services/avatars.js';
 import * as galleryService from '../../services/gallery.js';
 import * as integrationsService from '../../services/integrations.js';
 import * as auditLogService from '../../services/audit-log.js';
+import { scanNftAvatarsForWallet } from '../../services/scan-nft-avatars.js';
 import type { ActorType } from '../../services/audit-log.js';
 import { parseJsonBody } from '../../http/request-body.js';
 import {
@@ -231,6 +232,16 @@ export async function handleCrudRoutes(
     };
   }
 
+  // ── POST /avatars/scan-nft — Create draft avatars from held collection NFTs ─
+  if (method === 'POST' && path === '/avatars/scan-nft') {
+    if (!walletAddress) {
+      return jsonResponse(corsHeaders, 403, { error: 'Wallet sign-in required' });
+    }
+
+    const result = await scanNftAvatarsForWallet(walletAddress);
+    return jsonResponse(corsHeaders, 200, result);
+  }
+
   // ── PUT /avatars/{id}/reassign — Admin-only: Reassign avatar ownership ───
   const reassignMatch = path.match(/^\/avatars\/([^/]+)\/reassign$/);
   if (method === 'PUT' && reassignMatch) {
@@ -288,15 +299,8 @@ export async function handleCrudRoutes(
   if (method === 'GET' && avatarIntegrationsMatch) {
     const avatarId = avatarIntegrationsMatch[1];
 
-    if (!effectiveIsAdmin) {
-      if (!walletAddress) {
-        return jsonResponse(corsHeaders, 403, { error: 'Authentication required' });
-      }
-      const existing = await avatarService.getAvatar(avatarId);
-      if (!existing || existing.creatorWallet !== walletAddress) {
-        return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
-      }
-    }
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
 
     const statuses = await integrationsService.getAllIntegrationStatuses(avatarId);
     return jsonResponse(corsHeaders, 200, { integrations: statuses });
@@ -415,15 +419,8 @@ export async function handleCrudRoutes(
 
     // DELETE /avatars/{id} - Delete avatar (creator only for non-admin)
     if (method === 'DELETE') {
-      if (!effectiveIsAdmin) {
-        if (!walletAddress) {
-          return jsonResponse(corsHeaders, 403, { error: 'Authentication required' });
-        }
-        const existing = await avatarService.getAvatar(avatarId);
-        if (!existing || existing.creatorWallet !== walletAddress) {
-          return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
-        }
-      }
+      const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+      if (denied) return denied;
 
       await avatarService.deleteAvatar(avatarId, session);
 

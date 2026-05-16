@@ -20,7 +20,7 @@ import type { AICapability } from '../types.js';
 
 describe('Models Registry', () => {
   describe('AVAILABLE_MODELS catalog', () => {
-    it('should contain models for all core capabilities', () => {
+    it('should contain local models for non-LLM capabilities', () => {
       const capabilities: AICapability[] = [
         'image_generation',
         'video_generation',
@@ -28,7 +28,6 @@ describe('Models Registry', () => {
         'voice_clone',
         'text_to_speech',
         'transcription',
-        'llm',
       ];
 
       for (const capability of capabilities) {
@@ -57,7 +56,6 @@ describe('Models Registry', () => {
         'audio_generation',
         'voice_clone',
         'transcription',
-        'llm',
       ];
 
       for (const capability of capabilities) {
@@ -73,10 +71,12 @@ describe('Models Registry', () => {
     it('should have all featured models in the versions map', () => {
       expect('black-forest-labs/flux-schnell' in REPLICATE_MODEL_VERSIONS).toBe(true);
       expect('black-forest-labs/flux-1.1-pro' in REPLICATE_MODEL_VERSIONS).toBe(true);
+      expect('google/nano-banana-pro' in REPLICATE_MODEL_VERSIONS).toBe(true);
     });
 
     it('should have undefined for models using /models API', () => {
       expect(REPLICATE_MODEL_VERSIONS['black-forest-labs/flux-1.1-pro']).toBeUndefined();
+      expect(REPLICATE_MODEL_VERSIONS['google/nano-banana-pro']).toBeUndefined();
       expect(REPLICATE_MODEL_VERSIONS['minimax/video-01']).toBeUndefined();
       expect(REPLICATE_MODEL_VERSIONS['stability-ai/stable-audio-2.5']).toBeUndefined();
     });
@@ -103,7 +103,18 @@ describe('Models Registry', () => {
       ];
 
       for (const capability of capabilities) {
-        expect(DEFAULT_MODELS[capability]).toBeTruthy();
+        expect(DEFAULT_MODELS[capability]).toBeDefined();
+      }
+    });
+
+    it('does not hard-code a default LLM model ID', () => {
+      expect(DEFAULT_MODELS.llm).toBe('');
+    });
+
+    it('should have concrete defaults for non-LLM capabilities', () => {
+      for (const [capability, modelId] of Object.entries(DEFAULT_MODELS)) {
+        if (capability === 'llm') continue;
+        expect(modelId).toBeTruthy();
       }
     });
 
@@ -143,8 +154,14 @@ describe('Models Registry', () => {
       expect(models.every(m => m.capabilities.includes('voice_clone'))).toBe(true);
     });
 
-    it('should filter by provider when specified', () => {
+    it('should not expose retired Replicate image models', () => {
       const replicateModels = getModelsForCapability('image_generation', 'replicate');
+      expect(replicateModels).toEqual([]);
+    });
+
+    it('should filter by provider when specified', () => {
+      const replicateModels = getModelsForCapability('audio_generation', 'replicate');
+      expect(replicateModels.length).toBeGreaterThan(0);
       expect(replicateModels.every(m => m.provider === 'replicate')).toBe(true);
 
       const openaiModels = getModelsForCapability('llm', 'openai');
@@ -183,24 +200,36 @@ describe('Models Registry', () => {
       expect(model?.capabilities).toContain('voice_clone');
     });
 
-    it('should return first model when no default is marked', () => {
-      // Even if no isDefault is set, should return first available
+    it('does not return a static default LLM model', () => {
       const model = getDefaultModel('llm');
-      expect(model).toBeTruthy();
-      expect(model?.capabilities).toContain('llm');
+      expect(model).toBeUndefined();
     });
 
-    it('should filter by provider when specified', () => {
+    it('does not return static provider-filtered LLM models', () => {
       const model = getDefaultModel('llm', 'anthropic');
-      expect(model?.provider).toBe('anthropic');
+      expect(model).toBeUndefined();
     });
   });
 
   describe('getModelById', () => {
     it('should find model by exact ID', () => {
+      const model = getModelById('black-forest-labs/flux.2-pro');
+      expect(model).toBeTruthy();
+      expect(model?.name).toBe('FLUX 2 Pro');
+      expect(model?.provider).toBe('openrouter');
+    });
+
+    it('keeps FLUX 1.1 Pro registered for legacy Replicate config recognition', () => {
       const model = getModelById('black-forest-labs/flux-1.1-pro');
       expect(model).toBeTruthy();
-      expect(model?.name).toBe('FLUX 1.1 Pro');
+      expect(model?.capabilities).toContain('image_generation');
+      expect(model?.provider).toBe('replicate');
+    });
+
+    it('keeps Nano Banana Pro registered for legacy Replicate config recognition', () => {
+      const model = getModelById('google/nano-banana-pro');
+      expect(model).toBeTruthy();
+      expect(model?.capabilities).toContain('image_generation');
       expect(model?.provider).toBe('replicate');
     });
 
@@ -218,10 +247,12 @@ describe('Models Registry', () => {
   });
 
   describe('getModelsForProvider', () => {
-    it('should return all Replicate models', () => {
+    it('should return active Replicate models only', () => {
       const models = getModelsForProvider('replicate');
       expect(models.length).toBeGreaterThan(0);
       expect(models.every(m => m.provider === 'replicate')).toBe(true);
+      expect(models.every(m => !m.capabilities.includes('image_generation'))).toBe(true);
+      expect(models.every(m => !m.capabilities.includes('video_generation'))).toBe(true);
     });
 
     it('should return all OpenAI models', () => {
@@ -230,10 +261,9 @@ describe('Models Registry', () => {
       expect(models.every(m => m.provider === 'openai')).toBe(true);
     });
 
-    it('should return all Anthropic models', () => {
+    it('does not keep Anthropic LLM models in the static registry', () => {
       const models = getModelsForProvider('anthropic');
-      expect(models.length).toBeGreaterThan(0);
-      expect(models.every(m => m.provider === 'anthropic')).toBe(true);
+      expect(models).toEqual([]);
     });
 
     it('should return empty array for non-existent provider', () => {
@@ -281,9 +311,9 @@ describe('Model Selection Logic', () => {
 
   describe('Tier and quality attributes', () => {
     it('should have premium tier for compute-intensive models', () => {
-      const videoModel = getModelById('minimax/video-01');
+      const videoModel = getModelById('bytedance/seedance-2.0-fast');
       expect(videoModel?.tier).toBe('premium');
-      expect(videoModel?.speed).toBe('slow');
+      expect(videoModel?.speed).toBe('medium');
     });
 
     it('should have standard tier for common models', () => {

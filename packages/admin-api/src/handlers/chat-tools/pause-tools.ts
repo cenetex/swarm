@@ -28,6 +28,18 @@ export interface PauseToolResult {
   };
 }
 
+function isReplicateMediaFallback(args: Record<string, unknown>): boolean {
+  if (args.integration !== 'replicate') return false;
+  const reason = typeof args.reason === 'string' ? args.reason.toLowerCase() : '';
+  return (
+    reason.includes('image') ||
+    reason.includes('video') ||
+    reason.includes('media') ||
+    reason.includes('visualize') ||
+    reason.includes('openrouter')
+  );
+}
+
 /**
  * Check for and handle pause-for-input tool calls.
  *
@@ -84,6 +96,12 @@ export async function handlePauseToolCalls(params: {
           ? pendingArgs.preferredFamily
           : undefined;
       pendingArgs = await buildModelSelectorPayload(mcpServices.models, avatarId, family);
+    } else if (toolName === 'configure_integration' && isReplicateMediaFallback(pendingArgs)) {
+      pendingArgs = {
+        ...pendingArgs,
+        integration: 'openrouter',
+        reason: 'Image and video generation use OpenRouter through the server-side key.',
+      };
     } else if (toolName === 'request_feature_toggle') {
       pendingArgs = await buildFeatureTogglePayload(avatarId, pendingArgs);
     } else if (toolName === 'request_secret') {

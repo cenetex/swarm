@@ -22,6 +22,7 @@ import { isRequestValidationError } from '../middleware/validate.js';
 import { isAdminWallet, jsonResponse } from './avatar-routes/shared.js';
 import { ensureRuntimeConfig } from '../services/runtime-config.js';
 import type { RouteContext, RouteHandler } from './avatar-routes/types.js';
+import * as avatarService from '../services/avatars.js';
 
 // Domain route handlers
 import { handleSystemRoutes } from './avatar-routes/system.js';
@@ -117,6 +118,7 @@ export async function handler(
       walletAddress,
       accountId: walletSession?.accountId,
       effectiveIsAdmin,
+      assertAvatarOwnership: avatarService.assertAvatarOwnership,
     };
 
     // Try each domain handler in order

@@ -204,7 +204,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     initialTwitterConfigRef.current = null;
   }, [toolCall.id]);
 
-  // Debounced model search for Replicate
+  // Debounced model search for media model providers
   const handleModelSearch = (capability: string, query: string) => {
     setModelSearchQueries(prev => ({ ...prev, [capability]: query }));
 
@@ -495,6 +495,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     secretType: string;
     usesOAuth?: boolean;
     isAiProvider?: boolean;
+    serverManagedKey?: boolean;
     capabilities?: string[];
     testEndpoint?: string;
   };
@@ -541,7 +542,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
       helpUrl: 'https://replicate.com/account/api-tokens',
       secretType: 'replicate_api_key',
       isAiProvider: true,
-      capabilities: ['image_generation', 'video_generation', 'audio_generation', 'voice_clone', 'text_to_speech'],
+      capabilities: ['audio_generation', 'voice_clone', 'text_to_speech'],
       testEndpoint: 'https://api.replicate.com/v1/account',
     },
     openai: {
@@ -573,13 +574,14 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
       name: 'OpenRouter',
       icon: '🔀',
       color: 'cyan',
-      tokenLabel: 'API Key',
-      tokenPlaceholder: 'Enter your OpenRouter API key',
-      helpText: 'Get your API key from OpenRouter',
-      helpUrl: 'https://openrouter.ai/keys',
+      tokenLabel: 'Server API Key',
+      tokenPlaceholder: 'Managed server-side',
+      helpText: 'OpenRouter requests use the server-side Swarm key',
+      helpUrl: null,
       secretType: 'openrouter_api_key',
       isAiProvider: true,
-      capabilities: [],
+      serverManagedKey: true,
+      capabilities: ['image_generation', 'video_generation'],
     },
   };
 
@@ -757,8 +759,9 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
 
         setGlobalKeyAvailable(Boolean(match.hasGlobalKey));
 
-        // If backend says "use global" but there is no global/system key, force local key mode.
-        setUseGlobalKey(match.useGlobalKey && match.hasGlobalKey);
+        // OpenRouter is routed through the server-side key; do not force users
+        // into local-key mode if the backend key is absent.
+        setUseGlobalKey(config.serverManagedKey ? true : match.useGlobalKey && match.hasGlobalKey);
         setHasAvatarKey(Boolean(match.hasApiKey));
         if (match.models) {
           setSelectedModels(match.models);
@@ -769,7 +772,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
     };
 
     void run();
-  }, [activeAgent?.id, integration, config?.isAiProvider]);
+  }, [activeAgent?.id, integration, config?.isAiProvider, config?.serverManagedKey]);
 
   // Guard: If integration type is unknown or missing, show fallback UI (after hooks)
   if (!integration || !config) {
@@ -890,13 +893,16 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
 
   const handleSave = async () => {
     if (isSubmitting || !activeAgent?.id) return;
+    const serverManagedKey = Boolean(config.serverManagedKey);
     // For AI providers with global key, token is optional
     // For Twitter, allow save if config has changed even without token
     const allowTwitterSave = integration === 'twitter' && hasTwitterConfigChanges;
     if (!config.isAiProvider && !token.trim() && !(integration === 'telegram' && hasTelegramPolicyChanges) && !allowTwitterSave) return;
-    if (config.isAiProvider && !useGlobalKey && !token.trim()) return;
+    if (config.isAiProvider && !serverManagedKey && !useGlobalKey && !token.trim()) return;
     if (config.isAiProvider && useGlobalKey && globalKeyAvailable === false) {
-      setSaveError('No system/global API key is configured for this provider. Turn off “Use System API Key” and provide your own key.');
+      setSaveError(serverManagedKey
+        ? `${config.name} is managed server-side, but no system key is configured. Ask an admin to configure the backend key.`
+        : 'No system/global API key is configured for this provider. Turn off "Use System API Key" and provide your own key.');
       return;
     }
 
@@ -1075,7 +1081,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
       };
 
       if (config.isAiProvider) {
-        result.useGlobalKey = useGlobalKey;
+        result.useGlobalKey = serverManagedKey ? true : useGlobalKey;
 
         // Persist the effective selections that the user sees in the UI.
         // If the user never touches the dropdown, selectedModels may be empty even though
@@ -1225,9 +1231,9 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
   };
 
   return (
-    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg flex flex-col max-h-96">
       {/* Header */}
-      <div className="px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg-tertiary)]">
+      <div className="px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg-tertiary)] flex-shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-lg">{config.icon}</span>
           <div>
@@ -1242,7 +1248,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
       </div>
 
       {/* Content */}
-      <div className="p-3 space-y-3">
+      <div className="p-3 space-y-3 overflow-y-auto flex-1">
         {savedAt && (
           <div className="flex items-center gap-2 px-2.5 py-1.5 bg-green-500/10 border border-green-500/30 rounded-lg">
             <svg className="w-3.5 h-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1708,13 +1714,19 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
             {/* Global Key Toggle */}
             <div className="flex items-center justify-between p-3 bg-[var(--color-bg-tertiary)] rounded-lg">
               <div>
-                <p className="text-sm font-medium text-[var(--color-text)]">Use System API Key</p>
+                <p className="text-sm font-medium text-[var(--color-text)]">
+                  {config.serverManagedKey ? 'Managed by Swarm' : 'Use System API Key'}
+                </p>
                 <p className="text-xs text-[var(--color-text-muted)]">
-                  Use the shared system key instead of your own
+                  {config.serverManagedKey
+                    ? 'Requests are routed through the server-side provider key'
+                    : 'Use the shared system key instead of your own'}
                 </p>
                 {globalKeyAvailable === false && (
                   <p className="text-xs text-yellow-400 mt-1">
-                    No system key detected for {config.name}. Add a key in the backend (env/Secrets Manager) or enter your own.
+                    {config.serverManagedKey
+                      ? `No server-side key detected for ${config.name}. Add a key in the backend env or Secrets Manager.`
+                      : `No system key detected for ${config.name}. Add a key in the backend (env/Secrets Manager) or enter your own.`}
                   </p>
                 )}
               </div>
@@ -1722,12 +1734,13 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                 onClick={() => {
                   setSavedAt(null);
                   setSaveError(null);
-                  setUseGlobalKey(!useGlobalKey);
+                  if (!config.serverManagedKey) setUseGlobalKey(!useGlobalKey);
                 }}
-                disabled={disabled}
+                disabled={disabled || config.serverManagedKey}
                 className={`relative w-12 h-6 rounded-full transition-colors ${
                   useGlobalKey ? 'bg-brand-600' : 'bg-[var(--color-bg-elevated)]'
                 }`}
+                aria-label={config.serverManagedKey ? `${config.name} uses a server-side key` : 'Toggle system API key'}
               >
                 <span
                   className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
@@ -1738,7 +1751,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
             </div>
 
             {/* API Key Input (only if not using global) */}
-            {!useGlobalKey && (
+            {!useGlobalKey && !config.serverManagedKey && (
               <div>
                 <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-2">
                   {config.tokenLabel}
@@ -1856,7 +1869,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                                   const val = e.target.value;
                                   setModelSearchQueries(prev => ({ ...prev, [capability]: val }));
                                   setPickerHighlight(prev => ({ ...prev, [capability]: -1 }));
-                                  if (integration === 'replicate') {
+                                  if (integration === 'replicate' || integration === 'openrouter') {
                                     handleModelSearch(capability, val);
                                   }
                                 }}
@@ -1878,7 +1891,13 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
                                     (e.target as HTMLInputElement).blur();
                                   }
                                 }}
-                                placeholder={integration === 'replicate' ? 'Search models (e.g., flux, sdxl)...' : 'Filter models...'}
+                                placeholder={
+                                  integration === 'openrouter'
+                                    ? 'Search OpenRouter models...'
+                                    : integration === 'replicate'
+                                      ? 'Search models (e.g., stable audio, tts)...'
+                                      : 'Filter models...'
+                                }
                                 disabled={disabled}
                                 className="w-full pl-10 pr-8 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
                               />
@@ -2021,7 +2040,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
 
             {/* Actions */}
             <div className="flex gap-2 pt-2">
-              {!useGlobalKey && (
+              {!useGlobalKey && !config.serverManagedKey && (
                 <button
                   onClick={handleTest}
                   disabled={!token.trim() || disabled || isTesting}
@@ -2032,7 +2051,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
               )}
               <button
                 onClick={handleSave}
-                disabled={(!useGlobalKey && !token.trim()) || disabled || isSubmitting}
+                disabled={(!config.serverManagedKey && !useGlobalKey && !token.trim()) || disabled || isSubmitting}
                 className={`${useGlobalKey ? 'w-full' : 'flex-1'} px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-[var(--color-bg-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors`}
               >
                 {isSubmitting ? 'Saving...' : 'Save & Enable'}

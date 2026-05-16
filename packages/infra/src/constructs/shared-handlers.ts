@@ -24,7 +24,6 @@ import type * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import type * as s3 from 'aws-cdk-lib/aws-s3';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-
 import { LogGroupWithRetention } from '../utils/log-group-with-retention.js';
 
 // ESM equivalent of __dirname
@@ -146,9 +145,11 @@ export class SharedHandlers extends Construct {
       raticrossInboundKey,
       heliusApiKey,
       heliusApiKeyArn,
-      nftOwnershipEnforcement = 'off',
+      nftOwnershipEnforcement: configuredNftOwnershipEnforcement,
     } = props;
     const suffix = props.nameSuffix ?? '';
+    const nftOwnershipEnforcement = configuredNftOwnershipEnforcement
+      ?? (environment === 'prod' && (heliusApiKey || heliusApiKeyArn) ? 'on' : 'off');
 
     // Generate internal test key if not provided (non-production only).
     // Production MUST NOT have a test key to prevent auth bypass.
@@ -358,10 +359,8 @@ export class SharedHandlers extends Construct {
 
 
     // ========================================================================
-    // CloudWatch Log Groups (explicit management replaces deprecated logRetention)
+    // CloudWatch Log Groups
     // ========================================================================
-    // Using LogGroupWithRetention to safely adopt existing log groups that were
-    // previously created by the logRetention custom resource or Lambda runtime.
     const logRemovalPolicy = isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
     const logRetention = isProd
       ? logs.RetentionDays.ONE_MONTH
@@ -438,7 +437,10 @@ export class SharedHandlers extends Construct {
       timeout: cdk.Duration.seconds(180),
       memorySize: 1024,
       reservedConcurrentExecutions: 20,
-      environment: commonEnv,
+      environment: {
+        ...commonEnv,
+        ROOM_COORDINATOR_ENABLED: 'true',
+      },
       bundling: bundlingOptions,
       tracing: lambda.Tracing.ACTIVE,
       logGroup: messageProcessorLogGroup.logGroup,

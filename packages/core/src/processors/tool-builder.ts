@@ -6,6 +6,7 @@
  */
 
 import type { ToolCategory, ToolsetId, ProcessorConfig } from './types.js';
+import type { PromptGuidance } from '../types/index.js';
 
 // =============================================================================
 // CATEGORY TO TOOLSET MAPPING
@@ -152,6 +153,7 @@ export function createToolContext(config: ProcessorConfig): ToolContext {
 export interface FilterableToolDefinition {
   name: string;
   toolset?: ToolsetId;
+  promptGuidance?: PromptGuidance;
   platforms?: Array<'telegram' | 'discord' | 'twitter' | 'admin-ui' | 'api' | 'mcp'>;
   shouldShow?: (context: ToolContext) => Promise<boolean>;
 }

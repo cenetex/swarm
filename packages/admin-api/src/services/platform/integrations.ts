@@ -19,6 +19,7 @@ import { _getSecretValueInternal, secretExists, storeSecret } from '../secrets.j
 import { getDefaultModel, getModelsForCapability, type ModelInfo } from '../models-registry.js';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { getDynamoClient } from '../dynamo-client.js';
+import { hasSystemOpenRouterApiKey } from '../openrouter-key.js';
 
 const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
@@ -144,12 +145,12 @@ export const INTEGRATION_METADATA: Record<IntegrationType, IntegrationMetadata> 
   replicate: {
     type: 'replicate',
     name: 'Replicate',
-    description: 'AI models for image, video, audio, and voice generation',
+    description: 'AI models for audio and voice generation',
     icon: 'replicate',
     category: 'ai_provider',
     requiredSecrets: ['replicate_api_key'],
     optionalSecrets: [],
-    capabilities: ['image_generation', 'video_generation', 'audio_generation', 'voice_clone', 'text_to_speech'],
+    capabilities: ['audio_generation', 'voice_clone', 'text_to_speech'],
     configurable: true,
   },
   openai: {
@@ -177,12 +178,12 @@ export const INTEGRATION_METADATA: Record<IntegrationType, IntegrationMetadata> 
   openrouter: {
     type: 'openrouter',
     name: 'OpenRouter',
-    description: 'Access multiple AI models through a unified API',
+    description: 'Access LLM, image, and video models through a unified API',
     icon: 'openrouter',
     category: 'ai_provider',
     requiredSecrets: ['openrouter_api_key'],
     optionalSecrets: [],
-    capabilities: ['llm', 'image_generation'],
+    capabilities: ['llm', 'image_generation', 'video_generation'],
     configurable: true,
   },
 
@@ -273,12 +274,16 @@ export async function getIntegrationStatus(
   const hasSystemReplicateKey = integration === 'replicate'
     ? await hasSystemReplicateKeyConfigured()
     : false;
+  const hasSystemOpenRouterKey = integration === 'openrouter'
+    ? await hasSystemOpenRouterApiKey()
+    : false;
 
-  const hasGlobalKey = secretStatuses.some((s) => s.hasGlobal) || hasSystemReplicateKey;
+  const hasGlobalKey = secretStatuses.some((s) => s.hasGlobal) || hasSystemReplicateKey || hasSystemOpenRouterKey;
   const allSecretsConfigured = secretStatuses.every((s) =>
     s.hasAvatar ||
     s.hasGlobal ||
-    (hasSystemReplicateKey && s.secretType === 'replicate_api_key')
+    (hasSystemReplicateKey && s.secretType === 'replicate_api_key') ||
+    (hasSystemOpenRouterKey && s.secretType === 'openrouter_api_key')
   );
 
   // Get integration config from avatar

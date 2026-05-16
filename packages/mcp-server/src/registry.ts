@@ -18,7 +18,17 @@ function zodToJsonSchema(schema: ZodType<any>, _opts?: { target?: string }): Rec
   const { $schema: _, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
   return rest;
 }
-import { CATEGORY_TOOLSET_MAP, TOOLSET_DEFAULT_TAGS, type ToolsetId, type ToolTag } from './tool-metadata.js';
+import {
+  CATEGORY_TOOLSET_MAP,
+  TOOL_NAME_PROMPT_GUIDANCE,
+  TOOLSET_DEFAULT_TAGS,
+  TOOLSET_PROMPT_GUIDANCE,
+  type PromptGuidance,
+  type ToolsetId,
+  type ToolTag,
+} from './tool-metadata.js';
+
+export type { PromptGuidance } from './tool-metadata.js';
 
 // ============================================================================
 // Types
@@ -113,6 +123,8 @@ export interface ToolDefinition<TInput = any, TOutput = unknown> {
   toolset?: ToolsetId;
   /** Tags for discovery/routing */
   tags?: ToolTag[];
+  /** Prompt-side documentation for downstream system prompt builders */
+  promptGuidance?: PromptGuidance;
   /** Zod schema for input validation */
   inputSchema: ZodType<TInput>;
   /** Zod schema for output validation (optional) */
@@ -448,6 +460,7 @@ export class ToolRegistry {
       toolset: ToolsetId;
       tags: ToolTag[];
       category?: ToolDefinition['category'];
+      promptGuidance?: PromptGuidance;
     };
   }> {
     return this.getAll().map(tool => ({
@@ -458,6 +471,7 @@ export class ToolRegistry {
         toolset: tool.toolset || 'core',
         tags: tool.tags || [],
         category: tool.category,
+        promptGuidance: tool.promptGuidance,
       },
     }));
   }
@@ -479,6 +493,7 @@ export function defineTool<
   category?: ToolDefinition['category'];
   toolset?: ToolsetId;
   tags?: ToolTag[];
+  promptGuidance?: PromptGuidance;
   inputSchema: TInput;
   outputSchema?: ZodType<TOutput>;
   execute: ((input: z.infer<TInput>, context: ToolContext) => Promise<ToolResult<TOutput>>) | false;
@@ -554,8 +569,11 @@ function normalizeToolDefinition(tool: ToolDefinition): ToolDefinition {
   const tags = tool.tags && tool.tags.length > 0
     ? tool.tags
     : (TOOLSET_DEFAULT_TAGS[toolset] || []);
+  const promptGuidance = tool.promptGuidance
+    || TOOL_NAME_PROMPT_GUIDANCE[tool.name]
+    || TOOLSET_PROMPT_GUIDANCE[toolset];
 
-  return { ...tool, toolset, tags };
+  return { ...tool, toolset, tags, promptGuidance };
 }
 
 // ============================================================================

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { AvatarConfig } from '../types/index.js';
 import { ConfigError } from '../errors/errors.js';
 import { SwarmErrorCode } from '../errors/codes.js';
+import { DEFAULT_MODELS } from '../services/media/types.js';
 
 // =============================================================================
 // CONFIG FILE SCHEMAS (with defaults and snake_case support)
@@ -139,7 +140,7 @@ const PlatformConfigsFileSchema = z.object({
 
 const LLMConfigFileSchema = z.object({
   provider: z.enum(['bedrock', 'openrouter', 'anthropic']).default('openrouter'),
-  model: z.string().default('anthropic/claude-sonnet-4'),
+  model: z.string().default(DEFAULT_MODELS.llm),
   fallback_model: z.string().optional(),
   fallbackModel: z.string().optional(),
   temperature: z.number().default(0.8),
@@ -160,14 +161,14 @@ const LLMConfigFileSchema = z.object({
 
 const MediaConfigFileSchema = z.object({
   image: z.object({
-    provider: z.enum(['openrouter', 'replicate', 'dalle']).default('replicate'),
-    model: z.string().default('black-forest-labs/flux-schnell'),
-  }).default({ provider: 'replicate', model: 'black-forest-labs/flux-schnell' }),
+    provider: z.enum(['openrouter', 'replicate', 'dalle']).default('openrouter'),
+    model: z.string().default(DEFAULT_MODELS.image_generation),
+  }).default({ provider: 'openrouter', model: DEFAULT_MODELS.image_generation }),
   video: z.object({
-    provider: z.literal('replicate').default('replicate'),
-    model: z.string().default('minimax/video-01'),
+    provider: z.enum(['openrouter', 'replicate']).default('openrouter'),
+    model: z.string().default(DEFAULT_MODELS.video_generation),
   }).optional(),
-}).default({ image: { provider: 'replicate', model: 'black-forest-labs/flux-schnell' } });
+}).default({ image: { provider: 'openrouter', model: DEFAULT_MODELS.image_generation } });
 
 const ScheduledTweetFileSchema = z.object({
   cron: z.string(),
@@ -345,15 +346,19 @@ export function loadAvatarConfigFromEnv(avatarId: string): AvatarConfig {
     },
     llm: {
       provider: (process.env.LLM_PROVIDER as 'bedrock' | 'openrouter' | 'anthropic') || 'openrouter',
-      model: process.env.LLM_MODEL || 'anthropic/claude-sonnet-4',
+      model: process.env.LLM_MODEL || DEFAULT_MODELS.llm,
       temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.8'),
       maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '1024', 10),
       ...(process.env.LLM_TIMEOUT_MS ? { timeoutMs: parseInt(process.env.LLM_TIMEOUT_MS, 10) } : {}),
     },
     media: {
       image: {
-        provider: (process.env.IMAGE_PROVIDER as 'openrouter' | 'replicate' | 'dalle') || 'replicate',
-        model: process.env.IMAGE_MODEL || 'black-forest-labs/flux-schnell',
+        provider: (process.env.IMAGE_PROVIDER as 'openrouter' | 'replicate' | 'dalle') || 'openrouter',
+        model: process.env.IMAGE_MODEL || DEFAULT_MODELS.image_generation,
+      },
+      video: {
+        provider: (process.env.VIDEO_PROVIDER as 'openrouter' | 'replicate') || 'openrouter',
+        model: process.env.VIDEO_MODEL || DEFAULT_MODELS.video_generation,
       },
     },
     scheduling: {},

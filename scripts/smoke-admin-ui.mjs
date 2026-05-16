@@ -59,6 +59,15 @@ async function runSmoke() {
         return true;
       }
 
+      // External fonts are cosmetic and may be blocked in local/sandboxed
+      // smoke environments. The app still needs to render without them.
+      if (
+        /Failed to load resource/i.test(message) &&
+        /^https:\/\/fonts\.(googleapis|gstatic)\.com\//i.test(locationUrl)
+      ) {
+        return true;
+      }
+
       // API backend is not running during local/CI preview — proxy returns
       // 500 (no target) or 502 (ECONNREFUSED from vite's proxy middleware).
       // Both are expected when no admin-api lambda is up.

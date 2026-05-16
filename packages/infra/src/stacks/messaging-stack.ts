@@ -118,10 +118,12 @@ export class MessagingStack extends cdk.Stack {
       raticrossInboundKey,
       heliusApiKey,
       heliusApiKeyArn,
-      nftOwnershipEnforcement = 'off',
+      nftOwnershipEnforcement: configuredNftOwnershipEnforcement,
       replicateApiKeyArn,
       enableDiscordGateway = false,
     } = props;
+    const nftOwnershipEnforcement = configuredNftOwnershipEnforcement
+      ?? (environment === 'prod' && (heliusApiKey || heliusApiKeyArn) ? 'on' : 'off');
 
     // Create shared handlers (messaging queues + processors)
     this.sharedHandlers = new SharedHandlers(this, 'SharedHandlers', {

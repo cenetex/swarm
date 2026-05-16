@@ -78,6 +78,7 @@ export interface IntegrationConfigType {
   secretType: string;
   usesOAuth?: boolean;
   isAiProvider?: boolean;
+  serverManagedKey?: boolean;
   capabilities?: string[];
   testEndpoint?: string;
 }
@@ -150,7 +151,7 @@ export const INTEGRATION_CONFIGS: Record<string, IntegrationConfigType> = {
     helpUrl: 'https://replicate.com/account/api-tokens',
     secretType: 'replicate_api_key',
     isAiProvider: true,
-    capabilities: ['image_generation', 'video_generation', 'audio_generation', 'voice_clone', 'text_to_speech'],
+    capabilities: ['audio_generation', 'voice_clone', 'text_to_speech'],
     testEndpoint: 'https://api.replicate.com/v1/account',
   },
   openai: {
@@ -182,12 +183,13 @@ export const INTEGRATION_CONFIGS: Record<string, IntegrationConfigType> = {
     name: 'OpenRouter',
     icon: '🔀',
     color: 'cyan',
-    tokenLabel: 'API Key',
-    tokenPlaceholder: 'Enter your OpenRouter API key',
-    helpText: 'Get your API key from OpenRouter',
-    helpUrl: 'https://openrouter.ai/keys',
+    tokenLabel: 'Server API Key',
+    tokenPlaceholder: 'Managed server-side',
+    helpText: 'OpenRouter requests use the server-side Swarm key',
+    helpUrl: null,
     secretType: 'openrouter_api_key',
     isAiProvider: true,
-    capabilities: [],
+    serverManagedKey: true,
+    capabilities: ['image_generation', 'video_generation'],
   },
 };

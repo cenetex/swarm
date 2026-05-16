@@ -1,12 +1,20 @@
 /**
  * Services barrel export
  */
-export { BedrockLLMService, OpenRouterLLMService, createLLMService } from './llm/index.js';
+export {
+  BedrockLLMService,
+  OpenRouterLLMService,
+  createLLMService,
+  resolveOpenRouterChatModelPlan,
+  type OpenRouterChatModelPlan,
+} from './llm/index.js';
 export {
   SwarmMediaService,
   createMediaService,
   createMediaServiceWithDeps,
   buildVoiceCloneInput,
+  getOpenRouterImageModalities,
+  openRouterImageModelSupportsTextOutput,
   type GeneratedMediaExtended,
   type VoiceCloneInput,
 } from './media/index.js';
@@ -55,6 +63,22 @@ export {
   SUMMARY_CONFIG,
   type ChannelSummaryService,
 } from './channel-summary.js';
+export {
+  AVATAR_CONTEXT_SNAPSHOT_DEFAULTS,
+  buildAvatarContextSnapshot,
+  formatSnapshotRelativeTime,
+  renderAvatarContextSnapshot,
+  resolveHomeChannelFromAvatarConfig,
+  truncateSnapshotText,
+  type AvatarContextHomeChannel,
+  type AvatarContextSnapshot,
+  type AvatarContextSnapshotItem,
+  type AvatarContextSnapshotItemKind,
+  type AvatarContextSnapshotOptions,
+  type AvatarContextSnapshotPolicyLabel,
+  type AvatarContextSnapshotSource,
+  type BuildAvatarContextSnapshotParams,
+} from './avatar-context-snapshot.js';
 export {
   DynamoDBContentStoreService,
   createContentStoreService,
@@ -116,6 +140,7 @@ export {
   type TierEvaluationOptions,
 } from './brain/memory-tiers.js';
 export {
+  claimRoomMessage,
   appendMessage,
   getRecentMessages,
   updateOverlay,

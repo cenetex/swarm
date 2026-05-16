@@ -7,7 +7,12 @@
  * - Non-streaming responses are unaffected (schema validation only)
  */
 import { describe, test, expect } from 'bun:test';
-import { formatStreamingResponse, formatStreamingError } from './openai-compat.js';
+import {
+  formatStreamingResponse,
+  formatStreamingError,
+  normalizeOpenAIMessageForProvider,
+  usesExternalToolMode,
+} from './openai-compat.js';
 
 const CORS_HEADERS = { 'Access-Control-Allow-Origin': '*' };
 
@@ -130,6 +135,40 @@ describe('formatStreamingResponse', () => {
       expect(chunk.object).toBe('chat.completion.chunk');
     }
   });
+
+  test('emits tool_calls chunk and final tool_calls finish reason', () => {
+    const result = formatStreamingResponse(
+      'chatcmpl-tools', 1700000000, 'avatar:bot',
+      '', { promptTokens: 10, completionTokens: 4, totalTokens: 14 },
+      CORS_HEADERS,
+      {
+        toolCalls: [{
+          id: 'call_123',
+          type: 'function',
+          function: {
+            name: 'lookup_weather',
+            arguments: '{"city":"San Francisco"}',
+          },
+        }],
+        finishReason: 'tool_calls',
+      },
+    );
+
+    const events = parseSSEEvents(result.body as string);
+    expect(events.length).toBe(4); // role, tool_calls, final, done
+
+    const toolChunk = events[1].parsed as Record<string, unknown>;
+    const toolChoices = toolChunk.choices as Array<Record<string, unknown>>;
+    const delta = toolChoices[0].delta as Record<string, unknown>;
+    const toolCalls = delta.tool_calls as Array<Record<string, unknown>>;
+    expect(toolCalls[0].index).toBe(0);
+    expect(toolCalls[0].id).toBe('call_123');
+    expect((toolCalls[0].function as Record<string, unknown>).name).toBe('lookup_weather');
+
+    const finalChunk = events[2].parsed as Record<string, unknown>;
+    const finalChoices = finalChunk.choices as Array<Record<string, unknown>>;
+    expect(finalChoices[0].finish_reason).toBe('tool_calls');
+  });
 });
 
 describe('formatStreamingError', () => {
@@ -166,5 +205,66 @@ describe('formatStreamingError', () => {
 
     const body = result.body as string;
     expect(body.trimEnd().endsWith('data: [DONE]')).toBe(true);
+  });
+});
+
+describe('external tool mode helpers', () => {
+  test('detects requests that must bypass Swarm tool execution', () => {
+    expect(usesExternalToolMode({
+      messages: [{ role: 'user' }],
+      tools: [{ type: 'function' }],
+    })).toBe(true);
+
+    expect(usesExternalToolMode({
+      messages: [{ role: 'user' }],
+      tools: [],
+    })).toBe(true);
+
+    expect(usesExternalToolMode({
+      messages: [{ role: 'user' }],
+      tool_choice: 'none',
+    })).toBe(true);
+
+    expect(usesExternalToolMode({
+      messages: [{ role: 'tool' }],
+    })).toBe(true);
+
+    expect(usesExternalToolMode({
+      messages: [{ role: 'assistant', tool_calls: [{ id: 'call_1' }] }],
+    })).toBe(true);
+
+    expect(usesExternalToolMode({
+      messages: [{ role: 'user' }],
+    })).toBe(false);
+  });
+
+  test('normalizes tool messages and assistant tool_calls for provider requests', () => {
+    expect(normalizeOpenAIMessageForProvider({
+      role: 'tool',
+      content: '{"ok":true}',
+      tool_call_id: 'call_123',
+    })).toEqual({
+      role: 'tool',
+      content: '{"ok":true}',
+      tool_call_id: 'call_123',
+    });
+
+    expect(normalizeOpenAIMessageForProvider({
+      role: 'assistant',
+      content: '',
+      tool_calls: [{
+        id: 'call_123',
+        type: 'function',
+        function: { name: 'lookup_weather', arguments: '{}' },
+      }],
+    })).toEqual({
+      role: 'assistant',
+      content: null,
+      tool_calls: [{
+        id: 'call_123',
+        type: 'function',
+        function: { name: 'lookup_weather', arguments: '{}' },
+      }],
+    });
   });
 });

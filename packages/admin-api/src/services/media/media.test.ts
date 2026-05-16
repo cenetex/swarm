@@ -123,11 +123,34 @@ describe('Image Generation Options', () => {
 
     if (referenceImageUrls.length > 0) {
       nanoBananaInput.image_input = referenceImageUrls.slice(0, 14);
+      nanoBananaInput.image = referenceImageUrls[0];
+      nanoBananaInput.image_prompt = referenceImageUrls[0];
       nanoBananaInput.aspect_ratio = 'match_input_image';
     }
 
     expect(nanoBananaInput.image_input).toEqual(['https://example.com/ref1.png']);
+    expect(nanoBananaInput.image).toBe('https://example.com/ref1.png');
+    expect(nanoBananaInput.image_prompt).toBe('https://example.com/ref1.png');
     expect(nanoBananaInput.aspect_ratio).toBe('match_input_image');
+  });
+
+  it('should build Flux input with image_prompt for reference images', () => {
+    const prompt = 'A self portrait';
+    const referenceImageUrls = ['https://example.com/ref-sheet.png'];
+    const aspectRatio = '1:1';
+
+    const fluxInput: Record<string, unknown> = {
+      prompt: `${prompt}. Use the provided reference images to maintain visual consistency with the character's appearance, style, and features.`,
+      aspect_ratio: aspectRatio,
+      output_format: 'png',
+      num_outputs: 1,
+      image_input: referenceImageUrls.slice(0, 14),
+      image: referenceImageUrls[0],
+      image_prompt: referenceImageUrls[0],
+    };
+
+    expect(fluxInput.image_prompt).toBe('https://example.com/ref-sheet.png');
+    expect(fluxInput.aspect_ratio).toBe('1:1');
   });
 
   it('should build correct Nano Banana Pro input without reference images', () => {
@@ -333,8 +356,8 @@ describe('Integration Config Model Selection', () => {
       avatar: Partial<AvatarRecord> | null,
       capability: AICapability
     ): string {
-      if (avatar?.integrations?.replicate?.models?.[capability]) {
-        return avatar.integrations.replicate.models[capability]!;
+      if (avatar?.integrations?.openrouter?.models?.[capability]) {
+        return avatar.integrations.openrouter.models[capability]!;
       }
       return DEFAULT_MODELS[capability];
     }
@@ -342,18 +365,16 @@ describe('Integration Config Model Selection', () => {
     it('should return configured model when avatar has integration config', () => {
       const avatar: Partial<AvatarRecord> = {
         integrations: {
-          replicate: {
+          openrouter: {
             enabled: true,
             useGlobalKey: false,
-            models: {
-              image_generation: 'black-forest-labs/flux-schnell',
-            },
+            models: { image_generation: 'black-forest-labs/flux.2-flex' },
           },
         },
       };
 
       const model = getConfiguredModel(avatar, 'image_generation');
-      expect(model).toBe('black-forest-labs/flux-schnell');
+      expect(model).toBe('black-forest-labs/flux.2-flex');
     });
 
     it('should return default model when avatar has no integration config', () => {
@@ -367,7 +388,7 @@ describe('Integration Config Model Selection', () => {
       expect(model).toBe(DEFAULT_MODELS.image_generation);
     });
 
-    it('should return default model when replicate integration not configured', () => {
+    it('should return default model when OpenRouter integration not configured', () => {
       const avatar: Partial<AvatarRecord> = {
         integrations: {
           telegram: {
@@ -383,12 +404,10 @@ describe('Integration Config Model Selection', () => {
     it('should return default model when capability not specified in config', () => {
       const avatar: Partial<AvatarRecord> = {
         integrations: {
-          replicate: {
+          openrouter: {
             enabled: true,
             useGlobalKey: true,
-            models: {
-              video_generation: 'luma/ray',
-            },
+            models: { video_generation: 'bytedance/seedance-2.0-fast' },
           },
         },
       };
@@ -410,7 +429,7 @@ describe('Integration Config Model Selection', () => {
 
       const avatar: Partial<AvatarRecord> = {
         integrations: {
-          replicate: {
+          openrouter: {
             enabled: true,
             useGlobalKey: false,
             models: capabilityModelMap,

@@ -11,6 +11,7 @@ import {
 import type { AvatarRecord } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { createSystemLogger } from './structured-logger.js';
+import { DEFAULT_MODELS } from './models-registry.js';
 
 const log = createSystemLogger('config-sync');
 
@@ -157,6 +158,21 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
     format: 'ogg' as const,
     ...record.voiceConfig,
   };
+  const integrationOpenRouterImageModel = record.integrations?.openrouter?.models?.image_generation;
+  const legacyOpenRouterImageModel = record.mediaConfig?.image?.provider === 'openrouter'
+    ? record.mediaConfig.image.model
+    : undefined;
+  const mediaImageModel = integrationOpenRouterImageModel
+    || legacyOpenRouterImageModel
+    || DEFAULT_MODELS.image_generation;
+
+  const integrationOpenRouterVideoModel = record.integrations?.openrouter?.models?.video_generation;
+  const legacyOpenRouterVideoModel = record.mediaConfig?.video?.provider === 'openrouter'
+    ? record.mediaConfig.video.model
+    : undefined;
+  const mediaVideoModel = integrationOpenRouterVideoModel
+    || legacyOpenRouterVideoModel
+    || DEFAULT_MODELS.video_generation;
 
   const config: AvatarConfig = {
     id: record.avatarId,
@@ -196,18 +212,13 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
     },
     media: {
       image: {
-        // Priority: integrations config > mediaConfig > default
-        provider: 'replicate',
-        model: record.integrations?.replicate?.models?.image_generation
-          || record.mediaConfig?.image?.model
-          || 'google/nano-banana-pro',
+        provider: 'openrouter',
+        model: mediaImageModel,
       },
-      video: (record.integrations?.replicate?.models?.video_generation || record.mediaConfig?.video?.model) ? {
-        provider: 'replicate' as const,
-        model: record.integrations?.replicate?.models?.video_generation
-          || record.mediaConfig?.video?.model
-          || 'minimax/video-01',
-      } : undefined,
+      video: {
+        provider: 'openrouter',
+        model: mediaVideoModel,
+      },
     },
     scheduling: {},
     behavior: {
@@ -251,6 +262,21 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
 
       if (defaultVoiceConfig.enabled) {
         tools.push('send_voice_message', 'create_my_voice', 'transcribe_audio');
+      }
+
+      // Signal station governance tools (for autonomous station runners)
+      if (record.mcpConfig?.enabledToolsets?.includes('signal-station')) {
+        tools.push(
+          'signal_station_state',
+          'signal_set_hail',
+          'signal_set_price',
+          'signal_build_module',
+          'signal_channel_read',
+          'signal_channel_post',
+          'signal_set_miner_chatter',
+          'signal_set_hauler_chatter',
+          'signal_set_rati_hail'
+        );
       }
 
       // De-dupe in case config-sync is called repeatedly.
@@ -369,6 +395,11 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
     } else if (record.llmConfig.provider === 'anthropic') {
       config.secrets.push('ANTHROPIC_API_KEY');
     }
+  }
+
+  // Add Signal API token for station governance
+  if (record.mcpConfig?.enabledToolsets?.includes('signal-station')) {
+    config.secrets.push('SIGNAL_API_TOKEN');
   }
 
   return config;

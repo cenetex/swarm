@@ -5,12 +5,138 @@
  * and unified integration configuration.
  */
 import type { AllServices } from '@swarm/mcp-server';
+import {
+  createPresenceService,
+  createStateService,
+  type ChannelInfo,
+  type ChannelState,
+} from '@swarm/core';
 import type { IntegrationType, AICapability } from '../integrations.js';
 import type { UserSession } from '../../types.js';
 import type { ServiceContainer } from '../service-container.js';
 import { getBotToken } from './helpers.js';
+import { isRetiredReplicateMediaModel } from '../models-registry.js';
 
 type PlatformServices = Pick<AllServices, 'telegram' | 'twitter' | 'discord' | 'integrations'>;
+type TelegramServices = NonNullable<AllServices['telegram']>;
+type TelegramChatInfo = Awaited<ReturnType<NonNullable<TelegramServices['listChats']>>>[number];
+type TelegramChatType = TelegramChatInfo['type'];
+
+const TELEGRAM_CHAT_TYPES = new Set<TelegramChatType>([
+  'private',
+  'group',
+  'supergroup',
+  'channel',
+]);
+
+function normalizeTelegramChatType(type: unknown, chatId: string | number): TelegramChatType {
+  if (typeof type === 'string' && TELEGRAM_CHAT_TYPES.has(type as TelegramChatType)) {
+    return type as TelegramChatType;
+  }
+
+  const id = String(chatId);
+  if (id.startsWith('-100')) return 'supergroup';
+  if (id.startsWith('-')) return 'group';
+  return 'private';
+}
+
+function upsertTelegramChat(
+  chats: Map<string, TelegramChatInfo>,
+  chat: TelegramChatInfo,
+): void {
+  const key = String(chat.chatId);
+  const existing = chats.get(key);
+  if (!existing) {
+    chats.set(key, chat);
+    return;
+  }
+
+  chats.set(key, {
+    ...existing,
+    ...chat,
+    chatId: existing.chatId,
+    title: chat.title ?? existing.title,
+    username: chat.username ?? existing.username,
+    memberCount: chat.memberCount ?? existing.memberCount,
+    summary: chat.summary ?? existing.summary,
+    lastActivityAt: Math.max(existing.lastActivityAt ?? 0, chat.lastActivityAt ?? 0) || undefined,
+  });
+}
+
+function addConfigTelegramChats(
+  chats: Map<string, TelegramChatInfo>,
+  telegramConfig: {
+    homeChannelId?: string;
+    homeChannelUsername?: string;
+    allowedChatIds?: string[];
+    allowedChats?: Array<{ chatId: string; username?: string; title?: string }>;
+  } | undefined,
+): void {
+  if (!telegramConfig) return;
+
+  if (telegramConfig.homeChannelId) {
+    upsertTelegramChat(chats, {
+      chatId: telegramConfig.homeChannelId,
+      title: telegramConfig.homeChannelUsername ? `@${telegramConfig.homeChannelUsername}` : undefined,
+      username: telegramConfig.homeChannelUsername,
+      type: normalizeTelegramChatType(undefined, telegramConfig.homeChannelId),
+    });
+  }
+
+  for (const chat of telegramConfig.allowedChats ?? []) {
+    upsertTelegramChat(chats, {
+      chatId: chat.chatId,
+      title: chat.title,
+      username: chat.username,
+      type: normalizeTelegramChatType(undefined, chat.chatId),
+    });
+  }
+
+  const knownIds = new Set(Array.from(chats.keys()));
+  for (const chatId of telegramConfig.allowedChatIds ?? []) {
+    if (knownIds.has(String(chatId))) continue;
+    upsertTelegramChat(chats, {
+      chatId,
+      type: normalizeTelegramChatType(undefined, chatId),
+    });
+  }
+}
+
+function addPresenceTelegramChats(
+  chats: Map<string, TelegramChatInfo>,
+  presenceChannels: ChannelInfo[],
+): void {
+  for (const channel of presenceChannels) {
+    upsertTelegramChat(chats, {
+      chatId: channel.channelId,
+      title: channel.title,
+      type: normalizeTelegramChatType(channel.type, channel.channelId),
+      memberCount: channel.memberCount,
+      lastActivityAt: channel.lastActivityAt,
+      summary: channel.summary,
+    });
+  }
+}
+
+function addStateTelegramChats(
+  chats: Map<string, TelegramChatInfo>,
+  states: ChannelState[],
+): void {
+  for (const state of states) {
+    upsertTelegramChat(chats, {
+      chatId: state.channelId,
+      title: state.chatTitle,
+      type: normalizeTelegramChatType(state.chatType, state.channelId),
+      lastActivityAt: state.lastActivityAt,
+      summary: state.summary,
+    });
+  }
+}
+
+function getStateTableName(): string | undefined {
+  const stateTable = process.env.STATE_TABLE?.trim();
+  return stateTable || undefined;
+}
 
 /**
  * Create platform-related MCP services for a specific avatar.
@@ -28,6 +154,39 @@ export function createPlatformServices(
     telegramAdmin: { diagnoseTelegram: _diagnoseTelegram },
     modelsRegistry: { getModelsForCapability: _getModelsForCapability, AVAILABLE_MODELS: _AVAILABLE_MODELS },
   } = svc;
+
+  const listKnownTelegramChats = async (targetAvatarId: string): Promise<TelegramChatInfo[]> => {
+    const chats = new Map<string, TelegramChatInfo>();
+
+    const avatar = await svc.avatars.getAvatar(targetAvatarId);
+    addConfigTelegramChats(chats, avatar?.platforms?.telegram);
+
+    const stateTable = getStateTableName();
+    if (stateTable) {
+      try {
+        const [presenceChannels, stateChannels] = await Promise.all([
+          createPresenceService(stateTable).getChannelsForPlatform(targetAvatarId, 'telegram'),
+          createStateService(stateTable).getChannelStatesForPlatform(targetAvatarId, 'telegram'),
+        ]);
+        addPresenceTelegramChats(chats, presenceChannels);
+        addStateTelegramChats(chats, stateChannels);
+      } catch {
+        // Keep config-backed chat tools usable even if presence/state lookup is temporarily unavailable.
+      }
+    }
+
+    return Array.from(chats.values())
+      .sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
+  };
+
+  const getKnownTelegramChat = async (
+    targetAvatarId: string,
+    chatId: string | number,
+  ): Promise<TelegramChatInfo | null> => {
+    const target = String(chatId);
+    const chats = await listKnownTelegramChats(targetAvatarId);
+    return chats.find((chat) => String(chat.chatId) === target) ?? null;
+  };
 
   return {
     // =========================================================================
@@ -151,6 +310,35 @@ export function createPlatformServices(
         const botToken = await getBotToken(svc, avatarId);
         return chatVoting.executeModification(avatarId, proposalId, botToken);
       },
+
+      listChats: async (avatarId) => {
+        return listKnownTelegramChats(avatarId);
+      },
+
+      getChatInfo: async (avatarId, chatId) => {
+        return getKnownTelegramChat(avatarId, chatId);
+      },
+
+      sendToChat: async (avatarId, chatId, text, options) => {
+        const botToken = await getBotToken(svc, avatarId);
+        const numericChatId = typeof chatId === 'number' ? chatId : Number(chatId);
+        if (!Number.isFinite(numericChatId)) {
+          throw new Error('Telegram chatId must be a numeric chat ID');
+        }
+
+        return telegram.sendMessage(botToken, numericChatId, text, {
+          replyToMessageId: options?.replyToMessageId,
+        });
+      },
+
+      getChatSummary: async (avatarId, chatId) => {
+        const chat = await getKnownTelegramChat(avatarId, chatId);
+        return chat?.summary ?? null;
+      },
+
+      discoverChats: async (avatarId) => {
+        return listKnownTelegramChats(avatarId);
+      },
     },
 
     // =========================================================================
@@ -221,9 +409,9 @@ export function createPlatformServices(
         } else if (capability) {
           return _getModelsForCapability(capability as AICapability);
         } else if (integration) {
-          return _AVAILABLE_MODELS.filter(m => m.provider === integration);
+          return _AVAILABLE_MODELS.filter(m => m.provider === integration && !isRetiredReplicateMediaModel(m));
         }
-        return _AVAILABLE_MODELS;
+        return _AVAILABLE_MODELS.filter(m => !isRetiredReplicateMediaModel(m));
       },
 
       setModelPreference: async (integration: string, capability: string, modelId: string) => {

@@ -57,13 +57,15 @@ You can request and store secrets for various integrations and services:
 - **Telegram**: Configure via the integration panel (bot token from @BotFather)
 - **Discord**: Configure via the integration panel (bot token from Developer Portal)
 - **Twitter/X**: Configure via the integration panel (OAuth/API)
-- **Replicate**: Configure via the integration panel (API token for image/video generation)
+- **Replicate**: Configure via the integration panel only for voice/audio generation
 - **OpenAI**: Configure via the integration panel (API key for TTS/transcription)
 - **Anthropic**: Configure via the integration panel (API key)
-- **OpenRouter**: Configure via the integration panel (API key)
+- **OpenRouter**: Server-managed for LLM, image, and video generation; users can choose models but should not be asked to paste API keys
 - **Helius**: API key for Solana RPC (wallet balance lookups)
 
-**CRITICAL: When the user wants to set up or configure an integration (Telegram, Discord, Twitter/X, Replicate, OpenAI, Anthropic, OpenRouter), you MUST call the configure_integration tool. Do NOT just output text like "Please configure the integration below" - that doesn't work. You must actually invoke the tool.**
+**CRITICAL: When the user wants to set up or configure an integration (Telegram, Discord, Twitter/X, Replicate for voice/audio, OpenAI, Anthropic, OpenRouter model preferences), you MUST call the configure_integration tool. Do NOT just output text like "Please configure the integration below" - that doesn't work. You must actually invoke the tool.**
+
+Do not suggest Replicate as a fallback for image or video generation. Image and video generation use OpenRouter through the server-side key. If media generation fails, report the error clearly instead of asking the user for OpenRouter or Replicate API keys.
 
 Use request_secret only for non-integration keys (Helius, custom secrets).
 

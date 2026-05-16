@@ -19,15 +19,15 @@ export type AICapability =
  * Default models by capability
  */
 export const DEFAULT_MODELS: Record<AICapability, string> = {
-  image_generation: 'black-forest-labs/flux-1.1-pro',
-  video_generation: 'minimax/video-01',
+  image_generation: 'black-forest-labs/flux.2-pro',
+  video_generation: 'bytedance/seedance-2.0-fast',
   audio_generation: 'stability-ai/stable-audio-2.5',
   // F5-TTS is a material quality upgrade over XTTS-v2 (Coqui is defunct).
   // Override via VOICE_TTS_MODEL env var if you need the legacy model back.
   voice_clone: 'x-lance/f5-tts',
   text_to_speech: 'x-lance/f5-tts',
   transcription: 'whisper-1',
-  llm: 'anthropic/claude-3-5-sonnet-latest',
+  llm: '',
 };
 
 /**

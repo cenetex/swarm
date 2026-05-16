@@ -87,6 +87,7 @@ describe('Twitter OAuth Handler', () => {
   let mockDisconnectTwitter: ReturnType<typeof vi.fn>;
   let mockGetAvatar: ReturnType<typeof vi.fn>;
   let mockUpdateAvatar: ReturnType<typeof vi.fn>;
+  let mockAssertAvatarOwnership: ReturnType<typeof vi.fn>;
   let mockAuthenticateRequest: ReturnType<typeof vi.fn>;
   let mockRequireAdmin: ReturnType<typeof vi.fn>;
   let mockGetWalletAddress: ReturnType<typeof vi.fn>;
@@ -120,6 +121,15 @@ describe('Twitter OAuth Handler', () => {
     mockDisconnectTwitter = vi.fn(() => Promise.resolve());
     mockGetAvatar = vi.fn(() => Promise.resolve(createMockAvatar('test-avatar')));
     mockUpdateAvatar = vi.fn(() => Promise.resolve(createMockAvatar('test-avatar')));
+    mockAssertAvatarOwnership = vi.fn(async (avatarId: string, walletAddress: string) => {
+      const avatar = await mockGetAvatar(avatarId);
+      if (!avatar || avatar.creatorWallet !== walletAddress) {
+        const error = new Error('not owner') as Error & { code: string };
+        error.code = 'not_owner';
+        throw error;
+      }
+      return avatar;
+    });
     mockAuthenticateRequest = vi.fn(() => Promise.resolve(createTestSession()));
     mockRequireAdmin = vi.fn(() => true);
     mockGetWalletAddress = vi.fn(() => Promise.resolve('admin-wallet-123'));
@@ -136,6 +146,7 @@ describe('Twitter OAuth Handler', () => {
       avatarService: {
         getAvatar: mockGetAvatar as unknown as TwitterOAuthHandlerDeps['avatarService']['getAvatar'],
         updateAvatar: mockUpdateAvatar as unknown as TwitterOAuthHandlerDeps['avatarService']['updateAvatar'],
+        assertAvatarOwnership: mockAssertAvatarOwnership as unknown as TwitterOAuthHandlerDeps['avatarService']['assertAvatarOwnership'],
       },
       auth: {
         authenticateRequest: mockAuthenticateRequest as unknown as TwitterOAuthHandlerDeps['auth']['authenticateRequest'],

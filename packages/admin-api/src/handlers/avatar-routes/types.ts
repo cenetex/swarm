@@ -4,6 +4,12 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import type { UserSession } from '../../types.js';
 
+export type AvatarOwnershipAuthorizer = (
+  avatarId: string,
+  walletAddress: string,
+  opts?: { isAdmin?: boolean },
+) => Promise<unknown>;
+
 /**
  * Context object threaded through all domain route handlers.
  * Built once in the top-level router and passed to each handler.
@@ -18,6 +24,12 @@ export type RouteContext = {
   /** accountId from the wallet session (if available). */
   accountId: string | undefined;
   effectiveIsAdmin: boolean;
+  /**
+   * Central avatar ownership authorizer. Production routes set this to
+   * services/avatars.assertAvatarOwnership so NFT-backed avatars are checked
+   * against current on-chain ownership rather than stale creatorWallet.
+   */
+  assertAvatarOwnership?: AvatarOwnershipAuthorizer;
 };
 
 /**

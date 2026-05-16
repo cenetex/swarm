@@ -61,6 +61,12 @@ type GetAvatarFn = (id: string) => Promise<{
   creatorWallet?: string | null;
 } | null>;
 
+function getOwnershipErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
 /**
  * Return an error response if the caller is neither admin nor owner.
  * Returns `null` when access is granted.
@@ -76,6 +82,23 @@ export async function requireOwnerOrAdmin(
   if (!ctx.walletAddress) {
     return jsonResponse(ctx.corsHeaders, 403, { error: 'Authentication required' });
   }
+
+  if (ctx.assertAvatarOwnership) {
+    try {
+      await ctx.assertAvatarOwnership(avatarId, ctx.walletAddress, { isAdmin: false });
+      return null;
+    } catch (error) {
+      const code = getOwnershipErrorCode(error);
+      if (code === 'verification_unavailable') {
+        return jsonResponse(ctx.corsHeaders, 503, {
+          error: 'Ownership verification temporarily unavailable',
+          code,
+        });
+      }
+      return jsonResponse(ctx.corsHeaders, 404, { error: 'Avatar not found' });
+    }
+  }
+
   const existing = await getAvatar(avatarId);
   if (
     !existing ||

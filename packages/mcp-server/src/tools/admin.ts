@@ -17,7 +17,7 @@ export type ToggleableFeature = typeof TOGGLEABLE_FEATURES[number];
  * - Status display
  *
  * Includes both platform integrations (Telegram, Twitter, Discord) and
- * AI provider integrations (Replicate, OpenAI, Anthropic).
+ * AI provider integrations (Replicate for voice/audio, OpenAI, Anthropic, OpenRouter).
  */
 export const CONFIGURABLE_INTEGRATIONS = [
   // Platform integrations
@@ -123,14 +123,14 @@ export function createAdminTools(services: AdminToolServices) {
      * Much simpler than having the avatar walk through multi-step credential flows.
      *
      * Supports both platform integrations (Telegram, Twitter, Discord) and
-     * AI provider integrations (Replicate, OpenAI, Anthropic, OpenRouter).
+     * AI provider integrations (Replicate for voice/audio, OpenAI, Anthropic, OpenRouter).
      */
     defineManualTool({
       name: 'configure_integration',
       description: `Show the configuration panel for an integration.
 
 **Platform integrations:** telegram, twitter, discord
-**AI providers:** replicate, openai, anthropic, openrouter
+**AI providers:** replicate (voice/audio only), openai, anthropic, openrouter (server-managed key; model preferences only)
 
 The panel allows the user to:
 - Enable or disable the integration
@@ -141,10 +141,12 @@ The panel allows the user to:
 
 Use this when:
 - Setting up a new integration
-- Resetting credentials (e.g., "reset my Telegram token", "update Replicate API key")
+- Resetting credentials (e.g., "reset my Telegram token", "update Replicate API key for voice")
 - Configuring AI model preferences (e.g., "I want to use a different image model")
 - Checking integration status
 - Troubleshooting connection issues
+
+Do not use Replicate as an image/video generation fallback. Image and video generation use OpenRouter through the server-side key; users should not be asked to paste an OpenRouter key.
 
 The UI handles all the complexity - just call this tool with the integration name.`,
       toolset: 'admin',

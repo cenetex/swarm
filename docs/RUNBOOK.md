@@ -801,7 +801,7 @@ aws logs filter-log-events \
   --limit 10
 ```
 
-**Resolution:** The media processor attempts to fall back to a system-level Replicate key (`REPLICATE_API_KEY_SECRET_ARN`). If both per-avatar and system keys are missing, image/video generation will fail. Set the system key or add a per-avatar key.
+**Resolution:** Image/video generation uses the server-side OpenRouter key (`LLM_API_KEY_SECRET_ARN` or `OPENROUTER_API_KEY_SECRET_ARN`). Replicate is only used for legacy voice/audio and background-removal paths. If image/video generation reports a missing OpenRouter key, configure the backend key rather than asking users for per-avatar keys.
 
 ---
 

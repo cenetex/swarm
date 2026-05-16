@@ -80,7 +80,7 @@ interface AuthState {
     id: string;
     email?: string;
     walletAddress?: string;
-  }) => Promise<void>;
+  }, options?: { force?: boolean }) => Promise<void>;
 
   // Actions – session lifecycle
   logout: () => Promise<void>;
@@ -125,7 +125,7 @@ export const useAuthStore = create<AuthState>()(
 
       // -- Backend sync (Privy) -----------------------------------------------
 
-      syncWithBackend: async (accessToken, privyUser) => {
+      syncWithBackend: async (accessToken, privyUser, options) => {
         const walletAddress = privyUser.walletAddress;
         if (!walletAddress) {
           console.warn('[AuthStore] Wallet address not available yet; skipping backend sync');
@@ -133,8 +133,8 @@ export const useAuthStore = create<AuthState>()(
         }
 
         const state = get();
-        if (state.isLoading) return;
-        if (state.isAuthenticated && state.user?.walletAddress === walletAddress) return;
+        if (!options?.force && state.isLoading) return;
+        if (!options?.force && state.isAuthenticated && state.user?.walletAddress === walletAddress) return;
 
         set({ isLoading: true, error: null });
         try {

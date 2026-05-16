@@ -37,6 +37,7 @@ import {
   toRuntimeLimits,
   syncRuntimeLimitsToState,
 } from './billing/runtime-limits.js';
+import * as avatarService from './avatars.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { fetchAllAssetsByOwner } from './web3/helius-pagination.js';
 import { createSystemLogger } from './structured-logger.js';
@@ -87,7 +88,7 @@ export interface AscensionPreflightResult {
   hasOrb: boolean;
   profileImageUrl?: string;
   error?: string;
-  errorCode?: 'NOT_INHABITANT' | 'ALREADY_ASCENDED' | 'NO_ORB' | 'AVATAR_NOT_FOUND';
+  errorCode?: 'NOT_INHABITANT' | 'ALREADY_ASCENDED' | 'NO_ORB' | 'AVATAR_NOT_FOUND' | 'OWNERSHIP_VERIFICATION_UNAVAILABLE';
 }
 
 export interface BurnVerificationResult {
@@ -451,6 +452,27 @@ async function checkOrbOwnership(walletAddress: string): Promise<{
   }
 }
 
+function mapAvatarOwnershipError(error: unknown): {
+  error: string;
+  errorCode: NonNullable<AscensionPreflightResult['errorCode']>;
+} | null {
+  if (!(error instanceof avatarService.AvatarOwnershipError)) {
+    return null;
+  }
+
+  if (error.code === 'verification_unavailable') {
+    return {
+      error: 'Avatar ownership verification temporarily unavailable',
+      errorCode: 'OWNERSHIP_VERIFICATION_UNAVAILABLE',
+    };
+  }
+
+  return {
+    error: 'Only the current avatar owner can ascend this avatar',
+    errorCode: 'NOT_INHABITANT',
+  };
+}
+
 // =============================================================================
 // Preflight Check
 // =============================================================================
@@ -507,9 +529,16 @@ export async function preflightAscend(
     };
   }
 
-  // Check if wallet is the creator
-  const isInhabitant = avatar.creatorWallet === walletAddress;
-  if (!isInhabitant) {
+  // Check current avatar ownership. NFT-backed avatars re-verify against
+  // the current on-chain holder instead of trusting claim-time creatorWallet.
+  try {
+    await avatarService.assertAvatarOwnership(avatarId, walletAddress, { isAdmin: false });
+  } catch (error) {
+    const ownershipError = mapAvatarOwnershipError(error);
+    if (!ownershipError) {
+      throw error;
+    }
+
     return {
       canAscend: false,
       avatarId,
@@ -521,8 +550,8 @@ export async function preflightAscend(
       requiredRatiBurn: 0,
       hasOrb: false,
       profileImageUrl: avatar.profileImage?.url,
-      error: 'Only the avatar creator can ascend this avatar',
-      errorCode: 'NOT_INHABITANT',
+      error: ownershipError.error,
+      errorCode: ownershipError.errorCode,
     };
   }
 
@@ -877,6 +906,8 @@ export async function executeAscension(
   const now = Date.now();
 
   try {
+    await avatarService.assertAvatarOwnership(avatarId, walletAddress, { isAdmin: false });
+
     // Update avatar record to mark as ascended
     await getDynamoClient().send(new UpdateCommand({
       TableName: TABLE_NAME,
@@ -960,6 +991,16 @@ export async function executeAscension(
       ascendedAt: now,
     };
   } catch (error) {
+    const ownershipError = mapAvatarOwnershipError(error);
+    if (ownershipError) {
+      return {
+        success: false,
+        avatarId,
+        error: ownershipError.error,
+        errorCode: ownershipError.errorCode,
+      };
+    }
+
     if (error instanceof Error && error.name === 'ConditionalCheckFailedException') {
       return {
         success: false,

@@ -107,9 +107,9 @@ export function getErrorRecovery(errorMessage: string): ErrorRecovery | null {
       title: 'API Key Not Configured',
       explanation: 'A required API key or secret is missing. The avatar needs this to communicate with external services.',
       actions: [
-        'Ask the avatar: "What API keys do you need?"',
-        'The avatar will prompt you to enter the required secret securely.',
-        'Common keys: OpenRouter API key (for AI responses), Telegram bot token (for Telegram).',
+        'For OpenRouter, ask an administrator to check the server-side provider key.',
+        'For platform integrations, ask the avatar to open the relevant setup panel.',
+        'Common user-provided keys: Telegram bot token, Discord bot token, or Replicate for voice/audio.',
       ],
       severity: 'error',
     };

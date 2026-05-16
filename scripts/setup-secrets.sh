@@ -296,9 +296,9 @@ ENV_SECRET_NAMES=(
 )
 
 ENV_SECRET_DESCRIPTIONS=(
-    "OpenRouter API key for LLM access (Claude, GPT, etc.)"
+    "OpenRouter API key for server-side LLM, image, and video access"
     "Helius API key for Solana RPC and NFT queries"
-    "Replicate API key for AI image/video generation"
+    "Replicate API key for AI voice/audio generation"
     "SerpAPI key for web search functionality"
     "Privy app secret (server-side API access)"
     "Privy JWT verification key (verify access tokens server-side)"

@@ -86,6 +86,8 @@ export async function handleApiKeyRoutes(
         avatarId,
         name: body.name || 'API Key',
         createdBy: session.email || walletAddress || 'unknown',
+        createdByWallet: walletAddress,
+        adminBypass: effectiveIsAdmin,
       });
 
       logger.info('API key created', {
@@ -282,6 +284,8 @@ export async function handleApiKeyRoutes(
       const result = await createApiKey({
         name: body.name || 'Wildcard API Key',
         createdBy: session.email || walletAddress || 'unknown',
+        createdByWallet: walletAddress,
+        adminBypass: true,
       });
 
       logger.info('Wildcard API key created', {

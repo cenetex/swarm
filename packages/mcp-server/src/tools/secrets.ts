@@ -119,7 +119,7 @@ export const createSecretTools = (services: SecretServices) => [
   // Manual tool for UI-based secret input
   defineManualTool({
     name: 'request_secret',
-    description: 'Request a secret from the user via secure input field. For integration credentials (Telegram/Twitter/Discord/Replicate/OpenAI/Anthropic/OpenRouter), prefer configure_integration.',
+    description: 'Request a secret from the user via secure input field. For integration credentials (Telegram/Twitter/Discord/Replicate voice/OpenAI/Anthropic), prefer configure_integration. Do not request OpenRouter API keys from users; OpenRouter is server-managed.',
     platforms: ['admin-ui'],
     inputSchema: z.object({
       secretType: z.enum([

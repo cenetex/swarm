@@ -11,7 +11,7 @@ import * as pendingTools from '../../services/pending-tools.js';
 import * as avatars from '../../services/avatars.js';
 import { configureIntegration } from '../../services/integrations.js';
 import { syncAvatarConfig } from '../../services/config-sync.js';
-import { resolveChatModel } from '../../services/models-registry.js';
+import { resolveOpenRouterChatModelPlan } from '../../services/openrouter-chat-models.js';
 import { createSystemLogger } from '../../services/structured-logger.js';
 import { LLM_MODEL } from '../chat-llm.js';
 import type { AvatarContext, ProcessChatResult } from './types.js';
@@ -204,11 +204,11 @@ export async function resumeChatAfterToolResult(
   ];
 
   const avatarMaxTokens = avatarRecord?.llmConfig?.maxTokens;
-  const resolvedModel = resolveChatModel({
+  const resolvedModel = (await resolveOpenRouterChatModelPlan({
     requestModel: undefined,
     avatarModel: avatarRecord?.llmConfig?.model,
     defaultModel: LLM_MODEL,
-  });
+  })).primaryModel;
   const chatResult = await processChat(null, nextHistory, session, avatarContext, {
     model: resolvedModel,
     maxTokens: typeof avatarMaxTokens === 'number' ? avatarMaxTokens : undefined,

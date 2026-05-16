@@ -72,6 +72,7 @@ export function makeCtx(overrides: Partial<RouteContext> & {
     walletAddress: overrides.walletAddress ?? null,
     accountId: overrides.accountId ?? undefined,
     effectiveIsAdmin: overrides.effectiveIsAdmin ?? true,
+    assertAvatarOwnership: overrides.assertAvatarOwnership,
   };
 }
 

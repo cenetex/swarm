@@ -91,8 +91,6 @@ describe('Integration Metadata', () => {
       expect(replicate.name).toBe('Replicate');
       expect(replicate.category).toBe('ai_provider');
       expect(replicate.requiredSecrets).toContain('replicate_api_key');
-      expect(replicate.capabilities).toContain('image_generation');
-      expect(replicate.capabilities).toContain('video_generation');
       expect(replicate.capabilities).toContain('audio_generation');
       expect(replicate.capabilities).toContain('voice_clone');
       expect(replicate.capabilities).toContain('text_to_speech');
@@ -125,6 +123,8 @@ describe('Integration Metadata', () => {
       expect(openrouter.category).toBe('ai_provider');
       expect(openrouter.requiredSecrets).toContain('openrouter_api_key');
       expect(openrouter.capabilities).toContain('llm');
+      expect(openrouter.capabilities).toContain('image_generation');
+      expect(openrouter.capabilities).toContain('video_generation');
       expect(openrouter.configurable).toBe(true);
     });
   });
@@ -184,30 +184,37 @@ describe('getAvailableModelsForIntegration', () => {
   it('should return models for Replicate capabilities', () => {
     const models = getAvailableModelsForIntegration('replicate');
 
-    expect(models.image_generation).toBeTruthy();
-    expect(models.video_generation).toBeTruthy();
     expect(models.audio_generation).toBeTruthy();
     expect(models.voice_clone).toBeTruthy();
     expect(models.text_to_speech).toBeTruthy();
 
     // Should have at least one model per capability
+    expect(models.audio_generation.length).toBeGreaterThan(0);
+    expect(models.voice_clone.length).toBeGreaterThan(0);
+  });
+
+  it('should return media models for OpenRouter capabilities', () => {
+    const models = getAvailableModelsForIntegration('openrouter');
+
+    expect(models.llm).toEqual([]);
+    expect(models.image_generation).toBeTruthy();
+    expect(models.video_generation).toBeTruthy();
     expect(models.image_generation.length).toBeGreaterThan(0);
     expect(models.video_generation.length).toBeGreaterThan(0);
   });
 
-  it('should return models for OpenAI capabilities', () => {
+  it('should not return static LLM models for OpenAI capabilities', () => {
     const models = getAvailableModelsForIntegration('openai');
 
-    expect(models.llm).toBeTruthy();
+    expect(models.llm).toEqual([]);
     expect(models.text_to_speech).toBeTruthy();
     expect(models.transcription).toBeTruthy();
   });
 
-  it('should return models for Anthropic capabilities', () => {
+  it('should not return static LLM models for Anthropic capabilities', () => {
     const models = getAvailableModelsForIntegration('anthropic');
 
-    expect(models.llm).toBeTruthy();
-    expect(models.llm.length).toBeGreaterThan(0);
+    expect(models.llm).toEqual([]);
   });
 
   it('should only return models for that provider', () => {
@@ -323,7 +330,7 @@ describe('Model Selection Logic', () => {
     capability: AICapability,
     defaultModelId: string
   ): string {
-    const config = avatar?.integrations?.replicate;
+    const config = avatar?.integrations?.openrouter;
     const configuredModel = config?.models?.[capability];
 
     if (configuredModel) {
@@ -336,18 +343,18 @@ describe('Model Selection Logic', () => {
   it('should return configured model when set', () => {
     const avatar: MockAvatar = {
       integrations: {
-        replicate: {
+        openrouter: {
           enabled: true,
           useGlobalKey: false,
           models: {
-            image_generation: 'custom/model',
+            image_generation: 'black-forest-labs/flux.2-flex',
           },
         },
       },
     };
 
     const model = getConfiguredModel(avatar, 'image_generation', 'default/model');
-    expect(model).toBe('custom/model');
+    expect(model).toBe('black-forest-labs/flux.2-flex');
   });
 
   it('should return default when no config', () => {
@@ -364,7 +371,7 @@ describe('Model Selection Logic', () => {
   it('should return default when capability not in models', () => {
     const avatar: MockAvatar = {
       integrations: {
-        replicate: {
+        openrouter: {
           enabled: true,
           useGlobalKey: true,
           models: {
@@ -448,18 +455,18 @@ describe('Integration Categories', () => {
 });
 
 describe('Capability Distribution', () => {
-  it('should have image_generation on Replicate', () => {
+  it('should have image_generation on OpenRouter', () => {
     const providers = Object.values(INTEGRATION_METADATA)
       .filter((m) => m.capabilities.includes('image_generation'));
 
-    expect(providers.map((p) => p.type)).toContain('replicate');
+    expect(providers.map((p) => p.type)).toEqual(['openrouter']);
   });
 
-  it('should have video_generation only on Replicate', () => {
+  it('should have video_generation only on OpenRouter', () => {
     const providers = Object.values(INTEGRATION_METADATA)
       .filter((m) => m.capabilities.includes('video_generation'));
 
-    expect(providers.map((p) => p.type)).toEqual(['replicate']);
+    expect(providers.map((p) => p.type)).toEqual(['openrouter']);
   });
 
   it('should have llm on multiple providers', () => {

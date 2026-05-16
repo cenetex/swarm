@@ -120,6 +120,42 @@ describe('avatars deleteAvatar', () => {
     });
   });
 
+  it('does not decrement creator slots when deleting scan-created NFT slot avatars', async () => {
+    const avatar = makeAvatar({
+      nftMint: 'mint-123',
+      slotType: 'nft',
+    });
+
+    sendMock.mockImplementation(async (command: unknown) => {
+      if (command instanceof GetCommand) {
+        return { Item: avatar };
+      }
+      if (command instanceof PutCommand) {
+        return {};
+      }
+      if (command instanceof DeleteCommand) {
+        return {};
+      }
+      throw new Error(`Unexpected command: ${String((command as { constructor?: { name?: string } }).constructor?.name)}`);
+    });
+
+    await deleteAvatar('nft-avatar', session, mockDeps);
+
+    expect(mockDeps.decrementCreatorCount).not.toHaveBeenCalled();
+
+    const deleteCall = sendMock.mock.calls
+      .map(([command]) => command)
+      .find((command): command is DeleteCommand => command instanceof DeleteCommand);
+
+    expect(deleteCall).toBeDefined();
+    expect(deleteCall?.input).toMatchObject({
+      Key: {
+        pk: 'CLAIMED_NFT#mint-123',
+        sk: 'AVATAR',
+      },
+    });
+  });
+
   // #1464 — When Telegram is enabled, deregister the webhook BEFORE wiping
   // secrets; otherwise the webhook is orphaned and Telegram keeps POSTing.
   it('deregisters the Telegram webhook before secrets are deleted', async () => {

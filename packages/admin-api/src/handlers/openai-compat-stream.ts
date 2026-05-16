@@ -17,19 +17,23 @@ import {
   parseAvatarId,
   resolveModel,
   hashApiKey,
+  OpenAIMessageSchema,
+  OpenAIToolSchema,
+  OpenAIToolChoiceSchema,
+  normalizeOpenAIMessageForProvider,
+  resolveApiKeyAvatarAccess,
 } from './openai-compat.js';
-import * as avatars from '../services/avatars.js';
 import {
   LLM_TIMEOUT_MS,
   getLlmApiKey,
 } from './chat-llm.js';
 import { resolveTokenUsage, recordTokenUsage } from '../services/token-accounting.js';
-
-// Schema (same as openai-compat.ts)
-const OpenAIMessageSchema = z.object({
-  role: z.enum(['system', 'user', 'assistant']),
-  content: z.string(),
-});
+import {
+  DEFAULT_MODELS,
+  executeWithFallback,
+  withOpenRouterFallbackRouting,
+} from '../services/models-registry.js';
+import { resolveOpenRouterChatModelPlan } from '../services/openrouter-chat-models.js';
 
 const StreamRequestSchema = z.object({
   model: z.string().optional(), // Optional for scoped keys
@@ -38,11 +42,28 @@ const StreamRequestSchema = z.object({
   max_tokens: z.number().int().positive().optional(),
   stream: z.literal(true),
   user: z.string().optional(),
+  tools: z.array(OpenAIToolSchema).optional(),
+  tool_choice: OpenAIToolChoiceSchema.optional(),
 });
 
+interface StreamToolCallDelta {
+  index?: number;
+  id?: string;
+  type?: 'function';
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+}
+
 interface StreamChunk {
+  model?: string;
   choices?: Array<{
-    delta?: { role?: string; content?: string };
+    delta?: {
+      role?: string;
+      content?: string;
+      tool_calls?: StreamToolCallDelta[];
+    };
     finish_reason?: string | null;
   }>;
   usage?: {
@@ -159,23 +180,25 @@ async function handleStreamingRequest(
     return;
   }
 
-  // See the sibling non-stream handler for why this uses getAvatar directly
-  // instead of assertAvatarOwnership: API-key sessions synthesize a
-  // non-wallet userId so the ownership gate always rejected them.
-  const avatarRecord = await avatars.getAvatar(avatarId);
-  if (!avatarRecord) {
-    writeErrorAndEnd(stream, requestId, `Avatar not found: ${avatarId}`);
+  const access = await resolveApiKeyAvatarAccess(avatarId, validation);
+  if (!access.ok) {
+    writeErrorAndEnd(stream, requestId, access.message);
     return;
   }
+  const avatarRecord = access.avatarRecord;
 
   const keyHash = hashApiKey(apiKey);
 
   // Build messages
-  const llmModel = avatarRecord.llmConfig?.model || 'anthropic/claude-3-5-sonnet-latest';
+  const llmModel = (await resolveOpenRouterChatModelPlan({
+    requestModel: undefined,
+    avatarModel: avatarRecord.llmConfig?.model,
+    defaultModel: DEFAULT_MODELS.llm,
+  })).primaryModel;
   const systemPrompt = avatarRecord.persona || `You are ${avatarRecord.name || 'an AI assistant'}.`;
   const messages = [
     { role: 'system' as const, content: systemPrompt },
-    ...request.messages,
+    ...request.messages.map(normalizeOpenAIMessageForProvider),
   ];
 
   logger.info('Starting streaming chat completion', {
@@ -184,6 +207,8 @@ async function handleStreamingRequest(
     avatarId,
     model: llmModel,
     requestId,
+    externalToolCount: request.tools?.length || 0,
+    hasToolChoice: request.tool_choice !== undefined,
   });
 
   // Get OpenRouter API key
@@ -203,29 +228,55 @@ async function handleStreamingRequest(
   stream.write(`data: ${JSON.stringify(roleChunk)}\n\n`);
 
   // Call OpenRouter with streaming
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${llmApiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://swarm.rati.chat',
-      'X-Title': 'Swarm API',
-    },
-    body: JSON.stringify({
-      model: llmModel,
-      messages,
-      max_tokens: request.max_tokens,
-      temperature: request.temperature,
-      stream: true,
-    }),
-    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+  const requestBody: Record<string, unknown> = {
+    messages,
+    max_tokens: request.max_tokens,
+    temperature: request.temperature,
+    stream: true,
+  };
+
+  if (request.tools && request.tools.length > 0) {
+    requestBody.tools = request.tools;
+  }
+  if (request.tool_choice !== undefined) {
+    requestBody.tool_choice = request.tool_choice;
+  }
+
+  const modelPlan = await resolveOpenRouterChatModelPlan({
+    requestModel: llmModel,
+    apiKey: llmApiKey,
+    requireTools: !!request.tools && request.tools.length > 0,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    writeErrorAndEnd(stream, requestId, `LLM error: ${response.status} ${errorText.slice(0, 200)}`);
-    return;
-  }
+  const fallbackResult = await executeWithFallback(async (candidateModel) => {
+    const routedBody = withOpenRouterFallbackRouting(requestBody, candidateModel, {
+      requireParameters: !!request.tools && request.tools.length > 0,
+      fallbackModels: modelPlan.fallbackModels,
+    });
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${llmApiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://swarm.rati.chat',
+        'X-Title': 'Swarm API',
+      },
+      body: JSON.stringify(routedBody),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`LLM error: ${response.status} ${errorText.slice(0, 1000)}`);
+    }
+
+    return response;
+  }, {
+    primaryModel: modelPlan.primaryModel,
+    avatarId,
+    fallbackModels: modelPlan.fallbackModels,
+  });
+  const response = fallbackResult.result;
 
   if (!response.body) {
     writeErrorAndEnd(stream, requestId, 'No response body from LLM');
@@ -237,6 +288,10 @@ async function handleStreamingRequest(
   const decoder = new TextDecoder();
   let buffer = '';
   let fullContent = '';
+  let toolCallText = '';
+  let toolCallCount = 0;
+  let finishReason: string | null = null;
+  let upstreamModel = fallbackResult.model;
   let providerUsage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
 
   try {
@@ -255,7 +310,11 @@ async function handleStreamingRequest(
 
         try {
           const chunk = JSON.parse(trimmed.slice(6)) as StreamChunk;
-          const delta = chunk.choices?.[0]?.delta;
+          if (typeof chunk.model === 'string' && chunk.model.length > 0) {
+            upstreamModel = chunk.model;
+          }
+          const choice = chunk.choices?.[0];
+          const delta = choice?.delta;
           const content = delta?.content;
 
           if (content) {
@@ -271,6 +330,30 @@ async function handleStreamingRequest(
             stream.write(`data: ${JSON.stringify(clientChunk)}\n\n`);
           }
 
+          if (delta?.tool_calls && delta.tool_calls.length > 0) {
+            toolCallText += JSON.stringify(delta.tool_calls);
+            for (const toolCall of delta.tool_calls) {
+              if (typeof toolCall.index === 'number') {
+                toolCallCount = Math.max(toolCallCount, toolCall.index + 1);
+              } else {
+                toolCallCount = Math.max(toolCallCount, 1);
+              }
+            }
+
+            const clientChunk = {
+              id: completionId,
+              object: 'chat.completion.chunk',
+              created,
+              model,
+              choices: [{ index: 0, delta: { tool_calls: delta.tool_calls }, finish_reason: null }],
+            };
+            stream.write(`data: ${JSON.stringify(clientChunk)}\n\n`);
+          }
+
+          if (choice?.finish_reason) {
+            finishReason = choice.finish_reason;
+          }
+
           if (chunk.usage) {
             providerUsage = chunk.usage;
           }
@@ -284,7 +367,23 @@ async function handleStreamingRequest(
   }
 
   // Resolve token usage
-  const promptText = request.messages.map(m => m.content).join('\n');
+  const promptParts = request.messages.map(m => {
+    if (m.role === 'assistant' && m.tool_calls?.length) {
+      return `${m.content}\n${JSON.stringify(m.tool_calls)}`;
+    }
+    if (m.role === 'tool') {
+      return `${m.tool_call_id || ''}\n${m.content}`;
+    }
+    return m.content;
+  });
+  if (request.tools?.length) {
+    promptParts.push(JSON.stringify(request.tools));
+  }
+  if (request.tool_choice !== undefined) {
+    promptParts.push(JSON.stringify(request.tool_choice));
+  }
+  const promptText = promptParts.join('\n');
+  const completionText = fullContent || toolCallText;
   const tokenUsage = resolveTokenUsage(
     providerUsage ? {
       promptTokens: providerUsage.prompt_tokens || 0,
@@ -292,8 +391,8 @@ async function handleStreamingRequest(
       totalTokens: providerUsage.total_tokens || 0,
     } : undefined,
     promptText,
-    fullContent,
-    llmModel,
+    completionText,
+    upstreamModel,
   );
 
   // Write final chunk with finish_reason and usage
@@ -302,7 +401,7 @@ async function handleStreamingRequest(
     object: 'chat.completion.chunk',
     created,
     model,
-    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    choices: [{ index: 0, delta: {}, finish_reason: finishReason || (toolCallCount > 0 ? 'tool_calls' : 'stop') }],
     usage: {
       prompt_tokens: tokenUsage.promptTokens,
       completion_tokens: tokenUsage.completionTokens,
@@ -319,8 +418,12 @@ async function handleStreamingRequest(
     subsystem: 'openai-compat-stream',
     avatarId,
     model: llmModel,
+    upstreamModel,
+    usedFallback: fallbackResult.usedFallback || upstreamModel !== llmModel,
     latencyMs,
     contentLength: fullContent.length,
+    toolCallCount,
+    finishReason: finishReason || (toolCallCount > 0 ? 'tool_calls' : 'stop'),
     requestId,
   });
 
@@ -329,7 +432,7 @@ async function handleStreamingRequest(
     requestId,
     keyHash,
     avatarId,
-    model: llmModel,
+    model: upstreamModel,
     usage: tokenUsage,
   }).catch(() => {});
 }
