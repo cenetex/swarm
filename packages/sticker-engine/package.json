@@ -4,11 +4,32 @@
   "description": "Sticker processing engine for Telegram and web formats",
   "type": "module",
   "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./formats/web": "./dist/formats/web.js",
-    "./formats/telegram": "./dist/formats/telegram.js",
-    "./core/*": "./dist/core/*"
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./formats/web": {
+      "bun": "./src/formats/web.ts",
+      "types": "./src/formats/web.ts",
+      "import": "./dist/formats/web.js",
+      "default": "./dist/formats/web.js"
+    },
+    "./formats/telegram": {
+      "bun": "./src/formats/telegram.ts",
+      "types": "./src/formats/telegram.ts",
+      "import": "./dist/formats/telegram.js",
+      "default": "./dist/formats/telegram.js"
+    },
+    "./core/*": {
+      "bun": "./src/core/*",
+      "types": "./src/core/*",
+      "import": "./dist/core/*",
+      "default": "./dist/core/*"
+    }
   },
   "scripts": {
     "build": "tsc --build",
