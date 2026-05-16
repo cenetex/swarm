@@ -17,7 +17,7 @@ export function LandingPage() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-[var(--color-bg)] flex flex-col relative overflow-hidden">
+    <div className="h-[100dvh] bg-[var(--color-bg)] flex flex-col relative overflow-y-auto overflow-x-hidden">
       {/* Background gradients */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(122,99,149,0.3),transparent)]" />
@@ -50,6 +50,16 @@ export function LandingPage() {
         <p className="text-sm text-[var(--color-text-secondary)] text-center mb-10 max-w-md leading-relaxed">
           {t('landing.subtitle')}
         </p>
+
+        <div className="w-full max-w-sm mb-10 flex flex-col items-center gap-3">
+          <PrivyLoginButton
+            label={t('landing.primaryCta')}
+            className="w-full justify-center"
+          />
+          <p className="text-xs text-[var(--color-text-muted)] text-center">
+            {t('landing.socialProof')}
+          </p>
+        </div>
 
         {/* How it works — chat demo */}
         <div className="w-full max-w-sm mb-10">
@@ -107,23 +117,15 @@ export function LandingPage() {
         </div>
 
         {/* Pricing */}
-        <div className="w-full max-w-2xl mb-10">
-          <h3 className="text-lg sm:text-xl font-bold text-[var(--color-text)] text-center mb-1">
+        <section className="w-full max-w-2xl mb-10" aria-labelledby="landing-pricing-title">
+          <h3 id="landing-pricing-title" className="text-lg sm:text-xl font-bold text-[var(--color-text)] text-center mb-1">
             {t('landing.pricingTitle')}
           </h3>
           <p className="text-sm text-[var(--color-text-secondary)] text-center mb-5">
             {t('landing.pricingSubtitle')}
           </p>
           <PricingTiers />
-        </div>
-
-        {/* CTA */}
-        <PrivyLoginButton className="w-full max-w-sm justify-center" />
-
-        {/* Social proof hint */}
-        <p className="mt-4 text-xs text-[var(--color-text-muted)] text-center">
-          {t('landing.socialProof')}
-        </p>
+        </section>
       </div>
 
       {/* Footer with ecosystem links */}
@@ -278,9 +280,11 @@ function PricingTiers() {
             <li>{t('landing.tierCreatorFeature3')}</li>
             <li>{t('landing.tierCreatorFeature4')}</li>
           </ul>
-          <div className="text-xs font-medium py-2 rounded-lg bg-blue-600 text-white">
-            {t('landing.tierCreatorButton')}
-          </div>
+          <PrivyLoginButton
+            label={t('landing.tierCreatorButton')}
+            showIcon={false}
+            className="w-full justify-center py-2"
+          />
         </div>
       </div>
     </div>
