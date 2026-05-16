@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import { formatBrainMemoryContext, truncateForPrompt, formatRelativeTime, buildRecentBotActivityDigest } from './context-builder.js';
-import type { BrainMemoryFact, PresenceService, ChannelInfo } from '@swarm/core';
+import {
+  formatBrainMemoryContext,
+  truncateForPrompt,
+  formatRelativeTime,
+  buildRecentBotActivityDigest,
+  buildCrossPlatformCustomContext,
+} from './context-builder.js';
+import type { AvatarConfig, BrainMemoryFact, ChannelInfo, PresenceService, SwarmEnvelope } from '@swarm/core';
 
 describe('formatBrainMemoryContext', () => {
   it('returns empty string for empty facts array', () => {
@@ -227,5 +233,87 @@ describe('buildRecentBotActivityDigest', () => {
     expect(result).not.toBeNull();
     const lines = result!.split('\n').filter((l) => l.startsWith('-'));
     expect(lines.length).toBeLessThanOrEqual(4);
+  });
+});
+
+describe('buildCrossPlatformCustomContext', () => {
+  function makeStateService(messagesByChannel: Record<string, Array<{ content: string; isBot: boolean; sender: string; username?: string; timestamp: number }>>) {
+    return {
+      getChannelState: vi.fn().mockImplementation((_avatarId: string, channelId: string) => {
+        const msgs = messagesByChannel[channelId];
+        if (!msgs) return Promise.resolve(null);
+        return Promise.resolve({
+          avatarId: 'av1',
+          channelId,
+          platform: 'telegram',
+          recentMessages: msgs.map((message, index) => ({
+            messageId: `${channelId}-${index}`,
+            ...message,
+          })),
+          lastActivityAt: msgs.at(-1)?.timestamp || Date.now(),
+          messageCount: msgs.length,
+        });
+      }),
+    };
+  }
+
+  it('renders snapshot-backed recent activity and home summary sections', async () => {
+    const now = Date.now();
+    const presenceService = {
+      getAllChannels: vi.fn().mockResolvedValue([
+        { channelId: 'current', platform: 'telegram', lastActivityAt: now },
+        { channelId: 'discord-1', platform: 'discord', title: 'Ops', lastActivityAt: now - 60_000 },
+        { channelId: '-100home', platform: 'telegram', title: 'Home', lastActivityAt: now - 120_000 },
+      ]),
+      getConnectedPlatforms: vi.fn().mockResolvedValue([]),
+      getChannelsForPlatform: vi.fn().mockResolvedValue([]),
+      getChannelWithSummary: vi.fn().mockResolvedValue({
+        channelId: '-100home',
+        platform: 'telegram',
+        title: 'Home',
+        type: 'supergroup',
+        lastActivityAt: now - 120_000,
+      }),
+      buildPresenceContext: vi.fn().mockResolvedValue(''),
+      checkGlobalRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 20, windowStart: 0, windowEnd: 0, totalPosts: 0, maxPosts: 20 }),
+      recordPost: vi.fn().mockResolvedValue(undefined),
+      registerChannel: vi.fn().mockResolvedValue(undefined),
+      updateChannelSummary: vi.fn().mockResolvedValue(undefined),
+    } as unknown as PresenceService;
+
+    const stateService = makeStateService({
+      current: [{ content: 'current message', isBot: false, sender: 'Bob', timestamp: now }],
+      'discord-1': [{ content: 'discord context', isBot: false, sender: 'Alice', username: 'alice', timestamp: now - 60_000 }],
+      '-100home': [
+        { content: 'home one', isBot: false, sender: 'Carol', timestamp: now - 180_000 },
+        { content: 'home two', isBot: false, sender: 'Dan', timestamp: now - 120_000 },
+      ],
+    });
+
+    const result = await buildCrossPlatformCustomContext({
+      avatarId: 'av1',
+      avatarConfig: {
+        platforms: {
+          telegram: {
+            homeChannelId: '-100home',
+            homeChannelUsername: 'home',
+          },
+        },
+      } as AvatarConfig,
+      avatarSecrets: {},
+      envelope: {
+        platform: 'telegram',
+        conversationId: 'current',
+      } as SwarmEnvelope,
+      presenceService,
+      stateService: stateService as any,
+    });
+
+    expect(result).toContain('## Recent Cross-Platform Activity');
+    expect(result).toContain('discord/Ops');
+    expect(result).toContain('discord context');
+    expect(result).toContain('## Home Channel Summary');
+    expect(result).toContain('Home channel (Telegram Home)');
+    expect(result).toContain('do not quote or attribute private chat');
   });
 });

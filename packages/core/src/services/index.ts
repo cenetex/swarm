@@ -64,6 +64,22 @@ export {
   type ChannelSummaryService,
 } from './channel-summary.js';
 export {
+  AVATAR_CONTEXT_SNAPSHOT_DEFAULTS,
+  buildAvatarContextSnapshot,
+  formatSnapshotRelativeTime,
+  renderAvatarContextSnapshot,
+  resolveHomeChannelFromAvatarConfig,
+  truncateSnapshotText,
+  type AvatarContextHomeChannel,
+  type AvatarContextSnapshot,
+  type AvatarContextSnapshotItem,
+  type AvatarContextSnapshotItemKind,
+  type AvatarContextSnapshotOptions,
+  type AvatarContextSnapshotPolicyLabel,
+  type AvatarContextSnapshotSource,
+  type BuildAvatarContextSnapshotParams,
+} from './avatar-context-snapshot.js';
+export {
   DynamoDBContentStoreService,
   createContentStoreService,
   type ContentStoreService,

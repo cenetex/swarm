@@ -4,8 +4,11 @@
  * recent bot activity digest, and home channel summary for the message processor.
  */
 import {
+  buildAvatarContextSnapshot,
   createChannelSummaryService,
   logger,
+  renderAvatarContextSnapshot,
+  resolveHomeChannelFromAvatarConfig,
   resolveSystemPrompt,
   toolsToCategories,
   type BrainMemoryFact,
@@ -41,50 +44,19 @@ export async function buildRecentBotActivityDigest(params: {
   presenceService: PresenceService;
   stateService: ReturnType<typeof createStateService>;
 }): Promise<string | null> {
-  const now = Date.now();
+  const snapshot = await buildAvatarContextSnapshot({
+    avatarId: params.avatarId,
+    currentChannelId: params.currentChannelId,
+    currentPlatform: params.currentPlatform,
+    presenceService: params.presenceService,
+    stateGetter: params.stateService.getChannelState.bind(params.stateService),
+    options: {
+      includeHomeChannelSummary: false,
+      warmChannelSummaries: false,
+    },
+  });
 
-  const channels = await params.presenceService.getAllChannels(params.avatarId);
-  if (channels.length === 0) return null;
-
-  const sorted = channels
-    .slice()
-    .sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0))
-    .slice(0, 8);
-
-  const lines: string[] = [];
-  for (const ch of sorted) {
-    if (
-      params.currentChannelId &&
-      params.currentPlatform &&
-      ch.channelId === params.currentChannelId &&
-      ch.platform === params.currentPlatform
-    ) {
-      continue;
-    }
-
-    const state = await params.stateService.getChannelState(params.avatarId, ch.channelId);
-    const recent = state?.recentMessages || [];
-    if (recent.length === 0) continue;
-
-    // Find the most recent message (bot or user) within 6h to capture conversation context.
-    const lastMsg = [...recent].reverse().find((m) => Boolean(m.content));
-    if (!lastMsg) continue;
-    if (now - lastMsg.timestamp > 6 * 60 * 60_000) continue;
-
-    const channelLabel = ch.title || ch.channelId;
-    const speaker = lastMsg.isBot ? 'bot' : (lastMsg.username || lastMsg.sender || 'user');
-    lines.push(
-      `- ${ch.platform}/${channelLabel} (${formatRelativeTime(lastMsg.timestamp, now)}, ${speaker}): ${truncateForPrompt(lastMsg.content.replace(/\s+/g, ' ').trim(), 140)}`
-    );
-    if (lines.length >= 4) break;
-  }
-
-  if (lines.length === 0) return null;
-  return [
-    '## Recent Cross-Platform Activity',
-    'Most recent message per channel across other platforms (could be from user or bot).',
-    ...lines,
-  ].join('\n');
+  return renderAvatarContextSnapshot(snapshot);
 }
 
 export async function buildHomeChannelSummaryContext(params: {
@@ -95,43 +67,24 @@ export async function buildHomeChannelSummaryContext(params: {
   presenceService: PresenceService;
   stateService: ReturnType<typeof createStateService>;
 }): Promise<string | null> {
-  const telegramCfg = params.avatarConfig.platforms?.telegram;
-  const homeChannelId = telegramCfg?.homeChannelId;
-  if (!homeChannelId) return null;
+  const homeChannel = resolveHomeChannelFromAvatarConfig(params.avatarConfig);
+  if (!homeChannel) return null;
 
-  const summaryService = createChannelSummaryService(params.avatarSecrets);
+  const snapshot = await buildAvatarContextSnapshot({
+    avatarId: params.avatarId,
+    currentChannelId: params.envelope.conversationId,
+    currentPlatform: params.envelope.platform as Platform,
+    homeChannel,
+    presenceService: params.presenceService,
+    stateGetter: params.stateService.getChannelState.bind(params.stateService),
+    summaryService: createChannelSummaryService(params.avatarSecrets),
+    options: {
+      includeRecentActivity: false,
+      warmChannelSummaries: false,
+    },
+  });
 
-  let summary: string | null = null;
-  try {
-    summary = await summaryService.getOrGenerateSummary(
-      params.avatarId,
-      homeChannelId,
-      'telegram',
-      params.presenceService,
-      params.stateService.getChannelState.bind(params.stateService)
-    );
-  } catch (err) {
-    logger.warn('Failed to get/generate home channel summary', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  if (!summary) return null;
-
-  const channelDetail = await params.presenceService.getChannelWithSummary(params.avatarId, homeChannelId, 'telegram');
-  const homeLabel = channelDetail?.title
-    || (telegramCfg?.homeChannelUsername ? `@${telegramCfg.homeChannelUsername}` : undefined)
-    || homeChannelId;
-
-  const isInHomeChannel = params.envelope.platform === 'telegram' && params.envelope.conversationId === homeChannelId;
-  const locationNote = isInHomeChannel ? ' (current channel)' : '';
-
-  return [
-    '## Home Channel Summary',
-    `Home channel (Telegram ${homeLabel}${locationNote}): ${truncateForPrompt(summary, 220)}`,
-    '',
-    'Safety: When replying publicly (e.g., Twitter), do not quote or attribute private chat; use this only as high-level background context.',
-  ].join('\n');
+  return renderAvatarContextSnapshot(snapshot);
 }
 
 export async function buildCrossPlatformCustomContext(params: {
@@ -142,75 +95,17 @@ export async function buildCrossPlatformCustomContext(params: {
   presenceService: PresenceService;
   stateService: ReturnType<typeof createStateService>;
 }): Promise<string | undefined> {
-  const parts: string[] = [];
+  const snapshot = await buildAvatarContextSnapshot({
+    avatarId: params.avatarId,
+    currentChannelId: params.envelope.conversationId,
+    currentPlatform: params.envelope.platform as Platform,
+    homeChannel: resolveHomeChannelFromAvatarConfig(params.avatarConfig),
+    presenceService: params.presenceService,
+    stateGetter: params.stateService.getChannelState.bind(params.stateService),
+    summaryService: createChannelSummaryService(params.avatarSecrets),
+  });
 
-  try {
-    const digest = await buildRecentBotActivityDigest({
-      avatarId: params.avatarId,
-      currentChannelId: params.envelope.conversationId,
-      currentPlatform: params.envelope.platform as Platform,
-      presenceService: params.presenceService,
-      stateService: params.stateService,
-    });
-    if (digest) parts.push(digest);
-  } catch (err) {
-    logger.warn('Failed to build recent bot activity digest', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  try {
-    const homeSummary = await buildHomeChannelSummaryContext(params);
-    if (homeSummary) parts.push(homeSummary);
-  } catch (err) {
-    logger.warn('Failed to build home channel context', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  // Generate summaries for the top 3 recently-active non-current, non-home channels
-  // so the presence context has actual content, not just "Last active Xm ago".
-  try {
-    const homeChannelId = params.avatarConfig.platforms?.telegram?.homeChannelId;
-    const allChannels = await params.presenceService.getAllChannels(params.avatarId);
-    const summaryService = createChannelSummaryService(params.avatarSecrets);
-
-    const candidates = allChannels
-      .filter((ch) => {
-        if (ch.channelId === params.envelope.conversationId && ch.platform === params.envelope.platform) return false;
-        if (homeChannelId && ch.channelId === homeChannelId && ch.platform === 'telegram') return false;
-        return (ch.lastActivityAt || 0) > Date.now() - 24 * 60 * 60_000;
-      })
-      .sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0))
-      .slice(0, 3);
-
-    await Promise.all(
-      candidates.map(async (ch) => {
-        try {
-          await summaryService.getOrGenerateSummary(
-            params.avatarId,
-            ch.channelId,
-            ch.platform,
-            params.presenceService,
-            params.stateService.getChannelState.bind(params.stateService)
-          );
-        } catch (err) {
-          logger.warn('Failed to generate summary for channel', {
-            channelId: ch.channelId,
-            platform: ch.platform,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      })
-    );
-  } catch (err) {
-    logger.warn('Failed to generate cross-platform channel summaries', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  if (parts.length === 0) return undefined;
-  return parts.join('\n\n');
+  return renderAvatarContextSnapshot(snapshot) || undefined;
 }
 
 /**
