@@ -163,6 +163,7 @@ export interface AutonomousPostsConfig {
   imageChance?: number;
   useMemories?: boolean;
   topics?: string[];
+  dailyBudget?: number;
 }
 
 /**

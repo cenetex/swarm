@@ -190,6 +190,7 @@ describe('config-sync convertToAvatarConfig', () => {
             imageChance: 0.5,
             useMemories: false,
             topics: ['ai'],
+            dailyBudget: 3,
           },
           communities: [{ id: '123', name: 'Test Community' }],
         },
@@ -218,8 +219,183 @@ describe('config-sync convertToAvatarConfig', () => {
 
     expect(config.platforms.twitter?.features).toEqual(['mention_replies', 'autonomous_posts', 'community_posts']);
     expect(config.platforms.twitter?.autonomousPosts?.minIntervalHours).toBe(5);
+    expect(config.platforms.twitter?.autonomousPosts?.dailyBudget).toBe(3);
     expect(config.platforms.twitter?.communities?.[0]?.id).toBe('123');
     expect(config.scheduling.tweets).toBeUndefined();
+  });
+
+  it('preserves system prompt overrides for runtime prompt resolution', () => {
+    const record = {
+      pk: 'AVATAR#prompt-avatar',
+      sk: 'CONFIG',
+      avatarId: 'prompt-avatar',
+      name: 'Prompt Avatar',
+      persona: 'Template persona',
+      systemPromptOverride: {
+        kind: 'inline',
+        text: 'Use this exact prompt.',
+      },
+      platforms: {},
+      voiceConfig: {
+        enabled: true,
+        ttsProvider: 'voice-clone',
+        format: 'ogg',
+      },
+      llmConfig: {
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-4',
+        temperature: 0.8,
+        maxTokens: 1024,
+        useGlobalKey: true,
+      },
+      currentEra: 0,
+      status: 'active',
+      createdAt: Date.now(),
+      createdBy: 'test@example.com',
+      updatedAt: Date.now(),
+      updatedBy: 'test@example.com',
+    } satisfies Partial<AvatarRecord> as AvatarRecord;
+
+    const config = convertToAvatarConfig(record);
+
+    expect(config.systemPromptOverride).toEqual({
+      kind: 'inline',
+      text: 'Use this exact prompt.',
+    });
+  });
+
+  it('preserves Replicate media settings from avatar media config', () => {
+    const record = {
+      pk: 'AVATAR#media-avatar',
+      sk: 'CONFIG',
+      avatarId: 'media-avatar',
+      name: 'Media Avatar',
+      mediaConfig: {
+        image: {
+          provider: 'replicate',
+          model: 'google/nano-banana-pro',
+        },
+        video: {
+          provider: 'replicate',
+          model: 'bytedance/seedance-2.0-fast',
+        },
+        useProfileAsReference: true,
+      },
+      platforms: {},
+      voiceConfig: {
+        enabled: true,
+        ttsProvider: 'voice-clone',
+        format: 'ogg',
+      },
+      llmConfig: {
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-4',
+        temperature: 0.8,
+        maxTokens: 1024,
+        useGlobalKey: true,
+      },
+      currentEra: 0,
+      status: 'active',
+      createdAt: Date.now(),
+      createdBy: 'test@example.com',
+      updatedAt: Date.now(),
+      updatedBy: 'test@example.com',
+    } satisfies Partial<AvatarRecord> as AvatarRecord;
+
+    const config = convertToAvatarConfig(record);
+
+    expect(config.media.image).toEqual({
+      provider: 'replicate',
+      model: 'google/nano-banana-pro',
+    });
+    expect(config.media.video).toEqual({
+      provider: 'replicate',
+      model: 'bytedance/seedance-2.0-fast',
+    });
+  });
+
+  it('enables Telegram media, gallery, and sticker tools for runtime use', () => {
+    const record = {
+      pk: 'AVATAR#sticker-avatar',
+      sk: 'CONFIG',
+      avatarId: 'sticker-avatar',
+      name: 'Sticker Avatar',
+      platforms: {
+        telegram: {
+          enabled: true,
+          botUsername: 'stickerbot',
+        },
+      },
+      voiceConfig: {
+        enabled: true,
+        ttsProvider: 'voice-clone',
+        format: 'ogg',
+      },
+      llmConfig: {
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-4',
+        temperature: 0.8,
+        maxTokens: 1024,
+        useGlobalKey: true,
+      },
+      currentEra: 0,
+      status: 'active',
+      createdAt: Date.now(),
+      createdBy: 'test@example.com',
+      updatedAt: Date.now(),
+      updatedBy: 'test@example.com',
+    } satisfies Partial<AvatarRecord> as AvatarRecord;
+
+    const config = convertToAvatarConfig(record);
+
+    expect(config.tools).toEqual(expect.arrayContaining([
+      'generate_sticker',
+      'create_sticker',
+      'send_sticker',
+      'get_sticker_pack',
+      'get_gallery_for_stickers',
+    ]));
+  });
+
+  it('marks scheduled tweet templates as enabled when scheduled tweets are active', () => {
+    const record = {
+      pk: 'AVATAR#twitter-avatar',
+      sk: 'CONFIG',
+      avatarId: 'twitter-avatar',
+      name: 'Twitter Avatar',
+      platforms: {
+        twitter: {
+          enabled: true,
+          username: 'twitterbot',
+          features: ['scheduled_tweets'],
+        },
+      },
+      voiceConfig: {
+        enabled: true,
+        ttsProvider: 'voice-clone',
+        format: 'ogg',
+      },
+      llmConfig: {
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-4',
+        temperature: 0.8,
+        maxTokens: 1024,
+        useGlobalKey: true,
+      },
+      currentEra: 0,
+      status: 'active',
+      createdAt: Date.now(),
+      createdBy: 'test@example.com',
+      updatedAt: Date.now(),
+      updatedBy: 'test@example.com',
+    } satisfies Partial<AvatarRecord> as AvatarRecord;
+
+    const config = convertToAvatarConfig(record);
+
+    expect(config.scheduling.tweets).toEqual([
+      { cron: '0 12 * * *', template: 'general', enabled: true },
+      { cron: '0 18 * * *', template: 'general', enabled: true },
+    ]);
   });
 
   it('propagates nftMint and creatorWallet so the handler ownership gate (#1416) can see them', () => {

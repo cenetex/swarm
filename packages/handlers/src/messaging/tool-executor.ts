@@ -114,6 +114,26 @@ export function toolResultsToActions(
         break;
       }
 
+      case 'generate_sticker':
+      case 'create_sticker':
+      case 'send_sticker': {
+        const data = result.data as { fileId?: string; stickerId?: string; emoji?: string } | undefined;
+        if (data?.fileId) {
+          actions.push({
+            type: 'send_sticker',
+            emoji: data.emoji || '🐴',
+            stickerId: data.fileId,
+          });
+        } else if (result.media?.url) {
+          actions.push({
+            type: 'send_media',
+            mediaType: 'image',
+            url: result.media.url,
+          });
+        }
+        break;
+      }
+
       // Handle any tool that returns media (gallery, stickers, etc.)
       default: {
         if (result.media?.url && result.media?.type) {

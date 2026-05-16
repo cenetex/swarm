@@ -8,3 +8,4 @@
 export * from './types.js';
 export * from './core/index.js';
 export * from './formats/web.js';
+export * from './formats/telegram.js';

@@ -693,6 +693,10 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   generate_image: 'media',
   generate_video: 'media',
   generate_sticker: 'media',
+  create_sticker: 'media',
+  send_sticker: 'media',
+  get_sticker_pack: 'media',
+  get_gallery_for_stickers: 'gallery',
   // Gallery
   list_gallery: 'gallery',
   search_gallery: 'gallery',

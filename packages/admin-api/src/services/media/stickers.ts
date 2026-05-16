@@ -161,6 +161,7 @@ export async function generateSticker(
   emoji?: string;
   packName?: string;
   packUrl?: string;
+  fileId?: string;
   error?: string;
 }> {
   try {
@@ -329,6 +330,7 @@ export async function generateSticker(
       emoji: finalEmoji,
       packName,
       packUrl: `https://t.me/addstickers/${packName}`,
+      fileId,
     };
   } catch (error) {
     log.error('sticker', 'generate_sticker_failed', {
@@ -353,6 +355,7 @@ export async function createStickerFromGallery(
   emoji?: string;
   packName?: string;
   packUrl?: string;
+  fileId?: string;
   error?: string;
 }> {
   try {
@@ -389,6 +392,7 @@ export async function createStickerFromGallery(
         emoji: item.stickerInfo.emoji,
         packName: item.stickerInfo.setName,
         packUrl: `https://t.me/addstickers/${item.stickerInfo.setName}`,
+        fileId: item.stickerInfo.fileId,
       };
     }
 
@@ -498,6 +502,7 @@ export async function createStickerFromGallery(
       emoji: finalEmoji,
       packName,
       packUrl: `https://t.me/addstickers/${packName}`,
+      fileId,
     };
   } catch (error) {
     log.error('sticker', 'create_sticker_from_gallery_failed', {

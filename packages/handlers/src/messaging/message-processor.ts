@@ -327,6 +327,11 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
       'send_gallery_image',
       'generate_image',
       'generate_video',
+      'generate_sticker',
+      'create_sticker',
+      'send_sticker',
+      'get_sticker_pack',
+      'get_gallery_for_stickers',
       'get_job_status',
       'list_jobs',
     ].forEach(t => effectiveTools.add(t));

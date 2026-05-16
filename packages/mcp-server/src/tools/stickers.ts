@@ -49,7 +49,8 @@ export interface StickerServices {
     avatarId: string,
     prompt: string,
     emoji?: string,
-    conversationId?: string
+    conversationId?: string,
+    ownerUserId?: string
   ) => Promise<{
     success: boolean;
     stickerId?: string;
@@ -57,6 +58,7 @@ export interface StickerServices {
     emoji?: string;
     packName?: string;
     packUrl?: string;
+    fileId?: string;
     error?: string;
   }>;
 
@@ -68,7 +70,8 @@ export interface StickerServices {
     avatarId: string,
     galleryItemId: string,
     emoji?: string,
-    conversationId?: string
+    conversationId?: string,
+    ownerUserId?: string
   ) => Promise<{
     success: boolean;
     stickerId?: string;
@@ -76,6 +79,7 @@ export interface StickerServices {
     emoji?: string;
     packName?: string;
     packUrl?: string;
+    fileId?: string;
     error?: string;
   }>;
 
@@ -126,7 +130,8 @@ export const createStickerTools = (services: StickerServices) => [
           context.avatarId,
           input.prompt,
           input.emoji,
-          context.conversationId
+          context.conversationId,
+          context.userId
         );
 
         if (!result.success) {
@@ -137,6 +142,7 @@ export const createStickerTools = (services: StickerServices) => [
           success: true,
           data: {
             stickerId: result.stickerId,
+            fileId: result.fileId,
             emoji: result.emoji,
             packUrl: result.packUrl,
             message: `Created sticker ${result.emoji} and added to pack!`,
@@ -170,7 +176,8 @@ export const createStickerTools = (services: StickerServices) => [
           context.avatarId,
           input.galleryItemId,
           input.emoji,
-          context.conversationId
+          context.conversationId,
+          context.userId
         );
 
         if (!result.success) {
@@ -181,6 +188,7 @@ export const createStickerTools = (services: StickerServices) => [
           success: true,
           data: {
             stickerId: result.stickerId,
+            fileId: result.fileId,
             emoji: result.emoji,
             packUrl: result.packUrl,
             message: `Converted image to sticker ${result.emoji}!`,
@@ -232,6 +240,7 @@ export const createStickerTools = (services: StickerServices) => [
           success: true,
           data: {
             stickerId: sticker.id,
+            fileId: sticker.fileId,
             emoji: sticker.emoji,
             message: `Sent sticker ${sticker.emoji}`,
           },

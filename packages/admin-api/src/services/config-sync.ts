@@ -21,6 +21,9 @@ interface AvatarConfig {
   name: string;
   version: string;
   persona: string;
+  systemPromptOverride?:
+    | { kind: 'inline'; text: string }
+    | { kind: 'url'; url: string; cacheTtlSec?: number };
   brain?: {
     writeMode?: 'legacy' | 'dual' | 'canonical';
     readMode?: 'legacy' | 'hybrid' | 'canonical';
@@ -79,6 +82,7 @@ interface AvatarConfig {
         imageChance: number;
         useMemories: boolean;
         topics?: string[];
+        dailyBudget?: number;
       };
     };
     discord?: {
@@ -122,6 +126,7 @@ interface AvatarConfig {
     tweets?: Array<{
       cron: string;
       template: string;
+      enabled: boolean;
     }>;
   };
   behavior: {
@@ -148,6 +153,57 @@ const dynamoClient = getDynamoClient();
 const STATE_TABLE = process.env.STATE_TABLE;
 const ADMIN_TABLE = process.env.ADMIN_TABLE;
 
+type CoreImageProvider = AvatarConfig['media']['image']['provider'];
+type CoreVideoProvider = NonNullable<AvatarConfig['media']['video']>['provider'];
+
+function normalizeImageProvider(
+  provider: NonNullable<AvatarRecord['mediaConfig']>['image']['provider'] | undefined
+): CoreImageProvider {
+  // Core media routing does not have a native Gemini image provider; Gemini image models
+  // are exposed through OpenRouter in this runtime path.
+  return provider === 'gemini' || !provider ? 'openrouter' : provider;
+}
+
+function resolveImageMedia(record: AvatarRecord): AvatarConfig['media']['image'] {
+  if (record.mediaConfig?.image) {
+    return {
+      provider: normalizeImageProvider(record.mediaConfig.image.provider),
+      model: record.mediaConfig.image.model,
+    };
+  }
+
+  const replicateImageModel = record.integrations?.replicate?.models?.image_generation;
+  if (replicateImageModel) {
+    return { provider: 'replicate', model: replicateImageModel };
+  }
+
+  const openRouterImageModel = record.integrations?.openrouter?.models?.image_generation;
+  return {
+    provider: 'openrouter',
+    model: openRouterImageModel || DEFAULT_MODELS.image_generation,
+  };
+}
+
+function resolveVideoMedia(record: AvatarRecord): NonNullable<AvatarConfig['media']['video']> {
+  if (record.mediaConfig?.video) {
+    return {
+      provider: record.mediaConfig.video.provider as CoreVideoProvider,
+      model: record.mediaConfig.video.model,
+    };
+  }
+
+  const replicateVideoModel = record.integrations?.replicate?.models?.video_generation;
+  if (replicateVideoModel) {
+    return { provider: 'replicate', model: replicateVideoModel };
+  }
+
+  const openRouterVideoModel = record.integrations?.openrouter?.models?.video_generation;
+  return {
+    provider: 'openrouter',
+    model: openRouterVideoModel || DEFAULT_MODELS.video_generation,
+  };
+}
+
 /**
  * Convert AdminAPI AvatarRecord to Core AvatarConfig format
  */
@@ -158,27 +214,15 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
     format: 'ogg' as const,
     ...record.voiceConfig,
   };
-  const integrationOpenRouterImageModel = record.integrations?.openrouter?.models?.image_generation;
-  const legacyOpenRouterImageModel = record.mediaConfig?.image?.provider === 'openrouter'
-    ? record.mediaConfig.image.model
-    : undefined;
-  const mediaImageModel = integrationOpenRouterImageModel
-    || legacyOpenRouterImageModel
-    || DEFAULT_MODELS.image_generation;
-
-  const integrationOpenRouterVideoModel = record.integrations?.openrouter?.models?.video_generation;
-  const legacyOpenRouterVideoModel = record.mediaConfig?.video?.provider === 'openrouter'
-    ? record.mediaConfig.video.model
-    : undefined;
-  const mediaVideoModel = integrationOpenRouterVideoModel
-    || legacyOpenRouterVideoModel
-    || DEFAULT_MODELS.video_generation;
+  const mediaImage = resolveImageMedia(record);
+  const mediaVideo = resolveVideoMedia(record);
 
   const config: AvatarConfig = {
     id: record.avatarId,
     name: record.name,
     version: '1.0.0',
     persona: record.persona || `You are ${record.name}, a helpful AI assistant.`,
+    systemPromptOverride: record.systemPromptOverride,
     brain: record.mcpConfig?.brain ? {
       writeMode: record.mcpConfig.brain.writeMode,
       readMode: record.mcpConfig.brain.readMode,
@@ -211,14 +255,8 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
       maxTokens: record.llmConfig.maxTokens,
     },
     media: {
-      image: {
-        provider: 'openrouter',
-        model: mediaImageModel,
-      },
-      video: {
-        provider: 'openrouter',
-        model: mediaVideoModel,
-      },
+      image: mediaImage,
+      video: mediaVideo,
     },
     scheduling: {},
     behavior: {
@@ -262,6 +300,22 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
 
       if (defaultVoiceConfig.enabled) {
         tools.push('send_voice_message', 'create_my_voice', 'transcribe_audio');
+      }
+
+      if (record.platforms.telegram?.enabled) {
+        tools.push(
+          'get_my_gallery',
+          'search_gallery',
+          'send_gallery_image',
+          'generate_video',
+          'generate_sticker',
+          'create_sticker',
+          'send_sticker',
+          'get_sticker_pack',
+          'get_gallery_for_stickers',
+          'get_job_status',
+          'list_jobs'
+        );
       }
 
       // Signal station governance tools (for autonomous station runners)
@@ -323,6 +377,7 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
           topics: twitterRecord.autonomousPosts.topics?.length
             ? twitterRecord.autonomousPosts.topics
             : undefined,
+          dailyBudget: twitterRecord.autonomousPosts.dailyBudget,
         }
       : undefined;
 
@@ -342,8 +397,8 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
     // Add scheduled tweets only when enabled.
     if (features.includes('scheduled_tweets')) {
       config.scheduling.tweets = [
-        { cron: '0 12 * * *', template: 'general' },
-        { cron: '0 18 * * *', template: 'general' },
+        { cron: '0 12 * * *', template: 'general', enabled: true },
+        { cron: '0 18 * * *', template: 'general', enabled: true },
       ];
     }
   }

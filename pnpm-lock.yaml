@@ -434,6 +434,9 @@ importers:
       '@swarm/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
+      '@swarm/sticker-engine':
+        specifier: workspace:*
+        version: link:../sticker-engine
       grammy:
         specifier: ^1.42.0
         version: 1.42.0

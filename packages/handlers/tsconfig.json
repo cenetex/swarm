@@ -10,6 +10,7 @@
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.smoke.ts"],
   "references": [
     { "path": "../core" },
-    { "path": "../mcp-server" }
+    { "path": "../mcp-server" },
+    { "path": "../sticker-engine" }
   ]
 }

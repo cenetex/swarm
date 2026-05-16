@@ -117,6 +117,53 @@ describe('toolResultsToActions', () => {
     });
   });
 
+  describe('Telegram sticker tools', () => {
+    it('sends Telegram sticker file_ids as sticker actions', () => {
+      const actions = toolResultsToActions([
+        {
+          name: 'send_sticker',
+          result: {
+            success: true,
+            data: {
+              fileId: 'telegram-file-id',
+              stickerId: 'gallery-sticker-id',
+              emoji: '🔥',
+            },
+          },
+        },
+      ]);
+
+      expect(actions).toEqual([
+        {
+          type: 'send_sticker',
+          emoji: '🔥',
+          stickerId: 'telegram-file-id',
+        },
+      ]);
+    });
+
+    it('falls back to image send when a generated sticker has no file_id', () => {
+      const actions = toolResultsToActions([
+        {
+          name: 'generate_sticker',
+          result: {
+            success: true,
+            data: { stickerId: 'sticker-1', emoji: '🐴' },
+            media: { type: 'sticker', url: 'https://cdn.example.com/sticker.png' },
+          },
+        },
+      ]);
+
+      expect(actions).toEqual([
+        {
+          type: 'send_media',
+          mediaType: 'image',
+          url: 'https://cdn.example.com/sticker.png',
+        },
+      ]);
+    });
+  });
+
   describe('generate_image async pendingJob', () => {
     it('produces send_message action for async image generation', () => {
       const actions = toolResultsToActions([

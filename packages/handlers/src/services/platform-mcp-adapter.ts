@@ -25,6 +25,7 @@ import { TwitterAdapter, DiscordAdapter, createContentStoreService, enqueuePost,
 import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { createVoiceServices } from './voice.js';
 import { createRuntimeBrainService } from './brain.js';
+import { createRuntimeStickerServices } from './telegram-sticker-packs.js';
 import {
   checkMediaLimit,
   checkMediaWithEnergyFallback,
@@ -571,6 +572,21 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         return undefined;
       },
     },
+
+    stickers: createRuntimeStickerServices({
+      avatarId,
+      avatarConfig,
+      mediaService,
+      mediaBucket: config.mediaBucket,
+      cdnUrl: config.cdnUrl,
+      secrets: config.secrets,
+      consumeStickerCredit: async () => {
+        const usageCheck = await checkMediaWithEnergyFallback(avatarId);
+        if (!usageCheck.allowed) {
+          throw new Error(buildLimitError(usageCheck.reason));
+        }
+      },
+    }),
 
     // =========================================================================
     // Media Credits (preflight checks against runtime entitlement contract)
