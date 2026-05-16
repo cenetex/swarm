@@ -45,6 +45,7 @@ vi.mock('../../services/avatars.js', () => ({
 vi.mock('../../services/web3/orb-slots.js', () => ({
   slotOrbToAvatar: async () => slotOrbResult,
   unslotOrbFromAvatar: async () => unslotOrbResult,
+  getOrbResonance: async () => null,
 }));
 
 vi.mock('../../services/billing/entitlements.js', () => ({

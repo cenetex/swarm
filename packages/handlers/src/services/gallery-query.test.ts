@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   getUnpostedGalleryImages,
   markGalleryImagePosted,
@@ -12,7 +12,19 @@ function createMockClient(sendFn: (...args: unknown[]) => Promise<unknown>) {
 }
 
 describe('gallery-query', () => {
+  const originalAdminTable = process.env.ADMIN_TABLE;
+
   beforeEach(() => {
+    delete process.env.ADMIN_TABLE;
+    _setDynamoClient(null);
+  });
+
+  afterEach(() => {
+    if (originalAdminTable === undefined) {
+      delete process.env.ADMIN_TABLE;
+    } else {
+      process.env.ADMIN_TABLE = originalAdminTable;
+    }
     _setDynamoClient(null);
   });
 
@@ -118,17 +130,11 @@ describe('gallery-query', () => {
 
   describe('markGalleryImagePosted', () => {
     it('no-ops when adminTable option is not provided and env is unset', async () => {
-      const origEnv = process.env.ADMIN_TABLE;
-      delete process.env.ADMIN_TABLE;
-
       const send = vi.fn();
       _setDynamoClient(createMockClient(send));
 
       await markGalleryImagePosted('avatar-1', 'GALLERY#123#img-1');
       expect(send).not.toHaveBeenCalled();
-
-      // Restore
-      if (origEnv !== undefined) process.env.ADMIN_TABLE = origEnv;
     });
 
     it('sends UpdateCommand to mark image as posted', async () => {
