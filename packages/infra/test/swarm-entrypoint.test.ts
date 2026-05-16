@@ -16,4 +16,9 @@ describe('CDK app entrypoint', () => {
     expect(src).toContain('  enableDiscordGateway,\n');
     expect(src).not.toContain('  enableDiscordGateway: false,');
   });
+
+  it('allows named six-character stack suffixes such as prod00', () => {
+    expect(src).toContain('^[a-z0-9]{6}$');
+    expect(src).toContain('Expected 6 alphanumeric chars');
+  });
 });

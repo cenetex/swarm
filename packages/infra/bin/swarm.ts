@@ -130,8 +130,8 @@ const stackHashRaw = getContextValue<string>('stackHash', envConfig);
 function normalizeStackHash(value?: string): string | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
-  if (!/^[a-f0-9]{6}$/i.test(trimmed)) {
-    throw new Error(`Invalid stackHash "${value}". Expected 6 hex chars.`);
+  if (!/^[a-z0-9]{6}$/i.test(trimmed)) {
+    throw new Error(`Invalid stackHash "${value}". Expected 6 alphanumeric chars.`);
   }
   return trimmed.toLowerCase();
 }
