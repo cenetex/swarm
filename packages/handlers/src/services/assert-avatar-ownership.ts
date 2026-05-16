@@ -60,7 +60,9 @@ export async function assertAvatarStillOwnedByClaimer(
   } = {},
 ): Promise<void> {
   if (!avatar.nftMint) return;
-  if (!avatar.creatorWallet) return;
+  if (!avatar.creatorWallet) {
+    throw new HandlerOwnershipError({ code: 'verification_unavailable' });
+  }
 
   const resolve = deps.getCachedNFTOwner ?? getCachedNFTOwner;
   let currentOwner: string | null;

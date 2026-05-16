@@ -66,7 +66,9 @@ vi.mock('../services/assert-avatar-ownership.js', () => ({
   HandlerOwnershipError: MockHandlerOwnershipError,
   assertAvatarStillOwnedByClaimer: async (avatar: Record<string, unknown>) => {
     if (!avatar.nftMint) return; // Non-NFT avatars pass through
-    if (!avatar.creatorWallet) return; // Missing creator wallet = pass through
+    if (!avatar.creatorWallet) {
+      throw new MockHandlerOwnershipError({ code: 'verification_unavailable' });
+    }
 
     if (!mockNFTOwnershipCheck) {
       throw new Error('Test must set mockNFTOwnershipCheck');

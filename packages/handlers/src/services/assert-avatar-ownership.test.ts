@@ -23,9 +23,9 @@ describe('assertAvatarStillOwnedByClaimer', () => {
     expect(called).toBe(false);
   });
 
-  it('missing creatorWallet passes without calling the cache', async () => {
+  it('missing creatorWallet on an NFT-backed avatar fails closed without calling the cache', async () => {
     let called = false;
-    await assertAvatarStillOwnedByClaimer(
+    const err = await assertAvatarStillOwnedByClaimer(
       { avatarId: 'a3', nftMint: 'MINT_1' },
       {
         getCachedNFTOwner: async () => {
@@ -33,7 +33,10 @@ describe('assertAvatarStillOwnedByClaimer', () => {
           return 'never';
         },
       },
-    );
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(HandlerOwnershipError);
+    expect((err as HandlerOwnershipError).code).toBe('verification_unavailable');
     expect(called).toBe(false);
   });
 

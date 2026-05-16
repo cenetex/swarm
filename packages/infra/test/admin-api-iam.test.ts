@@ -7,6 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const src = readFileSync(resolve(__dirname, '../src/constructs/admin-api.ts'), 'utf8');
+const adminApiStackSrc = readFileSync(resolve(__dirname, '../src/stacks/admin-api-stack.ts'), 'utf8');
+const sharedHandlersSrc = readFileSync(resolve(__dirname, '../src/constructs/shared-handlers.ts'), 'utf8');
 
 describe('AdminApiConstruct chat worker IAM permissions (issue #232)', () => {
   it('grants explicit GSI1 query permission to chat worker', () => {
@@ -54,5 +56,16 @@ describe('AdminApiConstruct NFT ownership wiring', () => {
 
     expect(chatHandlerGrantMatch).not.toBeNull();
     expect(chatWorkerGrantMatch).not.toBeNull();
+  });
+});
+
+describe('NFT ownership enforcement defaults', () => {
+  it('defaults prod handler enforcement on when Helius is configured', () => {
+    expect(adminApiStackSrc).toContain(
+      "?? (environment === 'prod' && heliusApiKeyArn ? 'on' : 'off')",
+    );
+    expect(sharedHandlersSrc).toContain(
+      "?? (environment === 'prod' && (heliusApiKey || heliusApiKeyArn) ? 'on' : 'off')",
+    );
   });
 });

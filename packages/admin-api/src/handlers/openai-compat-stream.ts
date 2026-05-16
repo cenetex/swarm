@@ -21,8 +21,8 @@ import {
   OpenAIToolSchema,
   OpenAIToolChoiceSchema,
   normalizeOpenAIMessageForProvider,
+  resolveApiKeyAvatarAccess,
 } from './openai-compat.js';
-import * as avatars from '../services/avatars.js';
 import {
   LLM_TIMEOUT_MS,
   getLlmApiKey,
@@ -180,14 +180,12 @@ async function handleStreamingRequest(
     return;
   }
 
-  // See the sibling non-stream handler for why this uses getAvatar directly
-  // instead of assertAvatarOwnership: API-key sessions synthesize a
-  // non-wallet userId so the ownership gate always rejected them.
-  const avatarRecord = await avatars.getAvatar(avatarId);
-  if (!avatarRecord) {
-    writeErrorAndEnd(stream, requestId, `Avatar not found: ${avatarId}`);
+  const access = await resolveApiKeyAvatarAccess(avatarId, validation);
+  if (!access.ok) {
+    writeErrorAndEnd(stream, requestId, access.message);
     return;
   }
+  const avatarRecord = access.avatarRecord;
 
   const keyHash = hashApiKey(apiKey);
 

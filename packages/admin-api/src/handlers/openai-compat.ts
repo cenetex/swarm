@@ -167,6 +167,8 @@ interface ApiKeyRecord {
   name: string; // Human-readable name for the key
   createdAt: number;
   createdBy: string; // Email or userId of creator
+  createdByWallet?: string; // Wallet that created the key, used for NFT transfer revocation
+  adminBypass?: boolean; // True for keys minted by admins; preserves admin bypass semantics
   lastUsedAt?: number;
   usageCount: number;
   rateLimit?: {
@@ -176,10 +178,12 @@ interface ApiKeyRecord {
   enabled: boolean;
 }
 
-interface ApiKeyValidationResult {
+export interface ApiKeyValidationResult {
   valid: boolean;
   session?: UserSession;
   avatarId?: string;
+  createdByWallet?: string;
+  adminBypass?: boolean;
   error?: string;
   statusCode?: number;
   retryAfterSeconds?: number;
@@ -387,6 +391,8 @@ export async function validateApiKey(apiKey: string): Promise<ApiKeyValidationRe
       valid: true,
       session,
       avatarId: keyRecord.avatarId === '*' ? undefined : keyRecord.avatarId,
+      createdByWallet: keyRecord.createdByWallet,
+      adminBypass: keyRecord.adminBypass === true || keyRecord.avatarId === '*',
     };
   } catch (err) {
     logger.error('API key validation error', err);
@@ -679,6 +685,81 @@ function apiKeyValidationErrorResponse(
     'invalid_api_key',
     corsHeaders
   );
+}
+
+export type CompatAvatarRecord = NonNullable<Awaited<ReturnType<typeof avatars.getAvatar>>>;
+
+export type ApiKeyAvatarAccessResult =
+  | { ok: true; avatarRecord: CompatAvatarRecord }
+  | {
+      ok: false;
+      statusCode: number;
+      message: string;
+      type: string;
+      code: string;
+    };
+
+function getAvatarOwnershipErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+export async function resolveApiKeyAvatarAccess(
+  avatarId: string,
+  validation: ApiKeyValidationResult,
+): Promise<ApiKeyAvatarAccessResult> {
+  const avatarRecord = await avatars.getAvatar(avatarId);
+  if (!avatarRecord) {
+    return {
+      ok: false,
+      statusCode: 404,
+      message: `Avatar not found: ${avatarId}`,
+      type: 'not_found',
+      code: 'avatar_not_found',
+    };
+  }
+
+  if (!avatarRecord.nftMint || validation.adminBypass) {
+    return { ok: true, avatarRecord };
+  }
+
+  if (!validation.createdByWallet) {
+    return {
+      ok: false,
+      statusCode: 403,
+      message: 'API key owner wallet is required for NFT-backed avatar access. Reissue this API key from the current owner wallet.',
+      type: 'permission_error',
+      code: 'api_key_owner_wallet_required',
+    };
+  }
+
+  try {
+    const ownedAvatar = await avatars.assertAvatarOwnership(
+      avatarId,
+      validation.createdByWallet,
+      { isAdmin: false },
+    );
+    return { ok: true, avatarRecord: ownedAvatar };
+  } catch (error) {
+    const code = getAvatarOwnershipErrorCode(error);
+    if (code === 'verification_unavailable') {
+      return {
+        ok: false,
+        statusCode: 503,
+        message: 'Ownership verification temporarily unavailable',
+        type: 'server_error',
+        code,
+      };
+    }
+    return {
+      ok: false,
+      statusCode: 403,
+      message: 'API key is no longer authorized for this NFT-backed avatar. Reissue the key from the current owner wallet.',
+      type: 'permission_error',
+      code: code || 'nft_ownership_required',
+    };
+  }
 }
 
 // =============================================================================
@@ -997,17 +1078,17 @@ async function handleChatCompletions(
     return errorResponse(403, `API key not authorized for avatar: ${avatarId}`, 'permission_error', 'unauthorized_avatar', corsHeaders);
   }
 
-  // The scoped API key check above (`validation.avatarId !== avatarId`) is
-  // the auth grant for this endpoint. API-key sessions don't carry a wallet
-  // address — `session.userId` is a synthetic `api-key:<hash-prefix>` string
-  // — so calling `assertAvatarOwnership` here always returned not_owner and
-  // collapsed to 404 regardless of the real NFT state. NFT-transfer
-  // revocation on this path should be driven by revoking the API key itself
-  // (UI exposes this), or by a future flag-gated gate analogous to #1416.
-  const avatarRecord = await avatars.getAvatar(avatarId);
-  if (!avatarRecord) {
-    return errorResponse(404, `Avatar not found: ${avatarId}`, 'not_found', 'avatar_not_found', corsHeaders);
+  const access = await resolveApiKeyAvatarAccess(avatarId, validation);
+  if (!access.ok) {
+    return errorResponse(
+      access.statusCode,
+      access.message,
+      access.type,
+      access.code,
+      corsHeaders,
+    );
   }
+  const avatarRecord = access.avatarRecord;
 
   // Reject unsupported stream + audio combination
   if (request.stream && request.include_audio) {
@@ -1564,6 +1645,8 @@ export async function createApiKey(params: {
   avatarId?: string;
   name: string;
   createdBy: string;
+  createdByWallet?: string | null;
+  adminBypass?: boolean;
   rateLimit?: { requestsPerMinute: number; requestsPerDay: number };
 }): Promise<{ fullKey: string; keyPrefix: string }> {
   const { fullKey, record } = generateApiKey();
@@ -1576,6 +1659,8 @@ export async function createApiKey(params: {
     name: params.name,
     createdAt: Date.now(),
     createdBy: params.createdBy,
+    createdByWallet: params.createdByWallet || undefined,
+    adminBypass: params.adminBypass === true,
     usageCount: 0,
     enabled: true,
     rateLimit: params.rateLimit,
@@ -1594,6 +1679,8 @@ export async function createApiKey(params: {
           #name = :name,
           createdAt = :createdAt,
           createdBy = :createdBy,
+          createdByWallet = :createdByWallet,
+          adminBypass = :adminBypass,
           usageCount = :usageCount,
           enabled = :enabled
           ${params.rateLimit ? ', rateLimit = :rateLimit' : ''}
@@ -1608,6 +1695,8 @@ export async function createApiKey(params: {
       ':name': fullRecord.name,
       ':createdAt': fullRecord.createdAt,
       ':createdBy': fullRecord.createdBy,
+      ':createdByWallet': fullRecord.createdByWallet ?? null,
+      ':adminBypass': fullRecord.adminBypass ?? false,
       ':usageCount': fullRecord.usageCount,
       ':enabled': fullRecord.enabled,
       ...(params.rateLimit ? { ':rateLimit': params.rateLimit } : {}),
@@ -1621,7 +1710,7 @@ export async function createApiKey(params: {
       pk: params.avatarId ? `AVATAR#${params.avatarId}` : 'GLOBAL',
       sk: `API_KEY#${record.keyHash.slice(0, 16)}`,
     },
-    UpdateExpression: 'SET keyPrefix = :keyPrefix, keyHash = :keyHash, #name = :name, createdAt = :createdAt, createdBy = :createdBy',
+    UpdateExpression: 'SET keyPrefix = :keyPrefix, keyHash = :keyHash, #name = :name, createdAt = :createdAt, createdBy = :createdBy, createdByWallet = :createdByWallet, adminBypass = :adminBypass',
     ExpressionAttributeNames: {
       '#name': 'name',
     },
@@ -1631,6 +1720,8 @@ export async function createApiKey(params: {
       ':name': fullRecord.name,
       ':createdAt': fullRecord.createdAt,
       ':createdBy': fullRecord.createdBy,
+      ':createdByWallet': fullRecord.createdByWallet ?? null,
+      ':adminBypass': fullRecord.adminBypass ?? false,
     },
   }));
 

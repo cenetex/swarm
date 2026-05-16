@@ -446,21 +446,26 @@ async function ensureAvatarAccess(
       };
     }
 
-    const canManage = avatar.creatorWallet === context.walletAddress;
-    if (!canManage) {
+    try {
+      await avatarService.assertAvatarOwnership(context.avatarId, context.walletAddress, { isAdmin: false });
+    } catch (ownershipError) {
       const now = Date.now();
       const state = createInitialOnboardingState(now);
+      const verificationUnavailable = ownershipError instanceof avatarService.AvatarOwnershipError
+        && ownershipError.code === 'verification_unavailable';
       const error = createError({
-        code: 'forbidden',
-        category: 'auth',
-        message: 'Forbidden.',
-        retryable: false,
+        code: verificationUnavailable ? 'ownership_verification_unavailable' : 'forbidden',
+        category: verificationUnavailable ? 'dependency' : 'auth',
+        message: verificationUnavailable
+          ? 'Avatar ownership verification temporarily unavailable.'
+          : 'Forbidden.',
+        retryable: verificationUnavailable,
       });
 
       return {
         ok: false,
         response: {
-          statusCode: 403,
+          statusCode: verificationUnavailable ? 503 : 403,
           envelope: buildEnvelope({
             now,
             avatarId: context.avatarId,

@@ -10,7 +10,7 @@
  */
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 import type { RouteContext } from './types.js';
-import { jsonResponse } from './shared.js';
+import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { syncRuntimeContractForAvatar } from './runtime-sync.js';
 import { parseJsonBody } from '../../http/request-body.js';
 import { logger } from '@swarm/core';
@@ -59,13 +59,8 @@ export async function handleEntitlementRoutes(
       return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
     }
 
-    const canManage =
-      effectiveIsAdmin ||
-      avatar.creatorWallet === walletAddress;
-
-    if (!canManage) {
-      return jsonResponse(corsHeaders, 403, { error: 'Forbidden' });
-    }
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
 
     if (method === 'PUT') {
       const body = parseJsonBody<{ mintAddress?: unknown }>(event);
@@ -112,14 +107,8 @@ export async function handleEntitlementRoutes(
       return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
     }
 
-    if (!effectiveIsAdmin) {
-      if (
-        !walletAddress ||
-        avatar.creatorWallet !== walletAddress
-      ) {
-        return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
-      }
-    }
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
 
     const entitlement = await entitlementsService.getEntitlement(avatarId);
     return jsonResponse(corsHeaders, 200, { avatarId, entitlement });
@@ -233,14 +222,8 @@ export async function handleEntitlementRoutes(
       return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
     }
 
-    if (!effectiveIsAdmin) {
-      if (
-        !walletAddress ||
-        avatar.creatorWallet !== walletAddress
-      ) {
-        return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
-      }
-    }
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
 
     const entitlement = await entitlementsService.getEntitlement(avatarId);
     const effective = getEffectiveLimitsForAvatar(avatarId, entitlement);
@@ -276,11 +259,8 @@ export async function handleEntitlementRoutes(
       return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
     }
 
-    if (!effectiveIsAdmin) {
-      if (!walletAddress || avatar.creatorWallet !== walletAddress) {
-        return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
-      }
-    }
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
 
     const readiness = await evaluateActivationReadiness(avatar, {
       effectiveIsAdmin,
@@ -301,13 +281,8 @@ export async function handleEntitlementRoutes(
       return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
     }
 
-    const canActivate =
-      effectiveIsAdmin ||
-      avatar.creatorWallet === walletAddress;
-
-    if (!canActivate) {
-      return jsonResponse(corsHeaders, 403, { error: 'Forbidden' });
-    }
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
 
     // Evaluate activation readiness gate using canonical contract.
     const readiness = await evaluateActivationReadiness(avatar, {
@@ -395,13 +370,8 @@ export async function handleEntitlementRoutes(
       return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
     }
 
-    const canDeactivate =
-      effectiveIsAdmin ||
-      avatar.creatorWallet === walletAddress;
-
-    if (!canDeactivate) {
-      return jsonResponse(corsHeaders, 403, { error: 'Forbidden' });
-    }
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
 
     const actorId = walletAddress || session.email || 'unknown';
     const result = await avatarService.deactivateAvatar(avatarId, actorId);

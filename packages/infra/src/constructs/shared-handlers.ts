@@ -145,9 +145,11 @@ export class SharedHandlers extends Construct {
       raticrossInboundKey,
       heliusApiKey,
       heliusApiKeyArn,
-      nftOwnershipEnforcement = 'off',
+      nftOwnershipEnforcement: configuredNftOwnershipEnforcement,
     } = props;
     const suffix = props.nameSuffix ?? '';
+    const nftOwnershipEnforcement = configuredNftOwnershipEnforcement
+      ?? (environment === 'prod' && (heliusApiKey || heliusApiKeyArn) ? 'on' : 'off');
 
     // Generate internal test key if not provided (non-production only).
     // Production MUST NOT have a test key to prevent auth bypass.

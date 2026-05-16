@@ -802,7 +802,8 @@ export async function handleExecuteAscension(
     // First do a preflight check to get the required RATI amount
     const preflight = await preflightAscend(avatarId, session.user.walletAddress);
     if (!preflight.canAscend) {
-      return jsonResponse(400, {
+      const statusCode = preflight.errorCode === 'OWNERSHIP_VERIFICATION_UNAVAILABLE' ? 503 : 400;
+      return jsonResponse(statusCode, {
         error: preflight.error || 'Cannot ascend this avatar',
         ...preflight,
       }, cors);
@@ -856,7 +857,8 @@ export async function handleExecuteAscension(
     );
 
     if (!result.success) {
-      return jsonResponse(400, {
+      const statusCode = result.errorCode === 'OWNERSHIP_VERIFICATION_UNAVAILABLE' ? 503 : 400;
+      return jsonResponse(statusCode, {
         error: result.error || 'Ascension failed',
       }, cors);
     }

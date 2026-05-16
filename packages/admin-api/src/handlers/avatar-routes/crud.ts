@@ -5,7 +5,7 @@
  */
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 import type { RouteContext } from './types.js';
-import { jsonResponse } from './shared.js';
+import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { logger } from '@swarm/core';
 import * as avatarService from '../../services/avatars.js';
 import * as galleryService from '../../services/gallery.js';
@@ -299,15 +299,8 @@ export async function handleCrudRoutes(
   if (method === 'GET' && avatarIntegrationsMatch) {
     const avatarId = avatarIntegrationsMatch[1];
 
-    if (!effectiveIsAdmin) {
-      if (!walletAddress) {
-        return jsonResponse(corsHeaders, 403, { error: 'Authentication required' });
-      }
-      const existing = await avatarService.getAvatar(avatarId);
-      if (!existing || existing.creatorWallet !== walletAddress) {
-        return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
-      }
-    }
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    if (denied) return denied;
 
     const statuses = await integrationsService.getAllIntegrationStatuses(avatarId);
     return jsonResponse(corsHeaders, 200, { integrations: statuses });
@@ -426,15 +419,8 @@ export async function handleCrudRoutes(
 
     // DELETE /avatars/{id} - Delete avatar (creator only for non-admin)
     if (method === 'DELETE') {
-      if (!effectiveIsAdmin) {
-        if (!walletAddress) {
-          return jsonResponse(corsHeaders, 403, { error: 'Authentication required' });
-        }
-        const existing = await avatarService.getAvatar(avatarId);
-        if (!existing || existing.creatorWallet !== walletAddress) {
-          return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
-        }
-      }
+      const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+      if (denied) return denied;
 
       await avatarService.deleteAvatar(avatarId, session);
 

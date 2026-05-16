@@ -25,6 +25,7 @@ export type OnboardingErrorCode =
   | 'avatar_not_found'
   | 'forbidden'
   | 'authentication_required'
+  | 'ownership_verification_unavailable'
   | 'invalid_json_body'
   | 'invalid_request_body'
   | 'invalid_state_transition'

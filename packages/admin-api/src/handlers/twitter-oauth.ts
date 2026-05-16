@@ -25,6 +25,8 @@ import {
   disconnectTwitter as twitterDisconnectTwitter,
 } from '../services/twitter-oauth.js';
 import {
+  assertAvatarOwnership as avatarAssertOwnership,
+  AvatarOwnershipError,
   getAvatar as avataretAgent,
   updateAvatar as avatarpdateAgent,
 } from '../services/avatars.js';
@@ -61,6 +63,11 @@ export interface TwitterOAuthHandlerDeps {
   avatarService: {
     getAvatar: (avatarId: string) => Promise<AvatarRecord | null>;
     updateAvatar: (avatarId: string, updates: Partial<AvatarRecord>, session: UserSession) => Promise<AvatarRecord>;
+    assertAvatarOwnership: (
+      avatarId: string,
+      walletAddress: string,
+      opts?: { isAdmin?: boolean },
+    ) => Promise<AvatarRecord>;
   };
   auth: {
     authenticateRequest: (event: APIGatewayProxyEventV2) => Promise<UserSession>;
@@ -72,19 +79,29 @@ export interface TwitterOAuthHandlerDeps {
 /**
  * Check if a user can manage an avatar (admin OR creator)
  */
-function canManageAvatar(
+async function canManageAvatar(
   session: UserSession,
   avatar: AvatarRecord,
   walletAddress: string | null,
-  requireAdminFn: (s: UserSession) => boolean
-): boolean {
+  requireAdminFn: (s: UserSession) => boolean,
+  assertAvatarOwnershipFn: TwitterOAuthHandlerDeps['avatarService']['assertAvatarOwnership'],
+): Promise<{ ok: true } | { ok: false; verificationUnavailable?: boolean }> {
   if (requireAdminFn(session)) {
-    return true;
+    return { ok: true };
   }
   if (!walletAddress) {
-    return false;
+    return { ok: false };
   }
-  return avatar.creatorWallet === walletAddress;
+
+  try {
+    await assertAvatarOwnershipFn(avatar.avatarId, walletAddress, { isAdmin: false });
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof AvatarOwnershipError && err.code === 'verification_unavailable') {
+      return { ok: false, verificationUnavailable: true };
+    }
+    return { ok: false };
+  }
 }
 
 /**
@@ -111,6 +128,7 @@ function getDefaultDeps(): TwitterOAuthHandlerDeps {
     avatarService: {
       getAvatar: avataretAgent,
       updateAvatar: avatarpdateAgent,
+      assertAvatarOwnership: avatarAssertOwnership,
     },
     auth: {
       authenticateRequest,
@@ -202,11 +220,22 @@ export async function handler(
       }
 
       // Allow admin OR avatar creator to connect Twitter
-      if (!canManageAvatar(session, avatar, walletAddress, auth.requireAdmin)) {
+      const access = await canManageAvatar(
+        session,
+        avatar,
+        walletAddress,
+        auth.requireAdmin,
+        avatarService.assertAvatarOwnership,
+      );
+      if (!access.ok) {
         return {
-          statusCode: 403,
+          statusCode: access.verificationUnavailable ? 503 : 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: 'You must be the avatar owner to connect Twitter' }),
+          body: JSON.stringify({
+            error: access.verificationUnavailable
+              ? 'Ownership verification temporarily unavailable'
+              : 'You must be the avatar owner to connect Twitter',
+          }),
         };
       }
 
@@ -336,11 +365,22 @@ export async function handler(
         };
       }
 
-      if (!canManageAvatar(session, avatar, walletAddress, auth.requireAdmin)) {
+      const access = await canManageAvatar(
+        session,
+        avatar,
+        walletAddress,
+        auth.requireAdmin,
+        avatarService.assertAvatarOwnership,
+      );
+      if (!access.ok) {
         return {
-          statusCode: 403,
+          statusCode: access.verificationUnavailable ? 503 : 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: 'You must be the avatar owner to view Twitter status' }),
+          body: JSON.stringify({
+            error: access.verificationUnavailable
+              ? 'Ownership verification temporarily unavailable'
+              : 'You must be the avatar owner to view Twitter status',
+          }),
         };
       }
 
@@ -369,11 +409,22 @@ export async function handler(
         };
       }
 
-      if (!canManageAvatar(session, avatar, walletAddress, auth.requireAdmin)) {
+      const access = await canManageAvatar(
+        session,
+        avatar,
+        walletAddress,
+        auth.requireAdmin,
+        avatarService.assertAvatarOwnership,
+      );
+      if (!access.ok) {
         return {
-          statusCode: 403,
+          statusCode: access.verificationUnavailable ? 503 : 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: 'You must be the avatar owner to disconnect Twitter' }),
+          body: JSON.stringify({
+            error: access.verificationUnavailable
+              ? 'Ownership verification temporarily unavailable'
+              : 'You must be the avatar owner to disconnect Twitter',
+          }),
         };
       }
 

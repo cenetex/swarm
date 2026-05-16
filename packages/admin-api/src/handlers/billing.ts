@@ -3,7 +3,11 @@ import { z } from 'zod';
 
 import { getSessionFromCookie, getClearSessionCookies } from '../auth/session-cookie.js';
 import { getCorsHeaders } from '../http/cors.js';
-import { getAvatar } from '../services/avatars.js';
+import {
+  assertAvatarOwnership,
+  AvatarOwnershipError,
+  getAvatar,
+} from '../services/avatars.js';
 import { recordAuditEvent } from '../services/audit-log.js';
 import { createSystemLogger } from '../services/structured-logger.js';
 
@@ -98,9 +102,19 @@ async function assertAvatarAccess(
   if (!avatar) return { ok: false, statusCode: 404, error: 'Avatar not found' };
   if (effectiveIsAdmin) return { ok: true };
 
-  const isOwner = avatar.creatorWallet === walletAddress;
-  if (!isOwner) return { ok: false, statusCode: 403, error: 'Forbidden' };
-  return { ok: true };
+  try {
+    await assertAvatarOwnership(avatarId, walletAddress, { isAdmin: false });
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof AvatarOwnershipError && err.code === 'verification_unavailable') {
+      return {
+        ok: false,
+        statusCode: 503,
+        error: 'Ownership verification temporarily unavailable',
+      };
+    }
+    return { ok: false, statusCode: 403, error: 'Forbidden' };
+  }
 }
 
 async function handleCheckout(
