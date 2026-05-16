@@ -16,8 +16,17 @@
 set -eu
 
 # Discover test files. Compatible with macOS bash 3.x (no mapfile/declare -A).
-MOCKING_FILES=$(grep -rlE 'mock\.module\(|vi\.mock\(' --include='*.test.ts' packages/ | sort)
-ALL_FILES=$(find packages -name '*.test.ts' -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
+MOCKING_FILES=$(find packages -name '*.test.ts' \
+  -not -path '*/node_modules/*' \
+  -not -path '*/dist/*' \
+  -not -path '*/cdk.out/*' \
+  -not -path '*/cdk.out.*/*' \
+  -exec grep -lE 'mock\.module\(|vi\.mock\(' {} + | sort || true)
+ALL_FILES=$(find packages -name '*.test.ts' \
+  -not -path '*/node_modules/*' \
+  -not -path '*/dist/*' \
+  -not -path '*/cdk.out/*' \
+  -not -path '*/cdk.out.*/*' | sort)
 
 # Build set difference using a tmpfile
 TMP_DIR=$(mktemp -d)
@@ -71,7 +80,11 @@ fi
 # Run them only when RUN_SMOKE_TESTS=1 is set so CI stays green while the smoke
 # test logic is being debugged.
 if [ "${RUN_SMOKE_TESTS:-0}" = "1" ]; then
-  SMOKE_FILES=$(find packages -name '*.smoke.ts' -not -path '*/node_modules/*' -not -path '*/dist/*' | sort)
+  SMOKE_FILES=$(find packages -name '*.smoke.ts' \
+    -not -path '*/node_modules/*' \
+    -not -path '*/dist/*' \
+    -not -path '*/cdk.out/*' \
+    -not -path '*/cdk.out.*/*' | sort)
   if [ -n "$SMOKE_FILES" ]; then
     echo "$SMOKE_FILES" | while IFS= read -r f; do
       [ -z "$f" ] && continue
