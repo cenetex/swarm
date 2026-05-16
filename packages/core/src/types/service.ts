@@ -15,8 +15,16 @@ import type { ChannelState, UserCooldown } from './state.js';
 export interface ToolDefinition {
   name: string;
   description: string;
+  promptGuidance?: PromptGuidance;
   parameters: z.ZodSchema;
   execute: (params: unknown, context: ToolContext) => Promise<ToolResult>;
+}
+
+export interface PromptGuidance {
+  category: 'twitter' | 'gallery' | 'media' | 'voice' | 'memory' | 'core' | (string & {});
+  summary: string;
+  whenToUse?: string;
+  examples?: string[];
 }
 
 export interface ToolContext {

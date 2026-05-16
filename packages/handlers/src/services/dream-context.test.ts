@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getDreamContext } from './dream-context.js';
 import { _setDynamoClient } from './dynamo-client.js';
 
@@ -7,7 +7,20 @@ function createMockClient(sendFn: (...args: unknown[]) => Promise<unknown>) {
 }
 
 describe('dream-context', () => {
+  let originalStateTable: string | undefined;
+
   beforeEach(() => {
+    originalStateTable = process.env.STATE_TABLE;
+    delete process.env.STATE_TABLE;
+    _setDynamoClient(null);
+  });
+
+  afterEach(() => {
+    if (originalStateTable !== undefined) {
+      process.env.STATE_TABLE = originalStateTable;
+    } else {
+      delete process.env.STATE_TABLE;
+    }
     _setDynamoClient(null);
   });
 

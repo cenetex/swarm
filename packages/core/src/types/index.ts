@@ -430,6 +430,7 @@ export interface UserCooldown {
 
 export type {
   ToolDefinition,
+  PromptGuidance,
   ToolContext,
   ToolResult,
   ServiceContainer,

@@ -620,6 +620,8 @@ describe('createPlatformMCPServices', () => {
     });
 
     it('getReferenceImageUrl falls back to profile image for non-character category', async () => {
+      _setDynamoClient(createMockClient(async () => ({ Items: [] })));
+
       const services = createPlatformMCPServices({
         avatarId: 'test-avatar',
         avatarConfig: buildTestAvatarConfig({
