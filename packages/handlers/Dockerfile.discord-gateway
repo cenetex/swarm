@@ -14,19 +14,22 @@ WORKDIR /build
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/core/package.json packages/core/tsconfig.json packages/core/
 COPY packages/mcp-server/package.json packages/mcp-server/tsconfig.json packages/mcp-server/
+COPY packages/sticker-engine/package.json packages/sticker-engine/tsconfig.json packages/sticker-engine/
 COPY packages/handlers/package.json packages/handlers/tsconfig.json packages/handlers/
 
 # Install dependencies (cached layer — only re-runs when manifests change)
 RUN corepack enable && corepack prepare pnpm@latest --activate
-RUN pnpm install --frozen-lockfile --filter @swarm/core --filter @swarm/mcp-server --filter @swarm/handlers
+RUN pnpm install --frozen-lockfile --filter @swarm/core --filter @swarm/mcp-server --filter @swarm/sticker-engine --filter @swarm/handlers
 
 # Copy source AFTER install so source-only changes don't bust the install cache
 COPY packages/core/src/ packages/core/src/
 COPY packages/mcp-server/src/ packages/mcp-server/src/
+COPY packages/sticker-engine/src/ packages/sticker-engine/src/
 COPY packages/handlers/src/ packages/handlers/src/
 
 RUN pnpm --filter @swarm/core build
 RUN pnpm --filter @swarm/mcp-server build
+RUN pnpm --filter @swarm/sticker-engine build
 RUN pnpm --filter @swarm/handlers build
 
 # ─── Production image ─────────────────────────────────────────────────────────
@@ -48,17 +51,20 @@ COPY --from=builder /build/packages/handlers/package.json ./package.json
 # Copy workspace package manifests for dependency merge
 COPY --from=builder /build/packages/core/package.json /tmp/swarm-core-package.json
 COPY --from=builder /build/packages/mcp-server/package.json /tmp/swarm-mcp-server-package.json
+COPY --from=builder /build/packages/sticker-engine/package.json /tmp/swarm-sticker-engine-package.json
 
 # Merge deps from all workspace packages and strip workspace: protocol references.
-# Core and mcp-server have their own deps (e.g., @anthropic-ai/sdk, jimp) that must
-# be installed so barrel imports don't fail at runtime.
+# Core, mcp-server, and sticker-engine have their own deps (e.g.,
+# @anthropic-ai/sdk, jimp, sharp) that must be installed so barrel imports don't
+# fail at runtime.
 RUN node -e "\
 const fs=require('fs');\
 const h=require('./package.json');\
 const c=require('/tmp/swarm-core-package.json');\
 const m=require('/tmp/swarm-mcp-server-package.json');\
+const s=require('/tmp/swarm-sticker-engine-package.json');\
 const deps={...h.dependencies};\
-for(const pkg of [c,m]){for(const[k,v]of Object.entries(pkg.dependencies||{})){if(!deps[k])deps[k]=v}}\
+for(const pkg of [c,m,s]){for(const[k,v]of Object.entries(pkg.dependencies||{})){if(!deps[k])deps[k]=v}}\
 for(const k of Object.keys(deps)){if(String(deps[k]).startsWith('workspace:'))delete deps[k]}\
 h.dependencies=deps;\
 fs.writeFileSync('package.json',JSON.stringify(h,null,2))"
@@ -69,6 +75,8 @@ COPY --from=builder /build/packages/core/dist/ ./node_modules/@swarm/core/dist/
 COPY --from=builder /build/packages/core/package.json ./node_modules/@swarm/core/package.json
 COPY --from=builder /build/packages/mcp-server/dist/ ./node_modules/@swarm/mcp-server/dist/
 COPY --from=builder /build/packages/mcp-server/package.json ./node_modules/@swarm/mcp-server/package.json
+COPY --from=builder /build/packages/sticker-engine/dist/ ./node_modules/@swarm/sticker-engine/dist/
+COPY --from=builder /build/packages/sticker-engine/package.json ./node_modules/@swarm/sticker-engine/package.json
 
 RUN chown -R swarm:swarm /home/swarm
 USER swarm
