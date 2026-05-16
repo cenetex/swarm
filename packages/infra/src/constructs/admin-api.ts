@@ -2592,6 +2592,7 @@ export class AdminApiConstruct extends Construct {
       memorySize: 256,
       environment: {
         ADMIN_TABLE: this.table.tableName,
+        STATE_TABLE: stateTable?.tableName || '',
         ADMIN_EMAILS: adminEmails,
         NODE_ENV: environment,
         LOG_LEVEL: logLevel,
