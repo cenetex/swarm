@@ -28,6 +28,7 @@ import { parseSqsRecordBody, cleanupSqsRecord, sendSqsMessage } from '../service
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
 import { RaticrossAdapter } from './adapters/raticross-adapter.js';
+import { shouldRecordSentTextInChannelHistory } from './response-history.js';
 
 const dynamo = getDynamoClient();
 
@@ -607,26 +608,36 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
         sendSuccess = queuedMedia;
       }
 
-      // Update channel state with bot's response
-      for (const text of sentMessages) {
-        try {
-          await stateService.addMessageToChannel(
-            avatarId,
-            response.conversationId,
-            response.platform,
-            {
-              messageId: `bot_${randomUUID()}`,
-              sender: outboundRuntime.avatarConfig.name,
-              isBot: true,
-              content: text,
-              timestamp: Date.now(),
-            }
-          );
-        } catch (error) {
-          logger.warn('Failed to update channel state for sent message', {
-            error: error instanceof Error ? error.message : String(error),
-          });
+      // Update channel state with bot's response. New responses reserve this
+      // text before enqueueing so the next same-chat turn sees it immediately.
+      if (shouldRecordSentTextInChannelHistory(response)) {
+        for (const text of sentMessages) {
+          try {
+            await stateService.addMessageToChannel(
+              avatarId,
+              response.conversationId,
+              response.platform,
+              {
+                messageId: `bot_${randomUUID()}`,
+                sender: outboundRuntime.avatarConfig.name,
+                isBot: true,
+                content: text,
+                timestamp: Date.now(),
+              }
+            );
+          } catch (error) {
+            logger.warn('Failed to update channel state for sent message', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
+      } else if (sentMessages.length > 0) {
+        logger.info('Skipped duplicate sent-text channel history append', {
+          event: 'response_context_already_reserved',
+          subsystem: 'state',
+          contextMessageId: response.contextMessageId,
+          sentMessageCount: sentMessages.length,
+        });
       }
 
       // Record media deliveries in channel history so the LLM sees them on

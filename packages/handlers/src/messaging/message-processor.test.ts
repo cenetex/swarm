@@ -12,6 +12,10 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { formatMentionContext, buildReplyAnnotation } from './message-processor.js';
+import {
+  buildReservedResponseMessageId,
+  extractResponseTextForContext,
+} from './response-history.js';
 import type { ContextMessage } from '@swarm/core';
 
 // Schema matching MessageQueueItemSchema
@@ -493,6 +497,33 @@ describe('Message Processor - Tool Execution E2E', () => {
       };
 
       expect(action.replyToMessageId).toBe('msg-original');
+    });
+
+    it('builds stable reserved context message ids per avatar conversation turn', () => {
+      const envelope = {
+        avatarId: 'mika',
+        platform: 'telegram' as const,
+        conversationId: '-100123',
+        messageId: '42',
+      };
+
+      expect(buildReservedResponseMessageId(envelope)).toBe(buildReservedResponseMessageId(envelope));
+      expect(buildReservedResponseMessageId({
+        ...envelope,
+        messageId: '43',
+      })).not.toBe(buildReservedResponseMessageId(envelope));
+    });
+
+    it('extracts generated send_message text for immediate context reservation', () => {
+      const text = extractResponseTextForContext({
+        actions: [
+          { type: 'send_message', text: ' First reply ' },
+          { type: 'react', emoji: '👍', messageId: 'msg-1' },
+          { type: 'send_message', text: 'Second reply' },
+        ],
+      });
+
+      expect(text).toBe('First reply\n\nSecond reply');
     });
   });
 });
@@ -1004,4 +1035,3 @@ describe('Message Processor - Quota debit ordering (#1509)', () => {
     expect(debitIdx).toBeGreaterThan(skipIdx);
   });
 });
-

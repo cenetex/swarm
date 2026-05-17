@@ -189,6 +189,7 @@ export interface SwarmResponse {
   platform: Platform;
   conversationId: string;
   replyToMessageId?: string;
+  contextMessageId?: string;
   
   // Response content
   actions: ResponseAction[];
@@ -873,6 +874,7 @@ export const SwarmResponseSchema = z.object({
   platform: PlatformSchema,
   conversationId: z.string(),
   replyToMessageId: z.string().optional(),
+  contextMessageId: z.string().optional(),
   actions: z.array(ResponseActionSchema),
   generatedAt: z.number(),
   llmModel: z.string(),

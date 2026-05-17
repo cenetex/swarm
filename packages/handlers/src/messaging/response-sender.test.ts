@@ -11,6 +11,7 @@
  * @see packages/handlers/src/response-sender.ts
  */
 import { describe, it, expect, vi } from 'vitest';
+import { shouldRecordSentTextInChannelHistory } from './response-history.js';
 
 describe('Response Sender - JSON Parse Error Handling', () => {
   /**
@@ -320,6 +321,18 @@ describe('Response Sender - Media Handling', () => {
       // Media should be queued
       expect(mediaActions).toHaveLength(1);
     });
+  });
+});
+
+describe('Response Sender - Channel History Reservation', () => {
+  it('records sent text for legacy responses without a reserved context message', () => {
+    expect(shouldRecordSentTextInChannelHistory({})).toBe(true);
+  });
+
+  it('does not append duplicate sent text when generation already reserved it', () => {
+    expect(shouldRecordSentTextInChannelHistory({
+      contextMessageId: 'bot_pending_abc123',
+    })).toBe(false);
   });
 });
 

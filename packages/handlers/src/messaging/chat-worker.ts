@@ -36,6 +36,7 @@ import { createRuntimeBrainService } from '../services/brain.js';
 import { executeToolLoop, buildResponseFromToolLoop } from './tool-loop.js';
 import type { LLMMessage } from './llm-client.js';
 import { createTypingSender } from './typing-indicator.js';
+import { reserveResponseInChannelHistory } from './response-history.js';
 
 // ─── SQS Message Schema ─────────────────────────────────────────────────────
 
@@ -317,6 +318,28 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           toolLoopResult,
           avatarRuntime.avatarConfig.llm.model,
         );
+
+        try {
+          const contextMessageId = await reserveResponseInChannelHistory({
+            stateService,
+            envelope,
+            response,
+            avatarName: avatarRuntime.avatarConfig.name,
+          });
+          if (contextMessageId) {
+            logger.info('Reserved chat worker response in channel history', {
+              event: 'response_context_reserved',
+              subsystem: 'state',
+              contextMessageId,
+            });
+          }
+        } catch (error) {
+          logger.warn('Failed to reserve chat worker response in channel history', {
+            event: 'response_context_reservation_failed',
+            subsystem: 'state',
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
 
         // Enqueue response for sending
         await sendSqsMessage({

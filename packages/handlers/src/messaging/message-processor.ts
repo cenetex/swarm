@@ -51,6 +51,7 @@ import { ensureReplicateKey } from '../utils/system-replicate-key.js';
 import { ensureOpenRouterKey } from '../utils/system-openrouter-key.js';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { createRuntimeBrainService } from '../services/brain.js';
+import { reserveResponseInChannelHistory } from './response-history.js';
 
 // Extracted modules
 import { callLLM, stripAvatarNamePrefix, type LLMMessage } from './llm-client.js';
@@ -1155,6 +1156,28 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       } else {
         // Direct response (no tools or sync fallback)
         const response = result.response;
+
+        try {
+          const contextMessageId = await reserveResponseInChannelHistory({
+            stateService,
+            envelope,
+            response,
+            avatarName: avatarRuntime.avatarConfig.name,
+          });
+          if (contextMessageId) {
+            logger.info('Reserved generated response in channel history', {
+              event: 'response_context_reserved',
+              subsystem: 'state',
+              contextMessageId,
+            });
+          }
+        } catch (error) {
+          logger.warn('Failed to reserve generated response in channel history', {
+            event: 'response_context_reservation_failed',
+            subsystem: 'state',
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
 
         metrics.incrementCounter('ResponsesEnqueued');
         metrics.setProperty('Outcome', 'success');
