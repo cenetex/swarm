@@ -11,6 +11,7 @@ import { getAdminTable } from './env-validation.js';
 // Lazy-loaded admin-api operations (avoids static dependency on @swarm/admin-api)
 let _adminOps: {
   createAvatarFromTelegram: (params: CreateAvatarFromTelegramParams) => Promise<{ success: boolean; avatarId?: string; error?: string; message?: string }>;
+  getManagedBotToken: (managerBotToken: string, managedBotUserId: number) => Promise<{ success: boolean; token?: string; error?: string }>;
   getAvatar: (id: string) => Promise<Record<string, unknown> | null>;
   updateAvatarFromTelegram: (id: string, updates: { name?: string; description?: string; persona?: string }, by: string) => Promise<unknown>;
 } | null = null;
@@ -22,6 +23,7 @@ async function getAdminOps() {
     const mod = await import('@swarm/admin-api');
     _adminOps = {
       createAvatarFromTelegram: mod.createAvatarFromTelegram,
+      getManagedBotToken: mod.getManagedBotToken,
       getAvatar: mod.getAvatar as (id: string) => Promise<Record<string, unknown> | null>,
       updateAvatarFromTelegram: mod.updateAvatarFromTelegram,
     };
@@ -92,6 +94,7 @@ async function getAdminService(avatarId: string, _avatarConfig: AvatarConfig): P
   const service = createTelegramAdminService({
     adminTable: getAdminTable(),
     botToken,
+    managerBotUsername: _avatarConfig.platforms.telegram?.botUsername,
     createAvatar: async (params: CreateAvatarFromTelegramParams) => {
       const ops = await getAdminOps();
       const result = await ops.createAvatarFromTelegram(params);
@@ -100,6 +103,10 @@ async function getAdminService(avatarId: string, _avatarConfig: AvatarConfig): P
         avatarId: result.avatarId,
         error: result.message || result.error,
       };
+    },
+    getManagedBotToken: async (managedBotUserId: number) => {
+      const ops = await getAdminOps();
+      return ops.getManagedBotToken(botToken, managedBotUserId);
     },
     getAvatar: async (id: string) => {
       const ops = await getAdminOps();
@@ -176,4 +183,22 @@ export async function processAdminCallbackQuery(
   }
 
   await service.processUpdate(update as Update);
+}
+
+/**
+ * Process an admin bot managed-bot update.
+ * Called from the webhook handler when Telegram reports a managed bot creation.
+ */
+export async function processAdminManagedBotUpdate(
+  avatarId: string,
+  avatarConfig: AvatarConfig,
+  update: unknown
+): Promise<void> {
+  const service = await getAdminService(avatarId, avatarConfig);
+  if (!service) {
+    logger.error('Failed to initialize admin service', { avatarId });
+    return;
+  }
+
+  await service.processManagedBotUpdate(update);
 }

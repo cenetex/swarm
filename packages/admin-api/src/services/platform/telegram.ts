@@ -121,6 +121,7 @@ export async function registerTelegramWebhook(
           'edited_channel_post',
           'callback_query',
           'my_chat_member',
+          'managed_bot',
         ],
         drop_pending_updates: true,
         max_connections: 40,  // Default, can be tuned
@@ -231,6 +232,65 @@ export async function getTelegramWebhookInfoDetailed(
   }
 
   return result.result || {};
+}
+
+export interface ManagedBotTokenResult {
+  success: boolean;
+  token?: string;
+  error?: string;
+}
+
+/**
+ * Fetch the token for a bot created through Telegram's Managed Bots flow.
+ *
+ * The manager/admin bot token is used only for the Telegram API call. The
+ * returned managed-bot token must never be logged or displayed.
+ */
+export async function getManagedBotToken(
+  managerBotToken: string,
+  managedBotUserId: number
+): Promise<ManagedBotTokenResult> {
+  const url = `https://api.telegram.org/bot${managerBotToken}/getManagedBotToken`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: managedBotUserId }),
+    });
+
+    const result = await response.json() as {
+      ok: boolean;
+      result?: string;
+      description?: string;
+    };
+
+    if (!result.ok || !result.result) {
+      log.warn('managed_bot', 'token_fetch_failed', {
+        managedBotUserId,
+        description: result.description,
+      });
+      return {
+        success: false,
+        error: result.description || 'Telegram did not return a managed bot token',
+      };
+    }
+
+    log.info('managed_bot', 'token_fetched', { managedBotUserId });
+    return {
+      success: true,
+      token: result.result,
+    };
+  } catch (error) {
+    log.warn('managed_bot', 'token_fetch_error', {
+      managedBotUserId,
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch managed bot token',
+    };
+  }
 }
 
 /**

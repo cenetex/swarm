@@ -30,12 +30,20 @@ export interface TelegramAdminDependencies {
   adminTable: string;
   /** Bot token for the admin bot */
   botToken: string;
+  /** Username of the admin/manager bot, used for Telegram managed-bot creation links */
+  managerBotUsername?: string;
   /** Function to create avatar from Telegram */
   createAvatar: (params: CreateAvatarParams) => Promise<CreateAvatarResult>;
+  /** Function to retrieve a token for a Telegram managed bot */
+  getManagedBotToken?: (managedBotUserId: number) => Promise<ManagedBotTokenResult>;
   /** Function to get avatar by ID */
   getAvatar?: (avatarId: string) => Promise<AvatarInfo | null>;
   /** Function to update avatar */
   updateAvatar?: (avatarId: string, updates: AvatarUpdates) => Promise<void>;
+  /** Test seam for session persistence */
+  sessionService?: TelegramAdminSessionStore;
+  /** Test seam for Telegram Bot API calls */
+  botApi?: TelegramBotApi;
 }
 
 export interface CreateAvatarParams {
@@ -52,6 +60,12 @@ export interface CreateAvatarParams {
 export interface CreateAvatarResult {
   success: boolean;
   avatarId?: string;
+  error?: string;
+}
+
+export interface ManagedBotTokenResult {
+  success: boolean;
+  token?: string;
   error?: string;
 }
 
@@ -83,6 +97,49 @@ interface SendOptions {
   parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2';
 }
 
+interface TelegramBotApi {
+  sendMessage(chatId: number | string, text: string, options?: Record<string, unknown>): Promise<Message>;
+  editMessageText(chatId: number | string, messageId: number, text: string, options?: Record<string, unknown>): Promise<unknown>;
+  answerCallbackQuery(callbackQueryId: string, options?: Record<string, unknown>): Promise<unknown>;
+}
+
+interface TelegramAdminSessionStore {
+  getOrCreateSession(
+    telegramUserId: string,
+    telegramUsername?: string,
+    telegramDisplayName?: string
+  ): Promise<TelegramAdminSession>;
+  getSession(telegramUserId: string): Promise<TelegramAdminSession | null>;
+  updateState(
+    telegramUserId: string,
+    state: TelegramAdminSession['state'],
+    stateData?: Record<string, unknown>
+  ): Promise<void>;
+  resetState(telegramUserId: string): Promise<void>;
+  setAvatarId(telegramUserId: string, avatarId: string): Promise<void>;
+  getUserBot(telegramUserId: string): Promise<{ avatarId: string; botUsername: string } | null>;
+  registerUserBot(
+    telegramUserId: string,
+    telegramUsername: string | undefined,
+    avatarId: string,
+    botUsername: string
+  ): Promise<void>;
+}
+
+interface ManagedBotUser {
+  id: number;
+  is_bot?: boolean;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+}
+
+interface ManagedBotEvent {
+  user?: ManagedBotUser;
+  bot?: ManagedBotUser;
+  chatId?: number | string;
+}
+
 // =============================================================================
 // SERVICE IMPLEMENTATION
 // =============================================================================
@@ -91,14 +148,15 @@ interface SendOptions {
  * Create a Telegram Admin Service
  */
 export function createTelegramAdminService(deps: TelegramAdminDependencies) {
-  const sessionService = createTelegramAdminSessionService(deps.adminTable);
-  const bot = new Bot(deps.botToken);
+  const sessionService = deps.sessionService || createTelegramAdminSessionService(deps.adminTable);
+  const bot = deps.botApi ? undefined : new Bot(deps.botToken);
+  const botApi = deps.botApi || bot!.api;
 
   /**
    * Send a message to a chat
    */
   async function sendMessage(chatId: number | string, text: string, options?: SendOptions): Promise<Message> {
-    const message = await bot.api.sendMessage(chatId, text, {
+    const message = await botApi.sendMessage(chatId, text, {
       reply_markup: options?.replyMarkup,
       reply_to_message_id: options?.replyToMessageId,
       parse_mode: options?.parseMode,
@@ -111,7 +169,7 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
    */
   async function editMessage(chatId: number | string, messageId: number, text: string, options?: SendOptions): Promise<void> {
     try {
-      await bot.api.editMessageText(chatId, messageId, text, {
+      await botApi.editMessageText(chatId, messageId, text, {
         reply_markup: options?.replyMarkup,
         parse_mode: options?.parseMode,
       });
@@ -128,7 +186,86 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
    * Answer a callback query (acknowledge button press)
    */
   async function answerCallback(callbackQueryId: string, text?: string): Promise<void> {
-    await bot.api.answerCallbackQuery(callbackQueryId, { text });
+    await botApi.answerCallbackQuery(callbackQueryId, { text });
+  }
+
+  function buildSuggestedBotUsername(session: TelegramAdminSession): string {
+    const source = session.telegramUsername || session.telegramDisplayName || `user${session.telegramUserId.slice(-6)}`;
+    const normalized = source
+      .toLowerCase()
+      .replace(/^@+/, '')
+      .replace(/[^a-z0-9_]/g, '')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    const fallback = `swarm${session.telegramUserId.slice(-6).replace(/\D/g, '') || 'user'}`;
+    const base = (normalized || fallback).replace(/bot$/i, '').slice(0, 29) || 'swarm';
+    const username = `${base}bot`;
+    return username.length >= 5 ? username : 'swarmbot';
+  }
+
+  function buildSuggestedBotName(session: TelegramAdminSession): string {
+    const name = session.telegramDisplayName?.trim() || session.telegramUsername || 'Swarm';
+    const suffix = /bot$/i.test(name) ? '' : ' Bot';
+    return `${name}${suffix}`.slice(0, 64);
+  }
+
+  function onboardingKeyboard(session: TelegramAdminSession): InlineKeyboardMarkup {
+    return keyboards.onboardingStartKeyboard(
+      deps.managerBotUsername,
+      buildSuggestedBotUsername(session),
+      buildSuggestedBotName(session)
+    );
+  }
+
+  function displayNameFromManagedUser(user: ManagedBotUser): string | undefined {
+    const parts = [user.first_name, user.last_name]
+      .map(part => part?.trim())
+      .filter((part): part is string => Boolean(part));
+    return parts.length > 0 ? parts.join(' ') : undefined;
+  }
+
+  function asRecord(value: unknown): Record<string, unknown> | undefined {
+    return value && typeof value === 'object' ? value as Record<string, unknown> : undefined;
+  }
+
+  function asManagedBotUser(value: unknown): ManagedBotUser | undefined {
+    const record = asRecord(value);
+    if (!record || typeof record.id !== 'number') return undefined;
+
+    return {
+      id: record.id,
+      is_bot: typeof record.is_bot === 'boolean' ? record.is_bot : undefined,
+      first_name: typeof record.first_name === 'string' ? record.first_name : undefined,
+      last_name: typeof record.last_name === 'string' ? record.last_name : undefined,
+      username: typeof record.username === 'string' ? record.username : undefined,
+    };
+  }
+
+  function extractManagedBotEvent(update: unknown): ManagedBotEvent | null {
+    const updateRecord = asRecord(update);
+    if (!updateRecord) return null;
+
+    const managedBot = asRecord(updateRecord.managed_bot);
+    if (managedBot) {
+      return {
+        user: asManagedBotUser(managedBot.user),
+        bot: asManagedBotUser(managedBot.bot),
+      };
+    }
+
+    const message = asRecord(updateRecord.message);
+    const managedBotCreated = asRecord(message?.managed_bot_created);
+    if (message && managedBotCreated) {
+      const chat = asRecord(message.chat);
+      const chatId = typeof chat?.id === 'number' || typeof chat?.id === 'string' ? chat.id : undefined;
+      return {
+        user: asManagedBotUser(message.from),
+        bot: asManagedBotUser(managedBotCreated.bot),
+        chatId,
+      };
+    }
+
+    return null;
   }
 
   /**
@@ -214,7 +351,7 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
 
       case 'help':
         await sendMessage(chatId, keyboards.HELP_MESSAGE, {
-          replyMarkup: session.avatarId ? keyboards.mainMenu() : keyboards.mainMenuNewUser(),
+          replyMarkup: session.avatarId ? keyboards.mainMenu() : onboardingKeyboard(session),
         });
         break;
 
@@ -255,7 +392,7 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
     // New user - show onboarding instructions
     await sessionService.updateState(session.telegramUserId, 'onboarding_token');
     await sendMessage(chatId, keyboards.WELCOME_NEW_USER, {
-      replyMarkup: keyboards.cancelKeyboard(),
+      replyMarkup: onboardingKeyboard(session),
     });
   }
 
@@ -265,7 +402,7 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
   async function handleCancelCommand(session: TelegramAdminSession, chatId: number): Promise<void> {
     await sessionService.resetState(session.telegramUserId);
     await sendMessage(chatId, keyboards.OPERATION_CANCELLED, {
-      replyMarkup: session.avatarId ? keyboards.mainMenu() : keyboards.mainMenuNewUser(),
+      replyMarkup: session.avatarId ? keyboards.mainMenu() : onboardingKeyboard(session),
     });
   }
 
@@ -347,6 +484,7 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
       botToken: result.token,
       botUsername: result.botInfo.username,
       botId: result.botInfo.id,
+      provisioningSource: 'manual_token',
     };
 
     await sessionService.updateState(session.telegramUserId, 'onboarding_name', stateData);
@@ -359,6 +497,112 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
     logger.info('Bot token validated', {
       botUsername: result.botInfo.username,
       botId: result.botInfo.id,
+    });
+  }
+
+  /**
+   * Handle Telegram managed-bot updates/service messages.
+   */
+  async function processManagedBotUpdate(update: unknown): Promise<void> {
+    const event = extractManagedBotEvent(update);
+    if (!event?.user || !event.bot) {
+      logger.warn('Managed bot update missing user or bot', { event: 'managed_bot_invalid' });
+      return;
+    }
+
+    const telegramUserId = event.user.id.toString();
+    const chatId = event.chatId ?? event.user.id;
+    const telegramUsername = event.user.username;
+    const telegramDisplayName = displayNameFromManagedUser(event.user);
+
+    logger.setContext({
+      subsystem: 'telegram-admin',
+      telegramUserId,
+      chatId,
+      managedBotId: event.bot.id,
+    });
+
+    const session = await sessionService.getOrCreateSession(
+      telegramUserId,
+      telegramUsername,
+      telegramDisplayName
+    );
+
+    const existingBot = await sessionService.getUserBot(telegramUserId);
+    if (existingBot) {
+      const message = keyboards.alreadyHasBotMessage(existingBot.botUsername);
+      await sendMessage(chatId, message, {
+        replyMarkup: keyboards.mainMenu(existingBot.botUsername),
+      });
+      return;
+    }
+
+    if (!event.bot.username) {
+      await sendMessage(chatId, keyboards.managedBotUnavailableMessage(), {
+        replyMarkup: keyboards.onboardingStartKeyboard(
+          deps.managerBotUsername,
+          buildSuggestedBotUsername(session),
+          buildSuggestedBotName(session)
+        ),
+      });
+      logger.warn('Managed bot update missing bot username', {
+        event: 'managed_bot_missing_username',
+        managedBotId: event.bot.id,
+      });
+      return;
+    }
+
+    if (!deps.getManagedBotToken) {
+      await sendMessage(chatId, keyboards.managedBotUnavailableMessage(event.bot.username), {
+        replyMarkup: keyboards.onboardingStartKeyboard(
+          deps.managerBotUsername,
+          buildSuggestedBotUsername(session),
+          buildSuggestedBotName(session)
+        ),
+      });
+      logger.warn('Managed bot token retrieval not configured', {
+        event: 'managed_bot_token_unconfigured',
+        managedBotId: event.bot.id,
+        botUsername: event.bot.username,
+      });
+      return;
+    }
+
+    const tokenResult = await deps.getManagedBotToken(event.bot.id);
+    if (!tokenResult.success || !tokenResult.token) {
+      await sendMessage(chatId, keyboards.managedBotUnavailableMessage(event.bot.username), {
+        replyMarkup: keyboards.onboardingStartKeyboard(
+          deps.managerBotUsername,
+          buildSuggestedBotUsername(session),
+          buildSuggestedBotName(session)
+        ),
+      });
+      logger.warn('Managed bot token retrieval failed', {
+        event: 'managed_bot_token_failed',
+        managedBotId: event.bot.id,
+        botUsername: event.bot.username,
+        error: tokenResult.error,
+      });
+      return;
+    }
+
+    const stateData: OnboardingStateData = {
+      botToken: tokenResult.token,
+      botUsername: event.bot.username,
+      botId: event.bot.id,
+      provisioningSource: 'managed_bot',
+    };
+
+    await sessionService.updateState(telegramUserId, 'onboarding_name', stateData);
+
+    const message = keyboards.managedBotReceivedMessage(event.bot.username);
+    await sendMessage(chatId, message, {
+      replyMarkup: keyboards.cancelKeyboard(),
+    });
+
+    logger.info('Managed bot token accepted', {
+      managedBotId: event.bot.id,
+      botUsername: event.bot.username,
     });
   }
 
@@ -382,7 +626,7 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
           });
         } else {
           await sendMessage(chatId, keyboards.WELCOME_NEW_USER, {
-            replyMarkup: keyboards.cancelKeyboard(),
+            replyMarkup: onboardingKeyboard(session),
           });
           await sessionService.updateState(session.telegramUserId, 'onboarding_token');
         }
@@ -507,7 +751,13 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
 
     // Validate we have all required data
     if (!stateData?.botToken || !stateData?.botUsername || !stateData?.botId || !stateData?.name) {
-      logger.error('Missing required state data for bot creation', { stateData });
+      logger.error('Missing required state data for bot creation', {
+        hasBotToken: Boolean(stateData?.botToken),
+        hasBotUsername: Boolean(stateData?.botUsername),
+        hasBotId: Boolean(stateData?.botId),
+        hasName: Boolean(stateData?.name),
+        provisioningSource: stateData?.provisioningSource,
+      });
       await sendMessage(chatId, keyboards.ERROR_GENERIC);
       await sessionService.resetState(session.telegramUserId);
       return;
@@ -677,9 +927,16 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
           // Start onboarding
           await sessionService.updateState(telegramUserId, 'onboarding_token');
           await editMessage(chatId, messageId, keyboards.WELCOME_NEW_USER, {
-            replyMarkup: keyboards.cancelKeyboard(),
+            replyMarkup: onboardingKeyboard(session),
           });
         }
+        break;
+
+      case 'manual_token':
+        await sessionService.updateState(telegramUserId, 'onboarding_token');
+        await editMessage(chatId, messageId, keyboards.MANUAL_TOKEN_INSTRUCTIONS, {
+          replyMarkup: keyboards.cancelKeyboard(),
+        });
         break;
 
       case 'profile_menu':
@@ -743,14 +1000,14 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
 
       case 'help':
         await editMessage(chatId, messageId, keyboards.HELP_MESSAGE, {
-          replyMarkup: session.avatarId ? keyboards.mainMenu() : keyboards.mainMenuNewUser(),
+          replyMarkup: session.avatarId ? keyboards.mainMenu() : onboardingKeyboard(session),
         });
         break;
 
       case 'cancel':
         await sessionService.resetState(telegramUserId);
         await editMessage(chatId, messageId, keyboards.OPERATION_CANCELLED, {
-          replyMarkup: session.avatarId ? keyboards.mainMenu() : keyboards.mainMenuNewUser(),
+          replyMarkup: session.avatarId ? keyboards.mainMenu() : onboardingKeyboard(session),
         });
         break;
 
@@ -773,6 +1030,11 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
    * Process a raw Telegram update (for use in webhook handler)
    */
   async function processUpdate(update: Update): Promise<void> {
+    if (extractManagedBotEvent(update)) {
+      await processManagedBotUpdate(update);
+      return;
+    }
+
     // Handle callback queries (inline button presses)
     if (update.callback_query) {
       await processCallbackQuery(update);
@@ -787,6 +1049,7 @@ export function createTelegramAdminService(deps: TelegramAdminDependencies) {
     processMessage,
     processUpdate,
     processCallbackQuery,
+    processManagedBotUpdate,
     sendMessage,
     editMessage,
     sessionService,

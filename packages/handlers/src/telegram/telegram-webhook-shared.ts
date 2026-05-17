@@ -226,6 +226,26 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return { statusCode: 400, body: 'Invalid JSON' };
     }
 
+    const rawUpdate = update as unknown as Record<string, unknown>;
+    const rawMessage = rawUpdate.message && typeof rawUpdate.message === 'object'
+      ? rawUpdate.message as Record<string, unknown>
+      : undefined;
+
+    // Telegram Managed Bots can arrive as a top-level managed_bot update or
+    // as a managed_bot_created service message. Route both before generic
+    // message parsing so onboarding receives the bot metadata.
+    if (rawUpdate.managed_bot || rawMessage?.managed_bot_created) {
+      logger.info('Managed bot update received', { event: 'managed_bot_update' });
+      try {
+        const { processAdminManagedBotUpdate } = await import('../services/telegram-admin-handler.js');
+        await processAdminManagedBotUpdate(avatarId, avatarConfig, update as unknown);
+        return ok();
+      } catch (err) {
+        logger.error('Managed bot handler error', err, { event: 'managed_bot_error' });
+        return ok();
+      }
+    }
+
     // Handle bot added/removed from channel (my_chat_member update)
     if (update.my_chat_member) {
       const myChatMember = update.my_chat_member as {

@@ -75,6 +75,25 @@ export function urlButton(text: string, url: string): InlineKeyboardButton {
   return { text, url };
 }
 
+function stripAt(username: string): string {
+  return username.trim().replace(/^@+/, '');
+}
+
+/**
+ * Build a Telegram managed-bot creation link for @BotFather.
+ * Format: https://t.me/newbot/<manager_bot_username>/<suggested_username>?name=<display_name>
+ */
+export function managedBotCreationUrl(
+  managerBotUsername: string,
+  suggestedBotUsername: string,
+  suggestedBotName: string
+): string {
+  const manager = encodeURIComponent(stripAt(managerBotUsername));
+  const username = encodeURIComponent(suggestedBotUsername);
+  const name = encodeURIComponent(suggestedBotName);
+  return `https://t.me/newbot/${manager}/${username}?name=${name}`;
+}
+
 // =============================================================================
 // KEYBOARD BUILDERS
 // =============================================================================
@@ -90,9 +109,35 @@ export function keyboard(...rows: InlineKeyboardButton[][]): InlineKeyboardMarku
  * Build main menu keyboard for new users (no bot yet)
  */
 export function mainMenuNewUser(): InlineKeyboardMarkup {
+  return onboardingStartKeyboard();
+}
+
+/**
+ * Build the onboarding start keyboard. When a manager bot username is known,
+ * offer Telegram's managed-bot flow first; manual token paste remains the
+ * fallback path.
+ */
+export function onboardingStartKeyboard(
+  managerBotUsername?: string,
+  suggestedBotUsername = 'swarmbot',
+  suggestedBotName = 'Swarm Bot'
+): InlineKeyboardMarkup {
+  const rows: InlineKeyboardButton[][] = [];
+
+  if (managerBotUsername) {
+    rows.push([
+      urlButton(
+        'Create Managed Bot',
+        managedBotCreationUrl(managerBotUsername, suggestedBotUsername, suggestedBotName)
+      ),
+    ]);
+  }
+
+  rows.push([button('Paste BotFather Token', 'manual_token')]);
+  rows.push([urlButton('Learn More', 'https://swarm.rati.chat/docs')]);
+
   return keyboard(
-    [button('Create My Bot', 'main_menu')],
-    [urlButton('Learn More', 'https://swarm.rati.chat/docs')]
+    ...rows
   );
 }
 
@@ -187,7 +232,13 @@ export function backButton(action: CallbackAction, text = 'Back'): InlineKeyboar
  */
 export const WELCOME_NEW_USER = `Welcome to Ratibot! I'll help you create your own AI-powered bot.
 
-To get started:
+Tap "Create Managed Bot" to create a Telegram bot without copying a token. If Telegram does not offer managed-bot access for your account yet, use the manual token option.`;
+
+/**
+ * Manual token fallback instructions
+ */
+export const MANUAL_TOKEN_INSTRUCTIONS = `Manual token setup:
+
 1. Open @BotFather
 2. Send /newbot
 3. Choose a name and username for your bot
@@ -213,6 +264,25 @@ export function tokenReceivedMessage(botUsername: string): string {
 Now, what would you like to name your bot? This will be displayed in the admin panel.
 
 Example: "My Assistant" or "Coffee Shop Bot"`;
+}
+
+/**
+ * Managed bot received - asking for name
+ */
+export function managedBotReceivedMessage(botUsername: string): string {
+  return `Connected your managed bot: @${botUsername}
+
+Now, what would you like to name your bot? This will be displayed in the admin panel.
+
+Example: "My Assistant" or "Coffee Shop Bot"`;
+}
+
+/**
+ * Managed bot token was unavailable
+ */
+export function managedBotUnavailableMessage(botUsername?: string): string {
+  const botLabel = botUsername ? ` for @${botUsername}` : '';
+  return `Telegram did not return managed-bot access${botLabel}. Please use manual token setup for now.`;
 }
 
 /**

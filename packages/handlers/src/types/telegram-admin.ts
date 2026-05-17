@@ -79,6 +79,8 @@ export interface OnboardingStateData extends Record<string, unknown> {
   description?: string;
   /** Optional persona/personality */
   persona?: string;
+  /** How the bot token entered the onboarding flow */
+  provisioningSource?: 'manual_token' | 'managed_bot';
 }
 
 /**
@@ -158,6 +160,7 @@ export interface TelegramAdminBotConfig {
  */
 export type CallbackAction =
   | 'main_menu'
+  | 'manual_token'
   | 'profile_menu'
   | 'edit_name'
   | 'edit_description'
