@@ -1,6 +1,6 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
-import { buildMediaUrl, type AvatarConfig, type MediaService } from '@swarm/core';
+import { buildMediaUrl, logger, type AvatarConfig, type MediaService } from '@swarm/core';
 import type {
   GalleryItemForSticker,
   StickerInfo,
@@ -16,6 +16,7 @@ import { getDynamoClient } from './dynamo-client.js';
 import { getAdminTable } from './env-validation.js';
 
 const TELEGRAM_API = 'https://api.telegram.org/bot';
+const REFERENCE_URL_CHECK_TIMEOUT_MS = 1500;
 const s3Client = new S3Client({});
 
 interface TelegramResponse<T> {
@@ -82,6 +83,88 @@ export interface RuntimeStickerServicesConfig {
 
 function getBotToken(secrets: Record<string, string>): string | undefined {
   return secrets.TELEGRAM_BOT_TOKEN || secrets.telegram_bot_token;
+}
+
+type ReferenceImageKind = 'character' | 'profile';
+type ReferenceFetch = (url: string, init?: RequestInit) => Promise<Response>;
+
+interface StickerReferenceCandidate {
+  kind: ReferenceImageKind;
+  url: string;
+}
+
+interface StickerReferenceUrlOptions {
+  fetchImpl?: ReferenceFetch;
+  timeoutMs?: number;
+  onRejected?: (candidate: StickerReferenceCandidate, reason: string) => void;
+}
+
+function stickerReferenceCandidates(avatarConfig: Pick<AvatarConfig, 'characterReference' | 'profileImage'>): StickerReferenceCandidate[] {
+  return [
+    avatarConfig.characterReference?.url ? { kind: 'character' as const, url: avatarConfig.characterReference.url } : undefined,
+    avatarConfig.profileImage?.url ? { kind: 'profile' as const, url: avatarConfig.profileImage.url } : undefined,
+  ].filter((candidate): candidate is StickerReferenceCandidate => Boolean(candidate));
+}
+
+async function canUseStickerReferenceUrl(
+  candidate: StickerReferenceCandidate,
+  options: Required<Pick<StickerReferenceUrlOptions, 'fetchImpl' | 'timeoutMs'>>,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate.url);
+  } catch {
+    return { ok: false, reason: 'invalid_url' };
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return { ok: false, reason: 'unsupported_scheme' };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+  try {
+    const response = await options.fetchImpl(candidate.url, {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+    if (response.ok) return { ok: true };
+    return { ok: false, reason: `http_${response.status}` };
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return { ok: false, reason: 'timeout' };
+    }
+    return { ok: false, reason: 'fetch_failed' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function resolveStickerReferenceImageUrls(
+  avatarConfig: Pick<AvatarConfig, 'characterReference' | 'profileImage'>,
+  options: StickerReferenceUrlOptions = {},
+): Promise<string[]> {
+  const fetchImpl = options.fetchImpl || fetch;
+  const timeoutMs = options.timeoutMs ?? REFERENCE_URL_CHECK_TIMEOUT_MS;
+  const seen = new Set<string>();
+  const candidates = stickerReferenceCandidates(avatarConfig).filter(candidate => {
+    if (seen.has(candidate.url)) return false;
+    seen.add(candidate.url);
+    return true;
+  });
+
+  const checked = await Promise.all(candidates.map(async candidate => ({
+    candidate,
+    result: await canUseStickerReferenceUrl(candidate, { fetchImpl, timeoutMs }),
+  })));
+
+  return checked
+    .filter(({ candidate, result }) => {
+      if (result.ok) return true;
+      options.onRejected?.(candidate, result.reason);
+      return false;
+    })
+    .map(({ candidate }) => candidate.url);
 }
 
 async function telegramJson<T>(
@@ -439,10 +522,17 @@ export function createRuntimeStickerServices(config: RuntimeStickerServicesConfi
         await config.consumeStickerCredit?.();
         const { botToken: token, botInfo } = await getConfiguredBot();
         const stickerPrompt = `${prompt}. STICKER ART: bold clean lines, simplified shapes, flat vibrant colors, cartoon style. BACKGROUND: Must be PURE BLACK (#000000), solid and uniform, no gradients or patterns. OUTLINE: Include a THICK BRIGHT WHITE stroke (3-5px) around the entire subject edge.`;
-        const referenceImageUrls = [
-          config.avatarConfig.characterReference?.url,
-          config.avatarConfig.profileImage?.url,
-        ].filter((url): url is string => Boolean(url));
+        const referenceImageUrls = await resolveStickerReferenceImageUrls(config.avatarConfig, {
+          onRejected: (candidate, reason) => {
+            logger.warn('Skipping unreachable sticker reference image', {
+              event: 'sticker_reference_skipped',
+              subsystem: 'stickers',
+              avatarId,
+              referenceKind: candidate.kind,
+              reason,
+            });
+          },
+        });
 
         const generated = await config.mediaService.generateImage(stickerPrompt, config.avatarConfig.media.image, {
           avatarId,
