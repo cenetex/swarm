@@ -580,8 +580,11 @@ export const LLMConfigSchema = z.object({
   provider: z.enum(['bedrock', 'openrouter', 'anthropic']),
   model: z.string(),
   fallbackModel: z.string().optional(),
+  fastModel: z.string().optional(),
+  thinkingModel: z.string().optional(),
   temperature: z.number(),
   maxTokens: z.number(),
+  timeoutMs: z.number().optional(),
 });
 
 export const VoiceConfigSchema = z.object({
@@ -623,6 +626,7 @@ export const BehaviorConfigSchema = z.object({
   ignoreBots: z.boolean(),
   cooldownMinutes: z.number(),
   maxContextMessages: z.number(),
+  groupResponseDeadlineMs: z.number().optional(),
 });
 
 export const SolanaFeatureSchema = z.enum([

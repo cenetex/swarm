@@ -9,14 +9,28 @@
  *
  * @see packages/handlers/src/message-processor.ts
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { z } from 'zod';
-import { formatMentionContext, buildReplyAnnotation } from './message-processor.js';
+import {
+  buildReplyAnnotation,
+  formatMentionContext,
+  hasNewerMessageThanEnvelope,
+  isLatencyBoundGroupConversation,
+  resolveGroupResponseDeadlineMs,
+  resolveResponseLlmPolicy,
+} from './message-processor.js';
 import {
   buildReservedResponseMessageId,
   extractResponseTextForContext,
 } from './response-history.js';
 import type { ContextMessage } from '@swarm/core';
+
+afterEach(() => {
+  delete process.env.GROUP_FAST_LLM_MODEL;
+  delete process.env.FAST_LLM_MODEL;
+  delete process.env.GROUP_RESPONSE_DEADLINE_MS;
+  delete process.env.GROUP_RESPONSE_ENABLE_TOOLS;
+});
 
 // Schema matching MessageQueueItemSchema
 const MessageQueueItemSchema = z.object({
@@ -40,6 +54,110 @@ const MessageQueueItemSchema = z.object({
   enqueuedAt: z.number(),
   attempts: z.number(),
   maxAttempts: z.number(),
+});
+
+describe('Message Processor - Group Response Policy', () => {
+  const baseAvatarConfig = {
+    llm: {
+      provider: 'openrouter' as const,
+      model: 'anthropic/claude-sonnet-4.5',
+      temperature: 0.7,
+      maxTokens: 1024,
+    },
+    behavior: {
+      responseDelayMs: [0, 0] as [number, number],
+      typingIndicator: false,
+      ignoreBots: true,
+      cooldownMinutes: 0,
+      maxContextMessages: 20,
+    },
+  };
+
+  it('treats Discord guild and Telegram group chats as latency-bound', () => {
+    expect(isLatencyBoundGroupConversation({
+      platform: 'discord' as const,
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', chatType: 'group' },
+    })).toBe(true);
+
+    expect(isLatencyBoundGroupConversation({
+      platform: 'telegram' as const,
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', chatType: 'supergroup' },
+    })).toBe(true);
+
+    expect(isLatencyBoundGroupConversation({
+      platform: 'discord' as const,
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', chatType: 'private' },
+    })).toBe(false);
+  });
+
+  it('selects the fast model and a 10 second default budget for group replies', () => {
+    const policy = resolveResponseLlmPolicy({
+      ...baseAvatarConfig,
+      llm: {
+        ...baseAvatarConfig.llm,
+        fastModel: 'openai/gpt-4.1-mini',
+        thinkingModel: 'anthropic/claude-sonnet-4.5',
+      },
+    }, {
+      platform: 'discord' as const,
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', chatType: 'group' },
+    });
+
+    expect(policy.isLatencyBoundGroup).toBe(true);
+    expect(policy.llmConfig.model).toBe('openai/gpt-4.1-mini');
+    expect(policy.llmConfig.timeoutMs).toBe(10_000);
+    expect(policy.useFastModel).toBe(true);
+    expect(policy.enableTools).toBe(false);
+  });
+
+  it('uses the thinking model outside group conversations', () => {
+    const policy = resolveResponseLlmPolicy({
+      ...baseAvatarConfig,
+      llm: {
+        ...baseAvatarConfig.llm,
+        fastModel: 'openai/gpt-4.1-mini',
+        thinkingModel: 'anthropic/claude-opus-4.1',
+      },
+    }, {
+      platform: 'telegram' as const,
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', chatType: 'private' },
+    });
+
+    expect(policy.isLatencyBoundGroup).toBe(false);
+    expect(policy.llmConfig.model).toBe('anthropic/claude-opus-4.1');
+    expect(policy.llmConfig.timeoutMs).toBeUndefined();
+    expect(policy.enableTools).toBe(true);
+  });
+
+  it('allows environment defaults for group model, deadline, and tools', () => {
+    process.env.GROUP_FAST_LLM_MODEL = 'google/gemini-3-flash-preview';
+    process.env.GROUP_RESPONSE_DEADLINE_MS = '7500';
+    process.env.GROUP_RESPONSE_ENABLE_TOOLS = 'true';
+
+    const policy = resolveResponseLlmPolicy(baseAvatarConfig, {
+      platform: 'discord' as const,
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', chatType: 'group' },
+    });
+
+    expect(resolveGroupResponseDeadlineMs(baseAvatarConfig)).toBe(7500);
+    expect(policy.llmConfig.model).toBe('google/gemini-3-flash-preview');
+    expect(policy.llmConfig.timeoutMs).toBe(7500);
+    expect(policy.enableTools).toBe(true);
+  });
+
+  it('detects newer messages so late group replies can be suppressed', () => {
+    const envelope = { messageId: 'm1', timestamp: 1000 };
+
+    expect(hasNewerMessageThanEnvelope(envelope, [
+      { messageId: 'm1', timestamp: 1000 },
+      { messageId: 'm0', timestamp: 900 },
+      { messageId: 'same-ms', timestamp: 1000 },
+    ])).toBe(false);
+
+    expect(hasNewerMessageThanEnvelope(envelope, [
+      { messageId: 'm2', timestamp: 1001 },
+    ])).toBe(true);
+  });
 });
 
 describe('Message Processor - JSON Parse Error Handling', () => {

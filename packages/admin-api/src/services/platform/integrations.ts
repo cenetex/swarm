@@ -3,7 +3,11 @@
  * Unified configuration and status management for all integrations.
  */
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { UpdateExpressionBuilder } from '@swarm/core';
+import {
+  normalizeOpenRouterMediaCapability,
+  resolveDefaultOpenRouterMediaModel,
+  UpdateExpressionBuilder,
+} from '@swarm/core';
 import type {
   IntegrationType,
   AICapability,
@@ -23,6 +27,38 @@ import { hasSystemOpenRouterApiKey } from '../openrouter-key.js';
 
 const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function cloneIntegrationsMap(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? { ...value } : {};
+}
+
+function cloneIntegrationConfig(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? { ...value } : {};
+}
+
+async function resolveDefaultModelId(
+  capability: AICapability,
+  provider: IntegrationType
+): Promise<string> {
+  const openRouterMediaCapability = provider === 'openrouter'
+    ? normalizeOpenRouterMediaCapability(capability)
+    : undefined;
+
+  if (openRouterMediaCapability) {
+    try {
+      return (await resolveDefaultOpenRouterMediaModel(openRouterMediaCapability)).id;
+    } catch {
+      // Fall through to the static registry. The live catalog is best-effort for UI/model visibility.
+    }
+  }
+
+  const defaultModel = getDefaultModel(capability, provider);
+  return defaultModel?.id || '';
+}
 
 // =============================================================================
 // System Replicate Key Detection (env/Secrets Manager)
@@ -304,8 +340,7 @@ export async function getIntegrationStatus(
     models = {};
     for (const capability of metadata.capabilities) {
       const configuredModel = providerConfig?.models?.[capability];
-      const defaultModel = getDefaultModel(capability, integration);
-      models[capability] = configuredModel || defaultModel?.id || 'not_set';
+      models[capability] = configuredModel || await resolveDefaultModelId(capability, integration) || 'not_set';
     }
   }
 
@@ -355,18 +390,25 @@ export async function configureIntegration(params: ConfigureIntegrationParams): 
   }
 
   const now = Date.now();
-  const builder = new UpdateExpressionBuilder()
-    .set(`integrations.${integration}.enabled`, params.enabled ?? true)
-    .set('updatedAt', now)
-    .set('updatedBy', session.email);
+  const avatar = await getAvatar(avatarId);
+  const integrations = cloneIntegrationsMap(avatar?.integrations);
+  const existingConfig = cloneIntegrationConfig(integrations[integration]);
+  const nextConfig: Record<string, unknown> = {
+    ...existingConfig,
+    enabled: params.enabled ?? true,
+  };
 
   if (metadata.category === 'ai_provider') {
     if (typeof params.useGlobalKey === 'boolean') {
-      builder.set(`integrations.${integration}.useGlobalKey`, params.useGlobalKey);
+      nextConfig.useGlobalKey = params.useGlobalKey;
     }
 
     if (params.models) {
-      builder.set(`integrations.${integration}.models`, params.models);
+      const existingModels = cloneIntegrationConfig(existingConfig.models);
+      nextConfig.models = {
+        ...existingModels,
+        ...params.models,
+      };
     }
   }
 
@@ -374,9 +416,19 @@ export async function configureIntegration(params: ConfigureIntegrationParams): 
     for (const [key, value] of Object.entries(params.settings)) {
       // Only support safe, simple keys for now.
       if (!key || !/^[a-zA-Z0-9_]+$/.test(key)) continue;
-      builder.set(`integrations.${integration}.${key}`, value);
+      nextConfig[key] = value;
     }
   }
+
+  const nextIntegrations = {
+    ...integrations,
+    [integration]: nextConfig,
+  };
+
+  const builder = new UpdateExpressionBuilder()
+    .set('integrations', nextIntegrations)
+    .set('updatedAt', now)
+    .set('updatedBy', session.email);
 
   const update = builder.build();
 
@@ -426,11 +478,16 @@ export async function setModelPreference(
   session: UserSession
 ): Promise<void> {
   const avatar = await getAvatar(avatarId);
+  const integrations = cloneIntegrationsMap(avatar?.integrations);
   const existingConfig = avatar?.integrations?.[integration] as AIProviderConfig | undefined;
   const nextConfig = mergeModelPreferenceConfig(existingConfig, capability, modelId);
+  const nextIntegrations = {
+    ...integrations,
+    [integration]: nextConfig,
+  };
 
   const update = new UpdateExpressionBuilder()
-    .set(`integrations.${integration}`, nextConfig)
+    .set('integrations', nextIntegrations)
     .set('updatedAt', Date.now())
     .set('updatedBy', session.email)
     .build();
@@ -679,9 +736,7 @@ export async function getConfiguredModel(
     return configuredModel;
   }
 
-  // Fall back to default
-  const defaultModel = getDefaultModel(capability, provider);
-  return defaultModel?.id || '';
+  return resolveDefaultModelId(capability, provider);
 }
 
 /**

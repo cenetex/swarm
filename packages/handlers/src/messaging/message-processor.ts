@@ -23,6 +23,7 @@ import {
   createGallerySaver,
   createPresenceService,
   createRuntimeMetricsLogger,
+  getRecentMessages as getSharedRoomRecentMessages,
   logger,
   MessageQueueItemSchema,
   extractThinking,
@@ -35,6 +36,7 @@ import {
   type ResponseAction,
   type ResponseTrigger,
   type PresenceService,
+  type LLMConfig,
 } from '@swarm/core';
 import {
   ToolRegistry,
@@ -70,6 +72,143 @@ import {
 import { isSharedRoom } from '../services/room-ingress.js';
 
 const REPLY_CONTEXT_MAX_LENGTH = 200;
+const DEFAULT_GROUP_RESPONSE_DEADLINE_MS = 10_000;
+
+type ResponseLlmPolicy = {
+  isLatencyBoundGroup: boolean;
+  llmConfig: LLMConfig;
+  deadlineMs?: number;
+  useFastModel: boolean;
+  enableTools: boolean;
+};
+
+type MessageStalenessCandidate = {
+  messageId?: string;
+  timestamp?: number;
+};
+
+type GroupActivityStaleness = {
+  stale: boolean;
+  source?: 'channel-state' | 'shared-room';
+  latestMessageId?: string;
+  latestTimestamp?: number;
+};
+
+function trimToUndefined(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function parseOptionalPositiveInt(value: string | undefined): number | undefined {
+  const parsed = Number.parseInt(value || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+export function isLatencyBoundGroupConversation(
+  envelope: Pick<SwarmEnvelope, 'platform' | 'metadata'>,
+): boolean {
+  const chatType = envelope.metadata.chatType;
+  if (chatType === 'group' || chatType === 'supergroup' || chatType === 'channel') return true;
+  return envelope.platform === 'discord' && chatType !== 'private';
+}
+
+export function resolveGroupResponseDeadlineMs(
+  avatarConfig: Pick<AvatarConfig, 'behavior'>,
+): number {
+  return parseOptionalPositiveInt(String(avatarConfig.behavior.groupResponseDeadlineMs ?? ''))
+    ?? parseOptionalPositiveInt(process.env.GROUP_RESPONSE_DEADLINE_MS)
+    ?? DEFAULT_GROUP_RESPONSE_DEADLINE_MS;
+}
+
+export function resolveResponseLlmPolicy(
+  avatarConfig: Pick<AvatarConfig, 'llm' | 'behavior'>,
+  envelope: Pick<SwarmEnvelope, 'platform' | 'metadata'>,
+): ResponseLlmPolicy {
+  const isLatencyBoundGroup = isLatencyBoundGroupConversation(envelope);
+  const thinkingModel = trimToUndefined(avatarConfig.llm.thinkingModel);
+
+  if (!isLatencyBoundGroup) {
+    return {
+      isLatencyBoundGroup: false,
+      llmConfig: thinkingModel
+        ? { ...avatarConfig.llm, model: thinkingModel }
+        : avatarConfig.llm,
+      useFastModel: false,
+      enableTools: true,
+    };
+  }
+
+  const deadlineMs = resolveGroupResponseDeadlineMs(avatarConfig);
+  const fastModel = trimToUndefined(avatarConfig.llm.fastModel)
+    ?? trimToUndefined(process.env.GROUP_FAST_LLM_MODEL)
+    ?? trimToUndefined(process.env.FAST_LLM_MODEL);
+  const enableTools = process.env.GROUP_RESPONSE_ENABLE_TOOLS === 'true';
+
+  return {
+    isLatencyBoundGroup: true,
+    llmConfig: {
+      ...avatarConfig.llm,
+      model: fastModel ?? avatarConfig.llm.model,
+      timeoutMs: deadlineMs,
+    },
+    deadlineMs,
+    useFastModel: Boolean(fastModel),
+    enableTools,
+  };
+}
+
+export function hasNewerMessageThanEnvelope(
+  envelope: Pick<SwarmEnvelope, 'messageId' | 'timestamp'>,
+  messages: MessageStalenessCandidate[],
+): boolean {
+  return messages.some((message) => {
+    if (!message.messageId || typeof message.timestamp !== 'number') return false;
+    if (message.messageId === envelope.messageId) return false;
+    return message.timestamp > envelope.timestamp;
+  });
+}
+
+function latestNewerMessageThanEnvelope(
+  envelope: Pick<SwarmEnvelope, 'messageId' | 'timestamp'>,
+  messages: MessageStalenessCandidate[],
+): MessageStalenessCandidate | undefined {
+  return messages
+    .filter((message) => {
+      if (!message.messageId || typeof message.timestamp !== 'number') return false;
+      if (message.messageId === envelope.messageId) return false;
+      return message.timestamp > envelope.timestamp;
+    })
+    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))[0];
+}
+
+function isTimeoutLikeError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === 'AbortError' || /abort|timeout|timed out/i.test(error.message);
+}
+
+function appendGroupLatencyInstruction(
+  systemPrompt: string,
+  policy: ResponseLlmPolicy,
+): string {
+  if (!policy.isLatencyBoundGroup) return systemPrompt;
+
+  const modelLine = policy.useFastModel
+    ? 'You are using the fast response model for this turn.'
+    : 'You are using the regular model under a strict group-chat deadline.';
+  const toolLine = policy.enableTools
+    ? 'Tools may be available, but keep the first response concise.'
+    : 'Do not attempt tool-heavy work in this first response; answer briefly from the visible context.';
+
+  return [
+    systemPrompt,
+    '## Group Chat Response Policy',
+    `This is a busy group conversation with a ${policy.deadlineMs}ms response budget.`,
+    modelLine,
+    toolLine,
+    'Answer only while the reply is still directly relevant to the latest visible message.',
+    'Keep the reply short enough that it will not feel awkward if other participants continue talking.',
+  ].join('\n\n');
+}
 
 /**
  * Build a reply-to annotation for a message that references another message via replyToMessageId.
@@ -469,7 +608,8 @@ function envelopeToContextMessage(envelope: SwarmEnvelope): ContextMessage {
 
 type GenerateResponseResult =
   | { type: 'complete'; response: SwarmResponse }
-  | { type: 'needs_worker'; payload: ChatWorkerMessage };
+  | { type: 'needs_worker'; payload: ChatWorkerMessage }
+  | { type: 'suppressed'; reason: 'group_response_timeout' | 'group_response_empty'; details?: Record<string, unknown> };
 
 /**
  * Generate response with iterative tool execution.
@@ -495,16 +635,18 @@ async function generateResponse(
 ): Promise<GenerateResponseResult> {
   await maybeTranscribeAudio(envelope, toolClient, toolContext, avatarRuntime.avatarConfig);
   const brainService = createRuntimeBrainService(stateService, avatarRuntime.avatarConfig.brain);
+  const responsePolicy = resolveResponseLlmPolicy(avatarRuntime.avatarConfig, envelope);
   const systemPrompt = await buildSystemPrompt(
     envelope,
     avatarRuntime.avatarConfig,
     avatarRuntime.avatarId,
     avatarRuntime.secrets,
     presenceService,
-    stateService
+    stateService,
+    { fastResponseMode: responsePolicy.isLatencyBoundGroup }
   );
   // Inject memory context into system prompt (gated by BRAIN_INJECT_CONTEXT flag)
-  let enrichedSystemPrompt = systemPrompt;
+  let enrichedSystemPrompt = appendGroupLatencyInstruction(systemPrompt, responsePolicy);
   if (process.env.BRAIN_INJECT_CONTEXT === 'true') {
     try {
       const userText = envelope.content.text || '';
@@ -517,7 +659,7 @@ async function generateResponse(
         if (recallResult.facts.length > 0) {
           const memoryContext = formatBrainMemoryContext(recallResult.facts);
           if (memoryContext) {
-            enrichedSystemPrompt = systemPrompt + '\n\n' + memoryContext;
+            enrichedSystemPrompt = enrichedSystemPrompt + '\n\n' + memoryContext;
           }
           logger.info('Memory context injected into system prompt', {
             event: 'brain_context_injected',
@@ -542,7 +684,23 @@ async function generateResponse(
   const toolDefinitions = toolClient
     .getToolDefinitions()
     .filter((tool: { name: string }) => avatarRuntime.avatarConfig.tools.includes(tool.name));
-  const enabledTools = toolClient.getOpenAIToolsForTools(toolDefinitions);
+  const enabledTools = responsePolicy.enableTools
+    ? toolClient.getOpenAIToolsForTools(toolDefinitions)
+    : [];
+
+  if (responsePolicy.isLatencyBoundGroup) {
+    logger.info('Using latency-bound group response policy', {
+      event: 'group_response_policy_applied',
+      subsystem: 'chat',
+      avatarId: avatarRuntime.avatarId,
+      platform: envelope.platform,
+      conversationId: envelope.conversationId,
+      deadlineMs: responsePolicy.deadlineMs,
+      useFastModel: responsePolicy.useFastModel,
+      model: responsePolicy.llmConfig.model,
+      toolsEnabled: responsePolicy.enableTools,
+    });
+  }
 
   // Build initial messages from channel history + current message
   const maxContext = avatarRuntime.avatarConfig.behavior.maxContextMessages || 20;
@@ -676,7 +834,32 @@ async function generateResponse(
   // ─── First LLM call ─────────────────────────────────────────────────────
   if (refreshTyping) await refreshTyping();
 
-  const llmResponse = await callLLM(messages, enabledTools, avatarRuntime.avatarConfig.llm, avatarRuntime.secrets);
+  let llmResponse: Awaited<ReturnType<typeof callLLM>>;
+  try {
+    llmResponse = await callLLM(messages, enabledTools, responsePolicy.llmConfig, avatarRuntime.secrets);
+  } catch (error) {
+    if (responsePolicy.isLatencyBoundGroup && isTimeoutLikeError(error)) {
+      logger.info('Suppressing group response after LLM deadline', {
+        event: 'group_response_timeout_suppressed',
+        subsystem: 'chat',
+        avatarId: avatarRuntime.avatarId,
+        platform: envelope.platform,
+        conversationId: envelope.conversationId,
+        messageId: envelope.messageId,
+        deadlineMs: responsePolicy.deadlineMs,
+        model: responsePolicy.llmConfig.model,
+      });
+      return {
+        type: 'suppressed',
+        reason: 'group_response_timeout',
+        details: {
+          deadlineMs: responsePolicy.deadlineMs,
+          model: responsePolicy.llmConfig.model,
+        },
+      };
+    }
+    throw error;
+  }
 
   // ─── Fast path: no tool calls → return response directly ──────────────
   if (!llmResponse.toolCalls || llmResponse.toolCalls.length === 0) {
@@ -711,6 +894,12 @@ async function generateResponse(
     let actions: ResponseAction[] = [];
     if (outputContent) {
       actions = [{ type: 'send_message', text: outputContent, replyToMessageId: envelope.messageId }];
+    } else if (responsePolicy.isLatencyBoundGroup) {
+      return {
+        type: 'suppressed',
+        reason: 'group_response_empty',
+        details: { model: responsePolicy.llmConfig.model },
+      };
     }
 
     return {
@@ -722,7 +911,7 @@ async function generateResponse(
         replyToMessageId: envelope.messageId,
         actions,
         generatedAt: Date.now(),
-        llmModel: avatarRuntime.avatarConfig.llm.model,
+        llmModel: responsePolicy.llmConfig.model,
         tokensUsed: 100,
         responseTrigger: extraContext?.responseTrigger,
       },
@@ -835,7 +1024,7 @@ async function generateResponse(
     toolContext,
     avatarId: envelope.avatarId,
     avatarName: avatarRuntime.avatarConfig.name,
-    llmConfig: avatarRuntime.avatarConfig.llm,
+    llmConfig: responsePolicy.llmConfig,
     secrets: avatarRuntime.secrets,
     envelope,
     brainService,
@@ -844,10 +1033,88 @@ async function generateResponse(
     startIteration: 1,
   });
 
-  const { response } = buildResponseFromToolLoop(envelope, toolLoopResult, avatarRuntime.avatarConfig.llm.model);
+  const { response } = buildResponseFromToolLoop(envelope, toolLoopResult, responsePolicy.llmConfig.model);
   response.responseTrigger = extraContext?.responseTrigger;
 
   return { type: 'complete', response };
+}
+
+async function detectNewerGroupActivity(
+  envelope: SwarmEnvelope,
+  avatarId: string,
+  options: { checkSharedRoom: boolean },
+): Promise<GroupActivityStaleness> {
+  try {
+    const currentState = await stateService.getChannelState(avatarId, envelope.conversationId);
+    const channelLatest = latestNewerMessageThanEnvelope(
+      envelope,
+      currentState?.recentMessages ?? [],
+    );
+    if (channelLatest) {
+      return {
+        stale: true,
+        source: 'channel-state',
+        latestMessageId: channelLatest.messageId,
+        latestTimestamp: channelLatest.timestamp,
+      };
+    }
+  } catch (error) {
+    logger.warn('Failed to check channel state for group response staleness', {
+      event: 'group_response_staleness_check_failed',
+      subsystem: 'chat',
+      source: 'channel-state',
+      avatarId,
+      conversationId: envelope.conversationId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  if (!options.checkSharedRoom) {
+    return { stale: false };
+  }
+
+  try {
+    const recentRoomMessages = await getSharedRoomRecentMessages(envelope.conversationId, 8);
+    const sharedLatest = latestNewerMessageThanEnvelope(envelope, recentRoomMessages);
+    if (sharedLatest) {
+      return {
+        stale: true,
+        source: 'shared-room',
+        latestMessageId: sharedLatest.messageId,
+        latestTimestamp: sharedLatest.timestamp,
+      };
+    }
+  } catch (error) {
+    logger.warn('Failed to check shared room ledger for group response staleness', {
+      event: 'group_response_staleness_check_failed',
+      subsystem: 'chat',
+      source: 'shared-room',
+      avatarId,
+      conversationId: envelope.conversationId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return { stale: false };
+}
+
+async function resetSuppressedMessageState(
+  avatarId: string,
+  conversationId: string,
+  reason: string,
+): Promise<void> {
+  try {
+    await stateService.transitionState(avatarId, conversationId, 'IDLE');
+  } catch (error) {
+    logger.warn('Failed to reset channel state after suppressed response', {
+      event: 'suppressed_response_state_reset_failed',
+      subsystem: 'state',
+      avatarId,
+      conversationId,
+      reason,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 export const handler = async (event: SQSEvent, context: Context): Promise<{ batchItemFailures: { itemIdentifier: string }[] }> => {
@@ -1149,6 +1416,49 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
 
       metrics.trackDuration('ProcessingLatency', recordStartTime);
       metrics.incrementCounter('MessagesProcessed');
+
+      if (result.type === 'suppressed') {
+        metrics.incrementCounter('GroupResponsesSuppressed');
+        metrics.setProperty('Outcome', result.reason);
+        await resetSuppressedMessageState(avatarId, envelope.conversationId, result.reason);
+
+        logger.info('Response suppressed', {
+          event: 'response_suppressed',
+          subsystem: 'chat',
+          reason: result.reason,
+          details: result.details,
+        });
+
+        if (wasOffloaded) {
+          await cleanupSqsRecord(rawBody);
+        }
+        continue;
+      }
+
+      if (isLatencyBoundGroupConversation(envelope)) {
+        const staleness = await detectNewerGroupActivity(envelope, avatarId, {
+          checkSharedRoom: shouldRunRoomCoordinator,
+        });
+        if (staleness.stale) {
+          metrics.incrementCounter('GroupResponsesSuppressed');
+          metrics.setProperty('Outcome', 'group_response_stale');
+          await resetSuppressedMessageState(avatarId, envelope.conversationId, 'group_response_stale');
+
+          logger.info('Suppressing stale group response', {
+            event: 'group_response_stale_suppressed',
+            subsystem: 'chat',
+            source: staleness.source,
+            messageId: envelope.messageId,
+            latestMessageId: staleness.latestMessageId,
+            latestTimestamp: staleness.latestTimestamp,
+          });
+
+          if (wasOffloaded) {
+            await cleanupSqsRecord(rawBody);
+          }
+          continue;
+        }
+      }
 
       if (result.type === 'needs_worker') {
         // Delegate tool execution to the async chat worker

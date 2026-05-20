@@ -312,6 +312,8 @@ export interface LLMConfig {
   provider: 'bedrock' | 'openrouter' | 'anthropic';
   model: string;
   fallbackModel?: string;
+  fastModel?: string;
+  thinkingModel?: string;
   temperature: number;
   maxTokens: number;
   timeoutMs?: number;
@@ -361,6 +363,7 @@ export interface BehaviorConfig {
   ignoreBots: boolean;
   cooldownMinutes: number;
   maxContextMessages: number;
+  groupResponseDeadlineMs?: number;
 }
 
 export interface SolanaConfig {

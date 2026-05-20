@@ -128,6 +128,8 @@ export interface AvatarRecord {
   llmConfig: {
     provider: string;
     model: string;
+    fastModel?: string;
+    thinkingModel?: string;
     temperature: number;
     maxTokens: number;
     useGlobalKey: boolean;

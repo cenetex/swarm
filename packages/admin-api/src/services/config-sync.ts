@@ -109,6 +109,8 @@ interface AvatarConfig {
   llm: {
     provider: string;
     model: string;
+    fastModel?: string;
+    thinkingModel?: string;
     temperature: number;
     maxTokens: number;
   };
@@ -251,6 +253,8 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
     llm: {
       provider: record.llmConfig.provider,
       model: record.llmConfig.model,
+      fastModel: record.llmConfig.fastModel,
+      thinkingModel: record.llmConfig.thinkingModel,
       temperature: record.llmConfig.temperature,
       maxTokens: record.llmConfig.maxTokens,
     },

@@ -143,6 +143,10 @@ const LLMConfigFileSchema = z.object({
   model: z.string().default(DEFAULT_MODELS.llm),
   fallback_model: z.string().optional(),
   fallbackModel: z.string().optional(),
+  fast_model: z.string().optional(),
+  fastModel: z.string().optional(),
+  thinking_model: z.string().optional(),
+  thinkingModel: z.string().optional(),
   temperature: z.number().default(0.8),
   max_tokens: z.number().optional(),
   maxTokens: z.number().optional(),
@@ -152,6 +156,8 @@ const LLMConfigFileSchema = z.object({
   provider: val.provider,
   model: val.model,
   fallbackModel: val.fallbackModel || val.fallback_model,
+  fastModel: val.fastModel || val.fast_model,
+  thinkingModel: val.thinkingModel || val.thinking_model,
   temperature: val.temperature,
   maxTokens: val.maxTokens ?? val.max_tokens ?? 1024,
   ...((val.timeoutMs ?? val.timeout_ms) !== undefined
@@ -198,12 +204,17 @@ const BehaviorConfigFileSchema = z.object({
   cooldownMinutes: z.number().optional(),
   max_context_messages: z.number().optional(),
   maxContextMessages: z.number().optional(),
+  group_response_deadline_ms: z.number().optional(),
+  groupResponseDeadlineMs: z.number().optional(),
 }).transform((val) => ({
   responseDelayMs: val.responseDelayMs || val.response_delay_ms || [1000, 3000] as [number, number],
   typingIndicator: val.typingIndicator ?? val.typing_indicator ?? true,
   ignoreBots: val.ignoreBots ?? val.ignore_bots ?? true,
   cooldownMinutes: val.cooldownMinutes ?? val.cooldown_minutes ?? 5,
   maxContextMessages: val.maxContextMessages ?? val.max_context_messages ?? 20,
+  ...((val.groupResponseDeadlineMs ?? val.group_response_deadline_ms) !== undefined
+    ? { groupResponseDeadlineMs: val.groupResponseDeadlineMs ?? val.group_response_deadline_ms }
+    : {}),
 })).default({
   responseDelayMs: [1000, 3000] as [number, number],
   typingIndicator: true,
@@ -347,6 +358,8 @@ export function loadAvatarConfigFromEnv(avatarId: string): AvatarConfig {
     llm: {
       provider: (process.env.LLM_PROVIDER as 'bedrock' | 'openrouter' | 'anthropic') || 'openrouter',
       model: process.env.LLM_MODEL || DEFAULT_MODELS.llm,
+      ...(process.env.FAST_LLM_MODEL ? { fastModel: process.env.FAST_LLM_MODEL } : {}),
+      ...(process.env.THINKING_LLM_MODEL ? { thinkingModel: process.env.THINKING_LLM_MODEL } : {}),
       temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.8'),
       maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '1024', 10),
       ...(process.env.LLM_TIMEOUT_MS ? { timeoutMs: parseInt(process.env.LLM_TIMEOUT_MS, 10) } : {}),
@@ -368,6 +381,9 @@ export function loadAvatarConfigFromEnv(avatarId: string): AvatarConfig {
       ignoreBots: true,
       cooldownMinutes: parseInt(process.env.COOLDOWN_MINUTES || '5', 10),
       maxContextMessages: parseInt(process.env.MAX_CONTEXT_MESSAGES || '20', 10),
+      ...(process.env.GROUP_RESPONSE_DEADLINE_MS
+        ? { groupResponseDeadlineMs: parseInt(process.env.GROUP_RESPONSE_DEADLINE_MS, 10) }
+        : {}),
     },
     tools: ['send_message', 'react', 'ignore', 'wait'],
     secrets: ['TELEGRAM_BOT_TOKEN', 'TWITTER_API_KEY', 'OPENROUTER_API_KEY'],

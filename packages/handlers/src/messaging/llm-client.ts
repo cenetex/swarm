@@ -61,12 +61,13 @@ function scoreModel(model: OpenRouterChatModel, requireTools: boolean): number {
   return score;
 }
 
-async function listOpenRouterChatModels(apiKey: string): Promise<OpenRouterChatModel[]> {
+async function listOpenRouterChatModels(apiKey: string, signal?: AbortSignal): Promise<OpenRouterChatModel[]> {
   const now = Date.now();
   if (openRouterModelCache && openRouterModelCache.expiresAt > now) return openRouterModelCache.models;
 
   const response = await fetch(OPENROUTER_MODELS_ENDPOINT, {
     headers: { Authorization: `Bearer ${apiKey}` },
+    signal,
   });
   if (!response.ok) {
     throw new Error(`OpenRouter model catalog unavailable: HTTP ${response.status}`);
@@ -95,8 +96,9 @@ async function resolveLiveOpenRouterModel(
   configuredModel: string,
   apiKey: string,
   requireTools: boolean,
+  signal?: AbortSignal,
 ): Promise<{ primaryModel: string; fallbackModels: string[] }> {
-  const models = await listOpenRouterChatModels(apiKey);
+  const models = await listOpenRouterChatModels(apiKey, signal);
   const ranked = [...models]
     .filter((model) => !requireTools || supportsTools(model))
     .sort((a, b) => {
@@ -337,30 +339,35 @@ export async function callLLM(
     });
   }
 
-  const modelPlan = await resolveLiveOpenRouterModel(config.model || '', apiKey, tools.length > 0);
-
-  const requestBody: Record<string, unknown> = {
-    model: modelPlan.primaryModel,
-    messages,
-    temperature: config.temperature,
-    max_tokens: config.maxTokens,
-    ...(modelPlan.fallbackModels.length > 0 ? { models: [modelPlan.primaryModel, ...modelPlan.fallbackModels], route: 'fallback' } : {}),
-    provider: {
-      allow_fallbacks: true,
-      ...(tools.length > 0 ? { require_parameters: true } : {}),
-    },
-  };
-
-  if (tools.length > 0) {
-    requestBody.tools = tools;
-    requestBody.tool_choice = 'auto';
-  }
-
   const timeoutMs = config.timeoutMs ?? LLM_TIMEOUT_MS;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const modelPlan = await resolveLiveOpenRouterModel(
+      config.model || '',
+      apiKey,
+      tools.length > 0,
+      controller.signal
+    );
+
+    const requestBody: Record<string, unknown> = {
+      model: modelPlan.primaryModel,
+      messages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+      ...(modelPlan.fallbackModels.length > 0 ? { models: [modelPlan.primaryModel, ...modelPlan.fallbackModels], route: 'fallback' } : {}),
+      provider: {
+        allow_fallbacks: true,
+        ...(tools.length > 0 ? { require_parameters: true } : {}),
+      },
+    };
+
+    if (tools.length > 0) {
+      requestBody.tools = tools;
+      requestBody.tool_choice = 'auto';
+    }
+
     const doRequest = async (body: Record<string, unknown>) => fetch(LLM_ENDPOINT, {
       method: 'POST',
       headers: {

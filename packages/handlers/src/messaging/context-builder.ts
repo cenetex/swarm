@@ -94,6 +94,7 @@ export async function buildCrossPlatformCustomContext(params: {
   envelope: SwarmEnvelope;
   presenceService: PresenceService;
   stateService: ReturnType<typeof createStateService>;
+  fastResponseMode?: boolean;
 }): Promise<string | undefined> {
   const snapshot = await buildAvatarContextSnapshot({
     avatarId: params.avatarId,
@@ -102,7 +103,17 @@ export async function buildCrossPlatformCustomContext(params: {
     homeChannel: resolveHomeChannelFromAvatarConfig(params.avatarConfig),
     presenceService: params.presenceService,
     stateGetter: params.stateService.getChannelState.bind(params.stateService),
-    summaryService: createChannelSummaryService(params.avatarSecrets),
+    summaryService: params.fastResponseMode
+      ? undefined
+      : createChannelSummaryService(params.avatarSecrets),
+    options: params.fastResponseMode
+      ? {
+          includeHomeChannelSummary: false,
+          warmChannelSummaries: false,
+          maxChannelsToInspect: 4,
+          maxRecentActivityItems: 2,
+        }
+      : undefined,
   });
 
   return renderAvatarContextSnapshot(snapshot) || undefined;
@@ -117,7 +128,8 @@ export async function buildSystemPrompt(
   avatarId: string,
   avatarSecrets: Record<string, string>,
   presenceService: PresenceService,
-  stateService: ReturnType<typeof createStateService>
+  stateService: ReturnType<typeof createStateService>,
+  options: { fastResponseMode?: boolean } = {},
 ): Promise<string> {
   // Detect channel type for Telegram
   let channelType: 'private' | 'group' | 'supergroup' | 'channel' | undefined;
@@ -154,6 +166,7 @@ export async function buildSystemPrompt(
       envelope,
       presenceService,
       stateService,
+      fastResponseMode: options.fastResponseMode,
     });
   } catch (err) {
     logger.warn('Failed to build custom cross-platform context', {
