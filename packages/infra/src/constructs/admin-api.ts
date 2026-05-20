@@ -1571,6 +1571,24 @@ export class AdminApiConstruct extends Construct {
       integration: avatarsIntegration,
     });
 
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/telegram/state',
+      methods: [apigateway.HttpMethod.GET],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/telegram/allowed-chats/{chatId}',
+      methods: [apigateway.HttpMethod.DELETE],
+      integration: avatarsIntegration,
+    });
+
+    this.api.addRoutes({
+      path: '/avatars/{avatarId}/telegram/allowed-dmers/{userId}',
+      methods: [apigateway.HttpMethod.DELETE],
+      integration: avatarsIntegration,
+    });
+
     // Onboarding orchestrator routes
     this.api.addRoutes({
       path: '/onboarding/{avatarId}',

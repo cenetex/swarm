@@ -8,12 +8,28 @@ const __dirname = dirname(__filename);
 
 const src = readFileSync(resolve(__dirname, '../src/constructs/admin-api.ts'), 'utf8');
 
+function expectRoute(path: string, methods: string[]) {
+  const escapedPath = path.replace(/[{}]/g, match => `\\${match}`);
+  const escapedMethods = methods
+    .map(method => `apigateway\\.HttpMethod\\.${method}`)
+    .join(',\\s*');
+  const routeMatch = src.match(
+    new RegExp(
+      `this\\.api\\.addRoutes\\(\\{\\s*path:\\s*'${escapedPath}',\\s*methods:\\s*\\[${escapedMethods}\\],\\s*integration:\\s*avatarsIntegration,\\s*\\}\\);`,
+    ),
+  );
+
+  expect(routeMatch).not.toBeNull();
+}
+
 describe('AdminApiConstruct avatar routes', () => {
   it('registers POST /avatars/scan-nft with the avatars Lambda', () => {
-    const scanNftRouteMatch = src.match(
-      /this\.api\.addRoutes\(\{\s*path:\s*'\/avatars\/scan-nft',\s*methods:\s*\[apigateway\.HttpMethod\.POST\],\s*integration:\s*avatarsIntegration,\s*\}\);/
-    );
+    expectRoute('/avatars/scan-nft', ['POST']);
+  });
 
-    expect(scanNftRouteMatch).not.toBeNull();
+  it('registers Telegram dashboard routes with the avatars Lambda', () => {
+    expectRoute('/avatars/{avatarId}/telegram/state', ['GET']);
+    expectRoute('/avatars/{avatarId}/telegram/allowed-chats/{chatId}', ['DELETE']);
+    expectRoute('/avatars/{avatarId}/telegram/allowed-dmers/{userId}', ['DELETE']);
   });
 });
