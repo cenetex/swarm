@@ -19,6 +19,26 @@ async function createWidePng(): Promise<Buffer> {
     .toBuffer();
 }
 
+async function createLargeBlackStickerSource(): Promise<Buffer> {
+  return sharp({
+    create: {
+      width: 2048,
+      height: 2048,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 1 },
+    },
+  })
+    .composite([
+      {
+        input: Buffer.from(
+          '<svg width="2048" height="2048"><rect x="624" y="624" width="800" height="800" rx="120" fill="#ffffff"/><circle cx="1024" cy="1024" r="300" fill="#22c55e"/></svg>',
+        ),
+      },
+    ])
+    .png()
+    .toBuffer();
+}
+
 describe('Telegram Sticker Format Processor', () => {
   it('resizes PNGs to Telegram static sticker constraints', async () => {
     const result = await processForTelegramSticker(await createWidePng(), {
@@ -27,6 +47,15 @@ describe('Telegram Sticker Format Processor', () => {
 
     expect(result.width).toBe(512);
     expect(result.height).toBe(256);
+    expect(result.size).toBeLessThanOrEqual(512 * 1024);
+    expect(result.contentType).toBe('image/png');
+  });
+
+  it('downscales large generated sources before background removal', async () => {
+    const result = await processForTelegramSticker(await createLargeBlackStickerSource());
+
+    expect(result.width).toBe(512);
+    expect(result.height).toBe(512);
     expect(result.size).toBeLessThanOrEqual(512 * 1024);
     expect(result.contentType).toBe('image/png');
   });

@@ -177,8 +177,9 @@ export async function removeCheckerboardBackground(imageBuffer: Buffer): Promise
   let removedCount = 0;
   let barrierHits = 0;
 
-  while (queue.length > 0) {
-    const [x, y] = queue.shift()!;
+  let queueIndex = 0;
+  while (queueIndex < queue.length) {
+    const [x, y] = queue[queueIndex++]!;
     const key = y * width + x;
     if (visited[key] === 1) continue;
     visited[key] = 1;

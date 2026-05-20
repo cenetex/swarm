@@ -34,6 +34,30 @@ export interface TelegramProcessedSticker extends ProcessedSticker {
   contentType: 'image/png';
 }
 
+async function resizeSourceForTelegramSticker(imageBuffer: Buffer): Promise<Buffer> {
+  const sharp = await getSharp();
+  const metadata = await sharp(imageBuffer).metadata();
+  const width = metadata.width || TELEGRAM_STICKER_SIZE;
+  const height = metadata.height || TELEGRAM_STICKER_SIZE;
+
+  if (width <= TELEGRAM_STICKER_SIZE && height <= TELEGRAM_STICKER_SIZE) {
+    return imageBuffer;
+  }
+
+  const resize =
+    width >= height
+      ? { width: TELEGRAM_STICKER_SIZE }
+      : { height: TELEGRAM_STICKER_SIZE };
+
+  return sharp(imageBuffer)
+    .resize(resize)
+    .png({
+      compressionLevel: 9,
+      adaptiveFiltering: true,
+    })
+    .toBuffer();
+}
+
 export function generateStickerSetName(baseName: string, botUsername: string): string {
   const suffix = `_by_${botUsername.replace(/^@/, '').toLowerCase()}`;
   const maxBaseLength = 64 - suffix.length;
@@ -73,9 +97,10 @@ export async function processForTelegramSticker(
   options: TelegramStickerOptions = { removeBackground: true },
 ): Promise<TelegramProcessedSticker> {
   const sharp = await getSharp();
+  const stickerSizedBuffer = await resizeSourceForTelegramSticker(imageBuffer);
   const workingBuffer = options.removeBackground === false
-    ? imageBuffer
-    : await removeCheckerboardBackground(imageBuffer);
+    ? stickerSizedBuffer
+    : await removeCheckerboardBackground(stickerSizedBuffer);
 
   const metadata = await sharp(workingBuffer).metadata();
   const originalWidth = metadata.width || TELEGRAM_STICKER_SIZE;
