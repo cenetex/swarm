@@ -156,7 +156,7 @@ export interface LLMMessage {
  *
  * Returns extracted tool calls and cleaned content (with XML removed).
  */
-export function parseXmlToolCalls(content: string): {
+export function parseXmlToolCalls(content: string, allowedToolNames?: string[]): {
   toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
   cleanedContent: string;
 } {
@@ -164,7 +164,22 @@ export function parseXmlToolCalls(content: string): {
   let cleanedContent = content;
 
   // Known tool names that might appear as direct XML tags
-  const knownTools = ['send_message', 'react', 'ignore', 'wait', 'generate_image', 'remember', 'recall', 'take_selfie'];
+  const knownTools = [
+    'send_message',
+    'react',
+    'ignore',
+    'wait',
+    'generate_image',
+    'generate_video',
+    'generate_sticker',
+    'create_sticker',
+    'send_sticker',
+    'remember',
+    'recall',
+    'take_selfie',
+  ];
+  const allowedTools = allowedToolNames ? new Set(allowedToolNames) : undefined;
+  const isAllowedTool = (toolName: string) => !allowedTools || allowedTools.has(toolName);
 
   // Pattern 1: Match <function_calls>...</function_calls> wrapper format
   const functionCallsPattern = /<(?:antml:)?function_calls>([\s\S]*?)<\/(?:antml:)?function_calls>/gi;
@@ -172,6 +187,7 @@ export function parseXmlToolCalls(content: string): {
 
   while ((match = functionCallsPattern.exec(content)) !== null) {
     const block = match[1];
+    const toolCallCountBeforeBlock = toolCalls.length;
 
     // Extract <invoke> blocks
     const invokePattern = /<(?:antml:)?invoke\s+name=["']([^"']+)["']>([\s\S]*?)<\/(?:antml:)?invoke>/gi;
@@ -179,6 +195,8 @@ export function parseXmlToolCalls(content: string): {
 
     while ((invokeMatch = invokePattern.exec(block)) !== null) {
       const toolName = invokeMatch[1];
+      if (!isAllowedTool(toolName)) continue;
+
       const paramsBlock = invokeMatch[2];
       const args: Record<string, unknown> = {};
 
@@ -209,24 +227,22 @@ export function parseXmlToolCalls(content: string): {
       });
     }
 
-    // Remove the matched XML block from content
-    cleanedContent = cleanedContent.replace(match[0], '').trim();
+    // Remove the matched XML block only when it produced an allowed tool call.
+    if (toolCalls.length > toolCallCountBeforeBlock) {
+      cleanedContent = cleanedContent.replace(match[0], '').trim();
+    }
   }
 
   // Pattern 2: Match direct tool tags like <send_message>...</send_message>
-  for (const toolName of knownTools) {
+  const directToolNames = allowedTools ? Array.from(allowedTools) : knownTools;
+  for (const toolName of directToolNames) {
     const directPattern = new RegExp(`<${toolName}>([\\s\\S]*?)<\\/${toolName}>`, 'gi');
     let directMatch: RegExpExecArray | null;
 
     while ((directMatch = directPattern.exec(cleanedContent)) !== null) {
       const textContent = directMatch[1].trim();
 
-      // For send_message, the content is the text parameter
-      const args: Record<string, unknown> = toolName === 'send_message'
-        ? { text: textContent }
-        : toolName === 'react'
-          ? { emoji: textContent }
-          : { value: textContent };
+      const args = buildDirectToolArguments(toolName, textContent);
 
       toolCalls.push({
         id: `xml_${randomUUID().slice(0, 8)}`,
@@ -244,7 +260,97 @@ export function parseXmlToolCalls(content: string): {
     }
   }
 
+  // Pattern 3: Match bracketed pseudo-calls like:
+  // [generate_sticker(prompt="sharp cyberpunk mask, transparent background")]
+  // Some models leak this form when they mean to call a tool.
+  const bracketToolNames = allowedTools ? Array.from(allowedTools) : knownTools;
+  if (bracketToolNames.length > 0) {
+    const toolNamePattern = bracketToolNames.map(escapeRegex).join('|');
+    const bracketCallPattern = new RegExp(`\\[(${toolNamePattern})\\s*\\(([\\s\\S]*?)\\)\\]`, 'gi');
+    let bracketMatch: RegExpExecArray | null;
+
+    while ((bracketMatch = bracketCallPattern.exec(cleanedContent)) !== null) {
+      const toolName = bracketMatch[1];
+      if (!isAllowedTool(toolName)) continue;
+
+      const args = parseBracketToolArguments(bracketMatch[2]);
+      toolCalls.push({
+        id: `xml_${randomUUID().slice(0, 8)}`,
+        name: toolName,
+        arguments: args,
+      });
+
+      logger.info('Parsed bracketed tool call from content', {
+        toolName,
+        args,
+      });
+
+      cleanedContent = cleanedContent.replace(bracketMatch[0], '').trim();
+    }
+  }
+
   return { toolCalls, cleanedContent };
+}
+
+function buildDirectToolArguments(toolName: string, textContent: string): Record<string, unknown> {
+  switch (toolName) {
+    case 'send_message':
+      return { text: textContent };
+    case 'react':
+      return { emoji: textContent };
+    case 'generate_image':
+    case 'generate_video':
+    case 'generate_sticker':
+      return { prompt: textContent };
+    default:
+      return { value: textContent };
+  }
+}
+
+function parseBracketToolArguments(argsText: string): Record<string, unknown> {
+  const trimmed = argsText.trim();
+  if (!trimmed) return {};
+
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
+  const args: Record<string, unknown> = {};
+  const argPattern = /([A-Za-z_][A-Za-z0-9_]*)\s*=\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^,]+)(?:,|$)/g;
+  let argMatch: RegExpExecArray | null;
+
+  while ((argMatch = argPattern.exec(trimmed)) !== null) {
+    const key = argMatch[1];
+    const rawValue = argMatch[2].trim();
+    args[key] = parseBracketValue(rawValue);
+  }
+
+  return args;
+}
+
+function parseBracketValue(rawValue: string): unknown {
+  if (rawValue.startsWith('"')) {
+    try {
+      return JSON.parse(rawValue);
+    } catch {
+      return rawValue.slice(1, -1);
+    }
+  }
+  if (rawValue.startsWith("'") && rawValue.endsWith("'")) {
+    return rawValue.slice(1, -1).replace(/\\'/g, "'").replace(/\\\\/g, '\\');
+  }
+  try {
+    return JSON.parse(rawValue);
+  } catch {
+    return rawValue;
+  }
 }
 
 /**
@@ -461,8 +567,9 @@ export async function callLLM(
     let finalContent = choice.content || undefined;
     let xmlToolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> = [];
 
-    if (finalContent && (finalContent.includes('<function_calls>') || finalContent.includes('<invoke'))) {
-      const parsed = parseXmlToolCalls(finalContent);
+    if (finalContent) {
+      const allowedToolNames = tools.map(tool => tool.function.name);
+      const parsed = parseXmlToolCalls(finalContent, allowedToolNames);
       xmlToolCalls = parsed.toolCalls;
       finalContent = parsed.cleanedContent || undefined;
 

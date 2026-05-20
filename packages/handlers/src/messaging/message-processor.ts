@@ -59,7 +59,7 @@ import { reserveResponseInChannelHistory } from './response-history.js';
 // Extracted modules
 import { callLLM, stripAvatarNamePrefix, type LLMMessage } from './llm-client.js';
 import { maybeTranscribeAudio } from './tool-executor.js';
-import { executeToolLoop, buildResponseFromToolLoop } from './tool-loop.js';
+import { executeToolLoop, buildResponseFromToolLoop, type ToolLoopResult } from './tool-loop.js';
 import { buildSystemPrompt, formatBrainMemoryContext } from './context-builder.js';
 import { extractMediaContext, buildUserMessageContent, type MediaExtractionConfig } from './media-extractor.js';
 import type { ChatWorkerMessage } from './chat-worker.js';
@@ -155,6 +155,19 @@ export function resolveResponseLlmPolicy(
     useFastModel: Boolean(fastModel),
     enableTools,
   };
+}
+
+export function shouldEnableGroupToolsForMessage(
+  envelope: Pick<SwarmEnvelope, 'content' | 'metadata'>,
+): boolean {
+  if (!envelope.metadata.isMention && !envelope.metadata.isReplyToBot) return false;
+
+  const text = (envelope.content.text || '').toLowerCase();
+  if (!text.trim()) return false;
+
+  return /\b(use|call|run|invoke)\s+(the\s+)?tool\b/.test(text)
+    || /\b(generate|create|make|draw|render|show)\b[\s\S]{0,80}\b(image|picture|photo|video|sticker|art)\b/.test(text)
+    || /\b(image|picture|photo|video|sticker)\b[\s\S]{0,80}\b(generate|create|make|draw|render|tool)\b/.test(text);
 }
 
 export function hasNewerMessageThanEnvelope(
@@ -635,7 +648,25 @@ async function generateResponse(
 ): Promise<GenerateResponseResult> {
   await maybeTranscribeAudio(envelope, toolClient, toolContext, avatarRuntime.avatarConfig);
   const brainService = createRuntimeBrainService(stateService, avatarRuntime.avatarConfig.brain);
-  const responsePolicy = resolveResponseLlmPolicy(avatarRuntime.avatarConfig, envelope);
+  const baseResponsePolicy = resolveResponseLlmPolicy(avatarRuntime.avatarConfig, envelope);
+  const groupToolOverride = baseResponsePolicy.isLatencyBoundGroup
+    && !baseResponsePolicy.enableTools
+    && shouldEnableGroupToolsForMessage(envelope);
+  const responsePolicy: ResponseLlmPolicy = groupToolOverride
+    ? { ...baseResponsePolicy, enableTools: true }
+    : baseResponsePolicy;
+
+  if (groupToolOverride) {
+    logger.info('Enabling tools for explicit group tool request', {
+      event: 'group_tools_enabled_for_explicit_request',
+      subsystem: 'chat',
+      avatarId: avatarRuntime.avatarId,
+      platform: envelope.platform,
+      conversationId: envelope.conversationId,
+      messageId: envelope.messageId,
+    });
+  }
+
   const systemPrompt = await buildSystemPrompt(
     envelope,
     avatarRuntime.avatarConfig,
@@ -981,8 +1012,10 @@ async function generateResponse(
   });
 
   // Execute the pending tool calls inline
+  const preExecutedToolResults: ToolLoopResult['allToolResults'] = [];
   for (const toolCall of llmResponse.toolCalls) {
     const result = await toolClient.execute(toolCall.name, toolCall.arguments, toolContext);
+    preExecutedToolResults.push({ name: toolCall.name, result });
 
     // Check if this is a manual tool (pause tool) with ui action - wrap it with tool call id
     const toolResultContent = (() => {
@@ -1029,7 +1062,7 @@ async function generateResponse(
     envelope,
     brainService,
     refreshTyping,
-    initialToolResultCount: llmResponse.toolCalls.length,
+    preExecutedToolResults,
     startIteration: 1,
   });
 

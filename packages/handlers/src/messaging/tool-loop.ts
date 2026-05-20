@@ -36,6 +36,8 @@ export interface ToolLoopParams {
   envelope: SwarmEnvelope;
   brainService: ReturnType<typeof createRuntimeBrainService>;
   refreshTyping?: () => Promise<void>;
+  /** Tool results already executed by the caller before entering this loop */
+  preExecutedToolResults?: ToolLoopResult['allToolResults'];
   /** Number of tool results already accumulated (for entitlement continuity across queue hop) */
   initialToolResultCount?: number;
   /** Starting iteration (for continuity when worker picks up after first LLM call) */
@@ -73,11 +75,12 @@ export async function executeToolLoop(params: ToolLoopParams): Promise<ToolLoopR
     envelope,
     brainService,
     refreshTyping,
+    preExecutedToolResults = [],
     initialToolResultCount = 0,
     startIteration = 0,
   } = params;
 
-  const allToolResults: ToolLoopResult['allToolResults'] = [];
+  const allToolResults: ToolLoopResult['allToolResults'] = [...preExecutedToolResults];
   let finalContent: string | undefined;
   let cleanFinalContent: string | undefined;
   let iterations = startIteration;

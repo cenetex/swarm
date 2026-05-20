@@ -34,7 +34,7 @@ import { ensureReplicateKey } from '../utils/system-replicate-key.js';
 import { ensureOpenRouterKey } from '../utils/system-openrouter-key.js';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { createRuntimeBrainService } from '../services/brain.js';
-import { executeToolLoop, buildResponseFromToolLoop } from './tool-loop.js';
+import { executeToolLoop, buildResponseFromToolLoop, type ToolLoopResult } from './tool-loop.js';
 import type { LLMMessage } from './llm-client.js';
 import { createTypingSender } from './typing-indicator.js';
 import { reserveResponseInChannelHistory } from './response-history.js';
@@ -258,9 +258,11 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
         const brainService = createRuntimeBrainService(stateService, avatarRuntime.avatarConfig.brain);
 
         // Execute pending tool calls inline, then run the rest of the tool loop
+        const preExecutedToolResults: ToolLoopResult['allToolResults'] = [];
         for (const toolCall of pendingToolCalls) {
           logger.info('Executing tool (from initial LLM call)', { tool: toolCall.name });
           const result = await toolClient.execute(toolCall.name, toolCall.arguments, toolContext);
+          preExecutedToolResults.push({ name: toolCall.name, result });
 
           // Check if this is a manual tool (pause tool) with ui action - wrap it with tool call id
           const toolResultContent = (() => {
@@ -310,7 +312,8 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           envelope,
           brainService,
           refreshTyping,
-          initialToolResultCount: item.toolResultCount + pendingToolCalls.length,
+          preExecutedToolResults,
+          initialToolResultCount: item.toolResultCount,
           startIteration: 1, // Already did iteration 0 (first LLM call) in message-processor
         });
 

@@ -18,6 +18,7 @@ import {
   isLatencyBoundGroupConversation,
   resolveGroupResponseDeadlineMs,
   resolveResponseLlmPolicy,
+  shouldEnableGroupToolsForMessage,
 } from './message-processor.js';
 import {
   buildReservedResponseMessageId,
@@ -143,6 +144,30 @@ describe('Message Processor - Group Response Policy', () => {
     expect(policy.llmConfig.model).toBe('google/gemini-3-flash-preview');
     expect(policy.llmConfig.timeoutMs).toBe(7500);
     expect(policy.enableTools).toBe(true);
+  });
+
+  it('enables group tools for direct explicit media/tool requests', () => {
+    expect(shouldEnableGroupToolsForMessage({
+      content: { text: '@bot show him how to make a sticker' },
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', isMention: true },
+    })).toBe(true);
+
+    expect(shouldEnableGroupToolsForMessage({
+      content: { text: "you're doing it wrong. use the tool" },
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', isReplyToBot: true },
+    })).toBe(true);
+  });
+
+  it('keeps group tools disabled for ambient or ordinary direct chatter', () => {
+    expect(shouldEnableGroupToolsForMessage({
+      content: { text: 'somebody should make a sticker later' },
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k' },
+    })).toBe(false);
+
+    expect(shouldEnableGroupToolsForMessage({
+      content: { text: '@bot what do you think?' },
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', isMention: true },
+    })).toBe(false);
   });
 
   it('detects newer messages so late group replies can be suppressed', () => {
