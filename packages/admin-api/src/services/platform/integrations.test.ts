@@ -193,14 +193,14 @@ describe('getAvailableModelsForIntegration', () => {
     expect(models.voice_clone.length).toBeGreaterThan(0);
   });
 
-  it('should return media models for OpenRouter capabilities', () => {
+  it('does not return static media models for OpenRouter capabilities', () => {
     const models = getAvailableModelsForIntegration('openrouter');
 
     expect(models.llm).toEqual([]);
     expect(models.image_generation).toBeTruthy();
     expect(models.video_generation).toBeTruthy();
-    expect(models.image_generation.length).toBeGreaterThan(0);
-    expect(models.video_generation.length).toBeGreaterThan(0);
+    expect(models.image_generation).toEqual([]);
+    expect(models.video_generation).toEqual([]);
   });
 
   it('should not return static LLM models for OpenAI capabilities', () => {
@@ -347,14 +347,14 @@ describe('Model Selection Logic', () => {
           enabled: true,
           useGlobalKey: false,
           models: {
-            image_generation: 'black-forest-labs/flux.2-flex',
+            image_generation: 'google/gemini-3-pro-image-preview',
           },
         },
       },
     };
 
     const model = getConfiguredModel(avatar, 'image_generation', 'default/model');
-    expect(model).toBe('black-forest-labs/flux.2-flex');
+    expect(model).toBe('google/gemini-3-pro-image-preview');
   });
 
   it('should return default when no config', () => {

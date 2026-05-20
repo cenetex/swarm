@@ -11,7 +11,7 @@ import type { AICapability } from '../types.js';
  * Information about an AI model
  */
 export interface ModelInfo {
-  id: string;                      // Model identifier (e.g., 'google/nano-banana-pro')
+  id: string;                      // Model identifier
   name: string;                    // Display name
   provider: 'replicate' | 'openai' | 'anthropic' | 'openrouter';
   capabilities: AICapability[];   // What this model can do
@@ -49,56 +49,6 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   // IMAGE GENERATION
   // ==========================================================================
   {
-    id: 'black-forest-labs/flux.2-pro',
-    name: 'FLUX 2 Pro',
-    provider: 'openrouter',
-    capabilities: ['image_generation'],
-    description: 'High-quality OpenRouter image generation with good reference-image guidance.',
-    tier: 'premium',
-    speed: 'medium',
-    quality: 'high',
-  },
-  {
-    id: 'black-forest-labs/flux.2-flex',
-    name: 'FLUX 2 Flex',
-    provider: 'openrouter',
-    capabilities: ['image_generation'],
-    description: 'Flexible FLUX image generation via OpenRouter for broader prompt and reference workflows.',
-    tier: 'premium',
-    speed: 'medium',
-    quality: 'high',
-  },
-  {
-    id: 'google/gemini-3-pro-image-preview',
-    name: 'Gemini 3 Pro Image Preview',
-    provider: 'openrouter',
-    capabilities: ['image_generation'],
-    description: 'Gemini image generation with strong instruction following and image configuration support.',
-    tier: 'premium',
-    speed: 'medium',
-    quality: 'high',
-  },
-  {
-    id: 'google/gemini-2.5-flash-image',
-    name: 'Gemini 2.5 Flash Image',
-    provider: 'openrouter',
-    capabilities: ['image_generation'],
-    description: 'Fast multimodal image generation through OpenRouter.',
-    tier: 'standard',
-    speed: 'fast',
-    quality: 'standard',
-  },
-  {
-    id: 'openai/gpt-5-image-mini',
-    name: 'GPT-5 Image Mini',
-    provider: 'openrouter',
-    capabilities: ['image_generation'],
-    description: 'OpenAI image generation through OpenRouter for compact image workflows.',
-    tier: 'standard',
-    speed: 'medium',
-    quality: 'high',
-  },
-  {
     id: 'black-forest-labs/flux-1.1-pro',
     name: 'FLUX 1.1 Pro',
     provider: 'replicate',
@@ -108,17 +58,6 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     tier: 'premium',
     speed: 'fast',
     quality: 'high',
-  },
-  {
-    id: 'google/nano-banana-pro',
-    name: 'Nano Banana Pro',
-    provider: 'openrouter',
-    capabilities: ['image_generation'],
-    description: 'Reference-image aware image generation and editing via OpenRouter.',
-    tier: 'premium',
-    speed: 'medium',
-    quality: 'high',
-    isDefault: true,
   },
   {
     id: 'black-forest-labs/flux-schnell',
@@ -168,47 +107,6 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   // ==========================================================================
   // VIDEO GENERATION
   // ==========================================================================
-  {
-    id: 'bytedance/seedance-2.0-fast',
-    name: 'Seedance 2.0 Fast',
-    provider: 'openrouter',
-    capabilities: ['video_generation'],
-    description: 'Fast OpenRouter video generation with broad aspect-ratio and reference-image support.',
-    tier: 'premium',
-    speed: 'medium',
-    quality: 'high',
-  },
-  {
-    id: 'google/veo-3.1-fast',
-    name: 'Veo 3.1 Fast',
-    provider: 'openrouter',
-    capabilities: ['video_generation'],
-    description: 'Google Veo video generation through OpenRouter, optimized for lower latency.',
-    tier: 'premium',
-    speed: 'medium',
-    quality: 'high',
-    isDefault: true,
-  },
-  {
-    id: 'google/veo-3.1',
-    name: 'Veo 3.1',
-    provider: 'openrouter',
-    capabilities: ['video_generation'],
-    description: 'High-quality Google Veo video generation through OpenRouter.',
-    tier: 'premium',
-    speed: 'slow',
-    quality: 'high',
-  },
-  {
-    id: 'kwaivgi/kling-v3.0-std',
-    name: 'Kling v3.0 Standard',
-    provider: 'openrouter',
-    capabilities: ['video_generation'],
-    description: 'Kling video generation through OpenRouter for motion-heavy clips.',
-    tier: 'premium',
-    speed: 'slow',
-    quality: 'high',
-  },
   {
     id: 'minimax/video-01',
     name: 'Minimax Video',
@@ -417,8 +315,8 @@ export function getReplicateVersion(modelId: string): string | undefined {
  * Default model IDs by capability
  */
 export const DEFAULT_MODELS: Record<AICapability, string> = {
-  image_generation: 'google/nano-banana-pro',
-  video_generation: 'google/veo-3.1-fast',
+  image_generation: '',
+  video_generation: '',
   audio_generation: 'stability-ai/stable-audio-2.5',
   voice_clone: 'x-lance/f5-tts',
   text_to_speech: 'x-lance/f5-tts',

@@ -221,7 +221,7 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarMediaRuntime> {
     },
     media: {
       image: {
-        provider: 'replicate',
+        provider: 'openrouter',
         model: DEFAULT_MODELS.image_generation,
       },
     },
@@ -476,7 +476,9 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
         const prompt = avatarConfig.name
           ? `${avatarConfig.name}: ${item.action.prompt}`
           : item.action.prompt;
-        const media = await mediaService.generateVideo(prompt, avatarConfig.media.video);
+        const media = await mediaService.generateVideo(prompt, avatarConfig.media.video, {
+          avatarId,
+        });
         mediaAction = {
           type: 'send_media',
           mediaType: 'video',

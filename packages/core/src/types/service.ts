@@ -141,7 +141,7 @@ export interface MediaServiceGenerateOptions {
 
 export interface MediaService {
   generateImage(prompt: string, config: MediaConfig['image'], options?: MediaServiceGenerateOptions): Promise<GeneratedMedia>;
-  generateVideo(prompt: string, config: NonNullable<MediaConfig['video']>): Promise<GeneratedMedia>;
+  generateVideo(prompt: string, config: NonNullable<MediaConfig['video']>, options?: Pick<MediaServiceGenerateOptions, 'avatarId'>): Promise<GeneratedMedia>;
   uploadToS3(buffer: Buffer, key: string, contentType: string): Promise<string>;
 }
 

@@ -20,10 +20,8 @@ import type { AICapability } from '../types.js';
 
 describe('Models Registry', () => {
   describe('AVAILABLE_MODELS catalog', () => {
-    it('should contain local models for non-LLM capabilities', () => {
+    it('should contain local models for non-media non-LLM capabilities', () => {
       const capabilities: AICapability[] = [
-        'image_generation',
-        'video_generation',
         'audio_generation',
         'voice_clone',
         'text_to_speech',
@@ -51,8 +49,6 @@ describe('Models Registry', () => {
 
     it('should have exactly one default model per capability', () => {
       const capabilities: AICapability[] = [
-        'image_generation',
-        'video_generation',
         'audio_generation',
         'voice_clone',
         'transcription',
@@ -110,11 +106,16 @@ describe('Models Registry', () => {
       expect(DEFAULT_MODELS.llm).toBe('');
     });
 
-    it('should have concrete defaults for non-LLM capabilities', () => {
+    it('should have concrete defaults only for static non-media capabilities', () => {
       for (const [capability, modelId] of Object.entries(DEFAULT_MODELS)) {
-        if (capability === 'llm') continue;
+        if (capability === 'llm' || capability === 'image_generation' || capability === 'video_generation') continue;
         expect(modelId).toBeTruthy();
       }
+    });
+
+    it('does not hard-code OpenRouter media default model IDs', () => {
+      expect(DEFAULT_MODELS.image_generation).toBe('');
+      expect(DEFAULT_MODELS.video_generation).toBe('');
     });
 
     it('default model IDs should exist in AVAILABLE_MODELS', () => {
@@ -129,16 +130,14 @@ describe('Models Registry', () => {
   });
 
   describe('getModelsForCapability', () => {
-    it('should return image generation models', () => {
+    it('does not return static OpenRouter image generation models', () => {
       const models = getModelsForCapability('image_generation');
-      expect(models.length).toBeGreaterThan(0);
-      expect(models.every(m => m.capabilities.includes('image_generation'))).toBe(true);
+      expect(models).toEqual([]);
     });
 
-    it('should return video generation models', () => {
+    it('does not return static OpenRouter video generation models', () => {
       const models = getModelsForCapability('video_generation');
-      expect(models.length).toBeGreaterThan(0);
-      expect(models.every(m => m.capabilities.includes('video_generation'))).toBe(true);
+      expect(models).toEqual([]);
     });
 
     it('should return audio generation models', () => {
@@ -175,20 +174,14 @@ describe('Models Registry', () => {
   });
 
   describe('getDefaultModel', () => {
-    it('should return default model for image_generation', () => {
+    it('does not return a static default model for image_generation', () => {
       const model = getDefaultModel('image_generation');
-      expect(model).toBeTruthy();
-      expect(model?.id).toBe(DEFAULT_MODELS.image_generation);
-      expect(model?.provider).toBe('openrouter');
-      expect(model?.capabilities).toContain('image_generation');
+      expect(model).toBeUndefined();
     });
 
-    it('should return default model for video_generation', () => {
+    it('does not return a static default model for video_generation', () => {
       const model = getDefaultModel('video_generation');
-      expect(model).toBeTruthy();
-      expect(model?.id).toBe(DEFAULT_MODELS.video_generation);
-      expect(model?.provider).toBe('openrouter');
-      expect(model?.capabilities).toContain('video_generation');
+      expect(model).toBeUndefined();
     });
 
     it('should return default model for audio_generation', () => {
@@ -216,10 +209,10 @@ describe('Models Registry', () => {
 
   describe('getModelById', () => {
     it('should find model by exact ID', () => {
-      const model = getModelById('black-forest-labs/flux.2-pro');
+      const model = getModelById('stability-ai/stable-audio-2.5');
       expect(model).toBeTruthy();
-      expect(model?.name).toBe('FLUX 2 Pro');
-      expect(model?.provider).toBe('openrouter');
+      expect(model?.name).toBe('Stable Audio 2.5');
+      expect(model?.provider).toBe('replicate');
     });
 
     it('keeps FLUX 1.1 Pro registered for legacy Replicate config recognition', () => {
@@ -229,11 +222,9 @@ describe('Models Registry', () => {
       expect(model?.provider).toBe('replicate');
     });
 
-    it('registers Nano Banana Pro as an OpenRouter image model', () => {
+    it('does not register fake OpenRouter media model IDs', () => {
       const model = getModelById('google/nano-banana-pro');
-      expect(model).toBeTruthy();
-      expect(model?.capabilities).toContain('image_generation');
-      expect(model?.provider).toBe('openrouter');
+      expect(model).toBeUndefined();
     });
 
     it('should return undefined for non-existent model', () => {
@@ -314,9 +305,9 @@ describe('Model Selection Logic', () => {
 
   describe('Tier and quality attributes', () => {
     it('should have premium tier for compute-intensive models', () => {
-      const videoModel = getModelById('bytedance/seedance-2.0-fast');
+      const videoModel = getModelById('minimax/video-01');
       expect(videoModel?.tier).toBe('premium');
-      expect(videoModel?.speed).toBe('medium');
+      expect(videoModel?.speed).toBe('slow');
     });
 
     it('should have standard tier for common models', () => {

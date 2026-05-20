@@ -47,8 +47,8 @@ export interface AIProviderConfig {
 
   // Model preferences per capability (overrides system defaults)
   models?: {
-    image_generation?: string;     // e.g., 'black-forest-labs/flux.2-pro'
-    video_generation?: string;     // e.g., 'bytedance/seedance-2.0-fast'
+    image_generation?: string;
+    video_generation?: string;
     audio_generation?: string;     // e.g., 'stability-ai/stable-audio-2.5'
     voice_clone?: string;          // e.g., 'lucataco/xtts-v2'
     text_to_speech?: string;       // e.g., 'lucataco/xtts-v2' or 'gpt-4o-mini-tts'

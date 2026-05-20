@@ -1,26 +1,7 @@
 import type { AICapability } from '../types.js';
-import { isUsableOpenRouterModelId } from '@swarm/core';
+import { listOpenRouterMediaModels } from '@swarm/core/services';
+import type { OpenRouterCatalogModel } from '@swarm/core/services';
 import type { ModelInfo } from './models-registry.js';
-
-const OPENROUTER_MODELS_ENDPOINT = 'https://openrouter.ai/api/v1/models';
-const OPENROUTER_VIDEO_MODELS_ENDPOINT = 'https://openrouter.ai/api/v1/videos/models';
-
-interface OpenRouterCatalogModel {
-  id?: string;
-  name?: string;
-  description?: string;
-  architecture?: {
-    output_modalities?: string[];
-  };
-  output_modalities?: string[];
-  supported_parameters?: string[];
-  pricing?: {
-    prompt?: string;
-    completion?: string;
-    image?: string;
-    video?: string;
-  };
-}
 
 interface SearchOpenRouterModelsOptions {
   apiKey?: string;
@@ -79,7 +60,6 @@ function mapOpenRouterModel(
   model: OpenRouterCatalogModel,
   requestedCapability?: 'image_generation' | 'video_generation',
 ): ModelInfo | null {
-  if (!isUsableOpenRouterModelId(model.id)) return null;
   return {
     id: model.id,
     name: model.name || model.id.split('/').pop() || model.id,
@@ -92,40 +72,20 @@ function mapOpenRouterModel(
   };
 }
 
-function extractCatalogModels(payload: unknown): OpenRouterCatalogModel[] {
-  if (Array.isArray(payload)) {
-    return payload as OpenRouterCatalogModel[];
-  }
-  if (payload && typeof payload === 'object') {
-    const data = (payload as { data?: unknown }).data;
-    if (Array.isArray(data)) {
-      return data as OpenRouterCatalogModel[];
-    }
-  }
-  return [];
-}
-
 export async function searchOpenRouterModels(
   query: string,
   options: SearchOpenRouterModelsOptions = {},
 ): Promise<ModelInfo[]> {
   const capability = normalizeMediaCapability(options.capability);
   const limit = options.limit ?? 20;
-  const endpoint = capability === 'video_generation'
-    ? OPENROUTER_VIDEO_MODELS_ENDPOINT
-    : `${OPENROUTER_MODELS_ENDPOINT}?output_modalities=image`;
+  const catalogModels = capability
+    ? await listOpenRouterMediaModels(capability, { apiKey: options.apiKey })
+    : [
+        ...await listOpenRouterMediaModels('image_generation', { apiKey: options.apiKey }),
+        ...await listOpenRouterMediaModels('video_generation', { apiKey: options.apiKey }),
+      ];
 
-  const headers: Record<string, string> = {};
-  if (options.apiKey) {
-    headers.Authorization = `Bearer ${options.apiKey}`;
-  }
-
-  const response = await fetch(endpoint, { headers });
-  if (!response.ok) {
-    throw new Error(`OpenRouter model search failed: HTTP ${response.status}`);
-  }
-
-  const models = extractCatalogModels(await response.json())
+  const models = catalogModels
     .map((model) => mapOpenRouterModel(model, capability))
     .filter((model): model is ModelInfo => Boolean(model))
     .filter((model) => !capability || model.capabilities.includes(capability))

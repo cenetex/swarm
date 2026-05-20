@@ -368,13 +368,13 @@ describe('Integration Config Model Selection', () => {
           openrouter: {
             enabled: true,
             useGlobalKey: false,
-            models: { image_generation: 'black-forest-labs/flux.2-flex' },
+            models: { image_generation: 'google/gemini-3-pro-image-preview' },
           },
         },
       };
 
       const model = getConfiguredModel(avatar, 'image_generation');
-      expect(model).toBe('black-forest-labs/flux.2-flex');
+      expect(model).toBe('google/gemini-3-pro-image-preview');
     });
 
     it('should return default model when avatar has no integration config', () => {
@@ -407,7 +407,7 @@ describe('Integration Config Model Selection', () => {
           openrouter: {
             enabled: true,
             useGlobalKey: true,
-            models: { video_generation: 'bytedance/seedance-2.0-fast' },
+            models: { video_generation: 'google/veo-3.1-fast' },
           },
         },
       };

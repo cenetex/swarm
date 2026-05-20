@@ -1,7 +1,44 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import type { AICapability } from './types.js';
 import { createModelResolver } from './resolvers.js';
 import { DEFAULT_MODELS } from './types.js';
+import { clearOpenRouterMediaCatalogCache } from './openrouter-catalog.js';
+
+const originalFetch = globalThis.fetch;
+const LIVE_IMAGE_MODEL = 'google/gemini-3-pro-image-preview';
+const LIVE_VIDEO_MODEL = 'google/veo-3.1-fast';
+
+function installOpenRouterCatalogMock(): void {
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/videos/models')) {
+      return new Response(JSON.stringify({
+        data: [
+          { id: LIVE_VIDEO_MODEL, name: 'Google: Veo 3.1 Fast' },
+        ],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({
+      data: [
+        {
+          id: LIVE_IMAGE_MODEL,
+          name: 'Google: Nano Banana Pro (Gemini 3 Pro Image Preview)',
+          architecture: { output_modalities: ['image'] },
+        },
+      ],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as unknown as typeof fetch;
+}
+
+beforeEach(() => {
+  clearOpenRouterMediaCatalogCache();
+  installOpenRouterCatalogMock();
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  clearOpenRouterMediaCatalogCache();
+});
 
 function createDocClientWithItem(item: any) {
   return {
@@ -17,7 +54,7 @@ describe('core media resolvers', () => {
         integrations: {
           openrouter: {
             models: {
-              image_generation: 'black-forest-labs/flux.2-flex',
+              image_generation: LIVE_IMAGE_MODEL,
             },
           },
           replicate: {
@@ -30,7 +67,7 @@ describe('core media resolvers', () => {
 
       const resolveModel = createModelResolver({ tableName: 'T', dynamoClient: docClient })!;
       const result = await resolveModel('avatar-1', 'image_generation');
-      expect(result.model).toBe('black-forest-labs/flux.2-flex');
+      expect(result.model).toBe(LIVE_IMAGE_MODEL);
       expect(result.provider).toBe('openrouter');
     });
 
@@ -47,7 +84,7 @@ describe('core media resolvers', () => {
 
       const resolveModel = createModelResolver({ tableName: 'T', dynamoClient: docClient })!;
       const result = await resolveModel('avatar-1', 'image_generation');
-      expect(result.model).toBe(DEFAULT_MODELS.image_generation);
+      expect(result.model).toBe(LIVE_IMAGE_MODEL);
       expect(result.provider).toBe('openrouter');
     });
 
@@ -67,9 +104,9 @@ describe('core media resolvers', () => {
       const image = await resolveModel('avatar-1', 'image_generation');
       const video = await resolveModel('avatar-1', 'video_generation');
 
-      expect(image.model).toBe(DEFAULT_MODELS.image_generation);
+      expect(image.model).toBe(LIVE_IMAGE_MODEL);
       expect(image.provider).toBe('openrouter');
-      expect(video.model).toBe(DEFAULT_MODELS.video_generation);
+      expect(video.model).toBe(LIVE_VIDEO_MODEL);
       expect(video.provider).toBe('openrouter');
     });
 
@@ -85,7 +122,7 @@ describe('core media resolvers', () => {
       const resolveModel = createModelResolver({ tableName: 'T', dynamoClient: docClient })!;
       const image = await resolveModel('avatar-1', 'image_generation');
 
-      expect(image.model).toBe(DEFAULT_MODELS.image_generation);
+      expect(image.model).toBe(LIVE_IMAGE_MODEL);
       expect(image.provider).toBe('openrouter');
     });
 
@@ -94,11 +131,11 @@ describe('core media resolvers', () => {
 
       const resolveModel = createModelResolver({ tableName: 'T', dynamoClient: docClient })!;
       const image = await resolveModel('avatar-1', 'image_generation');
-      expect(image.model).toBe(DEFAULT_MODELS.image_generation);
+      expect(image.model).toBe(LIVE_IMAGE_MODEL);
       expect(image.provider).toBe('openrouter');
 
       const video = await resolveModel('avatar-1', 'video_generation');
-      expect(video.model).toBe(DEFAULT_MODELS.video_generation);
+      expect(video.model).toBe(LIVE_VIDEO_MODEL);
       expect(video.provider).toBe('openrouter');
     });
 
@@ -113,7 +150,7 @@ describe('core media resolvers', () => {
 
       const resolveModel = createModelResolver({ tableName: 'T', dynamoClient: docClient })!;
       const image = await resolveModel('avatar-1', 'image_generation');
-      expect(image.model).toBe(DEFAULT_MODELS.image_generation);
+      expect(image.model).toBe(LIVE_IMAGE_MODEL);
       expect(image.provider).toBe('openrouter');
 
       const audio = await resolveModel('avatar-1', 'audio_generation' as AICapability);
@@ -131,11 +168,11 @@ describe('core media resolvers', () => {
 
       const resolveModel = createModelResolver({ tableName: 'T', dynamoClient: docClient })!;
       const video = await resolveModel('avatar-1', 'video_generation');
-      expect(video.model).toBe(DEFAULT_MODELS.video_generation);
+      expect(video.model).toBe(LIVE_VIDEO_MODEL);
       expect(video.provider).toBe('openrouter');
 
       const image = await resolveModel('avatar-1', 'image_generation');
-      expect(image.model).toBe(DEFAULT_MODELS.image_generation);
+      expect(image.model).toBe(LIVE_IMAGE_MODEL);
     });
   });
 });

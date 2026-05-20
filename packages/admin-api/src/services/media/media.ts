@@ -15,6 +15,8 @@ import {
   createApiKeyResolver,
   createTrialCreditConsumer,
   getOpenRouterImageModalities,
+  isLiveOpenRouterMediaModelId,
+  normalizeOpenRouterMediaCapability,
   type ResolverConfig,
 } from '@swarm/core/services';
 import * as mediaJobs from './media-jobs.js';
@@ -166,7 +168,6 @@ const OPENROUTER_VIDEOS_ENDPOINT = 'https://openrouter.ai/api/v1/videos';
 const OPENROUTER_SITE_URL = process.env.OPENROUTER_SITE_URL || process.env.PUBLIC_SITE_URL || 'https://swarm.rati.chat';
 const OPENROUTER_APP_TITLE = process.env.OPENROUTER_APP_TITLE || 'aws-swarm';
 const IMAGE_GENERATION_MAX_REFERENCE_IMAGES = 14;
-const MATCH_INPUT_IMAGE_ASPECT_RATIO_MODELS = new Set(['google/nano-banana-pro']);
 const SUPPORTED_MEDIA_PROVIDERS = ['openrouter', 'replicate'] as const;
 type SupportedMediaProvider = typeof SUPPORTED_MEDIA_PROVIDERS[number];
 
@@ -175,7 +176,7 @@ function getImageGenerationAspectRatio(
   hasReferenceImages: boolean,
   aspectRatio: GenerateImageOptions['aspectRatio'],
 ): GenerateImageOptions['aspectRatio'] {
-  if (hasReferenceImages && MATCH_INPUT_IMAGE_ASPECT_RATIO_MODELS.has(modelId)) {
+  if (hasReferenceImages && /(^|\/)gemini-.*image/i.test(modelId)) {
     return 'match_input_image';
   }
   return aspectRatio;
@@ -420,6 +421,7 @@ async function resolveMediaModel(
   const resolved = await coreModelResolver(avatarId, capability);
   const registryProvider = modelOverride ? getModelById(modelOverride)?.provider : undefined;
   const provider = registryProvider || resolved.provider;
+  const mediaCapability = normalizeOpenRouterMediaCapability(capability);
 
   if ((capability === 'image_generation' || capability === 'video_generation') && provider === 'replicate') {
     throw new Error(`${capability} uses OpenRouter; Replicate is only supported for voice/audio generation.`);
@@ -427,6 +429,13 @@ async function resolveMediaModel(
 
   if (!isSupportedMediaProvider(provider)) {
     throw new Error(`Unsupported media provider for ${capability}: ${provider}`);
+  }
+
+  if (modelOverride && provider === 'openrouter' && mediaCapability) {
+    const isLiveModel = await isLiveOpenRouterMediaModelId(mediaCapability, modelOverride);
+    if (!isLiveModel) {
+      throw new Error(`OpenRouter ${capability} model is not in the live catalog: ${modelOverride}`);
+    }
   }
 
   return {

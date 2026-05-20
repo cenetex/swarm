@@ -280,9 +280,9 @@ describe('validateReplicateInput', () => {
     expect(adjustments).toHaveLength(2);
   });
 
-  it('keeps Nano Banana image_input and strips unsupported Flux alias', () => {
+  it('keeps Gemini image_input and strips unsupported Flux alias', () => {
     const nanoSchema: ModelSupportedParams = {
-      modelId: 'google/nano-banana-pro',
+      modelId: 'google/gemini-3-pro-image-preview',
       params: {
         prompt: { type: 'string' },
         image_input: { type: 'array' },
@@ -302,7 +302,7 @@ describe('validateReplicateInput', () => {
       aspect_ratio: 'match_input_image',
     };
 
-    const { cleanedInput, adjustments } = validateReplicateInput('google/nano-banana-pro', input, nanoSchema);
+    const { cleanedInput, adjustments } = validateReplicateInput('google/gemini-3-pro-image-preview', input, nanoSchema);
 
     expect(cleanedInput.image_input).toEqual(['https://example.com/ref.png']);
     expect(cleanedInput.image_prompt).toBeUndefined();

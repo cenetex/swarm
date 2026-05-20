@@ -167,9 +167,9 @@ describe('config-sync convertToAvatarConfig', () => {
 
     const config = convertToAvatarConfig(record);
     expect(config.media.image.provider).toBe('openrouter');
-    expect(config.media.image.model).toBe('google/nano-banana-pro');
+    expect(config.media.image.model).toBe('');
     expect(config.media.video?.provider).toBe('openrouter');
-    expect(config.media.video?.model).toBe('google/veo-3.1-fast');
+    expect(config.media.video?.model).toBe('');
   });
 
   it('syncs Twitter features and autonomous posts settings', () => {
@@ -273,11 +273,11 @@ describe('config-sync convertToAvatarConfig', () => {
       mediaConfig: {
         image: {
           provider: 'replicate',
-          model: 'google/nano-banana-pro',
+          model: 'black-forest-labs/flux-schnell',
         },
         video: {
           provider: 'replicate',
-          model: 'bytedance/seedance-2.0-fast',
+          model: 'minimax/video-01',
         },
         useProfileAsReference: true,
       },
@@ -306,11 +306,11 @@ describe('config-sync convertToAvatarConfig', () => {
 
     expect(config.media.image).toEqual({
       provider: 'replicate',
-      model: 'google/nano-banana-pro',
+      model: 'black-forest-labs/flux-schnell',
     });
     expect(config.media.video).toEqual({
       provider: 'replicate',
-      model: 'bytedance/seedance-2.0-fast',
+      model: 'minimax/video-01',
     });
   });
 

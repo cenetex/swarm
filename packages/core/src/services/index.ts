@@ -31,6 +31,16 @@ export {
   type ResolverConfig,
 } from './media/resolvers.js';
 export {
+  clearOpenRouterMediaCatalogCache,
+  isLiveOpenRouterMediaModelId,
+  listOpenRouterMediaModels,
+  normalizeOpenRouterMediaCapability,
+  resolveDefaultOpenRouterMediaModel,
+  selectPreferredOpenRouterMediaModel,
+  type OpenRouterCatalogModel,
+  type OpenRouterMediaCapability,
+} from './media/openrouter-catalog.js';
+export {
   DEFAULT_MODELS,
   type AICapability,
   type MediaServiceDependencies,

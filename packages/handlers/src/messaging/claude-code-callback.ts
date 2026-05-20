@@ -86,7 +86,7 @@ async function getAvatarContext(avatarId: string) {
       temperature: 0.8,
       maxTokens: 1024,
     },
-    media: { image: { provider: 'replicate', model: DEFAULT_MODELS.image_generation } },
+    media: { image: { provider: 'openrouter', model: DEFAULT_MODELS.image_generation } },
     scheduling: {},
     behavior: {
       responseDelayMs: [1000, 3000],

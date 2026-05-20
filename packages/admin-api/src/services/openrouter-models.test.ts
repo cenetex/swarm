@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { clearOpenRouterMediaCatalogCache } from '@swarm/core/services';
 import { searchOpenRouterModels } from './openrouter-models.js';
 
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  clearOpenRouterMediaCatalogCache();
 });
 
 describe('searchOpenRouterModels', () => {
@@ -18,7 +20,7 @@ describe('searchOpenRouterModels', () => {
           architecture: { output_modalities: ['image'] },
         },
         {
-          id: 'google/nano-banana-pro',
+          id: 'google/gemini-3-pro-image-preview',
           name: 'Nano Banana Pro',
           description: 'Image generation model',
           architecture: { output_modalities: ['image'] },
@@ -31,7 +33,7 @@ describe('searchOpenRouterModels', () => {
 
     const results = await searchOpenRouterModels('nano', { capability: 'image_generation' });
 
-    expect(results.map(result => result.id)).toEqual(['google/nano-banana-pro']);
+    expect(results.map(result => result.id)).toEqual(['google/gemini-3-pro-image-preview']);
   });
 
   it('does not fall back to hardcoded OpenRouter registry rows when the live catalog fails', async () => {

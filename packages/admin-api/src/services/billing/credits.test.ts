@@ -132,7 +132,7 @@ describe('Gallery System', () => {
         url: 'https://media.example.com/avatars/avatar-1/images/test.png',
         s3Key: 'avatars/avatar-1/images/test.png',
         prompt: 'A cute whale swimming',
-        model: 'google/nano-banana-pro',
+        model: 'google/gemini-3-pro-image-preview',
         platform: 'telegram',
         createdAt: new Date().toISOString(),
       };

@@ -17,13 +17,12 @@ import { getOpenRouterImageModalities } from './openrouter-image.js';
 export * from './types.js';
 export * from './resolvers.js';
 export * from './openrouter-image.js';
+export * from './openrouter-catalog.js';
 export { buildVoiceCloneInput, type VoiceCloneInput } from './voice-input.js';
 
 const IMAGE_GENERATION_MAX_REFERENCE_IMAGES = 14;
-const MATCH_INPUT_IMAGE_ASPECT_RATIO_MODELS = new Set(['google/nano-banana-pro']);
-
 function getReferenceAwareAspectRatio(model: string, aspectRatio?: string, hasReferenceImages = false): string {
-  if (hasReferenceImages && MATCH_INPUT_IMAGE_ASPECT_RATIO_MODELS.has(model)) {
+  if (hasReferenceImages && /(^|\/)gemini-.*image/i.test(model)) {
     return 'match_input_image';
   }
   return aspectRatio || '1:1';
@@ -292,14 +291,29 @@ export class SwarmMediaService implements MediaService {
     };
   }
 
-  async generateVideo(prompt: string, config: NonNullable<MediaConfig['video']>): Promise<GeneratedMedia> {
-    switch (config.provider) {
+  async generateVideo(
+    prompt: string,
+    config: NonNullable<MediaConfig['video']>,
+    options?: Pick<GenerateImageOptions, 'avatarId'>
+  ): Promise<GeneratedMedia> {
+    let resolvedConfig = config;
+    const avatarId = options?.avatarId;
+    if (avatarId && this.deps?.resolveModel) {
+      const resolved = await this.deps.resolveModel(avatarId, 'video_generation');
+      resolvedConfig = {
+        ...config,
+        provider: resolved.provider as 'replicate' | 'openrouter',
+        model: resolved.model,
+      };
+    }
+
+    switch (resolvedConfig.provider) {
       case 'openrouter':
-        return this.generateVideoOpenRouter(prompt, config.model);
+        return this.generateVideoOpenRouter(prompt, resolvedConfig.model);
       case 'replicate':
-        return this.generateVideoReplicate(prompt, config.model);
+        return this.generateVideoReplicate(prompt, resolvedConfig.model);
       default:
-        throw new Error(`Unknown video provider: ${config.provider}`);
+        throw new Error(`Unknown video provider: ${resolvedConfig.provider}`);
     }
   }
 

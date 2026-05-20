@@ -5,9 +5,8 @@ import {
 } from './openrouter-image.js';
 
 describe('OpenRouter image model modalities', () => {
-  it('uses image-only modalities for FLUX image models', () => {
-    expect(getOpenRouterImageModalities('black-forest-labs/flux.2-pro')).toEqual(['image']);
-    expect(getOpenRouterImageModalities('black-forest-labs/flux.2-flex')).toEqual(['image']);
+  it('uses image-only modalities for non-Gemini image models', () => {
+    expect(getOpenRouterImageModalities('openai/gpt-5-image-mini')).toEqual(['image']);
   });
 
   it('uses image-only modalities by default for unknown image models', () => {

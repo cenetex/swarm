@@ -14,6 +14,11 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { isUsableOpenRouterModelId } from '../../utils/openrouter-model-id.js';
+import {
+  isLiveOpenRouterMediaModelId,
+  normalizeOpenRouterMediaCapability,
+  resolveDefaultOpenRouterMediaModel,
+} from './openrouter-catalog.js';
 import type {
   AICapability,
   ResolvedModel,
@@ -98,6 +103,15 @@ export function createModelResolver(config: ResolverConfig): MediaServiceDepende
   const docClient = config.dynamoClient || createDocClient(config.region);
 
   return async (avatarId: string, capability: AICapability): Promise<ResolvedModel> => {
+    const mediaCapability = normalizeOpenRouterMediaCapability(capability);
+    const isLiveConfiguredModel = async (provider: ValidProvider, model: unknown): Promise<boolean> => {
+      if (!isUsableConfiguredModel(provider, model)) return false;
+      if (provider === 'openrouter' && mediaCapability) {
+        return isLiveOpenRouterMediaModelId(mediaCapability, model);
+      }
+      return true;
+    };
+
     try {
       // Check avatar's integration config
       const result = await docClient.send(new GetCommand({
@@ -123,7 +137,7 @@ export function createModelResolver(config: ResolverConfig): MediaServiceDepende
 
       for (const provider of getPreferredProviders(capability)) {
         const configuredModel = item?.integrations?.[provider]?.models?.[capability];
-        if (isUsableConfiguredModel(provider, configuredModel)) {
+        if (await isLiveConfiguredModel(provider, configuredModel)) {
           console.log(`[MediaResolver] Using configured ${capability} model for ${avatarId}: ${configuredModel} (${provider})`);
           return {
             model: configuredModel,
@@ -142,7 +156,7 @@ export function createModelResolver(config: ResolverConfig): MediaServiceDepende
         const resolvedProvider = isValidProvider(syncedConfigProvider)
           ? syncedConfigProvider
           : getDefaultProvider(capability);
-        if (!isUsableConfiguredModel(resolvedProvider, syncedConfigModel)) {
+        if (!(await isLiveConfiguredModel(resolvedProvider, syncedConfigModel))) {
           console.warn(`[MediaResolver] Ignoring unusable synced ${resolvedProvider} ${capability} model for ${avatarId}: ${syncedConfigModel}`);
         } else {
           console.log(`[MediaResolver] Using synced ${capability} model for ${avatarId}: ${syncedConfigModel} (${resolvedProvider})`);
@@ -156,9 +170,18 @@ export function createModelResolver(config: ResolverConfig): MediaServiceDepende
       console.warn(`[MediaResolver] Failed to get avatar config: ${err}`);
     }
 
-    // Fall back to default
-    const defaultModel = DEFAULT_MODELS[capability];
     const defaultProvider = getDefaultProvider(capability);
+    if (mediaCapability && defaultProvider === 'openrouter') {
+      const defaultModel = await resolveDefaultOpenRouterMediaModel(mediaCapability);
+      console.log(`[MediaResolver] Using live OpenRouter default ${capability} model: ${defaultModel.id} (${defaultProvider})`);
+      return {
+        model: defaultModel.id,
+        provider: defaultProvider,
+      };
+    }
+
+    // Fall back to static defaults only for non-OpenRouter media capabilities.
+    const defaultModel = DEFAULT_MODELS[capability];
     console.log(`[MediaResolver] Using default ${capability} model: ${defaultModel} (${defaultProvider})`);
     return {
       model: defaultModel,
