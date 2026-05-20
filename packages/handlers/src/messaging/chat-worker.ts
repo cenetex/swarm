@@ -19,6 +19,7 @@ import {
   logger,
   CORRELATION_ID_ATTR,
   type AvatarConfig,
+  type ResponseTrigger,
   type SwarmEnvelope,
 } from '@swarm/core';
 import {
@@ -55,6 +56,7 @@ export interface ChatWorkerMessage {
   toolResultCount: number;
   /** Cooldown config from avatar behavior */
   cooldownMinutes?: number;
+  responseTrigger?: ResponseTrigger;
 }
 
 // ─── Environment & Services ──────────────────────────────────────────────────
@@ -318,6 +320,7 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           toolLoopResult,
           avatarRuntime.avatarConfig.llm.model,
         );
+        response.responseTrigger = item.responseTrigger;
 
         try {
           const contextMessageId = await reserveResponseInChannelHistory({

@@ -33,6 +33,7 @@ import {
   type SwarmEnvelope,
   type SwarmResponse,
   type ResponseAction,
+  type ResponseTrigger,
   type PresenceService,
 } from '@swarm/core';
 import {
@@ -485,7 +486,12 @@ async function generateResponse(
   avatarRuntime: AvatarRuntime,
   channelHistory?: ContextMessage[],
   refreshTyping?: () => Promise<void>,
-  extraContext?: { traceId: string; correlationId: string; cooldownMinutes: number },
+  extraContext?: {
+    traceId: string;
+    correlationId: string;
+    cooldownMinutes: number;
+    responseTrigger: ResponseTrigger;
+  },
 ): Promise<GenerateResponseResult> {
   await maybeTranscribeAudio(envelope, toolClient, toolContext, avatarRuntime.avatarConfig);
   const brainService = createRuntimeBrainService(stateService, avatarRuntime.avatarConfig.brain);
@@ -718,6 +724,7 @@ async function generateResponse(
         generatedAt: Date.now(),
         llmModel: avatarRuntime.avatarConfig.llm.model,
         tokensUsed: 100,
+        responseTrigger: extraContext?.responseTrigger,
       },
     };
   }
@@ -756,6 +763,7 @@ async function generateResponse(
       processingStartedAt: Date.now(),
       toolResultCount: 0,
       cooldownMinutes: extraContext.cooldownMinutes,
+      responseTrigger: extraContext.responseTrigger,
     };
 
     logger.info('Delegating tool loop to chat worker', {
@@ -837,6 +845,7 @@ async function generateResponse(
   });
 
   const { response } = buildResponseFromToolLoop(envelope, toolLoopResult, avatarRuntime.avatarConfig.llm.model);
+  response.responseTrigger = extraContext?.responseTrigger;
 
   return { type: 'complete', response };
 }
@@ -1060,6 +1069,8 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
         trigger: decision.trigger,
         delay: decision.delay,
         priority: decision.priority,
+        suppressionReason: decision.suppressionReason,
+        suppressionDetails: decision.suppressionDetails,
       });
 
       if (!decision.shouldRespond) {
@@ -1067,6 +1078,8 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
           event: 'response_skipped',
           subsystem: 'chat',
           reason: decision.trigger,
+          suppressionReason: decision.suppressionReason,
+          suppressionDetails: decision.suppressionDetails,
         });
         continue;
       }
@@ -1126,7 +1139,12 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       const result = await generateResponse(
         envelope, toolClient, toolContext, avatarRuntime,
         updatedState.recentMessages, refreshTyping,
-        { traceId, correlationId, cooldownMinutes: avatarRuntime.avatarConfig.behavior.cooldownMinutes },
+        {
+          traceId,
+          correlationId,
+          cooldownMinutes: avatarRuntime.avatarConfig.behavior.cooldownMinutes,
+          responseTrigger: decision.trigger,
+        },
       );
 
       metrics.trackDuration('ProcessingLatency', recordStartTime);

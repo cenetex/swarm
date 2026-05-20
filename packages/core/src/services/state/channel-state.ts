@@ -6,6 +6,7 @@ import type {
   ContextMessage,
   Platform,
   ResponseDecision,
+  ResponseTrigger,
 } from '../../types/index.js';
 import { truncateContent } from '../../utils/redact-pii.js';
 
@@ -33,6 +34,8 @@ export const CHANNEL_CONFIG = {
   // Response rate limiting
   MAX_FOLLOW_UPS: parseInt(process.env.MAX_FOLLOW_UPS || '3', 10),         // Max consecutive follow-ups per engagement window
   AMBIENT_COOLDOWN_MS: parseInt(process.env.AMBIENT_COOLDOWN_MS || '300000', 10), // 5 minutes minimum between non-direct responses
+  DIRECT_REPLY_BURST_LIMIT: parseInt(process.env.DIRECT_REPLY_BURST_LIMIT || '2', 10),
+  DIRECT_REPLY_BURST_WINDOW_MS: parseInt(process.env.DIRECT_REPLY_BURST_WINDOW_MS || '60000', 10),
 
   // Response timing
   MIN_RESPONSE_DELAY_MS: 500,     // Minimum delay to seem natural
@@ -406,7 +409,7 @@ export async function markResponseSent(
   avatarId: string,
   channelId: string,
   responseMessageId: string,
-  trigger?: string
+  trigger?: ResponseTrigger
 ): Promise<ChannelState | null> {
   const current = await getChannelState(docClient, tableName, avatarId, channelId);
   if (!current) return null;
@@ -496,6 +499,45 @@ function isAmbientCooldownActive(state: ChannelState): boolean {
   return elapsed < CHANNEL_CONFIG.AMBIENT_COOLDOWN_MS;
 }
 
+function isGroupChat(state: ChannelState): boolean {
+  return state.chatType === 'group' || state.chatType === 'supergroup';
+}
+
+function getDirectReplyBurstSuppression(
+  state: ChannelState,
+  now: number,
+  directMessages: ContextMessage[],
+): ResponseDecision | undefined {
+  if (!isGroupChat(state)) return undefined;
+  if (CHANNEL_CONFIG.DIRECT_REPLY_BURST_LIMIT <= 0) return undefined;
+
+  // Explicit @mentions are allowed through. The cap is for reply-chain pings
+  // that can otherwise turn one busy Telegram thread into repeated bot output.
+  if (directMessages.some(message => message.isMention)) return undefined;
+  if (!directMessages.some(message => message.isReplyToBot)) return undefined;
+
+  const windowStart = now - CHANNEL_CONFIG.DIRECT_REPLY_BURST_WINDOW_MS;
+  const botRepliesInWindow = state.recentMessages.filter(
+    message => message.isBot && message.timestamp >= windowStart
+  ).length;
+
+  if (botRepliesInWindow < CHANNEL_CONFIG.DIRECT_REPLY_BURST_LIMIT) {
+    return undefined;
+  }
+
+  return {
+    shouldRespond: false,
+    trigger: 'none',
+    delay: 0,
+    priority: 'low',
+    suppressionReason: 'direct_reply_burst_cap',
+    suppressionDetails: {
+      botRepliesInWindow,
+      windowMs: CHANNEL_CONFIG.DIRECT_REPLY_BURST_WINDOW_MS,
+    },
+  };
+}
+
 /**
  * Evaluate whether to respond to this channel (Kyro-style)
  * Returns decision with trigger type and delay
@@ -521,12 +563,16 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
     // and then sends a follow-up chatter message before we process, we still
     // recognize the mention as unanswered. See #1534.
     const lastMessage = state.recentMessages[state.recentMessages.length - 1];
-    const hasNewDirectEngagement = state.recentMessages.some(
+    const newDirectMessages = state.recentMessages.filter(
       m => (m.isMention || m.isReplyToBot) &&
            m.timestamp > (state.stateChangedAt || 0)
     );
+    const hasNewDirectEngagement = newDirectMessages.length > 0;
 
     if (hasNewDirectEngagement) {
+      const burstSuppression = getDirectReplyBurstSuppression(state, now, newDirectMessages);
+      if (burstSuppression) return burstSuppression;
+
       return {
         shouldRespond: true,
         trigger: 'direct_engagement',
@@ -579,14 +625,19 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
   //   reply counts; older mentions in the buffer are assumed already
   //   handled or stale, preventing the 50-msg-buffer spam vector.
   const lastMessage = state.recentMessages[state.recentMessages.length - 1];
-  const hasDirectEngagement = state.lastResponseAt
-    ? state.recentMessages.some(
+  const directMessages = state.lastResponseAt
+    ? state.recentMessages.filter(
         m => (m.isMention || m.isReplyToBot) &&
              m.timestamp > (state.lastResponseAt as number)
       )
-    : !!(lastMessage && (lastMessage.isMention || lastMessage.isReplyToBot));
+    : lastMessage && (lastMessage.isMention || lastMessage.isReplyToBot)
+      ? [lastMessage]
+      : [];
 
-  if (hasDirectEngagement) {
+  if (directMessages.length > 0) {
+    const burstSuppression = getDirectReplyBurstSuppression(state, now, directMessages);
+    if (burstSuppression) return burstSuppression;
+
     return {
       shouldRespond: true,
       trigger: 'direct_engagement',
@@ -629,8 +680,7 @@ export function evaluateResponseTrigger(state: ChannelState): ResponseDecision {
   // disabled because they fire on chat the bot wasn't addressed in,
   // producing the "responds to everyone" complaint reported in #1505.
   // Heartbeat-driven proactive replies are tracked separately.
-  const isGroup = state.chatType === 'group' || state.chatType === 'supergroup';
-  if (isGroup) {
+  if (isGroupChat(state)) {
     return {
       shouldRespond: false,
       trigger: 'none',
@@ -899,4 +949,3 @@ export async function getActiveChannels(
     .filter(ch => ch.lastActivityAt > cutoff)
     .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
 }
-

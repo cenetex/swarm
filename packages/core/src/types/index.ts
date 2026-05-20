@@ -190,6 +190,7 @@ export interface SwarmResponse {
   conversationId: string;
   replyToMessageId?: string;
   contextMessageId?: string;
+  responseTrigger?: ResponseTrigger;
   
   // Response content
   actions: ResponseAction[];
@@ -349,12 +350,14 @@ export interface ResponseDecision {
   // Suppression context for logging/metrics (aws-swarm#1534).
   // Optional; populated only when shouldRespond = false AND there is a
   // meaningful brake (cap/cooldown) that explains the decision.
-  suppressionReason?: 'follow_up_cap' | 'ambient_cooldown';
+  suppressionReason?: 'follow_up_cap' | 'ambient_cooldown' | 'direct_reply_burst_cap';
   suppressionDetails?: {
     followUpsInWindow?: number;
     windowEndsAt?: number;
     msSinceLastResponse?: number;
     cooldownMs?: number;
+    botRepliesInWindow?: number;
+    windowMs?: number;
   };
 }
 
@@ -875,6 +878,15 @@ export const SwarmResponseSchema = z.object({
   conversationId: z.string(),
   replyToMessageId: z.string().optional(),
   contextMessageId: z.string().optional(),
+  responseTrigger: z.enum([
+    'direct_engagement',
+    'engaged_user',
+    'message_threshold',
+    'conversation_gap',
+    'scheduled',
+    'private_chat',
+    'none',
+  ]).optional(),
   actions: z.array(ResponseActionSchema),
   generatedAt: z.number(),
   llmModel: z.string(),
@@ -922,6 +934,15 @@ export const ResponseDecisionSchema = z.object({
   trigger: ResponseTriggerSchema,
   delay: z.number(),
   priority: z.enum(['high', 'normal', 'low']),
+  suppressionReason: z.enum(['follow_up_cap', 'ambient_cooldown', 'direct_reply_burst_cap']).optional(),
+  suppressionDetails: z.object({
+    followUpsInWindow: z.number().optional(),
+    windowEndsAt: z.number().optional(),
+    msSinceLastResponse: z.number().optional(),
+    cooldownMs: z.number().optional(),
+    botRepliesInWindow: z.number().optional(),
+    windowMs: z.number().optional(),
+  }).optional(),
 });
 
 export const ContextMessageSchema = z.object({

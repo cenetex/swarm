@@ -48,6 +48,7 @@ const mockOutboundSend = vi.fn(() =>
   Promise.resolve({
     success: true,
     sentMessages: ['Hello from bot!'],
+    sentMedia: [],
     errors: [],
   }),
 );
@@ -336,6 +337,7 @@ describe('Response Sender Smoke Tests', () => {
       Promise.resolve({
         success: true,
         sentMessages: ['Hello from bot!'],
+        sentMedia: [],
         errors: [],
       }),
     );
@@ -430,6 +432,7 @@ describe('Response Sender Smoke Tests', () => {
       Promise.resolve({
         success: false,
         sentMessages: [],
+        sentMedia: [],
         errors: [{ code: 'RATE_LIMITED', message: 'Too many requests' }],
       }),
     );

@@ -46,13 +46,14 @@ const mockAddMessageToChannel = vi.fn(() =>
 );
 const mockEvaluateResponseTrigger = vi.fn(() => ({
   shouldRespond: true,
-  trigger: 'mention',
+  trigger: 'direct_engagement',
   delay: 0,
   priority: 'high',
 }));
 const mockTransitionState = vi.fn(() => Promise.resolve());
 const mockMarkResponseSent = vi.fn(() => Promise.resolve());
 const mockSetUserCooldown = vi.fn(() => Promise.resolve());
+const mockCheckAndSetIdempotency = vi.fn(() => Promise.resolve(true));
 const mockSaveFact = vi.fn(() => Promise.resolve());
 const mockGetChannelState = vi.fn(() => Promise.resolve(null));
 const mockBrainRemember = vi.fn(() => Promise.resolve({ saved: true, source: 'legacy' as const }));
@@ -66,6 +67,7 @@ const mockStateService = {
   transitionState: mockTransitionState,
   markResponseSent: mockMarkResponseSent,
   setUserCooldown: mockSetUserCooldown,
+  checkAndSetIdempotency: mockCheckAndSetIdempotency,
   saveFact: mockSaveFact,
   getChannelState: mockGetChannelState,
 };
@@ -387,6 +389,7 @@ describe('Message Processor Smoke Tests', () => {
     mockAddMessageToChannel.mockClear();
     mockEvaluateResponseTrigger.mockClear();
     mockTransitionState.mockClear();
+    mockCheckAndSetIdempotency.mockClear();
     mockCheckAndIncrementMessageUsage.mockClear();
     mockCheckToolCallLimit.mockClear();
     mockIsMemoryWriteAllowed.mockClear();
@@ -405,7 +408,7 @@ describe('Message Processor Smoke Tests', () => {
     );
     mockEvaluateResponseTrigger.mockImplementation(() => ({
       shouldRespond: true,
-      trigger: 'mention',
+      trigger: 'direct_engagement',
       delay: 0,
       priority: 'high',
     }));
@@ -421,9 +424,23 @@ describe('Message Processor Smoke Tests', () => {
     );
 
     // Mock global fetch for LLM calls
-    (globalThis as unknown as { fetch: unknown }).fetch = vi.fn(() =>
-      Promise.resolve(mockFetchResponse()),
-    );
+    (globalThis as unknown as { fetch: unknown }).fetch = vi.fn((url: string) => {
+      if (String(url).includes('/models')) {
+        return Promise.resolve({
+          ok: true,
+          json: vi.fn(() => Promise.resolve({
+            data: [{
+              id: 'google/gemini-3-flash-preview',
+              context_length: 1_000_000,
+              architecture: { output_modalities: ['text'] },
+              supported_parameters: ['tools', 'tool_choice'],
+            }],
+          })),
+          text: vi.fn(() => Promise.resolve('')),
+        });
+      }
+      return Promise.resolve(mockFetchResponse());
+    });
   });
 
   // --- Happy path ---

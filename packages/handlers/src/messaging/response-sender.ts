@@ -687,7 +687,8 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
           await stateService.markResponseSent(
             avatarId,
             response.conversationId,
-            `resp_${response.replyToMessageId || Date.now()}_${Date.now()}`
+            `resp_${response.replyToMessageId || Date.now()}_${Date.now()}`,
+            response.responseTrigger
           );
         } catch (error) {
           logger.warn('Failed to mark response sent', {

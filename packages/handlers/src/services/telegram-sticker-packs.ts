@@ -79,6 +79,7 @@ export interface RuntimeStickerServicesConfig {
   cdnUrl?: string;
   secrets: Record<string, string>;
   consumeStickerCredit?: () => Promise<void>;
+  resolveStickerOwnerUserId?: (avatarId: string) => Promise<string | undefined>;
 }
 
 function getBotToken(secrets: Record<string, string>): string | undefined {
@@ -207,10 +208,70 @@ async function uploadStickerFile(
   return data.result;
 }
 
+interface StickerOwnerAvatarRecord {
+  createdBy?: string;
+  platforms?: {
+    telegram?: {
+      stickerOwnerUserId?: unknown;
+      ownerUserId?: unknown;
+      telegramUserId?: unknown;
+    };
+  };
+}
+
+function normalizeTelegramOwnerUserId(value: unknown): string | undefined {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : undefined;
+  }
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return /^\d+$/.test(trimmed) ? trimmed : undefined;
+}
+
+export function resolveStickerOwnerUserIdFromAvatarRecord(record?: StickerOwnerAvatarRecord | null): string | undefined {
+  const telegramConfig = record?.platforms?.telegram;
+  const configuredOwner = normalizeTelegramOwnerUserId(
+    telegramConfig?.stickerOwnerUserId
+    ?? telegramConfig?.ownerUserId
+    ?? telegramConfig?.telegramUserId
+  );
+  if (configuredOwner) return configuredOwner;
+
+  const createdBy = typeof record?.createdBy === 'string' ? record.createdBy.trim() : '';
+  const match = /^telegram:(\d+)(?:\s|$|\()/i.exec(createdBy);
+  return match?.[1];
+}
+
+async function resolveStoredStickerOwnerUserId(avatarId: string): Promise<string | undefined> {
+  const [bindingResult, avatarResult] = await Promise.all([
+    getDynamoClient().send(new GetCommand({
+      TableName: getAdminTable(),
+      Key: { pk: `AVATAR#${avatarId}`, sk: 'TELEGRAM_OWNER_BINDING' },
+      ProjectionExpression: 'telegramUserId',
+    })),
+    getDynamoClient().send(new GetCommand({
+      TableName: getAdminTable(),
+      Key: { pk: `AVATAR#${avatarId}`, sk: 'CONFIG' },
+      ProjectionExpression: '#createdBy, #platforms',
+      ExpressionAttributeNames: {
+        '#createdBy': 'createdBy',
+        '#platforms': 'platforms',
+      },
+    })),
+  ]);
+
+  const bindingOwner = normalizeTelegramOwnerUserId(
+    (bindingResult.Item as { telegramUserId?: unknown } | undefined)?.telegramUserId
+  );
+  if (bindingOwner) return bindingOwner;
+
+  return resolveStickerOwnerUserIdFromAvatarRecord(avatarResult.Item as StickerOwnerAvatarRecord | undefined);
+}
+
 function requireTelegramOwnerUserId(ownerUserId?: string): number {
   const parsed = Number(ownerUserId);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new Error('Telegram sticker pack creation requires the requesting Telegram user id');
+    throw new Error("Telegram sticker pack creation requires the avatar's linked Telegram account");
   }
   return parsed;
 }
@@ -500,6 +561,7 @@ async function addProcessedStickerToPack(params: {
 
 export function createRuntimeStickerServices(config: RuntimeStickerServicesConfig): StickerServices {
   const botToken = getBotToken(config.secrets);
+  const resolveStickerOwnerUserId = config.resolveStickerOwnerUserId ?? resolveStoredStickerOwnerUserId;
 
   async function getConfiguredBot() {
     if (!botToken) throw new Error('No Telegram bot token configured');
@@ -509,7 +571,7 @@ export function createRuntimeStickerServices(config: RuntimeStickerServicesConfi
   }
 
   return {
-    async generateSticker(avatarId, prompt, emoji, _conversationId, ownerUserId) {
+    async generateSticker(avatarId, prompt, emoji, _conversationId) {
       if (!config.mediaService) {
         return { success: false, error: 'Media service not configured' };
       }
@@ -518,7 +580,7 @@ export function createRuntimeStickerServices(config: RuntimeStickerServicesConfi
       }
 
       try {
-        const owner = requireTelegramOwnerUserId(ownerUserId);
+        const owner = requireTelegramOwnerUserId(await resolveStickerOwnerUserId(avatarId));
         await config.consumeStickerCredit?.();
         const { botToken: token, botInfo } = await getConfiguredBot();
         const stickerPrompt = `${prompt}. STICKER ART: bold clean lines, simplified shapes, flat vibrant colors, cartoon style. BACKGROUND: Must be PURE BLACK (#000000), solid and uniform, no gradients or patterns. OUTLINE: Include a THICK BRIGHT WHITE stroke (3-5px) around the entire subject edge.`;
@@ -557,11 +619,18 @@ export function createRuntimeStickerServices(config: RuntimeStickerServicesConfi
         });
         return { success: true, ...result };
       } catch (error) {
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.warn('Telegram sticker generation failed', {
+          event: 'telegram_sticker_generation_failed',
+          subsystem: 'stickers',
+          avatarId,
+          errorMessage,
+        });
+        return { success: false, error: errorMessage };
       }
     },
 
-    async createStickerFromGallery(avatarId, galleryItemId, emoji, _conversationId, ownerUserId) {
+    async createStickerFromGallery(avatarId, galleryItemId, emoji, _conversationId) {
       if (!config.mediaBucket) {
         return { success: false, error: 'Media bucket not configured' };
       }
@@ -582,7 +651,7 @@ export function createRuntimeStickerServices(config: RuntimeStickerServicesConfi
           };
         }
 
-        const owner = requireTelegramOwnerUserId(ownerUserId);
+        const owner = requireTelegramOwnerUserId(await resolveStickerOwnerUserId(avatarId));
         await config.consumeStickerCredit?.();
         const { botToken: token, botInfo } = await getConfiguredBot();
         const processed = await processImageSourceForTelegramSticker(item.url);
@@ -601,7 +670,15 @@ export function createRuntimeStickerServices(config: RuntimeStickerServicesConfi
         });
         return { success: true, ...result };
       } catch (error) {
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.warn('Telegram gallery sticker conversion failed', {
+          event: 'telegram_gallery_sticker_conversion_failed',
+          subsystem: 'stickers',
+          avatarId,
+          galleryItemId,
+          errorMessage,
+        });
+        return { success: false, error: errorMessage };
       }
     },
 

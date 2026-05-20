@@ -49,8 +49,7 @@ export interface StickerServices {
     avatarId: string,
     prompt: string,
     emoji?: string,
-    conversationId?: string,
-    ownerUserId?: string
+    conversationId?: string
   ) => Promise<{
     success: boolean;
     stickerId?: string;
@@ -70,8 +69,7 @@ export interface StickerServices {
     avatarId: string,
     galleryItemId: string,
     emoji?: string,
-    conversationId?: string,
-    ownerUserId?: string
+    conversationId?: string
   ) => Promise<{
     success: boolean;
     stickerId?: string;
@@ -130,8 +128,7 @@ export const createStickerTools = (services: StickerServices) => [
           context.avatarId,
           input.prompt,
           input.emoji,
-          context.conversationId,
-          context.userId
+          context.conversationId
         );
 
         if (!result.success) {
@@ -176,8 +173,7 @@ export const createStickerTools = (services: StickerServices) => [
           context.avatarId,
           input.galleryItemId,
           input.emoji,
-          context.conversationId,
-          context.userId
+          context.conversationId
         );
 
         if (!result.success) {

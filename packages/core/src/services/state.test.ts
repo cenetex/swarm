@@ -11,7 +11,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { CHANNEL_CONFIG, DynamoDBStateService } from './state.js';
 import { evaluateResponseTrigger } from './state/channel-state.js';
-import type { ChannelState, ContextMessage, ResponseDecision, Platform } from '../types/index.js';
+import type { ChannelState, ContextMessage, ResponseDecision, Platform, ResponseTrigger } from '../types/index.js';
 
 class InMemoryStateService extends DynamoDBStateService {
   private store = new Map<string, ChannelState>();
@@ -117,7 +117,8 @@ class InMemoryStateService extends DynamoDBStateService {
   override async markResponseSent(
     avatarId: string,
     channelId: string,
-    responseMessageId: string
+    responseMessageId: string,
+    trigger?: ResponseTrigger
   ): Promise<ChannelState | null> {
     const current = await this.getChannelState(avatarId, channelId);
     if (!current) return null;
@@ -130,6 +131,19 @@ class InMemoryStateService extends DynamoDBStateService {
     current.pendingResponseAt = undefined;
     // Keep recentMessages intact for conversation context
     current.ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
+
+    if (trigger === 'engaged_user' && current.engagedUsers) {
+      const latest = current.recentMessages[current.recentMessages.length - 1];
+      if (latest?.userId) {
+        const engagedUntil = current.engagedUsers[latest.userId];
+        if (engagedUntil && engagedUntil > now) {
+          const windowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+          if (!current.followUpCountByWindow) current.followUpCountByWindow = {};
+          current.followUpCountByWindow[windowStart] =
+            (current.followUpCountByWindow[windowStart] ?? 0) + 1;
+        }
+      }
+    }
 
     await this.updateChannelState(current);
     return current;
@@ -153,6 +167,8 @@ describe('CHANNEL_CONFIG', () => {
     expect(CHANNEL_CONFIG.CONVERSATION_GAP_MS).toBe(20000);
     expect(CHANNEL_CONFIG.MIN_RESPONSE_DELAY_MS).toBeLessThan(CHANNEL_CONFIG.MAX_RESPONSE_DELAY_MS);
     expect(CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS).toBe(5 * 60 * 1000); // 5 minutes
+    expect(CHANNEL_CONFIG.DIRECT_REPLY_BURST_LIMIT).toBe(2);
+    expect(CHANNEL_CONFIG.DIRECT_REPLY_BURST_WINDOW_MS).toBe(60000);
   });
 });
 
@@ -1373,6 +1389,30 @@ describe('DynamoDB Response Validation', () => {
   });
 
   describe('Follow-up cap (#1534)', () => {
+    it('markResponseSent increments engaged_user follow-up count for the current window', async () => {
+      const now = Date.now();
+      const engagedUntil = now + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS / 2;
+      const engagementWindowStart = engagedUntil - CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
+      const svc = new InMemoryStateService();
+      const state = createTestChannelState({
+        recentMessages: [
+          createTestMessage({
+            messageId: 'follow-up-1',
+            userId: 'user-123',
+            timestamp: now,
+          }),
+        ],
+        engagedUsers: {
+          'user-123': engagedUntil,
+        },
+      });
+
+      svc.setState(state);
+      const updated = await svc.markResponseSent('test-avatar', '-100123456789', 'resp-1', 'engaged_user');
+
+      expect(updated?.followUpCountByWindow?.[engagementWindowStart]).toBe(1);
+    });
+
     it('should cap engaged_user follow-ups at MAX_FOLLOW_UPS with suppression details', () => {
       const now = Date.now();
       // windowStart = engagedUntil - ENGAGEMENT_WINDOW_MS by definition, so
@@ -1461,6 +1501,113 @@ describe('DynamoDB Response Validation', () => {
       const decision = evaluateResponseTrigger(state);
 
       // Should respond because this is direct_engagement, not engaged_user
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('direct_engagement');
+    });
+  });
+
+  describe('Direct reply burst cap', () => {
+    it('suppresses reply-only direct engagement after recent bot reply burst', () => {
+      const now = Date.now();
+      const state = createTestChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        lastResponseAt: now - 45_000,
+        recentMessages: [
+          createTestMessage({
+            messageId: 'bot-1',
+            sender: 'HissBot',
+            isBot: true,
+            content: 'first',
+            timestamp: now - 40_000,
+          }),
+          createTestMessage({
+            messageId: 'bot-2',
+            sender: 'HissBot',
+            isBot: true,
+            content: 'second',
+            timestamp: now - 20_000,
+          }),
+          createTestMessage({
+            messageId: 'user-reply',
+            userId: 'user-123',
+            isReplyToBot: true,
+            replyToMessageId: 'bot-2',
+            timestamp: now,
+          }),
+        ],
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(false);
+      expect(decision.trigger).toBe('none');
+      expect(decision.suppressionReason).toBe('direct_reply_burst_cap');
+      expect(decision.suppressionDetails?.botRepliesInWindow).toBe(CHANNEL_CONFIG.DIRECT_REPLY_BURST_LIMIT);
+      expect(decision.suppressionDetails?.windowMs).toBe(CHANNEL_CONFIG.DIRECT_REPLY_BURST_WINDOW_MS);
+    });
+
+    it('allows explicit mentions even after the reply burst cap is reached', () => {
+      const now = Date.now();
+      const state = createTestChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        lastResponseAt: now - 45_000,
+        recentMessages: [
+          createTestMessage({
+            messageId: 'bot-1',
+            sender: 'HissBot',
+            isBot: true,
+            timestamp: now - 40_000,
+          }),
+          createTestMessage({
+            messageId: 'bot-2',
+            sender: 'HissBot',
+            isBot: true,
+            timestamp: now - 20_000,
+          }),
+          createTestMessage({
+            messageId: 'user-mention',
+            userId: 'user-123',
+            isMention: true,
+            isReplyToBot: true,
+            replyToMessageId: 'bot-2',
+            timestamp: now,
+          }),
+        ],
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
+      expect(decision.shouldRespond).toBe(true);
+      expect(decision.trigger).toBe('direct_engagement');
+    });
+
+    it('allows reply-only direct engagement below the reply burst cap', () => {
+      const now = Date.now();
+      const state = createTestChannelState({
+        chatType: 'supergroup',
+        state: 'IDLE',
+        lastResponseAt: now - 45_000,
+        recentMessages: [
+          createTestMessage({
+            messageId: 'bot-1',
+            sender: 'HissBot',
+            isBot: true,
+            timestamp: now - 20_000,
+          }),
+          createTestMessage({
+            messageId: 'user-reply',
+            userId: 'user-123',
+            isReplyToBot: true,
+            replyToMessageId: 'bot-1',
+            timestamp: now,
+          }),
+        ],
+      });
+
+      const decision = evaluateResponseTrigger(state);
+
       expect(decision.shouldRespond).toBe(true);
       expect(decision.trigger).toBe('direct_engagement');
     });

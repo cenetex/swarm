@@ -23,6 +23,7 @@ import type {
   MemoryFact,
   Platform,
   ResponseDecision,
+  ResponseTrigger,
   StateService,
   UserCooldown,
 } from '../../types/index.js';
@@ -160,7 +161,7 @@ export class DynamoDBStateService implements StateService {
     avatarId: string,
     channelId: string,
     responseMessageId: string,
-    trigger?: string
+    trigger?: ResponseTrigger
   ): Promise<ChannelState | null> {
     return markResponseSent(this.docClient, this.tableName, avatarId, channelId, responseMessageId, trigger);
   }

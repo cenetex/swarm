@@ -2,6 +2,7 @@
  * Response types - actions the avatar can take
  */
 import type { Platform } from './platform.js';
+import type { ResponseTrigger } from './state.js';
 
 // =============================================================================
 // RESPONSE TYPES
@@ -20,6 +21,7 @@ export interface SwarmResponse {
   generatedAt: number;
   llmModel: string;
   tokensUsed: number;
+  responseTrigger?: ResponseTrigger;
 }
 
 export type ResponseAction =

@@ -33,12 +33,14 @@ export interface ResponseDecision {
   delay: number;           // Delay in ms before responding (0 = immediate)
   priority: 'high' | 'normal' | 'low';
   // Suppression context (optional)
-  suppressionReason?: 'follow_up_cap' | 'ambient_cooldown';
+  suppressionReason?: 'follow_up_cap' | 'ambient_cooldown' | 'direct_reply_burst_cap';
   suppressionDetails?: {
     followUpsInWindow?: number;
     windowEndsAt?: number;
     msSinceLastResponse?: number;
     cooldownMs?: number;
+    botRepliesInWindow?: number;
+    windowMs?: number;
   };
 }
 
