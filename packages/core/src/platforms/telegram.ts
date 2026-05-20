@@ -167,7 +167,7 @@ export function buildTelegramEnvelope(
     metadata: {
       receivedAt: Date.now(),
       priority: (isMention || isReplyToBot) ? 'high' : 'normal',
-      idempotencyKey: `telegram:${config.avatarId}:${message.message_id}`,
+      idempotencyKey: `telegram:${config.avatarId}:${message.chat.id}:${message.message_id}`,
 
       // Direct engagement detection
       isMention,

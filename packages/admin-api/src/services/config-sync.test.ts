@@ -138,7 +138,7 @@ describe('config-sync convertToAvatarConfig', () => {
     expect(config.platforms.telegram?.allowedDmUserIds).toBeUndefined();
   });
 
-  it('defaults image generation model to OpenRouter FLUX 2 Pro when unset', () => {
+  it('defaults media generation models to current OpenRouter defaults when unset', () => {
     const record = {
       pk: 'AVATAR#test-avatar',
       sk: 'CONFIG',
@@ -167,9 +167,9 @@ describe('config-sync convertToAvatarConfig', () => {
 
     const config = convertToAvatarConfig(record);
     expect(config.media.image.provider).toBe('openrouter');
-    expect(config.media.image.model).toBe('black-forest-labs/flux.2-pro');
+    expect(config.media.image.model).toBe('google/nano-banana-pro');
     expect(config.media.video?.provider).toBe('openrouter');
-    expect(config.media.video?.model).toBe('bytedance/seedance-2.0-fast');
+    expect(config.media.video?.model).toBe('google/veo-3.1-fast');
   });
 
   it('syncs Twitter features and autonomous posts settings', () => {

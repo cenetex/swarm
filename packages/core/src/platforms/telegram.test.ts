@@ -462,7 +462,26 @@ describe('buildTelegramEnvelope', () => {
       const envelope2 = buildTelegramEnvelope(update, defaultConfig);
 
       expect(envelope1!.metadata.idempotencyKey).toBe(envelope2!.metadata.idempotencyKey);
-      expect(envelope1!.metadata.idempotencyKey).toBe('telegram:test-avatar:123');
+      expect(envelope1!.metadata.idempotencyKey).toBe('telegram:test-avatar:-100123456789:123');
+    });
+
+    it('should not collide across chats that reuse the same message id', () => {
+      const groupUpdate = createTelegramUpdate({ message_id: 123 });
+      const dmUpdate = createTelegramUpdate({
+        message_id: 123,
+        chat: {
+          id: 456,
+          type: 'private',
+          first_name: 'John',
+        } as Message['chat'],
+      });
+
+      const groupEnvelope = buildTelegramEnvelope(groupUpdate, defaultConfig);
+      const dmEnvelope = buildTelegramEnvelope(dmUpdate, defaultConfig);
+
+      expect(groupEnvelope!.metadata.idempotencyKey).toBe('telegram:test-avatar:-100123456789:123');
+      expect(dmEnvelope!.metadata.idempotencyKey).toBe('telegram:test-avatar:456:123');
+      expect(groupEnvelope!.metadata.idempotencyKey).not.toBe(dmEnvelope!.metadata.idempotencyKey);
     });
 
     it('should include platformUpdateId', () => {

@@ -13,6 +13,7 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { isUsableOpenRouterModelId } from '../../utils/openrouter-model-id.js';
 import type {
   AICapability,
   ResolvedModel,
@@ -78,6 +79,14 @@ function getPreferredProviders(capability: AICapability): ValidProvider[] {
   return ['replicate'];
 }
 
+function isUsableConfiguredModel(provider: ValidProvider, model: unknown): model is string {
+  if (typeof model !== 'string' || !model.trim()) return false;
+  if (provider === 'openrouter') {
+    return isUsableOpenRouterModelId(model);
+  }
+  return true;
+}
+
 // ============================================================================
 // MODEL RESOLUTION
 // ============================================================================
@@ -114,12 +123,14 @@ export function createModelResolver(config: ResolverConfig): MediaServiceDepende
 
       for (const provider of getPreferredProviders(capability)) {
         const configuredModel = item?.integrations?.[provider]?.models?.[capability];
-        if (configuredModel) {
+        if (isUsableConfiguredModel(provider, configuredModel)) {
           console.log(`[MediaResolver] Using configured ${capability} model for ${avatarId}: ${configuredModel} (${provider})`);
           return {
             model: configuredModel,
             provider,
           };
+        } else if (configuredModel) {
+          console.warn(`[MediaResolver] Ignoring unusable ${provider} ${capability} model for ${avatarId}: ${configuredModel}`);
         }
       }
 
@@ -131,11 +142,15 @@ export function createModelResolver(config: ResolverConfig): MediaServiceDepende
         const resolvedProvider = isValidProvider(syncedConfigProvider)
           ? syncedConfigProvider
           : getDefaultProvider(capability);
-        console.log(`[MediaResolver] Using synced ${capability} model for ${avatarId}: ${syncedConfigModel} (${resolvedProvider})`);
-        return {
-          model: syncedConfigModel,
-          provider: resolvedProvider,
-        };
+        if (!isUsableConfiguredModel(resolvedProvider, syncedConfigModel)) {
+          console.warn(`[MediaResolver] Ignoring unusable synced ${resolvedProvider} ${capability} model for ${avatarId}: ${syncedConfigModel}`);
+        } else {
+          console.log(`[MediaResolver] Using synced ${capability} model for ${avatarId}: ${syncedConfigModel} (${resolvedProvider})`);
+          return {
+            model: syncedConfigModel,
+            provider: resolvedProvider,
+          };
+        }
       }
     } catch (err) {
       console.warn(`[MediaResolver] Failed to get avatar config: ${err}`);

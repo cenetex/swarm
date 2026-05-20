@@ -51,6 +51,44 @@ describe('core media resolvers', () => {
       expect(result.provider).toBe('openrouter');
     });
 
+    it('ignores unusable tilde-prefixed OpenRouter media model aliases', async () => {
+      const docClient = createDocClientWithItem({
+        integrations: {
+          openrouter: {
+            models: {
+              image_generation: '~google/nano-banana-pro',
+              video_generation: '~google/veo-3.1-fast',
+            },
+          },
+        },
+      });
+
+      const resolveModel = createModelResolver({ tableName: 'T', dynamoClient: docClient })!;
+      const image = await resolveModel('avatar-1', 'image_generation');
+      const video = await resolveModel('avatar-1', 'video_generation');
+
+      expect(image.model).toBe(DEFAULT_MODELS.image_generation);
+      expect(image.provider).toBe('openrouter');
+      expect(video.model).toBe(DEFAULT_MODELS.video_generation);
+      expect(video.provider).toBe('openrouter');
+    });
+
+    it('ignores unusable synced OpenRouter media model aliases', async () => {
+      const docClient = createDocClientWithItem({
+        config: {
+          media: {
+            image: { model: '~google/nano-banana-pro', provider: 'openrouter' },
+          },
+        },
+      });
+
+      const resolveModel = createModelResolver({ tableName: 'T', dynamoClient: docClient })!;
+      const image = await resolveModel('avatar-1', 'image_generation');
+
+      expect(image.model).toBe(DEFAULT_MODELS.image_generation);
+      expect(image.provider).toBe('openrouter');
+    });
+
     it('falls back to OpenRouter for image and video defaults', async () => {
       const docClient = createDocClientWithItem({});
 

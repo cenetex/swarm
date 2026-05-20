@@ -71,12 +71,11 @@ describe('Models Registry', () => {
     it('should have all featured models in the versions map', () => {
       expect('black-forest-labs/flux-schnell' in REPLICATE_MODEL_VERSIONS).toBe(true);
       expect('black-forest-labs/flux-1.1-pro' in REPLICATE_MODEL_VERSIONS).toBe(true);
-      expect('google/nano-banana-pro' in REPLICATE_MODEL_VERSIONS).toBe(true);
+      expect('google/nano-banana-pro' in REPLICATE_MODEL_VERSIONS).toBe(false);
     });
 
     it('should have undefined for models using /models API', () => {
       expect(REPLICATE_MODEL_VERSIONS['black-forest-labs/flux-1.1-pro']).toBeUndefined();
-      expect(REPLICATE_MODEL_VERSIONS['google/nano-banana-pro']).toBeUndefined();
       expect(REPLICATE_MODEL_VERSIONS['minimax/video-01']).toBeUndefined();
       expect(REPLICATE_MODEL_VERSIONS['stability-ai/stable-audio-2.5']).toBeUndefined();
     });
@@ -179,12 +178,16 @@ describe('Models Registry', () => {
     it('should return default model for image_generation', () => {
       const model = getDefaultModel('image_generation');
       expect(model).toBeTruthy();
+      expect(model?.id).toBe(DEFAULT_MODELS.image_generation);
+      expect(model?.provider).toBe('openrouter');
       expect(model?.capabilities).toContain('image_generation');
     });
 
     it('should return default model for video_generation', () => {
       const model = getDefaultModel('video_generation');
       expect(model).toBeTruthy();
+      expect(model?.id).toBe(DEFAULT_MODELS.video_generation);
+      expect(model?.provider).toBe('openrouter');
       expect(model?.capabilities).toContain('video_generation');
     });
 
@@ -226,11 +229,11 @@ describe('Models Registry', () => {
       expect(model?.provider).toBe('replicate');
     });
 
-    it('keeps Nano Banana Pro registered for legacy Replicate config recognition', () => {
+    it('registers Nano Banana Pro as an OpenRouter image model', () => {
       const model = getModelById('google/nano-banana-pro');
       expect(model).toBeTruthy();
       expect(model?.capabilities).toContain('image_generation');
-      expect(model?.provider).toBe('replicate');
+      expect(model?.provider).toBe('openrouter');
     });
 
     it('should return undefined for non-existent model', () => {

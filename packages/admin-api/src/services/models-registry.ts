@@ -30,7 +30,6 @@ export interface ModelInfo {
 export const REPLICATE_MODEL_VERSIONS: Record<string, string | undefined> = {
   // All featured image models use the model endpoint to avoid stale version hashes
   'black-forest-labs/flux-1.1-pro': undefined,
-  'google/nano-banana-pro': undefined,
   'black-forest-labs/flux-schnell': undefined,
   'stability-ai/sdxl': undefined,
   'ideogram-ai/ideogram-v2': undefined,
@@ -58,7 +57,6 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     tier: 'premium',
     speed: 'medium',
     quality: 'high',
-    isDefault: true,
   },
   {
     id: 'black-forest-labs/flux.2-flex',
@@ -114,13 +112,13 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   {
     id: 'google/nano-banana-pro',
     name: 'Nano Banana Pro',
-    provider: 'replicate',
+    provider: 'openrouter',
     capabilities: ['image_generation'],
-    description: 'Reference-image aware image generation and editing with support for multiple input images.',
-    version: REPLICATE_MODEL_VERSIONS['google/nano-banana-pro'],
+    description: 'Reference-image aware image generation and editing via OpenRouter.',
     tier: 'premium',
     speed: 'medium',
     quality: 'high',
+    isDefault: true,
   },
   {
     id: 'black-forest-labs/flux-schnell',
@@ -179,7 +177,6 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     tier: 'premium',
     speed: 'medium',
     quality: 'high',
-    isDefault: true,
   },
   {
     id: 'google/veo-3.1-fast',
@@ -190,6 +187,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     tier: 'premium',
     speed: 'medium',
     quality: 'high',
+    isDefault: true,
   },
   {
     id: 'google/veo-3.1',
@@ -419,8 +417,8 @@ export function getReplicateVersion(modelId: string): string | undefined {
  * Default model IDs by capability
  */
 export const DEFAULT_MODELS: Record<AICapability, string> = {
-  image_generation: 'black-forest-labs/flux.2-pro',
-  video_generation: 'bytedance/seedance-2.0-fast',
+  image_generation: 'google/nano-banana-pro',
+  video_generation: 'google/veo-3.1-fast',
   audio_generation: 'stability-ai/stable-audio-2.5',
   voice_clone: 'x-lance/f5-tts',
   text_to_speech: 'x-lance/f5-tts',
