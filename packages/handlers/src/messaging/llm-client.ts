@@ -6,6 +6,7 @@
 import { randomUUID } from 'crypto';
 import {
   createCircuitBreaker,
+  isUsableOpenRouterModelId,
   logger,
   LLMError,
   SwarmErrorCode,
@@ -73,7 +74,9 @@ async function listOpenRouterChatModels(apiKey: string): Promise<OpenRouterChatM
 
   const data = await response.json() as { data?: OpenRouterCatalogModel[] };
   const models = (data.data || [])
-    .filter((model): model is OpenRouterCatalogModel & { id: string } => Boolean(model.id) && isTextModel(model))
+    .filter((model): model is OpenRouterCatalogModel & { id: string } =>
+      isUsableOpenRouterModelId(model.id) && isTextModel(model)
+    )
     .map((model) => ({
       id: model.id,
       contextLength: model.context_length || 0,

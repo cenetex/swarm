@@ -31,6 +31,7 @@ export {
 export {
   cleanResponse,
   surfaceModelConfig,
+  shouldUseEmptyResponseFallback,
   extractPendingJobs,
   extractTaskActions,
   detectAvatarUpdates,

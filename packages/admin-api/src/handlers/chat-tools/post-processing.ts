@@ -2,7 +2,7 @@
  * Post-Processing Module
  *
  * Handles response cleanup after LLM + tool execution:
- * - Thinking tag extraction
+ * - Hidden thought tag extraction
  * - Media URL redaction
  * - Stale text filtering
  * - Media extraction from tool results
@@ -19,7 +19,7 @@ import * as avatars from '../../services/avatars.js';
 
 /**
  * Clean up the LLM response text:
- * 1. Extract and strip <thinking> tags
+ * 1. Extract and strip hidden thought tags
  * 2. Remove stale "connect your X/Twitter" text
  * 3. Redact raw media URLs
  *
@@ -29,7 +29,7 @@ export function cleanResponse(response: string): { response: string; extractedTh
   let cleaned = response;
   let extractedThinking: string[] | undefined;
 
-  // Extract <thinking> tags
+  // Extract hidden thought tags
   if (typeof cleaned === 'string') {
     const { cleanContent, thinkingBlocks } = extractThinking(cleaned);
     cleaned = cleanContent;
@@ -100,6 +100,18 @@ export function surfaceModelConfig(
   }
 
   return response;
+}
+
+/**
+ * Empty model text is only an error when no async work was started. Media tools
+ * can return a pending job while the follow-up assistant text is blank; the UI
+ * should show the job state instead of a generic apology.
+ */
+export function shouldUseEmptyResponseFallback(
+  response: string,
+  pendingJobs: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string; purpose?: string }>
+): boolean {
+  return !response && pendingJobs.length === 0;
 }
 
 /**

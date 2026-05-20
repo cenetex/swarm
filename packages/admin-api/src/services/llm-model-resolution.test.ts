@@ -91,6 +91,9 @@ describe('getValidModelId', () => {
     expect(getValidModelId('google/gemini-3-flash-preview')).toBe('google/gemini-3-flash-preview');
   });
 
+  it('rejects tilde-prefixed OpenRouter registry aliases', () => {
+    expect(getValidModelId('~google/gemini-3-flash-preview')).toBeUndefined();
+  });
 });
 
 describe('OpenRouter fallback routing', () => {
@@ -118,6 +121,7 @@ describe('OpenRouter fallback routing', () => {
   it('recognizes supported OpenRouter catalog ID shapes', () => {
     expect(isOpenRouterCatalogModelId('openrouter/auto')).toBe(true);
     expect(isOpenRouterCatalogModelId('google/gemini-3-flash-preview')).toBe(true);
+    expect(isOpenRouterCatalogModelId('~google/gemini-3-flash-preview')).toBe(false);
     expect(isOpenRouterCatalogModelId('unknown/nonexistent-model')).toBe(false);
   });
 });

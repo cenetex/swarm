@@ -8,18 +8,26 @@ export function extractThinkingTags(content: string): ThinkingExtractionResult {
 
   const thinkingBlocks: string[] = [];
 
-  const thinkingRegex = /<\s*thinking\s*>([\s\S]*?)<\s*\/\s*thinking\s*>/gi;
-  const thinkingOrphanOpenRegex = /<\s*thinking\s*>/gi;
-  const thinkingOrphanCloseRegex = /<\s*\/\s*thinking\s*>/gi;
-  const thinkingSelfClosingRegex = /<\s*thinking\s*\/\s*>/gi;
+  const thinkingRegex = /<\s*(thinking|thought)\s*>([\s\S]*?)<\s*\/\s*\1\s*>/gi;
+  const malformedLeadingThoughtRegex = /^\s*<\s*(thinking|thought)\b(?!\s*\/?\s*>)([^\r\n]*)(?:\r?\n|$)/i;
+  const thinkingOrphanOpenRegex = /<\s*(?:thinking|thought)\s*>/gi;
+  const thinkingOrphanCloseRegex = /<\s*\/\s*(?:thinking|thought)\s*>/gi;
+  const thinkingSelfClosingRegex = /<\s*(?:thinking|thought)\s*\/\s*>/gi;
 
   let match: RegExpExecArray | null;
   while ((match = thinkingRegex.exec(content)) !== null) {
-    const block = (match[1] ?? '').trim();
+    const block = (match[2] ?? '').trim();
     if (block) thinkingBlocks.push(block);
   }
 
   let cleanContent = content.replace(thinkingRegex, '').trim();
+  const malformedLeadingThought = cleanContent.match(malformedLeadingThoughtRegex);
+  if (malformedLeadingThought) {
+    const block = (malformedLeadingThought[2] ?? '').trim();
+    if (block) thinkingBlocks.push(block);
+    cleanContent = cleanContent.replace(malformedLeadingThoughtRegex, '').trim();
+  }
+
   cleanContent = cleanContent
     .replace(thinkingSelfClosingRegex, '')
     .replace(thinkingOrphanOpenRegex, '')

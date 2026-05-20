@@ -5,6 +5,11 @@ import { useState, useEffect, useMemo } from 'react';
 import type { ToolPromptProps } from './types';
 
 const PRIORITY_MODEL_PROVIDERS = ['anthropic', 'openai', 'google', 'meta-llama', 'mistralai', 'cohere', 'deepseek'] as const;
+const OPENROUTER_MODEL_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/;
+
+function isSelectableOpenRouterModelId(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() === value && OPENROUTER_MODEL_ID_PATTERN.test(value);
+}
 
 export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -19,8 +24,8 @@ export function ModelSelectorPrompt({ toolCall, onSubmit, disabled }: ToolPrompt
     instructions?: string;
   };
 
-  const models = args.models || [];
-  const currentModel = args.currentModel || '';
+  const models = (args.models || []).filter((model) => isSelectableOpenRouterModelId(model.id));
+  const currentModel = isSelectableOpenRouterModelId(args.currentModel) ? args.currentModel : '';
 
   type ProviderModel = (typeof models)[number];
 

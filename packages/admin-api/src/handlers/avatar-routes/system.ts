@@ -19,6 +19,8 @@ import {
   type ModelInfo,
 } from '../../services/models-registry.js';
 
+type ModelsByCapability = Partial<Record<ModelInfo['capabilities'][number], ModelInfo[]>>;
+
 // Module-level cache for the Replicate API key resolved from Secrets Manager.
 let cachedReplicateApiKey: string | null = null;
 
@@ -88,6 +90,19 @@ export async function handleSystemRoutes(
     }
 
     if (integrationParam) {
+      if (integrationParam === 'openrouter') {
+        try {
+          return jsonResponse(corsHeaders, 200, {
+            integration: integrationParam,
+            modelsByCapability: await getLiveOpenRouterModelsByCapability(),
+          });
+        } catch {
+          return jsonResponse(corsHeaders, 502, {
+            error: 'OpenRouter model catalog unavailable',
+          });
+        }
+      }
+
       const modelsByCapability = integrationsService.getAvailableModelsForIntegration(
         integrationParam as (typeof allowed)[number],
       );
@@ -97,12 +112,20 @@ export async function handleSystemRoutes(
       });
     }
 
-    const integrations = allowed.reduce<
-      Record<string, ReturnType<typeof integrationsService.getAvailableModelsForIntegration>>
-    >((acc, integration) => {
-      acc[integration] = integrationsService.getAvailableModelsForIntegration(integration);
-      return acc;
-    }, {});
+    const integrations: Record<string, ModelsByCapability> = {};
+    for (const integration of allowed) {
+      if (integration === 'openrouter') {
+        try {
+          integrations[integration] = await getLiveOpenRouterModelsByCapability();
+        } catch {
+          return jsonResponse(corsHeaders, 502, {
+            error: 'OpenRouter model catalog unavailable',
+          });
+        }
+      } else {
+        integrations[integration] = integrationsService.getAvailableModelsForIntegration(integration);
+      }
+    }
 
     return jsonResponse(corsHeaders, 200, { integrations });
   }
@@ -131,13 +154,19 @@ export async function handleSystemRoutes(
     }
 
     if (integration === 'openrouter') {
-      const results = await searchOpenRouterModels(query, {
-        capability: capability as ModelInfo['capabilities'][number] | undefined,
-      });
-      return jsonResponse(corsHeaders, 200, {
-        results,
-        source: 'openrouter_api',
-      });
+      try {
+        const results = await searchOpenRouterModels(query, {
+          capability: capability as ModelInfo['capabilities'][number] | undefined,
+        });
+        return jsonResponse(corsHeaders, 200, {
+          results,
+          source: 'openrouter_api',
+        });
+      } catch {
+        return jsonResponse(corsHeaders, 502, {
+          error: 'OpenRouter model catalog unavailable',
+        });
+      }
     }
 
     // Get system Replicate API key from env or Secrets Manager
@@ -192,6 +221,18 @@ export async function handleSystemRoutes(
   }
 
   return null;
+}
+
+async function getLiveOpenRouterModelsByCapability(): Promise<ModelsByCapability> {
+  const [imageModels, videoModels] = await Promise.all([
+    searchOpenRouterModels('', { capability: 'image_generation', limit: 100 }),
+    searchOpenRouterModels('', { capability: 'video_generation', limit: 100 }),
+  ]);
+
+  return {
+    image_generation: imageModels,
+    video_generation: videoModels,
+  };
 }
 
 /**

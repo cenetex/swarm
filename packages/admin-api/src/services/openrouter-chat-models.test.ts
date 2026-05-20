@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test';
 import {
   _resetOpenRouterChatModelCache,
+  listOpenRouterChatModels,
   resolveOpenRouterChatModelPlan,
 } from './openrouter-chat-models.js';
 
@@ -100,5 +101,36 @@ describe('resolveOpenRouterChatModelPlan', () => {
 
     expect(plan.primaryModel).toBe('provider/tools-model');
     expect(plan.fallbackModels).toEqual([]);
+  });
+
+  it('purges tilde-prefixed OpenRouter registry aliases from model selection', async () => {
+    mockOpenRouterCatalog([
+      {
+        id: '~google/fake-registry-model',
+        name: 'Fake Registry Model',
+        context_length: 1000000,
+        architecture: { output_modalities: ['text'] },
+        supported_parameters: ['tools'],
+      },
+      {
+        id: 'google/live-model',
+        name: 'Live Model',
+        context_length: 128000,
+        architecture: { output_modalities: ['text'] },
+        supported_parameters: ['tools'],
+      },
+    ]);
+
+    const models = await listOpenRouterChatModels();
+    expect(models.map(model => model.id)).toEqual(['google/live-model']);
+
+    const plan = await resolveOpenRouterChatModelPlan({
+      requestModel: '~google/fake-registry-model',
+      requireTools: true,
+    });
+
+    expect(plan.primaryModel).toBe('google/live-model');
+    expect(plan.fallbackModels).toEqual([]);
+    expect(plan.source).toBe('catalog');
   });
 });

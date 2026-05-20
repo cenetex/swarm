@@ -74,6 +74,7 @@ import {
   handlePauseToolCalls,
   cleanResponse,
   surfaceModelConfig,
+  shouldUseEmptyResponseFallback,
   extractPendingJobs,
   extractTaskActions,
   detectAvatarUpdates,
@@ -234,17 +235,24 @@ export async function processChat(
 
   // Post-processing
   response = surfaceModelConfig(response, toolCalls, toolResults);
+  const pendingJobs = extractPendingJobs(toolCalls, toolResults);
 
-  if (!response) {
+  if (shouldUseEmptyResponseFallback(response, pendingJobs)) {
     logger.error('LLM response empty after all retries', { event: 'llm_empty_after_retries', avatarId, model: effectiveModel });
     recordError({ error: 'LLM returned empty response after all retries', subsystem: 'llm', category: 'llm_empty_response', avatarId }).catch(() => {});
     response = 'I apologize, but I couldn\'t generate a response. Please try again.';
+  } else if (!response && pendingJobs.length > 0) {
+    logger.info('LLM response empty after pending async job', {
+      event: 'llm_empty_after_pending_job',
+      avatarId,
+      model: effectiveModel,
+      pendingJobTypes: pendingJobs.map(job => job.type),
+    });
   }
 
   const cleaned = cleanResponse(response);
   response = cleaned.response;
 
-  const pendingJobs = extractPendingJobs(toolCalls, toolResults);
   const taskActions = extractTaskActions(toolCalls, toolResults);
   allMedia.push(...extractMedia(toolResults));
   const avatarUpdates = await detectAvatarUpdates(toolCalls, toolResults, avatarId);

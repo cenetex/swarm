@@ -10,6 +10,7 @@ import {
   DEFAULT_LLM_PROVIDER,
   DEFAULT_LLM_TEMPERATURE,
   DEFAULT_LLM_MAX_TOKENS,
+  isUsableOpenRouterModelId,
 } from '@swarm/core';
 import type { UserSession, SecretType } from '../../types.js';
 import type { TokenLaunchConfig } from '../web3/token-launch.js';
@@ -259,7 +260,7 @@ export function createIdentityServices(
           }>;
         };
 
-        let models = data.data || [];
+        let models = (data.data || []).filter(m => isUsableOpenRouterModelId(m.id));
 
         models = models.filter(m => {
           const modality = m.architecture?.modality;

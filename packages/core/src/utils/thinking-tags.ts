@@ -1,8 +1,8 @@
 /**
  * Thinking Tags Utility
  * 
- * Extracts <thinking>...</thinking> tags from bot responses.
- * - Thinking content should go into bot memory (internal reasoning)
+ * Extracts hidden thought tags from bot responses.
+ * - Hidden thought content should go into bot memory (internal reasoning)
  * - Clean content should be sent to chat (user-facing message)
  * 
  * This enables bots to have internal monologue/reasoning that persists
@@ -19,13 +19,15 @@ export interface ThinkingExtractionResult {
 }
 
 /**
- * Extract thinking tags from a response and return clean content.
+ * Extract hidden thought tags from a response and return clean content.
  * 
  * Supports multiple thinking blocks and handles edge cases:
  * - Nested content (not supported - uses non-greedy match)
  * - Multiple blocks
  * - Multiline content
  * - Case-insensitive tags
+ * - Both <thinking> and <thought> tag names
+ * - Malformed leading tags like "<thought internal note\nUser reply"
  * 
  * @example
  * ```ts
@@ -47,15 +49,16 @@ export function extractThinking(content: string): ThinkingExtractionResult {
 
   const thinkingBlocks: string[] = [];
   
-  // Match <thinking>...</thinking> tags (case-insensitive, multiline, non-greedy)
-  const thinkingRegex = /<\s*thinking\s*>([\s\S]*?)<\s*\/\s*thinking\s*>/gi;
-  const thinkingOrphanOpenRegex = /\s*<\s*thinking\s*>\s*/gi;
-  const thinkingOrphanCloseRegex = /\s*<\s*\/\s*thinking\s*>\s*/gi;
-  const thinkingSelfClosingRegex = /\s*<\s*thinking\s*\/\s*>\s*/gi;
+  // Match hidden-thought tags (case-insensitive, multiline, non-greedy).
+  const thinkingRegex = /<\s*(thinking|thought)\s*>([\s\S]*?)<\s*\/\s*\1\s*>/gi;
+  const malformedLeadingThoughtRegex = /^\s*<\s*(thinking|thought)\b(?!\s*\/?\s*>)([^\r\n]*)(?:\r?\n|$)/i;
+  const thinkingOrphanOpenRegex = /\s*<\s*(?:thinking|thought)\s*>\s*/gi;
+  const thinkingOrphanCloseRegex = /\s*<\s*\/\s*(?:thinking|thought)\s*>\s*/gi;
+  const thinkingSelfClosingRegex = /\s*<\s*(?:thinking|thought)\s*\/\s*>\s*/gi;
   
   let match;
   while ((match = thinkingRegex.exec(content)) !== null) {
-    const thinkingContent = match[1].trim();
+    const thinkingContent = match[2].trim();
     if (thinkingContent) {
       thinkingBlocks.push(thinkingContent);
     }
@@ -63,6 +66,15 @@ export function extractThinking(content: string): ThinkingExtractionResult {
 
   // Remove all thinking blocks from the content
   let cleanContent = content.replace(thinkingRegex, '').trim();
+
+  const malformedLeadingThought = cleanContent.match(malformedLeadingThoughtRegex);
+  if (malformedLeadingThought) {
+    const thinkingContent = malformedLeadingThought[2].trim();
+    if (thinkingContent) {
+      thinkingBlocks.push(thinkingContent);
+    }
+    cleanContent = cleanContent.replace(malformedLeadingThoughtRegex, '').trim();
+  }
 
   // Remove any remaining orphan/self-closing tags
   cleanContent = cleanContent
@@ -116,5 +128,8 @@ export function formatThinkingForMemory(
  */
 export function hasThinkingTags(content: string): boolean {
   if (!content) return false;
-  return /<thinking>[\s\S]*?<\/thinking>/i.test(content);
+  return (
+    /<\s*(thinking|thought)\s*>[\s\S]*?<\s*\/\s*\1\s*>/i.test(content) ||
+    /^\s*<\s*(thinking|thought)\b(?!\s*\/?\s*>)/i.test(content)
+  );
 }

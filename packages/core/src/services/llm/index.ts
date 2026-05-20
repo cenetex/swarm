@@ -11,6 +11,7 @@ import {
 } from '@aws-sdk/client-bedrock-runtime';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
+import { isUsableOpenRouterModelId } from '../../utils/openrouter-model-id.js';
 import type {
   LLMService,
   LLMConfig,
@@ -147,7 +148,9 @@ async function listOpenRouterChatModels(apiKey: string): Promise<OpenRouterChatM
 
   const payload = await response.json() as { data?: OpenRouterCatalogModel[] };
   const models = (payload.data || [])
-    .filter((model): model is OpenRouterCatalogModel & { id: string } => Boolean(model.id) && isTextOutputModel(model))
+    .filter((model): model is OpenRouterCatalogModel & { id: string } =>
+      isUsableOpenRouterModelId(model.id) && isTextOutputModel(model)
+    )
     .map((model) => ({
       id: model.id,
       contextLength: model.context_length || 0,

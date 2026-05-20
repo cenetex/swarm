@@ -1,5 +1,33 @@
 import { describe, expect, test } from 'bun:test';
-import { sanitizeToolError } from './chat-tool-helpers.js';
+import { buildModelSelectorPayload, sanitizeToolError } from './chat-tool-helpers.js';
+
+describe('buildModelSelectorPayload', () => {
+  test('filters tilde-prefixed OpenRouter registry aliases out of model selector payloads', async () => {
+    const services = {
+      listModels: async () => [
+        {
+          id: '~google/fake-registry-model',
+          name: 'Fake Registry Model',
+          contextLength: 1000000,
+        },
+        {
+          id: 'google/live-model',
+          name: 'Live Model',
+          contextLength: 128000,
+        },
+      ],
+      getConfig: async () => ({
+        model: 'google/live-model',
+        temperature: 0.7,
+        maxTokens: 1024,
+      }),
+    } as unknown as Parameters<typeof buildModelSelectorPayload>[0];
+
+    const payload = await buildModelSelectorPayload(services, 'avatar-1');
+
+    expect((payload.models as Array<{ id: string }>).map(model => model.id)).toEqual(['google/live-model']);
+  });
+});
 
 describe('sanitizeToolError', () => {
   // -------------------------------------------------------------------------

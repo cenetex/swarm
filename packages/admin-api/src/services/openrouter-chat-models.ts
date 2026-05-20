@@ -1,4 +1,4 @@
-import { logger } from '@swarm/core';
+import { isUsableOpenRouterModelId, logger } from '@swarm/core';
 
 const OPENROUTER_MODELS_ENDPOINT = 'https://openrouter.ai/api/v1/models?output_modalities=text';
 const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -67,7 +67,7 @@ function modelSupportsTools(model: OpenRouterChatModel): boolean {
 }
 
 function mapCatalogModel(model: OpenRouterCatalogModel): OpenRouterChatModel | null {
-  if (!model.id || !modelSupportsText(model)) return null;
+  if (!isUsableOpenRouterModelId(model.id) || !modelSupportsText(model)) return null;
   return {
     id: model.id,
     name: model.name || model.id,

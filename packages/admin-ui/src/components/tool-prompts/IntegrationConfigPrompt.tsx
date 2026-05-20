@@ -1231,7 +1231,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
   };
 
   return (
-    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg flex flex-col max-h-96">
+    <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg flex flex-col flex-1 min-h-0 h-full">
       {/* Header */}
       <div className="px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg-tertiary)] flex-shrink-0">
         <div className="flex items-center gap-2">
@@ -1248,7 +1248,7 @@ export function IntegrationConfigPrompt({ toolCall, onSubmit, disabled }: ToolPr
       </div>
 
       {/* Content */}
-      <div className="p-3 space-y-3 overflow-y-auto flex-1">
+      <div className="p-3 space-y-3 overflow-y-auto flex-1 min-h-0">
         {savedAt && (
           <div className="flex items-center gap-2 px-2.5 py-1.5 bg-green-500/10 border border-green-500/30 rounded-lg">
             <svg className="w-3.5 h-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">

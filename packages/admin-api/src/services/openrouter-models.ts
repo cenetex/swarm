@@ -1,5 +1,6 @@
 import type { AICapability } from '../types.js';
-import { AVAILABLE_MODELS, type ModelInfo } from './models-registry.js';
+import { isUsableOpenRouterModelId } from '@swarm/core';
+import type { ModelInfo } from './models-registry.js';
 
 const OPENROUTER_MODELS_ENDPOINT = 'https://openrouter.ai/api/v1/models';
 const OPENROUTER_VIDEO_MODELS_ENDPOINT = 'https://openrouter.ai/api/v1/videos/models';
@@ -44,17 +45,6 @@ function modelMatchesQuery(model: Pick<ModelInfo, 'id' | 'name' | 'description'>
   );
 }
 
-function hardcodedOpenRouterModels(
-  query: string,
-  capability?: 'image_generation' | 'video_generation',
-): ModelInfo[] {
-  return AVAILABLE_MODELS.filter((model) =>
-    model.provider === 'openrouter' &&
-    (!capability || model.capabilities.includes(capability)) &&
-    modelMatchesQuery(model, query)
-  );
-}
-
 function inferCapabilities(
   model: OpenRouterCatalogModel,
   requestedCapability?: 'image_generation' | 'video_generation',
@@ -89,7 +79,7 @@ function mapOpenRouterModel(
   model: OpenRouterCatalogModel,
   requestedCapability?: 'image_generation' | 'video_generation',
 ): ModelInfo | null {
-  if (!model.id) return null;
+  if (!isUsableOpenRouterModelId(model.id)) return null;
   return {
     id: model.id,
     name: model.name || model.id.split('/').pop() || model.id,
@@ -125,25 +115,21 @@ export async function searchOpenRouterModels(
     ? OPENROUTER_VIDEO_MODELS_ENDPOINT
     : `${OPENROUTER_MODELS_ENDPOINT}?output_modalities=image`;
 
-  try {
-    const headers: Record<string, string> = {};
-    if (options.apiKey) {
-      headers.Authorization = `Bearer ${options.apiKey}`;
-    }
-
-    const response = await fetch(endpoint, { headers });
-    if (!response.ok) {
-      throw new Error(`OpenRouter model search failed: HTTP ${response.status}`);
-    }
-
-    const models = extractCatalogModels(await response.json())
-      .map((model) => mapOpenRouterModel(model, capability))
-      .filter((model): model is ModelInfo => Boolean(model))
-      .filter((model) => !capability || model.capabilities.includes(capability))
-      .filter((model) => modelMatchesQuery(model, query));
-
-    return models.slice(0, limit);
-  } catch {
-    return hardcodedOpenRouterModels(query, capability).slice(0, limit);
+  const headers: Record<string, string> = {};
+  if (options.apiKey) {
+    headers.Authorization = `Bearer ${options.apiKey}`;
   }
+
+  const response = await fetch(endpoint, { headers });
+  if (!response.ok) {
+    throw new Error(`OpenRouter model search failed: HTTP ${response.status}`);
+  }
+
+  const models = extractCatalogModels(await response.json())
+    .map((model) => mapOpenRouterModel(model, capability))
+    .filter((model): model is ModelInfo => Boolean(model))
+    .filter((model) => !capability || model.capabilities.includes(capability))
+    .filter((model) => modelMatchesQuery(model, query));
+
+  return models.slice(0, limit);
 }

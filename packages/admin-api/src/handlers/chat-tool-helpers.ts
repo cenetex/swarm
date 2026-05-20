@@ -4,6 +4,7 @@
  * and message sanitization for the admin chat handler.
  */
 import {
+  isUsableOpenRouterModelId,
   logger,
   extractThinking,
   resolveAllowedToolsets,
@@ -384,7 +385,7 @@ export async function buildModelSelectorPayload(
   avatarId: string,
   family?: string
 ): Promise<Record<string, unknown>> {
-  const models = await services.listModels(family);
+  const models = (await services.listModels(family)).filter(model => isUsableOpenRouterModelId(model.id));
   const config = await services.getConfig(avatarId);
   const currentModel = config?.model;
 

@@ -89,7 +89,7 @@ function extractOpenRouterImageUrl(payload: unknown): string | undefined {
   return undefined;
 }
 
-function extractOpenRouterVideoUrl(payload: unknown): string | undefined {
+export function extractOpenRouterVideoUrl(payload: unknown): string | undefined {
   if (!payload || typeof payload !== 'object') return undefined;
   const response = payload as {
     url?: string;
@@ -97,7 +97,21 @@ function extractOpenRouterVideoUrl(payload: unknown): string | undefined {
     video?: { url?: string };
     output?: unknown;
     outputs?: unknown;
-    data?: { url?: string; video_url?: string; video?: { url?: string }; output?: unknown; outputs?: unknown };
+    unsigned_url?: string;
+    unsigned_urls?: unknown;
+    signed_url?: string;
+    signed_urls?: unknown;
+    data?: {
+      url?: string;
+      video_url?: string;
+      video?: { url?: string };
+      output?: unknown;
+      outputs?: unknown;
+      unsigned_url?: string;
+      unsigned_urls?: unknown;
+      signed_url?: string;
+      signed_urls?: unknown;
+    };
   };
   const candidates: unknown[] = [
     response.url,
@@ -105,11 +119,19 @@ function extractOpenRouterVideoUrl(payload: unknown): string | undefined {
     response.video?.url,
     response.output,
     response.outputs,
+    response.unsigned_url,
+    response.unsigned_urls,
+    response.signed_url,
+    response.signed_urls,
     response.data?.url,
     response.data?.video_url,
     response.data?.video?.url,
     response.data?.output,
     response.data?.outputs,
+    response.data?.unsigned_url,
+    response.data?.unsigned_urls,
+    response.data?.signed_url,
+    response.data?.signed_urls,
   ];
   for (const candidate of candidates) {
     if (typeof candidate === 'string') return candidate;

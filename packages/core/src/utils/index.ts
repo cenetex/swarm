@@ -44,6 +44,10 @@ export {
   canonicalizeMediaUrls,
 } from './media-url.js';
 
+export {
+  isUsableOpenRouterModelId,
+} from './openrouter-model-id.js';
+
 // Metrics (CloudWatch Embedded Metric Format)
 export {
   MetricsLogger,

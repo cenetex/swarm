@@ -4,7 +4,7 @@
  * Catalog of available AI models and fallback chains,
  * plus model selection logic with automatic fallback on errors.
  */
-import { logger } from '@swarm/core';
+import { isUsableOpenRouterModelId, logger } from '@swarm/core';
 import type { AICapability } from '../types.js';
 
 /**
@@ -356,7 +356,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const OPENROUTER_MODEL_ID_PATTERN = /^~?[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/;
 const OPENROUTER_CATALOG_PROVIDER_PREFIXES = new Set([
   'anthropic',
   'deepseek',
@@ -383,9 +382,8 @@ function isKnownFallbackModel(id: string): boolean {
  * unavailable IDs instead of silently replacing valid catalog choices.
  */
 export function isOpenRouterCatalogModelId(value: string): boolean {
-  if (!OPENROUTER_MODEL_ID_PATTERN.test(value)) return false;
-  const [rawProvider] = value.split('/');
-  const provider = rawProvider?.replace(/^~/, '');
+  if (!isUsableOpenRouterModelId(value)) return false;
+  const [provider] = value.split('/');
   if (!provider) return false;
   return OPENROUTER_CATALOG_PROVIDER_PREFIXES.has(provider);
 }

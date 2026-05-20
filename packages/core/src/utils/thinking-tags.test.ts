@@ -27,6 +27,22 @@ describe('extractThinking', () => {
     expect(result.hasThinking).toBe(true);
   });
 
+  it('should extract thought tags as internal reasoning', () => {
+    const content = '<thought>I should not leak this</thought>Hello!';
+    const result = extractThinking(content);
+    expect(result.cleanContent).toBe('Hello!');
+    expect(result.thinkingBlocks).toEqual(['I should not leak this']);
+    expect(result.hasThinking).toBe(true);
+  });
+
+  it('should strip malformed leading thought lines', () => {
+    const content = '<thought The video failed to generate and should stay hidden.\nThe transaction failed, and the video got rugged.';
+    const result = extractThinking(content);
+    expect(result.cleanContent).toBe('The transaction failed, and the video got rugged.');
+    expect(result.thinkingBlocks).toEqual(['The video failed to generate and should stay hidden.']);
+    expect(result.hasThinking).toBe(true);
+  });
+
   it('should extract multiple thinking blocks', () => {
     const content = '<thinking>First thought</thinking>Hello <thinking>Second thought</thinking>there!';
     const result = extractThinking(content);
@@ -105,6 +121,13 @@ Line 2
     expect(result.cleanContent).toBe('Hello World');
     expect(result.thinkingBlocks).toEqual([]);
   });
+
+  it('should strip orphan thought tags', () => {
+    const content = 'Hello <thought>World';
+    const result = extractThinking(content);
+    expect(result.cleanContent).toBe('Hello World');
+    expect(result.thinkingBlocks).toEqual([]);
+  });
 });
 
 describe('formatThinkingForMemory', () => {
@@ -142,6 +165,14 @@ describe('hasThinkingTags', () => {
 
   it('should return true for content with thinking tags', () => {
     expect(hasThinkingTags('<thinking>test</thinking>')).toBe(true);
+  });
+
+  it('should return true for content with thought tags', () => {
+    expect(hasThinkingTags('<thought>test</thought>')).toBe(true);
+  });
+
+  it('should return true for malformed leading thought tags', () => {
+    expect(hasThinkingTags('<thought hidden note\nVisible reply')).toBe(true);
   });
 
   it('should be case-insensitive', () => {

@@ -386,7 +386,7 @@ export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspace
         role="complementary"
         aria-label="Workspace"
         className={[
-          'bg-[var(--color-bg-secondary)] border-[var(--color-border)] flex flex-col',
+          'bg-[var(--color-bg-secondary)] border-[var(--color-border)] flex flex-col min-h-0 overflow-hidden',
           isFullscreen
             ? // Fullscreen: fills viewport on every breakpoint
               'fixed inset-0 z-50 max-h-none rounded-none border-0'
@@ -494,7 +494,7 @@ export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspace
         <div
           id={`workspace-panel-${activeTab}`}
           role="tabpanel"
-          className="flex-1 overflow-y-auto px-4 py-4 flex flex-col"
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-4 flex flex-col"
           onPointerDown={onTabBodyPointerDown}
           onPointerMove={onTabBodyPointerMove}
           onPointerUp={onTabBodyPointerEnd}
