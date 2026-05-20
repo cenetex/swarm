@@ -217,9 +217,104 @@ export async function removeCheckerboardBackground(imageBuffer: Buffer): Promise
     }
   }
 
+  // Second pass: remove background islands trapped inside preserved white outlines.
+  // Edge flood fill cannot reach these because the outline is intentionally a barrier.
+  const islandVisited = new Uint8Array(pixelCount);
+  let enclosedIslandCount = 0;
+  let enclosedIslandPixels = 0;
+  const islandQueue: number[] = [];
+  const componentPixels: number[] = [];
+
+  const isOpaqueCandidate = (key: number): boolean => {
+    const idx = key * channels;
+    if (outputPixels[idx + 3] === 0) return false;
+    const r = pixels[idx];
+    const g = pixels[idx + 1];
+    const b = pixels[idx + 2];
+    return isBackgroundPixel(r, g, b) || matchesEdgeBackground(r, g, b);
+  };
+
+  for (let startKey = 0; startKey < pixelCount; startKey++) {
+    if (islandVisited[startKey] === 1 || !isOpaqueCandidate(startKey)) continue;
+
+    componentPixels.length = 0;
+    islandQueue.length = 0;
+    islandQueue.push(startKey);
+    islandVisited[startKey] = 1;
+
+    let islandQueueIndex = 0;
+    let touchesImageEdge = false;
+    let barrierBoundary = 0;
+    let coloredBoundary = 0;
+    let totalBoundary = 0;
+
+    while (islandQueueIndex < islandQueue.length) {
+      const key = islandQueue[islandQueueIndex++]!;
+      componentPixels.push(key);
+
+      const x = key % width;
+      const y = Math.floor(key / width);
+      if (x === 0 || x === width - 1 || y === 0 || y === height - 1) {
+        touchesImageEdge = true;
+      }
+
+      for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+          touchesImageEdge = true;
+          continue;
+        }
+
+        const nkey = ny * width + nx;
+        if (isOpaqueCandidate(nkey)) {
+          if (islandVisited[nkey] === 0) {
+            islandVisited[nkey] = 1;
+            islandQueue.push(nkey);
+          }
+          continue;
+        }
+
+        const nidx = nkey * channels;
+        if (outputPixels[nidx + 3] === 0) continue;
+
+        totalBoundary++;
+        const nr = pixels[nidx];
+        const ng = pixels[nidx + 1];
+        const nb = pixels[nidx + 2];
+        if (isBarrierPixel(nr, ng, nb)) {
+          barrierBoundary++;
+        } else if (isColored[nkey] === 1) {
+          coloredBoundary++;
+        }
+      }
+    }
+
+    if (touchesImageEdge || componentPixels.length < 12 || totalBoundary === 0) continue;
+
+    const barrierBoundaryRatio = barrierBoundary / totalBoundary;
+    const coloredBoundaryRatio = coloredBoundary / totalBoundary;
+    const isOutlineEnclosedIsland = barrierBoundary >= 8
+      && barrierBoundaryRatio >= 0.45
+      && coloredBoundaryRatio <= 0.35;
+
+    if (!isOutlineEnclosedIsland) continue;
+
+    for (const key of componentPixels) {
+      const idx = key * channels;
+      if (outputPixels[idx + 3] !== 0) {
+        outputPixels[idx + 3] = 0;
+        enclosedIslandPixels++;
+      }
+    }
+    enclosedIslandCount++;
+  }
+
   console.log('Background removal complete', {
     totalPixels: pixelCount,
     removedPixels: removedCount,
+    enclosedIslandCount,
+    enclosedIslandPixels,
     barrierHits,
     coloredThreshold,
     grayChromaThreshold,
