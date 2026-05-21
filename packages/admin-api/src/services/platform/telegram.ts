@@ -640,6 +640,7 @@ export async function sendChatAction(
 export interface SendMessageOptions {
   replyToMessageId?: number;
   disableWebPagePreview?: boolean;
+  disableNotification?: boolean;
 }
 
 export interface SendMessageResult {
@@ -669,9 +670,22 @@ export async function sendMessage(
       ...(typeof options?.disableWebPagePreview === 'boolean'
         ? { disable_web_page_preview: options.disableWebPagePreview }
         : {}),
+      ...(typeof options?.disableNotification === 'boolean'
+        ? { disable_notification: options.disableNotification }
+        : {}),
     }),
   });
 
+  return parseSendMessageResult(response, 'Failed to send message');
+}
+
+export interface SendMediaOptions {
+  caption?: string;
+  replyToMessageId?: number;
+  disableNotification?: boolean;
+}
+
+async function parseSendMessageResult(response: Response, fallback: string): Promise<SendMessageResult> {
   const result = await response.json() as {
     ok: boolean;
     result?: { message_id: number };
@@ -679,10 +693,70 @@ export async function sendMessage(
   };
 
   if (!result.ok || !result.result) {
-    throw new Error(result.description || 'Failed to send message');
+    throw new Error(result.description || fallback);
   }
 
   return { messageId: result.result.message_id };
+}
+
+/**
+ * Send a photo by public URL.
+ */
+export async function sendPhoto(
+  botToken: string,
+  chatId: number,
+  photoUrl: string,
+  options?: SendMediaOptions
+): Promise<SendMessageResult> {
+  const url = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      photo: photoUrl,
+      ...(options?.caption ? { caption: options.caption.slice(0, 1024) } : {}),
+      ...(typeof options?.replyToMessageId === 'number'
+        ? { reply_to_message_id: options.replyToMessageId }
+        : {}),
+      ...(typeof options?.disableNotification === 'boolean'
+        ? { disable_notification: options.disableNotification }
+        : {}),
+    }),
+  });
+
+  return parseSendMessageResult(response, 'Failed to send photo');
+}
+
+/**
+ * Send a video by public URL.
+ */
+export async function sendVideo(
+  botToken: string,
+  chatId: number,
+  videoUrl: string,
+  options?: SendMediaOptions
+): Promise<SendMessageResult> {
+  const url = `https://api.telegram.org/bot${botToken}/sendVideo`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      video: videoUrl,
+      ...(options?.caption ? { caption: options.caption.slice(0, 1024) } : {}),
+      ...(typeof options?.replyToMessageId === 'number'
+        ? { reply_to_message_id: options.replyToMessageId }
+        : {}),
+      ...(typeof options?.disableNotification === 'boolean'
+        ? { disable_notification: options.disableNotification }
+        : {}),
+    }),
+  });
+
+  return parseSendMessageResult(response, 'Failed to send video');
 }
 
 /**

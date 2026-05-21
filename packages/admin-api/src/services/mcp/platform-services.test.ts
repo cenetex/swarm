@@ -55,6 +55,8 @@ function makeServiceContainer(overrides: Partial<ServiceContainer> = {}): Servic
     setBotShortDescription: vi.fn(),
     sendChatAction: vi.fn(),
     sendMessage: vi.fn(),
+    sendPhoto: vi.fn(),
+    sendVideo: vi.fn(),
     setMessageReaction: vi.fn(),
   };
 
@@ -299,6 +301,8 @@ describe('createPlatformServices Telegram chat services', () => {
       setBotShortDescription: vi.fn(),
       sendChatAction: vi.fn(),
       sendMessage: vi.fn().mockResolvedValue({ messageId: 42 }),
+      sendPhoto: vi.fn(),
+      sendVideo: vi.fn(),
       setMessageReaction: vi.fn(),
     };
     const secrets = {
@@ -319,5 +323,61 @@ describe('createPlatformServices Telegram chat services', () => {
       replyToMessageId: 99,
     });
     expect(result).toEqual({ messageId: 42 });
+  });
+
+  it('sends Telegram media through the existing token lookup and API service', async () => {
+    presenceService.getChannelsForPlatform.mockResolvedValue([]);
+    stateService.getChannelStatesForPlatform.mockResolvedValue([]);
+
+    const telegram = {
+      getUserProfilePhotos: vi.fn(),
+      getFileUrl: vi.fn(),
+      getBotName: vi.fn(),
+      setBotName: vi.fn(),
+      getBotDescription: vi.fn(),
+      setBotDescription: vi.fn(),
+      getBotShortDescription: vi.fn(),
+      setBotShortDescription: vi.fn(),
+      sendChatAction: vi.fn(),
+      sendMessage: vi.fn(),
+      sendPhoto: vi.fn().mockResolvedValue({ messageId: 43 }),
+      sendVideo: vi.fn().mockResolvedValue({ messageId: 44 }),
+      setMessageReaction: vi.fn(),
+    };
+    const secrets = {
+      _getSecretValueInternal: vi.fn().mockResolvedValue('telegram-token'),
+    };
+    const svc = makeServiceContainer({
+      telegram: telegram as unknown as ServiceContainer['telegram'],
+      secrets: secrets as unknown as ServiceContainer['secrets'],
+    });
+
+    const services = createPlatformServices('avatar-1', session, svc);
+    const imageResult = await services.telegram!.sendMediaToChat!(
+      'avatar-1',
+      '-1001',
+      'https://cdn.example.com/img.png',
+      { caption: 'caption', replyToMessageId: 99, mediaType: 'image' },
+    );
+    const videoResult = await services.telegram!.sendMediaToChat!(
+      'avatar-1',
+      '-1001',
+      'https://cdn.example.com/video.mp4',
+      { mediaType: 'video' },
+    );
+
+    expect(secrets._getSecretValueInternal).toHaveBeenCalledWith('avatar-1', 'telegram_bot_token', 'default');
+    expect(telegram.sendPhoto).toHaveBeenCalledWith('telegram-token', -1001, 'https://cdn.example.com/img.png', {
+      caption: 'caption',
+      replyToMessageId: 99,
+      disableNotification: undefined,
+    });
+    expect(telegram.sendVideo).toHaveBeenCalledWith('telegram-token', -1001, 'https://cdn.example.com/video.mp4', {
+      caption: undefined,
+      replyToMessageId: undefined,
+      disableNotification: undefined,
+    });
+    expect(imageResult).toEqual({ messageId: 43 });
+    expect(videoResult).toEqual({ messageId: 44 });
   });
 });

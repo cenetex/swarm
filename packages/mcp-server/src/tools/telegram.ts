@@ -68,6 +68,8 @@ export interface TelegramChatInfo {
   summary?: string;
 }
 
+export type TelegramMediaType = 'image' | 'video' | 'sticker';
+
 export interface TelegramServices {
   /** Get Telegram integration status */
   getTelegramStatus?: (avatarId: string) => Promise<TelegramStatus>;
@@ -165,6 +167,14 @@ export interface TelegramServices {
   /** Send message to a specific chat (cross-platform posting) */
   sendToChat?: (avatarId: string, chatId: number | string, text: string, options?: {
     parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2';
+    replyToMessageId?: number;
+    disableNotification?: boolean;
+  }) => Promise<{ messageId: number } | null>;
+
+  /** Send media to a specific chat (cross-platform posting) */
+  sendMediaToChat?: (avatarId: string, chatId: number | string, mediaUrl: string, options?: {
+    mediaType?: TelegramMediaType;
+    caption?: string;
     replyToMessageId?: number;
     disableNotification?: boolean;
   }) => Promise<{ messageId: number } | null>;
@@ -759,6 +769,67 @@ export const createTelegramTools = (services: TelegramServices) => [
             messageId: result.messageId,
             chatId: input.chatId,
             message: 'Message sent successfully',
+          },
+        };
+      } catch (err) {
+        return { success: false, error: String(err) };
+      }
+    },
+  }),
+
+  defineTool({
+    name: 'telegram_send_media_to_chat',
+    description: 'Send an image, video, or sticker URL to a specific Telegram chat. Use this when a generated or gallery image must be posted into a Telegram group/channel instead of only shown in admin chat.',
+    category: 'telegram',
+    toolset: 'telegram',
+    platforms: ['telegram', 'admin-ui', 'api', 'mcp'],
+    inputSchema: z.object({
+      chatId: z.union([z.number(), z.string()]).describe('Telegram chat ID to send to'),
+      mediaUrl: z.string().url().describe('Public image/video/sticker URL to send'),
+      mediaType: z.enum(['image', 'video', 'sticker']).default('image')
+        .describe('Type of media to send. Stickers are sent as photos when only a URL is available.'),
+      caption: z.string().max(1024).optional()
+        .describe('Optional caption for image/video media'),
+      replyToMessageId: z.number().int().positive().optional()
+        .describe('Optional Telegram message ID to reply to'),
+      disableNotification: z.boolean().optional()
+        .describe('Send silently without notification'),
+    }),
+    execute: async (input, context): Promise<ToolResult> => {
+      if (!services.sendMediaToChat) {
+        return { success: false, error: 'Send media to chat service is not available' };
+      }
+
+      try {
+        const result = await services.sendMediaToChat(
+          context.avatarId,
+          input.chatId,
+          input.mediaUrl,
+          {
+            mediaType: input.mediaType,
+            caption: input.caption,
+            replyToMessageId: input.replyToMessageId,
+            disableNotification: input.disableNotification,
+          }
+        );
+
+        if (!result) {
+          return { success: false, error: 'Failed to send media' };
+        }
+
+        return {
+          success: true,
+          data: {
+            messageId: result.messageId,
+            chatId: input.chatId,
+            mediaUrl: input.mediaUrl,
+            mediaType: input.mediaType,
+            message: 'Media sent successfully',
+          },
+          media: {
+            type: input.mediaType === 'video' ? 'video' : 'image',
+            url: input.mediaUrl,
+            caption: input.caption,
           },
         };
       } catch (err) {

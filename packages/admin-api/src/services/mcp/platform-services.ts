@@ -331,6 +331,26 @@ export function createPlatformServices(
         });
       },
 
+      sendMediaToChat: async (avatarId, chatId, mediaUrl, options) => {
+        const botToken = await getBotToken(svc, avatarId);
+        const numericChatId = typeof chatId === 'number' ? chatId : Number(chatId);
+        if (!Number.isFinite(numericChatId)) {
+          throw new Error('Telegram chatId must be a numeric chat ID');
+        }
+
+        const mediaOptions = {
+          caption: options?.caption,
+          replyToMessageId: options?.replyToMessageId,
+          disableNotification: options?.disableNotification,
+        };
+
+        if (options?.mediaType === 'video') {
+          return telegram.sendVideo(botToken, numericChatId, mediaUrl, mediaOptions);
+        }
+
+        return telegram.sendPhoto(botToken, numericChatId, mediaUrl, mediaOptions);
+      },
+
       getChatSummary: async (avatarId, chatId) => {
         const chat = await getKnownTelegramChat(avatarId, chatId);
         return chat?.summary ?? null;
