@@ -17,6 +17,7 @@ import {
   formatMentionContext,
   hasNewerMessageThanEnvelope,
   isLatencyBoundGroupConversation,
+  rankToolsForMessage,
   resolveGroupResponseDeadlineMs,
   resolveResponseLlmPolicy,
   sharedRoomMessagesToContextMessages,
@@ -156,9 +157,43 @@ describe('Message Processor - Group Response Policy', () => {
     })).toBe(true);
 
     expect(shouldEnableGroupToolsForMessage({
+      content: { text: '@bot try another sticker please' },
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', isMention: true },
+    })).toBe(true);
+
+    expect(shouldEnableGroupToolsForMessage({
       content: { text: "you're doing it wrong. use the tool" },
       metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', isReplyToBot: true },
     })).toBe(true);
+  });
+
+  it('ranks explicit group media requests to the narrow best tool', () => {
+    expect(rankToolsForMessage({
+      content: { text: '@bot try another sticker please' },
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', isMention: true },
+    })).toMatchObject({
+      enableTools: true,
+      toolNames: ['generate_sticker'],
+      reason: 'media_intent',
+    });
+
+    expect(rankToolsForMessage({
+      content: { text: '@bot can you show us a picture of you' },
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', isMention: true },
+    })).toMatchObject({
+      enableTools: true,
+      toolNames: ['generate_image'],
+      reason: 'media_intent',
+    });
+
+    expect(rankToolsForMessage({
+      content: { text: '@bot make a short video' },
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', isMention: true },
+    })).toMatchObject({
+      enableTools: true,
+      toolNames: ['generate_video'],
+      reason: 'media_intent',
+    });
   });
 
   it('keeps group tools disabled for ambient or ordinary direct chatter', () => {
@@ -169,6 +204,11 @@ describe('Message Processor - Group Response Policy', () => {
 
     expect(shouldEnableGroupToolsForMessage({
       content: { text: '@bot what do you think?' },
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', isMention: true },
+    })).toBe(false);
+
+    expect(shouldEnableGroupToolsForMessage({
+      content: { text: '@bot do you like stickers?' },
       metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', isMention: true },
     })).toBe(false);
   });

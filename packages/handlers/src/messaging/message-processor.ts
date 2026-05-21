@@ -84,6 +84,93 @@ type ResponseLlmPolicy = {
   enableTools: boolean;
 };
 
+export type ToolIntentRanking = {
+  enableTools: boolean;
+  toolNames: string[];
+  reason: 'not_direct' | 'empty' | 'explicit_tool_request' | 'media_intent' | 'no_tool_intent';
+  scores: Record<string, number>;
+};
+
+const EXPLICIT_TOOL_REQUEST_RE = /\b(use|call|run|invoke)\s+(the\s+)?tool\b/;
+const MEDIA_ACTION_RE = /\b(generate|create|make|draw|render|show|try|retry|another|more|new|again|please|send|give|get)\b/;
+const MEDIA_TOOL_TERMS: Record<string, RegExp[]> = {
+  generate_sticker: [
+    /\bgenerate[_ -]?sticker\b/,
+    /\bsticker\s+pack\b/,
+    /\bstickers?\b/,
+  ],
+  generate_video: [
+    /\bgenerate[_ -]?video\b/,
+    /\bvideos?\b/,
+    /\bclips?\b/,
+    /\banimations?\b/,
+    /\banimate(?:d)?\b/,
+  ],
+  generate_image: [
+    /\bgenerate[_ -]?image\b/,
+    /\bimages?\b/,
+    /\bpictures?\b/,
+    /\bphotos?\b/,
+    /\bpics?\b/,
+    /\bart\b/,
+    /\bvisuals?\b/,
+    /\bdrawing\b/,
+  ],
+};
+
+function scoreMediaToolIntent(text: string, patterns: RegExp[]): number {
+  let score = 0;
+  for (const pattern of patterns) {
+    if (pattern.test(text)) {
+      score += pattern.source.includes('generate') ? 5 : 3;
+    }
+  }
+  if (score > 0 && MEDIA_ACTION_RE.test(text)) {
+    score += 1;
+  }
+  return score;
+}
+
+export function rankToolsForMessage(
+  envelope: Pick<SwarmEnvelope, 'content' | 'metadata'>,
+): ToolIntentRanking {
+  if (!envelope.metadata.isMention && !envelope.metadata.isReplyToBot) {
+    return { enableTools: false, toolNames: [], reason: 'not_direct', scores: {} };
+  }
+
+  const text = (envelope.content.text || '').toLowerCase();
+  if (!text.trim()) {
+    return { enableTools: false, toolNames: [], reason: 'empty', scores: {} };
+  }
+
+  const scores = Object.fromEntries(
+    Object.entries(MEDIA_TOOL_TERMS).map(([toolName, patterns]) => [
+      toolName,
+      scoreMediaToolIntent(text, patterns),
+    ]),
+  );
+
+  const rankedTools = Object.entries(scores)
+    .filter(([, score]) => score >= 4)
+    .sort((a, b) => b[1] - a[1])
+    .map(([toolName]) => toolName);
+
+  if (rankedTools.length > 0) {
+    return {
+      enableTools: true,
+      toolNames: [rankedTools[0]],
+      reason: 'media_intent',
+      scores,
+    };
+  }
+
+  if (EXPLICIT_TOOL_REQUEST_RE.test(text)) {
+    return { enableTools: true, toolNames: [], reason: 'explicit_tool_request', scores };
+  }
+
+  return { enableTools: false, toolNames: [], reason: 'no_tool_intent', scores };
+}
+
 type MessageStalenessCandidate = {
   messageId?: string;
   timestamp?: number;
@@ -162,14 +249,7 @@ export function resolveResponseLlmPolicy(
 export function shouldEnableGroupToolsForMessage(
   envelope: Pick<SwarmEnvelope, 'content' | 'metadata'>,
 ): boolean {
-  if (!envelope.metadata.isMention && !envelope.metadata.isReplyToBot) return false;
-
-  const text = (envelope.content.text || '').toLowerCase();
-  if (!text.trim()) return false;
-
-  return /\b(use|call|run|invoke)\s+(the\s+)?tool\b/.test(text)
-    || /\b(generate|create|make|draw|render|show)\b[\s\S]{0,80}\b(image|picture|photo|video|sticker|art)\b/.test(text)
-    || /\b(image|picture|photo|video|sticker)\b[\s\S]{0,80}\b(generate|create|make|draw|render|tool)\b/.test(text);
+  return rankToolsForMessage(envelope).enableTools;
 }
 
 export function hasNewerMessageThanEnvelope(
@@ -705,9 +785,10 @@ async function generateResponse(
   await maybeTranscribeAudio(envelope, toolClient, toolContext, avatarRuntime.avatarConfig);
   const brainService = createRuntimeBrainService(stateService, avatarRuntime.avatarConfig.brain);
   const baseResponsePolicy = resolveResponseLlmPolicy(avatarRuntime.avatarConfig, envelope);
+  const toolIntentRanking = rankToolsForMessage(envelope);
   const groupToolOverride = baseResponsePolicy.isLatencyBoundGroup
     && !baseResponsePolicy.enableTools
-    && shouldEnableGroupToolsForMessage(envelope);
+    && toolIntentRanking.enableTools;
   const responsePolicy: ResponseLlmPolicy = groupToolOverride
     ? { ...baseResponsePolicy, enableTools: true }
     : baseResponsePolicy;
@@ -720,6 +801,9 @@ async function generateResponse(
       platform: envelope.platform,
       conversationId: envelope.conversationId,
       messageId: envelope.messageId,
+      reason: toolIntentRanking.reason,
+      rankedToolNames: toolIntentRanking.toolNames,
+      toolScores: toolIntentRanking.scores,
     });
   }
 
@@ -771,9 +855,28 @@ async function generateResponse(
   const toolDefinitions = toolClient
     .getToolDefinitions()
     .filter((tool: { name: string }) => avatarRuntime.avatarConfig.tools.includes(tool.name));
+  const rankedToolNames = responsePolicy.isLatencyBoundGroup ? toolIntentRanking.toolNames : [];
+  const rankedToolDefinitions = rankedToolNames.length > 0
+    ? rankedToolNames
+      .map(toolName => toolDefinitions.find(tool => tool.name === toolName))
+      .filter((tool): tool is (typeof toolDefinitions)[number] => Boolean(tool))
+    : toolDefinitions;
+  const availableRankedToolNames = new Set(rankedToolDefinitions.map(tool => tool.name));
+  const effectiveToolDefinitions = rankedToolNames.length > 0
+    ? rankedToolDefinitions
+    : toolDefinitions;
   const enabledTools = responsePolicy.enableTools
-    ? toolClient.getOpenAIToolsForTools(toolDefinitions)
+    ? toolClient.getOpenAIToolsForTools(effectiveToolDefinitions)
     : [];
+
+  if (responsePolicy.enableTools && rankedToolNames.length > 0 && enabledTools.length > 0) {
+    enrichedSystemPrompt = [
+      enrichedSystemPrompt,
+      '## Tool Routing',
+      `The runtime selected ${rankedToolNames.join(', ')} as the relevant tool for this request.`,
+      'If the user is asking for that action, call the selected tool now instead of describing the action.',
+    ].join('\n\n');
+  }
 
   if (responsePolicy.isLatencyBoundGroup) {
     logger.info('Using latency-bound group response policy', {
@@ -786,6 +889,10 @@ async function generateResponse(
       useFastModel: responsePolicy.useFastModel,
       model: responsePolicy.llmConfig.model,
       toolsEnabled: responsePolicy.enableTools,
+      toolIntentReason: toolIntentRanking.reason,
+      rankedToolNames,
+      enabledToolNames: enabledTools.map(tool => tool.function.name),
+      unavailableRankedToolNames: rankedToolNames.filter(toolName => !availableRankedToolNames.has(toolName)),
     });
   }
 
