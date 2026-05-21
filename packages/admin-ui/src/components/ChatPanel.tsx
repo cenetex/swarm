@@ -14,7 +14,7 @@ import { useWorkspaceStore } from '../store/workspace';
 import { TaskCard as TaskCardComponent } from './tool-prompts/TaskCard';
 import type { ToolSubmitResult } from './tool-prompts/types';
 import { useAuth } from '../store/auth';
-import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion, updateAvatar as updateAvatarApi, getAvatar, toggleFeature, transcribeAudio, type JobStatus } from '../api';
+import { sendChatMessage, saveAvatarSecret, submitToolResult, pollJobCompletion, updateAvatar as updateAvatarApi, toggleFeature, transcribeAudio, type JobStatus } from '../api';
 import { ChatMessage as ChatMessageComponent } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { AvatarDisplay } from './AvatarSidebar';
@@ -881,36 +881,25 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       // Handle model selection updates
       if (typeof resultObj.selectedModel === 'string') {
         try {
-          const avatar = await getAvatar(activeAvatar.id);
-          const currentConfig = avatar.llmConfig || {
-            provider: 'openrouter',
-            model: resultObj.selectedModel,
-            temperature: 0.8,
-            maxTokens: 1024,
-            useGlobalKey: true,
-          };
-
-          await updateAvatarApi(activeAvatar.id, {
-            llmConfig: {
-              ...currentConfig,
-              model: resultObj.selectedModel,
-            },
-          });
+          const resumed = await submitToolResult(activeAvatar.id, toolCallId, resultObj);
 
           updateAvatar(activeAvatar.id, { model: resultObj.selectedModel });
           updateToolCallStatus();
 
-          // Post an assistant confirmation so the chat doesn't leave the
-          // pre-submit placeholder ("Please select a model:") as the last
-          // visible assistant message. We don't round-trip through the LLM
-          // here — model switches are a simple local state change.
-          const modelLabel = typeof resultObj.selectedModelLabel === 'string'
-            ? resultObj.selectedModelLabel
-            : resultObj.selectedModel;
           addMessage(activeAvatar.id, {
             role: 'assistant',
-            content: t('chat.message.modelUpdated', { model: modelLabel }),
+            content: resumed.response || t('chat.message.modelUpdated', { model: resultObj.selectedModel }),
+            toolCalls: resumed.pendingToolCall ? [{
+              id: resumed.pendingToolCall.id,
+              name: resumed.pendingToolCall.name,
+              arguments: resumed.pendingToolCall.arguments,
+              status: 'pending',
+            }] : undefined,
+            media: resumed.media,
           });
+          if (resumed.pendingToolCall) {
+            registerResumedToolCall(resumed.pendingToolCall);
+          }
 
           return { ok: true };
         } catch (error) {

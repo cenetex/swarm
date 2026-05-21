@@ -71,6 +71,8 @@ export function ToolPrompt({ toolCall, onSubmit, disabled }: ToolPromptProps) {
     case 'request_secret':
     case 'prompt_secret':
       return <SecretPrompt toolCall={normalizedToolCall} onSubmit={onSubmit} disabled={disabled} />;
+    case 'request_model_selection':
+      return <ModelSelectorPrompt toolCall={normalizedToolCall} onSubmit={onSubmit} disabled={disabled} />;
     case 'confirm_action':
       return <ConfirmPrompt toolCall={normalizedToolCall} onSubmit={onSubmit} disabled={disabled} />;
     case 'request_property_research':

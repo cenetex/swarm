@@ -29,6 +29,7 @@ export const CATEGORY_TOOLSETS: Record<ToolCategory, ToolsetId[]> = {
   memory: ['memory'],
   nft: ['nft'],
   property: ['property'],
+  models: ['models'],
   diagnostics: ['diagnostics'],
   'signal-station': ['signal-station'],
 };
@@ -36,7 +37,7 @@ export const CATEGORY_TOOLSETS: Record<ToolCategory, ToolsetId[]> = {
 /**
  * Base toolsets that are always included regardless of enabled categories.
  */
-export const BASE_TOOLSETS: ToolsetId[] = ['core', 'admin', 'config', 'jobs', 'models'];
+export const BASE_TOOLSETS: ToolsetId[] = ['core', 'admin', 'config', 'jobs'];
 
 // =============================================================================
 // CATEGORY DETECTION

@@ -11,6 +11,10 @@ import type {
 } from 'aws-lambda';
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 import {
+  DEFAULT_LLM_MAX_TOKENS,
+  DEFAULT_LLM_MODEL,
+  DEFAULT_LLM_PROVIDER,
+  DEFAULT_LLM_TEMPERATURE,
   logger,
   createRuntimeMetricsLogger,
   detectEnabledCategories,
@@ -19,11 +23,12 @@ import { authenticateRequest, requireAdmin } from '../auth/request-auth.js';
 import { getCorsHeaders } from '../http/cors.js';
 import { parseJsonBody } from '../http/request-body.js';
 import * as chatHistory from '../services/chat-history.js';
-import { savePendingTool } from '../services/pending-tools.js';
+import { getPendingTool, removePendingTool, savePendingTool } from '../services/pending-tools.js';
 import { createChatJob, createJobId } from '../services/chat-jobs.js';
 import {
   ChatRequestSchema,
   type AdminChatMessage,
+  type AvatarRecord,
   type UserSession,
 } from '../types.js';
 import { recordError } from '../services/auto-issues.js';
@@ -39,6 +44,7 @@ import {
 import type { ToolContext } from '@swarm/mcp-server';
 import { createMCPServices } from '../services/mcp-adapter.js';
 import * as avatars from '../services/avatars.js';
+import { getValidModelId } from '../services/models-registry.js';
 import { resolveOpenRouterChatModelPlan } from '../services/openrouter-chat-models.js';
 import { mapAdminChatHandlerError } from './chat-error-mapping.js';
 import { getGateStatus } from '../services/web3/nft-gate.js';
@@ -100,6 +106,63 @@ function prefersAsyncResponse(event: APIGatewayProxyEventV2): boolean {
 function clampInt(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+
+function extractModelIdFromMessage(message: string): string | undefined {
+  const matches = message.match(/[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*/gi) || [];
+  for (const candidate of matches) {
+    const model = getValidModelId(candidate);
+    if (model) return model;
+  }
+  return undefined;
+}
+
+async function handlePendingModelSelectionText(params: {
+  session: UserSession;
+  avatarRecord: AvatarRecord | null;
+  avatarId: string | undefined;
+  message: string;
+  history: AdminChatMessage[];
+  corsHeaders: Record<string, string>;
+}): Promise<APIGatewayProxyResultV2 | null> {
+  const { session, avatarRecord, avatarId, message, history, corsHeaders } = params;
+  if (!session.email || !avatarId) return null;
+
+  const pendingTool = await getPendingTool(session.email, avatarId);
+  if (pendingTool?.toolName !== 'request_model_selection') return null;
+
+  const selectedModel = extractModelIdFromMessage(message);
+  if (!selectedModel) return null;
+
+  const currentConfig = avatarRecord?.llmConfig || {
+    provider: DEFAULT_LLM_PROVIDER,
+    model: DEFAULT_LLM_MODEL,
+    temperature: DEFAULT_LLM_TEMPERATURE,
+    maxTokens: DEFAULT_LLM_MAX_TOKENS,
+    useGlobalKey: true,
+  };
+  await avatars.updateAvatar(avatarId, {
+    llmConfig: {
+      ...currentConfig,
+      provider: currentConfig.provider || DEFAULT_LLM_PROVIDER,
+      model: selectedModel,
+    },
+  }, session);
+  await removePendingTool(session.email, avatarId);
+
+  const response = `Model updated to ${selectedModel}.`;
+  const nextHistory: AdminChatMessage[] = [
+    ...history,
+    { role: 'user', content: message },
+    { role: 'assistant', content: response },
+  ];
+  await chatHistory.saveChatHistory(session, nextHistory, avatarId);
+
+  return {
+    statusCode: 200,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ response, history: nextHistory }),
+  };
 }
 
 /**
@@ -378,6 +441,19 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // Build avatar context
     const avatarRecord = avatar?.id ? await avatars.getAvatar(avatar.id) : null;
+    const pendingModelSelectionResponse = await handlePendingModelSelectionText({
+      session,
+      avatarRecord,
+      avatarId: avatar?.id,
+      message,
+      history,
+      corsHeaders,
+    });
+    if (pendingModelSelectionResponse) {
+      if (idempotencyKey) await chatIdempotencyStore.update(idempotencyKey, pendingModelSelectionResponse);
+      return pendingModelSelectionResponse;
+    }
+
     const voiceEnabled = process.env.ENABLE_VOICE_TOOLS !== 'false';
     const enabledToolsets = avatarRecord?.mcpConfig?.enabledToolsets || [];
     const enabledCategories = avatarRecord

@@ -5,13 +5,13 @@
  * mismatch occurs) and the SDK streaming tool execution path.
  */
 import { logger } from '@swarm/core';
-import { isPauseForInputTool } from '@swarm/mcp-server';
+import { isPauseForInputTool, type AllServices } from '@swarm/mcp-server';
 import type { AdminChatMessage, ToolResult } from '../../types.js';
 import {
   sanitizeMessages,
   sanitizeToolError,
   stringifyToolResultForModel,
-  toAdminToolCall,
+  buildPauseToolPayload,
   buildPendingToolResponse,
   hasExecuteFunction,
   type SdkToolCall,
@@ -63,7 +63,7 @@ export async function executeFallbackToolLoop(params: {
   messagesWithAttachments: AdminChatMessage[];
   messages: AdminChatMessage[];
   avatarId: string | undefined;
-  mcpServices: unknown | null;
+  mcpServices: { models?: AllServices['models'] } | null;
 }): Promise<FallbackToolLoopResult> {
   const {
     tools,
@@ -259,10 +259,17 @@ export async function executeFallbackToolLoop(params: {
         pauseToolRepeatCount = 1;
       }
 
+      const payload = await buildPauseToolPayload({
+        toolName: pauseToolName,
+        args: getToolArgs(nextPauseTool),
+        mcpServices,
+        avatarId,
+        tools,
+      });
       const pendingToolCall = {
         id: String(nextPauseTool.id),
-        name: pauseToolName,
-        arguments: getToolArgs(nextPauseTool),
+        name: payload.toolName,
+        arguments: payload.arguments,
       };
 
       response = buildPendingToolResponse(pendingToolCall.name, pendingToolCall.arguments);
@@ -270,7 +277,14 @@ export async function executeFallbackToolLoop(params: {
       earlyMessages.push({
         role: 'assistant',
         content: response,
-        tool_calls: [toAdminToolCall(nextPauseTool)],
+        tool_calls: [{
+          id: pendingToolCall.id,
+          type: 'function' as const,
+          function: {
+            name: pendingToolCall.name,
+            arguments: JSON.stringify(pendingToolCall.arguments),
+          },
+        }],
       });
 
       return {

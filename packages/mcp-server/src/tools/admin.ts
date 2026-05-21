@@ -135,14 +135,14 @@ export function createAdminTools(services: AdminToolServices) {
 The panel allows the user to:
 - Enable or disable the integration
 - Enter required credentials (bot tokens, API keys)
-- For AI providers: select which models to use for each capability
+- For AI providers: manage provider credentials and status
 - Test the connection
 - View current status
 
 Use this when:
 - Setting up a new integration
 - Resetting credentials (e.g., "reset my Telegram token", "update Replicate API key for voice")
-- Configuring AI model preferences (e.g., "I want to use a different image model")
+- Configuring provider credentials or status
 - Checking integration status
 - Troubleshooting connection issues
 
@@ -304,7 +304,7 @@ Verifies that the credentials are valid and the service is accessible.`,
       description: `Get the list of available AI models.
 Can filter by integration (e.g., 'replicate', 'openai') or capability (e.g., 'image_generation', 'voice_clone').
 
-Use this to show the user what models they can choose from.`,
+Use this for catalog lookup only. For LLM model changes, call request_model_selection.`,
       category: 'readonly',
       toolset: 'admin',
       platforms: ['admin-ui', 'api'],
@@ -332,14 +332,16 @@ Use this to show the user what models they can choose from.`,
 
     defineManualTool({
       name: 'request_model_selection',
-      description: `Show the user a model selection interface for a specific capability.
-Use this when the user wants to change which AI model is used for a specific task.
+      description: `Show the user the LLM model selection interface.
+Use this when the user wants to change the chat/reasoning model.
 
-Example: "I want to use a different model for image generation"`,
+Example: "Switch me to a DeepSeek chat model"`,
       toolset: 'admin',
       platforms: ['admin-ui'],
       inputSchema: z.object({
-        capability: z.enum(AI_CAPABILITIES).describe('Which capability to configure'),
+        capability: z.literal('llm').optional().default('llm').describe('Only LLM model selection is handled by this prompt'),
+        family: z.string().optional().describe('Optional provider/model family filter, e.g. claude, gpt, deepseek, gemini'),
+        preferredFamily: z.string().optional().describe('Optional provider/model family filter alias'),
         currentModel: z.string().optional().describe('Currently selected model (if any)'),
         reason: z.string().optional().describe('Why the user wants to change models'),
       }),

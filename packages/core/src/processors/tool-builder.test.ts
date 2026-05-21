@@ -95,6 +95,12 @@ describe('resolveAllowedToolsets', () => {
     expect(toolsets).toContain('admin');
     expect(toolsets).toContain('config');
     expect(toolsets).toContain('jobs');
+    expect(toolsets).not.toContain('models');
+  });
+
+  it('should include model tools only when the models category is enabled', () => {
+    const toolsets = resolveAllowedToolsets(['models']);
+
     expect(toolsets).toContain('models');
   });
 
@@ -324,6 +330,6 @@ describe('BASE_TOOLSETS', () => {
     expect(BASE_TOOLSETS).toContain('admin');
     expect(BASE_TOOLSETS).toContain('config');
     expect(BASE_TOOLSETS).toContain('jobs');
-    expect(BASE_TOOLSETS).toContain('models');
+    expect(BASE_TOOLSETS).not.toContain('models');
   });
 });

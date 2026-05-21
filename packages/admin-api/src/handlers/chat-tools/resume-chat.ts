@@ -4,13 +4,21 @@
  * Handles resuming a chat conversation after the UI submits a tool result
  * (e.g., model selection, integration config, secret input).
  */
-import { detectEnabledCategories, type ToolCategory } from '@swarm/core';
+import {
+  DEFAULT_LLM_MAX_TOKENS,
+  DEFAULT_LLM_MODEL,
+  DEFAULT_LLM_PROVIDER,
+  DEFAULT_LLM_TEMPERATURE,
+  detectEnabledCategories,
+  type ToolCategory,
+} from '@swarm/core';
 import type { AdminChatMessage, ToolResult, UserSession } from '../../types.js';
 import * as chatHistory from '../../services/chat-history.js';
 import * as pendingTools from '../../services/pending-tools.js';
 import * as avatars from '../../services/avatars.js';
 import { configureIntegration } from '../../services/integrations.js';
 import { syncAvatarConfig } from '../../services/config-sync.js';
+import { getValidModelId } from '../../services/models-registry.js';
 import { resolveOpenRouterChatModelPlan } from '../../services/openrouter-chat-models.js';
 import { createSystemLogger } from '../../services/structured-logger.js';
 import { LLM_MODEL } from '../chat-llm.js';
@@ -89,9 +97,15 @@ export async function resumeChatAfterToolResult(
   const historyToolCalls = history
     .filter(m => m.role === 'assistant' && Array.isArray(m.tool_calls))
     .flatMap(m => m.tool_calls || []);
-  const hasMatchingToolCall = historyToolCalls.some(tc => tc.id === toolCallId);
+  const matchingHistoryToolCall = historyToolCalls.find(tc => tc.id === toolCallId);
+  const hasMatchingToolCall = Boolean(matchingHistoryToolCall);
 
   const validatedViaPendingStore = pendingRecord?.toolCallId === toolCallId;
+  const validatedToolName = pendingRecord?.toolName || (() => {
+    if (!matchingHistoryToolCall) return undefined;
+    const call = matchingHistoryToolCall as { name?: string; function?: { name?: string } };
+    return call.function?.name || call.name;
+  })();
 
   log.info('resume', 'tool_call_validation_started', {
     toolCallId,
@@ -113,11 +127,19 @@ export async function resumeChatAfterToolResult(
     log.info('resume', 'tool_call_validated_via_history', { toolCallId });
   } else {
     // If validation fails, log detailed info including all tool calls in history
-    const toolCallsInHistory = historyToolCalls.map(tc => ({
-      id: tc.id,
-      name: (tc as any).function?.name || (tc as any).name,
-      type: (tc as any).type,
-    }));
+    const toolCallsInHistory = historyToolCalls.map(tc => {
+      const call = tc as {
+        id?: string;
+        name?: string;
+        type?: string;
+        function?: { name?: string };
+      };
+      return {
+        id: call.id,
+        name: call.function?.name || call.name,
+        type: call.type,
+      };
+    });
 
     log.error('resume', 'tool_call_validation_failed', {
       toolCallId,
@@ -131,6 +153,80 @@ export async function resumeChatAfterToolResult(
       toolCallsInHistory,
     });
     throw new Error(`Unknown or expired toolCallId: ${toolCallId}`);
+  }
+
+  // If the matching assistant tool_call was stripped from history (by sanitization
+  // or TTL expiry), inject a synthetic assistant message so the LLM provider
+  // sees a proper assistant→tool message pair.
+  let baseHistory = history;
+  if (!hasMatchingToolCall && pendingRecord) {
+    baseHistory = [
+      ...history,
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{
+          id: toolCallId,
+          type: 'function' as const,
+          function: {
+            name: pendingRecord.toolName,
+            arguments: JSON.stringify(pendingRecord.arguments),
+          },
+        }],
+      },
+    ];
+  }
+
+  // Handle request_model_selection results server-side so the pending tool
+  // record is consumed consistently with every other manual tool prompt.
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    const resultObj = result as Record<string, unknown>;
+    if (validatedToolName === 'request_model_selection' && typeof resultObj.selectedModel === 'string') {
+      const selectedModel = getValidModelId(resultObj.selectedModel);
+      if (!selectedModel) {
+        throw new Error(`Unknown or unsupported model ID: ${resultObj.selectedModel}`);
+      }
+
+      const currentConfig = avatarRecord?.llmConfig || {
+        provider: DEFAULT_LLM_PROVIDER,
+        model: DEFAULT_LLM_MODEL,
+        temperature: DEFAULT_LLM_TEMPERATURE,
+        maxTokens: DEFAULT_LLM_MAX_TOKENS,
+        useGlobalKey: true,
+      };
+      await avatars.updateAvatar(avatarId, {
+        llmConfig: {
+          ...currentConfig,
+          provider: currentConfig.provider || DEFAULT_LLM_PROVIDER,
+          model: selectedModel,
+        },
+      }, session);
+
+      const response = `Model updated to ${selectedModel}.`;
+      const nextHistory: AdminChatMessage[] = [
+        ...baseHistory,
+        {
+          role: 'tool',
+          tool_call_id: toolCallId,
+          content: JSON.stringify({ selectedModel }),
+        } as ToolResult,
+        {
+          role: 'assistant',
+          content: response,
+        },
+      ];
+
+      await chatHistory.saveChatHistory(session, nextHistory, avatarId);
+
+      if (validatedViaPendingStore) {
+        await pendingTools.removePendingTool(session.email, avatarId);
+      }
+
+      return {
+        response,
+        history: nextHistory,
+      };
+    }
   }
 
   // Handle configure_integration results - persist models and settings to DynamoDB
@@ -171,28 +267,6 @@ export async function resumeChatAfterToolResult(
   }
 
   const toolContent = typeof result === 'string' ? result : JSON.stringify(result ?? {});
-
-  // If the matching assistant tool_call was stripped from history (by sanitization
-  // or TTL expiry), inject a synthetic assistant message so the LLM provider
-  // sees a proper assistant→tool message pair.
-  let baseHistory = history;
-  if (!hasMatchingToolCall && pendingRecord) {
-    baseHistory = [
-      ...history,
-      {
-        role: 'assistant',
-        content: '',
-        tool_calls: [{
-          id: toolCallId,
-          type: 'function' as const,
-          function: {
-            name: pendingRecord.toolName,
-            arguments: JSON.stringify(pendingRecord.arguments),
-          },
-        }],
-      },
-    ];
-  }
 
   const nextHistory: AdminChatMessage[] = [
     ...baseHistory,

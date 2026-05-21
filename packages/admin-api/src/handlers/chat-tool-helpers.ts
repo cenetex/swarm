@@ -380,6 +380,110 @@ export async function executeUiTool(
   return await tool.function.execute(parsedArgs.data) as Record<string, unknown>;
 }
 
+function isReplicateMediaFallback(args: Record<string, unknown>): boolean {
+  if (args.integration !== 'replicate') return false;
+  const reason = typeof args.reason === 'string' ? args.reason.toLowerCase() : '';
+  return (
+    reason.includes('image') ||
+    reason.includes('video') ||
+    reason.includes('media') ||
+    reason.includes('visualize') ||
+    reason.includes('openrouter')
+  );
+}
+
+export async function buildPauseToolPayload(params: {
+  toolName: string;
+  args: Record<string, unknown>;
+  mcpServices: { models?: AllServices['models'] } | null;
+  avatarId: string | undefined;
+  tools: Tool[];
+}): Promise<{ toolName: string; arguments: Record<string, unknown> }> {
+  const { toolName, mcpServices, avatarId, tools } = params;
+  let pendingArgs = params.args;
+  let uiToolName = toolName;
+
+  try {
+    if (toolName === 'request_model_selection') {
+      const family = typeof pendingArgs.family === 'string'
+        ? pendingArgs.family
+        : typeof pendingArgs.preferredFamily === 'string'
+          ? pendingArgs.preferredFamily
+          : undefined;
+
+      pendingArgs = mcpServices?.models && avatarId
+        ? await buildModelSelectorPayload(mcpServices.models, avatarId, family)
+        : {
+            type: 'model_selector',
+            models: [],
+            ...(family ? { instructions: `Showing models filtered by "${family}".` } : {}),
+          };
+    } else if (toolName === 'configure_integration' && isReplicateMediaFallback(pendingArgs)) {
+      pendingArgs = {
+        ...pendingArgs,
+        integration: 'openrouter',
+        reason: 'Image and video generation use OpenRouter through the server-side key.',
+      };
+    } else if (toolName === 'request_feature_toggle') {
+      pendingArgs = avatarId
+        ? await buildFeatureTogglePayload(avatarId, pendingArgs)
+        : { ...pendingArgs, type: 'feature_toggle' };
+    } else if (toolName === 'request_secret') {
+      const secretType = typeof pendingArgs.secretType === 'string'
+        ? pendingArgs.secretType
+        : typeof pendingArgs.secretKey === 'string'
+          ? pendingArgs.secretKey
+          : undefined;
+
+      const secretTypeToIntegration: Record<string, 'telegram' | 'twitter' | 'discord' | 'replicate' | 'openai' | 'anthropic' | 'openrouter'> = {
+        telegram_bot_token: 'telegram',
+        telegram_webhook_secret: 'telegram',
+        twitter_api_key: 'twitter',
+        twitter_api_secret: 'twitter',
+        twitter_access_token: 'twitter',
+        twitter_access_secret: 'twitter',
+        discord_bot_token: 'discord',
+        replicate_api_key: 'replicate',
+        replicate_api_token: 'replicate',
+        openai_api_key: 'openai',
+        anthropic_api_key: 'anthropic',
+        openrouter_api_key: 'openrouter',
+      };
+
+      const integration = secretType ? secretTypeToIntegration[secretType] : undefined;
+      if (integration) {
+        pendingArgs = {
+          integration,
+          reason: typeof pendingArgs.reason === 'string' ? pendingArgs.reason : undefined,
+        };
+        uiToolName = 'configure_integration';
+      }
+    } else if (toolName === 'request_twitter_connection' || toolName === 'twitter_request_integration') {
+      pendingArgs = {
+        integration: 'twitter',
+        reason: typeof pendingArgs.message === 'string' ? pendingArgs.message : undefined,
+        ...pendingArgs,
+      };
+      uiToolName = 'configure_integration';
+    } else if (
+      toolName === 'get_profile_upload_url' ||
+      toolName === 'get_reference_image_upload_url' ||
+      toolName === 'get_character_reference_upload_url' ||
+      toolName === 'set_profile_image' ||
+      toolName === 'set_character_reference'
+    ) {
+      pendingArgs = await executeUiTool(toolName, pendingArgs, tools);
+    }
+  } catch (error) {
+    logger.error('Failed to build pending tool payload', error, { toolName });
+  }
+
+  return {
+    toolName: uiToolName,
+    arguments: pendingArgs,
+  };
+}
+
 export async function buildModelSelectorPayload(
   services: AllServices['models'],
   avatarId: string,

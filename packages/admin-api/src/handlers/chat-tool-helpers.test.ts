@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildModelSelectorPayload, sanitizeToolError } from './chat-tool-helpers.js';
+import { buildModelSelectorPayload, buildPauseToolPayload, sanitizeToolError } from './chat-tool-helpers.js';
 
 describe('buildModelSelectorPayload', () => {
   test('filters tilde-prefixed OpenRouter registry aliases out of model selector payloads', async () => {
@@ -26,6 +26,66 @@ describe('buildModelSelectorPayload', () => {
     const payload = await buildModelSelectorPayload(services, 'avatar-1');
 
     expect((payload.models as Array<{ id: string }>).map(model => model.id)).toEqual(['google/live-model']);
+  });
+});
+
+describe('buildPauseToolPayload', () => {
+  test('normalizes request_model_selection into a renderable model selector payload', async () => {
+    const services = {
+      listModels: async (family?: string) => {
+        expect(family).toBe('deepseek');
+        return [
+          {
+            id: 'deepseek/deepseek-r1',
+            name: 'DeepSeek R1',
+            contextLength: 128000,
+          },
+        ];
+      },
+      getConfig: async () => ({
+        model: 'openai/gpt-4o',
+        temperature: 0.7,
+        maxTokens: 1024,
+      }),
+    } as unknown as Parameters<typeof buildModelSelectorPayload>[0];
+
+    const payload = await buildPauseToolPayload({
+      toolName: 'request_model_selection',
+      args: { family: 'deepseek' },
+      mcpServices: { models: services },
+      avatarId: 'avatar-1',
+      tools: [],
+    });
+
+    expect(payload.toolName).toBe('request_model_selection');
+    expect(payload.arguments.type).toBe('model_selector');
+    expect(payload.arguments.currentModel).toBe('openai/gpt-4o');
+    expect(payload.arguments.models).toEqual([
+      {
+        id: 'deepseek/deepseek-r1',
+        name: 'DeepSeek R1',
+        pricing: undefined,
+        contextLength: 128000,
+        provider: 'deepseek',
+      },
+    ]);
+  });
+
+  test('returns a model selector shell even when model services are unavailable', async () => {
+    const payload = await buildPauseToolPayload({
+      toolName: 'request_model_selection',
+      args: { family: 'claude' },
+      mcpServices: null,
+      avatarId: undefined,
+      tools: [],
+    });
+
+    expect(payload.toolName).toBe('request_model_selection');
+    expect(payload.arguments).toEqual({
+      type: 'model_selector',
+      models: [],
+      instructions: 'Showing models filtered by "claude".',
+    });
   });
 });
 
