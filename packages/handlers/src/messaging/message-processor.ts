@@ -37,6 +37,8 @@ import {
   type ResponseTrigger,
   type PresenceService,
   type LLMConfig,
+  type SharedRoomMessage,
+  type TurnCandidate,
 } from '@swarm/core';
 import {
   ToolRegistry,
@@ -580,6 +582,59 @@ export function formatMentionContext(msg: { isMention?: boolean; isReplyToBot?: 
   return tags.length > 0 ? tags.join(' ') + ' ' : '';
 }
 
+export function shouldCheckGroupResponseStaleness(
+  envelope: Pick<SwarmEnvelope, 'platform' | 'metadata'>,
+): boolean {
+  if (!isLatencyBoundGroupConversation(envelope)) return false;
+  return !envelope.metadata.isMention && !envelope.metadata.isReplyToBot;
+}
+
+export function sharedRoomMessagesToContextMessages(
+  messages: SharedRoomMessage[],
+  avatarNamesById: Record<string, string | undefined> = {},
+  currentEnvelope?: SwarmEnvelope,
+): ContextMessage[] {
+  return messages.map((message) => {
+    const isCurrentMessage = currentEnvelope?.messageId === message.messageId;
+    const senderName = message.senderType === 'avatar'
+      ? (avatarNamesById[message.senderId] ?? message.senderId)
+      : message.senderId;
+
+    return {
+      messageId: message.messageId,
+      sender: senderName,
+      isBot: message.senderType === 'avatar',
+      content: message.content,
+      timestamp: message.timestamp,
+      userId: message.senderId,
+      username: message.senderId,
+      isMention: isCurrentMessage ? currentEnvelope?.metadata.isMention : undefined,
+      isReplyToBot: isCurrentMessage ? currentEnvelope?.metadata.isReplyToBot : undefined,
+      replyToMessageId: isCurrentMessage ? currentEnvelope?.replyTo : undefined,
+    };
+  });
+}
+
+export function contextMessageToLlmMessage(
+  msg: ContextMessage,
+  currentAvatarId: string,
+  prefix = '',
+): LLMMessage {
+  const isOtherAvatarMessage = msg.isBot && msg.username && msg.username !== currentAvatarId;
+
+  if (msg.isBot && !isOtherAvatarMessage) {
+    return {
+      role: 'assistant',
+      content: `${prefix}${msg.content}`,
+    };
+  }
+
+  return {
+    role: 'user',
+    content: `${prefix}${formatMentionContext(msg)}[${msg.sender}]: ${msg.content}`,
+  };
+}
+
 /**
  * Convert SwarmEnvelope to ContextMessage for channel state
  */
@@ -644,6 +699,7 @@ async function generateResponse(
     correlationId: string;
     cooldownMinutes: number;
     responseTrigger: ResponseTrigger;
+    sharedRoomId?: string;
   },
 ): Promise<GenerateResponseResult> {
   await maybeTranscribeAudio(envelope, toolClient, toolContext, avatarRuntime.avatarConfig);
@@ -760,19 +816,9 @@ async function generateResponse(
       );
       const prefix = replyAnnotation ? `${replyAnnotation}\n` : '';
 
-      messages.push({
-        role: msg.isBot ? 'assistant' : 'user',
-        // Only prefix user messages with sender name for group chat context.
-        // Bot (assistant) messages should NOT include the name prefix,
-        // otherwise the LLM learns to prefix its own responses with its name.
-        // Surface mention/reply-to-bot context so the LLM knows when it was
-        // directly addressed vs seeing a regular group message.
-        // Also include reply-to annotations for messages replying to content
-        // outside the visible context window.
-        content: msg.isBot
-          ? `${prefix}${msg.content}`
-          : `${prefix}${formatMentionContext(msg)}[${msg.sender}]: ${msg.content}`,
-      });
+      // Own bot messages are assistant history. Other avatars in shared-room
+      // context are participants, so keep their names visible as user turns.
+      messages.push(contextMessageToLlmMessage(msg, avatarRuntime.avatarId, prefix));
     }
 
     logger.info('Added channel history to context', {
@@ -984,6 +1030,7 @@ async function generateResponse(
       toolResultCount: 0,
       cooldownMinutes: extraContext.cooldownMinutes,
       responseTrigger: extraContext.responseTrigger,
+      sharedRoomId: extraContext.sharedRoomId,
     };
 
     logger.info('Delegating tool loop to chat worker', {
@@ -1131,6 +1178,35 @@ async function detectNewerGroupActivity(
   return { stale: false };
 }
 
+async function loadSharedRoomHistoryForContext(params: {
+  envelope: SwarmEnvelope;
+  candidates: TurnCandidate[];
+  limit: number;
+}): Promise<ContextMessage[] | null> {
+  const { envelope, candidates, limit } = params;
+  try {
+    const recentRoomMessages = await getSharedRoomRecentMessages(envelope.conversationId, limit);
+    if (recentRoomMessages.length === 0) return null;
+    const avatarNamesById = Object.fromEntries(
+      candidates.map((candidate) => [candidate.avatarId, candidate.avatarName]),
+    );
+    return sharedRoomMessagesToContextMessages(
+      recentRoomMessages,
+      avatarNamesById,
+      envelope,
+    );
+  } catch (error) {
+    logger.warn('Failed to load shared room ledger for response context', {
+      event: 'shared_room_context_load_failed',
+      subsystem: 'chat',
+      avatarId: envelope.avatarId,
+      conversationId: envelope.conversationId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 async function resetSuppressedMessageState(
   avatarId: string,
   conversationId: string,
@@ -1215,20 +1291,21 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       // that's the wrong avatar when the user mentioned (or named) someone
       // else. Off by default — flip via env var on the deploying lambda
       // after staging validation. See #1571.
-      let shouldRunRoomCoordinator = false;
-      if (
-        process.env.ROOM_COORDINATOR_ENABLED === 'true' &&
-        envelope.platform &&
-        envelope.conversationId
-      ) {
-        shouldRunRoomCoordinator = await isSharedRoom(envelope.platform, envelope.conversationId);
+      let isSharedRoomForProcessing = false;
+      if (envelope.platform && envelope.conversationId) {
+        isSharedRoomForProcessing = await isSharedRoom(envelope.platform, envelope.conversationId);
       }
+      const shouldRunRoomCoordinator =
+        process.env.ROOM_COORDINATOR_ENABLED === 'true' &&
+        isSharedRoomForProcessing;
+      let roomCoordinatorCandidates: TurnCandidate[] = [];
 
       if (shouldRunRoomCoordinator) {
         try {
           const result = await runRoomCoordinator(envelope);
           if (result) {
-            const { decision } = result;
+            const { decision, candidates } = result;
+            roomCoordinatorCandidates = candidates;
             if (!decision.primary) {
               logger.info('Room coordinator: no primary — skipping record', {
                 event: 'room_coordinator_no_primary',
@@ -1436,14 +1513,32 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
       );
       if (refreshTyping) await refreshTyping();
 
+      let responseContextHistory = updatedState.recentMessages;
+      if (isSharedRoomForProcessing) {
+        const sharedHistory = await loadSharedRoomHistoryForContext({
+          envelope,
+          candidates: roomCoordinatorCandidates,
+          limit: Math.max(avatarRuntime.avatarConfig.behavior.maxContextMessages || 20, 20),
+        });
+        if (sharedHistory) {
+          responseContextHistory = sharedHistory;
+          logger.info('Using shared room ledger for response context', {
+            event: 'shared_room_context_selected',
+            subsystem: 'chat',
+            historyCount: sharedHistory.length,
+          });
+        }
+      }
+
       const result = await generateResponse(
         envelope, toolClient, toolContext, avatarRuntime,
-        updatedState.recentMessages, refreshTyping,
+        responseContextHistory, refreshTyping,
         {
           traceId,
           correlationId,
           cooldownMinutes: avatarRuntime.avatarConfig.behavior.cooldownMinutes,
           responseTrigger: decision.trigger,
+          sharedRoomId: isSharedRoomForProcessing ? envelope.conversationId : undefined,
         },
       );
 
@@ -1468,9 +1563,9 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
         continue;
       }
 
-      if (isLatencyBoundGroupConversation(envelope)) {
+      if (shouldCheckGroupResponseStaleness(envelope)) {
         const staleness = await detectNewerGroupActivity(envelope, avatarId, {
-          checkSharedRoom: shouldRunRoomCoordinator,
+          checkSharedRoom: isSharedRoomForProcessing,
         });
         if (staleness.stale) {
           metrics.incrementCounter('GroupResponsesSuppressed');
@@ -1524,6 +1619,7 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
             envelope,
             response,
             avatarName: avatarRuntime.avatarConfig.name,
+            sharedRoom: isSharedRoomForProcessing ? { roomId: envelope.conversationId } : undefined,
           });
           if (contextMessageId) {
             logger.info('Reserved generated response in channel history', {

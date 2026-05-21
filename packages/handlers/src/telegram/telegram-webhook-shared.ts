@@ -19,6 +19,7 @@ import {
   CORRELATION_ID_ATTR,
   extractCorrelationIdFromApiEvent,
   hasValidInternalTestKey,
+  type SwarmEnvelope,
 } from '@swarm/core';
 import { getMessageFromUpdate } from '../utils/telegram-type-guards.js';
 import {
@@ -52,6 +53,7 @@ import {
   maybeBootstrapHomeChannelFromGroupEngagement,
   getChannelRegisteredAvatars,
   resolveMentionedAvatar,
+  resolveReplyTargetAvatar,
 } from './webhook-home-channel.js';
 
 import {
@@ -105,6 +107,16 @@ const NFT_OWNERSHIP_ENFORCEMENT = process.env.NFT_OWNERSHIP_ENFORCEMENT === 'on'
 
 function ok(): APIGatewayProxyResultV2 {
   return { statusCode: 200, body: 'OK' };
+}
+
+export function getSharedRoomMessageGroupId(
+  envelope: Pick<SwarmEnvelope, 'avatarId' | 'conversationId' | 'metadata'>,
+  roomKey: string,
+): string {
+  if (envelope.metadata.isMention || envelope.metadata.isReplyToBot) {
+    return `${envelope.avatarId}#${envelope.conversationId}`;
+  }
+  return roomKey;
 }
 
 function lowerHeaders(headers: Record<string, string | undefined> | undefined): Record<string, string> {
@@ -1021,28 +1033,6 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       }
     }
 
-    // Idempotency
-    const isNewMessage = await stateService.checkAndSetIdempotency(envelope.metadata.idempotencyKey);
-    if (!isNewMessage) {
-      logger.info('Duplicate message, skipping', { messageId: envelope.messageId });
-      return ok();
-    }
-
-    // Evaluate if we should respond
-    const evaluator = createMessageEvaluator(avatarConfig, stateService, {
-      botUsernames: [avatarConfig.platforms.telegram?.botUsername || ''],
-    });
-
-    const evaluation = await evaluator.evaluate(envelope);
-    if (!evaluation.shouldRespond) {
-      logger.info('Not responding', { reason: evaluation.reason });
-      return ok();
-    }
-
-    envelope.metadata.shouldRespond = evaluation.shouldRespond;
-    envelope.metadata.responseReason = evaluation.reason;
-    envelope.metadata.priority = evaluation.priority;
-
     // Note: DMs (private chats) are handled earlier and routed to admin service
     // This code path is only for groups/channels
     const normalizedChatType =
@@ -1054,8 +1044,22 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // Check if this is a shared room (multiple avatars in the channel).
     // Shared rooms use room-scoped ingress: one ledger append + one SQS job per
-    // inbound message, keyed by roomKey instead of avatarId#conversationId.
+    // inbound message. Ambient work is keyed by room; direct turns are keyed
+    // by target avatar so mentions/replies are not blocked behind room chatter.
     const shared = await isSharedRoom('telegram', envelope.conversationId);
+
+    if (!shared) {
+      // Idempotency for legacy single-avatar channels. Shared rooms use the
+      // shared-room claim below so one bot webhook cannot block another before
+      // the room ledger sees the message.
+      const isNewMessage = await stateService.checkAndSetIdempotency(envelope.metadata.idempotencyKey);
+      if (!isNewMessage) {
+        logger.info('Duplicate message, skipping', { messageId: envelope.messageId });
+        return ok();
+      }
+    }
+
+    let sharedRoomKey: string | undefined;
 
     if (shared) {
       const senderId = String(envelope.sender.platformUserId ?? envelope.sender.id);
@@ -1075,19 +1079,21 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
         });
         return ok();
       }
+      sharedRoomKey = ingressResult.roomKey;
 
       // Redirect the SQS job to the @-mentioned avatar when several bots
       // are in this chat. Telegram fans the same update out to every bot;
       // whichever webhook wins the dedup race owns the avatarId on the
-      // envelope, but the user may have explicitly @-mentioned a different
-      // bot. Without this redirect the wrong avatar processes the message
-      // and decides not to respond, which leaves the mention unanswered.
+      // envelope, but the message may directly target a different bot by
+      // @-mention or by replying to that bot's message. Without this redirect
+      // the wrong avatar processes the message and the direct turn can be
+      // delayed or dropped.
       try {
         const messageText = envelope.content.text || '';
+        const registered = await getChannelRegisteredAvatars(envelope.conversationId);
         if (messageText) {
-          const registered = await getChannelRegisteredAvatars(envelope.conversationId);
           const mentioned = resolveMentionedAvatar(messageText, registered);
-          if (mentioned && mentioned.avatarId !== avatarId) {
+          if (mentioned) {
             logger.info('Redirecting shared-room job to @-mentioned avatar', {
               event: 'shared_room_mention_redirect',
               roomKey: ingressResult.roomKey,
@@ -1098,28 +1104,84 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
             });
             envelope.avatarId = mentioned.avatarId;
             envelope.metadata.isMention = true;
+            envelope.metadata.priority = 'high';
           }
         }
+        const rawMessage = (envelope.raw as {
+          message?: {
+            reply_to_message?: {
+              from?: { is_bot?: boolean; username?: string };
+            };
+          };
+        } | undefined)?.message;
+        const replyTarget = resolveReplyTargetAvatar(
+          rawMessage?.reply_to_message?.from,
+          registered,
+        );
+        if (replyTarget) {
+          logger.info('Redirecting shared-room job to replied-to avatar', {
+            event: 'shared_room_reply_redirect',
+            roomKey: ingressResult.roomKey,
+            messageId: envelope.messageId,
+            fromAvatarId: avatarId,
+            toAvatarId: replyTarget.avatarId,
+            repliedBot: replyTarget.botUsername,
+          });
+          envelope.avatarId = replyTarget.avatarId;
+          envelope.metadata.isReplyToBot = true;
+          envelope.metadata.priority = 'high';
+        }
       } catch (err) {
-        logger.warn('mention-redirect failed; continuing with original avatar', {
+        logger.warn('shared-room target redirect failed; continuing with original avatar', {
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    }
+
+    // Evaluate if we should respond. Shared bot-authored messages are still
+    // admitted to SQS so the room coordinator can decide whether the bot turn
+    // directly targets another avatar; ambient bot messages are suppressed in
+    // the coordinator.
+    const evaluator = createMessageEvaluator(avatarConfig, stateService, {
+      botUsernames: [avatarConfig.platforms.telegram?.botUsername || ''],
+    });
+
+    const evaluation = await evaluator.evaluate(envelope);
+    const admitSharedBotMessage = shared && envelope.sender.isBot;
+    if (!evaluation.shouldRespond && !admitSharedBotMessage) {
+      logger.info('Not responding', { reason: evaluation.reason });
+      return ok();
+    }
+
+    envelope.metadata.shouldRespond = evaluation.shouldRespond || admitSharedBotMessage;
+    envelope.metadata.responseReason = evaluation.shouldRespond
+      ? evaluation.reason
+      : 'Shared room bot message admitted for coordination';
+    envelope.metadata.priority =
+      envelope.metadata.isMention || envelope.metadata.isReplyToBot
+        ? 'high'
+        : evaluation.priority;
+
+    if (shared) {
+      const roomKey = sharedRoomKey ?? buildRoomKey('telegram', envelope.conversationId);
+      const messageGroupId = getSharedRoomMessageGroupId(envelope, roomKey);
 
       // Send typing indicator immediately so group members see instant feedback
-      try {
-        await telegramAdapter.sendTypingIndicator(envelope.conversationId);
-      } catch { /* non-critical */ }
+      if (!envelope.sender.isBot || envelope.metadata.isMention || envelope.metadata.isReplyToBot) {
+        try {
+          await telegramAdapter.sendTypingIndicator(envelope.conversationId);
+        } catch { /* non-critical */ }
+      }
 
-      // Enqueue one coordination job keyed by roomKey (not per-avatar)
-      const roomKey = buildRoomKey('telegram', envelope.conversationId);
+      // Enqueue shared room work. Direct mentions/replies use the target
+      // avatar's queue group so they are not blocked behind ambient room work.
       await sendSqsMessage({
         QueueUrl: MESSAGE_QUEUE_URL,
         MessageAttributes: {
           traceId: { DataType: 'String', StringValue: traceId },
           [CORRELATION_ID_ATTR]: { DataType: 'String', StringValue: correlationId },
         },
-        MessageGroupId: roomKey,
+        MessageGroupId: messageGroupId,
         MessageDeduplicationId: envelope.metadata.idempotencyKey,
       }, {
         envelope,
@@ -1132,8 +1194,9 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       logger.info('Shared room message queued (room-scoped)', {
         event: 'room_message_queued',
         roomKey,
+        messageGroupId,
         messageId: envelope.messageId,
-        reason: evaluation.reason,
+        reason: envelope.metadata.responseReason,
         durationMs: Date.now() - startTime,
       });
     } else {

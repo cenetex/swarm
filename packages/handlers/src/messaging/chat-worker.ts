@@ -57,6 +57,7 @@ export interface ChatWorkerMessage {
   /** Cooldown config from avatar behavior */
   cooldownMinutes?: number;
   responseTrigger?: ResponseTrigger;
+  sharedRoomId?: string;
 }
 
 // ─── Environment & Services ──────────────────────────────────────────────────
@@ -331,6 +332,7 @@ export const handler = async (event: SQSEvent, context: Context): Promise<{ batc
             envelope,
             response,
             avatarName: avatarRuntime.avatarConfig.name,
+            sharedRoom: item.sharedRoomId ? { roomId: item.sharedRoomId } : undefined,
           });
           if (contextMessageId) {
             logger.info('Reserved chat worker response in channel history', {

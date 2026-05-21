@@ -224,6 +224,34 @@ describe('turn-arbiter', () => {
       expect(decision.primary).not.toBeNull();
       expect(decision.suppressed).toHaveLength(2);
     });
+
+    it('allows directed bot-to-bot turns when another avatar is mentioned', () => {
+      const candidates = [
+        makeCandidate({ avatarId: 'ambient' }),
+        makeCandidate({ avatarId: 'mentioned', isMentioned: true }),
+      ];
+      const decision = selectPrimaryResponder(
+        candidates,
+        makeMessage({ senderIsBot: true }),
+      );
+
+      expect(decision.primary?.avatarId).toBe('mentioned');
+      expect(decision.reasons['mentioned']).toBe('won:mention');
+    });
+
+    it('allows directed bot-to-bot turns when another avatar is named', () => {
+      const candidates = [
+        makeCandidate({ avatarId: 'ambient' }),
+        makeCandidate({ avatarId: 'named', isNameHit: true }),
+      ];
+      const decision = selectPrimaryResponder(
+        candidates,
+        makeMessage({ senderIsBot: true }),
+      );
+
+      expect(decision.primary?.avatarId).toBe('named');
+      expect(decision.reasons['named']).toBe('won:name-hit');
+    });
   });
 
   describe('multiple signals: mention + thread owner', () => {

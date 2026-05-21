@@ -12,7 +12,7 @@
  *   6. Random fallback (deterministic from messageId for reproducibility)
  *
  * Hard suppressors:
- *   - Bot-to-bot chains are suppressed by default
+ *   - Ambient bot-to-bot chains are suppressed by default
  *   - Once a primary is elected, all others are suppressed
  */
 import { logger } from '../utils/logger.js';
@@ -91,6 +91,20 @@ function scoreCandidate(
   return 100;
 }
 
+function hasDirectedBotToBotTarget(
+  candidates: TurnCandidate[],
+  config: TurnArbiterConfig,
+): boolean {
+  return candidates.some((candidate) => (
+    candidate.isMentioned ||
+    candidate.isNameHit ||
+    (
+      candidate.isReplyTarget &&
+      (candidate.replyConfidence ?? 1) >= config.replyConfidenceThreshold
+    )
+  ));
+}
+
 /**
  * Select the primary responder from a set of candidates for a given message.
  *
@@ -128,8 +142,14 @@ export function selectPrimaryResponder(
     };
   }
 
-  // Hard suppressor: bot-to-bot
-  if (config.suppressBotToBot && message.senderIsBot) {
+  // Hard suppressor: ambient bot-to-bot. Explicit bot-to-bot turns are allowed
+  // when the bot message directly targets another avatar by reply, @mention,
+  // or name hit; otherwise every candidate remains suppressed to avoid loops.
+  if (
+    config.suppressBotToBot &&
+    message.senderIsBot &&
+    !hasDirectedBotToBotTarget(candidates, config)
+  ) {
     for (const c of candidates) {
       reasons[c.avatarId] = 'suppressed:bot-to-bot';
     }

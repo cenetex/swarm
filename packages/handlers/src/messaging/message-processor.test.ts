@@ -13,11 +13,14 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { z } from 'zod';
 import {
   buildReplyAnnotation,
+  contextMessageToLlmMessage,
   formatMentionContext,
   hasNewerMessageThanEnvelope,
   isLatencyBoundGroupConversation,
   resolveGroupResponseDeadlineMs,
   resolveResponseLlmPolicy,
+  sharedRoomMessagesToContextMessages,
+  shouldCheckGroupResponseStaleness,
   shouldEnableGroupToolsForMessage,
 } from './message-processor.js';
 import {
@@ -182,6 +185,64 @@ describe('Message Processor - Group Response Policy', () => {
     expect(hasNewerMessageThanEnvelope(envelope, [
       { messageId: 'm2', timestamp: 1001 },
     ])).toBe(true);
+  });
+
+  it('does not run stale suppression for direct group mentions or replies', () => {
+    expect(shouldCheckGroupResponseStaleness({
+      platform: 'telegram' as const,
+      metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', chatType: 'supergroup', isMention: true },
+    })).toBe(false);
+
+    expect(shouldCheckGroupResponseStaleness({
+      platform: 'telegram' as const,
+      metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', chatType: 'supergroup', isReplyToBot: true },
+    })).toBe(false);
+
+    expect(shouldCheckGroupResponseStaleness({
+      platform: 'telegram' as const,
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k', chatType: 'supergroup' },
+    })).toBe(true);
+  });
+
+  it('converts shared-room avatar replies into cross-avatar context messages', () => {
+    const history = sharedRoomMessagesToContextMessages([
+      {
+        roomId: '-1001',
+        messageId: 'h1',
+        senderId: 'user-1',
+        senderType: 'human',
+        platform: 'telegram',
+        content: 'what do you think?',
+        timestamp: 1000,
+      },
+      {
+        roomId: '-1001',
+        messageId: 'b1',
+        senderId: 'phantom',
+        senderType: 'avatar',
+        platform: 'telegram',
+        content: 'Eliza should take this one.',
+        timestamp: 1001,
+      },
+    ], { phantom: 'Continuum Phantom' });
+
+    expect(history[1]).toMatchObject({
+      messageId: 'b1',
+      sender: 'Continuum Phantom',
+      isBot: true,
+      username: 'phantom',
+      content: 'Eliza should take this one.',
+    });
+
+    expect(contextMessageToLlmMessage(history[1]!, 'eliza')).toEqual({
+      role: 'user',
+      content: '[Continuum Phantom]: Eliza should take this one.',
+    });
+
+    expect(contextMessageToLlmMessage(history[1]!, 'phantom')).toEqual({
+      role: 'assistant',
+      content: 'Eliza should take this one.',
+    });
   });
 });
 

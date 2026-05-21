@@ -5,7 +5,10 @@
  * dedup race).
  */
 import { describe, it, expect } from 'bun:test';
-import { resolveMentionedAvatar } from './webhook-home-channel.js';
+import {
+  resolveMentionedAvatar,
+  resolveReplyTargetAvatar,
+} from './webhook-home-channel.js';
 
 const REGISTERED = [
   { avatarId: 'agent-3-qkwg', botUsername: 'bobthesnek_bot' },
@@ -56,5 +59,38 @@ describe('resolveMentionedAvatar', () => {
     expect(resolveMentionedAvatar('@NyxRatiBot, are you there?', REGISTERED)?.avatarId).toBe('agent-6-1cc5');
     expect(resolveMentionedAvatar('@NyxRatiBot.', REGISTERED)?.avatarId).toBe('agent-6-1cc5');
     expect(resolveMentionedAvatar('@NyxRatiBot!', REGISTERED)?.avatarId).toBe('agent-6-1cc5');
+  });
+});
+
+describe('resolveReplyTargetAvatar', () => {
+  it('matches a replied-to bot username to the registered avatar', () => {
+    const r = resolveReplyTargetAvatar(
+      { is_bot: true, username: 'ChoppaRatiBot' },
+      REGISTERED,
+    );
+
+    expect(r?.avatarId).toBe('avatar-4-txcl');
+    expect(r?.botUsername).toBe('ChoppaRatiBot');
+  });
+
+  it('is case-insensitive for replied-to usernames', () => {
+    const r = resolveReplyTargetAvatar(
+      { is_bot: true, username: 'nyxratibot' },
+      REGISTERED,
+    );
+
+    expect(r?.avatarId).toBe('agent-6-1cc5');
+  });
+
+  it('ignores human replies and unregistered bot usernames', () => {
+    expect(resolveReplyTargetAvatar(
+      { is_bot: false, username: 'NyxRatiBot' },
+      REGISTERED,
+    )).toBeNull();
+
+    expect(resolveReplyTargetAvatar(
+      { is_bot: true, username: 'OtherBot' },
+      REGISTERED,
+    )).toBeNull();
   });
 });

@@ -327,6 +327,23 @@ export function resolveMentionedAvatar(
 }
 
 /**
+ * Find which registered avatar a Telegram reply is targeting, based on the
+ * replied-to message author. This covers shared rooms where one bot receives
+ * an update that replies to another registered bot's message.
+ */
+export function resolveReplyTargetAvatar(
+  replyFrom: { is_bot?: boolean; username?: string } | undefined,
+  registered: Array<{ avatarId: string; botUsername: string }>
+): { avatarId: string; botUsername: string } | null {
+  if (!replyFrom?.is_bot || !replyFrom.username || registered.length === 0) return null;
+  const replyUsername = replyFrom.username.toLowerCase();
+  const match = registered.find(
+    (r) => r.botUsername?.toLowerCase() === replyUsername
+  );
+  return match ? { avatarId: match.avatarId, botUsername: match.botUsername } : null;
+}
+
+/**
  * Get all home channel IDs from the registry (global, for backward compatibility).
  * Uses in-memory caching with 60 second TTL.
  * @deprecated Prefer getHomeChannelIdsForAvatar for per-avatar scoping.

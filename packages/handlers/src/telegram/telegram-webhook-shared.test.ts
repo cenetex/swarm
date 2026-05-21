@@ -178,6 +178,44 @@ describe('telegram-webhook-shared allowlists', () => {
   });
 });
 
+describe('telegram-webhook-shared shared-room queue groups', () => {
+  it('uses the room queue group for ambient shared-room messages', async () => {
+    const { getSharedRoomMessageGroupId } = await modPromise;
+
+    const groupId = getSharedRoomMessageGroupId({
+      avatarId: 'phantom',
+      conversationId: '-1001',
+      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k' },
+    } as import('@swarm/core').SwarmEnvelope, 'telegram:-1001');
+
+    expect(groupId).toBe('telegram:-1001');
+  });
+
+  it('uses the target avatar queue group for direct shared-room mentions', async () => {
+    const { getSharedRoomMessageGroupId } = await modPromise;
+
+    const groupId = getSharedRoomMessageGroupId({
+      avatarId: 'eliza',
+      conversationId: '-1001',
+      metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', isMention: true },
+    } as import('@swarm/core').SwarmEnvelope, 'telegram:-1001');
+
+    expect(groupId).toBe('eliza#-1001');
+  });
+
+  it('uses the target avatar queue group for direct shared-room replies', async () => {
+    const { getSharedRoomMessageGroupId } = await modPromise;
+
+    const groupId = getSharedRoomMessageGroupId({
+      avatarId: 'phantom',
+      conversationId: '-1001',
+      metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', isReplyToBot: true },
+    } as import('@swarm/core').SwarmEnvelope, 'telegram:-1001');
+
+    expect(groupId).toBe('phantom#-1001');
+  });
+});
+
 // =============================================================================
 // Existing tests: Home channel bootstrap
 // =============================================================================
