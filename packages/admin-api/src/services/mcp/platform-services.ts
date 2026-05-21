@@ -378,6 +378,10 @@ export function createPlatformServices(
         return discord.sendMessage(avatarId, channelId, content, options);
       },
 
+      sendMediaToChannel: async (channelId, mediaUrl, options) => {
+        return discord.sendMediaToChannel(avatarId, channelId, mediaUrl, options);
+      },
+
       sendWebhookMessage: async (content, options) => {
         return discord.sendWebhookMessage(avatarId, content, options);
       },

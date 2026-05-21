@@ -152,6 +152,13 @@ describe('prompt-builder refactoring', () => {
       expect(categories).toContain('profile');
       expect(categories).toContain('diagnostics');
     });
+
+    it('toolsToCategories maps Discord read and media tools to Discord capabilities', () => {
+      const tools = ['discord_get_messages', 'discord_send_media_to_channel'];
+      const categories = toolsToCategories(tools);
+
+      expect(categories).toContain('discord');
+    });
   });
 
   describe('regression guard snapshot tests', () => {
@@ -198,6 +205,22 @@ describe('prompt-builder refactoring', () => {
       const prompt = buildDynamicSystemPrompt(avatar, 'admin-ui');
       expect(prompt).toContain('## Property Research');
       expect(prompt).toContain('research_property');
+    });
+
+    it('discord-enabled avatar includes generated media delivery guidance', () => {
+      const categories = toolsToCategories(['discord_send_media_to_channel']);
+
+      const avatar: ProcessorAvatarConfig = {
+        avatarId: 'discord-avatar',
+        name: 'Discord Avatar',
+        persona: 'You post to Discord.',
+        enabledCategories: categories,
+      };
+
+      const prompt = buildDynamicSystemPrompt(avatar, 'discord');
+      expect(prompt).toContain('## Discord Features');
+      expect(prompt).toContain('discord_send_media_to_channel');
+      expect(prompt).toContain('Do not tell users you cannot attach generated media');
     });
 
     it('full avatar config does not excessively bloat', () => {

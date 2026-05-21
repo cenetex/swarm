@@ -74,6 +74,7 @@ function makeServiceContainer(overrides: Partial<ServiceContainer> = {}): Servic
     discord: {
       getConnectionStatus: vi.fn(),
       sendMessage: vi.fn(),
+      sendMediaToChannel: vi.fn(),
       sendWebhookMessage: vi.fn(),
       getChannel: vi.fn(),
       listChannels: vi.fn(),
@@ -379,5 +380,38 @@ describe('createPlatformServices Telegram chat services', () => {
     });
     expect(imageResult).toEqual({ messageId: 43 });
     expect(videoResult).toEqual({ messageId: 44 });
+  });
+
+  it('sends Discord media through the avatar-scoped Discord API service', async () => {
+    const discord = {
+      getConnectionStatus: vi.fn(),
+      sendMessage: vi.fn(),
+      sendMediaToChannel: vi.fn().mockResolvedValue({ messageId: 'discord-43' }),
+      sendWebhookMessage: vi.fn(),
+      getChannel: vi.fn(),
+      listChannels: vi.fn(),
+      listGuilds: vi.fn(),
+      getMessages: vi.fn(),
+      addReaction: vi.fn(),
+      removeReaction: vi.fn(),
+    };
+    const svc = makeServiceContainer({
+      discord: discord as unknown as ServiceContainer['discord'],
+    });
+
+    const services = createPlatformServices('avatar-1', session, svc);
+    const result = await services.discord!.sendMediaToChannel!(
+      'channel-1',
+      'https://cdn.example.com/img.png',
+      { caption: 'caption', replyToMessageId: 'message-1', mediaType: 'image' },
+    );
+
+    expect(discord.sendMediaToChannel).toHaveBeenCalledWith(
+      'avatar-1',
+      'channel-1',
+      'https://cdn.example.com/img.png',
+      { caption: 'caption', replyToMessageId: 'message-1', mediaType: 'image' },
+    );
+    expect(result).toEqual({ messageId: 'discord-43' });
   });
 });

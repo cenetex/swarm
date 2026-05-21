@@ -322,6 +322,23 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
         );
       }
 
+      if (record.platforms.discord?.enabled) {
+        tools.push(
+          'discord_status',
+          'discord_send',
+          'discord_send_media_to_channel',
+          'discord_get_messages',
+          'discord_list_channels',
+          'discord_list_guilds',
+          'discord_get_channel',
+          'discord_get_channel_summary',
+          'generate_video',
+          'generate_sticker',
+          'get_job_status',
+          'list_jobs'
+        );
+      }
+
       // Signal station governance tools (for autonomous station runners)
       if (record.mcpConfig?.enabledToolsets?.includes('signal-station')) {
         tools.push(

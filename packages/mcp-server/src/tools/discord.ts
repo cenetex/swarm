@@ -14,6 +14,8 @@ import { defineTool, type ToolResult } from '../registry.js';
 export interface DiscordConnectionStatus {
   connected: boolean;
   mode: 'webhook' | 'bot' | 'hybrid' | 'global' | 'none';
+  credentialsValid?: boolean;
+  runtimeHealthy?: boolean;
   botUsername?: string;
   botId?: string;
   webhookConfigured?: boolean;
@@ -84,6 +86,19 @@ export interface DiscordServices {
         fields?: Array<{ name: string; value: string; inline?: boolean }>;
       }>;
       replyTo?: string;
+    }
+  ) => Promise<{ messageId: string } | null>;
+
+  /**
+   * Send a generated or gallery media URL to a Discord channel
+   */
+  sendMediaToChannel?: (
+    channelId: string,
+    mediaUrl: string,
+    options?: {
+      mediaType?: 'image' | 'video' | 'sticker';
+      caption?: string;
+      replyToMessageId?: string;
     }
   ) => Promise<{ messageId: string } | null>;
 
@@ -175,6 +190,51 @@ export interface DiscordServices {
   }>;
 }
 
+type DiscordMediaType = 'image' | 'video' | 'sticker';
+type DiscordSendOptions = NonNullable<Parameters<DiscordServices['sendMessage']>[2]>;
+
+function isBotApiMode(mode: DiscordConnectionStatus['mode']): boolean {
+  return mode === 'bot' || mode === 'hybrid' || mode === 'global';
+}
+
+function canUseBotApi(status: DiscordConnectionStatus): boolean {
+  if (!isBotApiMode(status.mode)) return false;
+  if (status.credentialsValid === false) return false;
+
+  // Older runtime adapters only expose `connected`; newer admin status splits
+  // credential validity from gateway health. REST sends/reads only need creds.
+  return status.connected || status.credentialsValid === true || status.runtimeHealthy === false;
+}
+
+function canUseWebhook(status: DiscordConnectionStatus): boolean {
+  if (!status.webhookConfigured) return false;
+  if (status.credentialsValid === false) return false;
+
+  return status.connected || status.credentialsValid === true || status.mode === 'webhook' || status.mode === 'hybrid';
+}
+
+function botApiUnavailableError(operation: string): string {
+  return `Discord bot credentials are not available. ${operation} requires bot, hybrid, or global mode.`;
+}
+
+function buildDiscordMediaMessage(
+  mediaUrl: string,
+  mediaType: DiscordMediaType,
+  caption?: string,
+): {
+  content: string;
+  embeds?: DiscordSendOptions['embeds'];
+} {
+  if (mediaType === 'video') {
+    return { content: caption ? `${caption}\n${mediaUrl}` : mediaUrl };
+  }
+
+  return {
+    content: caption ?? '',
+    embeds: [{ image: { url: mediaUrl } }],
+  };
+}
+
 /**
  * Create Discord tools
  */
@@ -193,7 +253,7 @@ export function createDiscordTools(services: DiscordServices) {
       execute: async (_input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
 
-        if (!status.connected) {
+        if (status.mode === 'none' && !status.webhookConfigured && status.credentialsValid !== true) {
           return {
             success: true,
             data: {
@@ -207,8 +267,10 @@ export function createDiscordTools(services: DiscordServices) {
         return {
           success: true,
           data: {
-            connected: true,
+            connected: status.connected,
             mode: status.mode,
+            credentialsValid: status.credentialsValid,
+            runtimeHealthy: status.runtimeHealthy,
             botUsername: status.botUsername,
             webhookConfigured: status.webhookConfigured,
             guilds: status.guilds?.map(g => ({
@@ -216,7 +278,7 @@ export function createDiscordTools(services: DiscordServices) {
               name: g.name,
               members: g.memberCount,
             })),
-            message: `Discord connected in ${status.mode} mode${status.botUsername ? ` as ${status.botUsername}` : ''}`,
+            message: `Discord ${status.connected ? 'connected' : 'configured'} in ${status.mode} mode${status.botUsername ? ` as ${status.botUsername}` : ''}`,
           },
         };
       },
@@ -228,7 +290,7 @@ export function createDiscordTools(services: DiscordServices) {
 
     defineTool({
       name: 'discord_send',
-      description: 'Send a message to a Discord channel. Requires bot mode or hybrid mode.',
+      description: 'Send a text message or simple embed to a Discord channel. For generated images, videos, or stickers, use discord_send_media_to_channel with the generated URL instead.',
       category: 'media',
       toolset: 'discord',
       inputSchema: z.object({
@@ -247,10 +309,10 @@ export function createDiscordTools(services: DiscordServices) {
       }),
       execute: async (input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
-        if (!status.connected || status.mode === 'webhook') {
+        if (!canUseBotApi(status)) {
           return {
             success: false,
-            error: 'Discord bot is not connected. Channel messaging requires bot mode.',
+            error: botApiUnavailableError('Channel messaging'),
           };
         }
 
@@ -285,8 +347,67 @@ export function createDiscordTools(services: DiscordServices) {
     }),
 
     defineTool({
+      name: 'discord_send_media_to_channel',
+      description: 'Send a generated or gallery image/video/sticker URL to a Discord channel. Use this after generate_image, generate_video, or generate_sticker when the media must appear in Discord.',
+      category: 'media',
+      toolset: 'discord',
+      platforms: ['discord', 'admin-ui', 'api', 'mcp'],
+      inputSchema: z.object({
+        channelId: z.string().describe('Discord channel ID to send to'),
+        mediaUrl: z.string().url().describe('Public image/video/sticker URL to send'),
+        mediaType: z.enum(['image', 'video', 'sticker']).default('image')
+          .describe('Type of media to send. Stickers are posted as image embeds when only a URL is available.'),
+        caption: z.string().max(2000).optional().describe('Optional caption to send with the media'),
+        replyToMessageId: z.string().optional().describe('Optional Discord message ID to reply to'),
+      }),
+      execute: async (input, _context): Promise<ToolResult> => {
+        const status = await services.getConnectionStatus();
+        if (!canUseBotApi(status)) {
+          return {
+            success: false,
+            error: botApiUnavailableError('Media delivery'),
+          };
+        }
+
+        const result = services.sendMediaToChannel
+          ? await services.sendMediaToChannel(input.channelId, input.mediaUrl, {
+              mediaType: input.mediaType,
+              caption: input.caption,
+              replyToMessageId: input.replyToMessageId,
+            })
+          : await (async () => {
+              const mediaMessage = buildDiscordMediaMessage(input.mediaUrl, input.mediaType, input.caption);
+              return services.sendMessage(input.channelId, mediaMessage.content, {
+                embeds: mediaMessage.embeds,
+                replyTo: input.replyToMessageId,
+              });
+            })();
+
+        if (!result) {
+          return { success: false, error: 'Failed to send Discord media.' };
+        }
+
+        return {
+          success: true,
+          data: {
+            messageId: result.messageId,
+            channelId: input.channelId,
+            mediaUrl: input.mediaUrl,
+            mediaType: input.mediaType,
+            message: 'Discord media sent successfully',
+          },
+          media: {
+            type: input.mediaType,
+            url: input.mediaUrl,
+            caption: input.caption,
+          },
+        };
+      },
+    }),
+
+    defineTool({
       name: 'discord_webhook_send',
-      description: 'Send a message via Discord webhook. Allows custom username and avatar. Works in webhook or hybrid mode.',
+      description: 'Send a message via Discord webhook. Allows custom username and avatar. Works in webhook or hybrid mode. For generated media sent by bot to a channel, prefer discord_send_media_to_channel.',
       category: 'media',
       toolset: 'discord',
       inputSchema: z.object({
@@ -304,7 +425,7 @@ export function createDiscordTools(services: DiscordServices) {
       }),
       execute: async (input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
-        if (!status.connected || !status.webhookConfigured) {
+        if (!canUseWebhook(status)) {
           return {
             success: false,
             error: 'Discord webhook is not configured.',
@@ -358,10 +479,10 @@ export function createDiscordTools(services: DiscordServices) {
       inputSchema: z.object({}),
       execute: async (_input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
-        if (!status.connected || status.mode === 'webhook') {
+        if (!canUseBotApi(status)) {
           return {
             success: false,
-            error: 'Discord bot is not connected.',
+            error: botApiUnavailableError('Guild listing'),
           };
         }
 
@@ -396,10 +517,10 @@ export function createDiscordTools(services: DiscordServices) {
       }),
       execute: async (input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
-        if (!status.connected || status.mode === 'webhook') {
+        if (!canUseBotApi(status)) {
           return {
             success: false,
-            error: 'Discord bot is not connected.',
+            error: botApiUnavailableError('Channel listing'),
           };
         }
 
@@ -441,10 +562,10 @@ export function createDiscordTools(services: DiscordServices) {
       }),
       execute: async (input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
-        if (!status.connected || status.mode === 'webhook') {
+        if (!canUseBotApi(status)) {
           return {
             success: false,
-            error: 'Discord bot is not connected.',
+            error: botApiUnavailableError('Channel lookup'),
           };
         }
 
@@ -485,10 +606,10 @@ export function createDiscordTools(services: DiscordServices) {
       }),
       execute: async (input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
-        if (!status.connected || status.mode === 'webhook') {
+        if (!canUseBotApi(status)) {
           return {
             success: false,
-            error: 'Discord bot is not connected.',
+            error: botApiUnavailableError('Message reading'),
           };
         }
 
@@ -530,10 +651,10 @@ export function createDiscordTools(services: DiscordServices) {
       }),
       execute: async (input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
-        if (!status.connected || status.mode === 'webhook') {
+        if (!canUseBotApi(status)) {
           return {
             success: false,
-            error: 'Discord bot is not connected.',
+            error: botApiUnavailableError('Reactions'),
           };
         }
 
@@ -565,10 +686,10 @@ export function createDiscordTools(services: DiscordServices) {
       }),
       execute: async (input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
-        if (!status.connected || status.mode === 'webhook') {
+        if (!canUseBotApi(status)) {
           return {
             success: false,
-            error: 'Discord bot is not connected.',
+            error: botApiUnavailableError('Reactions'),
           };
         }
 
@@ -603,10 +724,10 @@ export function createDiscordTools(services: DiscordServices) {
       }),
       execute: async (input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
-        if (!status.connected || status.mode === 'webhook') {
+        if (!canUseBotApi(status)) {
           return {
             success: false,
-            error: 'Discord bot is not connected.',
+            error: botApiUnavailableError('Presence updates'),
           };
         }
 
@@ -644,10 +765,10 @@ export function createDiscordTools(services: DiscordServices) {
       }),
       execute: async (input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
-        if (!status.connected || status.mode === 'webhook') {
+        if (!canUseBotApi(status)) {
           return {
             success: false,
-            error: 'Discord bot is not connected.',
+            error: botApiUnavailableError('Channel summaries'),
           };
         }
 
@@ -693,10 +814,10 @@ export function createDiscordTools(services: DiscordServices) {
       }),
       execute: async (input, _context): Promise<ToolResult> => {
         const status = await services.getConnectionStatus();
-        if (!status.connected || status.mode === 'webhook') {
+        if (!canUseBotApi(status)) {
           return {
             success: false,
-            error: 'Discord bot is not connected.',
+            error: botApiUnavailableError('Channel listing'),
           };
         }
 

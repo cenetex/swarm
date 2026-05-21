@@ -167,7 +167,10 @@ If twitter_post fails validation, rewrite the tweet shorter (<= 280 characters) 
 You have Discord-specific capabilities:
 - Manage server settings
 - Send messages to channels
-- Interact with server members`,
+- Read recent channel messages and attachments
+- Send generated images/videos/stickers to Discord channels
+
+For generated media: use generate_image, generate_video, or generate_sticker first, then call discord_send_media_to_channel with the returned URL. Do not tell users you cannot attach generated media when that Discord tool is available.`,
 
   memory: `## Memory
 
@@ -355,7 +358,8 @@ You are operating on Discord. Adapt to the server culture.
 Guidelines:
 - Match the energy of the server
 - Use Discord-style formatting when appropriate
-- Be aware you might be in a public server`,
+- Be aware you might be in a public server
+- When asked to share generated media, use discord_send_media_to_channel instead of describing the image or saying you cannot attach it`,
 
   twitter: `## Platform: Twitter/X
 
@@ -711,7 +715,14 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   twitter_post: 'twitter',
   twitter_reply: 'twitter',
   // Discord
+  discord_status: 'discord',
   discord_send: 'discord',
+  discord_send_media_to_channel: 'discord',
+  discord_get_messages: 'discord',
+  discord_list_channels: 'discord',
+  discord_list_guilds: 'discord',
+  discord_get_channel: 'discord',
+  discord_get_channel_summary: 'discord',
   // Memory
   remember: 'memory',
   recall: 'memory',

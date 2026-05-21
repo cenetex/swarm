@@ -357,6 +357,52 @@ describe('config-sync convertToAvatarConfig', () => {
     ]));
   });
 
+  it('enables Discord read, send, and media delivery tools for runtime use', () => {
+    const record = {
+      pk: 'AVATAR#discord-avatar',
+      sk: 'CONFIG',
+      avatarId: 'discord-avatar',
+      name: 'Discord Avatar',
+      platforms: {
+        discord: {
+          enabled: true,
+          mode: 'bot',
+        },
+      },
+      voiceConfig: {
+        enabled: false,
+      },
+      llmConfig: {
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-4',
+        temperature: 0.8,
+        maxTokens: 1024,
+        useGlobalKey: true,
+      },
+      currentEra: 0,
+      status: 'active',
+      createdAt: Date.now(),
+      createdBy: 'test@example.com',
+      updatedAt: Date.now(),
+      updatedBy: 'test@example.com',
+    } satisfies Partial<AvatarRecord> as AvatarRecord;
+
+    const config = convertToAvatarConfig(record);
+
+    expect(config.tools).toEqual(expect.arrayContaining([
+      'discord_status',
+      'discord_send',
+      'discord_send_media_to_channel',
+      'discord_get_messages',
+      'discord_list_channels',
+      'discord_list_guilds',
+      'discord_get_channel',
+      'discord_get_channel_summary',
+      'generate_video',
+      'generate_sticker',
+    ]));
+  });
+
   it('marks scheduled tweet templates as enabled when scheduled tweets are active', () => {
     const record = {
       pk: 'AVATAR#twitter-avatar',

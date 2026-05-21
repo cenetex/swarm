@@ -363,6 +363,32 @@ export async function sendMessage(
 }
 
 /**
+ * Send generated or gallery media to a Discord channel via bot
+ */
+export async function sendMediaToChannel(
+  avatarId: string,
+  channelId: string,
+  mediaUrl: string,
+  options?: {
+    mediaType?: 'image' | 'video' | 'sticker';
+    caption?: string;
+    replyToMessageId?: string;
+  }
+): Promise<{ messageId: string } | null> {
+  if (options?.mediaType === 'video') {
+    const content = options.caption ? `${options.caption}\n${mediaUrl}` : mediaUrl;
+    return sendMessage(avatarId, channelId, content, {
+      replyTo: options.replyToMessageId,
+    });
+  }
+
+  return sendMessage(avatarId, channelId, options?.caption ?? '', {
+    replyTo: options?.replyToMessageId,
+    embeds: [{ image: { url: mediaUrl } }],
+  });
+}
+
+/**
  * Send a message via Discord webhook
  */
 export async function sendWebhookMessage(
