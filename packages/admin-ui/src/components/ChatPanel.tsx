@@ -9,7 +9,7 @@
 import { lazy, Suspense, useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAvatarStore, useActiveAvatar, useActiveChat } from '../store';
-import { useTaskCardStore, useTranscriptTimeline } from '../store/task-cards';
+import { useTaskCardStore, useTranscriptTimeline, type TaskCard } from '../store/task-cards';
 import { useWorkspaceStore } from '../store/workspace';
 import { TaskCard as TaskCardComponent } from './tool-prompts/TaskCard';
 import type { ToolSubmitResult } from './tool-prompts/types';
@@ -31,6 +31,31 @@ import { LanguageSelector } from './LanguageSelector';
 // Track active polling jobs to avoid duplicate polling
 const activePollers = new Map<string, { controller: AbortController; avatarId: string }>();
 
+function getIntegrationName(args: Record<string, unknown> | undefined): string | undefined {
+  const value = args?.integration;
+  return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : undefined;
+}
+
+function formatIntegrationName(integration: string | undefined): string {
+  if (!integration) return 'integration';
+  return integration.charAt(0).toUpperCase() + integration.slice(1);
+}
+
+function findPendingIntegrationCard(
+  cards: Record<string, TaskCard>,
+  avatarId: string | undefined,
+  integration?: string,
+  excludeCardId?: string,
+): TaskCard | undefined {
+  if (!avatarId) return undefined;
+  return Object.values(cards).find((card) => {
+    if (card.id === excludeCardId) return false;
+    if (card.avatarId !== avatarId || card.status !== 'pending') return false;
+    if (card.toolName !== 'configure_integration') return false;
+    return integration ? getIntegrationName(card.arguments) === integration : true;
+  });
+}
+
 interface ChatPanelProps {
   onMenuClick?: () => void;
   /** Pre-filled invite code from ?invite= query param */
@@ -42,6 +67,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const activeAvatar = useActiveAvatar();
   const messages = useActiveChat();
   const timeline = useTranscriptTimeline(messages, activeAvatar?.id);
+  const taskCards = useTaskCardStore((s) => s.cards);
   // Extract action functions directly — they're stable references and don't
   // need reactive subscriptions, avoiding full-store re-renders.
   const { addMessage, updateMessage, removeMessage, updateAvatar, setLoading, setError, createAvatar } = useAvatarStore.getState();
@@ -51,6 +77,14 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const [isCreatingAvatar, setIsCreatingAvatar] = useState(false);
   const [showHint, setShowHint] = useState(true);
   const settingsOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'settings');
+  const pendingIntegrationCard = useMemo(
+    () => findPendingIntegrationCard(taskCards, activeAvatar?.id),
+    [taskCards, activeAvatar?.id],
+  );
+  const pendingIntegrationName = getIntegrationName(pendingIntegrationCard?.arguments);
+  const pendingIntegrationMessage = pendingIntegrationCard
+    ? `Finish ${formatIntegrationName(pendingIntegrationName)} setup before sending another message.`
+    : undefined;
   // Track which limit types have already shown an upgrade nudge this session
   const shownNudgesRef = useRef(new Set<string>());
 
@@ -237,6 +271,20 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       
       if (accessMode === 'browse') return; // Can't send in browse mode
 
+      const pendingIntegration = findPendingIntegrationCard(
+        useTaskCardStore.getState().cards,
+        targetAvatar.id,
+      );
+      if (pendingIntegration) {
+        const integrationName = getIntegrationName(pendingIntegration.arguments);
+        useWorkspaceStore.getState().openForTask(
+          pendingIntegration.id,
+          `${formatIntegrationName(integrationName)} setup`,
+        );
+        setError(`Finish ${formatIntegrationName(integrationName)} setup before sending another message.`);
+        return;
+      }
+
       // Build sender context from wallet auth
       const sender = isAuthenticated && user ? {
         walletAddress: user.walletAddress,
@@ -303,6 +351,15 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         if (loadingMessage) {
           // Check if there's a pending tool call that needs user input
           const pendingToolCall = response.pendingToolCall;
+          const duplicatePendingIntegration = pendingToolCall?.name === 'configure_integration'
+            ? findPendingIntegrationCard(
+                useTaskCardStore.getState().cards,
+                targetAvatar.id,
+                getIntegrationName(pendingToolCall.arguments),
+                pendingToolCall.id,
+              )
+            : undefined;
+          const pendingToolCallForDisplay = duplicatePendingIntegration ? undefined : pendingToolCall;
           
           // Pending jobs can arrive either as structured `pendingJobs` OR embedded in tool-result text.
           const pendingJobsList = [...(response.pendingJobs || [])];
@@ -411,11 +468,11 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             content: responseText,
             isLoading: false,
             thinking: thinkingFromServer,
-            toolCalls: pendingToolCall
+            toolCalls: pendingToolCallForDisplay
               ? [{
-                  id: pendingToolCall.id,
-                  name: pendingToolCall.name,
-                  arguments: pendingToolCall.arguments,
+                  id: pendingToolCallForDisplay.id,
+                  name: pendingToolCallForDisplay.name,
+                  arguments: pendingToolCallForDisplay.arguments,
                   status: 'pending' as const,
                 }]
               : undefined,
@@ -424,12 +481,12 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           };
 
           // Register in task card store so it survives setChat() replacements
-          if (pendingToolCall) {
+          if (pendingToolCallForDisplay) {
             useTaskCardStore.getState().registerTaskCard({
-              id: pendingToolCall.id,
+              id: pendingToolCallForDisplay.id,
               avatarId: targetAvatar.id,
-              toolName: pendingToolCall.name,
-              arguments: pendingToolCall.arguments,
+              toolName: pendingToolCallForDisplay.name,
+              arguments: pendingToolCallForDisplay.arguments,
             });
           }
 
@@ -1266,7 +1323,12 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       ) : accessMode === 'limited' ? (
         <div className="chat-input-container border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
           <div className="max-w-3xl mx-auto space-y-2">
-            <ChatInput onSend={handleSendMessage} onSendAudio={handleSendAudio} />
+            <ChatInput
+              onSend={handleSendMessage}
+              onSendAudio={handleSendAudio}
+              disabled={Boolean(pendingIntegrationCard)}
+              placeholder={pendingIntegrationMessage}
+            />
             <div className="flex items-center justify-center gap-2 text-xs text-amber-400">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -1278,7 +1340,12 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       ) : (
         <div className="chat-input-container border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
           <div className="max-w-3xl mx-auto">
-            <ChatInput onSend={handleSendMessage} onSendAudio={handleSendAudio} />
+            <ChatInput
+              onSend={handleSendMessage}
+              onSendAudio={handleSendAudio}
+              disabled={Boolean(pendingIntegrationCard)}
+              placeholder={pendingIntegrationMessage}
+            />
           </div>
         </div>
       )}
