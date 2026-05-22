@@ -462,6 +462,128 @@ async function playDiscordVoiceUrl(params: {
   return { playbackMs: Date.now() - startedAt };
 }
 
+function parsePositiveIntEnv(name: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function observeVoiceConnection(params: {
+  connection: import('@discordjs/voice').VoiceConnection;
+  voice: typeof import('@discordjs/voice');
+  avatarId: string;
+  guildId: string;
+  voiceChannelId: string;
+  attempt: number;
+}): () => void {
+  const onStateChange = (
+    oldState: import('@discordjs/voice').VoiceConnectionState,
+    newState: import('@discordjs/voice').VoiceConnectionState,
+  ) => {
+    logger.info('Discord voice connection state changed', {
+      event: 'discord_voice_connection_state_changed',
+      subsystem: 'discord-voice',
+      avatarId: params.avatarId,
+      guildId: params.guildId,
+      voiceChannelId: params.voiceChannelId,
+      attempt: params.attempt,
+      oldStatus: oldState.status,
+      newStatus: newState.status,
+    });
+  };
+  const onError = (err: Error) => {
+    logger.warn('Discord voice connection emitted error', {
+      event: 'discord_voice_connection_error',
+      subsystem: 'discord-voice',
+      avatarId: params.avatarId,
+      guildId: params.guildId,
+      voiceChannelId: params.voiceChannelId,
+      attempt: params.attempt,
+      errorName: err.name,
+      errorMessage: err.message,
+    });
+  };
+
+  params.connection.on('stateChange', onStateChange);
+  params.connection.on('error', onError);
+  return () => {
+    params.connection.off('stateChange', onStateChange);
+    params.connection.off('error', onError);
+  };
+}
+
+async function joinDiscordVoiceWithRetry(params: {
+  voice: typeof import('@discordjs/voice');
+  gateway: MinimalDiscordGateway;
+  avatarId: string;
+  guildId: string;
+  voiceChannelId: string;
+  timeoutMs: number;
+  attempts: number;
+}): Promise<{
+  connection: import('@discordjs/voice').VoiceConnection;
+  stopObserving: () => void;
+}> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= params.attempts; attempt += 1) {
+    const connection = params.voice.joinVoiceChannel({
+      channelId: params.voiceChannelId,
+      guildId: params.guildId,
+      adapterCreator: params.gateway.adapterCreator,
+      selfDeaf: false,
+      selfMute: false,
+    });
+    const stopObserving = observeVoiceConnection({
+      connection,
+      voice: params.voice,
+      avatarId: params.avatarId,
+      guildId: params.guildId,
+      voiceChannelId: params.voiceChannelId,
+      attempt,
+    });
+
+    try {
+      await params.voice.entersState(
+        connection,
+        params.voice.VoiceConnectionStatus.Ready,
+        params.timeoutMs,
+      );
+      logger.info('Discord voice connection ready', {
+        event: 'discord_voice_connection_ready',
+        subsystem: 'discord-voice',
+        avatarId: params.avatarId,
+        guildId: params.guildId,
+        voiceChannelId: params.voiceChannelId,
+        attempt,
+      });
+      return { connection, stopObserving };
+    } catch (err) {
+      lastError = err;
+      logger.warn('Discord voice connection did not become ready', {
+        event: 'discord_voice_connection_ready_timeout',
+        subsystem: 'discord-voice',
+        avatarId: params.avatarId,
+        guildId: params.guildId,
+        voiceChannelId: params.voiceChannelId,
+        attempt,
+        attempts: params.attempts,
+        timeoutMs: params.timeoutMs,
+        status: connection.state.status,
+        errorName: err instanceof Error ? err.name : undefined,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      });
+      stopObserving();
+      connection.destroy();
+      if (attempt < params.attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(lastError ? String(lastError) : 'Discord voice connection failed');
+}
+
 async function run(): Promise<void> {
   const avatarId = requiredEnv('AVATAR_ID');
   const guildId = requiredEnv('DISCORD_GUILD_ID');
@@ -474,6 +596,8 @@ async function run(): Promise<void> {
   const maxTurnMs = Math.max(2_000, Number.parseInt(process.env.DISCORD_VOICE_MAX_TURN_MS || '12000', 10));
   const maxTurnBytes = Math.max(32_000, Number.parseInt(process.env.DISCORD_VOICE_MAX_TURN_BYTES || '2000000', 10));
   const bargeInEnabled = isDiscordVoiceBargeInEnabled(process.env.DISCORD_VOICE_BARGE_IN_ENABLED);
+  const readyTimeoutMs = parsePositiveIntEnv('DISCORD_VOICE_READY_TIMEOUT_MS', 60_000);
+  const readyAttempts = parsePositiveIntEnv('DISCORD_VOICE_READY_ATTEMPTS', 2);
 
   logger.setContext({
     subsystem: 'discord-voice',
@@ -508,16 +632,17 @@ async function run(): Promise<void> {
   gateway.start();
   await gateway.waitReady();
 
-  const connection = voice.joinVoiceChannel({
-    channelId: voiceChannelId,
+  const { connection, stopObserving } = await joinDiscordVoiceWithRetry({
+    voice,
+    gateway,
+    avatarId,
     guildId,
-    adapterCreator: gateway.adapterCreator,
-    selfDeaf: false,
-    selfMute: false,
+    voiceChannelId,
+    timeoutMs: readyTimeoutMs,
+    attempts: readyAttempts,
   });
 
   try {
-    await voice.entersState(connection, voice.VoiceConnectionStatus.Ready, 20_000);
     const audioUrl = await buildGreetingAudioUrl(avatarId, avatarConfig, secrets);
     if (audioUrl) {
       await playDiscordVoiceUrl({
@@ -690,6 +815,7 @@ async function run(): Promise<void> {
       }, 500);
     });
   } finally {
+    stopObserving();
     connection.destroy();
     gateway.stop();
   }

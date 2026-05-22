@@ -63,6 +63,30 @@ import {
   saveFact,
 } from './fact-store.js';
 
+type PlainConfigRecord = Record<string, unknown>;
+
+function isPlainConfigRecord(value: unknown): value is PlainConfigRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function mergeConfigPreservingExisting<T>(existing: T, updates: T): T {
+  if (!isPlainConfigRecord(existing) || !isPlainConfigRecord(updates)) {
+    return updates;
+  }
+
+  const merged: PlainConfigRecord = { ...existing };
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === undefined) continue;
+
+    const existingValue = merged[key];
+    merged[key] = isPlainConfigRecord(existingValue) && isPlainConfigRecord(value)
+      ? mergeConfigPreservingExisting(existingValue, value)
+      : value;
+  }
+
+  return merged as T;
+}
+
 export {
   CHANNEL_CONFIG,
   getAllChannelStates,
@@ -265,19 +289,38 @@ export class DynamoDBStateService implements StateService {
   }
 
   async saveAvatarConfig(config: AvatarConfig): Promise<void> {
+    const key = {
+      pk: `AVATAR#${config.id}`,
+      sk: 'CONFIG',
+    };
+    const existing = await this.docClient.send(new GetCommand({
+      TableName: this.tableName,
+      Key: key,
+    }));
+    const existingConfig = existing.Item?.config as AvatarConfig | undefined;
+    const configToSave = existingConfig
+      ? mergeConfigPreservingExisting(existingConfig, config)
+      : config;
+    const item: Record<string, unknown> = {
+      ...key,
+      config: configToSave,
+      // GSI keys for efficient listing
+      gsi1pk: existing.Item?.gsi1pk ?? 'CONFIG',
+      gsi1sk: existing.Item?.gsi1sk ?? config.id,
+      // Metadata for tracking
+      updatedAt: Date.now(),
+      syncedFrom: 'handler',
+    };
+    if (existing.Item?.status !== undefined) {
+      item.status = existing.Item.status;
+    }
+    if (existing.Item?.syncedAt !== undefined) {
+      item.syncedAt = existing.Item.syncedAt;
+    }
+
     await this.docClient.send(new PutCommand({
       TableName: this.tableName,
-      Item: {
-        pk: `AVATAR#${config.id}`,
-        sk: 'CONFIG',
-        config,
-        // GSI keys for efficient listing
-        gsi1pk: 'CONFIG',
-        gsi1sk: config.id,
-        // Metadata for tracking
-        updatedAt: Date.now(),
-        syncedFrom: 'handler',
-      },
+      Item: item,
     }));
   }
 

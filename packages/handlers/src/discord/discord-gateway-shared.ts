@@ -683,6 +683,16 @@ function canBindingReceiveDiscordVoiceTrigger(
     return true;
   }
 
+  logger.info('Discord voice trigger denied by access control', {
+    event: 'discord_voice_trigger_denied',
+    subsystem: 'discord-voice',
+    avatarId: binding.avatarId,
+    guildId: message.guild_id,
+    channelId: message.channel_id,
+    voiceChannelId,
+    reason: accessResult.reason,
+  });
+
   return false;
 }
 
@@ -733,9 +743,9 @@ function selectSharedRoomEnvelopeBinding(
 async function maybeLaunchDiscordVoiceSession(
   message: DiscordMessage,
   binding: DiscordAvatarBinding,
-): Promise<void> {
+): Promise<boolean> {
   if (binding.isGlobalMode) {
-    return;
+    return false;
   }
 
   const decision = decideDiscordVoiceLaunch({
@@ -746,25 +756,28 @@ async function maybeLaunchDiscordVoiceSession(
   });
 
   if (!decision.shouldLaunch) {
-    if (
-      decision.reason === 'sender_not_in_voice' ||
-      decision.reason === 'voice_channel_not_allowed'
-    ) {
-      logger.info('Discord voice call not launched', {
-        event: 'discord_voice_launch_skipped',
-        subsystem: 'discord-voice',
-        reason: decision.reason,
-        avatarId: binding.avatarId,
-        guildId: message.guild_id,
-        channelId: message.channel_id,
-        voiceChannelId: decision.voiceChannelId,
-      });
+    const skipLogContext = {
+      event: 'discord_voice_launch_skipped',
+      subsystem: 'discord-voice',
+      reason: decision.reason,
+      avatarId: binding.avatarId,
+      guildId: message.guild_id,
+      channelId: message.channel_id,
+      voiceChannelId: decision.voiceChannelId,
+      discordVoiceConfigured: Boolean(binding.config.platforms.discord?.voice),
+      discordVoiceEnabled: binding.config.platforms.discord?.voice?.enabled,
+      discordVoiceAutoJoinOnMention: binding.config.platforms.discord?.voice?.autoJoinOnMention,
+    };
+    if (decision.reason === 'not_mentioned' || decision.reason === 'bot_message') {
+      logger.debug('Discord voice call not launched', skipLogContext);
+    } else {
+      logger.info('Discord voice call not launched', skipLogContext);
     }
-    return;
+    return false;
   }
 
   if (!canBindingReceiveDiscordVoiceTrigger(message, binding, decision.voiceChannelId)) {
-    return;
+    return false;
   }
 
   const result = await voiceTaskLauncher.launch({
@@ -787,6 +800,7 @@ async function maybeLaunchDiscordVoiceSession(
     taskArn: result.taskArn,
     detail: result.detail,
   });
+  return result.launched || result.reason === 'duplicate_recent_session';
 }
 
 // ─── Gateway Connection ──────────────────────────────────────────────────────
@@ -1148,9 +1162,12 @@ class GatewayConnection {
         eligible.push(binding);
       }
 
+      const voiceHandledAvatarIds = new Set<string>();
       for (const binding of eligible) {
         try {
-          await maybeLaunchDiscordVoiceSession(message, binding);
+          if (await maybeLaunchDiscordVoiceSession(message, binding)) {
+            voiceHandledAvatarIds.add(binding.avatarId);
+          }
         } catch (err) {
           logger.error('Error launching Discord voice session for avatar', err, {
             event: 'discord_voice_launch_error',
@@ -1191,15 +1208,31 @@ class GatewayConnection {
             }
 
             const firstBinding = selected.binding;
-            try {
-              await maybeLaunchDiscordVoiceSession(message, firstBinding);
-            } catch (err) {
-              logger.error('Error launching Discord voice session for selected shared-room avatar', err, {
-                event: 'discord_voice_launch_error',
-                subsystem: 'discord-voice',
-                avatarId: firstBinding.avatarId,
+            if (!voiceHandledAvatarIds.has(firstBinding.avatarId)) {
+              try {
+                if (await maybeLaunchDiscordVoiceSession(message, firstBinding)) {
+                  voiceHandledAvatarIds.add(firstBinding.avatarId);
+                }
+              } catch (err) {
+                logger.error('Error launching Discord voice session for selected shared-room avatar', err, {
+                  event: 'discord_voice_launch_error',
+                  subsystem: 'discord-voice',
+                  avatarId: firstBinding.avatarId,
+                  messageId: message.id,
+                });
+              }
+            }
+
+            if (voiceHandledAvatarIds.has(firstBinding.avatarId)) {
+              logger.info('Discord shared room message handled by voice session launch', {
+                event: 'room_message_voice_handled',
+                subsystem: 'discord',
+                channelId: message.channel_id,
                 messageId: message.id,
+                selectedAvatarId: firstBinding.avatarId,
+                selectionReason: selected.reason,
               });
+              return;
             }
 
             const discordConfig = firstBinding.config.platforms.discord!;
@@ -1252,6 +1285,16 @@ class GatewayConnection {
       } else {
         // Single-avatar path: legacy per-avatar enqueue
         for (const binding of eligible) {
+          if (voiceHandledAvatarIds.has(binding.avatarId)) {
+            logger.info('Discord message handled by voice session launch', {
+              event: 'message_voice_handled',
+              subsystem: 'discord',
+              avatarId: binding.avatarId,
+              channelId: message.channel_id,
+              messageId: message.id,
+            });
+            continue;
+          }
           try {
             await handleDiscordMessage(message, binding);
           } catch (err) {
