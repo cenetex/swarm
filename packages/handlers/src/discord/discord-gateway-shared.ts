@@ -1154,6 +1154,17 @@ class GatewayConnection {
             }
 
             const firstBinding = selected.binding;
+            try {
+              await maybeLaunchDiscordVoiceSession(message, firstBinding);
+            } catch (err) {
+              logger.error('Error launching Discord voice session for selected shared-room avatar', err, {
+                event: 'discord_voice_launch_error',
+                subsystem: 'discord-voice',
+                avatarId: firstBinding.avatarId,
+                messageId: message.id,
+              });
+            }
+
             const discordConfig = firstBinding.config.platforms.discord!;
             const envelope = buildDiscordEnvelope(message, {
               avatarId: firstBinding.avatarId,
