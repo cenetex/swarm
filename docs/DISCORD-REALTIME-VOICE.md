@@ -88,11 +88,19 @@ Worker duplex tuning:
   `2000000`.
 - `DISCORD_VOICE_TRANSCRIBE_MODEL`: OpenAI transcription model, default
   `whisper-1`.
+- `DISCORD_VOICE_BARGE_IN_ENABLED`: allow human speech to interrupt avatar
+  playback, default `true`. Set to `false`, `0`, `no`, or `off` to keep strict
+  serialized turn taking.
+
+Voice workers emit structured logs for capture, transcription, LLM, voice
+generation, playback, and total turn latency. Completed turn logs include
+`captureMs`, `transcriptionMs`, `llmMs`, `voiceGenerationMs`, `playbackMs`,
+`totalTurnMs`, `audioBytes`, and whether playback was interrupted.
 
 ## Current Boundary
 
 This slice implements bounded live speech-to-speech turns. It is not yet a
 sample-level realtime model session: speech is processed turn-by-turn after
-silence, and playback is serialized so the worker does not listen while it is
-speaking. The next layer is interruptible playback and lower-latency streaming
-recognition/model output.
+silence. Barge-in can interrupt avatar playback, but recognition and generation
+still happen in bounded turns rather than continuous bidirectional audio
+streaming. The next layer is lower-latency streaming recognition/model output.

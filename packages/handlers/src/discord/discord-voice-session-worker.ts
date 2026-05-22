@@ -248,6 +248,24 @@ export function shouldHandleVoiceSpeaker(userId: string, botUserId?: string): bo
   return Boolean(userId) && userId !== botUserId;
 }
 
+export function isDiscordVoiceBargeInEnabled(value: string | undefined): boolean {
+  if (value === undefined || value.trim() === '') return true;
+  return !['0', 'false', 'no', 'off'].includes(value.trim().toLowerCase());
+}
+
+export function shouldStartVoiceTurn(params: {
+  userId: string;
+  botUserId?: string;
+  stopped: boolean;
+  isPlaying: boolean;
+  bargeInEnabled: boolean;
+  isActiveSpeaker: boolean;
+}): boolean {
+  if (params.stopped || params.isActiveSpeaker) return false;
+  if (!shouldHandleVoiceSpeaker(params.userId, params.botUserId)) return false;
+  return !params.isPlaying || params.bargeInEnabled;
+}
+
 async function collectDiscordOggTurn(params: {
   opusStream: Readable;
   maxBytes: number;
@@ -425,8 +443,11 @@ async function playDiscordVoiceUrl(params: {
   connection: import('@discordjs/voice').VoiceConnection;
   audioUrl: string;
   timeoutMs: number;
-}): Promise<void> {
+  onPlayer?: (player: import('@discordjs/voice').AudioPlayer) => void;
+}): Promise<{ playbackMs: number }> {
+  const startedAt = Date.now();
   const player = params.voice.createAudioPlayer();
+  params.onPlayer?.(player);
   const stream = await fetchAudioStream(params.audioUrl);
   const resource = params.voice.createAudioResource(stream, {
     inputType: params.voice.StreamType.Arbitrary,
@@ -438,6 +459,7 @@ async function playDiscordVoiceUrl(params: {
     params.voice.AudioPlayerStatus.Idle,
     params.timeoutMs,
   );
+  return { playbackMs: Date.now() - startedAt };
 }
 
 async function run(): Promise<void> {
@@ -451,6 +473,7 @@ async function run(): Promise<void> {
   const turnSilenceMs = Math.max(400, Number.parseInt(process.env.DISCORD_VOICE_TURN_SILENCE_MS || '1200', 10));
   const maxTurnMs = Math.max(2_000, Number.parseInt(process.env.DISCORD_VOICE_MAX_TURN_MS || '12000', 10));
   const maxTurnBytes = Math.max(32_000, Number.parseInt(process.env.DISCORD_VOICE_MAX_TURN_BYTES || '2000000', 10));
+  const bargeInEnabled = isDiscordVoiceBargeInEnabled(process.env.DISCORD_VOICE_BARGE_IN_ENABLED);
 
   logger.setContext({
     subsystem: 'discord-voice',
@@ -508,6 +531,8 @@ async function run(): Promise<void> {
     let lastActivityAt = Date.now();
     let stopped = false;
     let isPlaying = false;
+    let interruptedPlaybackCount = 0;
+    let currentPlayer: import('@discordjs/voice').AudioPlayer | undefined;
     const activeSpeakers = new Set<string>();
     const stop = () => { stopped = true; };
     const sessionTimer = setTimeout(stop, sessionTimeoutMs);
@@ -516,8 +541,26 @@ async function run(): Promise<void> {
     }, Math.min(10_000, idleTimeoutMs));
 
     connection.receiver.speaking.on('start', (userId) => {
-      if (stopped || isPlaying || activeSpeakers.has(userId) || !shouldHandleVoiceSpeaker(userId, gateway.getBotUserId())) {
+      if (!shouldStartVoiceTurn({
+        userId,
+        botUserId: gateway.getBotUserId(),
+        stopped,
+        isPlaying,
+        bargeInEnabled,
+        isActiveSpeaker: activeSpeakers.has(userId),
+      })) {
         return;
+      }
+      if (isPlaying && bargeInEnabled && currentPlayer) {
+        interruptedPlaybackCount += 1;
+        logger.info('Discord voice playback interrupted by speaker', {
+          event: 'discord_voice_playback_interrupted',
+          subsystem: 'discord-voice',
+          avatarId,
+          speakerUserId: userId,
+          interruptedPlaybackCount,
+        });
+        currentPlayer.stop(true);
       }
       activeSpeakers.add(userId);
       const opusStream = connection.receiver.subscribe(userId, {
@@ -528,13 +571,25 @@ async function run(): Promise<void> {
       });
 
       void (async () => {
+        const turnStartedAt = Date.now();
+        let captureMs = 0;
+        let transcriptionMs = 0;
+        let llmMs = 0;
+        let voiceGenerationMs = 0;
+        let playbackMs = 0;
+        let wasInterrupted = false;
         try {
+          const captureStartedAt = Date.now();
           const audio = await collectDiscordOggTurn({
             opusStream: opusStream as unknown as Readable,
             maxBytes: maxTurnBytes,
             timeoutMs: maxTurnMs,
           });
+          captureMs = Date.now() - captureStartedAt;
+
+          const transcriptionStartedAt = Date.now();
           const transcript = await transcribeDiscordVoiceTurn({ audio, secrets });
+          transcriptionMs = Date.now() - transcriptionStartedAt;
           if (!transcript) return;
           lastActivityAt = Date.now();
           logger.info('Discord voice turn transcribed', {
@@ -543,8 +598,12 @@ async function run(): Promise<void> {
             avatarId,
             speakerUserId: userId,
             transcriptLength: transcript.length,
+            audioBytes: audio.length,
+            captureMs,
+            transcriptionMs,
           });
 
+          const llmStartedAt = Date.now();
           const reply = await generateDiscordVoiceReply({
             avatarId,
             guildId,
@@ -555,25 +614,52 @@ async function run(): Promise<void> {
             secrets,
             stateService,
           });
+          llmMs = Date.now() - llmStartedAt;
           if (!reply) return;
 
           isPlaying = true;
           try {
+            const voiceGenerationStartedAt = Date.now();
             const generated = await voiceServices.generateVoiceMessage({
               avatarId,
               text: reply,
               format: 'ogg',
             });
-            await playDiscordVoiceUrl({
+            voiceGenerationMs = Date.now() - voiceGenerationStartedAt;
+            const playbackStartedWithInterrupts = interruptedPlaybackCount;
+            const playback = await playDiscordVoiceUrl({
               voice,
               connection,
               audioUrl: generated.url,
               timeoutMs: Math.min(sessionTimeoutMs, 120_000),
+              onPlayer: (player) => {
+                currentPlayer = player;
+              },
             });
+            playbackMs = playback.playbackMs;
+            wasInterrupted = interruptedPlaybackCount > playbackStartedWithInterrupts;
             lastActivityAt = Date.now();
           } finally {
             isPlaying = false;
+            currentPlayer = undefined;
           }
+          logger.info('Discord voice turn completed', {
+            event: 'discord_voice_turn_completed',
+            subsystem: 'discord-voice',
+            avatarId,
+            speakerUserId: userId,
+            transcriptLength: transcript.length,
+            replyLength: reply.length,
+            audioBytes: audio.length,
+            captureMs,
+            transcriptionMs,
+            llmMs,
+            voiceGenerationMs,
+            playbackMs,
+            totalTurnMs: Date.now() - turnStartedAt,
+            bargeInEnabled,
+            interrupted: wasInterrupted,
+          });
         } catch (err) {
           logger.warn('Discord voice turn failed', {
             event: 'discord_voice_turn_failed',
@@ -581,6 +667,12 @@ async function run(): Promise<void> {
             avatarId,
             speakerUserId: userId,
             error: err instanceof Error ? err.message : String(err),
+            captureMs,
+            transcriptionMs,
+            llmMs,
+            voiceGenerationMs,
+            playbackMs,
+            totalTurnMs: Date.now() - turnStartedAt,
           });
         } finally {
           activeSpeakers.delete(userId);
