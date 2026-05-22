@@ -515,6 +515,12 @@ export const DiscordConfigSchema = z.object({
   homeChannelId: z.string().optional(),
   homeGuildId: z.string().optional(),
   homeChannelName: z.string().optional(),
+  voice: z.object({
+    enabled: z.boolean().optional(),
+    autoJoinOnMention: z.boolean().optional(),
+    maxSessionSeconds: z.number().int().positive().optional(),
+    allowedVoiceChannelIds: z.array(z.string()).optional(),
+  }).optional(),
 });
 
 export const TwitterCommunityConfigSchema = z.object({

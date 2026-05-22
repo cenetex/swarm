@@ -484,6 +484,8 @@ export class AdminApiStack extends cdk.Stack {
         stateTable,
         activityTable,
         adminTable: sharedAdminTable,
+        mediaBucket,
+        cdnUrl: sharedInfraStack.cdnUrl,
         messageQueue: this.sharedHandlers.messageQueue,
         secretPrefix,
         desiredCount: isProd ? 1 : 0,

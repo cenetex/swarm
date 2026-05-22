@@ -155,7 +155,10 @@ export class MessagingStack extends cdk.Stack {
         cluster: coreInfraStack.shared.discordCluster,
         stateTable: coreInfraStack.shared.stateTable,
         activityTable: coreInfraStack.shared.activityTable,
+        mediaBucket: coreInfraStack.shared.mediaBucket,
+        cdnUrl: coreInfraStack.cdnUrl,
         messageQueue: this.sharedHandlers.messageQueue,
+        secretPrefix,
       });
     }
   }

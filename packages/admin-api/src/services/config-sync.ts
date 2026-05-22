@@ -98,6 +98,12 @@ interface AvatarConfig {
       respondInDMs?: boolean;
       allowedChannels?: string[];
       allowedGuilds?: string[];
+      voice?: {
+        enabled?: boolean;
+        autoJoinOnMention?: boolean;
+        maxSessionSeconds?: number;
+        allowedVoiceChannelIds?: string[];
+      };
     };
     web?: {
       enabled: boolean;
@@ -447,6 +453,7 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
       respondInDMs: discordMode === 'global' ? false : (discordConfig.respondInDMs ?? true),
       allowedChannels: discordConfig.allowedChannels,
       allowedGuilds,
+      voice: discordConfig.voice,
     };
     // Global mode uses the shared global bot token, not a per-avatar secret
     if (discordMode !== 'global') {

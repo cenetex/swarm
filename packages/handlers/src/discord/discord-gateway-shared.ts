@@ -48,6 +48,12 @@ import {
   resolveDiscordHomeChannel,
   maybeBootstrapDiscordHomeChannel,
 } from './discord-home-channel.js';
+import {
+  DiscordVoiceStateTracker,
+  INTENT_GUILD_VOICE_STATES,
+  decideDiscordVoiceLaunch,
+} from './discord-voice-control.js';
+import { DiscordVoiceTaskLauncher } from './discord-voice-task-launcher.js';
 
 // ─── Environment ─────────────────────────────────────────────────────────────
 
@@ -71,13 +77,15 @@ const INTENT_GUILDS = 1 << 0;
 const INTENT_GUILD_MESSAGES = 1 << 9;
 const INTENT_DIRECT_MESSAGES = 1 << 12;
 const INTENT_MESSAGE_CONTENT = 1 << 15;
-const DEFAULT_INTENTS = INTENT_GUILDS | INTENT_GUILD_MESSAGES | INTENT_DIRECT_MESSAGES | INTENT_MESSAGE_CONTENT;
+const DEFAULT_INTENTS = INTENT_GUILDS | INTENT_GUILD_VOICE_STATES | INTENT_GUILD_MESSAGES | INTENT_DIRECT_MESSAGES | INTENT_MESSAGE_CONTENT;
 
 // ─── Shared Clients ──────────────────────────────────────────────────────────
 
 const secretsClient = new SecretsManagerClient({});
 const stateService = createStateService(STATE_TABLE);
 const activityService = ACTIVITY_TABLE ? createActivityService(ACTIVITY_TABLE) : null;
+const voiceStateTracker = new DiscordVoiceStateTracker();
+const voiceTaskLauncher = new DiscordVoiceTaskLauncher();
 
 /** Shared rate limiter for Discord API calls from this worker */
 const rateLimiter = new DiscordRateLimiter({
@@ -690,6 +698,65 @@ function selectSharedRoomEnvelopeBinding(
   return fallback ? { binding: fallback, reason: 'fallback' } : null;
 }
 
+async function maybeLaunchDiscordVoiceSession(
+  message: DiscordMessage,
+  binding: DiscordAvatarBinding,
+): Promise<void> {
+  if (binding.isGlobalMode) {
+    return;
+  }
+
+  if (!canBindingReceiveDiscordMessage(message, binding)) {
+    return;
+  }
+
+  const decision = decideDiscordVoiceLaunch({
+    message,
+    avatarConfig: binding.config,
+    botUserId: binding.botUserId,
+    tracker: voiceStateTracker,
+  });
+
+  if (!decision.shouldLaunch) {
+    if (
+      decision.reason === 'sender_not_in_voice' ||
+      decision.reason === 'voice_channel_not_allowed'
+    ) {
+      logger.info('Discord voice call not launched', {
+        event: 'discord_voice_launch_skipped',
+        subsystem: 'discord-voice',
+        reason: decision.reason,
+        avatarId: binding.avatarId,
+        guildId: message.guild_id,
+        channelId: message.channel_id,
+        voiceChannelId: decision.voiceChannelId,
+      });
+    }
+    return;
+  }
+
+  const result = await voiceTaskLauncher.launch({
+    avatarId: binding.avatarId,
+    avatarConfig: binding.config,
+    botUserId: binding.botUserId,
+    message,
+    decision,
+  });
+
+  logger.info('Discord voice worker launch evaluated', {
+    event: 'discord_voice_worker_launch',
+    subsystem: 'discord-voice',
+    avatarId: binding.avatarId,
+    guildId: message.guild_id,
+    textChannelId: message.channel_id,
+    voiceChannelId: decision.voiceChannelId,
+    launched: result.launched,
+    reason: result.reason,
+    taskArn: result.taskArn,
+    detail: result.detail,
+  });
+}
+
 // ─── Gateway Connection ──────────────────────────────────────────────────────
 
 interface GatewayPayload {
@@ -1007,6 +1074,11 @@ class GatewayConnection {
       return;
     }
 
+    if (eventType === 'VOICE_STATE_UPDATE') {
+      voiceStateTracker.record(data as Parameters<DiscordVoiceStateTracker['record']>[0]);
+      return;
+    }
+
     if (eventType === 'MESSAGE_CREATE') {
       const message = data as DiscordMessage;
 
@@ -1037,6 +1109,19 @@ class GatewayConnection {
 
         await ensureDiscordHomeChannelForEngagedMessage(message, binding);
         eligible.push(binding);
+      }
+
+      for (const binding of eligible) {
+        try {
+          await maybeLaunchDiscordVoiceSession(message, binding);
+        } catch (err) {
+          logger.error('Error launching Discord voice session for avatar', err, {
+            event: 'discord_voice_launch_error',
+            subsystem: 'discord-voice',
+            avatarId: binding.avatarId,
+            messageId: message.id,
+          });
+        }
       }
 
       // Shared room path: use platform-agnostic isSharedRoom check.

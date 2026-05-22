@@ -126,6 +126,12 @@ export interface AvatarRecord {
       allowedGuilds?: string[];
       applicationId?: string;
       publicKey?: string;
+      voice?: {
+        enabled?: boolean;
+        autoJoinOnMention?: boolean;
+        maxSessionSeconds?: number;
+        allowedVoiceChannelIds?: string[];
+      };
     };
     web?: { enabled: boolean };
   };

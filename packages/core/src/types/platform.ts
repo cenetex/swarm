@@ -243,6 +243,17 @@ export interface DiscordConfig {
    * Display-friendly channel name (e.g., "kyro-chat").
    */
   homeChannelName?: string;
+
+  /**
+   * Optional realtime voice-call behavior. The gateway uses this only as a
+   * control plane: it detects mentions and launches short-lived voice workers.
+   */
+  voice?: {
+    enabled?: boolean;
+    autoJoinOnMention?: boolean;
+    maxSessionSeconds?: number;
+    allowedVoiceChannelIds?: string[];
+  };
 }
 
 export interface TwitterCommunityConfig {

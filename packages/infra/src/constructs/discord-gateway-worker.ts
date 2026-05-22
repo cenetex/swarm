@@ -6,11 +6,13 @@
  * connects their bots, and routes incoming messages into the shared message queue.
  */
 import * as cdk from 'aws-cdk-lib';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
@@ -52,6 +54,16 @@ export interface DiscordGatewayWorkerProps {
   adminTable?: dynamodb.ITable;
 
   /**
+   * Media bucket used by voice workers to store generated greeting audio.
+   */
+  mediaBucket?: s3.IBucket;
+
+  /**
+   * CDN URL for generated media assets.
+   */
+  cdnUrl?: string;
+
+  /**
    * Shared FIFO message queue — inbound Discord messages are enqueued here
    */
   messageQueue: sqs.IQueue;
@@ -72,6 +84,7 @@ export interface DiscordGatewayWorkerProps {
 export class DiscordGatewayWorker extends Construct {
   public readonly service: ecs.FargateService;
   public readonly taskDefinition: ecs.FargateTaskDefinition;
+  public readonly voiceTaskDefinition: ecs.FargateTaskDefinition;
 
   constructor(scope: Construct, id: string, props: DiscordGatewayWorkerProps) {
     super(scope, id);
@@ -82,6 +95,7 @@ export class DiscordGatewayWorker extends Construct {
       stateTable,
       activityTable,
       adminTable,
+      mediaBucket,
       messageQueue,
     } = props;
     const suffix = props.nameSuffix ?? '';
@@ -91,7 +105,29 @@ export class DiscordGatewayWorker extends Construct {
       ? logs.RetentionDays.ONE_MONTH
       : logs.RetentionDays.ONE_WEEK;
 
-    // Task definition — lightweight: WebSocket connections are I/O-bound, not CPU
+    const image = ecs.ContainerImage.fromAsset(
+      path.resolve(__dirname, '../../../..'),
+      {
+        file: 'packages/handlers/Dockerfile.discord-gateway',
+        platform: ecr_assets.Platform.LINUX_ARM64,
+        // Cache layers in GitHub Actions cache to avoid full rebuild/push on every deploy.
+        // Requires buildx driver: docker-container (set in deploy-cdk-reusable.yml).
+        cacheFrom: [{ type: 'gha', params: { scope: 'discord-gateway-arm64' } }],
+        cacheTo: { type: 'gha', params: { scope: 'discord-gateway-arm64', mode: 'max' } },
+      }
+    );
+
+    const voiceSubnets = cluster.vpc.selectSubnets({
+      subnetType: ec2.SubnetType.PUBLIC,
+    });
+
+    const voiceWorkerSecurityGroup = new ec2.SecurityGroup(this, 'DiscordVoiceWorkerSecurityGroup', {
+      vpc: cluster.vpc,
+      allowAllOutbound: true,
+      description: 'Outbound-only security group for ephemeral Discord voice workers',
+    });
+
+    // Task definition — lightweight: WebSocket connections are I/O-bound, not CPU.
     this.taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       memoryLimitMiB: 1024,
       cpu: 512,
@@ -108,19 +144,43 @@ export class DiscordGatewayWorker extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    // Short-lived per-call workers. The gateway launches these with RunTask
+    // after it sees an opted-in avatar mentioned by a user who is in voice.
+    this.voiceTaskDefinition = new ecs.FargateTaskDefinition(this, 'VoiceTaskDef', {
+      memoryLimitMiB: 1024,
+      cpu: 512,
+      runtimePlatform: {
+        cpuArchitecture: ecs.CpuArchitecture.ARM64,
+        operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+      },
+    });
+
+    const voiceLogGroup = new logs.LogGroup(this, 'VoiceLogGroup', {
+      retention: logRetention,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.voiceTaskDefinition.addContainer('DiscordVoiceWorker', {
+      image,
+      command: ['node', 'dist/discord/discord-voice-session-worker.js'],
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'discord-voice',
+        logGroup: voiceLogGroup,
+      }),
+      environment: {
+        NODE_ENV: 'production',
+        STATE_TABLE: stateTable.tableName,
+        ...(adminTable ? { ADMIN_TABLE: adminTable.tableName } : {}),
+        ...(mediaBucket ? { MEDIA_BUCKET: mediaBucket.bucketName } : {}),
+        CDN_URL: props.cdnUrl || '',
+        SECRET_PREFIX: secretPrefix,
+        ENVIRONMENT: environment,
+      },
+    });
+
     // Container
     this.taskDefinition.addContainer('DiscordGateway', {
-      image: ecs.ContainerImage.fromAsset(
-        path.resolve(__dirname, '../../../..'),
-        {
-          file: 'packages/handlers/Dockerfile.discord-gateway',
-          platform: ecr_assets.Platform.LINUX_ARM64,
-          // Cache layers in GitHub Actions cache to avoid full rebuild/push on every deploy.
-          // Requires buildx driver: docker-container (set in deploy-cdk-reusable.yml).
-          cacheFrom: [{ type: 'gha', params: { scope: 'discord-gateway-arm64' } }],
-          cacheTo: { type: 'gha', params: { scope: 'discord-gateway-arm64', mode: 'max' } },
-        }
-      ),
+      image,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'discord-gw',
         logGroup,
@@ -135,9 +195,17 @@ export class DiscordGatewayWorker extends Construct {
               SHARED_ROOM_TABLE: adminTable.tableName,
             }
           : {}),
+        ...(mediaBucket ? { MEDIA_BUCKET: mediaBucket.bucketName } : {}),
+        CDN_URL: props.cdnUrl || '',
         MESSAGE_QUEUE_URL: messageQueue.queueUrl,
         SECRET_PREFIX: secretPrefix,
         ENVIRONMENT: environment,
+        DISCORD_VOICE_WORKER_ENABLED: 'true',
+        DISCORD_VOICE_WORKER_CLUSTER_ARN: cluster.clusterArn,
+        DISCORD_VOICE_WORKER_TASK_DEFINITION_ARN: this.voiceTaskDefinition.taskDefinitionArn,
+        DISCORD_VOICE_WORKER_SUBNET_IDS: voiceSubnets.subnetIds.join(','),
+        DISCORD_VOICE_WORKER_SECURITY_GROUP_IDS: voiceWorkerSecurityGroup.securityGroupId,
+        DISCORD_VOICE_WORKER_CONTAINER_NAME: 'DiscordVoiceWorker',
       },
       healthCheck: {
         command: ['CMD-SHELL', 'pgrep -f "node.*discord-gateway" || exit 1'],
@@ -152,7 +220,12 @@ export class DiscordGatewayWorker extends Construct {
     stateTable.grantReadWriteData(this.taskDefinition.taskRole);
     activityTable.grantReadWriteData(this.taskDefinition.taskRole);
     adminTable?.grantReadWriteData(this.taskDefinition.taskRole);
+    mediaBucket?.grantReadWrite(this.taskDefinition.taskRole);
     messageQueue.grantSendMessages(this.taskDefinition.taskRole);
+
+    stateTable.grantReadData(this.voiceTaskDefinition.taskRole);
+    adminTable?.grantReadWriteData(this.voiceTaskDefinition.taskRole);
+    mediaBucket?.grantReadWrite(this.voiceTaskDefinition.taskRole);
 
     this.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -160,6 +233,33 @@ export class DiscordGatewayWorker extends Construct {
         resources: [
           `arn:aws:secretsmanager:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:secret:${secretPrefix}/*`,
         ],
+      })
+    );
+
+    this.voiceTaskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:secret:${secretPrefix}/*`,
+        ],
+      })
+    );
+
+    const voicePassRoleResources = [this.voiceTaskDefinition.taskRole.roleArn];
+    if (this.voiceTaskDefinition.executionRole) {
+      voicePassRoleResources.push(this.voiceTaskDefinition.executionRole.roleArn);
+    }
+
+    this.taskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['ecs:RunTask'],
+        resources: [this.voiceTaskDefinition.taskDefinitionArn],
+      })
+    );
+    this.taskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['iam:PassRole'],
+        resources: voicePassRoleResources,
       })
     );
 
