@@ -46,6 +46,8 @@ export async function handleSecretsRoutes(
       webhookUrl?: string;
       webhookInfo?: { url?: string; pending_update_count?: number };
       reRegistered?: boolean;
+      botUsername?: string;
+      botId?: number;
     } | null = null;
 
     const normalizedKey = typeof rawKey === 'string' ? rawKey.trim().toLowerCase() : rawKey;
