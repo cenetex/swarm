@@ -1,5 +1,7 @@
 import WebSocket from 'ws';
 import { Readable } from 'node:stream';
+import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import type {
   DiscordGatewayAdapterCreator,
   DiscordGatewayAdapterImplementerMethods,
@@ -7,17 +9,22 @@ import type {
 } from '@discordjs/voice';
 import {
   createSecretsService,
+  createPresenceService,
   createStateService,
   logger,
   type AvatarConfig,
+  type SwarmEnvelope,
 } from '@swarm/core';
 import { createVoiceServices } from '../services/voice.js';
+import { callLLM, stripAvatarNamePrefix, type LLMMessage } from '../messaging/llm-client.js';
+import { buildSystemPrompt } from '../messaging/context-builder.js';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { INTENT_GUILD_VOICE_STATES } from './discord-voice-control.js';
 
 const DEFAULT_GATEWAY_URL = 'wss://gateway.discord.gg/?v=10&encoding=json';
 const INTENT_GUILDS = 1 << 0;
 const DEFAULT_INTENTS = INTENT_GUILDS | INTENT_GUILD_VOICE_STATES;
+const require = createRequire(import.meta.url);
 
 interface GatewayPayload {
   op: number;
@@ -108,6 +115,10 @@ class MinimalDiscordGateway {
     this.ws?.removeAllListeners();
     this.ws?.close(1000, 'voice session complete');
     this.ws = null;
+  }
+
+  getBotUserId(): string | undefined {
+    return this.botUserId;
   }
 
   private handlePayload(payload: GatewayPayload): void {
@@ -225,12 +236,221 @@ async function fetchAudioStream(url: string): Promise<Readable> {
   return Readable.from(Buffer.from(await response.arrayBuffer()));
 }
 
+export function sanitizeDiscordVoiceTranscript(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+export function sanitizeDiscordVoiceReply(text: string, avatarName: string): string {
+  return stripAvatarNamePrefix(text.replace(/\s+/g, ' ').trim(), avatarName).slice(0, 700);
+}
+
+export function shouldHandleVoiceSpeaker(userId: string, botUserId?: string): boolean {
+  return Boolean(userId) && userId !== botUserId;
+}
+
+async function collectDiscordOggTurn(params: {
+  opusStream: Readable;
+  maxBytes: number;
+  timeoutMs: number;
+}): Promise<Buffer> {
+  const prism = require('prism-media') as {
+    opus: {
+      OggLogicalBitstream: new (options: unknown) => NodeJS.WritableStream;
+      OpusHead: new (options: unknown) => unknown;
+    };
+  };
+  const oggBitstream = new prism.opus.OggLogicalBitstream({
+    opusHead: new prism.opus.OpusHead({
+      channelCount: 2,
+      sampleRate: 48_000,
+    }),
+    pageSizeControl: {
+      maxPackets: 10,
+    },
+  }) as unknown as NodeJS.WritableStream;
+  const oggStream = params.opusStream.pipe(oggBitstream) as unknown as NodeJS.ReadableStream;
+
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let settled = false;
+    const timer = setTimeout(() => {
+      finish();
+    }, params.timeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      oggStream.removeAllListeners();
+      params.opusStream.removeAllListeners();
+    };
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(Buffer.concat(chunks));
+    };
+
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+
+    oggStream.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > params.maxBytes) {
+        finish();
+        return;
+      }
+      chunks.push(Buffer.from(chunk));
+    });
+    oggStream.on('end', finish);
+    oggStream.on('close', finish);
+    oggStream.on('error', fail);
+    params.opusStream.on('error', fail);
+  });
+}
+
+async function transcribeDiscordVoiceTurn(params: {
+  audio: Buffer;
+  secrets: Record<string, string>;
+  language?: string;
+}): Promise<string> {
+  const openAiKey = params.secrets.OPENAI_API_KEY || params.secrets.openai_api_key;
+  if (!openAiKey || params.audio.length === 0) return '';
+
+  const form = new FormData();
+  form.append('file', new Blob([params.audio], { type: 'audio/ogg' }), 'discord-voice.ogg');
+  form.append('model', process.env.DISCORD_VOICE_TRANSCRIBE_MODEL || 'whisper-1');
+  if (params.language) form.append('language', params.language);
+
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${openAiKey}`,
+    },
+    body: form,
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`OpenAI transcription failed: ${response.status} ${text.slice(0, 200)}`);
+  }
+
+  const data = await response.json() as { text?: string };
+  return sanitizeDiscordVoiceTranscript(data.text || '');
+}
+
+function buildDiscordVoiceEnvelope(params: {
+  avatarId: string;
+  guildId: string;
+  voiceChannelId: string;
+  speakerUserId: string;
+  transcript: string;
+}): SwarmEnvelope {
+  const now = Date.now();
+  return {
+    avatarId: params.avatarId,
+    platform: 'discord',
+    traceId: `discord-voice-${randomUUID()}`,
+    messageId: `discord-voice-${now}-${params.speakerUserId}`,
+    conversationId: params.voiceChannelId,
+    timestamp: now,
+    sender: {
+      id: params.speakerUserId,
+      username: params.speakerUserId,
+      displayName: params.speakerUserId,
+      isBot: false,
+      platform: 'discord',
+      platformUserId: params.speakerUserId,
+    },
+    content: { text: params.transcript },
+    mentions: [],
+    raw: {
+      guildId: params.guildId,
+      voiceChannelId: params.voiceChannelId,
+      source: 'discord_voice',
+    },
+    metadata: {
+      receivedAt: now,
+      priority: 'high',
+      idempotencyKey: `discord-voice-${params.voiceChannelId}-${params.speakerUserId}-${now}`,
+      isMention: true,
+      shouldRespond: true,
+      responseReason: 'discord_voice_turn',
+    },
+  };
+}
+
+async function generateDiscordVoiceReply(params: {
+  avatarId: string;
+  guildId: string;
+  voiceChannelId: string;
+  speakerUserId: string;
+  transcript: string;
+  avatarConfig: AvatarConfig;
+  secrets: Record<string, string>;
+  stateService: ReturnType<typeof createStateService>;
+}): Promise<string | undefined> {
+  const presenceService = createPresenceService(process.env.STATE_TABLE || '');
+  const envelope = buildDiscordVoiceEnvelope(params);
+  const systemPrompt = await buildSystemPrompt(
+    envelope,
+    params.avatarConfig,
+    params.avatarId,
+    params.secrets,
+    presenceService,
+    params.stateService,
+    { fastResponseMode: true },
+  );
+  const messages: LLMMessage[] = [
+    {
+      role: 'system',
+      content: `${systemPrompt}\n\nYou are speaking live in a Discord voice channel. Reply conversationally in one or two short spoken sentences. Do not describe actions or mention transcription.`,
+    },
+    {
+      role: 'user',
+      content: `[Discord voice from ${params.speakerUserId}]: ${params.transcript}`,
+    },
+  ];
+
+  const llmResponse = await callLLM(messages, [], params.avatarConfig.llm, params.secrets);
+  const reply = sanitizeDiscordVoiceReply(llmResponse.content || '', params.avatarConfig.name);
+  return reply || undefined;
+}
+
+async function playDiscordVoiceUrl(params: {
+  voice: typeof import('@discordjs/voice');
+  connection: import('@discordjs/voice').VoiceConnection;
+  audioUrl: string;
+  timeoutMs: number;
+}): Promise<void> {
+  const player = params.voice.createAudioPlayer();
+  const stream = await fetchAudioStream(params.audioUrl);
+  const resource = params.voice.createAudioResource(stream, {
+    inputType: params.voice.StreamType.Arbitrary,
+  });
+  params.connection.subscribe(player);
+  player.play(resource);
+  await params.voice.entersState(
+    player,
+    params.voice.AudioPlayerStatus.Idle,
+    params.timeoutMs,
+  );
+}
+
 async function run(): Promise<void> {
   const avatarId = requiredEnv('AVATAR_ID');
   const guildId = requiredEnv('DISCORD_GUILD_ID');
   const voiceChannelId = requiredEnv('DISCORD_VOICE_CHANNEL_ID');
   const sessionSeconds = Number.parseInt(process.env.DISCORD_VOICE_SESSION_SECONDS || '600', 10);
   const sessionTimeoutMs = Math.max(30, Number.isFinite(sessionSeconds) ? sessionSeconds : 600) * 1000;
+  const idleSeconds = Number.parseInt(process.env.DISCORD_VOICE_IDLE_SECONDS || '90', 10);
+  const idleTimeoutMs = Math.max(30, Number.isFinite(idleSeconds) ? idleSeconds : 90) * 1000;
+  const turnSilenceMs = Math.max(400, Number.parseInt(process.env.DISCORD_VOICE_TURN_SILENCE_MS || '1200', 10));
+  const maxTurnMs = Math.max(2_000, Number.parseInt(process.env.DISCORD_VOICE_MAX_TURN_MS || '12000', 10));
+  const maxTurnBytes = Math.max(32_000, Number.parseInt(process.env.DISCORD_VOICE_MAX_TURN_BYTES || '2000000', 10));
 
   logger.setContext({
     subsystem: 'discord-voice',
@@ -241,6 +461,7 @@ async function run(): Promise<void> {
   });
 
   const avatarConfig = await getAvatarConfig(avatarId);
+  const stateService = createStateService(requiredEnv('STATE_TABLE'));
   const secretsService = createSecretsService();
   const secrets = await loadAvatarSecrets(
     secretsService,
@@ -251,6 +472,13 @@ async function run(): Promise<void> {
   if (!botToken) {
     throw new Error(`Discord bot token not configured for avatar ${avatarId}`);
   }
+  const voiceServices = createVoiceServices({
+    avatarId,
+    secrets,
+    voiceConfig: avatarConfig.voice,
+    mediaBucket: process.env.MEDIA_BUCKET,
+    cdnUrl: process.env.CDN_URL,
+  });
 
   const voice = await import('@discordjs/voice');
   const gateway = new MinimalDiscordGateway(botToken);
@@ -269,17 +497,106 @@ async function run(): Promise<void> {
     await voice.entersState(connection, voice.VoiceConnectionStatus.Ready, 20_000);
     const audioUrl = await buildGreetingAudioUrl(avatarId, avatarConfig, secrets);
     if (audioUrl) {
-      const player = voice.createAudioPlayer();
-      const stream = await fetchAudioStream(audioUrl);
-      const resource = voice.createAudioResource(stream, {
-        inputType: voice.StreamType.Arbitrary,
+      await playDiscordVoiceUrl({
+        voice,
+        connection,
+        audioUrl,
+        timeoutMs: Math.min(sessionTimeoutMs, 120_000),
       });
-      connection.subscribe(player);
-      player.play(resource);
-      await voice.entersState(player, voice.AudioPlayerStatus.Idle, Math.min(sessionTimeoutMs, 120_000));
-    } else {
-      await new Promise(resolve => setTimeout(resolve, Math.min(sessionTimeoutMs, 30_000)));
     }
+
+    let lastActivityAt = Date.now();
+    let stopped = false;
+    let isPlaying = false;
+    const activeSpeakers = new Set<string>();
+    const stop = () => { stopped = true; };
+    const sessionTimer = setTimeout(stop, sessionTimeoutMs);
+    const idleTimer = setInterval(() => {
+      if (Date.now() - lastActivityAt > idleTimeoutMs) stop();
+    }, Math.min(10_000, idleTimeoutMs));
+
+    connection.receiver.speaking.on('start', (userId) => {
+      if (stopped || isPlaying || activeSpeakers.has(userId) || !shouldHandleVoiceSpeaker(userId, gateway.getBotUserId())) {
+        return;
+      }
+      activeSpeakers.add(userId);
+      const opusStream = connection.receiver.subscribe(userId, {
+        end: {
+          behavior: voice.EndBehaviorType.AfterSilence,
+          duration: turnSilenceMs,
+        },
+      });
+
+      void (async () => {
+        try {
+          const audio = await collectDiscordOggTurn({
+            opusStream: opusStream as unknown as Readable,
+            maxBytes: maxTurnBytes,
+            timeoutMs: maxTurnMs,
+          });
+          const transcript = await transcribeDiscordVoiceTurn({ audio, secrets });
+          if (!transcript) return;
+          lastActivityAt = Date.now();
+          logger.info('Discord voice turn transcribed', {
+            event: 'discord_voice_turn_transcribed',
+            subsystem: 'discord-voice',
+            avatarId,
+            speakerUserId: userId,
+            transcriptLength: transcript.length,
+          });
+
+          const reply = await generateDiscordVoiceReply({
+            avatarId,
+            guildId,
+            voiceChannelId,
+            speakerUserId: userId,
+            transcript,
+            avatarConfig,
+            secrets,
+            stateService,
+          });
+          if (!reply) return;
+
+          isPlaying = true;
+          try {
+            const generated = await voiceServices.generateVoiceMessage({
+              avatarId,
+              text: reply,
+              format: 'ogg',
+            });
+            await playDiscordVoiceUrl({
+              voice,
+              connection,
+              audioUrl: generated.url,
+              timeoutMs: Math.min(sessionTimeoutMs, 120_000),
+            });
+            lastActivityAt = Date.now();
+          } finally {
+            isPlaying = false;
+          }
+        } catch (err) {
+          logger.warn('Discord voice turn failed', {
+            event: 'discord_voice_turn_failed',
+            subsystem: 'discord-voice',
+            avatarId,
+            speakerUserId: userId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        } finally {
+          activeSpeakers.delete(userId);
+        }
+      })();
+    });
+
+    await new Promise<void>((resolve) => {
+      const interval = setInterval(() => {
+        if (!stopped) return;
+        clearInterval(interval);
+        clearTimeout(sessionTimer);
+        clearInterval(idleTimer);
+        resolve();
+      }, 500);
+    });
   } finally {
     connection.destroy();
     gateway.stop();

@@ -43,7 +43,10 @@ the avatar in text.
   task via ECS `RunTask`.
 - The worker opens its own minimal Discord Gateway connection, joins the target
   voice channel, plays an avatar greeting audio asset when media storage and
-  voice config are available, and exits.
+  voice config are available, then listens for bounded user speech turns.
+- User speech is captured from Discord voice receive, wrapped as Ogg/Opus,
+  transcribed with the avatar's OpenAI key, passed through the avatar LLM prompt,
+  generated as cloned voice audio, and played back into the same voice channel.
 
 This keeps idle cost bounded to the existing gateway task. Voice sessions spend
 Fargate only while a call is active.
@@ -73,9 +76,23 @@ guild, text-channel, voice-channel, trigger message, trigger user, state table,
 secret prefix, and media settings. Bot tokens are never passed through ECS task
 overrides; the worker loads them from Secrets Manager.
 
-## Current MVP Boundary
+Worker duplex tuning:
 
-This slice makes Discord voice joinable and speakable. It does not yet implement
-full-duplex speech-to-speech conversation. The next layer is inbound voice
-receive, streaming speech recognition, OpenAI Realtime or equivalent turn
-handling, and interruptible speech playback.
+- `DISCORD_VOICE_IDLE_SECONDS`: end the session after no handled speech or
+  playback, default `90`.
+- `DISCORD_VOICE_TURN_SILENCE_MS`: silence duration that closes a user turn,
+  default `1200`.
+- `DISCORD_VOICE_MAX_TURN_MS`: hard cap for one captured speech turn, default
+  `12000`.
+- `DISCORD_VOICE_MAX_TURN_BYTES`: hard cap for one Ogg/Opus capture, default
+  `2000000`.
+- `DISCORD_VOICE_TRANSCRIBE_MODEL`: OpenAI transcription model, default
+  `whisper-1`.
+
+## Current Boundary
+
+This slice implements bounded live speech-to-speech turns. It is not yet a
+sample-level realtime model session: speech is processed turn-by-turn after
+silence, and playback is serialized so the worker does not listen while it is
+speaking. The next layer is interruptible playback and lower-latency streaming
+recognition/model output.
