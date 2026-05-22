@@ -841,6 +841,11 @@ class GatewayConnection {
     return this.botUserId;
   }
 
+  /** Current gateway intent bitmask */
+  getIntents(): number {
+    return this.intents;
+  }
+
   /** Add an avatar binding to this connection */
   addAvatar(binding: DiscordAvatarBinding): void {
     this.avatarBindings.set(binding.avatarId, binding);
@@ -1410,11 +1415,10 @@ function reconcileConnections(bindings: Map<string, DiscordAvatarBinding>): void
 
   // Start or update connections
   for (const [token, avatars] of tokenToAvatars) {
+    const desiredIntents = resolveGatewayIntents(avatars);
     let conn = connections.get(token);
     if (!conn) {
-      // Determine intents from first avatar (all share the same bot, so intents should match)
-      const intents = avatars[0].config.platforms.discord?.intents || DEFAULT_INTENTS;
-      conn = new GatewayConnection(token, intents);
+      conn = new GatewayConnection(token, desiredIntents);
       connections.set(token, conn);
 
       // Add all avatar bindings before starting
@@ -1427,8 +1431,36 @@ function reconcileConnections(bindings: Map<string, DiscordAvatarBinding>): void
         event: 'connection_started',
         subsystem: 'discord',
         avatarIds: avatars.map(a => a.avatarId),
+        intents: desiredIntents,
       });
     } else {
+      const currentIntents = conn.getIntents();
+      if (currentIntents !== desiredIntents) {
+        logger.info('Restarting gateway connection due to intent change', {
+          event: 'connection_restarting_for_intents',
+          subsystem: 'discord',
+          avatarIds: avatars.map((a) => a.avatarId),
+          previousIntents: currentIntents,
+          nextIntents: desiredIntents,
+        });
+
+        conn.stop();
+        conn = new GatewayConnection(token, desiredIntents);
+        connections.set(token, conn);
+        for (const avatar of avatars) {
+          conn.addAvatar(avatar);
+        }
+        conn.start();
+
+        logger.info('Restarted gateway connection with updated intents', {
+          event: 'connection_restarted_for_intents',
+          subsystem: 'discord',
+          avatarIds: avatars.map((a) => a.avatarId),
+          intents: desiredIntents,
+        });
+        continue;
+      }
+
       // Update bindings on existing connection
       const currentIds = new Set(conn.avatarBindings.keys());
       const newIds = new Set(avatars.map(a => a.avatarId));
@@ -1478,6 +1510,15 @@ function reconcileConnections(bindings: Map<string, DiscordAvatarBinding>): void
       });
     }
   }
+}
+
+function resolveGatewayIntents(avatars: DiscordAvatarBinding[]): number {
+  let intents = 0;
+  for (const avatar of avatars) {
+    intents |= avatar.config.platforms.discord?.intents ?? DEFAULT_INTENTS;
+  }
+  intents |= INTENT_GUILD_VOICE_STATES;
+  return intents || DEFAULT_INTENTS;
 }
 
 // ─── Preflight Checks ────────────────────────────────────────────────────────
