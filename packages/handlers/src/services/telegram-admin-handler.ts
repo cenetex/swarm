@@ -5,8 +5,8 @@
 import type { Update } from 'grammy/types';
 import { logger, type AvatarConfig, type SwarmEnvelope, type CreateAvatarFromTelegramParams } from '@swarm/core';
 import { createTelegramAdminService, type TelegramAdminService } from './telegram-admin.js';
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { getAdminTable } from './env-validation.js';
+import { getTelegramBotTokenFromSecrets } from '../telegram/bot-token-secrets.js';
 
 // Lazy-loaded admin-api operations (avoids static dependency on @swarm/admin-api)
 let _adminOps: {
@@ -31,9 +31,6 @@ async function getAdminOps() {
   return _adminOps!;
 }
 
-const secretsClient = new SecretsManagerClient({});
-const SECRET_PREFIX = process.env.SECRET_PREFIX || 'swarm';
-
 // Cache for admin service instances
 const adminServiceCache = new Map<string, { service: TelegramAdminService; expiresAt: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -47,7 +44,7 @@ type TelegramAdminAvatar = {
   description?: string;
   persona?: string;
   platforms?: {
-    telegram?: { enabled: boolean; botUsername?: string };
+    telegram?: { enabled: boolean; botUsername?: string; isAdminBot?: boolean; allowAllDms?: boolean };
     twitter?: { enabled: boolean; username?: string };
     discord?: { enabled: boolean };
   };
@@ -57,23 +54,18 @@ type TelegramAdminAvatar = {
 /**
  * Get bot token from Secrets Manager
  */
-async function getBotToken(avatarId: string): Promise<string | null> {
-  const cached = botTokenCache.get(avatarId);
+async function getBotToken(avatarId: string, allowGlobalFallback = false): Promise<string | null> {
+  const cacheKey = `${avatarId}:${allowGlobalFallback ? 'global' : 'avatar'}`;
+  const cached = botTokenCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.token;
   }
 
-  const secretName = `${SECRET_PREFIX}/${avatarId}/telegram_bot_token/default`;
-  try {
-    const response = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretName }));
-    const token = response.SecretString || '';
-    if (token) {
-      botTokenCache.set(avatarId, { token, expiresAt: Date.now() + CACHE_TTL_MS });
-    }
-    return token || null;
-  } catch {
-    return null;
+  const result = await getTelegramBotTokenFromSecrets(avatarId, { allowGlobalFallback });
+  if (result?.token) {
+    botTokenCache.set(cacheKey, { token: result.token, expiresAt: Date.now() + CACHE_TTL_MS });
   }
+  return result?.token || null;
 }
 
 /**
@@ -85,9 +77,12 @@ async function getAdminService(avatarId: string, _avatarConfig: AvatarConfig): P
     return cached.service;
   }
 
-  const botToken = await getBotToken(avatarId);
+  const botToken = await getBotToken(avatarId, Boolean(_avatarConfig.platforms.telegram?.isAdminBot));
   if (!botToken) {
-    logger.error('No bot token for admin bot', { avatarId });
+    logger.error('No bot token for admin bot', {
+      avatarId,
+      allowGlobalFallback: Boolean(_avatarConfig.platforms.telegram?.isAdminBot),
+    });
     return null;
   }
 
@@ -122,6 +117,8 @@ async function getAdminService(avatarId: string, _avatarConfig: AvatarConfig): P
             ? {
                 enabled: avatar.platforms.telegram.enabled,
                 botUsername: avatar.platforms.telegram.botUsername,
+                isAdminBot: avatar.platforms.telegram.isAdminBot,
+                allowAllDms: avatar.platforms.telegram.allowAllDms,
               }
             : undefined,
           twitter: avatar.platforms?.twitter

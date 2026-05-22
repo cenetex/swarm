@@ -76,6 +76,10 @@ export interface AvatarRecord {
       enabled: boolean;
       botUsername?: string;
       botId?: number;
+      /** Enables shared/managed bot operations for this Telegram avatar. */
+      isAdminBot?: boolean;
+      /** Allows all Telegram DMs, used by the admin/management bot. */
+      allowAllDms?: boolean;
       /** @deprecated Use allowedChats instead for richer display info */
       allowedChatIds?: string[];
       /** @deprecated Use allowedDmUsers instead for richer display info */

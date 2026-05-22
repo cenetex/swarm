@@ -56,6 +56,8 @@ interface AvatarConfig {
       enabled: boolean;
       botUsername: string;
       botId?: number;
+      isAdminBot?: boolean;
+      allowAllDms?: boolean;
       webhookPath: string;
       allowedChatTypes?: ('private' | 'group' | 'supergroup' | 'channel')[];
       allowedChatIds?: string[];
@@ -366,6 +368,8 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
       enabled: true,
       botUsername: record.platforms.telegram.botUsername || '',
       botId: record.platforms.telegram.botId,
+      isAdminBot: record.platforms.telegram.isAdminBot,
+      allowAllDms: record.platforms.telegram.allowAllDms,
       webhookPath: `/webhook/telegram/${record.avatarId}`,
       allowedChatTypes: ['private', 'group', 'supergroup', 'channel'],
       allowedChatIds: record.platforms.telegram.allowedChatIds,

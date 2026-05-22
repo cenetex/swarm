@@ -11,6 +11,7 @@ import {
   logger,
   type AvatarConfig,
 } from '@swarm/core';
+import { getTelegramBotTokenFromSecrets } from './bot-token-secrets.js';
 
 const secretsClient = new SecretsManagerClient({});
 
@@ -109,36 +110,33 @@ export async function getAvatarStatus(avatarId: string): Promise<AvatarStatus> {
   return result.status;
 }
 
-export async function getBotToken(avatarId: string): Promise<string | null> {
+export async function getBotToken(
+  avatarId: string,
+  options: { allowGlobalFallback?: boolean } = {}
+): Promise<string | null> {
   const now = Date.now();
-  const cached = botTokenCache.get(avatarId);
+  const cacheKey = `${avatarId}:${options.allowGlobalFallback ? 'global' : 'avatar'}`;
+  const cached = botTokenCache.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.value;
 
-  // Use direct Secrets Manager path (same pattern as getWebhookSecret)
-  const secretName = `${SECRET_PREFIX}/${avatarId}/telegram_bot_token/default`;
-  try {
-    logger.info('Fetching bot token from Secrets Manager', { avatarId, secretName });
-    const response = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretName }));
-    const token = response.SecretString || '';
-    if (!token) {
-      logger.warn('Bot token secret is empty', { avatarId, secretName });
-      return null;
-    }
-    logger.info('Successfully retrieved bot token', { avatarId, tokenLength: token.length });
-    botTokenCache.set(avatarId, { value: token, expiresAt: now + TOKEN_TTL_MS });
-    return token;
-  } catch (error: unknown) {
-    const err = error as { name?: string; message?: string; code?: string; $metadata?: unknown };
-    logger.error('Failed to get bot token from Secrets Manager', undefined, {
+  const result = await getTelegramBotTokenFromSecrets(avatarId, {
+    allowGlobalFallback: options.allowGlobalFallback,
+  });
+  if (!result) {
+    logger.warn('Telegram bot token not found in Secrets Manager', {
       avatarId,
-      secretName,
-      errorMessage: err.message || 'Unknown error',
-      errorName: err.name || 'Unknown',
-      errorCode: err.code,
-      metadata: err.$metadata ? JSON.stringify(err.$metadata) : undefined,
+      allowGlobalFallback: Boolean(options.allowGlobalFallback),
     });
     return null;
   }
+
+  logger.info('Successfully retrieved Telegram bot token', {
+    avatarId,
+    source: result.source,
+    tokenLength: result.token.length,
+  });
+  botTokenCache.set(cacheKey, { value: result.token, expiresAt: now + TOKEN_TTL_MS });
+  return result.token;
 }
 
 export async function getTelegramAdapter(avatarId: string, avatarConfig: AvatarConfig): Promise<TelegramAdapter | null> {
@@ -146,7 +144,9 @@ export async function getTelegramAdapter(avatarId: string, avatarConfig: AvatarC
   const cached = telegramAdapterCache.get(avatarId);
   if (cached && cached.expiresAt > now) return cached.value;
 
-  const token = await getBotToken(avatarId);
+  const token = await getBotToken(avatarId, {
+    allowGlobalFallback: Boolean(avatarConfig.platforms.telegram?.isAdminBot),
+  });
   if (!token) return null;
 
   const adapter = new TelegramAdapter(avatarConfig, token);

@@ -211,6 +211,7 @@ export async function evaluateSecretsCheck(
   const title = 'Required secrets are present';
 
   const telegramEnabled = Boolean(avatar.platforms?.telegram?.enabled);
+  const telegramUsesManagedBotToken = Boolean(avatar.platforms?.telegram?.isAdminBot);
   const twitterEnabled = Boolean(avatar.platforms?.twitter?.enabled);
   const discordEnabled = Boolean(avatar.platforms?.discord?.enabled);
   const discordMode = avatar.platforms?.discord?.mode;
@@ -231,7 +232,9 @@ export async function evaluateSecretsCheck(
       discordBotToken,
       discordWebhookUrl,
     ] = await Promise.all([
-      telegramEnabled ? hasSecretConfigured(avatar.avatarId, 'telegram_bot_token', deps) : Promise.resolve(true),
+      telegramEnabled && !telegramUsesManagedBotToken
+        ? hasSecretConfigured(avatar.avatarId, 'telegram_bot_token', deps)
+        : Promise.resolve(true),
       telegramEnabled ? hasSecretConfigured(avatar.avatarId, 'telegram_webhook_secret', deps) : Promise.resolve(true),
       twitterEnabled ? hasSecretConfigured(avatar.avatarId, 'twitter_access_token', deps) : Promise.resolve(true),
       twitterEnabled ? hasSecretConfigured(avatar.avatarId, 'twitter_access_secret', deps) : Promise.resolve(true),
@@ -271,7 +274,7 @@ export async function evaluateSecretsCheck(
   }
 
   const missing = new Set<string>();
-  if (telegramEnabled && !telegramBotToken) missing.add('telegram_bot_token');
+  if (telegramEnabled && !telegramUsesManagedBotToken && !telegramBotToken) missing.add('telegram_bot_token');
   if (telegramEnabled && !telegramWebhookSecret) missing.add('telegram_webhook_secret');
   if (twitterEnabled && !twitterAccessToken) missing.add('twitter_access_token');
   if (twitterEnabled && !twitterAccessSecret) missing.add('twitter_access_secret');
