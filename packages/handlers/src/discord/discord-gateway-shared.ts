@@ -654,6 +654,38 @@ function canBindingReceiveDiscordMessage(
   ).allowed;
 }
 
+function canBindingReceiveDiscordVoiceTrigger(
+  message: DiscordMessage,
+  binding: DiscordAvatarBinding,
+  voiceChannelId: string,
+): boolean {
+  const discordConfig = binding.config.platforms?.discord;
+  if (!discordConfig?.enabled) return false;
+
+  const accessCtx = buildDiscordAccessContext(message);
+  const accessResult = isDiscordChatAllowed(accessCtx, discordConfig);
+  if (accessResult.allowed) {
+    return true;
+  }
+
+  const isVoiceChannelTextChat =
+    accessResult.reason === 'channel_not_allowed'
+    && message.channel_id === voiceChannelId;
+  if (isVoiceChannelTextChat) {
+    logger.info('Discord voice trigger bypassed channel allowlist in voice-channel text chat', {
+      event: 'discord_voice_channel_text_override',
+      subsystem: 'discord-voice',
+      avatarId: binding.avatarId,
+      guildId: message.guild_id,
+      channelId: message.channel_id,
+      voiceChannelId,
+    });
+    return true;
+  }
+
+  return false;
+}
+
 function getActiveDiscordBindings(): DiscordAvatarBinding[] {
   const bindingsById = new Map<string, DiscordAvatarBinding>();
   for (const conn of connections.values()) {
@@ -706,10 +738,6 @@ async function maybeLaunchDiscordVoiceSession(
     return;
   }
 
-  if (!canBindingReceiveDiscordMessage(message, binding)) {
-    return;
-  }
-
   const decision = decideDiscordVoiceLaunch({
     message,
     avatarConfig: binding.config,
@@ -732,6 +760,10 @@ async function maybeLaunchDiscordVoiceSession(
         voiceChannelId: decision.voiceChannelId,
       });
     }
+    return;
+  }
+
+  if (!canBindingReceiveDiscordVoiceTrigger(message, binding, decision.voiceChannelId)) {
     return;
   }
 
