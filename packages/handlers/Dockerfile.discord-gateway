@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 # Discord Gateway Worker
 # Multi-tenant ECS Fargate task that connects to Discord Gateway WebSocket
 # and routes messages into the shared SQS pipeline.
@@ -8,6 +10,8 @@
 FROM node:20-slim AS builder
 
 WORKDIR /build
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
 
 # Copy workspace manifests FIRST (before source) so pnpm install is cached
 # unless package.json or pnpm-lock.yaml changes.
@@ -17,9 +21,11 @@ COPY packages/mcp-server/package.json packages/mcp-server/tsconfig.json packages
 COPY packages/sticker-engine/package.json packages/sticker-engine/tsconfig.json packages/sticker-engine/
 COPY packages/handlers/package.json packages/handlers/tsconfig.json packages/handlers/
 
-# Install dependencies (cached layer — only re-runs when manifests change)
-RUN corepack enable && corepack prepare pnpm@latest --activate
-RUN pnpm install --frozen-lockfile --filter @swarm/core --filter @swarm/mcp-server --filter @swarm/sticker-engine --filter @swarm/handlers
+# Install dependencies. The BuildKit cache mount survives between GitHub
+# Actions builds through the GHA cache configured by the CDK asset.
+RUN corepack enable && corepack prepare pnpm@10.19.0 --activate && pnpm config set store-dir /pnpm/store
+RUN --mount=type=cache,id=discord-gateway-pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --prefer-offline --filter @swarm/core --filter @swarm/mcp-server --filter @swarm/sticker-engine --filter @swarm/handlers
 
 # Copy source AFTER install so source-only changes don't bust the install cache
 COPY packages/core/src/ packages/core/src/
@@ -36,19 +42,21 @@ RUN pnpm --filter @swarm/handlers build
 
 FROM node:20-slim
 
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \
     procps \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean
 
 RUN useradd -m -s /bin/bash swarm
 
 WORKDIR /home/swarm/app
 
 # Copy built outputs
-COPY --from=builder /build/packages/handlers/dist/ ./dist/
-COPY --from=builder /build/packages/handlers/package.json ./package.json
+COPY --chown=swarm:swarm --from=builder /build/packages/handlers/dist/ ./dist/
+COPY --chown=swarm:swarm --from=builder /build/packages/handlers/package.json ./package.json
 # Copy workspace package manifests for dependency merge
 COPY --from=builder /build/packages/core/package.json /tmp/swarm-core-package.json
 COPY --from=builder /build/packages/mcp-server/package.json /tmp/swarm-mcp-server-package.json
@@ -69,17 +77,17 @@ for(const pkg of [c,m,s]){for(const[k,v]of Object.entries(pkg.dependencies||{}))
 for(const k of Object.keys(deps)){if(String(deps[k]).startsWith('workspace:'))delete deps[k]}\
 h.dependencies=deps;\
 fs.writeFileSync('package.json',JSON.stringify(h,null,2))"
-RUN npm install --omit=dev
+RUN --mount=type=cache,id=discord-gateway-npm-cache,target=/root/.npm \
+    npm install --omit=dev --prefer-offline --no-audit --no-fund
 
 # Copy workspace packages after npm install so npm prune cannot remove them.
-COPY --from=builder /build/packages/core/dist/ ./node_modules/@swarm/core/dist/
-COPY --from=builder /build/packages/core/package.json ./node_modules/@swarm/core/package.json
-COPY --from=builder /build/packages/mcp-server/dist/ ./node_modules/@swarm/mcp-server/dist/
-COPY --from=builder /build/packages/mcp-server/package.json ./node_modules/@swarm/mcp-server/package.json
-COPY --from=builder /build/packages/sticker-engine/dist/ ./node_modules/@swarm/sticker-engine/dist/
-COPY --from=builder /build/packages/sticker-engine/package.json ./node_modules/@swarm/sticker-engine/package.json
+COPY --chown=swarm:swarm --from=builder /build/packages/core/dist/ ./node_modules/@swarm/core/dist/
+COPY --chown=swarm:swarm --from=builder /build/packages/core/package.json ./node_modules/@swarm/core/package.json
+COPY --chown=swarm:swarm --from=builder /build/packages/mcp-server/dist/ ./node_modules/@swarm/mcp-server/dist/
+COPY --chown=swarm:swarm --from=builder /build/packages/mcp-server/package.json ./node_modules/@swarm/mcp-server/package.json
+COPY --chown=swarm:swarm --from=builder /build/packages/sticker-engine/dist/ ./node_modules/@swarm/sticker-engine/dist/
+COPY --chown=swarm:swarm --from=builder /build/packages/sticker-engine/package.json ./node_modules/@swarm/sticker-engine/package.json
 
-RUN chown -R swarm:swarm /home/swarm
 USER swarm
 
 ENV NODE_ENV=production

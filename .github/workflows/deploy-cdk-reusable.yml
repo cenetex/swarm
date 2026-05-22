@@ -126,6 +126,7 @@ jobs:
         env:
           PREV_REF: ${{ steps.detect.outputs.previous_ref }}
         run: |
+          START_EPOCH=$(date +%s)
           if [ "${{ steps.layer-cache.outputs.cache-hit }}" != "true" ]; then
             cd packages/layer && pnpm run build:layer && cd ../..
           fi
@@ -136,6 +137,10 @@ jobs:
           # imports whose dist/ never got produced (broke staging on #1561 and
           # again on #1564). Reverted in #1566.
           pnpm -r --filter '!admin-ui' build
+          END_EPOCH=$(date +%s)
+          DURATION=$((END_EPOCH - START_EPOCH))
+          echo "### CDK Build Timing" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Package build: ${DURATION}s" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Validate AWS environment secrets
         run: |
@@ -268,6 +273,7 @@ jobs:
           ADMIN_CERTIFICATE_ARN: ${{ secrets.ADMIN_CERTIFICATE_ARN || '' }}
           MEDIA_CDN_URL: ${{ secrets.MEDIA_CDN_URL || '' }}
         run: |
+          START_EPOCH=$(date +%s)
           ADMIN_DOMAIN=$(echo "${{ inputs.admin_url }}" | sed -E 's|^https?://||' | cut -d/ -f1)
           EXTRA_CONTEXT_ARGS="-c adminDomain=${ADMIN_DOMAIN}"
 
@@ -296,6 +302,10 @@ jobs:
 
           npx cdk diff --fail $DIFF_TARGETS -c environment=${{ inputs.cdk_env }} -c useExistingResources=$USE_EXISTING_RESOURCES -c useExistingBuckets=$USE_EXISTING_BUCKETS -c skipDomainAliases=$SKIP_DOMAIN_ALIASES -c stackHash=$STACK_HASH ${EXTRA_CONTEXT_ARGS} 2>&1 | tee diff-output.txt
           DIFF_EXIT=$?
+          END_EPOCH=$(date +%s)
+          DIFF_DURATION=$((END_EPOCH - START_EPOCH))
+          echo "duration_seconds=$DIFF_DURATION" >> "$GITHUB_OUTPUT"
+          echo "- CDK diff/synth: ${DIFF_DURATION}s" >> "$GITHUB_STEP_SUMMARY"
           set +o pipefail
           set -e
 
@@ -338,22 +348,105 @@ jobs:
           fi
 
       - name: CDK Deploy
+        id: cdk-deploy-step
         if: steps.diff.outputs.skip != 'true'
         working-directory: packages/infra
         run: |
+          set -euo pipefail
+          START_EPOCH=$(date +%s)
+          START_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "started_at=$START_ISO" >> "$GITHUB_OUTPUT"
           HOTSWAP=""
           if [ "${{ inputs.use_hotswap && 'true' || 'false' }}" = "true" ]; then
             HOTSWAP="--hotswap-fallback"
           fi
           STACK="${{ inputs.stack }}"
+          DEPLOY_ARGS=(--app cdk.out --require-approval never --concurrency 10)
+          if [ -n "$HOTSWAP" ]; then
+            DEPLOY_ARGS+=("$HOTSWAP")
+          fi
 
           # Reuse cdk.out from diff step to skip redundant re-synthesis (~30-60s savings)
+          set +e
           if [ -n "$STACK" ]; then
-            npx cdk deploy "$STACK" --app cdk.out --require-approval never --concurrency 10 $HOTSWAP
+            npx cdk deploy "$STACK" "${DEPLOY_ARGS[@]}" 2>&1 | tee deploy-output.txt
+          else
+            npx cdk deploy --all "${DEPLOY_ARGS[@]}" 2>&1 | tee deploy-output.txt
+          fi
+          DEPLOY_EXIT=${PIPESTATUS[0]}
+          set -e
+
+          END_EPOCH=$(date +%s)
+          DURATION=$((END_EPOCH - START_EPOCH))
+          echo "duration_seconds=$DURATION" >> "$GITHUB_OUTPUT"
+          echo "- CDK deploy total: ${DURATION}s" >> "$GITHUB_STEP_SUMMARY"
+
+          ASSET_START_COUNT=$(grep -Ec 'start: Building .*AssetImage|start: Publishing .*AssetImage' deploy-output.txt || true)
+          ASSET_SUCCESS_COUNT=$(grep -Ec 'success: Published .*AssetImage' deploy-output.txt || true)
+          CFN_DEPLOY_COUNT=$(grep -Ec 'deploying\.\.\.' deploy-output.txt || true)
+          echo "- Asset image build/publish markers: ${ASSET_START_COUNT} starts, ${ASSET_SUCCESS_COUNT} published" >> "$GITHUB_STEP_SUMMARY"
+          echo "- CloudFormation deploy markers: ${CFN_DEPLOY_COUNT}" >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$DEPLOY_EXIT"
+
+      - name: CDK Deploy Timing Summary
+        if: always() && steps.diff.outputs.skip != 'true'
+        env:
+          DEPLOY_STARTED_AT: ${{ steps.cdk-deploy-step.outputs.started_at }}
+          STACK_INPUT: ${{ inputs.stack }}
+          CDK_ENV: ${{ inputs.cdk_env }}
+        run: |
+          set -euo pipefail
+          echo "## CDK Deploy Timing" >> "$GITHUB_STEP_SUMMARY"
+          echo "- CDK diff/synth: ${{ steps.diff.outputs.duration_seconds || 'n/a' }}s" >> "$GITHUB_STEP_SUMMARY"
+          echo "- CDK deploy command: ${{ steps.cdk-deploy-step.outputs.duration_seconds || 'n/a' }}s" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "${DEPLOY_STARTED_AT:-}" ]; then
+            echo "- CloudFormation events: unavailable (deploy step did not start)" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          npx cdk deploy --all --app cdk.out --require-approval never --concurrency 10 $HOTSWAP
+          if [ -n "$STACK_INPUT" ]; then
+            STACKS="$STACK_INPUT"
+          else
+            STACKS="SwarmCore-${CDK_ENV} SwarmApi-${CDK_ENV} SwarmUi-${CDK_ENV} SwarmDocsSite-${CDK_ENV}"
+          fi
+
+          for STACK in $STACKS; do
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### ${STACK}" >> "$GITHUB_STEP_SUMMARY"
+            if ! aws cloudformation describe-stacks --stack-name "$STACK" >/dev/null 2>&1; then
+              echo "- Stack not found" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            EVENTS_JSON=$(aws cloudformation describe-stack-events \
+              --stack-name "$STACK" \
+              --query "StackEvents[?Timestamp>=\`${DEPLOY_STARTED_AT}\`].[Timestamp,ResourceStatus,ResourceType,LogicalResourceId]" \
+              --output json)
+            EVENT_COUNT=$(node -e "const events=JSON.parse(process.argv[1]); console.log(events.length)" "$EVENTS_JSON")
+            echo "- CloudFormation events since deploy start: ${EVENT_COUNT}" >> "$GITHUB_STEP_SUMMARY"
+
+            ECS_SUMMARY=$(node -e '
+              const events = JSON.parse(process.argv[1])
+                .map(([time,status,type,id]) => ({ time: Date.parse(time), status, type, id }))
+                .filter((e) => e.type === "AWS::ECS::Service")
+                .sort((a, b) => a.time - b.time);
+              const start = events.find((e) => e.status.endsWith("_IN_PROGRESS"));
+              const end = [...events].reverse().find((e) => e.status.endsWith("_COMPLETE"));
+              if (!start || !end || end.time < start.time) {
+                console.log("none");
+              } else {
+                console.log(`${start.id}: ${Math.round((end.time - start.time) / 1000)}s`);
+              }
+            ' "$EVENTS_JSON")
+
+            if [ "$ECS_SUMMARY" = "none" ]; then
+              echo "- ECS service stabilization: none observed" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- ECS service stabilization: ${ECS_SUMMARY}" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
 
       - name: Skip Deploy (no changes)
         if: steps.diff.outputs.skip == 'true'
