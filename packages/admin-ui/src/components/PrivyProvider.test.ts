@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { buildPrivyConfig } from './PrivyProvider.js';
 
 describe('PrivyProvider config', () => {
-  it('sets Solana defaults for wallets', () => {
-    const config = buildPrivyConfig({ hostname: 'swarm.rati.chat' });
+  it('sets Solana defaults for wallets', async () => {
+    const config = await buildPrivyConfig({ hostname: 'swarm.rati.chat' });
 
     expect(config.loginMethods).toEqual(['wallet', 'email', 'google', 'twitter']);
     expect(config.appearance?.showWalletLoginFirst).toBe(true);
@@ -14,3 +14,4 @@ describe('PrivyProvider config', () => {
     expect(config.supportedChains).toBeUndefined();
   });
 });
+

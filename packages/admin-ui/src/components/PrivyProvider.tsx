@@ -3,9 +3,8 @@
  * Wraps the app with Privy authentication context for email/social login
  * and (optionally) embedded wallet creation.
  */
-import { type ReactNode } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { PrivyProvider as PrivyReactProvider, type PrivyClientConfig } from '@privy-io/react-auth';
-import { toSolanaWalletConnectors } from '@privy-io/react-auth/solana';
 
 const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID || '';
 const PRIVY_ENABLE_EMBEDDED_WALLETS_RAW = import.meta.env.VITE_PRIVY_ENABLE_EMBEDDED_WALLETS;
@@ -15,6 +14,21 @@ interface PrivyProviderProps {
 }
 
 export function PrivyProvider({ children }: PrivyProviderProps) {
+  const [config, setConfig] = useState<PrivyClientConfig | null>(null);
+
+  useEffect(() => {
+    buildPrivyConfig().then(setConfig).catch(() => {
+      setConfig({
+        loginMethods: ['wallet', 'email', 'google', 'twitter'],
+        appearance: {
+          showWalletLoginFirst: true,
+          walletList: ['phantom', 'detected_solana_wallets', 'solflare', 'backpack', 'wallet_connect_qr_solana'],
+          walletChainType: 'solana-only',
+        },
+      });
+    });
+  }, []);
+
   if (!PRIVY_APP_ID) {
     console.error('[Privy] Missing VITE_PRIVY_APP_ID');
     return (
@@ -34,10 +48,14 @@ VITE_PRIVY_APP_ID=your_privy_app_id
     );
   }
 
+  if (!config) {
+    return null; // Loading config
+  }
+
   return (
     <PrivyReactProvider
       appId={PRIVY_APP_ID}
-      config={buildPrivyConfig()}
+      config={config}
     >
       {children}
     </PrivyReactProvider>
@@ -64,18 +82,19 @@ function shouldEnableEmbeddedWallets(hostnameOverride?: string): boolean {
   return host === 'swarm.rati.chat' || host === 'staging-swarm.rati.chat';
 }
 
-function getSolanaConnectors() {
+async function getSolanaConnectors() {
   if (typeof window === 'undefined') return undefined;
   try {
+    const { toSolanaWalletConnectors } = await import('@privy-io/react-auth/solana');
     return toSolanaWalletConnectors({ shouldAutoConnect: false });
   } catch {
     return undefined;
   }
 }
 
-export function buildPrivyConfig(options?: { hostname?: string }): PrivyClientConfig {
+export async function buildPrivyConfig(options?: { hostname?: string }): Promise<PrivyClientConfig> {
   const enableEmbeddedWallets = shouldEnableEmbeddedWallets(options?.hostname);
-  const solanaConnectors = getSolanaConnectors();
+  const solanaConnectors = await getSolanaConnectors();
 
   return {
     loginMethods: ['wallet', 'email', 'google', 'twitter'],
@@ -104,3 +123,4 @@ export function buildPrivyConfig(options?: { hostname?: string }): PrivyClientCo
       : {}),
   };
 }
+
