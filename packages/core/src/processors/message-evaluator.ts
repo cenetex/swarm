@@ -54,7 +54,29 @@ export class MessageEvaluator {
       return this.evaluateCommand(envelope);
     }
 
-    // 3. Check if user is on cooldown
+    // 3. Check for direct mention of bot. Direct engagement is user intent,
+    // so it must bypass per-user cooldowns.
+    const isMentioned = this.isBotMentioned(envelope);
+    if (isMentioned) {
+      return {
+        shouldRespond: true,
+        reason: 'Bot was directly mentioned',
+        priority: 'high',
+      };
+    }
+
+    // 4. Check if replying to bot's message. Like @mentions, explicit
+    // replies should get immediate answers even when the sender recently
+    // received a response.
+    if (envelope.replyTo && await this.isReplyToBot(envelope)) {
+      return {
+        shouldRespond: true,
+        reason: 'Reply to bot message',
+        priority: 'high',
+      };
+    }
+
+    // 5. Check if user is on cooldown
     const cooldown = await this.stateService.getUserCooldown(
       envelope.avatarId,
       envelope.platform,
@@ -66,25 +88,6 @@ export class MessageEvaluator {
         shouldRespond: false,
         reason: `User on cooldown until ${new Date(cooldown.cooldownUntil).toISOString()}`,
         priority: 'low',
-      };
-    }
-
-    // 4. Check for direct mention of bot
-    const isMentioned = this.isBotMentioned(envelope);
-    if (isMentioned) {
-      return {
-        shouldRespond: true,
-        reason: 'Bot was directly mentioned',
-        priority: 'high',
-      };
-    }
-
-    // 5. Check if replying to bot's message
-    if (envelope.replyTo && await this.isReplyToBot(envelope)) {
-      return {
-        shouldRespond: true,
-        reason: 'Reply to bot message',
-        priority: 'high',
       };
     }
 

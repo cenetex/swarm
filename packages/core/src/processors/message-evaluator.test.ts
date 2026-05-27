@@ -154,6 +154,53 @@ describe('MessageEvaluator', () => {
       // For Telegram it might still be false if not mentioned, but reason won't be cooldown
       expect(result.reason).not.toContain('User on cooldown');
     });
+
+    it('should bypass cooldown for direct mentions', async () => {
+      const cooldownUntil = Date.now() + 60000;
+      mockStateService.getUserCooldown.mockImplementation(() => Promise.resolve({ cooldownUntil }));
+
+      const envelope = {
+        avatarId: 'test-avatar',
+        platform: 'telegram',
+        sender: { isBot: false, id: 'user-1' },
+        content: { text: 'Hello @test_bot' },
+        mentions: [],
+        metadata: { isMention: true }
+      } as any;
+
+      const result = await evaluator.evaluate(envelope);
+      expect(result.shouldRespond).toBe(true);
+      expect(result.reason).toBe('Bot was directly mentioned');
+      expect(result.priority).toBe('high');
+      expect(mockStateService.getUserCooldown).not.toHaveBeenCalled();
+    });
+
+    it('should bypass cooldown for replies to bot messages', async () => {
+      const cooldownUntil = Date.now() + 60000;
+      mockStateService.getUserCooldown.mockImplementation(() => Promise.resolve({ cooldownUntil }));
+      mockStateService.getChannelState.mockImplementation(() => Promise.resolve({
+        recentMessages: [
+          { messageId: 'msg-bot-1', isBot: true }
+        ]
+      }));
+
+      const envelope = {
+        avatarId: 'test-avatar',
+        conversationId: 'chat-1',
+        platform: 'telegram',
+        sender: { isBot: false, id: 'user-1' },
+        replyTo: 'msg-bot-1',
+        content: { text: 'following up' },
+        mentions: [],
+        metadata: {}
+      } as any;
+
+      const result = await evaluator.evaluate(envelope);
+      expect(result.shouldRespond).toBe(true);
+      expect(result.reason).toBe('Reply to bot message');
+      expect(result.priority).toBe('high');
+      expect(mockStateService.getUserCooldown).not.toHaveBeenCalled();
+    });
   });
 
   describe('Platform: Telegram', () => {
