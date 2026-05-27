@@ -259,12 +259,6 @@ export class DiscordGatewayWorker extends Construct {
       resourceName: `${this.voiceTaskDefinition.family}:*`,
     });
 
-    const voiceTaskDefinitionFamilyArn = cdk.Stack.of(this).formatArn({
-      service: 'ecs',
-      resource: 'task-definition',
-      resourceName: `${this.voiceTaskDefinition.family}:*`,
-    });
-
     this.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: ['ecs:RunTask'],
