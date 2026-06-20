@@ -87,8 +87,8 @@ Run persistent AI avatars across Telegram, Discord, and the web — with the gua
 ## Quick Start
 
 ```bash
-git clone https://github.com/cenetex/aws-swarm.git
-cd aws-swarm
+git clone https://github.com/atimics/swarm.git
+cd swarm
 nvm use
 pnpm install
 pnpm build
