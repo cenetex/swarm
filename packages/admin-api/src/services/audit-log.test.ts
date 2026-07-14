@@ -110,6 +110,24 @@ describe('recordAuditEventWith', () => {
     expect(item.gsi1pk).toBe('AUDIT_TYPE#entitlement_changed');
   });
 
+  it('records resonance_changed events with a system actor', async () => {
+    const deps = makeMockDeps();
+    const result = await recordAuditEventWith(deps, {
+      avatarId: 'avatar-resonance',
+      eventType: 'resonance_changed',
+      actorId: 'avatar-resonance',
+      actorType: 'system',
+      details: { amount: 1, mintAddress: 'ORB#test' },
+    });
+
+    expect(result.eventType).toBe('resonance_changed');
+    expect(result.actorType).toBe('system');
+    expect(result.details.amount).toBe(1);
+
+    const item = putItems[0];
+    expect(item.gsi1pk).toBe('AUDIT_TYPE#resonance_changed');
+  });
+
   it('sets TTL to approximately 365 days from now', async () => {
     const deps = makeMockDeps();
     const before = Math.floor(Date.now() / 1000);

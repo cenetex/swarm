@@ -44,9 +44,10 @@ export type AuditEventType =
   | 'secret_set'
   | 'wallet_swept'
   | 'wallet_key_deleted'
-  | 'persona_updated';
+  | 'persona_updated'
+  | 'resonance_changed';
 
-export type ActorType = 'admin' | 'owner';
+export type ActorType = 'admin' | 'owner' | 'system';
 
 export interface AuditEvent {
   id: string;
