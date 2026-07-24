@@ -8,8 +8,7 @@
  * actions, the gallery button, or `useWorkspaceStore.setTab(...)`.
  *
  * Renders a 5-tab shell (Gallery / Prompt / Tools / Settings / Activity).
- * Gallery and Tools are wired today; Prompt / Settings / Activity show
- * placeholders that will be replaced by #1636 / #1638 / #1639.
+ * Settings now hosts runtime, backend, and avatar configuration controls.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -23,7 +22,10 @@ import { GalleryContent } from './GalleryPanel';
 import { PromptPreviewPanel } from './PromptPreviewPanel';
 import { AvatarConfigModal } from './AvatarConfigModal';
 import { ActivityHealthTab } from './ActivityHealthTab';
+import { AgentBackendSetup } from './AgentBackendSetup';
+import { HostingModePanel } from './HostingModePanel';
 import { useActiveAvatar } from '../store';
+import type { Avatar } from '../types';
 
 interface TaskWorkspaceProps {
   /** Callback when a tool prompt is submitted from within the workspace. */
@@ -62,6 +64,37 @@ function TabIcon({ d }: { d: string }) {
   );
 }
 
+function SettingsContent({
+  activeAvatar,
+  onClose,
+}: {
+  activeAvatar?: Avatar;
+  onClose: () => void;
+}) {
+  return (
+    <div className="w-full pb-4">
+      <HostingModePanel />
+      <AgentBackendSetup avatarId={activeAvatar?.id} avatarName={activeAvatar?.name} />
+
+      <div className="mt-4 max-w-3xl mx-auto">
+        {activeAvatar ? (
+          <AvatarConfigModal
+            avatar={activeAvatar}
+            embedded
+            embeddedLayout="section"
+            isOpen={true}
+            onClose={onClose}
+          />
+        ) : (
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-4 text-sm text-[var(--color-text-muted)]">
+            Select an avatar to edit profile, persona, and secret settings.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspaceProps) {
   const { t } = useTranslation();
   const isOpen = useWorkspaceStore((s) => s.isOpen);
@@ -80,6 +113,7 @@ export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspace
   const allCards = useTaskCardStore((s) => s.cards);
   const activeAvatar = useActiveAvatar();
   const panelRef = useRef<HTMLDivElement>(null);
+  const tabPanelRef = useRef<HTMLDivElement>(null);
 
   // Pending cards for the active avatar — most recent first. Drives the
   // queue list at the top of the Tools tab (#1637).
@@ -113,6 +147,11 @@ export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspace
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    tabPanelRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [activeTab, activeAvatar?.id, isOpen]);
 
   // ──────────────────────────────────────────────────────────────────────
   // Mobile gestures (#1640)
@@ -351,13 +390,7 @@ export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspace
       case 'prompt':
         return <PromptPreviewPanel embedded isOpen={true} onClose={close} />;
       case 'settings':
-        return activeAvatar
-          ? <AvatarConfigModal avatar={activeAvatar} embedded isOpen={true} onClose={close} />
-          : (
-            <div className="flex items-center justify-center h-full text-sm text-[var(--color-text-muted)]">
-              No avatar selected.
-            </div>
-          );
+        return <SettingsContent activeAvatar={activeAvatar} onClose={close} />;
       case 'activity':
         return <ActivityHealthTab onClose={close} initialInviteCode={initialInviteCode} />;
     }
@@ -489,6 +522,7 @@ export function TaskWorkspace({ onToolSubmit, initialInviteCode }: TaskWorkspace
 
         {/* Content area — touch handlers drive horizontal tab swipe (#1640) */}
         <div
+          ref={tabPanelRef}
           id={`workspace-panel-${activeTab}`}
           role="tabpanel"
           className="min-h-0 flex-1 overflow-y-auto px-4 py-4 flex flex-col"

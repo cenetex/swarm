@@ -62,7 +62,7 @@ const VERIFY_SK = 'SECRETS_VERIFY';
 const SECRETS_PK = 'SYSTEM';
 const SECRETS_SK = 'SECRETS_DATA';
 
-interface VerifyRecord {
+interface VerifyRecord extends Record<string, unknown> {
   salt: string;       // base64
   hash: string;       // hex of sha512(salt + derived_key_preview)
   createdAt: number;
@@ -123,6 +123,8 @@ export class EncryptedSecretsService implements SecretsService {
     });
 
     this.key = key;
+    this.cache = new Map();
+    this.dirty = false;
   }
 
   /**
@@ -208,7 +210,7 @@ export class EncryptedSecretsService implements SecretsService {
 
   /** Persist the in-memory cache to the encrypted store. */
   async flush(): Promise<void> {
-    this.requireUnlocked();
+    const key = this.requireUnlocked();
     if (!this.dirty) return;
 
     // Serialize flushes so concurrent calls don't race
@@ -222,7 +224,7 @@ export class EncryptedSecretsService implements SecretsService {
       // calls are captured in a subsequent flush, not lost mid-flight.
       const snapshot = new Map(this.cache);
       const json = JSON.stringify(Object.fromEntries(snapshot));
-      const encrypted = encrypt(json, this.key!);
+      const encrypted = encrypt(json, key);
       await this.store.put({
         pk: SECRETS_PK,
         sk: SECRETS_SK,
@@ -237,9 +239,10 @@ export class EncryptedSecretsService implements SecretsService {
 
   // ── Internal ───────────────────────────────────────────────────────────
 
-  private requireUnlocked(): asserts this is { key: Buffer } {
+  private requireUnlocked(): Buffer {
     if (!this.key) {
       throw new Error('Secrets store is locked. Call unlock(password) first.');
     }
+    return this.key;
   }
 }

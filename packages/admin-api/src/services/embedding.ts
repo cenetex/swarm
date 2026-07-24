@@ -276,6 +276,16 @@ export function getEmbeddingService(
 }
 
 /**
+ * Override the embedding service.
+ *
+ * Local-first runtimes inject an embedded llama.cpp provider here so memory
+ * embeddings stay on-device without changing hosted AWS behavior.
+ */
+export function _setEmbeddingService(service: EmbeddingService | null): void {
+  _embeddingService = service;
+}
+
+/**
  * Reset the embedding service (for testing)
  */
 export function _resetEmbeddingService(): void {

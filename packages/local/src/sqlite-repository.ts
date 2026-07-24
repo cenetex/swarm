@@ -4,7 +4,7 @@
  * Implements KeyValueStore using Bun's built-in SQLite (bun:sqlite).
  * For Node.js deployments, swap to better-sqlite3 — the API is nearly identical.
  */
-import { Database } from 'bun:sqlite';
+import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import type {
   KeyValueStore,
   CompositeKey,
@@ -253,7 +253,7 @@ export class SqliteRepository implements KeyValueStore {
   ): Promise<PaginatedResult<T>> {
     this._cleanupExpiredSoft();
     const pkPrefix = (options as (QueryOptions & { pkPrefix?: string }) | undefined)?.pkPrefix;
-    const params: unknown[] = [];
+    const params: SQLQueryBindings[] = [];
     let sql = `SELECT pk, sk, data FROM "${this.tableName}" WHERE `;
     if (pkPrefix) {
       sql += 'pk LIKE ?';
@@ -284,13 +284,16 @@ export class SqliteRepository implements KeyValueStore {
       );
       if (whereClause) {
         sql += ` AND (${whereClause})`;
-        params.push(...Object.values(fb));
+        params.push(...(Object.values(fb) as SQLQueryBindings[]));
       }
     }
 
     const scanFwd = options?.scanForward ?? true;
 
     if (exclusiveStartKey) {
+      if (typeof exclusiveStartKey.sk !== 'string') {
+        throw new TypeError('exclusiveStartKey.sk must be a string');
+      }
       sql += scanFwd ? ' AND sk > ?' : ' AND sk < ?';
       params.push(exclusiveStartKey.sk);
     }
@@ -411,7 +414,7 @@ export class SqliteRepository implements KeyValueStore {
   ): Promise<T[]> {
     this._cleanupExpiredSoft();
     let sql = `SELECT pk, sk, data FROM "${this.tableName}"`;
-    const bindParams: Array<unknown> = [];
+    const bindParams: SQLQueryBindings[] = [];
 
     const { whereClause, bindings } = translateFilter(
       params.filterExpression,
@@ -422,7 +425,7 @@ export class SqliteRepository implements KeyValueStore {
     const conditions: string[] = [];
     if (whereClause) {
       conditions.push(`(${whereClause})`);
-      bindParams.push(...Object.values(bindings));
+      bindParams.push(...(Object.values(bindings) as SQLQueryBindings[]));
     }
     const ttlClause = `(ttl IS NULL OR ttl > ${Math.floor(Date.now() / 1000)})`;
     conditions.push(ttlClause);

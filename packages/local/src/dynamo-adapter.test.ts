@@ -23,7 +23,7 @@ class UpdateCommand {
   constructor(public input: { TableName: string; Key: { pk: string; sk: string }; UpdateExpression: string; ExpressionAttributeNames?: Record<string, string>; ExpressionAttributeValues?: Record<string, unknown>; ReturnValues?: string }) {}
 }
 class ScanCommand {
-  constructor(public input: { TableName: string; FilterExpression: string; ExpressionAttributeValues: Record<string, unknown> }) {}
+  constructor(public input: { TableName: string; FilterExpression: string; ExpressionAttributeValues: Record<string, unknown>; ExpressionAttributeNames?: Record<string, string> }) {}
 }
 class BatchWriteCommand {
   constructor(public input: { RequestItems: Record<string, Array<{ PutRequest?: { Item: Record<string, unknown> }; DeleteRequest?: { Key: { pk: string; sk: string } } }>> }) {}
@@ -72,7 +72,7 @@ describe('LocalDynamoClientAdapter', () => {
       TableName: 'test',
       Key: { pk: 'U#1', sk: 'META' },
     });
-    const result = await adapter.send(cmd as any) as { Item?: Record<string, unknown> };
+    const result = await adapter.send(cmd as any) as { Item?: Record<string, unknown>; $metadata: { httpStatusCode: number } };
     expect(result.Item).toBeDefined();
     expect(result.Item!.name).toBe('Alice');
     expect(result.$metadata.httpStatusCode).toBe(200);

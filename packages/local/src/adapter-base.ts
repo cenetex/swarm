@@ -5,8 +5,12 @@
  * envelope, then delegates to a dispatch method. Handles the Bun-
  * compiled name mangling by matching on prefix rather than exact name.
  */
+export type LocalAdapterResult = Record<string, unknown> & {
+  $metadata?: { httpStatusCode?: number };
+};
+
 export abstract class LocalAdapter {
-  async send(command: unknown): Promise<Record<string, unknown>> {
+  async send(command: unknown): Promise<LocalAdapterResult> {
     const name: string =
       (command as { constructor?: { name?: string } })?.constructor?.name ?? '';
     const input: Record<string, unknown> =
@@ -21,5 +25,5 @@ export abstract class LocalAdapter {
   protected abstract dispatch(
     name: string,
     input: Record<string, unknown>,
-  ): Promise<Record<string, unknown>>;
+  ): Promise<LocalAdapterResult>;
 }

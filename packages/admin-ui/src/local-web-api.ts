@@ -22,35 +22,96 @@ type LocalAvatar = {
 type LocalState = {
   avatars: LocalAvatar[];
   chats: Record<string, Array<{ role: string; content: string; media?: unknown[] }>>;
-  secrets: Record<string, string>;
-  avatarSecrets: Record<string, Record<string, string>>;
   agentBackends: Record<string, {
     backend: string;
     endpoint?: string;
-    apiKey?: string;
-    deploymentTarget: 'local' | 'fly';
+    deploymentTarget: 'local' | 'ascii-box';
   }>;
+  hostingMode?: 'local' | 'hosted';
+  hostingSubstrate?: 'fly' | 'aws' | 'ascii-box';
   consentAcceptedAt?: number;
+  credentialMigrationRequired?: boolean;
 };
 
 const STORAGE_KEY = 'swarm:web-local:v1';
+const MAX_CHAT_MESSAGES = 100;
 
 const isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 
-function shouldInstallLocalWebApi(): boolean {
+export function isWebLocalHostAllowed(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+}
+
+export function shouldInstallLocalWebApi(): boolean {
   if (!isBrowser) return false;
+  if (!isWebLocalHostAllowed(window.location.hostname)) return false;
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
   if (env.VITE_WEB_LOCAL === '1' || env.VITE_SWARM_WEB_LOCAL === '1') return true;
   const params = new URLSearchParams(window.location.search);
-  if (params.get('local') === '1') return true;
-  const host = window.location.hostname.toLowerCase();
-  return host === 'rati.chat' || host === 'www.rati.chat' || host === 'swarm.rati.chat';
+  return params.get('local') === '1';
 }
 
-function readState(): LocalState {
+function sanitizeChatHistory(value: unknown): LocalState['chats'] {
+  if (!value || typeof value !== 'object') return {};
+  const histories: LocalState['chats'] = {};
+  for (const [avatarId, history] of Object.entries(value)) {
+    if (!Array.isArray(history)) continue;
+    histories[avatarId] = history
+      .filter((message): message is { role: string; content: string; media?: unknown[] } => (
+        Boolean(message)
+        && typeof message === 'object'
+        && typeof (message as { role?: unknown }).role === 'string'
+        && typeof (message as { content?: unknown }).content === 'string'
+      ))
+      .slice(-MAX_CHAT_MESSAGES);
+  }
+  return histories;
+}
+
+export function readLocalWebState(): LocalState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...emptyState(), ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const legacyBackends = parsed.agentBackends && typeof parsed.agentBackends === 'object'
+        ? parsed.agentBackends as Record<string, Record<string, unknown>>
+        : {};
+      const agentBackends = Object.fromEntries(
+        Object.entries(legacyBackends).map(([scope, backend]) => [scope, {
+          backend: typeof backend.backend === 'string' ? backend.backend : 'swarm-native',
+          endpoint: typeof backend.endpoint === 'string' ? backend.endpoint : undefined,
+          deploymentTarget: backend.deploymentTarget === 'ascii-box' ? 'ascii-box' as const : 'local' as const,
+        }]),
+      );
+      const hadPlaintextCredentials = Boolean(
+        parsed.secrets
+        || parsed.avatarSecrets
+        || Object.values(legacyBackends).some((backend) => typeof backend.apiKey === 'string'),
+      );
+      const credentialMigrationRequired = hadPlaintextCredentials || parsed.credentialMigrationRequired === true;
+      const chatHistoryRequiredSanitizing = parsed.chats && typeof parsed.chats === 'object'
+        ? Object.values(parsed.chats).some((history) => !Array.isArray(history) || history.length > MAX_CHAT_MESSAGES)
+        : Boolean(parsed.chats);
+      const sanitized: LocalState = {
+        ...emptyState(),
+        avatars: Array.isArray(parsed.avatars) ? parsed.avatars as LocalAvatar[] : [],
+        chats: sanitizeChatHistory(parsed.chats),
+        agentBackends,
+        hostingMode: parsed.hostingMode === 'hosted' ? 'hosted' : 'local',
+        hostingSubstrate: parsed.hostingSubstrate === 'fly'
+          || parsed.hostingSubstrate === 'aws'
+          || parsed.hostingSubstrate === 'ascii-box'
+          ? parsed.hostingSubstrate
+          : undefined,
+        consentAcceptedAt: typeof parsed.consentAcceptedAt === 'number' ? parsed.consentAcceptedAt : undefined,
+        credentialMigrationRequired,
+      };
+      if (hadPlaintextCredentials || chatHistoryRequiredSanitizing) {
+        writeState(sanitized);
+      }
+      return sanitized;
+    }
   } catch {
     // Fall through to a fresh local store.
   }
@@ -61,14 +122,76 @@ function emptyState(): LocalState {
   return {
     avatars: [],
     chats: {},
-    secrets: {},
-    avatarSecrets: {},
     agentBackends: {},
   };
 }
 
 function writeState(state: LocalState): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function localHostingStatus(_state: LocalState) {
+  return {
+    mode: 'local' as const,
+    local: {
+      available: true,
+      running: true,
+      label: 'This browser',
+      detail: 'Runs in this browser tab. Use the native app for encrypted local secrets and runtime supervision.',
+    },
+    hosted: {
+      available: false,
+      configured: false,
+      label: 'Hosted 24/7',
+      priceUsdMonthly: 9,
+      provider: 'external' as const,
+      architecture: 'not-configured',
+      status: 'not-configured' as const,
+      entitlement: 'none' as const,
+      detail: 'Hosted service is not available from browser-local mode. Use the native app after hosted checkout and provisioning are connected.',
+    },
+  };
+}
+
+function localHostingSubstratesStatus(state: LocalState) {
+  return {
+    ...(state.hostingSubstrate ? { selected: state.hostingSubstrate } : {}),
+    providers: [
+      {
+        id: 'fly',
+        label: 'Fly',
+        cliInstalled: false,
+        authenticated: false,
+        enabled: false,
+        detail: 'Browser build cannot read local Fly auth. Connect in Fly, then use the native app for one-click provision.',
+        loginCommand: 'fly auth login',
+        connectUrl: 'https://fly.io/docs/flyctl/auth-login/',
+        connectLabel: 'Connect Fly',
+      },
+      {
+        id: 'aws',
+        label: 'AWS',
+        cliInstalled: false,
+        authenticated: false,
+        enabled: false,
+        detail: 'Browser build cannot read local AWS SSO. Connect AWS locally, then use the native app for one-click provision.',
+        loginCommand: 'aws sso login',
+        connectUrl: 'https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html',
+        connectLabel: 'Connect AWS',
+      },
+      {
+        id: 'ascii-box',
+        label: 'Ascii Box',
+        cliInstalled: false,
+        authenticated: false,
+        enabled: false,
+        detail: 'Browser build cannot read Box auth. Start the Box quickstart, then use the native app for one-click provision.',
+        loginCommand: 'box login',
+        connectUrl: 'https://docs.ascii.dev/box/quickstart',
+        connectLabel: 'Connect Box',
+      },
+    ],
+  };
 }
 
 function json(data: unknown, init: ResponseInit = {}): Response {
@@ -127,7 +250,7 @@ function defaultAssistantReply(message: string, avatar?: LocalAvatar): string {
     return `Got it. I saved that direction for ${target}. You can keep refining the personality here, and this web build will keep the state in this browser.`;
   }
   if (/runtime|backend|hermes|cosy|codex|eliza|openclaw/i.test(message)) {
-    return `Runtime settings are local to this browser. Pick a runtime in the Agent runtime panel; local endpoints are remembered in localStorage.`;
+    return `Use the Run Swarm panel to choose local or hosted mode. Advanced runtime endpoints are remembered in localStorage.`;
   }
   if (/download|desktop|native|mac|windows|linux/i.test(message)) {
     return 'Use the Native clients panel to open the latest desktop release for macOS, Windows, or Linux.';
@@ -160,7 +283,7 @@ const AGENT_BACKENDS = [
       endpointHint: 'The web client remembers the Hermes endpoint in localStorage.',
     },
     launch: { command: 'hermes proxy start --port 8645', endpoint: 'http://localhost:8645' },
-    cloud: { fly: { endpointHint: 'Paste a Fly.io Hermes proxy endpoint.' } },
+    cloud: { asciiBox: { command: 'hermes proxy start --host 0.0.0.0 --port 8645', endpointHint: 'Provision Hermes on Ascii Box from the native client.' } },
     capabilities: { chat: true, tools: true, memory: true, autonomousLoop: true, codeExecution: false, multimodal: false },
   },
   {
@@ -176,7 +299,7 @@ const AGENT_BACKENDS = [
       endpointHint: 'The web client remembers the CosyWorld endpoint in localStorage.',
     },
     launch: { command: 'cd ../cosyworld && WEB_PORT=3101 npm run dev', endpoint: 'http://localhost:3101' },
-    cloud: { fly: { command: 'cd ../cosyworld && fly launch --name swarm-cosyworld-runtime', endpointHint: 'Paste a Fly.io CosyWorld endpoint.' } },
+    cloud: { asciiBox: { command: 'cd ../cosyworld && HOST=0.0.0.0 WEB_PORT=3101 npm run dev', endpointHint: 'Provision CosyWorld on Ascii Box from the native client.' } },
     capabilities: { chat: true, tools: true, memory: true, autonomousLoop: true, codeExecution: false, multimodal: true },
   },
   {
@@ -211,25 +334,59 @@ function backendStatus(state: LocalState, avatarId?: string) {
     selectedBackend,
     configured: selectedBackend.id === 'swarm-native' || selectedBackend.authMode === 'local-process' || !selectedBackend.requiresEndpoint || Boolean(endpoint),
     endpoint,
-    hasApiKey: Boolean(stored.apiKey),
+    hasApiKey: false,
     deploymentTarget: stored.deploymentTarget,
     scope: avatarId ? { avatarId, label: `Avatar ${avatarId}` } : { label: 'New agents' },
     backends: AGENT_BACKENDS,
   };
 }
 
-function routeLocalApi(request: Request): Response | Promise<Response> | null {
+export function routeLocalApi(request: Request): Response | Promise<Response> | null {
   const url = new URL(request.url);
   if (!url.pathname.startsWith('/api')) return null;
 
   const path = url.pathname.slice('/api'.length) || '/';
   const method = request.method.toUpperCase();
-  const state = readState();
+  const state = readLocalWebState();
 
   if (path === '/health') return json({ ok: true, mode: 'web-local' });
   if (path === '/auth/me') return json(localUser());
   if (path === '/auth/logout' && method === 'POST') return json({ ok: true });
   if (path.startsWith('/oauth/twitter/status/')) return json({ connected: false });
+  if (path === '/hosting/status' && method === 'GET') {
+    return json(localHostingStatus(state));
+  }
+  if (path === '/hosting/substrates/status' && method === 'GET') {
+    return json(localHostingSubstratesStatus(state));
+  }
+  if (path === '/hosting/substrates/select' && method === 'POST') {
+    return readJson(request).then((body) => {
+      const provider = body.provider === 'fly' || body.provider === 'aws' || body.provider === 'ascii-box'
+        ? body.provider
+        : undefined;
+      if (!provider) return json({ error: 'provider must be fly, aws, or ascii-box' }, { status: 400 });
+      return json({ error: 'Native app required', status: localHostingSubstratesStatus(state) }, { status: 409 });
+    });
+  }
+  if (path === '/hosting/mode' && method === 'POST') {
+    return readJson(request).then((body) => {
+      if (body.mode === 'hosted') {
+        return json({
+          error: 'Hosted checkout and provisioning are not available in browser-local mode.',
+          status: localHostingStatus(state),
+        }, { status: 501 });
+      }
+      state.hostingMode = 'local';
+      writeState(state);
+      return json(localHostingStatus(state));
+    });
+  }
+  if (path === '/hosting/provision' && method === 'POST') {
+    return json({
+      error: 'Hosted checkout and provisioning are not available in browser-local mode.',
+      status: localHostingStatus(state),
+    }, { status: 501 });
+  }
 
   if (path.startsWith('/consent')) {
     const policyVersion = url.searchParams.get('policyVersion') || '1.3';
@@ -323,14 +480,10 @@ function routeLocalApi(request: Request): Response | Promise<Response> | null {
       return json({ success: true, status: 'paused' });
     }
     if (action === 'secrets' && method === 'POST') {
-      return readJson(request).then((body) => {
-        const key = String(body.key || '');
-        if (key) {
-          state.avatarSecrets[avatarId] = { ...(state.avatarSecrets[avatarId] ?? {}), [key]: String(body.value ?? '') };
-          writeState(state);
-        }
-        return json({ success: true });
-      });
+      return json({
+        error: 'The native app credential store is required for avatar secrets.',
+        code: 'NATIVE_CREDENTIAL_STORE_REQUIRED',
+      }, { status: 501 });
     }
     if (action === 'energy') return json({ avatarId, current: 100, max: 100, nextRefillIn: 0, refillPerHour: 0, baseRefillPerHour: 0, bonusRefillPerHour: 0, ownerTokenBalance: 0 });
     if (action === 'gallery') return json({ items: [] });
@@ -353,7 +506,10 @@ function routeLocalApi(request: Request): Response | Promise<Response> | null {
     return readJson(request).then((body) => {
       const avatarId = String(body.avatarId || 'global');
       const message = body.message as { role?: string; content?: string } | undefined;
-      state.chats[avatarId] = [...(state.chats[avatarId] ?? []), { role: message?.role || 'assistant', content: message?.content || '' }];
+      state.chats[avatarId] = [
+        ...(state.chats[avatarId] ?? []),
+        { role: message?.role || 'assistant', content: message?.content || '' },
+      ].slice(-MAX_CHAT_MESSAGES);
       writeState(state);
       return json({ history: state.chats[avatarId] });
     });
@@ -365,7 +521,11 @@ function routeLocalApi(request: Request): Response | Promise<Response> | null {
       const avatar = state.avatars.find((item) => item.avatarId === avatarId);
       const history = [...(body.history as Array<{ role: string; content: string }> || [])];
       const reply = defaultAssistantReply(message, avatar);
-      const nextHistory = [...history, { role: 'user', content: message }, { role: 'assistant', content: reply }];
+      const nextHistory = [
+        ...history,
+        { role: 'user', content: message },
+        { role: 'assistant', content: reply },
+      ].slice(-MAX_CHAT_MESSAGES);
       state.chats[avatarId] = nextHistory;
       writeState(state);
       return json({ response: reply, history: nextHistory });
@@ -373,38 +533,36 @@ function routeLocalApi(request: Request): Response | Promise<Response> | null {
   }
 
   if (path === '/llm/status') {
-    const provider = state.secrets['llm-provider'] as 'openrouter' | 'ollama' | undefined;
-    const hasOpenRouter = Boolean(state.secrets['llm-api-key']);
     return json({
-      configured: Boolean(provider === 'ollama' || hasOpenRouter),
-      provider: provider ?? null,
-      selectedProvider: provider ?? null,
-      openrouter: { configured: hasOpenRouter },
+      configured: false,
+      provider: null,
+      selectedProvider: null,
+      openrouter: { configured: false },
       ollama: { available: false, endpoint: 'http://localhost:11434/v1' },
+      credentialMigrationRequired: Boolean(state.credentialMigrationRequired),
     });
   }
   if (path === '/llm/provider' && method === 'POST') {
-    return readJson(request).then((body) => {
-      state.secrets['llm-provider'] = String(body.provider || '');
-      writeState(state);
-      return routeLocalApi(new Request(new URL('/api/llm/status', url.origin)))!;
-    });
+    return json({
+      error: 'The native app is required to configure an AI provider securely.',
+      code: 'NATIVE_CREDENTIAL_STORE_REQUIRED',
+    }, { status: 501 });
   }
   if (path === '/llm/provider' && method === 'DELETE') {
-    delete state.secrets['llm-provider'];
-    delete state.secrets['llm-api-key'];
-    writeState(state);
-    return routeLocalApi(new Request(new URL('/api/llm/status', url.origin)))!;
+    return json({ success: true });
   }
   if (path === '/secrets/llm-api-key') {
-    if (method === 'GET') return json({ exists: Boolean(state.secrets['llm-api-key']) });
-    if (method === 'PUT' || method === 'POST') {
-      return readJson(request).then((body) => {
-        state.secrets['llm-api-key'] = String(body.value || body.apiKey || '');
-        state.secrets['llm-provider'] = 'openrouter';
-        writeState(state);
-        return json({ success: true });
+    if (method === 'GET') {
+      return json({
+        exists: false,
+        credentialMigrationRequired: Boolean(state.credentialMigrationRequired),
       });
+    }
+    if (method === 'PUT' || method === 'POST') {
+      return json({
+        error: 'The native app credential store is required for provider API keys.',
+        code: 'NATIVE_CREDENTIAL_STORE_REQUIRED',
+      }, { status: 501 });
     }
   }
 
@@ -413,13 +571,18 @@ function routeLocalApi(request: Request): Response | Promise<Response> | null {
   }
   if (path === '/agent-backends/select' && method === 'POST') {
     return readJson(request).then((body) => {
+      if (typeof body.apiKey === 'string' && body.apiKey.trim()) {
+        return json({
+          error: 'The native app credential store is required for backend API keys.',
+          code: 'NATIVE_CREDENTIAL_STORE_REQUIRED',
+        }, { status: 501 });
+      }
       const avatarId = typeof body.avatarId === 'string' ? body.avatarId : undefined;
       const key = avatarId || 'global';
       state.agentBackends[key] = {
         backend: String(body.backend || 'swarm-native'),
         endpoint: typeof body.endpoint === 'string' ? body.endpoint : undefined,
-        apiKey: typeof body.apiKey === 'string' ? body.apiKey : state.agentBackends[key]?.apiKey,
-        deploymentTarget: body.deploymentTarget === 'fly' ? body.deploymentTarget : 'local',
+        deploymentTarget: body.deploymentTarget === 'ascii-box' ? body.deploymentTarget : 'local',
       };
       writeState(state);
       return json(backendStatus(state, avatarId));
@@ -429,6 +592,53 @@ function routeLocalApi(request: Request): Response | Promise<Response> | null {
     delete state.agentBackends[url.searchParams.get('avatarId') || 'global'];
     writeState(state);
     return json(backendStatus(state, url.searchParams.get('avatarId') || undefined));
+  }
+
+  if (path.startsWith('/compute/ascii-box/')) {
+    if (path === '/compute/ascii-box/onboarding/status' && method === 'GET') {
+      return json({
+        provider: 'ascii-box',
+        readyForApiProvisioning: false,
+        apiKeyConfigured: false,
+        cliInstalled: false,
+        installCommand: 'curl -fsSL https://box.ascii.dev/install | sh',
+        docsUrl: 'https://docs.ascii.dev/box/quickstart',
+        freeTrial: {
+          available: true,
+          days: 7,
+          detail: 'Ascii Box onboarding requires the native/local server.',
+        },
+      });
+    }
+    if (path === '/compute/ascii-box/onboarding/start' && method === 'POST') {
+      return json({
+        provider: 'ascii-box',
+        readyForApiProvisioning: false,
+        apiKeyConfigured: false,
+        cliInstalled: false,
+        installCommand: 'curl -fsSL https://box.ascii.dev/install | sh',
+        docsUrl: 'https://docs.ascii.dev/box/quickstart',
+        freeTrial: {
+          available: true,
+          days: 7,
+          detail: 'Ascii Box onboarding requires the native/local server.',
+        },
+        error: 'Ascii Box quickstart requires the native/local server.',
+      }, { status: 501 });
+    }
+    const backend = url.searchParams.get('backend') || 'swarm-native';
+    if (path.endsWith('/status') && method === 'GET') {
+      return json({
+        provider: 'ascii-box',
+        backend,
+        configured: false,
+        connected: false,
+        supported: false,
+        session: null,
+        error: 'Ascii Box provisioning requires the native/local server.',
+      });
+    }
+    return json({ error: 'Ascii Box provisioning requires the native/local server.' }, { status: 501 });
   }
 
   if (path.startsWith('/runtime/')) {

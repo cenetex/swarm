@@ -47,11 +47,10 @@ export { getAdminTable, _resetAdminTableCache };
 // ---------------------------------------------------------------------------
 // Dynamic import helper for @swarm/admin-api
 // ---------------------------------------------------------------------------
-// @swarm/admin-api is NOT listed in handlers' package.json to avoid pulling in
-// the full admin-api bundle as a static dependency.  At runtime the module is
-// resolved via pnpm workspace hoisting.  This single helper centralises the
-// the TS error suppression and the export-shape validation so every call
-// site stays DRY.
+// The dependency is declared explicitly so TypeScript and production packagers
+// resolve the same runtime graph. Dynamic loading still avoids initializing the
+// admin API until a platform MCP operation actually needs it. This helper
+// centralises export-shape validation so every call site stays DRY.
 // ---------------------------------------------------------------------------
 
 /** Cached module reference so we only import once per cold start. */
@@ -77,7 +76,6 @@ async function importAdminApiExport<T>(
   expectedType?: string,
 ): Promise<T> {
   if (!_adminApiModule) {
-    // @ts-expect-error -- resolved at runtime via pnpm workspace hoisting
     _adminApiModule = (await import('@swarm/admin-api')) as Record<string, unknown>;
   }
 

@@ -1,17 +1,19 @@
-// Test environment setup - preloaded before test files
+// Test environment setup - preloaded before test files.
 import { beforeEach } from 'bun:test';
 
-process.env.STATE_TABLE = process.env.STATE_TABLE || 'test-state-table';
 process.env.ADMIN_TABLE = process.env.ADMIN_TABLE || 'test-admin-table';
-process.env.MESSAGE_QUEUE_URL = process.env.MESSAGE_QUEUE_URL || 'https://sqs.us-east-1.amazonaws.com/123456789012/test-queue';
+process.env.STATE_TABLE = process.env.STATE_TABLE || 'test-state-table';
 process.env.MEDIA_BUCKET = process.env.MEDIA_BUCKET || 'test-media-bucket';
+process.env.LLM_API_KEY_SECRET_ARN = process.env.LLM_API_KEY_SECRET_ARN || 'test/llm-api-key';
 
 const stub = {
   config: {},
   destroy: () => {},
   send: async (command: { constructor?: { name?: string }; input?: Record<string, unknown> }) => {
     const name = command.constructor?.name ?? '';
-    if (name.startsWith('GetSecretValue')) return { SecretString: 'test-secret' };
+    if (name.startsWith('GetSecretValue')) {
+      return { SecretString: 'test-secret' };
+    }
     if (name.startsWith('GetQueueAttributes')) {
       return {
         Attributes: {

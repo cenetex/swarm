@@ -2,5 +2,17 @@ packages:
   - packages/*
   - avatars/*
 
+allowBuilds:
+  '@anthropic-ai/claude-code': true
+  better-sqlite3: true
+  bigint-buffer: true
+  bufferutil: true
+  esbuild: true
+  ffmpeg-static: true
+  node-llama-cpp: true
+  sharp: true
+  unrs-resolver: true
+  utf-8-validate: true
+
 ignoredBuiltDependencies:
   - '@anthropic-ai/claude-code'

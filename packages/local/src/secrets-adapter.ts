@@ -5,6 +5,12 @@
 import { LocalAdapter } from './adapter-base.js';
 import type { SecretsService } from '@swarm/core';
 
+type ManageableSecretsService = SecretsService & {
+  setSecret?: (name: string, value: string) => Promise<void>;
+  deleteSecret?: (name: string) => Promise<void>;
+  flush?: () => Promise<void>;
+};
+
 export class LocalSecretsAdapter extends LocalAdapter {
   constructor(private secrets: SecretsService) { super(); }
 
@@ -33,7 +39,8 @@ export class LocalSecretsAdapter extends LocalAdapter {
       const secretId = input.SecretId as string;
       const secretString = input.SecretString as string;
       if (secretId && secretString) {
-        try { await this.secrets.setSecret(secretId, secretString); await this.secrets.flush(); } catch { /* ok */ }
+        const secrets = this.secrets as ManageableSecretsService;
+        try { await secrets.setSecret?.(secretId, secretString); await secrets.flush?.(); } catch { /* ok */ }
       }
       return { $metadata: { httpStatusCode: 200 } };
     }
@@ -41,7 +48,8 @@ export class LocalSecretsAdapter extends LocalAdapter {
     if (name.startsWith('DeleteSecret')) {
       const secretId = input.SecretId as string;
       if (secretId) {
-        try { await this.secrets.deleteSecret(secretId); await this.secrets.flush(); } catch { /* ok */ }
+        const secrets = this.secrets as ManageableSecretsService;
+        try { await secrets.deleteSecret?.(secretId); await secrets.flush?.(); } catch { /* ok */ }
       }
       return { $metadata: { httpStatusCode: 200 } };
     }

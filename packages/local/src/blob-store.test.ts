@@ -76,7 +76,7 @@ describe('LocalBlobStore', () => {
       const stream = store.createReadStream("stream-test.txt");
       expect(stream).not.toBeNull();
       const chunks: Buffer[] = [];
-      stream!.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream!.on("data", (chunk: string | Buffer) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
       stream!.on("end", () => {
         expect(Buffer.concat(chunks).toString()).toBe("streaming data");
       });

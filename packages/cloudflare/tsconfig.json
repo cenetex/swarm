@@ -1,15 +1,15 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "composite": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "types": ["node", "bun"]
+    "lib": ["ES2022", "WebWorker"],
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
-  "include": ["src"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"],
   "references": [
-    { "path": "../core" },
-    { "path": "../admin-api" },
-    { "path": "../mcp-server" }
+    { "path": "../core" }
   ]
 }

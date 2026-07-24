@@ -12,10 +12,41 @@ import { isOllamaAvailable, getOllamaModel, getOllamaEndpoint } from "./llm-olla
 import { getRatiBalance, getSolBalance } from "./rati-auto-bridge.js";
 import { createLocalServices } from './factories.js';
 import { RuntimeSupervisor } from './runtime-supervisor.js';
+import {
+  AWS_MANAGED_SWARM_STARTER_PLAN,
+  parseHostingStatus,
+  type HostingStatus,
+  type ManagedSwarmInstance,
+  type SwarmRunMode,
+} from '@swarm/core';
+import {
+  AsciiBoxApiError,
+  AsciiBoxClient,
+  firstUrlFromText,
+  parseAsciiBoxCliOnboardingOutput,
+  parsePortFromEndpoint,
+  redactAsciiBoxText,
+  redactAsciiBoxUrl,
+  sanitizeAsciiBoxForClient,
+  shellSingleQuote,
+  type AsciiBoxSession,
+  type AsciiBoxState,
+} from './ascii-box-provider.js';
 import { LocalS3Adapter } from './s3-adapter.js';
 import { LocalSQSAdapter } from './sqs-adapter.js';
 import { LocalSecretsAdapter } from './secrets-adapter.js';
 import { LocalLambdaAdapter } from './lambda-adapter.js';
+import {
+  createLocalLlamaEmbeddingService,
+  localLlamaEmbeddingsEnabled,
+  type LocalEmbeddingService,
+} from './llama-embedding.js';
+import {
+  createLocalLlamaChatService,
+  localLlamaChatEnabled,
+  type LocalChatCompletionRequest,
+  type LocalLlamaChatService,
+} from './llama-chat.js';
 import type { UserSession } from '@swarm/admin-api';
 
 export { createLocalServices } from './factories.js';
@@ -257,6 +288,7 @@ export async function initSecrets(
  */
 export async function injectLocalAdapters(
   services: ReturnType<typeof createLocalServices>,
+  embeddingService?: LocalEmbeddingService,
 ): Promise<void> {
   const { _setDynamoClient } = await import('../../admin-api/src/services/dynamo-client.js');
   _setDynamoClient(services.dynamoAdapter);
@@ -280,6 +312,16 @@ export async function injectLocalAdapters(
     if (typeof fn === 'function') { fn(adapter); injected++; }
   }
   if (injected > 0) console.log(`[local] Core setters injected (${injected})`);
+
+  if (embeddingService) {
+    const coreEmbeddingSetter = (core as Record<string, unknown>)._setEmbeddingService;
+    if (typeof coreEmbeddingSetter === 'function') {
+      coreEmbeddingSetter(embeddingService);
+    }
+    const adminEmbedding = await import('../../admin-api/src/services/embedding.js');
+    adminEmbedding._setEmbeddingService(embeddingService);
+    console.log(`[local] Embedded llama.cpp embeddings enabled (${embeddingService.modelId})`);
+  }
 }
 
 
@@ -292,24 +334,19 @@ export async function startServer(options: ServerOptions = {}) {
   setupLocalEnv();
 
 
-  // ── Ollama fallback (detect before any LLM imports) ──────────
-  const ollamaAvailable = await isOllamaAvailable();
-  if (ollamaAvailable && !process.env.LLM_API_KEY && !process.env.OPENROUTER_API_KEY) {
-    const ollamaModel = await getOllamaModel();
-    if (ollamaModel) {
-      process.env.LLM_ENDPOINT = getOllamaEndpoint();
-      process.env.LLM_API_KEY = "ollama";
-      process.env.LLM_MODEL = ollamaModel;
-      console.log(`[local] Ollama detected — using model "${ollamaModel}" at ${process.env.LLM_ENDPOINT}`);
-    }
-  }
-
   // ── Create local backends ──────────────────────────────────────────
   const services = createLocalServices({
     dbPath,
     blobDir: dataDir,
     blobBaseUrl: `http://localhost:${port}/blobs`,
   });
+  const embeddingService = localLlamaEmbeddingsEnabled()
+    ? createLocalLlamaEmbeddingService()
+    : undefined;
+  const chatService = localLlamaChatEnabled()
+    ? createLocalLlamaChatService()
+    : undefined;
+  const embeddedLlmEndpoint = chatService?.endpoint(port, host);
 
   // ── Unlock secrets ─────────────────────────────────────────────────
   const secretsResult = await initSecrets(services, {
@@ -330,7 +367,29 @@ export async function startServer(options: ServerOptions = {}) {
   }
   console.log(`[local] Secrets ${secretsResult.outcome}`);
 
-  await injectLocalAdapters(services);
+  // ── Local LLM fallback (set before admin LLM imports) ──────────────
+  const selectedLlmProvider = await services.secrets.getSecret('llm-provider').catch(() => null);
+  if (!process.env.LLM_API_KEY && !process.env.OPENROUTER_API_KEY) {
+    if ((selectedLlmProvider === 'embedded' || !selectedLlmProvider) && chatService && embeddedLlmEndpoint) {
+      process.env.LLM_ENDPOINT = embeddedLlmEndpoint;
+      process.env.LLM_API_KEY = 'embedded';
+      process.env.LLM_MODEL = chatService.modelId;
+      console.log(`[local] Embedded llama.cpp chat enabled (${chatService.modelId}) at ${embeddedLlmEndpoint}`);
+    } else if (selectedLlmProvider === 'ollama' || (!selectedLlmProvider && !chatService)) {
+      const ollamaAvailable = await isOllamaAvailable();
+      if (ollamaAvailable) {
+        const ollamaModel = await getOllamaModel();
+        if (ollamaModel) {
+          process.env.LLM_ENDPOINT = getOllamaEndpoint();
+          process.env.LLM_API_KEY = "ollama";
+          process.env.LLM_MODEL = ollamaModel;
+          console.log(`[local] Ollama detected — using model "${ollamaModel}" at ${process.env.LLM_ENDPOINT}`);
+        }
+      }
+    }
+  }
+
+  await injectLocalAdapters(services, embeddingService);
 
   // ── Express ────────────────────────────────────────────────────────
   const app = express();
@@ -627,7 +686,7 @@ export async function startServer(options: ServerOptions = {}) {
 
   // ── Admin API routes ───────────────────────────────────────────────
   try {
-    await mountAdminRoutes(app, services);
+    await mountAdminRoutes(app, services, undefined, embeddingService, chatService, embeddedLlmEndpoint);
   } catch (err) {
     console.warn('[local] Admin API routes unavailable:', (err as Error).message);
     mountStubRoutes(app);
@@ -646,55 +705,6 @@ export async function startServer(options: ServerOptions = {}) {
     if (message) pushLog("ERROR", `[UI] ${message}${stack ? " | " + stack.split("\\n").slice(0, 2).join(" <- ") : ""} (at ${url || "unknown"})`);
     res.json({ ok: true });
   });
-
-
-  // ── Signal integration: export avatar keypair ──────────────────────
-  app.get("/api/signal/keypair", async (_req, res) => {
-    try {
-      // Use stored identity from avatar creation
-      if (!_signalState.latestAvatarId || !_signalState.latestIdentity) {
-        res.status(404).json({ error: "No avatar found. Create one first." });
-        return;
-      }
-      const avatarId = _signalState.latestAvatarId;
-      const identity = _signalState.latestIdentity;
-
-      // Try to read the seed from secrets service
-      let seedB64: string | undefined;
-      try {
-        const { GetSecretValueCommand } = await import("@swarm/core");
-        const { getSecretsClient } = await import("../../admin-api/src/services/aws-clients.js");
-        const secretsClient = getSecretsClient();
-        const response = await secretsClient.send(new GetSecretValueCommand({
-          SecretId: `avatar/${avatarId}/identity-seed`
-        }));
-        if (response.SecretString) {
-          seedB64 = response.SecretString as string;
-        }
-      } catch {
-        // Fall through to legacy path
-      }
-
-      // Legacy: use encryptedSeed from the identity record
-      if (!seedB64 && identity.encryptedSeed) {
-        seedB64 = identity.encryptedSeed;
-      }
-
-      if (!seedB64) {
-        res.status(404).json({ error: "No identity keypair found. Create an avatar first." });
-        return;
-      }
-
-      res.json({
-        avatarId,
-        pubkey: identity.pubkey || _signalState.latestPubkey,
-        seedBase64: seedB64,
-      });
-    } catch (err) {
-      res.status(500).json({ error: (err as Error).message });
-    }
-  });
-
 
 
 
@@ -767,7 +777,7 @@ type AgentBackendId =
   | 'cosyworld'
   | 'custom';
 type AgentBackendAuthMode = 'none' | 'api-key' | 'oauth' | 'local-process';
-type AgentRuntimeDeploymentTarget = 'local' | 'fly';
+type AgentRuntimeDeploymentTarget = 'local' | 'ascii-box';
 type AgentBackendCapabilities = {
   chat: boolean;
   tools: boolean;
@@ -797,12 +807,23 @@ type AgentBackendDefinition = {
     docker?: { command: string; endpoint?: string };
   };
   cloud?: {
-    fly?: {
+    asciiBox?: {
       command?: string;
       endpointHint: string;
     };
   };
   capabilities: AgentBackendCapabilities;
+};
+type AsciiBoxComputeStatus = {
+  provider: 'ascii-box';
+  backend: AgentBackendId;
+  configured: boolean;
+  connected: boolean;
+  supported: boolean;
+  session: AsciiBoxSession | null;
+  endpoint?: string;
+  box?: ReturnType<typeof sanitizeAsciiBoxForClient>;
+  error?: string;
 };
 type AgentBackendStatus = {
   selected: AgentBackendId;
@@ -811,12 +832,35 @@ type AgentBackendStatus = {
   endpoint?: string;
   hasApiKey: boolean;
   deploymentTarget: AgentRuntimeDeploymentTarget;
+  compute?: {
+    asciiBox?: AsciiBoxComputeStatus;
+  };
   scope: {
     avatarId?: string;
     label: string;
   };
   backends: AgentBackendDefinition[];
 };
+
+type HostingMode = SwarmRunMode;
+type HostingSubstrateProvider = 'fly' | 'aws' | 'ascii-box';
+type HostingSubstrateProviderStatus = {
+  id: HostingSubstrateProvider;
+  label: string;
+  cliInstalled: boolean;
+  authenticated: boolean;
+  enabled: boolean;
+  detail: string;
+  account?: string;
+  loginCommand: string;
+  connectUrl?: string;
+  connectLabel?: string;
+};
+type HostingSubstratesStatus = {
+  selected?: HostingSubstrateProvider;
+  providers: HostingSubstrateProviderStatus[];
+};
+type LocalLlmProvider = 'embedded' | 'openrouter' | 'ollama';
 
 const AGENT_BACKENDS: AgentBackendDefinition[] = [
   {
@@ -864,9 +908,9 @@ const AGENT_BACKENDS: AgentBackendDefinition[] = [
       },
     },
     cloud: {
-      fly: {
-        command: 'fly launch --name swarm-hermes-runtime && fly secrets set HERMES_TOKEN=...',
-        endpointHint: 'Deploy a Hermes proxy to Fly.io, then paste the https://*.fly.dev endpoint.',
+      asciiBox: {
+        command: 'hermes proxy start --host 0.0.0.0 --port 8645',
+        endpointHint: 'Provision a Box and Swarm will start the Hermes proxy and attach the hosted endpoint automatically.',
       },
     },
     capabilities: {
@@ -904,9 +948,9 @@ const AGENT_BACKENDS: AgentBackendDefinition[] = [
       },
     },
     cloud: {
-      fly: {
-        command: 'fly launch --name swarm-elizaos-runtime',
-        endpointHint: 'Deploy the elizaOS service to Fly.io, then paste the app endpoint.',
+      asciiBox: {
+        command: 'HOST=0.0.0.0 elizaos start',
+        endpointHint: 'Provision a Box and Swarm will start elizaOS and attach the hosted endpoint automatically.',
       },
     },
     capabilities: {
@@ -1045,9 +1089,9 @@ const AGENT_BACKENDS: AgentBackendDefinition[] = [
       },
     },
     cloud: {
-      fly: {
-        command: 'cd ../cosyworld && fly launch --name swarm-cosyworld-runtime',
-        endpointHint: 'Deploy ../cosyworld to Fly.io, then paste the Fly app endpoint.',
+      asciiBox: {
+        command: 'cd ../cosyworld && HOST=0.0.0.0 WEB_PORT=3101 npm run dev',
+        endpointHint: 'Provision a Box and Swarm will start CosyWorld and attach the hosted endpoint automatically.',
       },
     },
     capabilities: {
@@ -1095,7 +1139,113 @@ function getDefaultAgentBackendEndpoint(definition: AgentBackendDefinition): str
 }
 
 function isAgentRuntimeDeploymentTarget(value: unknown): value is AgentRuntimeDeploymentTarget {
-  return value === 'local' || value === 'fly';
+  return value === 'local' || value === 'ascii-box';
+}
+
+const HOSTING_MODE_SECRET = 'hosting:global:mode';
+const AWS_MANAGED_INSTANCE_SECRET = 'hosting:global:aws-managed-instance';
+const HOSTING_SUBSTRATE_SECRET = 'hosting:global:substrate';
+
+function hostedEntitlementActive(): boolean {
+  return process.env.SWARM_HOSTED_ENTITLEMENT_ACTIVE === '1';
+}
+
+function isHostingSubstrateProvider(value: unknown): value is HostingSubstrateProvider {
+  return value === 'fly' || value === 'aws' || value === 'ascii-box';
+}
+
+async function readAwsManagedInstance(services: LocalServices): Promise<ManagedSwarmInstance | undefined> {
+  const raw = await readFirstSecretOrNull(services, [AWS_MANAGED_INSTANCE_SECRET]);
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as ManagedSwarmInstance;
+    if (parsed.provider !== 'aws' || parsed.architecture !== 'aws-managed-ec2-pool') return undefined;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+async function readActiveAwsManagedInstance(services: LocalServices): Promise<ManagedSwarmInstance | undefined> {
+  if (!hostedEntitlementActive()) return undefined;
+  const persisted = await readAwsManagedInstance(services);
+  const endpoint = process.env.SWARM_HOSTED_INSTANCE_ENDPOINT?.trim();
+  const instanceId = process.env.SWARM_HOSTED_INSTANCE_ID?.trim();
+  if (!endpoint || !instanceId) {
+    if (
+      persisted?.status === 'running'
+      && persisted.endpoint
+      && persisted.instanceId
+    ) {
+      return persisted;
+    }
+    return undefined;
+  }
+  const now = Date.now();
+  return {
+    provider: 'aws',
+    architecture: 'aws-managed-ec2-pool',
+    planId: AWS_MANAGED_SWARM_STARTER_PLAN.id,
+    status: 'running',
+    requestedAt: persisted?.requestedAt ?? now,
+    updatedAt: now,
+    region: process.env.SWARM_AWS_HOSTED_REGION || process.env.AWS_REGION || persisted?.region || 'us-east-1',
+    tenantId: process.env.SWARM_HOSTED_TENANT_ID || persisted?.tenantId || 'local-dev',
+    instanceId,
+    endpoint,
+  };
+}
+
+async function readHostingMode(services: LocalServices): Promise<HostingMode> {
+  return (await readFirstSecretOrNull(services, [HOSTING_MODE_SECRET])) === 'hosted' ? 'hosted' : 'local';
+}
+
+async function writeHostingMode(services: LocalServices, mode: HostingMode): Promise<void> {
+  await services.secrets.setSecret(HOSTING_MODE_SECRET, mode);
+  await services.secrets.flush();
+}
+
+async function readHostingSubstrate(services: LocalServices): Promise<HostingSubstrateProvider | undefined> {
+  const value = await readFirstSecretOrNull(services, [HOSTING_SUBSTRATE_SECRET]);
+  return isHostingSubstrateProvider(value) ? value : undefined;
+}
+
+async function writeHostingSubstrate(services: LocalServices, provider: HostingSubstrateProvider): Promise<void> {
+  await services.secrets.setSecret(HOSTING_SUBSTRATE_SECRET, provider);
+  await services.secrets.flush();
+}
+
+async function getHostingStatus(services: LocalServices, mode?: HostingMode): Promise<HostingStatus> {
+  const requestedMode = mode ?? await readHostingMode(services);
+  const entitlement = hostedEntitlementActive() ? 'active' as const : 'none' as const;
+  const instance = await readActiveAwsManagedInstance(services);
+  const hostedActive = Boolean(instance);
+  return parseHostingStatus({
+    mode: requestedMode === 'hosted' && hostedActive ? 'hosted' : 'local',
+    local: {
+      available: true,
+      running: requestedMode !== 'hosted' || !hostedActive,
+      label: 'This device',
+      detail: 'Runs while the app is open. Uses local encrypted storage and local runtime supervision.',
+    },
+    hosted: {
+      available: hostedActive,
+      configured: hostedActive,
+      label: AWS_MANAGED_SWARM_STARTER_PLAN.label,
+      priceUsdMonthly: AWS_MANAGED_SWARM_STARTER_PLAN.priceUsdMonthly,
+      provider: 'aws',
+      architecture: AWS_MANAGED_SWARM_STARTER_PLAN.architecture,
+      status: hostedActive ? 'active' : 'not-configured',
+      entitlement,
+      plan: AWS_MANAGED_SWARM_STARTER_PLAN,
+      ...(instance ? { instance } : {}),
+      detail: hostedActive
+        ? 'Hosted entitlement and runtime health are confirmed.'
+        : entitlement === 'active'
+          ? 'Hosted entitlement is active, but no healthy provisioned runtime is configured.'
+          : 'Hosted checkout and provisioning are not connected in this build.',
+    },
+  });
 }
 
 function normalizeAvatarScope(value: unknown): string | undefined {
@@ -1125,6 +1275,10 @@ function runtimeSupervisorKey(backend: AgentBackendId, avatarId?: string): strin
   return avatarId ? `${avatarId}:${backend}` : backend;
 }
 
+function asciiBoxSessionSecretKey(backend: AgentBackendId, avatarId?: string): string {
+  return avatarId ? `compute:${avatarId}:${backend}:ascii-box` : `compute:global:${backend}:ascii-box`;
+}
+
 async function readFirstSecretOrNull(services: LocalServices, names: string[]): Promise<string | null> {
   for (const name of names) {
     try {
@@ -1135,6 +1289,462 @@ async function readFirstSecretOrNull(services: LocalServices, names: string[]): 
     }
   }
   return null;
+}
+
+async function getAsciiBoxApiKey(services: LocalServices): Promise<string | null> {
+  const envKey = (process.env.ASCII_BOX_API_KEY || process.env.BOX_API_KEY || '').trim();
+  if (envKey) return envKey;
+  return readFirstSecretOrNull(services, [
+    'ASCII_BOX_API_KEY',
+    'BOX_API_KEY',
+    'ascii-box-api-key',
+    'box-api-key',
+  ]);
+}
+
+function createAsciiBoxClient(apiKey: string): AsciiBoxClient {
+  return new AsciiBoxClient({
+    apiKey,
+    baseUrl: process.env.ASCII_BOX_API_BASE || process.env.BOX_API_BASE,
+  });
+}
+
+const ASCII_BOX_INSTALL_COMMAND = 'curl -fsSL https://box.ascii.dev/install | sh';
+const ASCII_BOX_QUICKSTART_URL = 'https://docs.ascii.dev/box/quickstart';
+
+type ExecFileTextResult = {
+  stdout: string;
+  stderr: string;
+  success: boolean;
+  timedOut: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+};
+
+function execFileText(file: string, args: string[], timeoutMs: number): Promise<ExecFileTextResult> {
+  return new Promise((resolve) => {
+    execFile(
+      file,
+      args,
+      {
+        timeout: timeoutMs,
+        maxBuffer: 1024 * 1024,
+        env: { ...process.env, NO_COLOR: '1' },
+      },
+      (err, stdout, stderr) => {
+        const childErr = err as (Error & { code?: string | number; killed?: boolean; signal?: string }) | null;
+        resolve({
+          stdout: String(stdout ?? ''),
+          stderr: String(stderr ?? ''),
+          success: !err,
+          timedOut: Boolean(childErr?.killed || childErr?.signal === 'SIGTERM'),
+          ...(typeof childErr?.code === 'string' ? { errorCode: childErr.code } : {}),
+          ...(childErr ? { errorMessage: childErr.message } : {}),
+        });
+      },
+    );
+  });
+}
+
+async function asciiBoxCliInstalled(): Promise<boolean> {
+  const result = await execFileText('box', ['--version'], 2500);
+  return result.success || Boolean(`${result.stdout}\n${result.stderr}`.match(/\bbox\b/i));
+}
+
+function runMacTerminalCommand(command: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const escaped = command.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const script = `tell application "Terminal"\n  activate\n  do script "${escaped}"\nend tell`;
+    execFile('osascript', ['-e', script], (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+async function asciiBoxOnboardingStatus(services: LocalServices) {
+  const apiKey = await getAsciiBoxApiKey(services);
+  const cliInstalled = await asciiBoxCliInstalled();
+  return {
+    provider: 'ascii-box',
+    readyForApiProvisioning: Boolean(apiKey),
+    apiKeyConfigured: Boolean(apiKey),
+    cliInstalled,
+    installCommand: ASCII_BOX_INSTALL_COMMAND,
+    docsUrl: ASCII_BOX_QUICKSTART_URL,
+    freeTrial: {
+      available: true,
+      days: 7,
+      detail: 'Ascii Box onboarding uses browser-based GitHub sign-in and checkout for the free trial.',
+    },
+  };
+}
+
+function compactCommandOutput(result: ExecFileTextResult): string {
+  return redactAsciiBoxText(`${result.stdout}\n${result.stderr}`.trim()).split(/\r?\n/).find(Boolean) ?? '';
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function awsSubstrateStatus(): Promise<HostingSubstrateProviderStatus> {
+  const setup = {
+    loginCommand: 'aws sso login',
+    connectUrl: 'https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html',
+    connectLabel: 'Connect AWS',
+  };
+  const result = await execFileText('aws', ['sts', 'get-caller-identity', '--output', 'json'], 4_000);
+  if (result.success) {
+    const parsed = parseJsonObject(result.stdout);
+    const account = typeof parsed?.Account === 'string' ? parsed.Account : undefined;
+    const arn = typeof parsed?.Arn === 'string' ? parsed.Arn : undefined;
+    return {
+      id: 'aws',
+      label: 'AWS',
+      cliInstalled: true,
+      authenticated: true,
+      enabled: true,
+      detail: account ? `Signed in as ${account}` : 'Signed in locally',
+      ...(account || arn ? { account: account ?? arn } : {}),
+      ...setup,
+    };
+  }
+  const cliInstalled = result.errorCode !== 'ENOENT';
+  return {
+    id: 'aws',
+    label: 'AWS',
+    cliInstalled,
+    authenticated: false,
+    enabled: false,
+    detail: cliInstalled ? compactCommandOutput(result) || 'Not signed in locally' : 'AWS CLI not found',
+    ...setup,
+  };
+}
+
+async function flySubstrateStatus(): Promise<HostingSubstrateProviderStatus> {
+  const setup = {
+    loginCommand: 'fly auth login',
+    connectUrl: 'https://fly.io/docs/flyctl/auth-login/',
+    connectLabel: 'Connect Fly',
+  };
+  let result = await execFileText('fly', ['auth', 'whoami'], 4_000);
+  let cliInstalled = result.errorCode !== 'ENOENT';
+  if (!cliInstalled) {
+    result = await execFileText('flyctl', ['auth', 'whoami'], 4_000);
+    cliInstalled = result.errorCode !== 'ENOENT';
+  }
+  if (result.success) {
+    const account = compactCommandOutput(result);
+    return {
+      id: 'fly',
+      label: 'Fly',
+      cliInstalled: true,
+      authenticated: true,
+      enabled: true,
+      detail: account ? `Signed in as ${account}` : 'Signed in locally',
+      ...(account ? { account } : {}),
+      ...setup,
+    };
+  }
+  return {
+    id: 'fly',
+    label: 'Fly',
+    cliInstalled,
+    authenticated: false,
+    enabled: false,
+    detail: cliInstalled ? compactCommandOutput(result) || 'Not signed in locally' : 'Fly CLI not found',
+    ...setup,
+  };
+}
+
+async function asciiBoxSubstrateStatus(services: LocalServices): Promise<HostingSubstrateProviderStatus> {
+  const setup = {
+    loginCommand: 'box login',
+    connectUrl: 'https://docs.ascii.dev/box/quickstart',
+    connectLabel: 'Connect Box',
+  };
+  const apiKey = await getAsciiBoxApiKey(services);
+  if (apiKey) {
+    return {
+      id: 'ascii-box',
+      label: 'Ascii Box',
+      cliInstalled: await asciiBoxCliInstalled(),
+      authenticated: true,
+      enabled: true,
+      detail: 'Signed in locally',
+      ...setup,
+    };
+  }
+
+  const cliInstalled = await asciiBoxCliInstalled();
+  if (!cliInstalled) {
+    return {
+      id: 'ascii-box',
+      label: 'Ascii Box',
+      cliInstalled: false,
+      authenticated: false,
+      enabled: false,
+      detail: 'Box CLI not found',
+      ...setup,
+    };
+  }
+
+  let last: ExecFileTextResult | undefined;
+  for (const args of [['whoami', '--json'], ['auth', 'status', '--json']]) {
+    last = await execFileText('box', args, 4_000);
+    if (!last.success) continue;
+    const parsed = parseJsonObject(last.stdout);
+    const account = ['email', 'username', 'user', 'id']
+      .map((key) => parsed?.[key])
+      .find((value): value is string => typeof value === 'string' && value.length > 0);
+    return {
+      id: 'ascii-box',
+      label: 'Ascii Box',
+      cliInstalled: true,
+      authenticated: true,
+      enabled: true,
+      detail: account ? `Signed in as ${account}` : 'Signed in locally',
+      ...(account ? { account } : {}),
+      ...setup,
+    };
+  }
+
+  return {
+    id: 'ascii-box',
+    label: 'Ascii Box',
+    cliInstalled: true,
+    authenticated: false,
+    enabled: false,
+    detail: last ? compactCommandOutput(last) || 'Not signed in locally' : 'Not signed in locally',
+    ...setup,
+  };
+}
+
+async function getHostingSubstratesStatus(services: LocalServices): Promise<HostingSubstratesStatus> {
+  const [selected, fly, aws, asciiBox] = await Promise.all([
+    readHostingSubstrate(services),
+    flySubstrateStatus(),
+    awsSubstrateStatus(),
+    asciiBoxSubstrateStatus(services),
+  ]);
+  return {
+    ...(selected ? { selected } : {}),
+    providers: [fly, aws, asciiBox],
+  };
+}
+
+function isRunnableAsciiBoxState(state: AsciiBoxState): boolean {
+  return state === 'ready' || state === 'idle';
+}
+
+async function readAsciiBoxSession(
+  services: LocalServices,
+  backend: AgentBackendId,
+  avatarId?: string,
+): Promise<AsciiBoxSession | null> {
+  const raw = await readFirstSecretOrNull(services, [asciiBoxSessionSecretKey(backend, avatarId)]);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as AsciiBoxSession;
+    if (parsed.provider !== 'ascii-box' || parsed.backend !== backend || !parsed.boxId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function writeAsciiBoxSession(
+  services: LocalServices,
+  session: AsciiBoxSession,
+  avatarId?: string,
+): Promise<void> {
+  await services.secrets.setSecret(
+    asciiBoxSessionSecretKey(session.backend as AgentBackendId, avatarId),
+    JSON.stringify({ ...session, updatedAt: Date.now() }),
+  );
+}
+
+async function deleteAsciiBoxSession(
+  services: LocalServices,
+  backend: AgentBackendId,
+  avatarId?: string,
+): Promise<void> {
+  await services.secrets.deleteSecret(asciiBoxSessionSecretKey(backend, avatarId)).catch(() => undefined);
+}
+
+function safeAsciiError(err: unknown): { status: number; code?: string; message: string } {
+  if (err instanceof AsciiBoxApiError) {
+    return {
+      status: err.status,
+      code: err.code,
+      message: redactAsciiBoxText(err.message),
+    };
+  }
+  return {
+    status: 500,
+    message: err instanceof Error ? redactAsciiBoxText(err.message) : 'Ascii Box request failed',
+  };
+}
+
+function asciiBoxEndpointForClient(endpoint: string | undefined): string | undefined {
+  return endpoint ? redactAsciiBoxUrl(endpoint) : undefined;
+}
+
+function asciiBoxSessionForClient(session: AsciiBoxSession): AsciiBoxSession {
+  return {
+    ...session,
+    endpoint: asciiBoxEndpointForClient(session.endpoint),
+  };
+}
+
+async function maybeEnsureAsciiBoxRuntimeEndpoint(params: {
+  services: LocalServices;
+  client: AsciiBoxClient;
+  backend: AgentBackendId;
+  avatarId?: string;
+  session: AsciiBoxSession;
+}): Promise<AsciiBoxSession> {
+  const definition = getAgentBackendDefinition(params.backend);
+  const command = definition.cloud?.asciiBox?.command ?? definition.launch?.command;
+  const port = parsePortFromEndpoint(definition.launch?.endpoint);
+  if (!command || !port || params.session.endpoint) return params.session;
+
+  const now = Date.now();
+  if (params.session.launchAttemptedAt && now - params.session.launchAttemptedAt < 60_000) {
+    return params.session;
+  }
+
+  let next: AsciiBoxSession = {
+    ...params.session,
+    launchAttemptedAt: now,
+    lastError: undefined,
+  };
+
+  try {
+    const logPath = `/tmp/swarm-runtime-${params.backend}.log`;
+    const detached = `sh -lc ${shellSingleQuote(`nohup ${command} >${logPath} 2>&1 < /dev/null & echo started`)}`;
+    const launchResult = await params.client.command(params.session.boxId, detached, { timeoutSeconds: 10 });
+    if (launchResult.success === false) {
+      throw new Error(launchResult.stderr || launchResult.stdout || 'runtime launch command failed');
+    }
+
+    const title = `Swarm ${definition.name}`;
+    const hostResult = await params.client.command(
+      params.session.boxId,
+      `host ${port} --title ${shellSingleQuote(title)}`,
+      { timeoutSeconds: 30 },
+    );
+    if (hostResult.success === false) {
+      throw new Error(hostResult.stderr || hostResult.stdout || 'host command failed');
+    }
+
+    const hostedUrl = firstUrlFromText(`${hostResult.stdout ?? ''}\n${hostResult.stderr ?? ''}`);
+    if (!hostedUrl) {
+      throw new Error('host command did not return a URL');
+    }
+
+    next = {
+      ...next,
+      endpoint: hostedUrl,
+      hostedPort: port,
+      runtimeStartedAt: now,
+      lastError: undefined,
+    };
+    await params.services.secrets.setSecret(agentRuntimeSecretKey('agent-backend-endpoint', params.avatarId), hostedUrl);
+    await params.services.secrets.setSecret(runtimeSecretKey('endpoint', params.backend, params.avatarId), hostedUrl);
+  } catch (err) {
+    next = {
+      ...next,
+      lastError: safeAsciiError(err).message,
+    };
+  }
+
+  return next;
+}
+
+async function asciiBoxStatusPayload(
+  services: LocalServices,
+  backend: AgentBackendId,
+  avatarId?: string,
+): Promise<AsciiBoxComputeStatus> {
+  const apiKey = await getAsciiBoxApiKey(services);
+  const configured = Boolean(apiKey);
+  const session = await readAsciiBoxSession(services, backend, avatarId);
+  if (!session) {
+    return {
+      provider: 'ascii-box',
+      backend,
+      configured,
+      connected: configured,
+      supported: true,
+      session: null,
+    };
+  }
+
+  if (!apiKey) {
+    const clientSession = asciiBoxSessionForClient(session);
+    return {
+      provider: 'ascii-box',
+      backend,
+      configured: false,
+      connected: false,
+      supported: true,
+      session: clientSession,
+      endpoint: clientSession.endpoint,
+      error: 'Ascii Box API key is not configured.',
+    };
+  }
+
+  try {
+    const client = createAsciiBoxClient(apiKey);
+    const box = await client.getBox(session.boxId);
+    let next: AsciiBoxSession = {
+      ...session,
+      state: box.state,
+      updatedAt: Date.now(),
+    };
+    if (isRunnableAsciiBoxState(box.state)) {
+      next = await maybeEnsureAsciiBoxRuntimeEndpoint({ services, client, backend, avatarId, session: next });
+    }
+    await writeAsciiBoxSession(services, next, avatarId);
+    await services.secrets.flush();
+    return {
+      provider: 'ascii-box',
+      backend,
+      configured: true,
+      connected: true,
+      supported: true,
+      session: asciiBoxSessionForClient(next),
+      endpoint: asciiBoxEndpointForClient(next.endpoint),
+      box: sanitizeAsciiBoxForClient(box),
+      ...(next.lastError ? { error: next.lastError } : {}),
+    };
+  } catch (err) {
+    const safe = safeAsciiError(err);
+    const next = {
+      ...session,
+      lastError: safe.message,
+      updatedAt: Date.now(),
+    };
+    await writeAsciiBoxSession(services, next, avatarId);
+    await services.secrets.flush();
+    return {
+      provider: 'ascii-box',
+      backend,
+      configured: true,
+      connected: false,
+      supported: true,
+      session: asciiBoxSessionForClient(next),
+      endpoint: asciiBoxEndpointForClient(next.endpoint),
+      error: safe.message,
+    };
+  }
 }
 
 function localAppOrigins(port: number): Set<string> {
@@ -1323,6 +1933,13 @@ async function getLocalAgentBackendStatus(
 
   const selectedBackend = getAgentBackendDefinition(selected);
   endpoint = endpoint || (deploymentTarget === 'local' ? getDefaultAgentBackendEndpoint(selectedBackend) : undefined);
+  const asciiBox = deploymentTarget === 'ascii-box'
+    ? await asciiBoxStatusPayload(services, selected, avatarId)
+    : undefined;
+  endpoint = endpoint || asciiBox?.endpoint;
+  const clientEndpoint = deploymentTarget === 'ascii-box'
+    ? asciiBoxEndpointForClient(endpoint)
+    : endpoint;
   const configured = selectedBackend.id === 'swarm-native' ||
     selectedBackend.authMode === 'local-process' ||
     (!selectedBackend.requiresEndpoint || Boolean(endpoint));
@@ -1331,9 +1948,10 @@ async function getLocalAgentBackendStatus(
     selected,
     selectedBackend,
     configured,
-    endpoint,
+    endpoint: clientEndpoint,
     hasApiKey,
     deploymentTarget,
+    ...(asciiBox ? { compute: { asciiBox } } : {}),
     scope: {
       ...(avatarId ? { avatarId } : {}),
       label: avatarId ? `Avatar ${avatarId}` : 'New agents',
@@ -1342,17 +1960,37 @@ async function getLocalAgentBackendStatus(
   };
 }
 
-async function getLocalLlmStatus(services: LocalServices): Promise<{
+async function getLocalLlmStatus(
+  services: LocalServices,
+  chatService?: LocalLlamaChatService,
+  embeddedEndpoint = '',
+): Promise<{
   configured: boolean;
-  provider: 'openrouter' | 'ollama' | null;
-  selectedProvider: 'openrouter' | 'ollama' | null;
+  provider: LocalLlmProvider | null;
+  selectedProvider: LocalLlmProvider | null;
+  embedded: Awaited<ReturnType<LocalLlamaChatService['status']>>;
   openrouter: { configured: boolean };
   ollama: { available: boolean; model?: string; endpoint: string };
 }> {
-  let selectedProvider: 'openrouter' | 'ollama' | null = null;
+  const embedded = chatService
+    ? await chatService.status(true, embeddedEndpoint)
+    : {
+        provider: 'llama.cpp' as const,
+        enabled: false,
+        ready: false,
+        modelExists: false,
+        modelPath: '',
+        modelId: '',
+        contextSize: 0,
+        downloadUrl: '',
+        endpoint: embeddedEndpoint,
+        error: 'Local embedded chat is disabled.',
+      };
+
+  let selectedProvider: LocalLlmProvider | null = null;
   try {
     const rawProvider = await services.secrets.getSecret('llm-provider');
-    if (rawProvider === 'openrouter' || rawProvider === 'ollama') {
+    if (rawProvider === 'embedded' || rawProvider === 'openrouter' || rawProvider === 'ollama') {
       selectedProvider = rawProvider;
     }
   } catch {
@@ -1360,9 +1998,15 @@ async function getLocalLlmStatus(services: LocalServices): Promise<{
   }
 
   const envLlmKey = process.env.LLM_API_KEY;
+  const envSelectedProvider: LocalLlmProvider | null = envLlmKey === 'embedded'
+    ? 'embedded'
+    : envLlmKey === 'ollama'
+      ? 'ollama'
+      : null;
+  const effectiveSelectedProvider = selectedProvider ?? envSelectedProvider ?? (chatService ? 'embedded' : null);
   let hasOpenRouterKey = Boolean(
     process.env.OPENROUTER_API_KEY ||
-    (envLlmKey && envLlmKey !== 'ollama')
+    (envLlmKey && envLlmKey !== 'embedded' && envLlmKey !== 'ollama')
   );
   if (!hasOpenRouterKey) {
     try {
@@ -1373,12 +2017,29 @@ async function getLocalLlmStatus(services: LocalServices): Promise<{
     }
   }
 
-  if (hasOpenRouterKey) {
+  if ((effectiveSelectedProvider === 'openrouter' || (!effectiveSelectedProvider && hasOpenRouterKey)) && hasOpenRouterKey) {
     return {
       configured: true,
       provider: 'openrouter',
       selectedProvider: 'openrouter',
+      embedded,
       openrouter: { configured: true },
+      ollama: { available: false, endpoint: getOllamaEndpoint() },
+    };
+  }
+
+  if (effectiveSelectedProvider === 'embedded') {
+    if (chatService && embedded.endpoint) {
+      process.env.LLM_ENDPOINT = embedded.endpoint;
+      process.env.LLM_API_KEY = 'embedded';
+      process.env.LLM_MODEL = chatService.modelId;
+    }
+    return {
+      configured: Boolean(chatService && embedded.enabled && embedded.packageAvailable !== false),
+      provider: chatService && embedded.enabled && embedded.packageAvailable !== false ? 'embedded' : null,
+      selectedProvider: 'embedded',
+      embedded,
+      openrouter: { configured: false },
       ollama: { available: false, endpoint: getOllamaEndpoint() },
     };
   }
@@ -1392,9 +2053,10 @@ async function getLocalLlmStatus(services: LocalServices): Promise<{
   }
 
   return {
-    configured: selectedProvider === 'ollama' && Boolean(model),
-    provider: selectedProvider === 'ollama' && model ? 'ollama' : null,
-    selectedProvider,
+    configured: effectiveSelectedProvider === 'ollama' && Boolean(model),
+    provider: effectiveSelectedProvider === 'ollama' && model ? 'ollama' : null,
+    selectedProvider: effectiveSelectedProvider,
+    embedded,
     openrouter: { configured: false },
     ollama: { available: ollamaAvailable, model, endpoint: getOllamaEndpoint() },
   };
@@ -1404,6 +2066,9 @@ export async function mountAdminRoutes(
   app: express.Express,
   services: LocalServices,
   processChatOverride?: ChatProcessor,
+  embeddingService?: LocalEmbeddingService,
+  chatService?: LocalLlamaChatService,
+  embeddedLlmEndpoint = '',
 ) {
   const { processChat } = await import(
     '../../admin-api/src/handlers/chat.js'
@@ -1422,6 +2087,46 @@ export async function mountAdminRoutes(
     userId: sessionOverride?.userId ?? 'local-user',
     isAdmin: sessionOverride?.isAdmin ?? true,
     accessToken: 'local',
+  });
+
+  app.get('/v1/models', (_req, res) => {
+    if (!chatService) {
+      res.status(404).json({ error: { message: 'Local embedded chat is disabled.' } });
+      return;
+    }
+    res.json({
+      object: 'list',
+      data: [{
+        id: chatService.modelId,
+        object: 'model',
+        created: 0,
+        owned_by: 'swarm-local',
+      }],
+    });
+  });
+
+  app.post('/v1/chat/completions', async (req, res) => {
+    if (!chatService) {
+      res.status(503).json({ error: { message: 'Local embedded chat is disabled.' } });
+      return;
+    }
+    const body = req.body as LocalChatCompletionRequest;
+    if (body.stream) {
+      res.status(400).json({ error: { message: 'Streaming is not supported by the embedded local chat endpoint yet.' } });
+      return;
+    }
+    try {
+      const requestSignal = (req as express.Request & { signal?: AbortSignal }).signal;
+      const response = await chatService.complete(body, requestSignal);
+      res.json(response);
+    } catch (err) {
+      res.status(500).json({
+        error: {
+          message: err instanceof Error ? err.message : 'Local embedded chat failed',
+          type: 'local_llama_error',
+        },
+      });
+    }
   });
 
   app.post('/api/chat', async (req, res) => {
@@ -1445,7 +2150,7 @@ export async function mountAdminRoutes(
 
       const result = backendStatus.selected === 'swarm-native'
         ? await (async () => {
-            const llmStatus = await getLocalLlmStatus(services);
+            const llmStatus = await getLocalLlmStatus(services, chatService, embeddedLlmEndpoint);
             if (!llmStatus.configured) {
               res.status(409).json({
                 error: 'AI provider setup required',
@@ -1577,26 +2282,144 @@ export async function mountAdminRoutes(
   });
 
   app.get('/api/llm/status', async (_req, res) => {
-    res.json(await getLocalLlmStatus(services));
+    res.json(await getLocalLlmStatus(services, chatService, embeddedLlmEndpoint));
+  });
+
+  app.post('/api/llm/prepare', async (req, res) => {
+    if (!chatService) {
+      res.status(409).json({
+        provider: 'llama.cpp',
+        enabled: false,
+        ready: false,
+        error: 'Local embedded chat is disabled.',
+      });
+      return;
+    }
+    const { sampleText } = req.body as { sampleText?: unknown };
+    try {
+      res.json(await chatService.prepare(
+        typeof sampleText === 'string' && sampleText.trim() ? sampleText.trim() : undefined,
+      ));
+    } catch (err) {
+      res.status(500).json({
+        ...(await chatService.status(true, embeddedLlmEndpoint)),
+        ready: false,
+        error: err instanceof Error ? err.message : 'Failed to prepare local chat model',
+      });
+    }
+  });
+
+  app.get('/api/embeddings/status', async (_req, res) => {
+    if (!embeddingService) {
+      res.json({
+        provider: 'llama.cpp',
+        enabled: false,
+        ready: false,
+        modelExists: false,
+        error: 'Local embedded embeddings are disabled.',
+      });
+      return;
+    }
+    res.json(await embeddingService.status(true));
+  });
+
+  app.post('/api/embeddings/prepare', async (req, res) => {
+    if (!embeddingService) {
+      res.status(409).json({
+        provider: 'llama.cpp',
+        enabled: false,
+        ready: false,
+        error: 'Local embedded embeddings are disabled.',
+      });
+      return;
+    }
+    const { sampleText } = req.body as { sampleText?: unknown };
+    try {
+      res.json(await embeddingService.prepare(
+        typeof sampleText === 'string' && sampleText.trim() ? sampleText.trim() : undefined,
+      ));
+    } catch (err) {
+      res.status(500).json({
+        ...(await embeddingService.status(true)),
+        ready: false,
+        error: err instanceof Error ? err.message : 'Failed to prepare local embeddings',
+      });
+    }
+  });
+
+  app.get('/api/hosting/status', async (_req, res) => {
+    res.json(await getHostingStatus(services));
+  });
+
+  app.get('/api/hosting/substrates/status', async (_req, res) => {
+    res.json(await getHostingSubstratesStatus(services));
+  });
+
+  app.post('/api/hosting/substrates/select', async (req, res) => {
+    const { provider } = req.body as { provider?: unknown };
+    if (!isHostingSubstrateProvider(provider)) {
+      res.status(400).json({ error: 'provider must be fly, aws, or ascii-box' });
+      return;
+    }
+    const status = await getHostingSubstratesStatus(services);
+    const selected = status.providers.find((item) => item.id === provider);
+    if (!selected?.authenticated) {
+      res.status(409).json({
+        error: `${selected?.label ?? 'Provider'} is not signed in locally`,
+        status,
+      });
+      return;
+    }
+    await writeHostingSubstrate(services, provider);
+    res.json(await getHostingSubstratesStatus(services));
+  });
+
+  app.post('/api/hosting/mode', async (req, res) => {
+    const { mode } = req.body as { mode?: unknown };
+    if (mode !== 'local' && mode !== 'hosted') {
+      res.status(400).json({ error: 'mode must be local or hosted' });
+      return;
+    }
+    if (mode === 'hosted') {
+      res.status(501).json({
+        error: 'Hosted checkout and provisioning are not connected in this build.',
+        status: await getHostingStatus(services),
+      });
+      return;
+    }
+    await writeHostingMode(services, mode);
+    res.json(await getHostingStatus(services, mode));
+  });
+
+  app.post('/api/hosting/provision', async (_req, res) => {
+    res.status(501).json({
+      error: 'Hosted checkout and provisioning are not connected in this build.',
+      status: await getHostingStatus(services),
+    });
   });
 
   app.post('/api/llm/provider', async (req, res) => {
     const { provider } = req.body as { provider?: string };
-    if (provider !== 'openrouter' && provider !== 'ollama') {
-      res.status(400).json({ error: 'provider must be openrouter or ollama' });
+    if (provider !== 'embedded' && provider !== 'openrouter' && provider !== 'ollama') {
+      res.status(400).json({ error: 'provider must be embedded, openrouter, or ollama' });
       return;
     }
 
     await services.secrets.setSecret('llm-provider', provider);
+    if (provider === 'embedded' && chatService && embeddedLlmEndpoint) {
+      process.env.LLM_ENDPOINT = embeddedLlmEndpoint;
+      process.env.LLM_API_KEY = 'embedded';
+      process.env.LLM_MODEL = chatService.modelId;
+    }
     await services.secrets.flush();
-    res.json(await getLocalLlmStatus(services));
+    res.json(await getLocalLlmStatus(services, chatService, embeddedLlmEndpoint));
   });
 
   app.delete('/api/llm/provider', async (_req, res) => {
     await services.secrets.deleteSecret('llm-provider').catch(() => undefined);
     await services.secrets.deleteSecret('llm-api-key').catch(() => undefined);
     await services.secrets.flush();
-    res.json(await getLocalLlmStatus(services));
+    res.json(await getLocalLlmStatus(services, chatService, embeddedLlmEndpoint));
   });
 
   app.get('/api/agent-backends', async (req, res) => {
@@ -1618,7 +2441,7 @@ export async function mountAdminRoutes(
       return;
     }
     if (deploymentTarget !== undefined && !isAgentRuntimeDeploymentTarget(deploymentTarget)) {
-      res.status(400).json({ error: 'deploymentTarget must be local or fly' });
+      res.status(400).json({ error: 'deploymentTarget must be local or ascii-box' });
       return;
     }
 
@@ -1630,7 +2453,7 @@ export async function mountAdminRoutes(
     const trimmedEndpoint = providedEndpoint || defaultEndpoint;
     const trimmedApiKey = typeof apiKey === 'string' ? apiKey.trim() : '';
 
-    if (definition.requiresEndpoint && !trimmedEndpoint) {
+    if (definition.requiresEndpoint && target !== 'ascii-box' && !trimmedEndpoint) {
       res.status(400).json({ error: `${definition.name} requires an endpoint` });
       return;
     }
@@ -1657,8 +2480,262 @@ export async function mountAdminRoutes(
     await services.secrets.deleteSecret(agentRuntimeSecretKey('agent-backend-endpoint', avatarId)).catch(() => undefined);
     await services.secrets.deleteSecret(agentRuntimeSecretKey('agent-backend-api-key', avatarId)).catch(() => undefined);
     await services.secrets.deleteSecret(agentRuntimeSecretKey('agent-backend-deployment-target', avatarId)).catch(() => undefined);
+    for (const backend of AGENT_BACKENDS) {
+      await deleteAsciiBoxSession(services, backend.id, avatarId);
+    }
     await services.secrets.flush();
     res.json(await getLocalAgentBackendStatus(services, avatarId));
+  });
+
+  app.get('/api/compute/ascii-box/status', async (req, res) => {
+    const backend = req.query.backend;
+    const avatarId = normalizeAvatarScope(req.query.avatarId);
+    if (!isAgentBackendId(backend)) {
+      res.status(400).json({ error: 'backend query param required' });
+      return;
+    }
+    res.json(await asciiBoxStatusPayload(services, backend, avatarId));
+  });
+
+  app.get('/api/compute/ascii-box/onboarding/status', async (_req, res) => {
+    res.json(await asciiBoxOnboardingStatus(services));
+  });
+
+  app.post('/api/compute/ascii-box/onboarding/start', async (req, res) => {
+    try {
+      const action = (req.body as { action?: unknown } | undefined)?.action === 'continue' ? 'continue' : 'start';
+      const status = await asciiBoxOnboardingStatus(services);
+      if (status.readyForApiProvisioning) {
+        res.json({
+          ...status,
+          action: 'ready',
+          message: 'Ascii Box provider auth is already configured for automatic provisioning.',
+        });
+        return;
+      }
+
+      if (!status.cliInstalled) {
+        if (process.platform !== 'darwin') {
+          res.status(409).json({
+            ...status,
+            action: 'install',
+            error: `Install the Box CLI, then start onboarding (${process.platform} cannot open the installer automatically yet).`,
+          });
+          return;
+        }
+        await runMacTerminalCommand(ASCII_BOX_INSTALL_COMMAND);
+        res.status(202).json({
+          ...status,
+          action: 'install',
+          terminalOpened: true,
+          message: 'Opened the Box installer in Terminal. The installer starts browser onboarding and the free trial flow.',
+        });
+        return;
+      }
+
+      const args = action === 'continue' ? ['onboard', '--json'] : ['login', '--json'];
+      const result = await execFileText('box', args, 15_000);
+      const parsed = parseAsciiBoxCliOnboardingOutput(result.stdout, result.stderr);
+      const safeMessage = parsed.message ?? redactAsciiBoxText(result.stderr || result.stdout || '');
+      if (parsed.url || parsed.authenticated || result.success || result.timedOut) {
+        res.status(parsed.authenticated || result.success ? 200 : 202).json({
+          ...status,
+          cliInstalled: true,
+          action,
+          command: `box ${args.join(' ')}`,
+          authenticated: parsed.authenticated,
+          loginUrl: parsed.loginUrl,
+          checkoutUrl: parsed.checkoutUrl,
+          url: parsed.url,
+          nextCommand: parsed.nextCommand,
+          message: parsed.url
+            ? 'Continue the Ascii Box browser flow to start the free trial.'
+            : safeMessage || 'Ascii Box browser login started. Complete it, then check again.',
+        });
+        return;
+      }
+
+      res.status(500).json({
+        ...status,
+        cliInstalled: true,
+        action,
+        command: `box ${args.join(' ')}`,
+        error: safeMessage || 'Ascii Box onboarding did not return a login URL.',
+      });
+    } catch (err) {
+      res.status(500).json({
+        ...(await asciiBoxOnboardingStatus(services).catch(() => ({ provider: 'ascii-box' }))),
+        error: err instanceof Error ? redactAsciiBoxText(err.message) : 'Ascii Box onboarding failed',
+      });
+    }
+  });
+
+  app.post('/api/compute/ascii-box/provision', async (req, res) => {
+    try {
+      const { backend, avatarId, ttlSeconds, noEnv } = req.body as {
+        backend?: unknown;
+        avatarId?: unknown;
+        ttlSeconds?: unknown;
+        noEnv?: unknown;
+      };
+      if (!isAgentBackendId(backend)) {
+        res.status(400).json({ error: 'backend must be a supported agent backend id' });
+        return;
+      }
+      if (backend === 'swarm-native') {
+        res.status(400).json({ error: 'Swarm Native does not need an external compute provider' });
+        return;
+      }
+      const apiKey = await getAsciiBoxApiKey(services);
+      if (!apiKey) {
+        res.status(409).json({ error: 'Ascii Box API key is not configured', code: 'ASCII_BOX_API_KEY_REQUIRED' });
+        return;
+      }
+
+      const scopedAvatarId = normalizeAvatarScope(avatarId);
+      const resolvedTtl = ttlSeconds === null
+        ? null
+        : typeof ttlSeconds === 'number' && Number.isFinite(ttlSeconds)
+          ? Math.max(60, Math.floor(ttlSeconds))
+          : 3600;
+      const resolvedNoEnv = typeof noEnv === 'boolean' ? noEnv : true;
+      const client = createAsciiBoxClient(apiKey);
+      const box = await client.createBox({ ttlSeconds: resolvedTtl, noEnv: resolvedNoEnv });
+      const session: AsciiBoxSession = {
+        provider: 'ascii-box',
+        backend,
+        boxId: box.id,
+        state: box.state,
+        noEnv: resolvedNoEnv,
+        ttlSeconds: resolvedTtl,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      await writeAsciiBoxSession(services, session, scopedAvatarId);
+      await services.secrets.setSecret(agentRuntimeSecretKey('agent-backend', scopedAvatarId), backend);
+      await services.secrets.setSecret(agentRuntimeSecretKey('agent-backend-deployment-target', scopedAvatarId), 'ascii-box');
+      await services.secrets.deleteSecret(agentRuntimeSecretKey('agent-backend-endpoint', scopedAvatarId)).catch(() => undefined);
+      await services.secrets.flush();
+
+      res.status(202).json({
+        provider: 'ascii-box',
+        backend,
+        configured: true,
+        connected: true,
+        supported: true,
+        session: asciiBoxSessionForClient(session),
+        box: sanitizeAsciiBoxForClient(box),
+      });
+    } catch (err) {
+      const safe = safeAsciiError(err);
+      res.status(safe.status >= 400 && safe.status < 600 ? safe.status : 500).json({
+        error: safe.message,
+        code: safe.code,
+      });
+    }
+  });
+
+  app.post('/api/compute/ascii-box/stop', async (req, res) => {
+    try {
+      const { backend, avatarId } = req.body as { backend?: unknown; avatarId?: unknown };
+      if (!isAgentBackendId(backend)) {
+        res.status(400).json({ error: 'backend must be a supported agent backend id' });
+        return;
+      }
+      const scopedAvatarId = normalizeAvatarScope(avatarId);
+      const session = await readAsciiBoxSession(services, backend, scopedAvatarId);
+      if (!session) {
+        res.status(404).json({ error: 'Ascii Box session not found' });
+        return;
+      }
+      const apiKey = await getAsciiBoxApiKey(services);
+      if (!apiKey) {
+        res.status(409).json({ error: 'Ascii Box API key is not configured', code: 'ASCII_BOX_API_KEY_REQUIRED' });
+        return;
+      }
+      const box = await createAsciiBoxClient(apiKey).stopBox(session.boxId);
+      const next: AsciiBoxSession = {
+        ...session,
+        state: box?.state ?? 'archiving',
+        updatedAt: Date.now(),
+      };
+      await writeAsciiBoxSession(services, next, scopedAvatarId);
+      await services.secrets.flush();
+      res.json(await asciiBoxStatusPayload(services, backend, scopedAvatarId));
+    } catch (err) {
+      const safe = safeAsciiError(err);
+      res.status(safe.status >= 400 && safe.status < 600 ? safe.status : 500).json({ error: safe.message, code: safe.code });
+    }
+  });
+
+  app.post('/api/compute/ascii-box/resume', async (req, res) => {
+    try {
+      const { backend, avatarId } = req.body as { backend?: unknown; avatarId?: unknown };
+      if (!isAgentBackendId(backend)) {
+        res.status(400).json({ error: 'backend must be a supported agent backend id' });
+        return;
+      }
+      const scopedAvatarId = normalizeAvatarScope(avatarId);
+      const session = await readAsciiBoxSession(services, backend, scopedAvatarId);
+      if (!session) {
+        res.status(404).json({ error: 'Ascii Box session not found' });
+        return;
+      }
+      const apiKey = await getAsciiBoxApiKey(services);
+      if (!apiKey) {
+        res.status(409).json({ error: 'Ascii Box API key is not configured', code: 'ASCII_BOX_API_KEY_REQUIRED' });
+        return;
+      }
+      const box = await createAsciiBoxClient(apiKey).resumeBox(session.boxId, { noEnv: session.noEnv });
+      const next: AsciiBoxSession = {
+        ...session,
+        state: box?.state ?? 'provisioning',
+        endpoint: undefined,
+        hostedPort: undefined,
+        launchAttemptedAt: undefined,
+        runtimeStartedAt: undefined,
+        lastError: undefined,
+        updatedAt: Date.now(),
+      };
+      await writeAsciiBoxSession(services, next, scopedAvatarId);
+      await services.secrets.deleteSecret(agentRuntimeSecretKey('agent-backend-endpoint', scopedAvatarId)).catch(() => undefined);
+      await services.secrets.flush();
+      res.json(await asciiBoxStatusPayload(services, backend, scopedAvatarId));
+    } catch (err) {
+      const safe = safeAsciiError(err);
+      res.status(safe.status >= 400 && safe.status < 600 ? safe.status : 500).json({ error: safe.message, code: safe.code });
+    }
+  });
+
+  app.delete('/api/compute/ascii-box/session', async (req, res) => {
+    try {
+      const backend = req.query.backend;
+      const avatarId = normalizeAvatarScope(req.query.avatarId);
+      if (!isAgentBackendId(backend)) {
+        res.status(400).json({ error: 'backend query param required' });
+        return;
+      }
+      const session = await readAsciiBoxSession(services, backend, avatarId);
+      const apiKey = await getAsciiBoxApiKey(services);
+      if (session && apiKey) {
+        await createAsciiBoxClient(apiKey).deleteBox(session.boxId).catch(() => undefined);
+      }
+      await deleteAsciiBoxSession(services, backend, avatarId);
+      await services.secrets.deleteSecret(agentRuntimeSecretKey('agent-backend-endpoint', avatarId)).catch(() => undefined);
+      await services.secrets.flush();
+      res.json({
+        provider: 'ascii-box',
+        backend,
+        configured: Boolean(apiKey),
+        connected: Boolean(apiKey),
+        supported: true,
+        session: null,
+      });
+    } catch (err) {
+      const safe = safeAsciiError(err);
+      res.status(safe.status >= 400 && safe.status < 600 ? safe.status : 500).json({ error: safe.message, code: safe.code });
+    }
   });
 
   // ── Runtime supervisor: launch/stop external agent backends ─────────

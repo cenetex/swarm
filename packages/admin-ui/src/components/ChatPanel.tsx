@@ -27,7 +27,6 @@ const TaskWorkspace = lazy(() => import('./TaskWorkspace').then(m => ({ default:
 
 import { LanguageSelector } from './LanguageSelector';
 import { ApiKeySetup } from "./ApiKeySetup";
-import { AgentBackendSetup } from './AgentBackendSetup';
 import { NativeClientDownloads } from './NativeClientDownloads';
 import { ArweaveVaultPanel } from './ArweaveVaultPanel';
 
@@ -1131,7 +1130,6 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         <div className="px-3 lg:px-6">
           <NativeClientDownloads />
           <ArweaveVaultPanel />
-          <AgentBackendSetup />
           <ApiKeySetup onReadyChange={handleLlmReadyChange} />
         </div>
 
@@ -1252,7 +1250,6 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           {/* Activation checklist for admin users with newly created avatars */}
           <NativeClientDownloads />
           <ArweaveVaultPanel />
-          <AgentBackendSetup avatarId={activeAvatar.id} avatarName={activeAvatar.name} />
           {!isLlmReady && (
             <ApiKeySetup onReadyChange={handleLlmReadyChange} />
           )}

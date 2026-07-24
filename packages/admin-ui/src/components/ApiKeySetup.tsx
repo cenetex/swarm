@@ -55,6 +55,16 @@ export function ApiKeySetup({ onReadyChange }: ApiKeySetupProps) {
   }, [onReadyChange]);
 
   if (configured) return null;
+  if (isWebLocal) {
+    return (
+      <div className="mt-6 max-w-md mx-auto bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-xl p-4 text-left">
+        <p className="text-sm font-medium text-[var(--color-text)] mb-2">Native app required</p>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          The browser-local client does not accept or persist provider credentials. Open the native app to store an API key in the local credential store, or connect to a trusted backend.
+        </p>
+      </div>
+    );
+  }
 
   const handleSave = async () => {
     if (!apiKey.trim()) return;
@@ -141,9 +151,7 @@ export function ApiKeySetup({ onReadyChange }: ApiKeySetupProps) {
         </button>
       )}
       <p className="text-xs text-[var(--color-text-muted)] mb-3">
-        {isWebLocal
-          ? 'Static web mode keeps this key in localStorage in this browser. Paste your API key manually:'
-          : 'After authorizing, come back here — the key will be detected automatically. Or paste your API key manually:'}
+        After authorizing, come back here — the key will be detected automatically. Or paste your API key manually:
       </p>
       <div className="flex gap-2">
         <input

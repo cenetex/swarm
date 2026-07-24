@@ -7,12 +7,14 @@
 import { Bot } from "grammy";
 import type { UserSession } from "@swarm/admin-api";
 
+type LocalChatMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string };
+
 export interface TelegramPollingDeps {
   getToken: () => Promise<string | null>;
-  processMessage: (text: string, history: Array<{role:string;content:string}>, session: UserSession, avatarId: string) => Promise<{response:string;history:Array<{role:string;content:string}>}>;
+  processMessage: (text: string, history: LocalChatMessage[], session: UserSession, avatarId: string) => Promise<{response:string;history:LocalChatMessage[]}>;
   getAvatarId: () => Promise<string | null>;
-  loadHistory: (session: UserSession, avatarId: string) => Promise<Array<{role:string;content:string}>>;
-  saveHistory: (session: UserSession, avatarId: string, history: Array<{role:string;content:string}>) => Promise<void>;
+  loadHistory: (session: UserSession, avatarId: string) => Promise<LocalChatMessage[]>;
+  saveHistory: (session: UserSession, avatarId: string, history: LocalChatMessage[]) => Promise<void>;
 }
 
 const HISTORY_CACHE_MAX_ENTRIES = 200;
@@ -21,10 +23,10 @@ export function startTelegramPolling(deps: TelegramPollingDeps): () => void {
   let bot: Bot | null = null;
   let running = true;
   let lastUpdateId = 0;
-  const historyCache = new Map<string, Array<{role:string;content:string}>>();
+  const historyCache = new Map<string, LocalChatMessage[]>();
 
   function sessionFor(chatId: string): UserSession {
-    return { email: `tg-${chatId}@local.swarm`, userId: `tg-${chatId}`, isAdmin: false };
+    return { email: `tg-${chatId}@local.swarm`, userId: `tg-${chatId}`, isAdmin: false, accessToken: 'local-telegram' };
   }
 
   async function getHistory(chatId: string, avatarId: string) {

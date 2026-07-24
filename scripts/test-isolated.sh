@@ -7,61 +7,68 @@
 # pollution we run mock-using test files in their own bun process.
 #
 # This script:
-#   1. Finds all .test.ts files that contain `mock.module(` or `vi.mock(`.
-#   2. Runs each of those files in its own bun test process.
-#   3. Runs all remaining (mock-free) test files in one final batched process.
+#   1. Walks each workspace package independently so package-local bunfig.toml
+#      preloads are honored.
+#   2. Finds all .test.ts files that contain `mock.module(` or `vi.mock(`.
+#   3. Runs each of those files in its own bun test process.
+#   4. Runs the remaining mock-free files in one package-local batch.
 #
 # Exit non-zero on the first failing batch so CI surfaces the failure quickly.
 
 set -eu
 
-# Discover test files. Compatible with macOS bash 3.x (no mapfile/declare -A).
-MOCKING_FILES=$(find packages -name '*.test.ts' \
-  -not -path '*/node_modules/*' \
-  -not -path '*/dist/*' \
-  -not -path '*/cdk.out/*' \
-  -not -path '*/cdk.out.*/*' \
-  -exec grep -lE 'mock\.module\(|vi\.mock\(' {} + | sort || true)
-ALL_FILES=$(find packages -name '*.test.ts' \
-  -not -path '*/node_modules/*' \
-  -not -path '*/dist/*' \
-  -not -path '*/cdk.out/*' \
-  -not -path '*/cdk.out.*/*' | sort)
-
-# Build set difference using a tmpfile
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
-echo "$MOCKING_FILES" > "$TMP_DIR/mocking.txt"
-echo "$ALL_FILES" > "$TMP_DIR/all.txt"
-NON_MOCKING_FILES=$(grep -Fxv -f "$TMP_DIR/mocking.txt" "$TMP_DIR/all.txt" || true)
-
-NON_MOCKING_COUNT=$(echo "$NON_MOCKING_FILES" | grep -c . || true)
-MOCKING_COUNT=$(echo "$MOCKING_FILES" | grep -c . || true)
-
-echo "Test isolation plan:"
-echo "  - $NON_MOCKING_COUNT mock-free files (one batch)"
-echo "  - $MOCKING_COUNT files with module mocks (isolated processes)"
-echo ""
 
 FAILED=0
 
-# Run mock-free batch first
-if [ "$NON_MOCKING_COUNT" -gt 0 ]; then
-  echo "─── Batch: mock-free files ───"
-  # shellcheck disable=SC2086
-  if ! echo "$NON_MOCKING_FILES" | xargs bun test; then
-    FAILED=1
-  fi
-fi
+PACKAGE_DIRS=$(find packages -mindepth 2 -maxdepth 2 -name package.json \
+  -not -path '*/node_modules/*' -exec dirname {} \; | sort)
 
-# Run each mocking file in its own process
-echo "$MOCKING_FILES" | while IFS= read -r f; do
-  [ -z "$f" ] && continue
-  echo ""
-  echo "─── Isolated: $f ───"
-  if ! bun test "$f"; then
-    exit 1
-  fi
+echo "$PACKAGE_DIRS" | while IFS= read -r package_dir; do
+  [ -z "$package_dir" ] && continue
+  package_name=${package_dir#packages/}
+  package_tmp="$TMP_DIR/$package_name"
+  mkdir -p "$package_tmp"
+
+  (
+    cd "$package_dir"
+    find . -name '*.test.ts' \
+      -not -path '*/node_modules/*' \
+      -not -path '*/dist/*' \
+      -not -path '*/cdk.out/*' \
+      -not -path '*/cdk.out.*/*' | sort > "$package_tmp/all.txt"
+    if [ ! -s "$package_tmp/all.txt" ]; then
+      exit 0
+    fi
+
+    xargs grep -lE 'mock\.module\(|vi\.mock\(' < "$package_tmp/all.txt" \
+      | sort > "$package_tmp/mocking.txt" || true
+    grep -Fxv -f "$package_tmp/mocking.txt" "$package_tmp/all.txt" \
+      > "$package_tmp/non-mocking.txt" || true
+
+    non_mocking_count=$(grep -c . "$package_tmp/non-mocking.txt" || true)
+    mocking_count=$(grep -c . "$package_tmp/mocking.txt" || true)
+    echo ""
+    echo "─── Package: $package_name ───"
+    echo "  - $non_mocking_count mock-free files"
+    echo "  - $mocking_count isolated mock files"
+
+    if [ "$non_mocking_count" -gt 0 ]; then
+      if ! xargs bun test < "$package_tmp/non-mocking.txt"; then
+        exit 1
+      fi
+    fi
+
+    while IFS= read -r test_file; do
+      [ -z "$test_file" ] && continue
+      echo ""
+      echo "─── Isolated: $package_name/${test_file#./} ───"
+      if ! bun test "$test_file"; then
+        exit 1
+      fi
+    done < "$package_tmp/mocking.txt"
+  ) || exit 1
 done || FAILED=1
 
 # admin-ui DOM tests (#1455): *.test.tsx files run under vitest + jsdom, not

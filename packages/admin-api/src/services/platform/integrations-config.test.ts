@@ -51,24 +51,27 @@ const session: UserSession = {
 };
 
 function integrationsValue(): Record<string, unknown> {
-  const command = mockSend.mock.calls.at(-1)?.[0] as {
-    input?: { ExpressionAttributeValues?: Record<string, unknown> };
-  };
-  const values = command?.input?.ExpressionAttributeValues || {};
-  const integrations = Object.values(values).find(
-    (value): value is Record<string, unknown> =>
-      typeof value === 'object' &&
-      value !== null &&
-      !Array.isArray(value) &&
-      'openrouter' in value
-  );
-  if (!integrations) throw new Error('No integrations value found in update expression');
-  return integrations;
+  for (const call of [...mockSend.mock.calls].reverse()) {
+    const command = call[0] as {
+      input?: { ExpressionAttributeValues?: Record<string, unknown> };
+    };
+    const values = command?.input?.ExpressionAttributeValues || {};
+    const integrations = Object.values(values).find(
+      (value): value is Record<string, unknown> =>
+        typeof value === 'object' &&
+        value !== null &&
+        !Array.isArray(value) &&
+        'openrouter' in value
+    );
+    if (integrations) return integrations;
+  }
+  throw new Error('No integrations value found in update expression');
 }
 
 describe('configureIntegration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _setDynamoClient({ send: mockSend } as never);
     globalThis.fetch = originalFetch;
     clearOpenRouterMediaCatalogCache();
     mockSend.mockResolvedValue({});
@@ -139,6 +142,7 @@ describe('configureIntegration', () => {
 describe('setModelPreference', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _setDynamoClient({ send: mockSend } as never);
     mockSend.mockResolvedValue({});
     getAvatarMock.mockResolvedValue({ id: 'avatar-1' });
   });
@@ -167,6 +171,7 @@ describe('setModelPreference', () => {
 describe('getConfiguredModel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _setDynamoClient({ send: mockSend } as never);
     globalThis.fetch = originalFetch;
     clearOpenRouterMediaCatalogCache();
     getAvatarMock.mockResolvedValue({

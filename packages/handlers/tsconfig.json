@@ -9,6 +9,7 @@
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.smoke.ts"],
   "references": [
+    { "path": "../admin-api" },
     { "path": "../core" },
     { "path": "../mcp-server" },
     { "path": "../sticker-engine" }

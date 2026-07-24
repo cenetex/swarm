@@ -246,6 +246,16 @@ export function getEmbeddingService(): EmbeddingService {
 }
 
 /**
+ * Override the embedding service.
+ *
+ * Local-first runtimes use this hook to inject an embedded inference provider
+ * without making Lambda/Cloudflare bundles depend on native local packages.
+ */
+export function _setEmbeddingService(service: EmbeddingService | null): void {
+  _embeddingService = service;
+}
+
+/**
  * Reset the embedding service (for testing)
  */
 export function _resetEmbeddingService(): void {

@@ -41,6 +41,12 @@
       "types": "./src/errors/index.ts",
       "import": "./dist/errors/index.js",
       "default": "./dist/errors/index.js"
+    },
+    "./hosted": {
+      "bun": "./src/hosted/index.ts",
+      "types": "./src/hosted/index.ts",
+      "import": "./dist/hosted/index.js",
+      "default": "./dist/hosted/index.js"
     }
   },
   "scripts": {

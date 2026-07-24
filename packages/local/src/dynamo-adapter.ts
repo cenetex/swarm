@@ -1,12 +1,13 @@
 /**
  * LocalDynamoClientAdapter — routes DynamoDB-style send() calls through KeyValueStore.
  */
-import type { KeyValueStore, CompositeKey } from '@swarm/core';
+import type { KeyValueStore, CompositeKey, QueryOptions } from '@swarm/core';
+import type { LocalAdapterResult } from './adapter-base.js';
 
 export class LocalDynamoClientAdapter {
   constructor(private store: KeyValueStore) {}
 
-  async send(command: unknown): Promise<Record<string, unknown>> {
+  async send(command: unknown): Promise<LocalAdapterResult> {
     const cmd = command as { input: Record<string, unknown>; constructor?: { name?: string } };
     const name = cmd.constructor?.name ?? '';
     const input = cmd.input;
@@ -131,7 +132,7 @@ export class LocalDynamoClientAdapter {
       createdBy: 'local@swarm.dev',
       updatedAt: now,
       updatedBy: 'local@swarm.dev',
-    } as T;
+    } as unknown as T;
   }
 
   private fromStoredItems<T extends Record<string, unknown>>(
@@ -261,7 +262,7 @@ export class LocalDynamoClientAdapter {
       projectionExpression: input.ProjectionExpression as string | undefined,
       indexName: input.IndexName as string | undefined,
       pkPrefix: pkPrefix ? `${this.tablePrefix(tableName)}${pkPrefix}` : undefined,
-    },
+    } as QueryOptions & { pkPrefix?: string },
       this.toStoredLastEvaluatedKey(tableName, input.ExclusiveStartKey as Record<string, unknown> | undefined),
     );
 
@@ -279,7 +280,7 @@ export class LocalDynamoClientAdapter {
         projectionExpression: input.ProjectionExpression as string | undefined,
         indexName: input.IndexName as string | undefined,
         pkPrefix,
-      });
+      } as QueryOptions & { pkPrefix?: string });
       const deduped = new Map<string, Record<string, unknown>>();
       for (const item of this.fromStoredItems(tableName, legacyResult.items)) {
         deduped.set(`${item.pk}\u0000${item.sk}`, item);
@@ -314,7 +315,7 @@ export class LocalDynamoClientAdapter {
       conditionExpression: input.ConditionExpression as string | undefined,
       expressionAttributeNames: input.ExpressionAttributeNames as Record<string, string> | undefined,
       expressionAttributeValues: input.ExpressionAttributeValues as Record<string, unknown> | undefined,
-      returnValues: (input.ReturnValues as string | undefined) ?? 'NONE',
+      returnValues: (input.ReturnValues as 'ALL_NEW' | 'ALL_OLD' | 'UPDATED_NEW' | 'UPDATED_OLD' | 'NONE' | undefined) ?? 'NONE',
     });
     return { Attributes: this.fromStoredItem(tableName, result) ?? undefined, $metadata: { httpStatusCode: 200 } };
   }

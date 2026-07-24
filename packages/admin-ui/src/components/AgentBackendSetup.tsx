@@ -11,7 +11,7 @@ type AgentBackendId =
   | 'cosyworld'
   | 'custom';
 type AgentBackendAuthMode = 'none' | 'api-key' | 'oauth' | 'local-process';
-type AgentRuntimeDeploymentTarget = 'local' | 'fly';
+type AgentRuntimeDeploymentTarget = 'local' | 'ascii-box';
 type AgentBackendCapabilities = {
   chat: boolean;
   tools: boolean;
@@ -38,12 +38,7 @@ type AgentBackendDefinition = {
     endpoint?: string;
     docker?: { command: string; endpoint?: string };
   };
-  cloud?: {
-    fly?: {
-      command?: string;
-      endpointHint: string;
-    };
-  };
+  cloud?: Record<string, unknown>;
   capabilities: AgentBackendCapabilities;
 };
 type RuntimeState = {
@@ -88,7 +83,6 @@ type AgentBackendSetupProps = {
 export function AgentBackendSetup({ avatarId, avatarName }: AgentBackendSetupProps) {
   const [status, setStatus] = useState<AgentBackendStatus | null>(null);
   const [selected, setSelected] = useState<AgentBackendId>('swarm-native');
-  const [deploymentTarget, setDeploymentTarget] = useState<AgentRuntimeDeploymentTarget>('local');
   const [endpoint, setEndpoint] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
@@ -111,16 +105,13 @@ export function AgentBackendSetup({ avatarId, avatarName }: AgentBackendSetupPro
     [selected, status],
   );
   const defaultEndpoint = selectedBackend?.launch?.endpoint ?? '';
-  const effectiveEndpoint = deploymentTarget === 'local'
-    ? endpoint.trim() || launchEndpoint.trim() || defaultEndpoint
-    : endpoint.trim();
+  const effectiveEndpoint = endpoint.trim() || launchEndpoint.trim() || defaultEndpoint;
   const shouldShowManualEndpoint = Boolean(
-    selectedBackend?.requiresEndpoint && (deploymentTarget !== 'local' || !defaultEndpoint),
+    selectedBackend?.requiresEndpoint && !defaultEndpoint,
   );
   const scopedQuery = avatarId ? `?avatarId=${encodeURIComponent(avatarId)}` : '';
   const runtimeQuery = `backend=${encodeURIComponent(selected)}${avatarId ? `&avatarId=${encodeURIComponent(avatarId)}` : ''}`;
   const scopeLabel = avatarName || status?.scope.label || (avatarId ? `Avatar ${avatarId}` : 'New agents');
-  const flyHint = selectedBackend?.cloud?.fly?.endpointHint ?? 'Paste the Fly.io app endpoint for this runtime.';
 
   const loadStatus = useCallback(async () => {
     const res = await fetch(`/api/agent-backends${scopedQuery}`);
@@ -128,8 +119,7 @@ export function AgentBackendSetup({ avatarId, avatarName }: AgentBackendSetupPro
     const nextStatus = await res.json() as AgentBackendStatus;
     setStatus(nextStatus);
     setSelected(nextStatus.selected);
-    setDeploymentTarget(nextStatus.deploymentTarget ?? 'local');
-    setEndpoint(nextStatus.endpoint ?? '');
+    setEndpoint(nextStatus.deploymentTarget === 'local' ? nextStatus.endpoint ?? '' : '');
     setApiKey('');
   }, [scopedQuery]);
 
@@ -206,7 +196,7 @@ export function AgentBackendSetup({ avatarId, avatarName }: AgentBackendSetupPro
         body: JSON.stringify({
           avatarId,
           backend: selected,
-          deploymentTarget,
+          deploymentTarget: 'local',
           endpoint: selectedBackend.requiresEndpoint ? effectiveEndpoint : undefined,
           apiKey: apiKey.trim() || undefined,
         }),
@@ -218,8 +208,7 @@ export function AgentBackendSetup({ avatarId, avatarName }: AgentBackendSetupPro
       const nextStatus = await res.json() as AgentBackendStatus;
       setStatus(nextStatus);
       setSelected(nextStatus.selected);
-      setDeploymentTarget(nextStatus.deploymentTarget ?? 'local');
-      setEndpoint(nextStatus.endpoint ?? '');
+      setEndpoint(nextStatus.deploymentTarget === 'local' ? nextStatus.endpoint ?? '' : '');
       setApiKey('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save backend');
@@ -237,8 +226,7 @@ export function AgentBackendSetup({ avatarId, avatarName }: AgentBackendSetupPro
       const nextStatus = await res.json() as AgentBackendStatus;
       setStatus(nextStatus);
       setSelected(nextStatus.selected);
-      setDeploymentTarget(nextStatus.deploymentTarget ?? 'local');
-      setEndpoint(nextStatus.endpoint ?? '');
+      setEndpoint(nextStatus.deploymentTarget === 'local' ? nextStatus.endpoint ?? '' : '');
       setApiKey('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reset backend');
@@ -360,13 +348,12 @@ export function AgentBackendSetup({ avatarId, avatarName }: AgentBackendSetupPro
   };
 
   const isRunning = Boolean(runtime?.running);
-  const canLaunch = selectedBackend.id !== 'swarm-native' && deploymentTarget === 'local';
+  const canLaunch = selectedBackend.id !== 'swarm-native';
 
   const capabilities = capabilityLabels
     .filter(([key]) => selectedBackend.capabilities[key])
     .map(([, label]) => label);
   const isDirty = selected !== status.selected ||
-    deploymentTarget !== status.deploymentTarget ||
     (shouldShowManualEndpoint && endpoint.trim() !== (status.endpoint ?? '')) ||
     apiKey.trim().length > 0;
   const canSave = isDirty;
@@ -377,7 +364,7 @@ export function AgentBackendSetup({ avatarId, avatarName }: AgentBackendSetupPro
         <div>
           <p className="text-sm font-medium text-[var(--color-text)]">Agent runtime</p>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            {scopeLabel}: {selectedBackend.name} on {deploymentTarget} with a {selectedBackend.contextWindow.toLocaleString()} token base context.
+            {scopeLabel}: {selectedBackend.name} with a {selectedBackend.contextWindow.toLocaleString()} token base context.
           </p>
         </div>
         <span className={`text-xs font-medium ${status.configured ? 'text-green-400' : 'text-amber-400'}`}>
@@ -420,39 +407,6 @@ export function AgentBackendSetup({ avatarId, avatarName }: AgentBackendSetupPro
             Reset
           </button>
         </div>
-      </div>
-
-      <div className="mt-3">
-        <span className="text-xs font-medium text-[var(--color-text-secondary)]">Target</span>
-        <div className="mt-1 grid grid-cols-3 gap-2">
-          {([
-            ['local', 'Local'],
-            ['fly', 'Fly.io'],
-          ] as Array<[AgentRuntimeDeploymentTarget, string]>).map(([target, label]) => (
-            <button
-              key={target}
-              type="button"
-              onClick={() => {
-                setDeploymentTarget(target);
-                setEndpoint(target === status.deploymentTarget ? status.endpoint ?? '' : '');
-                setError('');
-              }}
-              disabled={saving}
-              className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors disabled:opacity-50 ${
-                deploymentTarget === target
-                  ? 'border-brand-500/60 bg-brand-500/15 text-brand-300'
-                  : 'border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">
-          {deploymentTarget === 'local'
-            ? selectedBackend.install.endpointHint ?? 'Run this runtime on your machine.'
-              : flyHint}
-        </p>
       </div>
 
       <p className="mt-3 text-xs text-[var(--color-text-muted)]">{selectedBackend.description}</p>
@@ -623,35 +577,17 @@ export function AgentBackendSetup({ avatarId, avatarName }: AgentBackendSetupPro
         </div>
       )}
 
-      {selectedBackend.cloud?.fly?.command && deploymentTarget === 'fly' && (
-        <div className="mt-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
-          <p className="text-xs font-medium text-[var(--color-text-secondary)]">Fly.io deploy</p>
-          <div className="mt-2 flex items-center gap-2">
-            <code className="flex-1 min-w-0 overflow-x-auto whitespace-nowrap rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-2 text-[11px] text-[var(--color-text-secondary)]">
-              {selectedBackend.cloud.fly.command}
-            </code>
-            <button
-              type="button"
-              onClick={() => copyCommand(selectedBackend.cloud?.fly?.command ?? '')}
-              className="shrink-0 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 py-1.5 text-[11px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text)]"
-            >
-              {copied === selectedBackend.cloud.fly.command ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-        </div>
-      )}
-
       {selectedBackend.requiresEndpoint && (
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           {shouldShowManualEndpoint && (
             <label className="block">
               <span className="text-xs font-medium text-[var(--color-text-secondary)]">
-                {deploymentTarget === 'fly' ? 'Fly.io endpoint' : 'Endpoint'}
+                Endpoint
               </span>
               <input
                 value={endpoint}
                 onChange={(event) => setEndpoint(event.target.value)}
-                placeholder={deploymentTarget === 'fly' ? 'https://your-runtime.fly.dev' : 'http://localhost:7331'}
+                placeholder="http://localhost:7331"
                 disabled={saving}
                 className="mt-1 w-full px-3 py-2 text-sm bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-text-tertiary)] focus:outline-none focus:border-brand-500"
               />

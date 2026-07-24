@@ -276,6 +276,7 @@ export {
 } from './telegram-dm-approval.js';
 export {
   getEmbeddingService,
+  _setEmbeddingService,
   _resetEmbeddingService,
   type EmbeddingService,
   type EmbeddingResult,

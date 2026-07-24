@@ -78,6 +78,32 @@ describe("chat response shaping", () => {
   });
 });
 
+describe("Ascii Box CLI output parsing", () => {
+  it("extracts login URLs and next commands from JSON events", async () => {
+    const { parseAsciiBoxCliOnboardingOutput } = await import("./ascii-box-provider.js");
+    const parsed = parseAsciiBoxCliOnboardingOutput([
+      '{"type":"login_url","login_url":"https://ascii.dev/login?token=abc","nextCommand":"box onboard --json"}',
+      '{"type":"login_complete","message":"Authenticated"}',
+    ].join("\n"));
+
+    expect(parsed.authenticated).toBe(true);
+    expect(parsed.loginUrl).toBe("https://ascii.dev/login?token=abc");
+    expect(parsed.url).toBe("https://ascii.dev/login?token=abc");
+    expect(parsed.nextCommand).toBe("box onboard --json");
+  });
+
+  it("falls back to checkout and plain URLs from mixed CLI output", async () => {
+    const { parseAsciiBoxCliOnboardingOutput } = await import("./ascii-box-provider.js");
+    const parsed = parseAsciiBoxCliOnboardingOutput(
+      '{"event":"checkout","checkout_url":"https://checkout.stripe.com/c/pay/test"}\n',
+      'Open https://docs.ascii.dev/box/quickstart for help',
+    );
+
+    expect(parsed.checkoutUrl).toBe("https://checkout.stripe.com/c/pay/test");
+    expect(parsed.url).toBe("https://checkout.stripe.com/c/pay/test");
+  });
+});
+
 // ── Import resolution tests — catch wrong/broken imports ─────────────
 describe("admin-api import resolution", () => {
   beforeAll(async () => {
@@ -116,6 +142,31 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   delete process.env.SWARM_LOCAL_API_TOKEN;
   delete process.env.SWARM_LOCAL_ALLOW_CUSTOM_RUNTIME_COMMANDS;
+  delete process.env.ASCII_BOX_API_KEY;
+  delete process.env.BOX_API_KEY;
+  delete process.env.ASCII_BOX_API_BASE;
+  delete process.env.BOX_API_BASE;
+  delete process.env.LLM_API_KEY;
+  delete process.env.LLM_ENDPOINT;
+  delete process.env.LLM_MODEL;
+  delete process.env.OPENROUTER_API_KEY;
+  delete process.env.SWARM_LOCAL_CHAT;
+  delete process.env.SWARM_LOCAL_CHAT_MODEL_PATH;
+  delete process.env.SWARM_LOCAL_CHAT_MODEL_URL;
+  delete process.env.SWARM_LOCAL_CHAT_MODEL_ID;
+  delete process.env.SWARM_LOCAL_CHAT_CONTEXT_SIZE;
+  delete process.env.SWARM_LOCAL_EMBEDDINGS;
+  delete process.env.SWARM_LOCAL_EMBEDDING_MODEL_PATH;
+  delete process.env.SWARM_LOCAL_EMBEDDING_MODEL_URL;
+  delete process.env.SWARM_LOCAL_EMBEDDING_MODEL_ID;
+  delete process.env.SWARM_LOCAL_EMBEDDING_DIMENSIONS;
+  delete process.env.SWARM_HOSTED_MODE_ENABLED;
+  delete process.env.SWARM_AWS_HOSTED_ENABLED;
+  delete process.env.SWARM_HOSTED_ENTITLEMENT_ACTIVE;
+  delete process.env.SWARM_HOSTED_INSTANCE_ENDPOINT;
+  delete process.env.SWARM_HOSTED_INSTANCE_ID;
+  delete process.env.SWARM_HOSTED_TENANT_ID;
+  delete process.env.SWARM_AWS_HOSTED_REGION;
 });
 
 describe("mountAdminRoutes integration", () => {
@@ -133,11 +184,19 @@ describe("mountAdminRoutes integration", () => {
       ["DELETE", `/api/chat?avatarId=${AID}`],
       ["POST", "/api/chat/message", { avatarId: AID, message: { role: "assistant", content: "status" } }],
       ["GET", "/api/llm/status"],
+      ["POST", "/api/llm/prepare", {}],
+      ["GET", "/api/embeddings/status"],
+      ["POST", "/api/embeddings/prepare", {}],
+      ["GET", "/api/hosting/status"],
+      ["POST", "/api/hosting/mode", { mode: "local" }],
+      ["POST", "/api/hosting/provision"],
       ["POST", "/api/llm/provider", { provider: "openrouter" }],
       ["DELETE", "/api/llm/provider"],
       ["GET", "/api/agent-backends"],
       ["POST", "/api/agent-backends/select", { backend: "swarm-native" }],
       ["DELETE", "/api/agent-backends/select"],
+      ["GET", "/api/compute/ascii-box/status?backend=hermes"],
+      ["POST", "/api/compute/ascii-box/provision", { backend: "hermes" }],
       ["GET", "/api/avatars"], ["POST", "/api/avatars", { name: "t" }],
       ["GET", `/api/avatars/${AID}`], ["PUT", `/api/avatars/${AID}`, { name: "x" }],
       ["PATCH", `/api/avatars/${AID}`, { name: "x" }],
@@ -156,6 +215,16 @@ describe("mountAdminRoutes integration", () => {
     const results = await Promise.all(routes.map(([m, p, b]) => hitRoute(app, m, p, b).then(r => `${m} ${p} -> ${r.status}`)));
     const bad = results.filter(r => r.endsWith("404"));
     expect(bad).toEqual([]);
+  });
+
+  it("does not expose avatar private seed material over HTTP", async () => {
+    const { mountAdminRoutes } = await import("./server.js");
+    const app = express();
+    await mountAdminRoutes(app, stubSvc as any);
+
+    const response = await hitRoute(app, "GET", "/api/signal/keypair");
+
+    expect(response.status).toBe(404);
   });
 
   it("passes pendingToolCall through /api/chat", async () => {
@@ -338,6 +407,286 @@ describe("mountAdminRoutes integration", () => {
     expect((body as any).endpoint).toBe("http://legacy-runtime.test/chat");
   });
 
+  it("reports hosted service only after entitlement and runtime health are authoritative", async () => {
+    const store = new Map<string, string>();
+    const services = {
+      secrets: {
+        setSecret: async (name: string, value: string) => { store.set(name, value); },
+        flush: async () => {},
+        listSecrets: async () => [] as string[],
+        getSecret: async (name: string) => store.get(name) ?? (name === "llm-api-key" ? "sk-test" : ""),
+        deleteSecret: async (name: string) => { store.delete(name); },
+      },
+    };
+    const { mountAdminRoutes } = await import("./server.js");
+    const app = express();
+    await mountAdminRoutes(app, services as any);
+
+    const status = await hitRoute(app, "GET", "/api/hosting/status");
+    expect(status.status).toBe(200);
+    expect((status.body as any).mode).toBe("local");
+    expect((status.body as any).local.available).toBe(true);
+    expect((status.body as any).hosted.provider).toBe("aws");
+    expect((status.body as any).hosted.architecture).toBe("aws-managed-ec2-pool");
+    expect((status.body as any).hosted.priceUsdMonthly).toBe(9);
+    expect((status.body as any).hosted.plan.id).toBe("starter");
+    expect((status.body as any).hosted.available).toBe(false);
+    expect((status.body as any).hosted.entitlement).toBe("none");
+    expect((status.body as any).hosted.status).toBe("not-configured");
+    expect(String((status.body as any).hosted.detail).includes("AWS")).toBe(false);
+    expect(String((status.body as any).hosted.detail).includes("EC2")).toBe(false);
+
+    const local = await hitRoute(app, "POST", "/api/hosting/mode", { mode: "local" });
+    expect(local.status).toBe(200);
+    expect((local.body as any).mode).toBe("local");
+
+    const hosted = await hitRoute(app, "POST", "/api/hosting/mode", { mode: "hosted" });
+    expect(hosted.status).toBe(501);
+    expect((hosted.body as any).status.mode).toBe("local");
+    expect((hosted.body as any).status.hosted.entitlement).toBe("none");
+    expect(store.get("hosting:global:mode")).toBe("local");
+    expect(store.has("hosting:global:aws-managed-instance")).toBe(false);
+
+    const provisioned = await hitRoute(app, "POST", "/api/hosting/provision");
+    expect(provisioned.status).toBe(501);
+    expect((provisioned.body as any).status.mode).toBe("local");
+
+    process.env.SWARM_HOSTED_ENTITLEMENT_ACTIVE = "1";
+    process.env.SWARM_HOSTED_INSTANCE_ENDPOINT = "https://tenant-1.swarm.example";
+    process.env.SWARM_HOSTED_INSTANCE_ID = "i-test123";
+    process.env.SWARM_HOSTED_TENANT_ID = "tenant-1";
+    store.set("hosting:global:mode", "hosted");
+    const active = await hitRoute(app, "GET", "/api/hosting/status");
+    expect((active.body as any).mode).toBe("hosted");
+    expect((active.body as any).hosted.status).toBe("active");
+    expect((active.body as any).hosted.entitlement).toBe("active");
+    expect((active.body as any).hosted.instance.status).toBe("running");
+    expect((active.body as any).hosted.instance.endpoint).toBe("https://tenant-1.swarm.example");
+    expect((active.body as any).hosted.instance.instanceId).toBe("i-test123");
+    expect(store.has("hosting:global:aws-managed-instance")).toBe(false);
+  });
+
+  it("reports auto-detected Ollama as the active provider without a saved provider secret", async () => {
+    process.env.LLM_API_KEY = "ollama";
+    process.env.LLM_ENDPOINT = "http://localhost:11434/v1";
+    process.env.LLM_MODEL = "smolLm2";
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname === "/api/tags") {
+        return new Response(JSON.stringify({
+          models: [{ name: "smolLm2:latest", size: 1 }],
+        }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+
+    const services = {
+      secrets: {
+        setSecret: async () => {},
+        flush: async () => {},
+        listSecrets: async () => [] as string[],
+        getSecret: async () => "",
+        deleteSecret: async () => {},
+      },
+    };
+    const { mountAdminRoutes } = await import("./server.js");
+    const app = express();
+    await mountAdminRoutes(app, services as any);
+
+    const status = await hitRoute(app, "GET", "/api/llm/status");
+
+    expect(status.status).toBe(200);
+    expect((status.body as any).configured).toBe(true);
+    expect((status.body as any).provider).toBe("ollama");
+    expect((status.body as any).selectedProvider).toBe("ollama");
+    expect((status.body as any).ollama.model).toBe("smolLm2");
+  });
+
+  it("reports embedded llama.cpp chat and serves OpenAI-compatible completions", async () => {
+    const services = {
+      secrets: {
+        setSecret: async () => {},
+        flush: async () => {},
+        listSecrets: async () => [] as string[],
+        getSecret: async () => { throw new Error("missing secret"); },
+        deleteSecret: async () => {},
+      },
+    };
+    const chatService = {
+      modelId: "local-chat-test",
+      status: async (_checkPackage?: boolean, endpoint = "") => ({
+        provider: "llama.cpp" as const,
+        enabled: true,
+        ready: true,
+        packageAvailable: true,
+        modelExists: true,
+        modelPath: "/tmp/local-chat-test.gguf",
+        modelId: "local-chat-test",
+        contextSize: 4096,
+        downloadUrl: "https://example.test/model.gguf",
+        endpoint,
+      }),
+      prepare: async () => ({
+        provider: "llama.cpp" as const,
+        enabled: true,
+        ready: true,
+        packageAvailable: true,
+        modelExists: true,
+        modelPath: "/tmp/local-chat-test.gguf",
+        modelId: "local-chat-test",
+        contextSize: 4096,
+        downloadUrl: "https://example.test/model.gguf",
+        endpoint: "http://127.0.0.1:3001/v1",
+        sampleResponse: "ready",
+      }),
+      complete: async (body: any) => ({
+        id: "chatcmpl-local-test",
+        object: "chat.completion" as const,
+        created: 0,
+        model: body.model || "local-chat-test",
+        choices: [{
+          index: 0,
+          message: { role: "assistant" as const, content: "inside" },
+          finish_reason: "stop" as const,
+        }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      }),
+    };
+
+    const { mountAdminRoutes } = await import("./server.js");
+    const app = express();
+    await mountAdminRoutes(
+      app,
+      services as any,
+      async () => ({ response: "x", history: [], avatar: null }) as any,
+      undefined,
+      chatService as any,
+      "http://127.0.0.1:3001/v1",
+    );
+
+    const status = await hitRoute(app, "GET", "/api/llm/status");
+    expect(status.status).toBe(200);
+    expect((status.body as any).configured).toBe(true);
+    expect((status.body as any).provider).toBe("embedded");
+    expect((status.body as any).embedded.ready).toBe(true);
+
+    const completion = await hitRoute(app, "POST", "/v1/chat/completions", {
+      model: "local-chat-test",
+      messages: [{ role: "user", content: "hello" }],
+      stream: false,
+    });
+    expect(completion.status).toBe(200);
+    expect((completion.body as any).choices[0].message.content).toBe("inside");
+
+    const prepared = await hitRoute(app, "POST", "/api/llm/prepare", {});
+    expect(prepared.status).toBe(200);
+    expect((prepared.body as any).sampleResponse).toBe("ready");
+  });
+
+  it("exposes disabled embedded embedding status when no local embedder is injected", async () => {
+    const { mountAdminRoutes } = await import("./server.js");
+    const app = express();
+    await mountAdminRoutes(app, stubSvc as any);
+
+    const status = await hitRoute(app, "GET", "/api/embeddings/status");
+    expect(status.status).toBe(200);
+    expect((status.body as any).provider).toBe("llama.cpp");
+    expect((status.body as any).enabled).toBe(false);
+
+    const prepared = await hitRoute(app, "POST", "/api/embeddings/prepare", {});
+    expect(prepared.status).toBe(409);
+  });
+
+  it("provisions Ascii Box sessions and redacts provider URLs in client payloads", async () => {
+    process.env.ASCII_BOX_API_KEY = "box_test";
+    const store = new Map<string, string>();
+    const services = {
+      secrets: {
+        setSecret: async (name: string, value: string) => { store.set(name, value); },
+        flush: async () => {},
+        listSecrets: async () => [] as string[],
+        getSecret: async (name: string) => store.get(name) ?? (name === "llm-api-key" ? "sk-test" : ""),
+        deleteSecret: async (name: string) => { store.delete(name); },
+      },
+    };
+    const commands: string[] = [];
+    const requests: Array<{ method: string; path: string; auth: string; body?: any }> = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const parsed = new URL(String(url));
+      const method = init?.method ?? "GET";
+      const auth = String((init?.headers as Record<string, string> | undefined)?.Authorization ?? "");
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      requests.push({ method, path: parsed.pathname, auth, body });
+
+      if (method === "POST" && parsed.pathname.endsWith("/boxes")) {
+        return new Response(JSON.stringify({
+          ok: true,
+          box: {
+            id: "box_test_123456789012",
+            state: "provisioning",
+            desktopUrl: "https://desktop.ascii.dev/session?_token=super-secret",
+          },
+        }), { status: 200 });
+      }
+
+      if (method === "GET" && parsed.pathname.endsWith("/boxes/box_test_123456789012")) {
+        return new Response(JSON.stringify({
+          ok: true,
+          box: {
+            id: "box_test_123456789012",
+            state: "ready",
+            desktopUrl: "https://desktop.ascii.dev/session?_token=super-secret",
+          },
+        }), { status: 200 });
+      }
+
+      if (method === "POST" && parsed.pathname.endsWith("/boxes/box_test_123456789012/commands")) {
+        commands.push(String(body.command));
+        const stdout = String(body.command).startsWith("host ")
+          ? "https://box-host.ascii.dev?_token=runtime-secret\n"
+          : "started\n";
+        return new Response(JSON.stringify({ ok: true, exitCode: 0, stdout }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({ error: { message: "unexpected request" } }), { status: 500 });
+    }) as typeof fetch;
+
+    const { mountAdminRoutes } = await import("./server.js");
+    const app = express();
+    await mountAdminRoutes(app, services as any);
+
+    const provisioned = await hitRoute(app, "POST", "/api/compute/ascii-box/provision", {
+      backend: "hermes",
+      ttlSeconds: 1800,
+      noEnv: true,
+    });
+
+    expect(provisioned.status).toBe(202);
+    expect((provisioned.body as any).provider).toBe("ascii-box");
+    expect((provisioned.body as any).configured).toBe(true);
+    expect((provisioned.body as any).box.desktopUrl).toContain("_token=%5BREDACTED%5D");
+    expect(store.get("agent:global:agent-backend")).toBe("hermes");
+    expect(store.get("agent:global:agent-backend-deployment-target")).toBe("ascii-box");
+
+    const status = await hitRoute(app, "GET", "/api/compute/ascii-box/status?backend=hermes");
+    expect(status.status).toBe(200);
+    expect((status.body as any).endpoint).toContain("_token=%5BREDACTED%5D");
+    expect((status.body as any).session.endpoint).toContain("_token=%5BREDACTED%5D");
+    expect(JSON.stringify(status.body)).not.toContain("runtime-secret");
+    expect((status.body as any).box.desktopUrl).toContain("_token=%5BREDACTED%5D");
+    expect(store.get("agent:global:agent-backend-endpoint")).toBe("https://box-host.ascii.dev?_token=runtime-secret");
+    const agentStatus = await hitRoute(app, "GET", "/api/agent-backends");
+    expect((agentStatus.body as any).endpoint).toContain("_token=%5BREDACTED%5D");
+    expect(JSON.stringify(agentStatus.body)).not.toContain("runtime-secret");
+    expect(commands.some((command) => command.includes("hermes proxy start --host 0.0.0.0 --port 8645"))).toBe(true);
+    expect(commands).toContain("host 8645 --title 'Swarm Hermes'");
+    expect(requests.every((request) => request.auth === "Bearer box_test")).toBe(true);
+    expect(requests.find((request) => request.method === "POST" && request.path.endsWith("/boxes"))?.body).toEqual({
+      ttlSeconds: 1800,
+      noEnv: true,
+    });
+  });
+
   it("secret save works", async () => {
     const { mountAdminRoutes } = await import("./server.js");
     const app = express();
@@ -419,15 +768,23 @@ describe("mountAdminRoutes integration", () => {
     expect(store.get("agent:avatar-one:agent-backend")).toBe("cosyworld");
     expect(store.get("agent:global:agent-backend")).toBe("codex");
 
-    const fly = await hitRoute(app, "POST", "/api/agent-backends/select", {
+    const asciiBox = await hitRoute(app, "POST", "/api/agent-backends/select", {
+      avatarId: "avatar-one",
+      backend: "cosyworld",
+      deploymentTarget: "ascii-box",
+    });
+    expect(asciiBox.status).toBe(200);
+    expect((asciiBox.body as any).deploymentTarget).toBe("ascii-box");
+    expect((asciiBox.body as any).endpoint).toBeUndefined();
+    expect((asciiBox.body as any).compute.asciiBox.configured).toBe(false);
+
+    const rejectedLegacyTarget = await hitRoute(app, "POST", "/api/agent-backends/select", {
       avatarId: "avatar-one",
       backend: "cosyworld",
       deploymentTarget: "fly",
-      endpoint: "https://cosyworld.fly.dev",
     });
-    expect(fly.status).toBe(200);
-    expect((fly.body as any).deploymentTarget).toBe("fly");
-    expect((fly.body as any).endpoint).toBe("https://cosyworld.fly.dev");
+    expect(rejectedLegacyTarget.status).toBe(400);
+    expect((rejectedLegacyTarget.body as any).error).toMatch(/ascii-box/);
 
     const reset = await hitRoute(app, "DELETE", "/api/agent-backends/select");
     expect(reset.status).toBe(200);
