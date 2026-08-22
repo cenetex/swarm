@@ -2,27 +2,14 @@ import { API_BASE } from './apiBase';
 import {
   parseHostingStatus,
   type HostingStatus,
+  type ManagedSwarmInstance,
   type SwarmRunMode,
 } from '@swarm/core/hosted';
 
 export type HostingMode = SwarmRunMode;
 export type HostingSubstrateProvider = 'fly' | 'aws' | 'ascii-box';
 
-export type ManagedSwarmInstance = {
-  provider: 'aws';
-  architecture: 'aws-managed-ec2-pool';
-  planId: 'starter';
-  status: 'requested' | 'provisioning' | 'running' | 'stopped' | 'error';
-  requestedAt: number;
-  updatedAt: number;
-  region?: string;
-  tenantId?: string;
-  instanceId?: string;
-  endpoint?: string;
-  error?: string;
-};
-
-export type { HostingStatus };
+export type { HostingStatus, ManagedSwarmInstance };
 
 export type HostingSubstrateProviderStatus = {
   id: HostingSubstrateProvider;

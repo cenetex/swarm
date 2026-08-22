@@ -53,5 +53,11 @@ export type CloudflareHostedBindings = {
   SWARM_QUEUE?: CloudflareQueue;
   SWARM_AVATAR_COORDINATORS?: CloudflareDurableObjectNamespace;
   SWARM_ENV?: string;
+  SWARM_HOSTED_ENABLED?: string;
+  SWARM_PUBLIC_URL?: string;
+  SWARM_SOLANA_CHAIN_ID?: string;
+  SWARM_USER_SECRET_KEK?: string;
+  SWARM_USER_SECRET_KEY_VERSION?: string;
+  SWARM_OPENROUTER_RETURN_PATH?: string;
   [binding: string]: unknown;
 };
