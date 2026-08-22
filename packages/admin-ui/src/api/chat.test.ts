@@ -11,7 +11,58 @@
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
-import { submitToolResult } from './chat';
+import { sendChatMessage, submitToolResult } from './chat';
+
+describe('sendChatMessage', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('sends one replay-safe request id with hosted chat work', async () => {
+    let requestBody: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn(async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({ response: 'Hello', history: [] });
+    }) as typeof fetch;
+
+    await sendChatMessage('Hi', [], { id: 'avatar-1', name: 'Ada' });
+
+    expect(requestBody.message).toBe('Hi');
+    expect(requestBody.requestId).toMatch(/^request_[A-Za-z0-9_-]+$/);
+  });
+
+  it('polls an accepted hosted chat job and returns its completed answer', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/jobs/job-1')) {
+        return Response.json({
+          jobId: 'job-1',
+          type: 'chat',
+          status: 'completed',
+          prompt: '',
+          createdAt: 1,
+          updatedAt: 2,
+          response: 'Stored answer',
+          history: [
+            { role: 'user', content: 'Hi' },
+            { role: 'assistant', content: 'Stored answer' },
+          ],
+        });
+      }
+      return Response.json({ jobId: 'job-1' }, { status: 202 });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const result = await sendChatMessage('Hi', [], { id: 'avatar-1', name: 'Ada' });
+
+    expect(result.response).toBe('Stored answer');
+    expect(result.history).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('submitToolResult', () => {
   const originalFetch = globalThis.fetch;

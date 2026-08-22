@@ -14,6 +14,7 @@ export interface CloudflareD1PreparedStatement {
 
 export interface CloudflareD1Database {
   prepare(query: string): CloudflareD1PreparedStatement;
+  batch?(statements: CloudflareD1PreparedStatement[]): Promise<CloudflareD1Result[]>;
 }
 
 export type CloudflareR2Object = {
@@ -42,6 +43,27 @@ export interface CloudflareQueue<T = unknown> {
   send(message: T, options?: { delaySeconds?: number }): Promise<void>;
 }
 
+export interface CloudflareQueueMessage<T = unknown> {
+  body: T;
+  ack(): void;
+  retry(options?: { delaySeconds?: number }): void;
+}
+
+export interface CloudflareQueueBatch<T = unknown> {
+  messages: CloudflareQueueMessage<T>[];
+}
+
+export interface CloudflareDurableObjectStorage {
+  get<T = unknown>(key: string): Promise<T | undefined>;
+  put(key: string, value: unknown): Promise<void>;
+  delete(key: string): Promise<boolean>;
+}
+
+export interface CloudflareDurableObjectState {
+  storage: CloudflareDurableObjectStorage;
+  blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>;
+}
+
 export interface CloudflareDurableObjectNamespace {
   idFromName(name: string): unknown;
   get(id: unknown): { fetch(request: Request): Promise<Response> };
@@ -59,5 +81,8 @@ export type CloudflareHostedBindings = {
   SWARM_USER_SECRET_KEK?: string;
   SWARM_USER_SECRET_KEY_VERSION?: string;
   SWARM_OPENROUTER_RETURN_PATH?: string;
+  SWARM_OPENROUTER_CHAT_URL?: string;
+  SWARM_OPENROUTER_MODEL?: string;
+  SWARM_HOSTED_CHAT_RATE_LIMIT?: string;
   [binding: string]: unknown;
 };
