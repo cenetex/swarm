@@ -13,13 +13,13 @@
 #
 # Options:
 #   --dir PATH        Worktree base directory (default: /private/tmp)
-#   --prefix PREFIX   Worktree directory prefix (default: aws-swarm-)
+#   --prefix PREFIX   Worktree directory prefix (default: swarm-)
 #   --issues N,N,...  Only finalize these issue numbers (default: all)
 #   --dry-run         Show what would be done without doing it
 #   --no-rebase       Skip rebase onto main (just commit + push)
 #
 # Examples:
-#   # Finalize all worktrees in /private/tmp/aws-swarm-*
+#   # Finalize all worktrees in /private/tmp/swarm-*
 #   scripts/worktree-finalize.sh
 #
 #   # Finalize specific issues
@@ -39,7 +39,7 @@ NC='\033[0m'
 
 # ── Defaults ────────────────────────────────────────────────────────────
 WORKTREE_DIR="/private/tmp"
-WORKTREE_PREFIX="aws-swarm-"
+WORKTREE_PREFIX="swarm-"
 ISSUE_FILTER=""
 DRY_RUN=""
 NO_REBASE=""
@@ -74,7 +74,7 @@ fi
 WORKTREES=()
 for dir in "${WORKTREE_DIR}/${WORKTREE_PREFIX}"*; do
   [ -d "$dir" ] || continue
-  # Extract issue number from directory name (e.g., aws-swarm-310 → 310)
+  # Extract issue number from directory name (e.g., swarm-310 → 310)
   num=$(basename "$dir" | sed "s/^${WORKTREE_PREFIX}//")
   if [ -n "$ISSUE_FILTER" ] && [[ "$FILTER_SET" != *" ${num} "* ]]; then
     continue
@@ -193,7 +193,7 @@ EOF
   EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
   if [ -n "$EXISTING_PR" ]; then
     echo -e "  ${YELLOW}PR #$EXISTING_PR already exists${NC}"
-    PR_URLS+=("https://github.com/cenetex/aws-swarm/pull/$EXISTING_PR")
+    PR_URLS+=("https://github.com/atimics/swarm/pull/$EXISTING_PR")
   else
     echo "  Creating PR..."
     # Build PR body from issue

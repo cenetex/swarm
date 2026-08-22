@@ -23,7 +23,7 @@ describe('nft-gate (Helius config fallbacks)', () => {
     delete process.env.DISABLE_NFT_GATE;
     delete process.env.ENVIRONMENT;
     // Reset cached module-level Helius state so env var changes take effect
-    _resetNftGateForTesting();
+    _resetNftGateForTesting({ apiKey: null, apiKeyArn: null });
   });
 
   afterEach(() => {

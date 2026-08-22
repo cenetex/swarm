@@ -1,4 +1,4 @@
-# AWS Swarm Roadmap
+# Swarm Roadmap
 
 This roadmap focuses on product and platform direction. It is a **directional overlay** on top of the GitHub issue queue, which is the canonical execution backlog.
 
@@ -32,7 +32,7 @@ The following queries surface the active execution state:
 | **In Progress** | `is:open is:issue status:in-progress` | Work actively being executed. Max 8 concurrent. |
 | **Prioritized Backlog** | `is:open is:issue priority:high -status:in-progress` | High-priority work awaiting capacity. |
 | **General Backlog** | `is:open is:issue priority:medium priority:low` | Lower-priority or speculative work. |
-| **Candidates** | See [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md) and `AWS Swarm Roadmap` project | Not yet approved for issue slots; draft items only. |
+| **Candidates** | See [docs/OPERATING-MODEL.md](docs/OPERATING-MODEL.md) and `Swarm Roadmap` project | Not yet approved for issue slots; draft items only. |
 
 When the in-progress count exceeds the WIP cap (8), no new issues may be pulled from backlog until the count drops.
 

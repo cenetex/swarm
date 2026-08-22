@@ -25,7 +25,7 @@ export interface OpenRouterChatModel {
 export interface OpenRouterChatModelPlan {
   primaryModel: string;
   fallbackModels: string[];
-  source: 'configured' | 'catalog';
+  source: 'configured' | 'catalog' | 'custom_endpoint';
 }
 
 export interface ResolveOpenRouterChatModelOptions {
@@ -141,9 +141,11 @@ export async function resolveOpenRouterChatModelPlan(
   // When using a custom LLM endpoint (Ollama, local proxy), skip the
   // OpenRouter catalog fetch and use the configured model directly.
   if (process.env.LLM_ENDPOINT) {
-    const model = options.requestModel || options.avatarModel || options.defaultModel;
+    const model = normalizeModelId(options.requestModel)
+      ?? normalizeModelId(options.avatarModel)
+      ?? normalizeModelId(options.defaultModel);
     if (model) {
-      return { primaryModel: model, fallbackModels: [], source: "custom_endpoint" };
+      return { primaryModel: model, fallbackModels: [], source: 'custom_endpoint' };
     }
   }
 

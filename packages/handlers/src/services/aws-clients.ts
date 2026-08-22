@@ -2,16 +2,17 @@
  * Shared AWS clients with mandatory injection (handlers).
  */
 export interface S3LikeClient {
-  send(command: { constructor: { name: string }; input: Record<string, unknown> }): Promise<Record<string, unknown>>;
+  send(command: { constructor: { name: string }; input: Record<string, unknown> }): Promise<any>;
 }
 export interface SQSLikeClient {
-  send(command: { constructor: { name: string }; input: Record<string, unknown> }): Promise<Record<string, unknown>>;
+  send(command: { constructor: { name: string }; input: Record<string, unknown> }): Promise<any>;
+  destroy?: () => void;
 }
 export interface SecretsLikeClient {
-  send(command: { constructor: { name: string }; input: Record<string, unknown> }): Promise<Record<string, unknown>>;
+  send(command: { constructor: { name: string }; input: Record<string, unknown> }): Promise<any>;
 }
 export interface LambdaLikeClient {
-  send(command: { constructor: { name: string }; input: Record<string, unknown> }): Promise<Record<string, unknown>>;
+  send(command: { constructor: { name: string }; input: Record<string, unknown> }): Promise<any>;
 }
 
 let _s3: S3LikeClient | null = null;

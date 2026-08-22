@@ -1,4 +1,4 @@
-# Local-first container image for aws-swarm.
+# Local-first container image for swarm.
 # Multi-stage: api (Express server) and admin-ui-dev (Vite dev server).
 #
 # Build:

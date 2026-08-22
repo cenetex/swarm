@@ -136,7 +136,7 @@ function buildLocalToolDiscoveryTools(enabledCategories?: string[]): Tool[] {
     type: 'function',
     function: {
       name: 'show_tools',
-      description: 'Show available tool categories without loading the full tool catalog. Use this before asking the user which capability to configure.',
+      description: 'Show avatar capability categories the user can configure or use.',
       parameters: {
         type: 'object',
         properties: {
@@ -155,7 +155,7 @@ function buildLocalToolDiscoveryTools(enabledCategories?: string[]): Tool[] {
             id: category,
             description: descriptions[category] || 'Additional avatar capability.',
           })),
-          note: 'This local model is running in compact tool-discovery mode. Ask the user which category to configure next; cloud providers can load the full executable catalog.',
+          guidance: 'Use these categories to answer capability questions or ask what the user wants to set up.',
         };
       },
     },
@@ -266,9 +266,7 @@ export async function processChat(
 
   const allMedia: MediaItem[] = [];
   const baseSystemPrompt = await buildEnrichedSystemPrompt(avatar, userMessage, options);
-  const systemPrompt = customLlmEndpoint && !customLlmToolsEnabled
-    ? `${baseSystemPrompt}\n\nLocal compact context mode: the full executable tool catalog is not loaded. Use the show_tools tool to inspect available capability categories, then ask the user which category or action to configure next.`
-    : baseSystemPrompt;
+  const systemPrompt = baseSystemPrompt;
 
   let transcribedText = '';
   if (userMessage !== null && avatarId && options?.attachments) {

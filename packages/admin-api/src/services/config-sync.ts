@@ -221,6 +221,12 @@ function resolveVideoMedia(record: AvatarRecord): NonNullable<AvatarConfig['medi
  * Convert AdminAPI AvatarRecord to Core AvatarConfig format
  */
 export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
+  // Avatars created without any platform wiring may have `platforms` undefined;
+  // the `record.platforms.x?.enabled` checks below would throw on the missing
+  // base object, so normalize it to an empty map first.
+  if (!record.platforms) {
+    record = { ...record, platforms: {} };
+  }
   const recordLlmConfig = record.llmConfig as Partial<AvatarRecord['llmConfig']> | undefined;
   const llmConfig = {
     provider: DEFAULT_LLM_PROVIDER,

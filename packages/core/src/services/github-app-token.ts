@@ -1,4 +1,4 @@
-import { GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { GetSecretValueCommand, SecretsManagerClient } from '../commands/index.js';
 /**
  * GitHub App Token Provider
  *
@@ -18,7 +18,7 @@ import { GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
  *
  * Environment:
  * - GITHUB_APP_CREDENTIALS_ARN: Secrets Manager ARN for the JSON credentials blob
- * - GITHUB_REPO: owner/repo used to discover the installation (e.g. "cenetex/aws-swarm")
+ * - GITHUB_REPO: owner/repo used to discover the installation (e.g. "atimics/swarm")
  */
 import * as crypto from 'node:crypto';
 
@@ -112,7 +112,7 @@ export class GitHubAppTokenProvider implements GitHubTokenProvider {
 
   constructor(secretArn: string, repo?: string) {
     this.secretArn = secretArn;
-    this.repo = repo || process.env.GITHUB_REPO || 'cenetex/aws-swarm';
+    this.repo = repo || process.env.GITHUB_REPO || 'atimics/swarm';
   }
 
   /**

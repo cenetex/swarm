@@ -10,7 +10,7 @@
  * and break the rest of the test suite.
  */
 import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
-import {  } from '@swarm/core';
+import { buildDiscordEnvelope } from '@swarm/core';
 
 // ─── Mock Tracking ────────────────────────────────────────────────────────────
 

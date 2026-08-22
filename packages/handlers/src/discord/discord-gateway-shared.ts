@@ -1626,7 +1626,7 @@ async function verifyQueueReachable(queueUrl: string): Promise<void> {
       errorMessage,
     });
   } finally {
-    sqsClient.destroy();
+    sqsClient.destroy?.();
   }
 }
 

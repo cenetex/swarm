@@ -28,8 +28,8 @@ export interface RaticrossActor {
   system: string;
   /** Agent identifier within the system (e.g., avatar ID) */
   agentId: string;
-  /** Ed25519 public key (base58) for cryptographic identity verification */
-  pubkey: string;
+  /** Ed25519 public key (base58) for cryptographic identity verification, when available. */
+  pubkey?: string;
 }
 
 // =============================================================================

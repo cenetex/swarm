@@ -75,7 +75,7 @@ async function getLlmApiKey(): Promise<string> {
     }
   }
 
-  return cachedApiKey;
+  return cachedApiKey ?? '';
 }
 
 function parseRecord(record: MessageRecord): DreamJobMessage {

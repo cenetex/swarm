@@ -16,6 +16,7 @@ import {
   type FilterableToolDefinition,
   type LLMTool,
   type ToolExecutionResult,
+  GetSecretValueCommand,
   detectEnabledCategories,
   filterTools,
   logger,
@@ -37,6 +38,7 @@ import {
   withOpenRouterFallbackRouting,
 } from './models-registry.js';
 import { resolveOpenRouterChatModelPlan } from './openrouter-chat-models.js';
+import { getSecretsClient } from './aws-clients.js';
 
 // =============================================================================
 // LLM CONFIGURATION
@@ -73,7 +75,7 @@ async function getLLMApiKey(): Promise<string> {
   }
 
   cachedLLMApiKey = response.SecretString;
-  return cachedLLMApiKey;
+  return cachedLLMApiKey ?? '';
 }
 
 // =============================================================================
@@ -361,7 +363,7 @@ async function callLLM(params: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://swarm.rati.chat',
-          'X-Title': 'AWS Swarm',
+          'X-Title': 'Swarm',
         },
         body: JSON.stringify(body),
         signal: controller.signal,

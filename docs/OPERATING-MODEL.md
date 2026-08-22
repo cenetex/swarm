@@ -1,6 +1,6 @@
 # Operating Model
 
-This document defines how planning artifacts should be used in `aws-swarm` without weakening the repository's issue-first execution model.
+This document defines how planning artifacts should be used in `swarm` without weakening the repository's issue-first execution model.
 
 ## Principle
 
@@ -15,7 +15,7 @@ GitHub Projects provide the planning layer above the issue queue:
 
 The active roadmap Project is:
 
-- `AWS Swarm Roadmap`
+- `Swarm Roadmap`
 - `https://github.com/orgs/cenetex/projects/4`
 
 ## What Lives Where
@@ -37,7 +37,7 @@ The active roadmap Project is:
 
 ## Project Fields
 
-Use these fields on the `AWS Swarm Roadmap` Project:
+Use these fields on the `Swarm Roadmap` Project:
 
 | Field | Purpose |
 | --- | --- |
@@ -95,7 +95,7 @@ Create a new issue for execution (no milestone; milestones are retired):
 
 ```bash
 gh issue create \
-  -R cenetex/aws-swarm \
+  -R cenetex/swarm \
   -t "feat(core): scoped memory tiers with retrieval policy" \
   -b "Closes #<parent-issue>" \
   -l type:feature \
@@ -118,7 +118,7 @@ Promote a draft item to an issue (after approval):
 
 ```bash
 gh issue create \
-  -R cenetex/aws-swarm \
+  -R cenetex/swarm \
   -t "[From draft] <title>" \
   -b "Closes #<parent-issue>" \
   -l type:feature \
@@ -126,7 +126,7 @@ gh issue create \
   -l priority:high
 
 gh project item-add 4 --owner cenetex \
-  --url https://github.com/cenetex/aws-swarm/issues/<new-issue-number>
+  --url https://github.com/cenetex/swarm/issues/<new-issue-number>
 ```
 
 Pull an issue into active work (if in-progress cap allows):

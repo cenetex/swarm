@@ -246,7 +246,7 @@ async function getHomeChannelEntries(): Promise<HomeChannelEntry[]> {
       ProjectionExpression: 'sk, registeredAvatars',
     }));
 
-    const entries: HomeChannelEntry[] = (result.Items || []).map((item) => ({
+    const entries: HomeChannelEntry[] = (result.Items || []).map((item: Record<string, unknown>) => ({
       sk: item.sk as string,
       registeredAvatars: item.registeredAvatars as HomeChannelEntry['registeredAvatars'],
     }));

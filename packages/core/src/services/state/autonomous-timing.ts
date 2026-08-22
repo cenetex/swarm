@@ -1,4 +1,4 @@
-import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from '../../commands/index.js';
 
 export async function getLastAutonomousPostTime(
   docClient: DynamoDBDocumentClient,

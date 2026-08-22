@@ -47,7 +47,7 @@ Exit evidence:
 **Goal**: An avatar's keypair becomes a Signal station. The avatar spawns at
 its derived position. The station signs chain log events.
 
-### 1.1 aws-swarm side
+### 1.1 swarm side
 
 - [ ] **Station position derivation** — export a function that derives (x, y)
   coordinates from pubkey: `SHA256(pubkey || "station") → (x, y)`. Expose as
@@ -69,7 +69,7 @@ its derived position. The station signs chain log events.
 - [ ] **Pubkey-based position derivation** — station `ring_slot` placement uses
   the SHA256 derivation instead of random assignment.
 
-- [ ] **Avatar voice import** — load voice tables from aws-swarm export format
+- [ ] **Avatar voice import** — load voice tables from swarm export format
   into `STATION_ONBOARD` and `NPC_CHATTER` tables.
 
 - [ ] **Chain log signing** — station events are signed with the avatar's
@@ -77,7 +77,7 @@ its derived position. The station signs chain log events.
 
 ### 1.3 Integration test
 
-- [ ] Create an avatar in aws-swarm, derive its station position, spawn a
+- [ ] Create an avatar in swarm, derive its station position, spawn a
   Signal station at that position, verify the station uses the avatar's pubkey
   and voice tables, mine an asteroid, verify the chain log event is signed.
 
@@ -234,7 +234,7 @@ liquidity). Phase 5 is gated on everything.
 
 | Repo | Owns |
 |------|------|
-| aws-swarm | Keypair, identity tools, wallet derivation, Arweave publishing, voice export |
+| swarm | Keypair, identity tools, wallet derivation, Arweave publishing, voice export |
 | signal | Station binding, position derivation, chain log, station economy, voice import |
 | rati | Token registry, NFT families, burn-to-mint specs, asset design |
 | rati-bridge (new) | Bridge contracts, attestation service, fraud detection |

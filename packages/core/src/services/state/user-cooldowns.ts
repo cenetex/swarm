@@ -1,5 +1,5 @@
 import type { Platform, UserCooldown } from '../../types/index.js';
-import { DeleteCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, DeleteCommand, GetCommand, PutCommand } from '../../commands/index.js';
 
 export async function getUserCooldown(
   docClient: DynamoDBDocumentClient,

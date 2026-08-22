@@ -152,7 +152,7 @@ export async function getChatBots(
     return [];
   }
 
-  return result.Items.map(item => ({
+  return result.Items.map((item: { avatarId?: string; botUsername?: string }) => ({
     avatarId: item.avatarId,
     botUsername: item.botUsername,
   }));

@@ -1,4 +1,4 @@
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, S3Client } from '../../commands/index.js';
 /**
  * Media Service - Image and video generation via multiple providers
  *
@@ -361,7 +361,7 @@ export class SwarmMediaService implements MediaService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
         'HTTP-Referer': 'https://swarm.rati.chat',
-        'X-Title': 'aws-swarm',
+        'X-Title': 'swarm',
       },
       body: JSON.stringify({
         model,
@@ -629,7 +629,7 @@ export class SwarmMediaService implements MediaService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
         'HTTP-Referer': 'https://swarm.rati.chat',
-        'X-Title': 'aws-swarm',
+        'X-Title': 'swarm',
       },
       body: JSON.stringify({
         model,

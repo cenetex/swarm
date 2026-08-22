@@ -1,4 +1,4 @@
-# Local-first containerized deployment of aws-swarm.
+# Local-first containerized deployment of swarm.
 # No AWS dependencies — SQLite for data, filesystem for blobs, in-memory queues.
 #
 # Usage:

@@ -1,4 +1,4 @@
-import { SendMessageCommand } from '@aws-sdk/client-sqs';
+import { SendMessageCommand, SQSClient } from '../commands/index.js';
 /**
  * Post Queue Service
  *

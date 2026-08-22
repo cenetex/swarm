@@ -1,4 +1,4 @@
-import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from '../../commands/index.js';
 
 /**
  * Get the timestamp of the last heartbeat for an avatar on a specific platform

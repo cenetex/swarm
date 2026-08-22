@@ -40,6 +40,7 @@ const DEFAULT_RETENTION_DAYS = 30;
 const SECONDS_PER_DAY = 86400;
 const MAX_RECALL_RESULTS = 20;
 const MAX_RECALL_CANDIDATES = 200;
+const MIN_SEMANTIC_RECALL_SIMILARITY = 0.3;
 
 let _client: DynamoDBDocumentClient | null = null;
 
@@ -82,10 +83,25 @@ function validateContent(content: string): string {
     : trimmed;
 }
 
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
 /**
  * Create a lightweight canonical memory client that writes/reads the
- * admin-api ADMIN_TABLE `MEMORY#` schema. No embeddings, graph, or
- * consolidation — those run separately in admin-api.
+ * admin-api ADMIN_TABLE `MEMORY#` schema. Embeddings are generated and used
+ * when an embedding service is configured; graph/consolidation run separately
+ * in admin-api.
  *
  * Items written by this client are fully compatible with admin-api's
  * memory.ts `AvatarMemory` schema so both systems can read/write
@@ -211,14 +227,53 @@ export function createCanonicalMemoryClient(
         userId?: string;
         createdAt: number;
         strength: number;
+        embedding?: number[];
       }>;
 
-      const matched = items.filter((item) => {
-        const contentMatch = item.content.toLowerCase().includes(queryLower);
-        const aboutMatch = (item.about || '').toLowerCase().includes(queryLower);
-        const userMatch = !userId || !item.userId || item.userId === userId;
-        return (contentMatch || aboutMatch) && userMatch;
-      });
+      const userScoped = items.filter((item) => !userId || !item.userId || item.userId === userId);
+      let queryEmbedding: number[] | undefined;
+      if (userScoped.some((item) => item.embedding && item.embedding.length > 0)) {
+        try {
+          queryEmbedding = (await getEmbeddingService().embedText(query)).vector;
+        } catch (error) {
+          logger.warn('Failed to generate embedding for recall query', {
+            event: 'recall_embedding_failed',
+            avatarId: validAvatarId,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      }
+
+      const now = Date.now();
+      const dayMs = 24 * 60 * 60 * 1000;
+      const matched = userScoped
+        .map((item) => {
+          const contentMatch = item.content.toLowerCase().includes(queryLower);
+          const aboutLower = (item.about || '').toLowerCase();
+          const aboutMatch = aboutLower.includes(queryLower);
+          const keywordScore = aboutLower === queryLower
+            ? 1
+            : aboutMatch
+              ? 0.75
+              : contentMatch
+                ? 0.5
+                : 0;
+          const semanticScore = queryEmbedding && item.embedding
+            ? cosineSimilarity(queryEmbedding, item.embedding)
+            : 0;
+          if (keywordScore === 0 && semanticScore < MIN_SEMANTIC_RECALL_SIMILARITY) {
+            return null;
+          }
+          const ageDays = Math.max(0, (now - item.createdAt) / dayMs);
+          const recencyScore = Math.exp(-ageDays / 30);
+          const score = (0.65 * Math.max(keywordScore, semanticScore)) +
+            (0.2 * recencyScore) +
+            (0.15 * (item.strength ?? DEFAULT_STRENGTH));
+          return { item, score };
+        })
+        .filter((entry): entry is { item: typeof userScoped[number]; score: number } => Boolean(entry))
+        .sort((a, b) => b.score - a.score)
+        .map(({ item }) => item);
 
       return {
         facts: matched.slice(0, MAX_RECALL_RESULTS).map((item) => ({

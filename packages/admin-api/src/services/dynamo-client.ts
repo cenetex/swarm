@@ -6,7 +6,7 @@
  * In production this is handled by the Lambda bootstrap.
  */
 export interface DynamoLikeClient {
-  send(command: { constructor: { name: string }; input: unknown }): Promise<unknown>;
+  send(command: { constructor: { name: string }; input: unknown }): Promise<any>;
 }
 
 let _client: DynamoLikeClient | null = null;

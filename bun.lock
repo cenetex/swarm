@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "aws-swarm",
+      "name": "swarm",
       "dependencies": {
         "bs58": "^6.0.0",
         "js-sha3": "^0.9.3",

@@ -28,7 +28,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Config ───────────────────────────────────────────────────────────────
-REPO="${GITHUB_REPOSITORY:-cenetex/aws-swarm}"
+REPO="${GITHUB_REPOSITORY:-atimics/swarm}"
 ENVIRONMENT="${ENVIRONMENT:-production}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 NOW_EPOCH=$(date +%s)

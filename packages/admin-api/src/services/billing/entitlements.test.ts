@@ -236,9 +236,7 @@ describe('findEntitlementByStripeSubscriptionId - GSI query (issue #418)', () =>
 
   it('should not import ScanCommand', () => {
     // Verify ScanCommand is no longer imported since it is no longer used
-    const importBlock = src.match(
-      /import \{[\s\S]*?\} from ['"]@aws-sdk\/lib-dynamodb['"]/
-    );
+    const importBlock = src.match(/import \{[\s\S]*?\} from ['"]@swarm\/core['"]/);
     expect(importBlock).not.toBeNull();
     expect(importBlock![0]).not.toContain('ScanCommand');
   });

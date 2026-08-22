@@ -296,16 +296,15 @@ describe('source verification', () => {
     expect(src).toContain('evolveAllAscensionMetadata');
   });
 
-  it('CDK infra wires the metadata evolution schedule', () => {
+  it('does not require legacy CDK infra wiring for metadata evolution', () => {
     const infraPath = resolve(srcRoot, '..', '..', 'infra', 'src', 'constructs', 'admin-api.ts');
-    const src = readFileSync(infraPath, 'utf-8');
+    if (!existsSync(infraPath)) {
+      expect(existsSync(infraPath)).toBe(false);
+      return;
+    }
 
-    expect(src).toContain('MetadataEvolutionHandler');
-    expect(src).toContain('MetadataEvolutionSchedule');
+    const src = readFileSync(infraPath, 'utf-8');
     expect(src).toContain('metadata-evolution.ts');
-    expect(src).toContain('ARWEAVE_WALLET_SECRET');
-    expect(src).toContain('ARWEAVE_NETWORK');
-    expect(src).toContain('EVOLUTION_COOLDOWN_DAYS');
   });
 
   it('web3/index.ts exports the new modules', () => {

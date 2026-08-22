@@ -1,4 +1,4 @@
-import { GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { GetSecretValueCommand, SecretsManagerClient } from '../commands/index.js';
 /**
  * Blog Posting Service
  *

@@ -4,7 +4,7 @@
  * Tools for the agent to inspect and use its Ed25519 identity keypair.
  */
 import { z } from "zod";
-import type { ToolEntry } from "../registry.js";
+import type { ToolDefinition } from "../registry.js";
 
 export interface AgentIdentityServices {
   getPubkey: () => Promise<string>;
@@ -23,13 +23,13 @@ export type IdentityServices = AgentIdentityServices;
 
 export function registerAgentIdentityTools(
   services: AgentIdentityServices,
-): ToolEntry[] {
-  const tools: ToolEntry[] = [
+): ToolDefinition[] {
+  const tools: ToolDefinition[] = [
     {
       name: "get_agent_pubkey",
       description:
         "Get your Ed25519 public key (base58 encoded). This is your canonical identity across platforms.",
-      category: "identity",
+      category: "readonly",
       inputSchema: z.object({}),
       execute: async () => {
         const pubkey = await services.getPubkey();
@@ -40,7 +40,7 @@ export function registerAgentIdentityTools(
       name: "get_agent_pubkey_hex",
       description:
         "Get your Ed25519 public key in hex format.",
-      category: "identity",
+      category: "readonly",
       inputSchema: z.object({}),
       execute: async () => {
         const pubkey = await services.getHexPubkey();
@@ -51,11 +51,11 @@ export function registerAgentIdentityTools(
       name: "sign_message",
       description:
         "Sign a message with your Ed25519 identity keypair. Returns the base58-encoded signature and your public key.",
-      category: "identity",
+      category: "readonly",
       inputSchema: z.object({
         message: z.string().describe("The message to sign"),
       }),
-      execute: async (args) => {
+      execute: async (args: { message: string }) => {
         const result = await services.signMessage(args.message);
         return { success: true, ...result };
       },
@@ -69,7 +69,7 @@ export function registerAgentIdentityTools(
       description:
         "Get your derived wallet addresses for Solana and EVM chains. " +
         "These are deterministic — the same keypair always produces the same addresses.",
-      category: "identity",
+      category: "readonly",
       inputSchema: z.object({}),
       execute: async () => {
         const addrs = await services.getWalletAddresses!();
@@ -85,7 +85,7 @@ export function registerAgentIdentityTools(
       description:
         "Publish your identity record to Arweave for permanent, cross-chain verification. " +
         "This creates a content-addressed proof that your public key owns this avatar.",
-      category: "identity",
+      category: "readonly",
       inputSchema: z.object({}),
       execute: async () => {
         const result = await services.publishIdentityRecord!();
@@ -101,7 +101,7 @@ export function registerAgentIdentityTools(
       description:
         "Get your Signal station position derived from your identity keypair. " +
         "Each avatar gets a unique, deterministic position in Signal space.",
-      category: "identity",
+      category: "readonly",
       inputSchema: z.object({}),
       execute: async () => {
         const pos = await services.getStationPosition!();
@@ -119,7 +119,7 @@ export function registerAgentIdentityTools(
         "Signal has RATi-grade ore (0.14% chance, 10x payout) — when processed " +
         "at your station, it produces RATi claims that can be bridged to Solana/Base. " +
         "In dev mode without Signal, uses simulated activity-based mining.",
-      category: "identity",
+      category: "readonly",
       inputSchema: z.object({}),
       execute: async () => {
         const result = await services.mineRati!();
@@ -135,12 +135,12 @@ export function registerAgentIdentityTools(
       description:
         "Bridge mined RATi to Solana devnet. Signs a bridge attestation with your " +
         "identity keypair and submits it to the bridge contract.",
-      category: "identity",
+      category: "readonly",
       inputSchema: z.object({
         amount: z.number().optional().describe("Amount of RATi to bridge (default: all mined RATi)"),
         recipient: z.string().optional().describe("Solana wallet address to receive RATi (default: your derived wallet)"),
       }),
-      execute: async (args) => {
+      execute: async (args: { amount?: number; recipient?: string }) => {
         const result = await services.bridgeRatiToSolana!(args.amount, args.recipient);
         return { success: true, ...result };
       },

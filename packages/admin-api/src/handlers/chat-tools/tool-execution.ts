@@ -140,11 +140,11 @@ export async function executeFallbackToolLoop(params: {
     // Check for pause tools BEFORE executing any tool calls so
     // side-effect tools (e.g. send_message) don't execute ahead of
     // a pause that should block the whole batch.  #1723.
-    if (mcpServices && avatarId) {
+    if (mcpServices?.models && avatarId) {
       const earlyPauseResult = await handlePauseToolCalls({
         toolCalls: currentToolCalls,
         adminToolCalls: currentAdminToolCalls,
-        mcpServices,
+        mcpServices: { models: mcpServices.models },
         avatarId,
         messages,
         tools,

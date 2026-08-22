@@ -1188,7 +1188,7 @@ export type {
 export type {
   HttpRequest,
   HttpResponse,
-  HttpResponse,
+  APIGatewayProxyStructuredResultV2,
   HttpHandler,
   MessageBatch,
   MessageRecord,

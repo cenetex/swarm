@@ -15,7 +15,9 @@
 
 export interface HttpRequest {
   body?: string | null;
+  cookies?: string[];
   headers: Record<string, string | undefined>;
+  httpMethod?: string;
   queryStringParameters?: Record<string, string | undefined>;
   pathParameters?: Record<string, string | undefined>;
   rawPath: string;
@@ -25,6 +27,9 @@ export interface HttpRequest {
     http: {
       method: string;
       path: string;
+      protocol?: string;
+      sourceIp?: string;
+      userAgent?: string;
     };
     requestId: string;
     timeEpoch: number;
@@ -35,16 +40,12 @@ export interface HttpRequest {
 export interface HttpResponse {
   statusCode: number;
   headers?: Record<string, string>;
+  cookies?: string[];
   body?: string;
   isBase64Encoded?: boolean;
 }
 
-export interface HttpResponse {
-  statusCode: number;
-  headers?: Record<string, string>;
-  body: string;
-  isBase64Encoded?: boolean;
-}
+export type APIGatewayProxyStructuredResultV2 = HttpResponse;
 
 export type HttpHandler = (
   event: HttpRequest,

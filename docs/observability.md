@@ -1,6 +1,6 @@
 # Observability
 
-How to emit structured logs from aws-swarm services. Applies to `packages/admin-api/**` (and anywhere that pulls in `@swarm/core` logging helpers). This is the how-to; see `packages/admin-api/src/services/structured-logger.ts` for the API surface.
+How to emit structured logs from swarm services. Applies to `packages/admin-api/**` (and anywhere that pulls in `@swarm/core` logging helpers). This is the how-to; see `packages/admin-api/src/services/structured-logger.ts` for the API surface.
 
 ## Why structured logs
 

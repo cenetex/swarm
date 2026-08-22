@@ -26,7 +26,6 @@ import { getSecretsClient } from '../aws-clients.js';
 import { getDynamoClient } from '../dynamo-client.js';
 import { hasSystemOpenRouterApiKey } from '../openrouter-key.js';
 
-const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -433,7 +432,7 @@ export async function configureIntegration(params: ConfigureIntegrationParams): 
 
   const update = builder.build();
 
-  await dynamoClient.send(
+  await getDynamoClient().send(
     new UpdateCommand({
       TableName: ADMIN_TABLE,
       Key: { pk: `AVATAR#${avatarId}`, sk: 'CONFIG' },
@@ -451,7 +450,7 @@ export async function setIntegrationEnabled(
   enabled: boolean,
   session: UserSession
 ): Promise<void> {
-  await dynamoClient.send(
+  await getDynamoClient().send(
     new UpdateCommand({
       TableName: ADMIN_TABLE,
       Key: { pk: `AVATAR#${avatarId}`, sk: 'CONFIG' },
@@ -493,7 +492,7 @@ export async function setModelPreference(
     .set('updatedBy', session.email)
     .build();
 
-  await dynamoClient.send(
+  await getDynamoClient().send(
     new UpdateCommand({
       TableName: ADMIN_TABLE,
       Key: { pk: `AVATAR#${avatarId}`, sk: 'CONFIG' },

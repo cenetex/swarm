@@ -181,7 +181,7 @@ Respond with ONLY the statement, nothing else.`;
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${llmApiKey}`,
           'HTTP-Referer': 'https://swarm.rati.chat',
-          'X-Title': 'AWS Swarm Memory Consolidation',
+          'X-Title': 'Swarm Memory Consolidation',
         },
         body: JSON.stringify(body),
       });

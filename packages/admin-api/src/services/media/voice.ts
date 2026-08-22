@@ -187,7 +187,7 @@ async function makeUrlAccessible(url: string): Promise<string> {
   if (!parsed) return url;
 
   const command = new GetObjectCommand({ Bucket: parsed.bucket, Key: parsed.key });
-  return getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  return getSignedUrl(s3Client as any, command as any, { expiresIn: 3600 });
 }
 
 async function getSecret(avatarId: string, type: 'openai_api_key' | 'replicate_api_key'): Promise<string | null> {

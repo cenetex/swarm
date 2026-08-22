@@ -2,7 +2,7 @@
  * Signal Station MCP Services
  *
  * HTTP client for the Signal space mining game station REST API.
- * Connects aws-swarm avatars to the game server so they can govern
+ * Connects swarm avatars to the game server so they can govern
  * stations: observe state, set prices, build modules, broadcast hails.
  *
  * Authentication: a single shared bearer token loaded from Secrets Manager

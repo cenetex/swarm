@@ -2,7 +2,7 @@
  * Shared DynamoDB client (handlers). Injection is MANDATORY.
  */
 export interface DynamoLikeClient {
-  send(command: { constructor: { name: string }; input: unknown }): Promise<unknown>;
+  send(command: { constructor: { name: string }; input: unknown }): Promise<any>;
 }
 
 let _client: DynamoLikeClient | null = null;

@@ -1,5 +1,8 @@
-import { GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  GetSecretValueCommand,
+  SecretsManagerClient,
+} from '../../commands/index.js';
 /**
  * Media Service Resolvers
  *
@@ -12,7 +15,7 @@ import {
   GetCommand,
   PutCommand,
   UpdateCommand,
-} from '@swarm/core';
+} from '../../commands/index.js';
 import { isUsableOpenRouterModelId } from '../../utils/openrouter-model-id.js';
 import {
   isLiveOpenRouterMediaModelId,

@@ -1,4 +1,4 @@
-import { SendMessageCommand } from '@aws-sdk/client-sqs';
+import { SendMessageCommand, SQSClient } from '../commands/index.js';
 /**
  * Media Queue Service
  *
@@ -15,6 +15,10 @@ function getSQSClient(): SQSClient {
     sqsClient = new SQSClient({});
   }
   return sqsClient;
+}
+
+export function _setSQSClient(client: SQSClient | null): void {
+  sqsClient = client;
 }
 
 /**

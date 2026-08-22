@@ -579,12 +579,12 @@ export async function getLineageHistory(avatarId: string): Promise<Array<{
     ScanIndexForward: false, // newest era first
   }));
 
-  return (result.Items ?? []).map((item) => ({
+  return (result.Items ?? []).map((item: Record<string, unknown>) => ({
     era: Number(item.era ?? String(item.sk).replace('ERA#', '')),
     walletAddress: String(item.walletAddress ?? ''),
     nftMint: String(item.nftMint ?? ''),
     mintedAt: Number(item.mintedAt ?? 0),
-  })).filter((item) => Boolean(item.walletAddress && item.nftMint));
+  })).filter((item: { walletAddress: string; nftMint: string }) => Boolean(item.walletAddress && item.nftMint));
 }
 
 /**

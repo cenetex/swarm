@@ -1,31 +1,60 @@
 /**
  * Local Secrets Manager command classes.
  */
+export type GetSecretValueCommandInput = Record<string, unknown>;
+export type CreateSecretCommandInput = Record<string, unknown>;
+export type PutSecretValueCommandInput = Record<string, unknown>;
+export type DescribeSecretCommandInput = Record<string, unknown>;
+export type UpdateSecretCommandInput = Record<string, unknown>;
+export type DeleteSecretCommandInput = Record<string, unknown>;
+export type RestoreSecretCommandInput = Record<string, unknown>;
+
 export class GetSecretValueCommand {
-  input: Record<string, unknown>;
-  constructor(input: Record<string, unknown>) { this.input = input; }
+  readonly commandName = 'GetSecretValueCommand';
+  input: GetSecretValueCommandInput;
+  constructor(input: GetSecretValueCommandInput) { this.input = input; }
 }
 export class CreateSecretCommand {
-  input: Record<string, unknown>;
-  constructor(input: Record<string, unknown>) { this.input = input; }
+  readonly commandName = 'CreateSecretCommand';
+  input: CreateSecretCommandInput;
+  constructor(input: CreateSecretCommandInput) { this.input = input; }
 }
 export class PutSecretValueCommand {
-  input: Record<string, unknown>;
-  constructor(input: Record<string, unknown>) { this.input = input; }
+  readonly commandName = 'PutSecretValueCommand';
+  input: PutSecretValueCommandInput;
+  constructor(input: PutSecretValueCommandInput) { this.input = input; }
 }
 export class DescribeSecretCommand {
-  input: Record<string, unknown>;
-  constructor(input: Record<string, unknown>) { this.input = input; }
+  readonly commandName = 'DescribeSecretCommand';
+  input: DescribeSecretCommandInput;
+  constructor(input: DescribeSecretCommandInput) { this.input = input; }
 }
 export class UpdateSecretCommand {
-  input: Record<string, unknown>;
-  constructor(input: Record<string, unknown>) { this.input = input; }
+  readonly commandName = 'UpdateSecretCommand';
+  input: UpdateSecretCommandInput;
+  constructor(input: UpdateSecretCommandInput) { this.input = input; }
 }
 export class DeleteSecretCommand {
-  input: Record<string, unknown>;
-  constructor(input: Record<string, unknown>) { this.input = input; }
+  readonly commandName = 'DeleteSecretCommand';
+  input: DeleteSecretCommandInput;
+  constructor(input: DeleteSecretCommandInput) { this.input = input; }
 }
 export class RestoreSecretCommand {
-  input: Record<string, unknown>;
-  constructor(input: Record<string, unknown>) { this.input = input; }
+  readonly commandName = 'RestoreSecretCommand';
+  input: RestoreSecretCommandInput;
+  constructor(input: RestoreSecretCommandInput) { this.input = input; }
+}
+
+export interface GetSecretValueCommandOutput {
+  SecretString?: string;
+  SecretBinary?: Uint8Array;
+}
+
+export class SecretsManagerClient {
+  constructor(_config?: Record<string, unknown>) {}
+  async send(command: GetSecretValueCommand): Promise<GetSecretValueCommandOutput>;
+  async send(command: unknown): Promise<any>;
+  async send(_command: unknown): Promise<Record<string, any>> {
+    throw new Error('SecretsManagerClient stub: inject a real client in production runtime');
+  }
 }

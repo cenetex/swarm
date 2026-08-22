@@ -177,11 +177,13 @@ async function getQueueDepth(queueUrl?: string): Promise<QueueStatus> {
     return { unavailable: true, reason: 'query_failed' };
   }
 
-  const depth = response.Attributes?.ApproximateNumberOfMessages
-    ? Number.parseInt(response.Attributes.ApproximateNumberOfMessages, 10)
+  const attributes = response?.Attributes;
+
+  const depth = attributes?.ApproximateNumberOfMessages
+    ? Number.parseInt(attributes.ApproximateNumberOfMessages, 10)
     : undefined;
-  const inFlight = response.Attributes?.ApproximateNumberOfMessagesNotVisible
-    ? Number.parseInt(response.Attributes.ApproximateNumberOfMessagesNotVisible, 10)
+  const inFlight = attributes?.ApproximateNumberOfMessagesNotVisible
+    ? Number.parseInt(attributes.ApproximateNumberOfMessagesNotVisible, 10)
     : undefined;
 
   return { depth, inFlight, unavailable: false };

@@ -407,9 +407,9 @@ export async function getIssue(issueId: string): Promise<{
   }));
 
   const items = result.Items || [];
-  const meta = items.find(i => i.sk === 'META') as AutoIssue | undefined;
+  const meta = items.find((i: { sk?: string }) => i.sk === 'META') as AutoIssue | undefined;
   const occurrences = items
-    .filter(i => i.sk?.startsWith('OCCURRENCE#'))
+    .filter((i: { sk?: string }) => i.sk?.startsWith('OCCURRENCE#'))
     .slice(0, 50) as ErrorOccurrence[];
 
   return {

@@ -4,7 +4,7 @@
 import {
   SecretsManagerClient,
   GetSecretValueCommand,
-} from '@aws-sdk/client-secrets-manager';
+} from '../commands/index.js';
 import type { SecretsService } from '../types/index.js';
 
 export class AWSSecretsService implements SecretsService {

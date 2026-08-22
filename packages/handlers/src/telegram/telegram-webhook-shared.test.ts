@@ -16,7 +16,7 @@
  * @see packages/handlers/src/telegram/webhook-chat-access.ts
  */
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import {  } from '@swarm/core';
+import type { AvatarConfig } from '@swarm/core';
 
 process.env.ADMIN_TABLE ||= 'ADMIN_TABLE';
 process.env.STATE_TABLE ||= 'STATE_TABLE';
@@ -26,6 +26,7 @@ const modPromise = import('./telegram-webhook-shared.js');
 const securityModPromise = import('./webhook-security.js');
 const chatAccessModPromise = import('./webhook-chat-access.js');
 const homeChannelModPromise = import('./webhook-home-channel.js');
+const avatarConfig = {} as AvatarConfig;
 
 // =============================================================================
 // Existing tests: Chat access allowlists
@@ -183,11 +184,14 @@ describe('telegram-webhook-shared shared-room queue groups', () => {
   it('uses the room queue group for ambient shared-room messages', async () => {
     const { getSharedRoomMessageGroupId } = await modPromise;
 
-    const groupId = getSharedRoomMessageGroupId({
-      avatarId: 'phantom',
-      conversationId: '-1001',
-      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k' },
-    });
+    const groupId = getSharedRoomMessageGroupId(
+      {
+        avatarId: 'phantom',
+        conversationId: '-1001',
+        metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k' },
+      },
+      'telegram:-1001',
+    );
 
     expect(groupId).toBe('telegram:-1001');
   });
@@ -195,11 +199,14 @@ describe('telegram-webhook-shared shared-room queue groups', () => {
   it('uses the target avatar queue group for direct shared-room mentions', async () => {
     const { getSharedRoomMessageGroupId } = await modPromise;
 
-    const groupId = getSharedRoomMessageGroupId({
-      avatarId: 'eliza',
-      conversationId: '-1001',
-      metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', isMention: true },
-    });
+    const groupId = getSharedRoomMessageGroupId(
+      {
+        avatarId: 'eliza',
+        conversationId: '-1001',
+        metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', isMention: true },
+      },
+      'telegram:-1001',
+    );
 
     expect(groupId).toBe('eliza#-1001');
   });
@@ -207,11 +214,14 @@ describe('telegram-webhook-shared shared-room queue groups', () => {
   it('uses the target avatar queue group for direct shared-room replies', async () => {
     const { getSharedRoomMessageGroupId } = await modPromise;
 
-    const groupId = getSharedRoomMessageGroupId({
-      avatarId: 'phantom',
-      conversationId: '-1001',
-      metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', isReplyToBot: true },
-    });
+    const groupId = getSharedRoomMessageGroupId(
+      {
+        avatarId: 'phantom',
+        conversationId: '-1001',
+        metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', isReplyToBot: true },
+      },
+      'telegram:-1001',
+    );
 
     expect(groupId).toBe('phantom#-1001');
   });

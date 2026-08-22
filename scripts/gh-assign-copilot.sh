@@ -10,7 +10,7 @@
 set -euo pipefail
 
 REPO_OWNER="${GH_REPO_OWNER:-cenetex}"
-REPO_NAME="${GH_REPO_NAME:-aws-swarm}"
+REPO_NAME="${GH_REPO_NAME:-swarm}"
 
 if [ $# -lt 1 ]; then
   echo "Usage: $0 <issue-number>" >&2

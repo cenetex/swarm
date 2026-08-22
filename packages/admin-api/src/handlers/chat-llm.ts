@@ -195,9 +195,15 @@ export async function getLlmApiKey(): Promise<string> {
   // Parse JSON secret (handles {"api_key": "..."} format)
   let parsed: Record<string, unknown> | null = null;
   try {
-    parsed = JSON.parse(response.SecretString);
-    cachedApiKey = (parsed.api_key || parsed.apiKey || parsed.API_KEY) as string | undefined;
-    if (!cachedApiKey) cachedApiKey = (parsed.value || parsed.key || parsed.secret) as string | undefined;
+    parsed = JSON.parse(response.SecretString) as Record<string, unknown>;
+    cachedApiKey = [parsed.api_key, parsed.apiKey, parsed.API_KEY].find(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    ) ?? null;
+    if (!cachedApiKey) {
+      cachedApiKey = [parsed.value, parsed.key, parsed.secret].find(
+        (value): value is string => typeof value === 'string' && value.length > 0,
+      ) ?? null;
+    }
   } catch {
     // Plain string secret — not valid JSON, fall through to raw string below
   }
@@ -213,8 +219,12 @@ export async function getLlmApiKey(): Promise<string> {
     cachedApiKey = response.SecretString.trim();
   }
 
+  if (!cachedApiKey) {
+    throw new Error('LLM API key not resolved');
+  }
+
   logger.info('LLM API key loaded', { keyPrefix: cachedApiKey.substring(0, 10) });
-  return cachedApiKey!;
+  return cachedApiKey;
 }
 
 type FallbackTool = {

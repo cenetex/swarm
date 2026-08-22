@@ -81,6 +81,7 @@ async function generateOpenRouterSpeech(params: {
   mediaBucket: string;
   cdnUrl?: string;
   fetchFn?: FetchFn;
+  s3Client?: S3ClientLike;
 }): Promise<{ assetId: string; url: string; durationMs?: number; format: AudioFormat }> {
   const responseFormat = getOpenRouterResponseFormat(params.format);
   const response = await (params.fetchFn || fetch)(OPENROUTER_SPEECH_ENDPOINT, {
@@ -121,6 +122,7 @@ async function generateOpenRouterSpeech(params: {
     format: detectedFormat,
     mediaBucket: params.mediaBucket,
     cdnUrl: params.cdnUrl,
+    s3Client: params.s3Client,
   });
 
   return { assetId: asset.assetId, url: asset.url, durationMs: undefined, format: detectedFormat };
@@ -246,7 +248,11 @@ async function makeUrlAccessible(url: string, cdnUrl?: string): Promise<string> 
   if (!parsed) return url;
 
   const command = new GetObjectCommand({ Bucket: parsed.bucket, Key: parsed.key });
-  return getSignedUrl(getDefaultS3Client(), command, { expiresIn: 3600 });
+  return getSignedUrl(
+    getDefaultS3Client() as unknown as Parameters<typeof getSignedUrl>[0],
+    command as unknown as Parameters<typeof getSignedUrl>[1],
+    { expiresIn: 3600 },
+  );
 }
 
 async function convertAudioToOgg(params: { avatarId: string; sourceUrl: string }): Promise<string | null> {
@@ -389,11 +395,12 @@ async function uploadAudioAsset(params: {
   format: AudioFormat;
   mediaBucket: string;
   cdnUrl?: string;
+  s3Client?: S3ClientLike;
 }): Promise<{ assetId: string; url: string }> {
   const assetId = randomUUID();
   const s3Key = `avatars/${params.avatarId}/audio/${assetId}.${params.format}`;
 
-  await getDefaultS3Client().send(new PutObjectCommand({
+  await (params.s3Client || getDefaultS3Client()).send(new PutObjectCommand({
     Bucket: params.mediaBucket,
     Key: s3Key,
     Body: params.buffer,
@@ -443,9 +450,6 @@ export function createVoiceServices(config: {
   const openAiKey = config.secrets.OPENAI_API_KEY || config.secrets.openai_api_key;
   const replicateKey = config.secrets.REPLICATE_API_TOKEN || config.secrets.REPLICATE_API_KEY || config.secrets.replicate_api_key;
   const telegramToken = config.secrets.TELEGRAM_BOT_TOKEN || config.secrets.telegram_bot_token;
-
-  // Note: _deps available for future DI/testing support but currently unused
-  // since helper functions use getDefaultS3Client() directly
 
   return {
     transcribeAudio: async (params: {
@@ -565,6 +569,7 @@ export function createVoiceServices(config: {
           mediaBucket: config.mediaBucket,
           cdnUrl: config.cdnUrl,
           fetchFn: config._deps?.fetch,
+          s3Client: config._deps?.s3Client,
         });
 
         if (requestedFormat === 'ogg' && asset.format !== 'ogg') {
@@ -619,6 +624,7 @@ export function createVoiceServices(config: {
         format: detectedFormat,
         mediaBucket: config.mediaBucket,
         cdnUrl: config.cdnUrl,
+        s3Client: config._deps?.s3Client,
       });
 
       return { assetId: asset.assetId, url: asset.url, durationMs: undefined, format: detectedFormat };
@@ -654,6 +660,7 @@ export function createVoiceServices(config: {
           mediaBucket: config.mediaBucket,
           cdnUrl: config.cdnUrl,
           fetchFn: config._deps?.fetch,
+          s3Client: config._deps?.s3Client,
         });
 
         const assetId = asset.assetId;
@@ -766,6 +773,7 @@ export function createVoiceServices(config: {
         format: detectedFormat,
         mediaBucket: config.mediaBucket,
         cdnUrl: config.cdnUrl,
+        s3Client: config._deps?.s3Client,
       });
 
       const assetId = asset.assetId;

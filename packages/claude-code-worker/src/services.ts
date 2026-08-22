@@ -1,4 +1,4 @@
-import { SendMessageCommand } from '@swarm/core';
+import { SendMessageCommand, SQSClient } from '@swarm/core';
 /**
  * Claude Code Services
  *

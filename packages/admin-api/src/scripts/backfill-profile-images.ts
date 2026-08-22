@@ -105,10 +105,10 @@ async function listLatestLegacyProfileKey(s3: S3Client, bucket: string, avatarId
     MaxKeys: 20,
   }));
 
-  const objects = (resp.Contents ?? []).filter(o => !!o.Key);
+  const objects = (resp.Contents ?? []).filter((o: { Key?: string }) => !!o.Key);
   if (objects.length === 0) return null;
 
-  objects.sort((a, b) => {
+  objects.sort((a: { LastModified?: Date }, b: { LastModified?: Date }) => {
     const aTime = a.LastModified?.getTime() ?? 0;
     const bTime = b.LastModified?.getTime() ?? 0;
     return bTime - aTime;

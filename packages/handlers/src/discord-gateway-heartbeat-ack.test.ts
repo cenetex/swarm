@@ -7,6 +7,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
 
+import * as RealSwarmCore from '../../core/src/index.js';
+
 // Mock all external dependencies before importing the module under test
 mock.module('ws', () => {
   class MockWebSocket {
@@ -45,15 +47,26 @@ mock.module('@aws-sdk/client-sqs', () => ({
   DeleteMessageCommand: class { constructor(public input: unknown) {} },
 }));
 
+// Preserve the complete core contract and replace only stateful services used
+// during gateway module initialization. A partial package mock can make an
+// otherwise unrelated import fail before these heartbeat tests execute.
 mock.module('@swarm/core', () => ({
-  SecretsManagerClient: class { send() { return Promise.resolve({}); } },
-  GetSecretValueCommand: class { constructor(public input: unknown) {} },
-  CreateSecretCommand: class { constructor(public input: unknown) {} },
-  UpdateSecretCommand: class { constructor(public input: unknown) {} },
-  DeleteSecretCommand: class { constructor(public input: unknown) {} },
-  DescribeSecretCommand: class { constructor(public input: unknown) {} },
-  RestoreSecretCommand: class { constructor(public input: unknown) {} },
-  PutSecretValueCommand: class { constructor(public input: unknown) {} },
+  ...RealSwarmCore,
+  createStateService: () => ({
+    listAvatars: async () => [],
+    getAvatarConfigWithStatus: async () => null,
+    checkAndSetIdempotency: async () => true,
+    addMessageToChannel: async () => {},
+  }),
+  createMessageEvaluator: () => ({ evaluate: async () => ({ shouldRespond: false, reason: 'test' }) }),
+  createActivityService: () => null,
+  logger: {
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    debug: () => {},
+    setContext: () => {},
+  },
 }));
 
 type GatewayConnectionClass = typeof import('./discord/discord-gateway-shared.js').GatewayConnection;

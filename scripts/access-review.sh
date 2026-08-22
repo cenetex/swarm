@@ -39,7 +39,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Config ───────────────────────────────────────────────────────────────
-REPO="${REPO:-cenetex/aws-swarm}"
+REPO="${REPO:-atimics/swarm}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 REVIEW_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 REVIEW_QUARTER="Q$(( ($(date +%-m) - 1) / 3 + 1 )) $(date +%Y)"

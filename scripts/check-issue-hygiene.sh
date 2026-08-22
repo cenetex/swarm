@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-REPO="cenetex/aws-swarm"
+REPO="atimics/swarm"
 BRANCH="${1:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")}"
 
 if [[ "${SKIP_ISSUE_HYGIENE:-}" == "1" || "${SKIP_ISSUE_HYGIENE:-}" == "true" ]]; then

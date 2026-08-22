@@ -52,7 +52,7 @@ asteroid belt seeding. No central allocation; no coordinate collisions.
 
 ### 2.2 Station lifecycle
 
-When a player runs Signal with a local aws-swarm avatar:
+When a player runs Signal with a local swarm avatar:
 
 1. Read the avatar's pubkey
 2. Derive the station position from pubkey hash
@@ -220,7 +220,7 @@ wallet addresses across chains. No separate key management needed.
 
 ## 6. Implementation Layers
 
-### 6.1 aws-swarm (this repo)
+### 6.1 swarm (this repo)
 
 Already done:
 - Ed25519 keypair generation and encrypted storage

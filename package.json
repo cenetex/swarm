@@ -1,6 +1,6 @@
 {
-  "name": "aws-swarm",
-  "description": "Social media avatar swarm framework for AWS",
+  "name": "swarm",
+  "description": "Social media avatar swarm framework",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.19.0",

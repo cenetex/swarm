@@ -12,6 +12,7 @@
  */
 import { createHmac } from 'crypto';
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { SecretsManagerClient } from '@swarm/core';
 
 // ---------------------------------------------------------------------------
 // Set env vars BEFORE dynamically loading the module under test

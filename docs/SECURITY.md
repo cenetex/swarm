@@ -1,6 +1,6 @@
 # Security Policy
 
-This document describes the security practices for the AWS Swarm project.
+This document describes the security practices for the Swarm project.
 
 ## Dependency Security
 
@@ -407,7 +407,7 @@ This project follows security best practices including:
 
 ## License
 
-This security policy is part of the AWS Swarm project and follows the same MIT license.
+This security policy is part of the Swarm project and follows the same MIT license.
 
 ---
 

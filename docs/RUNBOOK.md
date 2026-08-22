@@ -1,6 +1,6 @@
 # Operational Runbook
 
-> AWS Swarm -- Multi-tenant avatar platform on AWS serverless.
+> Swarm -- Multi-tenant avatar platform on AWS serverless.
 
 ---
 

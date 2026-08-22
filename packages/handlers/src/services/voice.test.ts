@@ -4,7 +4,8 @@
  * Tests for voice transcription, generation, and sending functionality.
  * Uses bun:test with mock functions for dependency injection.
  */
-import { describe, it, expect, beforeEach as _beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { createVoiceServices } from './voice.js';
 
 describe('VoiceServices - Pure Logic Tests', () => {
   describe('Audio format detection', () => {
@@ -249,9 +250,149 @@ describe('VoiceServices - Service Mock Integration', () => {
   });
 
   describe('generateVoiceMessage', () => {
-    it('does not rely on OpenAI TTS fallback', () => {
-      // Runtime voice generation should be Replicate-only; no OpenAI TTS fallback.
-      expect(true).toBe(true);
+    it('uses OpenRouter speech when no voice reference is configured', async () => {
+      const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
+        expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+        expect(options?.method).toBe('POST');
+        expect(options?.headers).toEqual(expect.objectContaining({
+          Authorization: 'Bearer test-openrouter-key',
+          'Content-Type': 'application/json',
+        }));
+
+        const body = JSON.parse(String(options?.body)) as {
+          model?: string;
+          messages?: Array<{ role?: string; content?: string }>;
+          modalities?: string[];
+          audio?: { voice?: string; format?: string };
+          stream?: boolean;
+        };
+        expect(body.model).toBe(process.env.OPENROUTER_SPEECH_MODEL || process.env.OPENROUTER_TTS_MODEL || 'openai/gpt-audio-mini');
+        expect(body.messages).toEqual([
+          { role: 'user', content: 'Hello from reference-free voice.' },
+        ]);
+        expect(body.modalities).toEqual(['text', 'audio']);
+        expect(body.audio).toEqual({
+          voice: process.env.OPENROUTER_SPEECH_VOICE || process.env.OPENROUTER_TTS_VOICE || 'alloy',
+          format: 'mp3',
+        });
+        expect(body.stream).toBe(true);
+
+        const streamPayload = [
+          'data: {"choices":[{"delta":{"audio":{"data":"YXVkaW8="}}}]}',
+          'data: [DONE]',
+          '',
+        ].join('\n');
+
+        return new Response(streamPayload, { status: 200 });
+      });
+
+      const voiceServices = createVoiceServices({
+        avatarId: 'test-avatar',
+        secrets: { OPENROUTER_API_KEY: 'test-openrouter-key' },
+        mediaBucket: 'test-bucket',
+        cdnUrl: 'https://cdn.example.com',
+        _deps: {
+          fetch: fetchMock,
+          s3Client: { send: vi.fn(async () => ({})) },
+        },
+      });
+
+      const generated = await voiceServices.generateVoiceMessage({
+        avatarId: 'test-avatar',
+        text: 'Hello from reference-free voice.',
+        format: 'mp3',
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(generated.assetId).toBeTruthy();
+      expect(generated.url).toMatch(/^https:\/\/cdn\.example\.com\/avatars\/test-avatar\/audio\/.+\.mp3$/);
+      expect(generated.format).toBe('mp3');
+    });
+
+    it('falls back to a clear provider error when no reference or OpenRouter key is available', async () => {
+      const voiceServices = createVoiceServices({
+        avatarId: 'test-avatar',
+        secrets: {},
+        mediaBucket: 'test-bucket',
+      });
+
+      await expect(voiceServices.generateVoiceMessage({
+        avatarId: 'test-avatar',
+        text: 'Hello without providers.',
+        format: 'ogg',
+      })).rejects.toThrow('Replicate API key not configured');
+    });
+
+    it('uses Replicate voice cloning when a reference voice is configured', async () => {
+      const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
+        if (url === 'https://api.replicate.com/v1/models/x-lance/f5-tts') {
+          return Response.json({ latest_version: { id: 'version-1' } });
+        }
+
+        if (url === 'https://api.replicate.com/v1/predictions') {
+          const body = JSON.parse(String(options?.body)) as { input?: Record<string, unknown> };
+          expect(body.input?.gen_text).toBe('Hello from cloned voice.');
+          expect(body.input?.ref_audio).toBe('https://example.com/ref.wav');
+          return Response.json({
+            id: 'pred-1',
+            status: 'succeeded',
+            output: 'https://replicate.delivery/out.wav',
+          });
+        }
+
+        if (url === 'https://replicate.delivery/out.wav') {
+          return new Response(new Uint8Array([1, 2, 3]), {
+            status: 200,
+            headers: { 'content-type': 'audio/wav' },
+          });
+        }
+
+        throw new Error(`Unexpected URL: ${url}`);
+      });
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      try {
+        const voiceServices = createVoiceServices({
+          avatarId: 'test-avatar',
+          secrets: {
+            OPENROUTER_API_KEY: 'test-openrouter-key',
+            REPLICATE_API_KEY: 'test-replicate-key',
+          },
+          voiceConfig: {
+            ttsProvider: 'voice-clone',
+            format: 'ogg',
+            referenceUrl: 'https://example.com/ref.wav',
+          },
+          mediaBucket: 'test-bucket',
+          cdnUrl: 'https://cdn.example.com',
+          replicatePollIntervalMs: 0,
+          _deps: {
+            s3Client: { send: vi.fn(async () => ({})) },
+          },
+        });
+
+        const generated = await voiceServices.generateVoiceMessage({
+          avatarId: 'test-avatar',
+          text: 'Hello from cloned voice.',
+          format: 'ogg',
+        });
+
+        expect(generated.assetId).toBeTruthy();
+        expect(generated.url).toMatch(/^https:\/\/cdn\.example\.com\/avatars\/test-avatar\/audio\/.+\.wav$/);
+        expect(generated.format).toBe('wav');
+        expect(fetchMock).toHaveBeenCalledWith(
+          'https://api.replicate.com/v1/predictions',
+          expect.objectContaining({
+            method: 'POST',
+            headers: expect.objectContaining({
+              Authorization: 'Bearer test-replicate-key',
+            }),
+          }),
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
 
     it('should use Replicate for voice cloning when configured', async () => {
