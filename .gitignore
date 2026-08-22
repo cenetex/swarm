@@ -73,6 +73,9 @@ issues/*.tmp
 audit/
 packages/infra/cdk.out.prod/*
 packages/infra/prod-resource-mapping.json
+packages/cloudflare/.dev.vars*
+packages/cloudflare/.wrangler/
+packages/cloudflare/wrangler.deploy.json
 migrations/
 .claude/
 

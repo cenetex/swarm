@@ -1,4 +1,4 @@
-import { CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN, parseHostingStatus } from '@swarm/core';
+import { CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN, parseHostingStatus } from '@swarm/core/hosted';
 import type { CloudflareHostedBindings, CloudflareQueueBatch } from './bindings.js';
 import {
   assertSameOrigin,

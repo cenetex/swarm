@@ -83,15 +83,19 @@ Migration `0003_hosted_chat_runtime.sql` adds account-keyed avatars, threads, me
 
 Required chat bindings:
 
-| Binding                            | Purpose                                                        |
-| ---------------------------------- | -------------------------------------------------------------- |
-| `SWARM_QUEUE`                      | Carries `swarm.hosted.chat.request` work.                      |
-| `SWARM_AVATAR_COORDINATORS`        | Durable Object namespace for per-avatar leases.                |
-| `SWARM_OPENROUTER_MODEL`           | Optional model override; defaults to `openai/gpt-4o-mini`.     |
-| `SWARM_OPENROUTER_CHAT_URL`        | Optional OpenRouter-compatible chat endpoint for tests/stacks. |
-| `SWARM_HOSTED_CHAT_RATE_LIMIT`     | Optional messages-per-minute override, clamped to 1–100.       |
+| Binding                        | Purpose                                                        |
+| ------------------------------ | -------------------------------------------------------------- |
+| `SWARM_QUEUE`                  | Carries `swarm.hosted.chat.request` work.                      |
+| `SWARM_AVATAR_COORDINATORS`    | Durable Object namespace for per-avatar leases.                |
+| `SWARM_OPENROUTER_MODEL`       | Optional model override; defaults to `openai/gpt-4o-mini`.     |
+| `SWARM_OPENROUTER_CHAT_URL`    | Optional OpenRouter-compatible chat endpoint for tests/stacks. |
+| `SWARM_HOSTED_CHAT_RATE_LIMIT` | Optional messages-per-minute override, clamped to 1–100.       |
 
 This slice does not activate a paid entitlement and does not report a tenant as subscribed or active.
+
+The Worker deployment configuration and protected manual release workflow are documented in
+[`docs/CLOUDFLARE-HOSTED-RUNBOOK.md`](../CLOUDFLARE-HOSTED-RUNBOOK.md). Merging this runtime does not
+route `swarm.rati.chat` to it; DNS and route cutover remain a separate release step.
 
 ### Secret envelope
 

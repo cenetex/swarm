@@ -1,0 +1,208 @@
+name: Deploy Cloudflare Hosted Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Cloudflare environment to deploy
+        required: true
+        type: choice
+        options:
+          - preview
+          - production
+        default: preview
+      confirm_production:
+        description: Type DEPLOY_PRODUCTION when environment is production
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-hosted-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: cloudflare-${{ inputs.environment }}
+    env:
+      SWARM_DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+      SWARM_PRODUCTION_CONFIRMATION: ${{ inputs.confirm_production }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SWARM_CF_WORKER_NAME: ${{ vars.SWARM_CF_WORKER_NAME }}
+      SWARM_CF_D1_DATABASE_NAME: ${{ vars.SWARM_CF_D1_DATABASE_NAME }}
+      SWARM_CF_D1_DATABASE_ID: ${{ vars.SWARM_CF_D1_DATABASE_ID }}
+      SWARM_CF_R2_BUCKET_NAME: ${{ vars.SWARM_CF_R2_BUCKET_NAME }}
+      SWARM_CF_QUEUE_NAME: ${{ vars.SWARM_CF_QUEUE_NAME }}
+      SWARM_PUBLIC_URL: ${{ vars.SWARM_PUBLIC_URL }}
+      SWARM_USER_SECRET_KEY_VERSION: ${{ vars.SWARM_USER_SECRET_KEY_VERSION }}
+      SWARM_USER_SECRET_KEK: ${{ secrets.SWARM_USER_SECRET_KEK }}
+      SWARM_USER_SECRET_PREVIOUS_KEY_VERSION: ${{ vars.SWARM_USER_SECRET_PREVIOUS_KEY_VERSION }}
+      SWARM_USER_SECRET_PREVIOUS_KEK: ${{ secrets.SWARM_USER_SECRET_PREVIOUS_KEK }}
+      SWARM_OPENROUTER_MODEL: ${{ vars.SWARM_OPENROUTER_MODEL }}
+      SWARM_HOSTED_CHAT_RATE_LIMIT: ${{ vars.SWARM_HOSTED_CHAT_RATE_LIMIT }}
+      WRANGLER_SEND_METRICS: 'false'
+
+    steps:
+      - name: Guard production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$SWARM_DEPLOY_ENVIRONMENT" = "production" ]; then
+            if [ "$SWARM_PRODUCTION_CONFIRMATION" != "DEPLOY_PRODUCTION" ]; then
+              echo "::error::Production requires confirm_production=DEPLOY_PRODUCTION."
+              exit 1
+            fi
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "::error::Production deployments must run from main."
+              exit 1
+            fi
+          fi
+
+      - name: Check deployment settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            CLOUDFLARE_ACCOUNT_ID
+            CLOUDFLARE_API_TOKEN
+            SWARM_CF_WORKER_NAME
+            SWARM_CF_D1_DATABASE_NAME
+            SWARM_CF_D1_DATABASE_ID
+            SWARM_CF_R2_BUCKET_NAME
+            SWARM_CF_QUEUE_NAME
+            SWARM_PUBLIC_URL
+            SWARM_USER_SECRET_KEY_VERSION
+            SWARM_USER_SECRET_KEK
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing protected settings: ${missing[*]}"
+            exit 1
+          fi
+          if { [ -n "${SWARM_USER_SECRET_PREVIOUS_KEY_VERSION:-}" ] && [ -z "${SWARM_USER_SECRET_PREVIOUS_KEK:-}" ]; } ||
+             { [ -z "${SWARM_USER_SECRET_PREVIOUS_KEY_VERSION:-}" ] && [ -n "${SWARM_USER_SECRET_PREVIOUS_KEK:-}" ]; }; then
+            echo "::error::Previous key version and previous wrapping key must be set together."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate package and deployment bundle
+        run: |
+          pnpm --filter @swarm/cloudflare typecheck
+          pnpm --filter @swarm/cloudflare lint
+          pnpm --filter @swarm/cloudflare test
+          pnpm --filter @swarm/cloudflare deploy:dry-run
+
+      - name: Render protected deployment configuration
+        run: >-
+          node packages/cloudflare/scripts/render-wrangler-config.mjs
+          --environment "$SWARM_DEPLOY_ENVIRONMENT"
+          --output packages/cloudflare/wrangler.deploy.json
+
+      - name: Validate wrapping keys
+        run: |
+          # shellcheck disable=SC2016
+          node --input-type=module -e '
+            const decode = (name) => {
+              const value = process.env[name] ?? "";
+              if (!/^[A-Za-z0-9_-]+$/.test(value) || Buffer.from(value, "base64url").length !== 32) {
+                throw new Error(`${name} must be a base64url-encoded 32-byte key.`);
+              }
+            };
+            decode("SWARM_USER_SECRET_KEK");
+            if (process.env.SWARM_USER_SECRET_PREVIOUS_KEK) decode("SWARM_USER_SECRET_PREVIOUS_KEK");
+          '
+
+      - name: Apply D1 migrations
+        run: >-
+          pnpm --filter @swarm/cloudflare exec wrangler d1 migrations apply SWARM_STATE
+          --remote
+          --config wrangler.deploy.json
+
+      - name: Prepare encrypted Worker secrets
+        env:
+          SECRETS_FILE: ${{ runner.temp }}/swarm-hosted-secrets.json
+        run: |
+          # shellcheck disable=SC2016
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            const secrets = { SWARM_USER_SECRET_KEK: process.env.SWARM_USER_SECRET_KEK };
+            const previousVersion = process.env.SWARM_USER_SECRET_PREVIOUS_KEY_VERSION;
+            if (previousVersion) {
+              if (!/^[A-Za-z0-9_]{1,40}$/.test(previousVersion)) throw new Error("Invalid previous key version.");
+              if (previousVersion === process.env.SWARM_USER_SECRET_KEY_VERSION) {
+                throw new Error("Previous and active key versions must differ.");
+              }
+              secrets[`SWARM_USER_SECRET_KEK_${previousVersion}`] = process.env.SWARM_USER_SECRET_PREVIOUS_KEK;
+            }
+            writeFileSync(process.env.SECRETS_FILE, JSON.stringify(secrets), { mode: 0o600 });
+          '
+
+      - name: Deploy Worker
+        env:
+          SECRETS_FILE: ${{ runner.temp }}/swarm-hosted-secrets.json
+        run: >-
+          pnpm --filter @swarm/cloudflare exec wrangler deploy
+          --strict
+          --config wrangler.deploy.json
+          --secrets-file "$SECRETS_FILE"
+          --message "GitHub ${GITHUB_SHA} ($SWARM_DEPLOY_ENVIRONMENT)"
+
+      - name: Smoke-check hosted runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          origin="${SWARM_PUBLIC_URL%/}"
+          health=$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors "$origin/health")
+          hosting=$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors "$origin/api/hosting/status")
+          echo "$health" | jq -e '.status == "ok" and .backend == "cloudflare" and .mode == "hosted"' >/dev/null
+          echo "$hosting" | jq -e '.hosted.configured == true and .hosted.available == true and .hosted.entitlement == "none"' >/dev/null
+          echo "Cloudflare hosted Worker smoke checks passed."
+
+      - name: Write deployment summary
+        if: success()
+        run: |
+          {
+            echo "## Cloudflare hosted Worker"
+            echo ""
+            echo "- Environment: \`${{ inputs.environment }}\`"
+            echo "- Worker: \`$SWARM_CF_WORKER_NAME\`"
+            echo "- Public URL: $SWARM_PUBLIC_URL"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- D1 migrations and smoke checks: passed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove generated deployment files
+        if: always()
+        run: |
+          rm -f packages/cloudflare/wrangler.deploy.json
+          rm -f "${{ runner.temp }}/swarm-hosted-secrets.json"

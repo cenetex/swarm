@@ -21,7 +21,10 @@
     "build": "tsc --build",
     "typecheck": "tsc -b",
     "test": "bun test",
-    "lint": "eslint --max-warnings 0 src/"
+    "lint": "eslint --max-warnings 0 src/",
+    "deploy:config": "node scripts/render-wrangler-config.mjs",
+    "predeploy:dry-run": "tsc -b",
+    "deploy:dry-run": "WRANGLER_WRITE_LOGS=false wrangler deploy --dry-run --outdir .wrangler/dry-run"
   },
   "dependencies": {
     "@swarm/core": "workspace:*",
@@ -29,6 +32,7 @@
     "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "wrangler": "4.125.0"
   }
 }
