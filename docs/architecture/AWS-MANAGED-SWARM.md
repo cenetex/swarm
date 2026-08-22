@@ -1,6 +1,8 @@
 # AWS Managed Swarm
 
-This is the current target for the paid hosted tier: users choose **Local** or **Hosted**. Hosted means Swarm runs 24/7 on infrastructure we operate.
+> Legacy/specialized runtime option. The default paid hosted tier now targets the shared Cloudflare hybrid described in `CLOUDFLARE-HOSTED-SWARM.md`.
+
+This design remains available if measured workloads require a managed container pool. Users still choose only **Local** or **Hosted**; the underlying provider is never a product-level choice.
 
 ## Product Model
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { createCloudflareHostedPlatform } from './platform.js';
+import { encodeHostedSecretKey } from './secret-crypto.js';
 import worker from './worker.js';
 import type {
   CloudflareD1Database,
@@ -9,18 +10,22 @@ import type {
   CloudflareR2Bucket,
 } from './bindings.js';
 
-function fakeStatement(): CloudflareD1PreparedStatement {
-  return {
-    bind: () => fakeStatement(),
+function fakeStatement(onBind?: (values: unknown[]) => void): CloudflareD1PreparedStatement {
+  const statement: CloudflareD1PreparedStatement = {
+    bind: (...values) => {
+      onBind?.(values);
+      return statement;
+    },
     first: async () => null,
     all: async () => ({ success: true, results: [] }),
     run: async () => ({ success: true }),
   };
+  return statement;
 }
 
-function fakeEnv(queue?: CloudflareQueue): CloudflareHostedBindings {
+function fakeEnv(queue?: CloudflareQueue, onBind?: (values: unknown[]) => void): CloudflareHostedBindings {
   return {
-    SWARM_STATE: { prepare: () => fakeStatement() } satisfies CloudflareD1Database,
+    SWARM_STATE: { prepare: () => fakeStatement(onBind) } satisfies CloudflareD1Database,
     SWARM_BLOBS: {
       get: async () => null,
       put: async () => ({}),
@@ -28,6 +33,7 @@ function fakeEnv(queue?: CloudflareQueue): CloudflareHostedBindings {
     } satisfies CloudflareR2Bucket,
     ...(queue ? { SWARM_QUEUE: queue } : {}),
     OPENROUTER_API_KEY: 'sk-test',
+    SWARM_USER_SECRET_KEK: encodeHostedSecretKey(new Uint8Array(32).fill(9)),
   };
 }
 
@@ -43,6 +49,7 @@ describe('Cloudflare hosted platform scaffold', () => {
     expect(platform.descriptor.capabilities).not.toContain('coordination');
     expect(platform.descriptor.capabilities).not.toContain('realtime');
     expect(platform.descriptor.capabilities).not.toContain('queues');
+    expect(platform.descriptor.capabilities).toContain('encrypted-user-secrets');
   });
 
   it('reads platform secrets from worker bindings', async () => {
@@ -50,9 +57,24 @@ describe('Cloudflare hosted platform scaffold', () => {
     await expect(platform.secrets.getPlatformSecret('OPENROUTER_API_KEY')).resolves.toBe('sk-test');
   });
 
-  it('fails closed for user secrets until envelope encryption exists', async () => {
-    const platform = createCloudflareHostedPlatform(fakeEnv());
-    await expect(platform.secrets.putUserSecret('acct-1', 'telegram', 'secret')).rejects.toThrow(/envelope encryption/i);
+  it('stores user secrets as an encrypted envelope', async () => {
+    const boundValues: unknown[][] = [];
+    const platform = createCloudflareHostedPlatform(fakeEnv(undefined, (values) => boundValues.push(values)));
+    await platform.secrets.putUserSecret({ accountId: 'acct-1' }, 'telegram', 'bot-secret');
+
+    const write = boundValues.find((values) => values.length === 6);
+    expect(write).toBeDefined();
+    expect(String(write?.[3])).not.toContain('bot-secret');
+    expect(String(write?.[3])).toContain('wrappedDataKey');
+  });
+
+  it('fails closed when the hosted encryption key is missing', async () => {
+    const env = fakeEnv();
+    delete env.SWARM_USER_SECRET_KEK;
+    const platform = createCloudflareHostedPlatform(env);
+    await expect(platform.secrets.putUserSecret({ accountId: 'acct-1' }, 'telegram', 'secret')).rejects.toThrow(
+      /not configured/i,
+    );
   });
 
   it('sends default queue messages through the queue binding', async () => {
@@ -74,11 +96,8 @@ describe('Cloudflare hosted platform scaffold', () => {
   });
 
   it('does not claim a subscription or active hosted runtime', async () => {
-    const response = await worker.fetch(
-      new Request('https://swarm.example/api/hosting/status'),
-      fakeEnv(),
-    );
-    const status = await response.json() as {
+    const response = await worker.fetch(new Request('https://swarm.example/api/hosting/status'), fakeEnv());
+    const status = (await response.json()) as {
       mode: string;
       hosted: { available: boolean; status: string; entitlement: string };
     };
@@ -86,6 +105,23 @@ describe('Cloudflare hosted platform scaffold', () => {
     expect(status.mode).toBe('local');
     expect(status.hosted.available).toBe(false);
     expect(status.hosted.status).toBe('not-configured');
+    expect(status.hosted.entitlement).toBe('none');
+  });
+
+  it('reports configured infrastructure as available but not active', async () => {
+    const env = fakeEnv();
+    env.SWARM_HOSTED_ENABLED = '1';
+    env.SWARM_PUBLIC_URL = 'https://swarm.example';
+    env.SWARM_ENV = 'production';
+    const response = await worker.fetch(new Request('https://swarm.example/api/hosting/status'), env);
+    const status = (await response.json()) as {
+      mode: string;
+      hosted: { available: boolean; status: string; entitlement: string };
+    };
+
+    expect(status.mode).toBe('local');
+    expect(status.hosted.available).toBe(true);
+    expect(status.hosted.status).toBe('available');
     expect(status.hosted.entitlement).toBe('none');
   });
 });

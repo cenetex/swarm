@@ -24,7 +24,9 @@
     "lint": "eslint --max-warnings 0 src/"
   },
   "dependencies": {
-    "@swarm/core": "workspace:*"
+    "@swarm/core": "workspace:*",
+    "bs58": "^6.0.0",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

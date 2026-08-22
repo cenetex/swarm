@@ -97,11 +97,17 @@ export interface HostedCoordinator {
   publishAvatarEvent(avatarId: string, event: JsonObject): Promise<void>;
 }
 
+export type HostedUserSecretScope = {
+  accountId: string;
+  tenantId?: string;
+};
+
 export interface HostedSecretStore {
   getPlatformSecret(name: string): Promise<string>;
-  getUserSecret(accountId: string, name: string): Promise<string | null>;
-  putUserSecret(accountId: string, name: string, value: string): Promise<void>;
-  deleteUserSecret(accountId: string, name: string): Promise<void>;
+  hasUserSecret(scope: HostedUserSecretScope, name: string): Promise<boolean>;
+  getUserSecret(scope: HostedUserSecretScope, name: string): Promise<string | null>;
+  putUserSecret(scope: HostedUserSecretScope, name: string, value: string): Promise<void>;
+  deleteUserSecret(scope: HostedUserSecretScope, name: string): Promise<void>;
 }
 
 export type HostedPlatformDescriptor = {
@@ -111,12 +117,14 @@ export type HostedPlatformDescriptor = {
   capabilities: HostedPlatformCapability[];
 };
 
+export type HostedDeploymentProvider = Exclude<HostedPlatformKind, 'local'>;
+
 export type ManagedSwarmHostingPlan = {
-  id: 'starter';
+  id: string;
   label: string;
   priceUsdMonthly: number;
-  provider: 'aws';
-  architecture: 'aws-managed-ec2-pool';
+  provider: HostedDeploymentProvider;
+  architecture: string;
   detail: string;
 };
 
@@ -128,9 +136,9 @@ export type ManagedSwarmInstanceStatus =
   | 'error';
 
 export type ManagedSwarmInstance = {
-  provider: 'aws';
-  architecture: 'aws-managed-ec2-pool';
-  planId: ManagedSwarmHostingPlan['id'];
+  provider: HostedDeploymentProvider;
+  architecture: string;
+  planId: string;
   status: ManagedSwarmInstanceStatus;
   requestedAt: number;
   updatedAt: number;
@@ -176,9 +184,9 @@ export const HostingStatusSchema = z.object({
       detail: z.string(),
     }).optional(),
     instance: z.object({
-      provider: z.literal('aws'),
-      architecture: z.literal('aws-managed-ec2-pool'),
-      planId: z.literal('starter'),
+      provider: z.enum(['cloudflare', 'aws', 'external']),
+      architecture: z.string().min(1),
+      planId: z.string().min(1),
       status: z.enum(['requested', 'provisioning', 'running', 'stopped', 'error']),
       requestedAt: z.number(),
       updatedAt: z.number(),
@@ -204,6 +212,15 @@ export const AWS_MANAGED_SWARM_STARTER_PLAN: ManagedSwarmHostingPlan = {
   provider: 'aws',
   architecture: 'aws-managed-ec2-pool',
   detail: 'Managed hosted Swarm runtime.',
+};
+
+export const CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN: ManagedSwarmHostingPlan = {
+  id: 'starter',
+  label: 'Hosted 24/7',
+  priceUsdMonthly: 9,
+  provider: 'cloudflare',
+  architecture: 'cloudflare-hybrid-shared-runtime',
+  detail: 'Shared always-on Swarm runtime with bring-your-own AI credentials.',
 };
 
 export function createAwsManagedSwarmDescriptor(): HostedPlatformDescriptor {

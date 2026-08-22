@@ -10,6 +10,7 @@ import type {
   HostedScheduledJob,
   HostedScheduler,
   HostedSecretStore,
+  HostedUserSecretScope,
   HostedStateEntry,
   HostedStatePutOptions,
   HostedStateStore,
@@ -17,6 +18,7 @@ import type {
 } from '@swarm/core';
 import type { CloudflareHostedBindings, CloudflareQueue } from './bindings.js';
 import { CloudflareFeatureNotImplementedError } from './errors.js';
+import { HostedSecretCipher, isHostedSecretKeyValid } from './secret-crypto.js';
 
 type D1StateRow = {
   pk: string;
@@ -167,7 +169,11 @@ export class CloudflareAvatarCoordinator implements HostedCoordinator {
 }
 
 export class CloudflareSecretStore implements HostedSecretStore {
-  constructor(private readonly env: CloudflareHostedBindings) {}
+  private readonly cipher: HostedSecretCipher;
+
+  constructor(private readonly env: CloudflareHostedBindings) {
+    this.cipher = createCloudflareSecretCipher(env);
+  }
 
   async getPlatformSecret(name: string): Promise<string> {
     const value = this.env[name];
@@ -177,17 +183,85 @@ export class CloudflareSecretStore implements HostedSecretStore {
     return value;
   }
 
-  async getUserSecret(_accountId: string, _name: string): Promise<string | null> {
-    throw new CloudflareFeatureNotImplementedError('User secrets', 'Envelope encryption for D1/R2 user secrets must be implemented first.');
+  async hasUserSecret(scope: HostedUserSecretScope, name: string): Promise<boolean> {
+    assertSecretCoordinates(scope, name);
+    const row = await this.env.SWARM_STATE.prepare(
+      `select 1 as present from swarm_user_secrets
+       where account_id = ? and tenant_id = ? and name = ?`,
+    )
+      .bind(scope.accountId, scope.tenantId ?? '', name)
+      .first<{ present: number }>();
+    return row?.present === 1;
   }
 
-  async putUserSecret(_accountId: string, _name: string, _value: string): Promise<void> {
-    throw new CloudflareFeatureNotImplementedError('User secrets', 'Refusing to store user secrets without envelope encryption.');
+  async getUserSecret(scope: HostedUserSecretScope, name: string): Promise<string | null> {
+    assertSecretCoordinates(scope, name);
+    const tenantId = scope.tenantId ?? '';
+    const row = await this.env.SWARM_STATE.prepare(
+      `select envelope from swarm_user_secrets
+       where account_id = ? and tenant_id = ? and name = ?`,
+    )
+      .bind(scope.accountId, tenantId, name)
+      .first<{ envelope: string }>();
+    if (!row) return null;
+    return this.cipher.open(row.envelope, secretContext(scope, name));
   }
 
-  async deleteUserSecret(_accountId: string, _name: string): Promise<void> {
-    throw new CloudflareFeatureNotImplementedError('User secrets', 'Encrypted user secret deletion is not wired yet.');
+  async putUserSecret(scope: HostedUserSecretScope, name: string, value: string): Promise<void> {
+    assertSecretCoordinates(scope, name);
+    if (!value) throw new Error('Hosted user secrets cannot be empty.');
+    const envelope = await this.cipher.seal(value, secretContext(scope, name));
+    const tenantId = scope.tenantId ?? '';
+    const result = await this.env.SWARM_STATE.prepare(
+      `insert into swarm_user_secrets (account_id, tenant_id, name, envelope, key_version, updated_at)
+       values (?, ?, ?, ?, ?, ?)
+       on conflict(account_id, tenant_id, name) do update set
+         envelope = excluded.envelope,
+         key_version = excluded.key_version,
+         updated_at = excluded.updated_at`,
+    )
+      .bind(scope.accountId, tenantId, name, JSON.stringify(envelope), envelope.keyVersion, Date.now())
+      .run();
+    if (!result.success) throw new Error(result.error ?? 'D1 encrypted user secret write failed');
   }
+
+  async deleteUserSecret(scope: HostedUserSecretScope, name: string): Promise<void> {
+    assertSecretCoordinates(scope, name);
+    const result = await this.env.SWARM_STATE.prepare(
+      'delete from swarm_user_secrets where account_id = ? and tenant_id = ? and name = ?',
+    )
+      .bind(scope.accountId, scope.tenantId ?? '', name)
+      .run();
+    if (!result.success) throw new Error(result.error ?? 'D1 encrypted user secret deletion failed');
+  }
+}
+
+export function createCloudflareSecretCipher(env: CloudflareHostedBindings): HostedSecretCipher {
+  const activeKeyVersion = env.SWARM_USER_SECRET_KEY_VERSION?.trim() || 'v1';
+  return new HostedSecretCipher(activeKeyVersion, (keyVersion) => {
+    if (keyVersion === activeKeyVersion) {
+      return env.SWARM_USER_SECRET_KEK?.trim() || null;
+    }
+    const suffix = keyVersion.toUpperCase().replace(/[^A-Z0-9]/gu, '_');
+    const previousKey = env[`SWARM_USER_SECRET_KEK_${suffix}`];
+    return typeof previousKey === 'string' && previousKey.trim() ? previousKey.trim() : null;
+  });
+}
+
+function assertSecretCoordinates(scope: HostedUserSecretScope, name: string): void {
+  if (!scope.accountId.trim() || scope.accountId.length > 160) {
+    throw new Error('Hosted user secret account scope is invalid.');
+  }
+  if ((scope.tenantId?.length ?? 0) > 160) {
+    throw new Error('Hosted user secret tenant scope is invalid.');
+  }
+  if (!name.trim() || name.length > 160) {
+    throw new Error('Hosted user secret name is invalid.');
+  }
+}
+
+function secretContext(scope: HostedUserSecretScope, name: string): string {
+  return JSON.stringify([scope.accountId, scope.tenantId ?? '', name]);
 }
 
 export function createCloudflareHostedPlatform(env: CloudflareHostedBindings): HostedPlatform {
@@ -197,6 +271,7 @@ export function createCloudflareHostedPlatform(env: CloudflareHostedBindings): H
     'platform-secrets',
   ];
   if (env.SWARM_QUEUE) capabilities.push('queues');
+  if (isHostedSecretKeyValid(env.SWARM_USER_SECRET_KEK)) capabilities.push('encrypted-user-secrets');
   return {
     descriptor: {
       kind: 'cloudflare',
