@@ -1,5 +1,5 @@
 import { CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN, parseHostingStatus } from '@swarm/core';
-import type { CloudflareHostedBindings } from './bindings.js';
+import type { CloudflareHostedBindings, CloudflareQueueBatch } from './bindings.js';
 import {
   assertSameOrigin,
   clearHostedSessionCookie,
@@ -21,6 +21,25 @@ import {
 } from './openrouter.js';
 import { createCloudflareHostedPlatform } from './platform.js';
 import { isHostedSecretKeyValid } from './secret-crypto.js';
+import {
+  clearHostedChatHistory,
+  cleanupHostedChatRuntime,
+  createHostedAvatar,
+  enqueueHostedChat,
+  getHostedAvatar,
+  getHostedChatJob,
+  HostedAvatarCoordinatorDurableObject,
+  HostedChatConfigurationError,
+  HostedChatMissingKeyError,
+  HostedChatNotFoundError,
+  HostedChatQueueError,
+  HostedChatRateLimitError,
+  listHostedAvatars,
+  listHostedChatHistory,
+  processHostedChatQueueBatch,
+} from './hosted-chat.js';
+
+export { HostedAvatarCoordinatorDurableObject };
 
 type ScheduledController = {
   scheduledTime: number;
@@ -71,6 +90,17 @@ function stringField(body: Record<string, unknown>, name: string): string {
   return value.trim();
 }
 
+function optionalStringField(body: Record<string, unknown>, name: string): string | undefined {
+  const value = body[name];
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') throw new Error(`${name} must be a string.`);
+  return value.trim() || undefined;
+}
+
+function validResourceId(value: string): boolean {
+  return /^[A-Za-z0-9._:-]{1,160}$/u.test(value);
+}
+
 function openRouterReturnUrl(env: CloudflareHostedBindings, request: Request, result: 'connected' | 'error'): string {
   const configuredPath = env.SWARM_OPENROUTER_RETURN_PATH?.trim() || '/?ai=openrouter';
   const path = configuredPath.startsWith('/') && !configuredPath.startsWith('//') ? configuredPath : '/?ai=openrouter';
@@ -93,6 +123,10 @@ function hostedConfigurationReady(env: CloudflareHostedBindings): boolean {
   } catch {
     return false;
   }
+}
+
+function hostedChatConfigurationReady(env: CloudflareHostedBindings): boolean {
+  return hostedConfigurationReady(env) && !!env.SWARM_QUEUE && !!env.SWARM_AVATAR_COORDINATORS;
 }
 
 async function handleRequest(request: Request, env: CloudflareHostedBindings): Promise<Response> {
@@ -301,6 +335,99 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     return json({ connected: false, provider: null });
   }
 
+  if (url.pathname === '/api/avatars' && request.method === 'GET') {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    return json(await listHostedAvatars(env, session));
+  }
+
+  if (url.pathname === '/api/avatars' && request.method === 'POST') {
+    assertSameOrigin(env, request);
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    if (!hostedChatConfigurationReady(env)) {
+      return json({ error: 'Hosted chat is not configured.' }, { status: 503 });
+    }
+    const body = await readJsonObject(request);
+    const name = stringField(body, 'name');
+    const description = optionalStringField(body, 'description');
+    if (name.length > 80) return json({ error: 'Avatar name is too large.' }, { status: 400 });
+    if ((description?.length ?? 0) > 1_000) return json({ error: 'Avatar description is too large.' }, { status: 400 });
+    return json(await createHostedAvatar(env, session, { name, ...(description ? { description } : {}) }), {
+      status: 201,
+    });
+  }
+
+  const avatarMatch = url.pathname.match(/^\/api\/avatars\/([^/]+)$/u);
+  if (avatarMatch && request.method === 'GET') {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = decodeURIComponent(avatarMatch[1] ?? '');
+    if (!validResourceId(avatarId)) return json({ error: 'Avatar id is invalid.' }, { status: 400 });
+    const avatar = await getHostedAvatar(env, session, avatarId);
+    return avatar ? json(avatar) : json({ error: 'Hosted avatar was not found.' }, { status: 404 });
+  }
+
+  if (url.pathname === '/api/chat' && request.method === 'GET') {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = url.searchParams.get('avatarId')?.trim() ?? '';
+    if (!validResourceId(avatarId)) return json({ error: 'avatarId is required.' }, { status: 400 });
+    const history = await listHostedChatHistory(env, session, avatarId);
+    return history ? json({ history }) : json({ error: 'Hosted avatar was not found.' }, { status: 404 });
+  }
+
+  if (url.pathname === '/api/chat' && request.method === 'DELETE') {
+    assertSameOrigin(env, request);
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = url.searchParams.get('avatarId')?.trim() ?? '';
+    if (!validResourceId(avatarId)) return json({ error: 'avatarId is required.' }, { status: 400 });
+    const cleared = await clearHostedChatHistory(env, session, avatarId);
+    return cleared ? json({ success: true }) : json({ error: 'Hosted avatar was not found.' }, { status: 404 });
+  }
+
+  if (url.pathname === '/api/chat' && request.method === 'POST') {
+    assertSameOrigin(env, request);
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    if (!hostedChatConfigurationReady(env)) {
+      return json({ error: 'Hosted chat is not configured.' }, { status: 503 });
+    }
+    const body = await readJsonObject(request);
+    const message = stringField(body, 'message');
+    if (message.length > 4_000) return json({ error: 'Chat message is too large.' }, { status: 400 });
+    const avatarValue = body.avatar;
+    const avatarId = avatarValue && typeof avatarValue === 'object' && !Array.isArray(avatarValue)
+      ? optionalStringField(avatarValue as Record<string, unknown>, 'id')
+      : optionalStringField(body, 'avatarId');
+    if (!avatarId || !validResourceId(avatarId)) return json({ error: 'avatar.id is required.' }, { status: 400 });
+    const providedRequestId = optionalStringField(body, 'requestId');
+    const requestId = providedRequestId ?? `request_${crypto.randomUUID()}`;
+    if (!validResourceId(requestId)) return json({ error: 'requestId is invalid.' }, { status: 400 });
+    const queued = await enqueueHostedChat(env, session, { avatarId, message, requestId });
+    return json(
+      {
+        jobId: queued.jobId,
+        type: 'chat',
+        status: 'pending',
+        requestId,
+        replayed: queued.replayed,
+      },
+      { status: 202 },
+    );
+  }
+
+  const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/u);
+  if (jobMatch && request.method === 'GET') {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const jobId = decodeURIComponent(jobMatch[1] ?? '');
+    if (!validResourceId(jobId)) return json({ error: 'Job id is invalid.' }, { status: 400 });
+    const job = await getHostedChatJob(env, session, jobId);
+    return job ? json(job) : json({ error: 'Hosted chat job was not found.' }, { status: 404 });
+  }
+
   return json({ error: 'Cloudflare hosted Swarm route not implemented yet' }, { status: 404 });
 }
 
@@ -319,8 +446,22 @@ export default {
           },
         );
       }
+      if (error instanceof HostedChatRateLimitError) {
+        return json(
+          { error: detail, retryAfter: error.retryAfter, limitType: 'messages' },
+          {
+            status: 429,
+            headers: { 'Retry-After': String(error.retryAfter) },
+          },
+        );
+      }
       if (error instanceof HostedOriginError) {
         return json({ error: detail }, { status: 403 });
+      }
+      if (error instanceof HostedChatNotFoundError) return json({ error: detail }, { status: 404 });
+      if (error instanceof HostedChatMissingKeyError) return json({ error: detail }, { status: 409 });
+      if (error instanceof HostedChatQueueError || error instanceof HostedChatConfigurationError) {
+        return json({ error: detail }, { status: 503 });
       }
       const isClientError = /required|invalid|base58|32 bytes|too large|JSON object|Cross-origin/iu.test(detail);
       return json(
@@ -334,6 +475,7 @@ export default {
 
   async scheduled(controller: ScheduledController, env: CloudflareHostedBindings): Promise<void> {
     await cleanupExpiredHostedAuth(env, controller.scheduledTime);
+    await cleanupHostedChatRuntime(env, controller.scheduledTime);
     const platform = createCloudflareHostedPlatform(env);
     await platform.queues.send('default', {
       type: 'swarm.cron.tick',
@@ -342,5 +484,9 @@ export default {
         scheduledTime: controller.scheduledTime,
       },
     });
+  },
+
+  async queue(batch: CloudflareQueueBatch, env: CloudflareHostedBindings): Promise<void> {
+    await processHostedChatQueueBatch(batch, env);
   },
 };

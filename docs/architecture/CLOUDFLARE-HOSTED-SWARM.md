@@ -66,6 +66,33 @@ The hosted Worker implements the first secure vertical slice:
 
 The existing admin UI routes are backed by the same store: `/api/llm/status` and the write-only `/api/secrets/llm-api-key` endpoint. Manual OpenRouter keys therefore receive the same encryption and account isolation as OAuth-created keys.
 
+## Hosted Web Chat
+
+The first hosted message path is now implemented for browser chat:
+
+1. The signed-in user creates or selects an avatar through `/api/avatars`.
+2. `POST /api/chat` checks the feature flag, session, avatar owner, message limit, Queue and Durable Object bindings, and the user's OpenRouter key.
+3. D1 stores one user message and one job for the client request id. A replay returns the existing job instead of calling the model again.
+4. The Queue consumer asks the avatar's Durable Object for a short lease. Only one job for that account and avatar can hold the lease.
+5. The consumer decrypts the account's OpenRouter key only for the provider call. It loads recent D1 history, calls the configured model, and stores one assistant message.
+6. The admin UI polls `/api/jobs/{jobId}`. Completed jobs return the stored answer and history. Failed jobs return a short safe message with no provider response or credential data.
+
+Model failures retry at most three times with increasing Queue delay. Initial Queue sends also stop after three attempts. Exhausted work enters the `dead` state instead of waiting forever. A request is limited to 4,000 characters, model context is capped at 20 stored messages, and the default account limit is 20 new messages per minute.
+
+Migration `0003_hosted_chat_runtime.sql` adds account-keyed avatars, threads, messages, jobs, and rate-limit rows. Every read and write includes the authenticated account id. The browser's supplied history and avatar text are not trusted as stored state.
+
+Required chat bindings:
+
+| Binding                            | Purpose                                                        |
+| ---------------------------------- | -------------------------------------------------------------- |
+| `SWARM_QUEUE`                      | Carries `swarm.hosted.chat.request` work.                      |
+| `SWARM_AVATAR_COORDINATORS`        | Durable Object namespace for per-avatar leases.                |
+| `SWARM_OPENROUTER_MODEL`           | Optional model override; defaults to `openai/gpt-4o-mini`.     |
+| `SWARM_OPENROUTER_CHAT_URL`        | Optional OpenRouter-compatible chat endpoint for tests/stacks. |
+| `SWARM_HOSTED_CHAT_RATE_LIMIT`     | Optional messages-per-minute override, clamped to 1–100.       |
+
+This slice does not activate a paid entitlement and does not report a tenant as subscribed or active.
+
 ### Secret envelope
 
 Every stored secret receives a random 256-bit data-encryption key. AES-256-GCM encrypts the secret, and a versioned root key wraps the data key with separate authenticated context. The context includes account, optional tenant, and secret name, preventing ciphertext from being moved between tenants or purposes.
@@ -86,12 +113,13 @@ Production requests fail closed when the canonical public URL or encryption mate
 ## Migration Roadmap
 
 1. **Foundation — implemented:** provider-neutral hosted plans, D1/R2/Queue adapters, SIWS sessions, encrypted user secrets, OpenRouter PKCE, and compatible admin UI sign-in/BYOK routes.
-2. **Webhook runtime:** port avatar reads, web chat, and Telegram ingress; add idempotency, Queue consumers, per-avatar Durable Object serialization, retry limits, and a dead-letter path.
-3. **Entitlement and quotas:** connect Stripe checkout/portal and optional on-chain entitlement; enforce request, token, storage, and concurrency limits before model calls.
-4. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
-5. **Media and scheduling:** move blobs to R2 and scheduled jobs to D1 plus Cron/Workflows.
-6. **Operational hardening:** KMS-backed root-key wrapping, secret re-encryption jobs, audit reporting, data export/deletion, monitoring, and administrative kill switches.
-7. **Burst compute:** use an external sandbox only for workloads that truly need a Linux computer.
+2. **Web chat runtime — implemented:** tenant-owned avatars and history, idempotent Queue jobs, per-avatar serialization, bounded model retries, and safe failed jobs.
+3. **Webhook runtime:** port Telegram ingress onto the same Queue and account-isolation rules.
+4. **Entitlement and quotas:** connect Stripe checkout/portal and optional on-chain entitlement; enforce request, token, storage, and concurrency limits before model calls.
+5. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
+6. **Media and scheduling:** move blobs to R2 and scheduled jobs to D1 plus Cron/Workflows.
+7. **Operational hardening:** KMS-backed root-key wrapping, secret re-encryption jobs, audit reporting, data export/deletion, monitoring, and administrative kill switches.
+8. **Burst compute:** use an external sandbox only for workloads that truly need a Linux computer.
 
 ## Cost Guardrails
 
@@ -105,8 +133,8 @@ Production requests fail closed when the canonical public URL or encryption mate
 
 ## Known Caveats
 
-- The current implementation establishes identity and BYOK but does not process hosted avatar messages yet.
-- Hosted status may report `available`; it must not report an active tenant runtime until entitlement and message processing are connected.
+- The current implementation processes browser chat only. Telegram, Discord, media, tools, and scheduling still use other runtimes.
+- Hosted status may report `available`; it must not report an active tenant runtime until entitlement state is connected in #1814.
 - D1 is not DynamoDB. Access patterns must be deliberate, and broad scans should be avoided.
 - Durable Objects are appropriate for coordination and inbound realtime clients, not arbitrary long-running processes.
 - Discord gateway connections require a persistent specialized service.

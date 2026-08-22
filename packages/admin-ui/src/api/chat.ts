@@ -5,6 +5,7 @@ import { API_BASE } from './apiBase';
  * Reserved subdomains are excluded from public access mode
  */
 function isPublicSubdomain(): boolean {
+  if (typeof window === 'undefined') return false;
   const hostname = window.location.hostname.split(':')[0]?.toLowerCase() || '';
   if (!hostname.endsWith('.rati.chat')) return false;
 
@@ -140,6 +141,9 @@ export async function sendChatMessage(
   sender?: SenderContext,
   activeTask?: ActiveTaskMeta,
 ): Promise<ChatResponse> {
+  const requestId = typeof globalThis.crypto?.randomUUID === 'function'
+    ? `request_${globalThis.crypto.randomUUID()}`
+    : `request_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const response = await fetch(getChatUrl(), {
     method: 'POST',
     headers: {
@@ -149,6 +153,8 @@ export async function sendChatMessage(
     },
     credentials: 'include',
     body: JSON.stringify({
+      // One id follows this send through Queue retries and browser polling.
+      requestId,
       message,
       history: history.map((m) => ({
         role: m.role,
