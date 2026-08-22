@@ -10,7 +10,7 @@ import {
   PutCommand,
   QueryCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { randomUUID } from 'crypto';
 import type {
   ChatModificationProposal,
@@ -152,7 +152,7 @@ export async function getChatBots(
     return [];
   }
 
-  return result.Items.map(item => ({
+  return result.Items.map((item: { avatarId?: string; botUsername?: string }) => ({
     avatarId: item.avatarId,
     botUsername: item.botUsername,
   }));

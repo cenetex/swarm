@@ -16,7 +16,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 import { createIdempotencyStore } from '../services/idempotency.js';
 
 // Ensure env is set before module evaluation

@@ -7,7 +7,7 @@
  * - POST /avatars/{id}/energy/add
  * - GET  /avatars/{id}/energy/history
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { syncRuntimeContractForAvatar } from './runtime-sync.js';
@@ -19,7 +19,7 @@ import * as energyBurnService from '../../services/billing/energy-burn.js';
 
 export async function handleEnergyRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, event, corsHeaders, session, walletAddress, effectiveIsAdmin } = ctx;
 
   // ── GET /avatars/{id}/energy ─────────────────────────────────────────────

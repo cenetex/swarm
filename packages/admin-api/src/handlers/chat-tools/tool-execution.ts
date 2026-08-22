@@ -8,11 +8,15 @@ import { logger } from '@swarm/core';
 import { isPauseForInputTool, type AllServices } from '@swarm/mcp-server';
 import type { AdminChatMessage, ToolResult } from '../../types.js';
 import {
+  handlePauseToolCalls,
+} from './pause-tools.js';
+import {
   sanitizeMessages,
   sanitizeToolError,
   stringifyToolResultForModel,
   buildPauseToolPayload,
   buildPendingToolResponse,
+  getToolArgs,
   hasExecuteFunction,
   type SdkToolCall,
   type Tool,
@@ -23,15 +27,7 @@ import {
   LLM_MAX_STEPS,
 } from '../chat-llm.js';
 
-/**
- * Safely extract tool call arguments as Record<string, unknown>.
- */
-export function getToolArgs(tc: SdkToolCall): Record<string, unknown> {
-  if (tc.arguments && typeof tc.arguments === 'object') {
-    return tc.arguments as Record<string, unknown>;
-  }
-  return {};
-}
+export { getToolArgs };
 
 export interface FallbackToolLoopResult {
   response: string;
@@ -77,6 +73,7 @@ export async function executeFallbackToolLoop(params: {
   } = params;
 
   let currentToolCalls = params.toolCalls;
+  logger.info("executeFallbackToolLoop: starting", { toolCount: currentToolCalls.length, toolNames: currentToolCalls.map(tc => String(tc.name)), hasMcpServices: !!mcpServices, avatarId });
   let currentAdminToolCalls = params.adminToolCalls;
   let currentAssistantContent = params.fallbackResponse;
   let response = '';
@@ -132,6 +129,28 @@ export async function executeFallbackToolLoop(params: {
         },
       })),
     });
+
+    // Check for pause tools BEFORE executing any tool calls so
+    // side-effect tools (e.g. send_message) don't execute ahead of
+    // a pause that should block the whole batch.  #1723.
+    if (mcpServices?.models && avatarId) {
+      const earlyPauseResult = await handlePauseToolCalls({
+        toolCalls: currentToolCalls,
+        adminToolCalls: currentAdminToolCalls,
+        mcpServices: { models: mcpServices.models },
+        avatarId,
+        messages,
+        tools,
+      });
+      if (earlyPauseResult) {
+        return {
+          response: earlyPauseResult.response,
+          toolResults,
+          earlyReturnHistory: earlyPauseResult.history,
+          pendingToolCall: earlyPauseResult.pendingToolCall,
+        };
+      }
+    }
 
     // Execute each tool call
     for (const toolCall of currentToolCalls) {

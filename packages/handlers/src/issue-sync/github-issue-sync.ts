@@ -14,12 +14,12 @@
  * Environment variables:
  * - ADMIN_TABLE: DynamoDB table name (for dedup writeback)
  * - GITHUB_APP_CREDENTIALS_ARN: Secrets Manager ARN for GitHub App credentials JSON
- * - GITHUB_REPO: Owner/repo (e.g., "cenetex/aws-swarm")
+ * - GITHUB_REPO: Owner/repo (e.g., "atimics/swarm")
  * - GITHUB_ISSUE_LABEL_PREFIX: Label prefix for auto-created issues (default: "auto-issue")
  * - ENVIRONMENT: Deployment environment name
  */
-import type { DynamoDBStreamEvent, DynamoDBRecord, Context } from 'aws-lambda';
-import { UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import type { DataChangeEvent, DataChangeRecord, ExecutionContext } from "@swarm/core";
+import { UpdateCommand, GetCommand } from '@swarm/core';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import type { AttributeValue } from '@aws-sdk/client-dynamodb';
 import { logger, GitHubAppTokenProvider, type GitHubTokenProvider } from '@swarm/core';
@@ -83,7 +83,7 @@ export function _setTokenProvider(provider: GitHubTokenProvider | null): void {
 // ---------------------------------------------------------------------------
 
 function getRepo(): string {
-  return process.env.GITHUB_REPO || 'cenetex/aws-swarm';
+  return process.env.GITHUB_REPO || 'atimics/swarm';
 }
 
 function getLabelPrefix(): string {
@@ -267,7 +267,7 @@ async function isAlreadySynced(
 /**
  * Determine if a DynamoDB stream record is a new ISSUE#/META insert
  */
-export function isNewIssueRecord(record: DynamoDBRecord): boolean {
+export function isNewIssueRecord(record: DataChangeRecord): boolean {
   if (record.eventName !== 'INSERT') {
     return false;
   }
@@ -288,8 +288,8 @@ export function isNewIssueRecord(record: DynamoDBRecord): boolean {
 // ---------------------------------------------------------------------------
 
 export async function handler(
-  event: DynamoDBStreamEvent,
-  context: Context,
+  event: DataChangeEvent,
+  context: ExecutionContext,
 ): Promise<void> {
   const tableName = process.env.ADMIN_TABLE;
   if (!tableName) {

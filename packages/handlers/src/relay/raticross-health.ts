@@ -4,7 +4,7 @@
  * Responds to health probes from peer bridge systems.
  * Also supports GET for simple liveness checks.
  */
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpRequest, HttpResponse } from "@swarm/core";
 import {
   RATICROSS_PROTOCOL_VERSION,
   logger,
@@ -14,7 +14,7 @@ import {
 const RATICROSS_INBOUND_KEY = process.env.RATICROSS_INBOUND_KEY;
 const START_TIME = Date.now();
 
-function json(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
+function json(statusCode: number, body: unknown): HttpResponse {
   return {
     statusCode,
     headers: { 'Content-Type': 'application/json' },
@@ -22,7 +22,7 @@ function json(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
   };
 }
 
-export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
+export async function handler(event: HttpRequest): Promise<HttpResponse> {
   logger.setContext({ subsystem: 'raticross-health' });
 
   // Auth check (same key as inbound relay)

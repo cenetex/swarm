@@ -1,4 +1,4 @@
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from "@swarm/core";
 
 const DEFAULT_COOKIE_NAME = 'swarm_session';
 
@@ -75,7 +75,7 @@ function buildCookie(params: {
  * guaranteed. We attempt to choose the first non-empty value; the codebase
  * should avoid duplicates by clearing the alternate scope when setting.
  */
-export function getSessionFromCookie(event: APIGatewayProxyEventV2): string | null {
+export function getSessionFromCookie(event: HttpRequest): string | null {
   const cookieName = getCookieName();
   const cookies = event.cookies || [];
   for (const cookie of cookies) {

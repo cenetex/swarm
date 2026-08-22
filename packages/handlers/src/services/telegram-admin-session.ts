@@ -8,7 +8,7 @@ import {
   UpdateCommand,
   DeleteCommand,
   QueryCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { logger } from '@swarm/core';
 import type {
   TelegramAdminSession,

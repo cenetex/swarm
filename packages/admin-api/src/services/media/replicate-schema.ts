@@ -7,8 +7,8 @@
  *
  * Cache layers: in-memory (5 min) → DynamoDB (24h TTL) → Replicate API
  */
-import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand } from '@swarm/core';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 import { createSystemLogger } from '../structured-logger.js';
 
 const log = createSystemLogger('replicate-schema');

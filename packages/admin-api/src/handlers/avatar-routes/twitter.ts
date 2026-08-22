@@ -7,7 +7,7 @@
  * - DELETE  /avatars/{id}/twitter/posts/{postId}
  * - PUT    /avatars/{id}/twitter/moderation
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { parseJsonBody } from '../../http/request-body.js';
@@ -17,7 +17,7 @@ import * as twitterFeedService from '../../services/twitter-feed.js';
 
 export async function handleTwitterRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, event, corsHeaders, session, walletAddress } = ctx;
 
   // ── GET /avatars/{id}/twitter/feed ───────────────────────────────────────

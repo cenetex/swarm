@@ -70,17 +70,3 @@ bootstrap:
 		--no-fail-on-empty-changeset
 	@echo "✅ OIDC role stack updated."
 
-# Deployment
-synth:
-	cd packages/infra && npx cdk synth
-
-diff:
-	cd packages/infra && npx cdk diff
-
-# Note: Actual deployment should go through GitHub Actions
-deploy:
-	@echo "Deployments should go through GitHub Actions."
-	@echo "Push to main branch to trigger staging deployment."
-	@echo ""
-	@echo "For manual CDK operations:"
-	@echo "  cd packages/infra && npx cdk deploy"

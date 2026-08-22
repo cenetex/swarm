@@ -1,26 +1,19 @@
 /**
- * Shared DynamoDB Document Client (handlers)
- *
- * Provides a singleton DynamoDBDocumentClient for reuse across all
- * handler modules, avoiding redundant client instantiation per module.
- *
- * The `_setDynamoClient` helper allows tests to inject a mock client.
+ * Shared DynamoDB client (handlers). Injection is MANDATORY.
  */
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+export interface DynamoLikeClient {
+  send(command: { constructor: { name: string }; input: unknown }): Promise<any>;
+}
 
-let _client: DynamoDBDocumentClient | null = null;
+let _client: DynamoLikeClient | null = null;
 
-export function getDynamoClient(): DynamoDBDocumentClient {
+export function getDynamoClient(): DynamoLikeClient {
   if (!_client) {
-    _client = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-      marshallOptions: { removeUndefinedValues: true },
-    });
+    throw new Error('DynamoDB client not injected. Call _setDynamoClient() before importing services.');
   }
   return _client;
 }
 
-/** For testing -- inject a mock client */
-export function _setDynamoClient(client: DynamoDBDocumentClient | null): void {
+export function _setDynamoClient(client: DynamoLikeClient | null): void {
   _client = client;
 }

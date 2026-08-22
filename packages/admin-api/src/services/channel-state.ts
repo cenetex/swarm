@@ -24,7 +24,7 @@ import {
   GetCommand,
   PutCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type {
   ChannelState,
   ChannelStateRecord,
@@ -1144,7 +1144,7 @@ async function defaultScan(params: {
   pageLimit: number;
   avatarId: string;
 }): Promise<{ items: ChannelStateRecord[]; lastEvaluatedKey?: Record<string, unknown> }> {
-  const { ScanCommand } = await import('@aws-sdk/lib-dynamodb');
+  const { ScanCommand } = await import('@swarm/core');
   const result = await dynamoClient.send(new ScanCommand({
     TableName: ADMIN_TABLE,
     FilterExpression: 'begins_with(pk, :prefix) AND sk = :sk',

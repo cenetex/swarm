@@ -4,7 +4,7 @@
  * Queries historical daily usage records for an avatar.
  * Each day's usage is stored in DynamoDB with key pk=USAGE#{avatarId}, sk=DAY#{YYYY-MM-DD}.
  */
-import { QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand } from '@swarm/core';
 import type { UsageRecord } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
 

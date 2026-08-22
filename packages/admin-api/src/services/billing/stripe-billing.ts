@@ -4,7 +4,8 @@
  * Thin Stripe API wrapper used by billing endpoints and webhook handling.
  * Keeps payment provider concerns out of route handlers.
  */
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { GetSecretValueCommand, SecretsManagerClient } from '@swarm/core';
+import { getSecretsClient } from '../aws-clients.js';
 import { createHmac, timingSafeEqual } from 'crypto';
 import type { EntitlementRecord, PlanType } from '../../types.js';
 import { createSystemLogger } from '../structured-logger.js';
@@ -14,7 +15,7 @@ const log = createSystemLogger('stripe-billing');
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const WEBHOOK_TOLERANCE_SECONDS = 300;
 
-let secretsClient: SecretsManagerClient = new SecretsManagerClient({});
+let secretsClient: SecretsManagerClient = getSecretsClient();
 
 let stripeSecretKey: string | null = process.env.STRIPE_SECRET_KEY || null;
 let stripeSecretKeyFetched = false;

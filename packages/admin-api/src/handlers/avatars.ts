@@ -8,9 +8,9 @@
  * modules so each can be tested in isolation with minimal mocks.
  */
 import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResultV2,
-} from 'aws-lambda';
+  HttpRequest,
+  HttpResponse,
+} from "@swarm/core";
 import { authenticateRequest, requireAdmin } from '../auth/request-auth.js';
 import { logger } from '@swarm/core';
 import { recordError } from '../services/auto-issues.js';
@@ -45,7 +45,7 @@ import { handlePersonaRoutes } from './avatar-routes/persona.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-async function getWalletSessionFromEvent(event: APIGatewayProxyEventV2) {
+async function getWalletSessionFromEvent(event: HttpRequest) {
   const sessionToken = getSessionFromCookie(event);
   if (!sessionToken) return null;
   return getSessionWithUser(sessionToken);
@@ -76,8 +76,8 @@ const routeHandlers: RouteHandler[] = [
 // ── Lambda handler ─────────────────────────────────────────────────────────
 
 export async function handler(
-  event: APIGatewayProxyEventV2,
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest,
+): Promise<HttpResponse> {
   // Validate critical runtime config on cold start (no-op on warm invocations)
   ensureRuntimeConfig();
 

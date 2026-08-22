@@ -1,6 +1,7 @@
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { GetSecretValueCommand } from '@swarm/core';
+import { getSecretsClient } from '../services/aws-clients.js';
 
-const secretsClient = new SecretsManagerClient({});
+const secretsClient = getSecretsClient();
 
 const DEFAULT_SECRET_PREFIX = 'swarm';
 const TOKEN_SECRET_NAME = 'telegram_bot_token';

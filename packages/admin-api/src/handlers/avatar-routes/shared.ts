@@ -4,7 +4,7 @@
  * Pure functions with NO service-module imports so domain-handler test files
  * never need to mock anything on behalf of this module.
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 
 // ── Admin wallets ──────────────────────────────────────────────────────────
@@ -20,7 +20,7 @@ export function jsonResponse(
   corsHeaders: Record<string, string>,
   statusCode: number,
   body: unknown,
-): APIGatewayProxyResultV2 {
+): HttpResponse {
   return {
     statusCode,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -77,7 +77,7 @@ export async function requireOwnerOrAdmin(
   ctx: RouteContext,
   avatarId: string,
   getAvatar: GetAvatarFn,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   if (ctx.effectiveIsAdmin) return null;
   if (!ctx.walletAddress) {
     return jsonResponse(ctx.corsHeaders, 403, { error: 'Authentication required' });

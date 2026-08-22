@@ -13,7 +13,7 @@
  * - Only NEW unique tweets cost API credits
  * - Budget tracking ensures we stay within tier limits
  */
-import type { ScheduledHandler, Context } from 'aws-lambda';
+import type { TimerHandler, ExecutionContext } from "@swarm/core";
 import { sendSqsMessage } from '../services/sqs-send.js';
 import { randomUUID } from 'node:crypto';
 import {
@@ -59,7 +59,7 @@ async function initialize(): Promise<void> {
  */
 // shouldProcessMention moved to utils/twitter-mention-poller-logic.ts (unit tested)
 
-export const handler: ScheduledHandler = async (_event, context: Context) => {
+export const handler: TimerHandler = async (_event, context: ExecutionContext) => {
   const startTime = Date.now();
   logger.setContext({
     platform: 'twitter',

@@ -89,6 +89,9 @@ export {
   stripMarkdown,
 } from './telegram-html.js';
 
+// Avatar name prefix stripping
+export { stripAvatarNamePrefix } from './strip-avatar-name-prefix.js';
+
 // Telegram message chunking (≤4096 / ≤1024 Telegram caps)
 export {
   splitForTelegram,

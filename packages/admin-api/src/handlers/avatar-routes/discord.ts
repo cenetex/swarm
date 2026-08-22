@@ -3,7 +3,7 @@
  *
  * - GET  /avatars/{id}/discord/status
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { logger } from '@swarm/core';
@@ -12,7 +12,7 @@ import * as discordService from '../../services/discord.js';
 
 export async function handleDiscordRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, corsHeaders } = ctx;
 
   // ── GET /avatars/{id}/discord/status ───────────────────────────────────

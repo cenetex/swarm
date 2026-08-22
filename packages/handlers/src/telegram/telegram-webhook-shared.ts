@@ -8,7 +8,7 @@
  * - Evaluates whether to respond
  * - Enqueues the message to the shared FIFO message queue
  */
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpRequest, HttpResponse } from "@swarm/core";
 import { sendSqsMessage } from '../services/sqs-send.js';
 import { processSharedRoomMessage, isSharedRoom, buildRoomKey } from '../services/room-ingress.js';
 import { randomUUID } from 'crypto';
@@ -105,7 +105,7 @@ const INTERNAL_TEST_KEY = process.env.INTERNAL_TEST_KEY;
 const RUNTIME_ENV = (process.env.ENVIRONMENT || process.env.NODE_ENV || '').trim().toLowerCase();
 const NFT_OWNERSHIP_ENFORCEMENT = process.env.NFT_OWNERSHIP_ENFORCEMENT === 'on';
 
-function ok(): APIGatewayProxyResultV2 {
+function ok(): HttpResponse {
   return { statusCode: 200, body: 'OK' };
 }
 
@@ -127,7 +127,7 @@ function lowerHeaders(headers: Record<string, string | undefined> | undefined): 
   return out;
 }
 
-export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
+export async function handler(event: HttpRequest): Promise<HttpResponse> {
   const startTime = Date.now();
   const avatarId = event.pathParameters?.avatarId;
   const requestId = event.requestContext.requestId;

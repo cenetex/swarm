@@ -13,13 +13,13 @@ import {
   ReceiveMessageCommand,
   DeleteMessageCommand,
   SendMessageCommand,
-} from '@aws-sdk/client-sqs';
+} from '@swarm/core';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   PutCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 
 // Get the path to the claude binary in node_modules
 const __dirname = dirname(fileURLToPath(import.meta.url));

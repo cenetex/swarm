@@ -38,6 +38,17 @@ export const useConsentStore = create<ConsentState>()(
       syncing: false,
 
       acceptConsent: async () => {
+        const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+        if (isLocal) {
+          // Local mode: accept immediately without backend
+          set({
+            consent: {
+              acceptedAt: new Date().toISOString(),
+              policyVersion: CURRENT_POLICY_VERSION,
+            },
+          });
+          return true;
+        }
         set({ syncing: true });
         try {
           const result = await recordConsent(CURRENT_POLICY_VERSION);

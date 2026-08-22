@@ -10,11 +10,12 @@
  * - Summarizing research results
  * - Responding to code task completions
  */
-import type { SQSEvent, Context, SQSBatchResponse } from 'aws-lambda';
+import type { MessageBatch, ExecutionContext, MessageBatchResponse } from "@swarm/core";
 import { sendSqsMessage } from '../services/sqs-send.js';
 import { randomUUID } from 'node:crypto';
-import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { GetCommand, UpdateCommand } from '@swarm/core';
+import { GetSecretValueCommand } from '@swarm/core';
+import { getSecretsClient } from '../services/aws-clients.js';
 import { logger, extractCorrelationIdFromSqsRecord } from '@swarm/core';
 import type {
   ContinuationMessage,
@@ -30,7 +31,7 @@ import { getDynamoClient } from '../services/dynamo-client.js';
 import { createStateService } from '@swarm/core/services';
 
 const dynamoClient = getDynamoClient();
-const secretsClient = new SecretsManagerClient({});
+const secretsClient = getSecretsClient();
 
 // Environment variables — ADMIN_TABLE is validated lazily via getAdminTable()
 const MESSAGE_QUEUE_URL = process.env.MESSAGE_QUEUE_URL;
@@ -419,16 +420,16 @@ async function processMessage(msg: ContinuationMessage, traceId: string): Promis
  * Lambda handler for continuation messages
  */
 export async function handler(
-  event: SQSEvent,
-  context: Context
-): Promise<SQSBatchResponse> {
+  event: MessageBatch,
+  context: ExecutionContext
+): Promise<MessageBatchResponse> {
   logger.setContext({
     subsystem: 'continuation',
     requestId: context.awsRequestId,
   });
 
   logger.info('Continuation processor triggered', { recordCount: event.Records.length });
-  const batchItemFailures: SQSBatchResponse['batchItemFailures'] = [];
+  const batchItemFailures: MessageBatchResponse['batchItemFailures'] = [];
 
   for (const record of event.Records) {
     try {

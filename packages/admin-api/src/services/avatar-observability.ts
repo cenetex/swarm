@@ -26,11 +26,9 @@ import {
   QueryCommand,
   UpdateCommand,
   BatchWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { redactLogData, redactString } from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
-
-const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE || 'swarm-admin';
 
 // ============================================================================
@@ -189,7 +187,7 @@ export async function recordLog(params: {
     platform: params.platform,
   };
 
-  await dynamoClient.send(new PutCommand({
+  await getDynamoClient().send(new PutCommand({
     TableName: ADMIN_TABLE,
     Item: {
       pk: `AVATAR#${params.avatarId}`,
@@ -327,7 +325,7 @@ export async function recordLogBatch(
   entries: Array<Omit<Parameters<typeof recordLog>[0], 'timestamp'>>
 ): Promise<void> {
   const result = await recordLogBatchWith(
-    { dynamoClient, tableName: ADMIN_TABLE },
+    { dynamoClient: getDynamoClient(), tableName: ADMIN_TABLE },
     entries,
   );
 
@@ -378,7 +376,7 @@ export async function listAvatarLogs(
     exprValues[':query'] = options.query;
   }
 
-  const result = await dynamoClient.send(new QueryCommand({
+  const result = await getDynamoClient().send(new QueryCommand({
     TableName: ADMIN_TABLE,
     KeyConditionExpression: 'pk = :pk AND sk >= :skPrefix',
     FilterExpression: filterParts.length ? filterParts.join(' AND ') : undefined,
@@ -423,7 +421,7 @@ export async function listLogsByLevel(
     exprValues[':query'] = options.query;
   }
 
-  const result = await dynamoClient.send(new QueryCommand({
+  const result = await getDynamoClient().send(new QueryCommand({
     TableName: ADMIN_TABLE,
     IndexName: 'GSI1',
     KeyConditionExpression: 'gsi1pk = :gsi1pk AND gsi1sk >= :since',
@@ -458,7 +456,7 @@ export async function countLogsByLevel(
   let pages = 0;
 
   do {
-    const result = await dynamoClient.send(new QueryCommand({
+    const result = await getDynamoClient().send(new QueryCommand({
       TableName: ADMIN_TABLE,
       IndexName: 'GSI1',
       KeyConditionExpression: 'gsi1pk = :gsi1pk AND gsi1sk >= :since',
@@ -571,7 +569,7 @@ export async function recordIssue(params: {
     status: 'open',
   };
 
-  await dynamoClient.send(new PutCommand({
+  await getDynamoClient().send(new PutCommand({
     TableName: ADMIN_TABLE,
     Item: {
       pk: `AVATAR#${params.avatarId}`,
@@ -613,7 +611,7 @@ export async function recordFeedback(params: {
     feedback: redactString(params.feedback),
   };
 
-  await dynamoClient.send(new PutCommand({
+  await getDynamoClient().send(new PutCommand({
     TableName: ADMIN_TABLE,
     Item: {
       pk: `AVATAR#${params.avatarId}`,
@@ -672,7 +670,7 @@ export async function listAvatarEvents(
     exprValues[':status'] = options.status;
   }
 
-  const result = await dynamoClient.send(new QueryCommand({
+  const result = await getDynamoClient().send(new QueryCommand({
     TableName: ADMIN_TABLE,
     KeyConditionExpression: 'pk = :pk AND sk >= :skPrefix',
     FilterExpression: filterParts.length ? filterParts.join(' AND ') : undefined,
@@ -718,7 +716,7 @@ export async function listAllEvents(
     exprValues[':status'] = options.status;
   }
 
-  const result = await dynamoClient.send(new QueryCommand({
+  const result = await getDynamoClient().send(new QueryCommand({
     TableName: ADMIN_TABLE,
     IndexName: 'GSI1',
     KeyConditionExpression: 'gsi1pk = :gsi1pk AND gsi1sk >= :since',
@@ -792,7 +790,7 @@ export async function updateIssueStatus(
     }
   }
 
-  await dynamoClient.send(new UpdateCommand({
+  await getDynamoClient().send(new UpdateCommand({
     TableName: ADMIN_TABLE,
     Key: {
       pk: `AVATAR#${avatarId}`,

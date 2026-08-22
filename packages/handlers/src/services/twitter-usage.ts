@@ -15,7 +15,7 @@ import {
   DynamoDBDocumentClient,
   GetCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 
 export type TwitterApiTier = 'free' | 'basic';
 

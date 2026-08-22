@@ -14,7 +14,7 @@
  * leak into the service tests.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from 'aws-lambda';
 
 const mockGetSessionWithUser = vi.fn();
 const mockGetGateStatus = vi.fn();
@@ -31,7 +31,7 @@ process.env.SESSION_COOKIE_NAME = 'swarm_session';
 // Helpers
 // -------------------------------------------------------------------------
 
-function createEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewayProxyEventV2 {
+function createEvent(overrides: Partial<HttpRequest> = {}): HttpRequest {
   return {
     version: '2.0',
     routeKey: '$default',
@@ -61,10 +61,10 @@ function createEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewa
     isBase64Encoded: false,
     cookies: ['swarm_session=test-session-token'],
     ...overrides,
-  } as APIGatewayProxyEventV2;
+  } as HttpRequest;
 }
 
-function linkChallengeEvent(body: object, cookieOverride?: string[]): APIGatewayProxyEventV2 {
+function linkChallengeEvent(body: object, cookieOverride?: string[]): HttpRequest {
   const event = createEvent({
     rawPath: '/auth/link/wallet/challenge',
     requestContext: {
@@ -93,7 +93,7 @@ function linkChallengeEvent(body: object, cookieOverride?: string[]): APIGateway
   return event;
 }
 
-function linkVerifyEvent(body: object, cookieOverride?: string[]): APIGatewayProxyEventV2 {
+function linkVerifyEvent(body: object, cookieOverride?: string[]): HttpRequest {
   const event = createEvent({
     rawPath: '/auth/link/wallet/verify',
     requestContext: {

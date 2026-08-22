@@ -31,7 +31,7 @@ const CONFIG = {
     : 30,
   pollIntervalMs: 5000, // Check for changes every 5 seconds
   screenshotDir: join(process.cwd(), 'test-screenshots', 'telegram-monitor'),
-  projectContext: `You are monitoring the Telegram desktop app for the aws-swarm project.
+  projectContext: `You are monitoring the Telegram desktop app for the swarm project.
 This project manages AI avatars that respond on Telegram and Twitter.
 Key avatars: Chamuel (agent-18-sp9g), Opus (agent-1-6yan).
 Look for: new messages, errors, bot responses, user interactions.

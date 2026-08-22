@@ -1,3 +1,4 @@
+import { DynamoDBDocumentClient } from '@swarm/core';
 /**
  * Identity Link Service Tests
  *
@@ -10,7 +11,6 @@
  *  - conflict scenarios (two platforms, two users)
  */
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   _setIdentityLinkDynamoClient,
   createIdentityLinkService,

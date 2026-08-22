@@ -8,14 +8,14 @@
  * uploads it to Arweave, and records the new URI. On-chain URI update
  * is deferred until Metaplex Umi SDK integration is complete.
  */
-import type { ScheduledEvent } from 'aws-lambda';
+import type { TimerEvent } from "@swarm/core";
 import { evolveAllAscensionMetadata } from '../services/web3/ascension-metadata-evolution.js';
 import type { ArweaveServiceConfig } from '../services/web3/arweave.js';
 import { createSystemLogger } from '../services/structured-logger.js';
 
 const log = createSystemLogger('metadata-evolution-handler');
 
-export async function handler(event: ScheduledEvent): Promise<void> {
+export async function handler(event: TimerEvent): Promise<void> {
   log.info('job', 'triggered', {
     time: event.time,
     source: event.source,

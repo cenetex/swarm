@@ -9,7 +9,7 @@
  * entitlement daily limit is exhausted, acting as a "burst" mechanism.
  * Higher-tier avatars with large limits rarely exhaust their entitlement pool.
  */
-import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, UpdateCommand } from '@swarm/core';
 import { logger } from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
 

@@ -1,10 +1,10 @@
+import { PutObjectCommand, S3Client } from '../../commands/index.js';
 /**
  * Media Service - Image and video generation via multiple providers
  *
  * This service can be used standalone with basic functionality, or enhanced
  * with injected dependencies for model resolution, credits, and gallery.
  */
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import type { MediaService, MediaConfig, GeneratedMedia } from '../../types/index.js';
 import type {
   MediaServiceDependencies,
@@ -361,7 +361,7 @@ export class SwarmMediaService implements MediaService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
         'HTTP-Referer': 'https://swarm.rati.chat',
-        'X-Title': 'aws-swarm',
+        'X-Title': 'swarm',
       },
       body: JSON.stringify({
         model,
@@ -629,7 +629,7 @@ export class SwarmMediaService implements MediaService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
         'HTTP-Referer': 'https://swarm.rati.chat',
-        'X-Title': 'aws-swarm',
+        'X-Title': 'swarm',
       },
       body: JSON.stringify({
         model,

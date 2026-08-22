@@ -6,7 +6,7 @@
  * - PATCH /avatars/{id}/persona — Update persona, record audit event
  * - GET /avatars/{id}/persona/history — List persona edit history
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import { createHash } from 'crypto';
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
@@ -63,7 +63,7 @@ function buildPersonaPreview(avatar: { avatarId: string; name: string; descripti
 
 export async function handlePersonaRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, event, corsHeaders, session, walletAddress, effectiveIsAdmin } = ctx;
 
   // ── GET /avatars/{id}/persona — Show current persona ───────────────────────

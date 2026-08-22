@@ -5,9 +5,9 @@
  * Useful for debugging and understanding avatar behavior.
  */
 import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResultV2,
-} from 'aws-lambda';
+  HttpRequest,
+  HttpResponse,
+} from "@swarm/core";
 import { z } from 'zod';
 import { authenticateRequest } from '../auth/request-auth.js';
 import { isAuthError } from '../auth/errors.js';
@@ -112,8 +112,8 @@ function estimateTokens(text: string): number {
 }
 
 export async function handler(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const corsHeaders = getCorsHeaders(event);
 
   // CORS preflight

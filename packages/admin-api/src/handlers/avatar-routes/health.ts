@@ -3,14 +3,14 @@
  *
  * - GET /avatars/health — paginated health summary for all avatars
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 import { jsonResponse } from './shared.js';
 import { getAvatarHealthSummaries } from '../../services/avatar-health.js';
 
 export async function handleHealthRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, event, corsHeaders, effectiveIsAdmin } = ctx;
 
   // ── GET /avatars/health ───────────────────────────────────────────────────

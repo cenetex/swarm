@@ -4,7 +4,7 @@ import { describe, expect, test, vi } from 'vitest';
 // IMPORTANT: bun:test vi.mock (mock.module) is process-global and persistent.
 // Mock classes MUST have proper prototypes (e.g., `send()` method, `input` property)
 // so that spyOn() and command inspection in other test files still works.
-vi.mock('@aws-sdk/client-secrets-manager', () => ({
+vi.mock('@swarm/core', () => ({
   SecretsManagerClient: class { async send() { return {}; } },
   GetSecretValueCommand: class { constructor(public input: unknown) {} },
 }));

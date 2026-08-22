@@ -1,4 +1,5 @@
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { GetSecretValueCommand } from '@swarm/core';
+import { getSecretsClient } from './aws-clients.js';
 
 let cachedSystemOpenRouterApiKey: string | null | undefined;
 
@@ -44,7 +45,7 @@ export async function getSystemOpenRouterApiKey(): Promise<string | null> {
   }
 
   try {
-    const client = new SecretsManagerClient({});
+    const client = getSecretsClient();
     const response = await client.send(new GetSecretValueCommand({ SecretId: secretArn }));
     cachedSystemOpenRouterApiKey = response.SecretString ? parseApiKey(response.SecretString) : null;
     return cachedSystemOpenRouterApiKey;

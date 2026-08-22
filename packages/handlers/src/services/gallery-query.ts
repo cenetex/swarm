@@ -5,7 +5,7 @@
  * Queries ADMIN_TABLE for unposted gallery images and marks them as posted.
  * Gracefully degrades when ADMIN_TABLE is not configured.
  */
-import { QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand, UpdateCommand } from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
 import { logger } from '@swarm/core';
 

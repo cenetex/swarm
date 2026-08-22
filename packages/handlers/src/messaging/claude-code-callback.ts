@@ -4,8 +4,8 @@
  * Processes callbacks from the Claude Code worker and sends responses to users.
  * This is a shared handler that routes responses to the appropriate avatar.
  */
-import type { SQSEvent, Context, SQSBatchResponse, Handler } from 'aws-lambda';
-import { GetCommand } from '@aws-sdk/lib-dynamodb';
+import type { MessageBatch, ExecutionContext, MessageBatchResponse, Handler } from "@swarm/core";
+import { GetCommand } from '@swarm/core';
 import {
   TelegramAdapter,
   TwitterAdapter,
@@ -208,10 +208,10 @@ function detectPlatform(
   return 'web';
 }
 
-export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
-  event: SQSEvent,
-  context: Context
-): Promise<SQSBatchResponse> => {
+export const handler: Handler<MessageBatch, MessageBatchResponse> = async (
+  event: MessageBatch,
+  context: ExecutionContext
+): Promise<MessageBatchResponse> => {
   logger.setContext({ requestId: context.awsRequestId });
 
   const batchItemFailures: { itemIdentifier: string }[] = [];

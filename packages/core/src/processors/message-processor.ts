@@ -39,32 +39,11 @@ import {
 import { buildDynamicSystemPrompt, buildChatSystemPrompt } from './prompt-builder.js';
 import { resolveSystemPrompt } from './system-prompt-resolver.js';
 import { logger } from '../utils/logger.js';
+import { stripAvatarNamePrefix } from '../utils/strip-avatar-name-prefix.js';
 
 // =============================================================================
 // HELPERS
 // =============================================================================
-
-/**
- * Strip avatar name prefix from response if the model accidentally included it.
- * Models sometimes see `[Username]: message` in history and mimic the pattern.
- */
-function stripAvatarNamePrefix(content: string | undefined, avatarName: string | undefined): string {
-  if (!content || !avatarName) return content || '';
-  
-  const escapedName = avatarName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const patterns = [
-    new RegExp(`^\\[${escapedName}[^\\]]*\\]:\\s*`, 'i'),
-    new RegExp(`^${escapedName}:\\s*`, 'i'),
-  ];
-  
-  for (const pattern of patterns) {
-    if (pattern.test(content)) {
-      return content.replace(pattern, '').trim();
-    }
-  }
-  
-  return content;
-}
 
 // =============================================================================
 // TYPES

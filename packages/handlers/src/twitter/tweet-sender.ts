@@ -11,8 +11,8 @@
  * 4. 429? -> record, re-queue with backoff
  * 5. Success? -> update content store, record success
  */
-import type { SQSHandler, SQSBatchResponse } from 'aws-lambda';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import type { MessageBatchHandler, MessageBatchResponse } from "@swarm/core";
+import { SQSClient, SendMessageCommand } from '@swarm/core';
 import {
   TwitterAdapter,
   createStateService,
@@ -27,6 +27,7 @@ import {
   type RateLimitService,
 } from '../services/twitter-rate-limit.js';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
+import { getSQSClient } from '../services/aws-clients.js';
 
 const STATE_TABLE = process.env.STATE_TABLE;
 const POST_QUEUE_URL = process.env.POST_QUEUE_URL;
@@ -68,7 +69,7 @@ async function initialize(): Promise<void> {
     dailyReservePct: TWITTER_DAILY_RESERVE_PCT,
     monthlyBudget: TWITTER_MONTHLY_BUDGET,
   });
-  sqsClient = new SQSClient({});
+  sqsClient = getSQSClient();
 }
 
 /**
@@ -88,7 +89,7 @@ async function requeue(
       attempts: message.attempts + 1,
     }),
     MessageGroupId: message.avatarId,
-    MessageDeduplicationId: `${message.postId}-${message.attempts + 1}-${Date.now()}`,
+    MessageDeduplicationId: `${message.postId}-${message.attempts + 1}`,
     DelaySeconds: effectiveDelay,
   }));
 
@@ -274,7 +275,7 @@ async function processMessage(message: PostQueueMessage): Promise<{ success: boo
 /**
  * SQS Handler for POST_QUEUE
  */
-export const handler: SQSHandler = async (event): Promise<SQSBatchResponse> => {
+export const handler: MessageBatchHandler = async (event): Promise<MessageBatchResponse> => {
   if (!ENABLE_DECOUPLED_POSTING) {
     logger.warn('Decoupled posting not enabled; keeping messages in queue');
     return {

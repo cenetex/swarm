@@ -10,7 +10,7 @@ import {
   UpdateCommand,
   ScanCommand,
   DeleteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { randomUUID } from 'crypto';
 import type {
   PropertyAddress,

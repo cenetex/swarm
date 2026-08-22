@@ -8,10 +8,11 @@
  *
  * Ported from solanafirehorse with adaptations for aws-swarm architecture.
  */
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, GetObjectCommand } from '@swarm/core';
 import { randomUUID } from 'crypto';
 import { buildMediaUrl } from '../../utils/media-url.js';
 import { createSystemLogger } from '../structured-logger.js';
+import { getS3Client } from '../aws-clients.js';
 
 const log = createSystemLogger('sticker-processor');
 
@@ -29,7 +30,7 @@ async function getSharp() {
   return sharpModule.default;
 }
 
-const s3Client = new S3Client({});
+const s3Client = getS3Client();
 
 /**
  * Telegram sticker requirements:

@@ -1,9 +1,9 @@
+import { SendMessageCommand, SQSClient } from '../commands/index.js';
 /**
  * Post Queue Service
  *
  * Utility for enqueueing posts to POST_QUEUE for decoupled Twitter posting.
  */
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import type { PostQueueMessage } from '../types/content-store.js';
 
 let sqsClient: SQSClient | null = null;
@@ -39,7 +39,7 @@ export async function enqueuePost(
     MessageBody: JSON.stringify(message),
     // FIFO queue requires MessageGroupId and MessageDeduplicationId
     MessageGroupId: avatarId,
-    MessageDeduplicationId: `${postId}-${Date.now()}`,
+    MessageDeduplicationId: postId,
   }));
 }
 

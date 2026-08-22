@@ -3,7 +3,7 @@
  *
  * Extracted from the monolithic avatars.ts handler.
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { logger } from '@swarm/core';
@@ -72,7 +72,7 @@ function buildOnboardingDiagnostics(decision: OnboardingRoutingDecision) {
 
 export async function handleCrudRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, event, corsHeaders, session, walletAddress, effectiveIsAdmin } = ctx;
 
   // ── POST /avatars — Create a new avatar ──────────────────────────────────

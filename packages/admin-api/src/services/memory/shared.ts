@@ -12,7 +12,7 @@
 import {
   type DynamoDBDocumentClient,
   BatchWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { getDynamoClient as getSharedDynamoClient, _setDynamoClient as _setSharedDynamoClient } from '../dynamo-client.js';
 import { logger } from '@swarm/core';
 import type {
@@ -161,7 +161,7 @@ export async function batchWriteWithRetry(
       RequestItems: unprocessed as Record<string, Array<{ DeleteRequest?: { Key: Record<string, unknown> }; PutRequest?: { Item: Record<string, unknown> } }>>,
     }));
 
-    const remaining = result.UnprocessedItems;
+    const remaining = result.UnprocessedItems as Record<string, unknown[]> | undefined;
 
     // Check if there are unprocessed items remaining
     if (!remaining || Object.keys(remaining).length === 0) {

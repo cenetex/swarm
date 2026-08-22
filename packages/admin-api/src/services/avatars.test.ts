@@ -1,9 +1,8 @@
 import { beforeEach, afterEach, describe, expect, it, spyOn, mock, afterAll } from 'bun:test';
-import { DeleteCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { AvatarRecord, UserSession } from '../types.js';
 import { _setDynamoClient } from './dynamo-client.js';
 import * as configSync from './config-sync.js';
+import { DeleteCommand, GetCommand, PutCommand } from '@swarm/core';
 
 // Dynamic import with query param to bypass vi.mock() from handler tests
 const {

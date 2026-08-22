@@ -12,9 +12,9 @@
  *   PATCH /issues/{id} - Update issue status
  */
 import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResultV2,
-} from 'aws-lambda';
+  HttpRequest,
+  HttpResponse,
+} from "@swarm/core";
 import { hasValidInternalTestKey, logger } from '@swarm/core';
 import { z } from 'zod';
 import * as autoIssues from '../services/auto-issues.js';
@@ -43,7 +43,7 @@ const ISSUE_STATUSES = ['open', 'acknowledged', 'investigating', 'resolved', 'wo
 /**
  * Validate internal test key for CI/CD requests
  */
-function validateTestKey(event: APIGatewayProxyEventV2): boolean {
+function validateTestKey(event: HttpRequest): boolean {
   return hasValidInternalTestKey({
     headers: event.headers,
     internalTestKey: getInternalTestKey(),
@@ -52,7 +52,7 @@ function validateTestKey(event: APIGatewayProxyEventV2): boolean {
   });
 }
 
-async function isAuthorized(event: APIGatewayProxyEventV2): Promise<boolean> {
+async function isAuthorized(event: HttpRequest): Promise<boolean> {
   if (validateTestKey(event)) {
     return true;
   }
@@ -69,8 +69,8 @@ async function isAuthorized(event: APIGatewayProxyEventV2): Promise<boolean> {
  * Lambda handler for issues API
  */
 export async function handler(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const corsHeaders = getCorsHeaders(event);
   const method = event.requestContext.http.method;
   const rawPath = event.rawPath;

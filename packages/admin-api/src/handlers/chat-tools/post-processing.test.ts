@@ -1,5 +1,19 @@
-import { describe, expect, it } from 'vitest';
-import { cleanResponse, extractPendingJobs, shouldUseEmptyResponseFallback } from './post-processing.js';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { injectTestClients } from '../__test-helpers__/inject-clients.js';
+
+let cleanResponse: typeof import('./post-processing.js').cleanResponse;
+let detectAvatarUpdates: typeof import('./post-processing.js').detectAvatarUpdates;
+let extractPendingJobs: typeof import('./post-processing.js').extractPendingJobs;
+let shouldUseEmptyResponseFallback: typeof import('./post-processing.js').shouldUseEmptyResponseFallback;
+
+beforeAll(async () => {
+  await injectTestClients();
+  const mod = await import('./post-processing.js');
+  cleanResponse = mod.cleanResponse;
+  detectAvatarUpdates = mod.detectAvatarUpdates;
+  extractPendingJobs = mod.extractPendingJobs;
+  shouldUseEmptyResponseFallback = mod.shouldUseEmptyResponseFallback;
+});
 
 describe('chat post-processing', () => {
   it('strips malformed leading thought lines from assistant responses', () => {
@@ -42,5 +56,19 @@ describe('chat post-processing', () => {
       type: 'video',
       prompt: 'make a video',
     }]);
+  });
+
+  it('surfaces update_my_profile name changes from tool arguments when backend refetch is unavailable', async () => {
+    const updates = await detectAvatarUpdates(
+      [{ id: 'call-profile', name: 'update_my_profile', arguments: { name: 'Mika' } }],
+      [{
+        tool_call_id: 'call-profile',
+        role: 'tool',
+        content: JSON.stringify({ success: true, data: { updated: ['name'] } }),
+      }],
+      undefined,
+    );
+
+    expect(updates).toEqual({ name: 'Mika' });
   });
 });

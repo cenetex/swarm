@@ -1,4 +1,4 @@
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { UserSession, AvatarRecord } from '../types.js';
 import { AvatarOwnershipError } from './avatars.js';
 
@@ -33,14 +33,14 @@ export interface ChatAccessDeps {
 export type AccessMode = 'admin' | 'owner' | 'public' | 'denied';
 
 export interface AccessCheckResult {
-  error: APIGatewayProxyResultV2 | null;
+  error: HttpResponse | null;
   mode: AccessMode;
 }
 
 export function createAvatarAccessChecker(deps: ChatAccessDeps) {
   const { isAdmin, session, getAvatar, corsHeaders, publicAvatarId, assertOwnership } = deps;
 
-  return async (avatarId: string | undefined | null): Promise<APIGatewayProxyResultV2 | null> => {
+  return async (avatarId: string | undefined | null): Promise<HttpResponse | null> => {
     if (isAdmin) return null;
 
     if (!avatarId) {

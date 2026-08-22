@@ -1,3 +1,8 @@
+import {
+  DynamoDBDocumentClient,
+  GetSecretValueCommand,
+  SecretsManagerClient,
+} from '../../commands/index.js';
 /**
  * Media Service Resolvers
  *
@@ -7,12 +12,10 @@
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
-  DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+} from '../../commands/index.js';
 import { isUsableOpenRouterModelId } from '../../utils/openrouter-model-id.js';
 import {
   isLiveOpenRouterMediaModelId,

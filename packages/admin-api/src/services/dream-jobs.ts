@@ -15,18 +15,19 @@ import {
   GetCommand,
   UpdateCommand,
   TransactWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+} from '@swarm/core';
+import { SendMessageCommand } from '@swarm/core';
 import { v4 as uuid } from 'uuid';
 import type { DreamJob, DailyCounter } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { createSystemLogger } from './structured-logger.js';
+import { getSQSClient } from './aws-clients.js';
 
 const log = createSystemLogger('dream-jobs');
 
 const dynamoClient = getDynamoClient();
 
-const sqsClient = new SQSClient({});
+const sqsClient = getSQSClient();
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 const DREAM_QUEUE_URL = process.env.DREAM_QUEUE_URL;

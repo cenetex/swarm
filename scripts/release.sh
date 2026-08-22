@@ -203,4 +203,4 @@ gh release create "$new_version" \
 echo ""
 echo "Released $new_version"
 echo "release-notes.yml will overwrite the body with AI-polished notes."
-echo "Watch: https://github.com/cenetex/aws-swarm/actions"
+echo "Watch: https://github.com/atimics/swarm/actions"

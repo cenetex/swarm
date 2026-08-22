@@ -1,0 +1,78 @@
+# Local-first container image for swarm.
+# Multi-stage: api (Express server) and admin-ui-dev (Vite dev server).
+#
+# Build:
+#   docker build -f Dockerfile.local --target api -t swarm-local .
+#
+# Run:
+#   docker run -p 3000:3000 -v $(pwd)/data:/data swarm-local
+
+FROM node:22-slim AS base
+RUN corepack enable && corepack prepare pnpm@latest --activate
+WORKDIR /app
+
+# Install system deps for better-sqlite3
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy workspace config
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.json tsconfig.base.json ./
+COPY packages/core/package.json packages/core/
+COPY packages/local/package.json packages/local/
+COPY packages/mcp-server/package.json packages/mcp-server/
+COPY packages/handlers/package.json packages/handlers/
+COPY packages/admin-api/package.json packages/admin-api/
+COPY packages/admin-ui/package.json packages/admin-ui/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy source
+COPY packages/core/src packages/core/src
+COPY packages/core/tsconfig.json packages/core/
+COPY packages/local/src packages/local/src
+COPY packages/local/tsconfig.json packages/local/
+COPY packages/mcp-server/src packages/mcp-server/src
+COPY packages/mcp-server/tsconfig.json packages/mcp-server/
+COPY packages/handlers/src packages/handlers/src
+COPY packages/handlers/tsconfig.json packages/handlers/
+COPY packages/admin-api/src packages/admin-api/src
+COPY packages/admin-api/tsconfig.json packages/admin-api/
+COPY packages/admin-ui/src packages/admin-ui/src
+COPY packages/admin-ui/public packages/admin-ui/public
+COPY packages/admin-ui/index.html packages/admin-ui/
+COPY packages/admin-ui/tsconfig.json packages/admin-ui/
+COPY packages/admin-ui/tsconfig.node.json packages/admin-ui/
+COPY packages/admin-ui/vite.config.ts packages/admin-ui/
+COPY packages/admin-ui/postcss.config.js packages/admin-ui/
+
+# Build the static admin bundle. The local API runs through Bun because it uses
+# bun:sqlite and still imports selected admin-api source modules for the pilot.
+RUN pnpm --filter @swarm/admin-ui build
+
+# ---- Admin UI dev target ----
+FROM node:22-slim AS admin-ui-dev
+RUN corepack enable && corepack prepare pnpm@latest --activate
+WORKDIR /app
+
+COPY packages/admin-ui/package.json packages/admin-ui/
+COPY packages/admin-ui/tsconfig.json packages/admin-ui/
+COPY packages/admin-ui/vite.config.ts packages/admin-ui/
+COPY packages/admin-ui/index.html packages/admin-ui/
+
+RUN cd packages/admin-ui && pnpm install
+
+WORKDIR /app/packages/admin-ui
+CMD ["pnpm", "exec", "vite", "--host", "0.0.0.0"]
+
+# ---- API target ----
+FROM oven/bun:1.2-slim AS api
+WORKDIR /app
+
+COPY --from=base /app /app
+
+RUN mkdir -p /data/blobs
+EXPOSE 3000
+
+CMD ["bun", "run", "packages/local/src/app.ts", "--admin-ui-path=/app/packages/admin-ui/dist"]

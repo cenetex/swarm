@@ -7,7 +7,7 @@
  * @see https://github.com/cenetex/aws-swarm/issues/822
  */
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 import { _setDynamoClient } from '../dynamo-client.js';
 
 // Ensure env is set before importing module under test.

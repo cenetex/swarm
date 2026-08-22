@@ -5,8 +5,8 @@
  * - POST /api-keys  (wildcard, admin-only)
  * - POST /avatars/{id}/tools/{toolCallId}
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
-import { QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import type { HttpResponse } from "@swarm/core";
+import { QueryCommand, UpdateCommand } from '@swarm/core';
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { logger } from '@swarm/core';
@@ -33,7 +33,7 @@ interface AvatarApiKeyIndexItem {
 
 export async function handleApiKeyRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, event, corsHeaders, session, walletAddress, effectiveIsAdmin } = ctx;
 
   // ── POST /avatars/{id}/tools/{toolCallId} — Resume chat after tool ──────

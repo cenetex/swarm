@@ -14,7 +14,7 @@ import {
   GetCommand,
   PutCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type { CreditBucket } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
 

@@ -12,7 +12,7 @@ import {
   UpdateCommand,
   QueryCommand,
   TransactWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { BURN_TIERS, ASCENSION_ENERGY_BOOST } from '@swarm/core';
 import type { CreditBucket, AvatarRecord } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';

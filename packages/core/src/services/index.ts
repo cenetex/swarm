@@ -276,7 +276,42 @@ export {
 } from './telegram-dm-approval.js';
 export {
   getEmbeddingService,
+  _setEmbeddingService,
   _resetEmbeddingService,
   type EmbeddingService,
   type EmbeddingResult,
 } from './embeddings.js';
+export type { KeyValueStore } from './key-value-store.js';
+export type { CompositeKey, ConditionalPutOptions, QueryOptions, PaginatedResult } from './dynamo-repository.js';
+
+// Local command classes (drop-in for @aws-sdk/*)
+export * from "../commands/index.js";
+
+// Agent Identity (Ed25519 keypair — Body 4)
+export {
+  generateAgentKeypair,
+  deriveAgentKeypair,
+  signMessage,
+  verifySignature,
+  toBase58,
+  toHex,
+  fromHex,
+  toBase64,
+  fromBase64,
+} from "./agent-identity.js";
+export type { AgentKeypair, AgentIdentity } from "./agent-identity.js";
+
+// Derived wallet addresses (Phase 0)
+export { deriveWalletAddresses } from "./agent-identity.js";
+export type { AgentWalletAddresses } from "./agent-identity.js";
+
+// Arweave identity publishing (Phase 0)
+export { buildIdentityRecord, publishIdentityRecord, fetchIdentityRecord } from "./arweave-identity.js";
+export type { ArweaveIdentityRecord, ArweavePublishResult } from "./arweave-identity.js";
+
+// RATi bridge (Phase 1)
+export { simulateMining, signBridgeAttestation, verifyBridgeAttestation, submitBridgeAttestation } from "./rati-bridge.js";
+export type { MiningOutput, BridgeAttestation, BridgeResult } from "./rati-bridge.js";
+
+export { deriveStationPosition, exportKeypairForSignal } from "./agent-identity.js";
+export type { StationPosition } from "./agent-identity.js";

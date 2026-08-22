@@ -3,7 +3,7 @@
  * Handles DM allowlist logic, superadmin helpers, username resolution,
  * chat-allowed checks, and redirect messages for Telegram webhook handler.
  */
-import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand } from '@swarm/core';
 import { logger } from '@swarm/core';
 import { getDynamoClient } from '../services/dynamo-client.js';
 

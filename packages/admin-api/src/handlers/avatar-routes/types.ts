@@ -1,7 +1,7 @@
 /**
  * Shared types for decomposed avatar route handlers.
  */
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpRequest, HttpResponse } from "@swarm/core";
 import type { UserSession } from '../../types.js';
 
 export type AvatarOwnershipAuthorizer = (
@@ -15,7 +15,7 @@ export type AvatarOwnershipAuthorizer = (
  * Built once in the top-level router and passed to each handler.
  */
 export type RouteContext = {
-  event: APIGatewayProxyEventV2;
+  event: HttpRequest;
   method: string;
   path: string;
   corsHeaders: Record<string, string>;
@@ -36,4 +36,4 @@ export type RouteContext = {
  * A domain route handler.
  * Returns a response if the route matches, or `null` to fall through to the next handler.
  */
-export type RouteHandler = (ctx: RouteContext) => Promise<APIGatewayProxyResultV2 | null>;
+export type RouteHandler = (ctx: RouteContext) => Promise<HttpResponse | null>;

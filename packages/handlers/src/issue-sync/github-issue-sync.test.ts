@@ -7,7 +7,7 @@
  * Uses bun:test (with vitest-compatible API).
  */
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
-import type { DynamoDBStreamEvent, DynamoDBRecord, Context } from 'aws-lambda';
+import type { DataChangeEvent, DataChangeRecord, ExecutionContext } from 'aws-lambda';
 import {
   handler,
   isNewIssueRecord,
@@ -22,7 +22,7 @@ import { _setDynamoClient } from '../services/dynamo-client.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function createContext(overrides?: Partial<Context>): Context {
+function createContext(overrides?: Partial<ExecutionContext>): ExecutionContext {
   return {
     callbackWaitsForEmptyEventLoop: false,
     functionName: 'github-issue-sync',
@@ -59,7 +59,7 @@ function makeIssueRecord(overrides: Partial<AutoIssueRecord> = {}): AutoIssueRec
   };
 }
 
-function createInsertRecord(pk: string, sk: string, extraFields: Record<string, unknown> = {}): DynamoDBRecord {
+function createInsertRecord(pk: string, sk: string, extraFields: Record<string, unknown> = {}): DataChangeRecord {
   return {
     eventID: `event-${Date.now()}`,
     eventName: 'INSERT',
@@ -94,14 +94,14 @@ function createInsertRecord(pk: string, sk: string, extraFields: Record<string, 
   };
 }
 
-function createModifyRecord(pk: string, sk: string): DynamoDBRecord {
+function createModifyRecord(pk: string, sk: string): DataChangeRecord {
   return {
     ...createInsertRecord(pk, sk),
     eventName: 'MODIFY',
   };
 }
 
-function createRemoveRecord(pk: string, sk: string): DynamoDBRecord {
+function createRemoveRecord(pk: string, sk: string): DataChangeRecord {
   return {
     eventID: `event-${Date.now()}`,
     eventName: 'REMOVE',
@@ -156,7 +156,7 @@ describe('isNewIssueRecord', () => {
   });
 
   it('returns false when NewImage is missing', () => {
-    const record: DynamoDBRecord = {
+    const record: DataChangeRecord = {
       eventName: 'INSERT',
       dynamodb: {},
     };
@@ -297,7 +297,7 @@ describe('handler (integration)', () => {
   });
 
   it('skips batch with no ISSUE#/META INSERT records', async () => {
-    const event: DynamoDBStreamEvent = {
+    const event: DataChangeEvent = {
       Records: [
         createModifyRecord('ISSUE#issue-abc', 'META'),
         createRemoveRecord('ISSUE#issue-abc', 'META'),
@@ -314,7 +314,7 @@ describe('handler (integration)', () => {
   });
 
   it('creates a GitHub issue for a new ISSUE#/META INSERT', async () => {
-    const event: DynamoDBStreamEvent = {
+    const event: DataChangeEvent = {
       Records: [
         createInsertRecord('ISSUE#issue-abc123', 'META', {
           issueId: 'issue-abc123',
@@ -349,7 +349,7 @@ describe('handler (integration)', () => {
     mockDynamoSend = mock(() => Promise.resolve({ Item: { githubIssueNumber: 42 } }));
     _setDynamoClient({ send: mockDynamoSend } as any);
 
-    const event: DynamoDBStreamEvent = {
+    const event: DataChangeEvent = {
       Records: [
         createInsertRecord('ISSUE#issue-abc123', 'META'),
       ],
@@ -381,7 +381,7 @@ describe('handler (integration)', () => {
     });
     globalThis.fetch = mockFetch as unknown as typeof fetch;
 
-    const event: DynamoDBStreamEvent = {
+    const event: DataChangeEvent = {
       Records: [
         createInsertRecord('ISSUE#issue-fail', 'META', { issueId: 'issue-fail' }),
         createInsertRecord('ISSUE#issue-ok', 'META', { issueId: 'issue-ok' }),
@@ -403,7 +403,7 @@ describe('handler (integration)', () => {
     }));
     globalThis.fetch = mockFetch as unknown as typeof fetch;
 
-    const event: DynamoDBStreamEvent = {
+    const event: DataChangeEvent = {
       Records: [
         createInsertRecord('ISSUE#issue-fail1', 'META', { issueId: 'issue-fail1' }),
         createInsertRecord('ISSUE#issue-fail2', 'META', { issueId: 'issue-fail2' }),
@@ -422,7 +422,7 @@ describe('handler (integration)', () => {
   it('throws when ADMIN_TABLE is not set', async () => {
     delete process.env.ADMIN_TABLE;
 
-    const event: DynamoDBStreamEvent = {
+    const event: DataChangeEvent = {
       Records: [createInsertRecord('ISSUE#issue-abc', 'META')],
     };
 
@@ -435,7 +435,7 @@ describe('handler (integration)', () => {
   });
 
   it('processes mixed records, only handling ISSUE#/META INSERTs', async () => {
-    const event: DynamoDBStreamEvent = {
+    const event: DataChangeEvent = {
       Records: [
         createInsertRecord('AVATAR#my-avatar', 'CONFIG'),      // Not an issue
         createModifyRecord('ISSUE#issue-old', 'META'),          // MODIFY, not INSERT

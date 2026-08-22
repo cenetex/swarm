@@ -8,9 +8,8 @@
  */
 import React, { lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { usePrivy } from '@privy-io/react-auth';
 import { useAvatarStore } from '../store/avatars';
-import { useAuth, useAuthStore } from '../store/auth';
+import { useAuth } from '../store/auth';
 import { ThemeToggle } from './ThemeToggle';
 import { PrivyLoginButton } from './PrivyLoginButton';
 import { AvatarReassignModal } from './AvatarReassignModal';
@@ -491,13 +490,6 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
   const { t } = useTranslation();
   const { avatars, activeAvatarId, createAvatar, setActiveAvatar, isLoading, error, fetchAvatars } = useAvatarStore();
   const { isAuthenticated, user, gateStatus, account } = useAuth();
-  const syncWithBackend = useAuthStore((state) => state.syncWithBackend);
-  const {
-    ready: privyReady,
-    authenticated: privyAuthenticated,
-    user: privyUser,
-    getAccessToken,
-  } = usePrivy();
   const [reassignAvatarData, setReassignAvatarData] = React.useState<Avatar | null>(null);
   const [showHealth, setShowHealth] = React.useState(false);
   const [isScanningNfts, setIsScanningNfts] = React.useState(false);
@@ -542,7 +534,7 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
     if (aCreatedByMe && !bCreatedByMe) return -1;
     if (bCreatedByMe && !aCreatedByMe) return 1;
     // Then by name
-    return a.name.localeCompare(b.name);
+    return (a.name || "").localeCompare(b.name || "");
   });
 
   const handleCreateAvatar = async () => {
@@ -554,18 +546,6 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
     }
   };
 
-  const refreshBackendSession = React.useCallback(async () => {
-    if (!privyReady || !privyAuthenticated || !privyUser || !walletAddress) return;
-
-    const token = await getAccessToken();
-    if (!token) return;
-
-    await syncWithBackend(token, {
-      id: (privyUser as { id: string }).id,
-      email: (privyUser as { email?: string })?.email,
-      walletAddress,
-    }, { force: true });
-  }, [getAccessToken, privyAuthenticated, privyReady, privyUser, syncWithBackend, walletAddress]);
 
   const handleScanNftAvatars = async () => {
     setIsScanningNfts(true);
@@ -573,14 +553,6 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
     setScanError(null);
 
     try {
-      try {
-        await refreshBackendSession();
-      } catch (sessionError) {
-        console.warn(
-          '[AvatarSidebar] Backend session refresh before NFT scan failed:',
-          sessionError instanceof Error ? sessionError.message : String(sessionError),
-        );
-      }
       const result = await avatarApi.scanNftAvatars();
       await fetchAvatars();
 
@@ -695,8 +667,17 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
         )}
       </div>
 
+      {/* Pinned active avatar — stays visible while the list scrolls */}
+      {activeAvatar && canManageActiveAvatar && (
+        <div className="border-b border-[var(--color-border)] px-2 py-2">
+          <ActiveAvatarControls avatar={activeAvatar} />
+        </div>
+      )}
+
       {/* Avatar List */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+      <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1">
+        {/* Create / scan / slots — contextual management, rendered below the list via order-last */}
+        <div className="order-last mt-3 pt-3 border-t border-[var(--color-border)] flex flex-col gap-1">
         {/* Slot Orbs (wallet gating) - visible for all authenticated users including admins */}
         {isAuthenticated && gateStatus && (
           <div className="px-2 py-2 mb-2 rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)]">
@@ -867,10 +848,7 @@ export function AvatarSidebar({ className, onClose, onSelectAvatar }: AvatarSide
             )}
           </>
         )}
-
-        {activeAvatar && canManageActiveAvatar && (
-          <ActiveAvatarControls avatar={activeAvatar} />
-        )}
+        </div>
 
         {isLoading && avatars.length === 0 ? (
           <div className="text-center py-8 text-[var(--color-text-muted)]">

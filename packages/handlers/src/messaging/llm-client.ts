@@ -353,30 +353,8 @@ function parseBracketValue(rawValue: string): unknown {
   }
 }
 
-/**
- * Strip avatar name prefix from response if the model accidentally included it.
- * Models sometimes see `[Username]: message` in history and mimic the pattern.
- * This removes prefixes like `[Rati]:`, `[Chamuel 😇]:`, `Rati:`, etc.
- */
-export function stripAvatarNamePrefix(content: string, avatarName: string): string {
-  if (!content || !avatarName) return content;
-
-  // Try various prefix patterns the model might use
-  const patterns = [
-    // [Name]: format (with optional emoji/special chars)
-    new RegExp(`^\\[${escapeRegex(avatarName)}[^\\]]*\\]:\\s*`, 'i'),
-    // Name: format at start of message
-    new RegExp(`^${escapeRegex(avatarName)}:\\s*`, 'i'),
-  ];
-
-  for (const pattern of patterns) {
-    if (pattern.test(content)) {
-      return content.replace(pattern, '').trim();
-    }
-  }
-
-  return content;
-}
+// Re-exported from @swarm/core — single source of truth.  #1723.
+export { stripAvatarNamePrefix } from '@swarm/core';
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

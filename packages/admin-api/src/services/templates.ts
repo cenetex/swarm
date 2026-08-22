@@ -5,7 +5,7 @@ import {
   PutCommand,
   GetCommand,
   ScanCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type { AvatarRecord, UserSession } from '../types.js';
 import * as avatarsDefault from './avatars.js';
 import { getDynamoClient } from './dynamo-client.js';

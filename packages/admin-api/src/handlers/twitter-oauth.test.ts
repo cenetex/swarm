@@ -4,12 +4,12 @@
  * Tests for the OAuth 1.0a handler routes using dependency injection.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from 'aws-lambda';
 import { handler, type TwitterOAuthHandlerDeps } from './twitter-oauth.js';
 import type { UserSession, AvatarRecord } from '../types.js';
 
 // Helper to create a mock API Gateway event
-function createEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewayProxyEventV2 {
+function createEvent(overrides: Partial<HttpRequest> = {}): HttpRequest {
   return {
     version: '2.0',
     routeKey: '$default',
@@ -36,7 +36,7 @@ function createEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewa
     },
     isBase64Encoded: false,
     ...overrides,
-  } as APIGatewayProxyEventV2;
+  } as HttpRequest;
 }
 
 // Helper to create test session

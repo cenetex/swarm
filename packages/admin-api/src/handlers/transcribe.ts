@@ -3,10 +3,11 @@
  * Transcribes audio files using OpenAI Whisper API
  */
 import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResultV2,
-} from 'aws-lambda';
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+  HttpRequest,
+  HttpResponse,
+} from "@swarm/core";
+import { GetSecretValueCommand } from '@swarm/core';
+import { getSecretsClient } from '../services/aws-clients.js';
 import { authenticateRequest, requireAdmin } from '../auth/request-auth.js';
 import { logger } from '@swarm/core';
 import { getCorsHeaders } from '../http/cors.js';
@@ -25,7 +26,7 @@ async function getOpenAiApiKey(): Promise<string> {
     throw new Error('LLM_API_KEY_SECRET_ARN not configured');
   }
 
-  const client = new SecretsManagerClient({});
+  const client = getSecretsClient();
   const response = await client.send(new GetSecretValueCommand({
     SecretId: LLM_API_KEY_SECRET_ARN,
   }));
@@ -51,8 +52,8 @@ async function getOpenAiApiKey(): Promise<string> {
   return cachedApiKey!;
 }
 export async function handler(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const corsHeaders = getCorsHeaders(event);
 
   // Handle CORS preflight

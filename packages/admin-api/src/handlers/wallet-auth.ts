@@ -2,7 +2,7 @@
  * Wallet Authentication Handler
  * Endpoints for Solana wallet sign-in (SIWS)
  */
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpRequest, HttpResponse } from "@swarm/core";
 import { hasValidInternalTestKey, logger } from '@swarm/core';
 import { z } from 'zod';
 import {
@@ -36,7 +36,6 @@ import {
 } from '../services/billing/runtime-limits.js';
 import { getAvatar } from '../services/avatars.js';
 import { checkNFTGate } from '../services/web3/nft-gate.js';
-import { handlePrivyAuth } from './privy-auth.js';
 import {
   preflightAscend,
   verifyAscensionBurns,
@@ -53,7 +52,7 @@ const INTERNAL_TEST_KEY = process.env.INTERNAL_TEST_KEY;
  * Check if request has valid internal test key.
  * Always returns false in production.
  */
-function hasInternalTestKey(event: APIGatewayProxyEventV2): boolean {
+function hasInternalTestKey(event: HttpRequest): boolean {
   return hasValidInternalTestKey({
     headers: event.headers,
     internalTestKey: INTERNAL_TEST_KEY,
@@ -199,7 +198,7 @@ function jsonResponse(
   body: unknown,
   headers?: Record<string, string>,
   cookies?: string[]
-): APIGatewayProxyResultV2 {
+): HttpResponse {
   return {
     statusCode,
     headers: {
@@ -220,8 +219,8 @@ function jsonResponse(
  * Generate a challenge for the user to sign
  */
 export async function handleChallenge(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = getCorsHeaders(event);
 
   // Handle preflight
@@ -276,8 +275,8 @@ export async function handleChallenge(
  * Verify signature and create session
  */
 export async function handleVerify(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = getCorsHeaders(event);
 
   // Handle preflight
@@ -389,9 +388,9 @@ export async function handleVerify(
  * Get current authenticated user with gate status
  */
 export async function handleMe(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   deps?: WalletAuthHandlerDeps
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const cors = getCorsHeaders(event);
 
   // Handle preflight
@@ -473,9 +472,9 @@ export async function handleMe(
  * Create a signed message challenge to link a wallet identity to the current account.
  */
 export async function handleLinkWalletChallenge(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   deps?: WalletAuthHandlerDeps
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const cors = getCorsHeaders(event);
 
   if (event.requestContext.http.method === 'OPTIONS') {
@@ -534,9 +533,9 @@ export async function handleLinkWalletChallenge(
  * Verify signature and attach wallet identity to the current account.
  */
 export async function handleLinkWalletVerify(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   deps?: WalletAuthHandlerDeps
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const cors = getCorsHeaders(event);
 
   if (event.requestContext.http.method === 'OPTIONS') {
@@ -599,8 +598,8 @@ export async function handleLinkWalletVerify(
  * End current session
  */
 export async function handleLogout(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = getCorsHeaders(event);
 
   // Handle preflight
@@ -627,8 +626,8 @@ export async function handleLogout(
  * Get NFT gate status for current user
  */
 export async function handleGateStatus(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = getCorsHeaders(event);
 
   if (event.requestContext.http.method === 'OPTIONS') {
@@ -667,8 +666,8 @@ export async function handleGateStatus(
  * Get ascension status for an avatar
  */
 export async function handleAscensionStatus(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = getCorsHeaders(event);
 
   if (event.requestContext.http.method === 'OPTIONS') {
@@ -698,8 +697,8 @@ export async function handleAscensionStatus(
  * Check if user can ascend an avatar (requirements check)
  */
 export async function handleAscensionPreflight(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = getCorsHeaders(event);
 
   if (event.requestContext.http.method === 'OPTIONS') {
@@ -745,8 +744,8 @@ export async function handleAscensionPreflight(
  * - nftMint: REQUIRED - The mint address of the newly created Ascension NFT
  */
 export async function handleExecuteAscension(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = getCorsHeaders(event);
 
   if (event.requestContext.http.method === 'OPTIONS') {
@@ -893,9 +892,9 @@ export async function handleExecuteAscension(
  * Main router for /auth/* endpoints
  */
 export async function handleWalletAuth(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   depsOrContext?: WalletAuthHandlerDeps | unknown
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const deps = depsOrContext && 'walletAuth' in (depsOrContext as object)
     ? (depsOrContext as WalletAuthHandlerDeps)
     : undefined;
@@ -913,11 +912,6 @@ export async function handleWalletAuth(
   // Handle preflight for all auth routes
   if (method === 'OPTIONS') {
     return { statusCode: 204, headers: cors };
-  }
-
-  // Route Privy auth to separate handler
-  if (path.startsWith('/auth/privy') || path.startsWith('/auth/link/privy')) {
-    return handlePrivyAuth(event);
   }
 
   // Route to appropriate handler

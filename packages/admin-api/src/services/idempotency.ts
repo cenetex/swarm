@@ -20,7 +20,7 @@ import {
   PutCommand,
   GetCommand,
   DeleteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { getDynamoClient as getSharedDynamoClient, _setDynamoClient as _setSharedDynamoClient } from './dynamo-client.js';
 import { logger } from '@swarm/core';
 

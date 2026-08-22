@@ -3,10 +3,10 @@
  * Lightweight endpoint for polling media job status
  */
 import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResultV2,
+  HttpRequest,
+  HttpResponse,
   APIGatewayProxyStructuredResultV2,
-} from 'aws-lambda';
+} from "@swarm/core";
 import { authenticateRequest, requireAdmin } from '../auth/request-auth.js';
 import { isAuthError } from '../auth/errors.js';
 import * as mediaJobs from '../services/media-jobs.js';
@@ -27,8 +27,8 @@ const log = createSystemLogger('jobs-handler');
  * - GET /jobs?avatarId=xxx - List pending jobs for an avatar
  */
 export async function handler(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const corsHeaders = getCorsHeaders(event);
 
   // Handle preflight

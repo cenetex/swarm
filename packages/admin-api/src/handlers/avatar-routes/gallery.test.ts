@@ -6,16 +6,8 @@
  *   POST   /avatars/{id}/gallery/upload-url
  *   POST   /avatars/{id}/gallery/save
  */
-import { describe, it, expect, beforeEach, mock, afterAll } from 'bun:test';
+import { describe, it, expect, beforeEach, afterAll } from 'bun:test';
 import { makeCtx, MOCK_AVATAR } from './test-helpers.js';
-
-// Capture original modules BEFORE installing test mocks so afterAll can
-// restore them. bun's mock.module is process-global and mock.restore() does
-// not undo module mocks — we have to re-install the originals manually to
-// prevent pollution of subsequent test files (e.g. services/media tests).
-const realAvatarsModule = await import('../../services/avatars.js');
-const realGalleryModule = await import('../../services/gallery.js');
-const realMediaModule = await import('../../services/media.js');
 
 // ── Mock state ─────────────────────────────────────────────────────────────
 let getAvatarResult: unknown = MOCK_AVATAR;
@@ -23,30 +15,7 @@ let getGalleryResult: unknown[] = [];
 let getGalleryUploadUrlResult: unknown = { uploadUrl: 'https://s3.example.com/upload' };
 let addToGalleryResult: unknown = { id: 'item-1', url: 'https://cdn/img.jpg', createdAt: Date.now() };
 
-mock.module('../../services/avatars.js', () => ({
-  getAvatar: async () => getAvatarResult,
-}));
-
-mock.module('../../services/gallery.js', () => ({
-  getGallery: async () => getGalleryResult,
-  generateGalleryId: () => 'generated-id',
-  addToGallery: async (..._args: unknown[]) => addToGalleryResult,
-}));
-
-mock.module('../../services/media.js', () => ({
-  getGalleryUploadUrl: async (..._args: unknown[]) => getGalleryUploadUrlResult,
-}));
-
-mock.module('@swarm/core', () => ({
-  ...RealSwarmCore,
-  logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, setContext: () => {} },
-}));
-
-// ── Import handler AFTER mocks ─────────────────────────────────────────────
-import { handleGalleryRoutes as importedHandler } from './gallery.js';
-
-// Bypass mocks below to access real @swarm/core for spreading into the factory.
-import * as RealSwarmCore from '../../../../core/src/index.js';
+import { handleGalleryRoutes as importedHandler, _setGalleryRouteDeps } from './gallery.js';
 
 describe('handleGalleryRoutes', () => {
   beforeEach(() => {
@@ -54,6 +23,13 @@ describe('handleGalleryRoutes', () => {
     getGalleryResult = [];
     getGalleryUploadUrlResult = { uploadUrl: 'https://s3.example.com/upload' };
     addToGalleryResult = { id: 'item-1', url: 'https://cdn/img.jpg', createdAt: Date.now() };
+    _setGalleryRouteDeps({
+      getAvatar: async () => getAvatarResult as never,
+      getGallery: async () => getGalleryResult as never,
+      generateGalleryId: () => 'test-gallery-id',
+      addToGallery: async () => addToGalleryResult as never,
+      getGalleryUploadUrl: async () => getGalleryUploadUrlResult as never,
+    });
   });
 
   describe('GET /avatars/{id}/gallery', () => {
@@ -253,10 +229,5 @@ describe('handleGalleryRoutes', () => {
 });
 
 afterAll(() => {
-  // Restore original modules so subsequent test files (e.g. services/media)
-  // see the real implementations of generateGalleryId, getGallery, etc.
-  mock.module('../../services/avatars.js', () => ({ ...realAvatarsModule }));
-  mock.module('../../services/gallery.js', () => ({ ...realGalleryModule }));
-  mock.module('../../services/media.js', () => ({ ...realMediaModule }));
-  mock.restore();
+  _setGalleryRouteDeps(null);
 });

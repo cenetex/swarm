@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 import type { AvatarMemory, MemoryTier } from '../types.js';
 import * as memory from './memory.js';
 import * as embedding from './embedding.js';

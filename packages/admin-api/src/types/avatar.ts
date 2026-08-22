@@ -71,6 +71,19 @@ export interface AvatarRecord {
     createdAt: number;
   };
 
+  // Agent identity — Ed25519 keypair (Body 4)
+  identity?: {
+    /** base58-encoded Ed25519 public key */
+    pubkey: string;
+    /** encrypted seed material (base64) */
+    encryptedSeed?: string;
+    /** keypair derivation info */
+    derivation?: {
+      type: "random" | "derived";
+      provenance?: string;
+    };
+  };
+
   platforms: {
     telegram?: {
       enabled: boolean;

@@ -172,6 +172,34 @@ describe('config-sync convertToAvatarConfig', () => {
     expect(config.media.video?.model).toBe('');
   });
 
+  it('defaults missing LLM config for legacy local records', () => {
+    const record = {
+      pk: 'AVATAR#legacy-avatar',
+      sk: 'CONFIG',
+      avatarId: 'legacy-avatar',
+      name: 'Legacy Avatar',
+      platforms: {},
+      voiceConfig: {
+        enabled: true,
+        ttsProvider: 'voice-clone',
+        format: 'ogg',
+      },
+      currentEra: 0,
+      status: 'active',
+      createdAt: Date.now(),
+      createdBy: 'test@example.com',
+      updatedAt: Date.now(),
+      updatedBy: 'test@example.com',
+    } satisfies Partial<AvatarRecord> as AvatarRecord;
+
+    const config = convertToAvatarConfig(record);
+
+    expect(config.llm.provider).toBe('openrouter');
+    expect(config.llm.model).toBe('');
+    expect(config.llm.temperature).toBe(0.8);
+    expect(config.llm.maxTokens).toBe(1024);
+  });
+
   it('syncs Twitter features and autonomous posts settings', () => {
     const record = {
       pk: 'AVATAR#test-avatar',

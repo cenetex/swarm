@@ -29,7 +29,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
-} from '@aws-sdk/client-s3';
+} from '../commands/index.js';
 import { randomUUID } from 'crypto';
 import { logger } from '../utils/logger.js';
 
@@ -198,6 +198,9 @@ export function createSqsOffloadService(config: SqsOffloadConfig): SqsOffloadSer
 
       if (!response.Body) {
         throw new Error(`Empty S3 response for offloaded payload: s3://${ref.bucket}/${ref.key}`);
+      }
+      if (!('transformToString' in response.Body)) {
+        throw new Error(`S3 response body cannot be converted to string: s3://${ref.bucket}/${ref.key}`);
       }
 
       const bodyStr = await response.Body.transformToString('utf-8');

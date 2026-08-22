@@ -1,9 +1,9 @@
+import { RATICROSS_PROTOCOL_VERSION } from '@swarm/core';
 /**
  * Raticross Health Check Handler Tests
  */
 import { describe, it, expect } from 'bun:test';
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
-import { RATICROSS_PROTOCOL_VERSION } from '@swarm/core';
+import type { HttpRequest } from 'aws-lambda';
 
 // Set env before importing handler
 process.env.RATICROSS_INBOUND_KEY = 'test-health-key';
@@ -11,7 +11,7 @@ process.env.RATICROSS_INBOUND_KEY = 'test-health-key';
 // Dynamic import to pick up env
 const { handler } = await import('./raticross-health.js');
 
-function makeEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewayProxyEventV2 {
+function makeEvent(overrides: Partial<HttpRequest> = {}): HttpRequest {
   return {
     version: '2.0',
     routeKey: 'POST /raticross/health',

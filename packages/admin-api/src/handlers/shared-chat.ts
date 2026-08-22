@@ -7,7 +7,7 @@
  * - Wallet-based authentication (SIWS)
  * - Per-channel message history
  */
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpRequest, HttpResponse } from "@swarm/core";
 import { z } from 'zod';
 import { logger } from '@swarm/core';
 import { getSessionWithUser } from '../services/wallet-auth.js';
@@ -18,7 +18,7 @@ import { isRequestValidationError } from '../middleware/validate.js';
 import {
   GetCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type { MessageSender } from '../types.js';
 import * as avatarService from '../services/avatars.js';
 import { createSharedChatProcessor } from '../services/processor-adapter.js';
@@ -223,7 +223,7 @@ function jsonResponse(
   body: unknown,
   headers?: Record<string, string>,
   cookies?: string[]
-): APIGatewayProxyResultV2 {
+): HttpResponse {
   return {
     statusCode,
     headers: {
@@ -235,7 +235,7 @@ function jsonResponse(
   };
 }
 
-function corsHeaders(event: APIGatewayProxyEventV2): Record<string, string> {
+function corsHeaders(event: HttpRequest): Record<string, string> {
   return getCorsHeaders(event);
 }
 
@@ -459,8 +459,8 @@ async function generateAvatarResponse(
  * Get messages from a shared chat channel
  */
 export async function handleGetMessages(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = corsHeaders(event);
 
   if (event.requestContext.http.method === 'OPTIONS') {
@@ -508,8 +508,8 @@ export async function handleGetMessages(
  * Send a message to a shared chat channel
  */
 export async function handleSendMessage(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = corsHeaders(event);
 
   if (event.requestContext.http.method === 'OPTIONS') {
@@ -648,8 +648,8 @@ export async function handleSendMessage(
  * Get the current user's sender identity
  */
 export async function handleGetIdentity(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = corsHeaders(event);
 
   if (event.requestContext.http.method === 'OPTIONS') {
@@ -683,8 +683,8 @@ export async function handleGetIdentity(
  * Returns { typing: true, avatarName: "..." } if avatar is currently generating a response
  */
 export async function handleGetTypingStatus(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = corsHeaders(event);
 
   if (event.requestContext.http.method === 'OPTIONS') {
@@ -719,8 +719,8 @@ export async function handleGetTypingStatus(
  * Used for displaying the avatar header on shared chat pages
  */
 export async function handleGetAvatar(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const cors = corsHeaders(event);
 
   if (event.requestContext.http.method === 'OPTIONS') {
@@ -750,8 +750,8 @@ export async function handleGetAvatar(
  * Main router for /shared-chat/* endpoints
  */
 export async function handleSharedChat(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const rawPath = event.rawPath;
   const path = rawPath === '/api'
     ? '/'

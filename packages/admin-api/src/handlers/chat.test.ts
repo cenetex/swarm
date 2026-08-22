@@ -5,6 +5,9 @@
  * These tests focus on logic patterns and data structures, not on mocking external services.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+const chatHandlerSource = readFileSync(new URL('./chat.ts', import.meta.url), 'utf8');
 
 describe('Admin Chat - Tool Call Flow', () => {
   beforeEach(() => {
@@ -252,6 +255,15 @@ describe('Admin Chat - Tool Call Flow', () => {
       expect(pendingJobs[0].jobId).toBe('job-123');
       expect(pendingJobs[0].type).toBe('video');
     });
+  });
+});
+
+describe('Admin Chat - Prompt Hygiene', () => {
+  it('does not expose local tool-loading implementation details to the model', () => {
+    expect(chatHandlerSource).not.toContain('compact tool-discovery mode');
+    expect(chatHandlerSource).not.toContain('Local compact context mode');
+    expect(chatHandlerSource).not.toContain('full executable tool catalog');
+    expect(chatHandlerSource).not.toContain('cloud providers can load');
   });
 });
 

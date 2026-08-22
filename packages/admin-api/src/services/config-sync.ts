@@ -7,7 +7,11 @@ import {
   PutCommand,
   DeleteCommand,
   GetCommand,
-} from '@aws-sdk/lib-dynamodb';
+  DEFAULT_LLM_MAX_TOKENS,
+  DEFAULT_LLM_MODEL,
+  DEFAULT_LLM_PROVIDER,
+  DEFAULT_LLM_TEMPERATURE,
+} from '@swarm/core';
 import type { AvatarRecord } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';
 import { createSystemLogger } from './structured-logger.js';
@@ -159,7 +163,6 @@ interface AvatarConfig {
   secrets: string[];
 }
 
-const dynamoClient = getDynamoClient();
 const STATE_TABLE = process.env.STATE_TABLE;
 const ADMIN_TABLE = process.env.ADMIN_TABLE;
 
@@ -218,6 +221,21 @@ function resolveVideoMedia(record: AvatarRecord): NonNullable<AvatarConfig['medi
  * Convert AdminAPI AvatarRecord to Core AvatarConfig format
  */
 export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
+  // Avatars created without any platform wiring may have `platforms` undefined;
+  // the `record.platforms.x?.enabled` checks below would throw on the missing
+  // base object, so normalize it to an empty map first.
+  if (!record.platforms) {
+    record = { ...record, platforms: {} };
+  }
+  const recordLlmConfig = record.llmConfig as Partial<AvatarRecord['llmConfig']> | undefined;
+  const llmConfig = {
+    provider: DEFAULT_LLM_PROVIDER,
+    model: DEFAULT_LLM_MODEL,
+    temperature: DEFAULT_LLM_TEMPERATURE,
+    maxTokens: DEFAULT_LLM_MAX_TOKENS,
+    useGlobalKey: true,
+    ...recordLlmConfig,
+  };
   const defaultVoiceConfig = {
     enabled: true,
     ttsProvider: 'voice-clone' as const,
@@ -259,12 +277,12 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
 
     platforms: {},
     llm: {
-      provider: record.llmConfig.provider,
-      model: record.llmConfig.model,
-      fastModel: record.llmConfig.fastModel,
-      thinkingModel: record.llmConfig.thinkingModel,
-      temperature: record.llmConfig.temperature,
-      maxTokens: record.llmConfig.maxTokens,
+      provider: llmConfig.provider,
+      model: llmConfig.model,
+      fastModel: llmConfig.fastModel,
+      thinkingModel: llmConfig.thinkingModel,
+      temperature: llmConfig.temperature,
+      maxTokens: llmConfig.maxTokens,
     },
     media: {
       image: mediaImage,
@@ -474,12 +492,12 @@ export function convertToAvatarConfig(record: AvatarRecord): AvatarConfig {
   }
 
   // Add API keys based on LLM provider
-  if (record.llmConfig.useGlobalKey) {
+  if (llmConfig.useGlobalKey) {
     // Global key will be fetched from swarm/shared/secrets
   } else {
-    if (record.llmConfig.provider === 'openrouter') {
+    if (llmConfig.provider === 'openrouter') {
       config.secrets.push('OPENROUTER_API_KEY');
-    } else if (record.llmConfig.provider === 'anthropic') {
+    } else if (llmConfig.provider === 'anthropic') {
       config.secrets.push('ANTHROPIC_API_KEY');
     }
   }
@@ -504,7 +522,7 @@ export async function syncAvatarConfig(record: AvatarRecord): Promise<void> {
   // Only sync active avatars (not drafts or deleted)
   if (record.status === 'deleted') {
     // Remove from state table
-    await dynamoClient.send(new DeleteCommand({
+    await getDynamoClient().send(new DeleteCommand({
       TableName: STATE_TABLE,
       Key: {
         pk: `AVATAR#${record.avatarId}`,
@@ -524,13 +542,13 @@ export async function syncAvatarConfig(record: AvatarRecord): Promise<void> {
 
     if (ADMIN_TABLE) {
       try {
-        const connectionResult = await dynamoClient.send(new GetCommand({
+        const connectionResult = await getDynamoClient().send(new GetCommand({
           TableName: ADMIN_TABLE,
           Key: {
             pk: `AVATAR#${record.avatarId}`,
             sk: 'TWITTER#CONNECTION',
           },
-        }));
+        })) as { Item?: { charLimit?: number; verifiedType?: string } };
         if (connectionResult.Item) {
           // Use stored charLimit or default to 280 (handles legacy records without charLimit)
           config.platforms.twitter.charLimit = connectionResult.Item.charLimit || 280;
@@ -548,7 +566,7 @@ export async function syncAvatarConfig(record: AvatarRecord): Promise<void> {
     }
   }
 
-  await dynamoClient.send(new PutCommand({
+  await getDynamoClient().send(new PutCommand({
     TableName: STATE_TABLE,
     Item: {
       pk: `AVATAR#${record.avatarId}`,

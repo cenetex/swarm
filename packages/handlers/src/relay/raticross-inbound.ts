@@ -4,7 +4,7 @@
  * Receives raticross Envelope messages from peer systems (e.g., Kyro)
  * and enqueues them to the shared FIFO message queue as SwarmEnvelopes.
  */
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpRequest, HttpResponse } from "@swarm/core";
 import { randomUUID } from 'crypto';
 import { sendSqsMessage } from '../services/sqs-send.js';
 import {
@@ -27,7 +27,7 @@ function initialize(): void {
   }
 }
 
-function ok(body: Record<string, unknown> = { ok: true }): APIGatewayProxyResultV2 {
+function ok(body: Record<string, unknown> = { ok: true }): HttpResponse {
   return {
     statusCode: 200,
     headers: { 'Content-Type': 'application/json' },
@@ -35,7 +35,7 @@ function ok(body: Record<string, unknown> = { ok: true }): APIGatewayProxyResult
   };
 }
 
-function error(statusCode: number, message: string): APIGatewayProxyResultV2 {
+function error(statusCode: number, message: string): HttpResponse {
   return {
     statusCode,
     headers: { 'Content-Type': 'application/json' },
@@ -77,7 +77,7 @@ function mapToSwarmEnvelope(envelope: RaticrossEnvelope, avatarId: string): Swar
   };
 }
 
-export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
+export async function handler(event: HttpRequest): Promise<HttpResponse> {
   const correlationId = randomUUID();
   logger.setContext({ correlationId, subsystem: 'raticross-inbound' });
 
@@ -109,6 +109,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       !envelope.to?.system || !envelope.to?.agentId ||
       !envelope.conversationId || envelope.content === undefined) {
     return error(400, 'Missing required envelope fields');
+  }
+
+  // Warn if sender has no pubkey — all agents should carry identity
+  if (!envelope.from.pubkey) {
+    logger.warn('Raticross envelope missing sender pubkey', {
+      event: 'raticross_missing_pubkey',
+      subsystem: 'raticross-inbound',
+      fromAgent: envelope.from.agentId,
+    });
   }
 
   initialize();

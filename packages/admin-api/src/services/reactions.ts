@@ -17,12 +17,13 @@
  *
  * @see docs/COORDINATION-OWNERSHIP.md for the full ownership model.
  */
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { SendMessageCommand } from '@swarm/core';
 import { createSystemLogger } from './structured-logger.js';
+import { getSQSClient } from './aws-clients.js';
 
 const log = createSystemLogger('reactions');
 
-const sqsClient = new SQSClient({});
+const sqsClient = getSQSClient();
 const REACTION_QUEUE_URL = process.env.RESPONSE_QUEUE_URL; // Reuse response queue
 
 // Common reaction emojis that work with Telegram

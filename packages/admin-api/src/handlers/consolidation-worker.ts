@@ -11,7 +11,7 @@
  *
  * @see memory-consolidation.ts for business logic
  */
-import type { ScheduledEvent, Context } from 'aws-lambda';
+import type { TimerEvent, ExecutionContext } from "@swarm/core";
 import { logger } from '@swarm/core';
 import { consolidateAllAvatars, type BatchConsolidationResult } from '../services/memory-consolidation.js';
 
@@ -21,8 +21,8 @@ import { consolidateAllAvatars, type BatchConsolidationResult } from '../service
  * Triggered by EventBridge rule (e.g., daily at 3 AM UTC)
  */
 export async function handler(
-  event: ScheduledEvent,
-  context: Context
+  event: TimerEvent,
+  context: ExecutionContext
 ): Promise<BatchConsolidationResult> {
   logger.setContext({
     subsystem: 'memory-consolidation',

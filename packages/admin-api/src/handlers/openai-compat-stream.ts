@@ -8,7 +8,7 @@
  * the buffered processChat() call with a direct OpenRouter streaming fetch,
  * writing SSE chunks to the response stream as they arrive.
  */
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from "@swarm/core";
 import { z } from 'zod';
 import { logger } from '@swarm/core';
 import {
@@ -81,7 +81,7 @@ interface StreamChunk {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const handler = (globalThis as any).awslambda?.streamifyResponse?.(
-  async (event: APIGatewayProxyEventV2, responseStream: NodeJS.WritableStream) => {
+  async (event: HttpRequest, responseStream: NodeJS.WritableStream) => {
     const requestId = event.requestContext?.requestId || crypto.randomUUID();
 
     // Set SSE content type via metadata
@@ -119,7 +119,7 @@ export const handler = (globalThis as any).awslambda?.streamifyResponse?.(
       httpStream.end();
     }
   }
-) ?? (async (_event: APIGatewayProxyEventV2) => {
+) ?? (async (_event: HttpRequest) => {
   // Fallback for non-streaming Lambda invocations (API Gateway)
   return {
     statusCode: 400,
@@ -134,7 +134,7 @@ export const handler = (globalThis as any).awslambda?.streamifyResponse?.(
 });
 
 async function handleStreamingRequest(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   stream: NodeJS.WritableStream & { write(chunk: string): boolean },
   requestId: string,
 ): Promise<void> {

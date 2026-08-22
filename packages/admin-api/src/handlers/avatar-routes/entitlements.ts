@@ -8,7 +8,7 @@
  * - POST       /avatars/{id}/deactivate
  * - GET        /avatars/{id}/audit-log
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { syncRuntimeContractForAvatar } from './runtime-sync.js';
@@ -42,7 +42,7 @@ function resolveActorType(
 
 export async function handleEntitlementRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, event, corsHeaders, session, walletAddress, effectiveIsAdmin } = ctx;
 
   // ── PUT / DELETE /avatars/{id}/orb ───────────────────────────────────────

@@ -11,7 +11,7 @@
  *
  * @module avatar-health
  */
-import { QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand } from '@swarm/core';
 import { logger } from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
 import * as avatarService from './avatars.js';

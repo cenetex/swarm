@@ -3,7 +3,7 @@
  *
  * Manages MCP server configuration (toolsets and external servers) for avatars.
  */
-import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, UpdateCommand } from '@swarm/core';
 import type { McpConfig, ToolsetId, ExternalMcpServer } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
 

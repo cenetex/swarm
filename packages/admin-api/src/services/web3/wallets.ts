@@ -13,7 +13,7 @@ import { JsonRpcProvider, formatEther } from 'ethers';
 import {
   QueryCommand,
   GetCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { _getSecretValueInternal as _getSecretValueInternalDefault } from '../secrets.js';
 import type { WalletInfo } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';

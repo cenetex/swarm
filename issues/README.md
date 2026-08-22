@@ -2,15 +2,15 @@
 
 GitHub Issues is the **only** source of truth for issue lifecycle (open/close/status/labels/assignees/PR linkage).
 
-- Tracker: https://github.com/cenetex/aws-swarm/issues
-- CLI: `gh issue list --repo cenetex/aws-swarm --state open --limit 200`
+- Tracker: https://github.com/atimics/swarm/issues
+- CLI: `gh issue list --repo atimics/swarm --state open --limit 200`
 
 ## Workflow
 
 1. Create or update the issue in GitHub first.
 2. Reference it in branches/commits/PRs (`Closes #123`).
 3. For triage context and WIP caps, see [../CLAUDE.md](../CLAUDE.md) and [../docs/OPERATING-MODEL.md](../docs/OPERATING-MODEL.md).
-4. For planning candidates not yet promoted to issues, use the `AWS Swarm Roadmap` Project (cenetex/projects/4) — see `OPERATING-MODEL.md`.
+4. For planning candidates not yet promoted to issues, use the `Swarm Roadmap` Project (cenetex/projects/4) — see `OPERATING-MODEL.md`.
 
 ## Why local mirrors were retired
 

@@ -1,4 +1,4 @@
-# AWS Swarm Plan: Active Execution (M2+ Issue-Driven)
+# Swarm Plan: Active Execution (M2+ Issue-Driven)
 
 Goal: deliver a stable platform with reliable admin UX, complete account identity flows, and production-grade multi-platform parity. Execution is entirely issue-driven, not milestone-driven.
 

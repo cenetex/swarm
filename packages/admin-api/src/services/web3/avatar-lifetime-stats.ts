@@ -7,7 +7,7 @@
  * Queries are best-effort: failures return partial data and never block
  * the abandon flow.
  */
-import { QueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand, GetCommand } from '@swarm/core';
 import { getDynamoClient } from '../dynamo-client.js';
 import { createSystemLogger } from '../structured-logger.js';
 

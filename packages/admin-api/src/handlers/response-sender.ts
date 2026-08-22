@@ -4,17 +4,15 @@
  * 
  * Triggered by SQS messages from the Replicate webhook handler
  */
-import type { SQSEvent, Context, SQSBatchResponse, Handler } from 'aws-lambda';
-import { GetCommand } from '@aws-sdk/lib-dynamodb';
-import {
-  SecretsManagerClient,
-  GetSecretValueCommand,
-} from '@aws-sdk/client-secrets-manager';
+import type { MessageBatch, ExecutionContext, MessageBatchResponse, Handler } from "@swarm/core";
+import { GetCommand } from '@swarm/core';
+import { GetSecretValueCommand } from '@swarm/core';
 import { logger } from '@swarm/core';
 import { getDynamoClient } from '../services/dynamo-client.js';
+import { getSecretsClient } from '../services/aws-clients.js';
 
 const dynamoClient = getDynamoClient();
-const secretsClient = new SecretsManagerClient({});
+const secretsClient = getSecretsClient();
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
@@ -514,9 +512,9 @@ async function processMessage(message: ResponseMessage): Promise<void> {
 /**
  * Lambda handler for SQS-triggered response sending
  */
-export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
-  event: SQSEvent,
-  context: Context
+export const handler: Handler<MessageBatch, MessageBatchResponse> = async (
+  event: MessageBatch,
+  context: ExecutionContext
 ) => {
   logger.setContext({
     subsystem: 'response-sender',
@@ -524,7 +522,7 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
   });
 
   logger.info('Response sender triggered', { recordCount: event.Records.length });
-  const batchItemFailures: SQSBatchResponse['batchItemFailures'] = [];
+  const batchItemFailures: MessageBatchResponse['batchItemFailures'] = [];
 
   for (const record of event.Records) {
     try {

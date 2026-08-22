@@ -21,7 +21,7 @@ import {
   GetCommand,
   UpdateCommand,
   PutCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import {
   RATI_MINT,
   GATE_COLLECTION,

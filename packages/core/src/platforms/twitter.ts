@@ -1,9 +1,9 @@
+import { GetObjectCommand, S3Client } from '../commands/index.js';
 /**
  * Twitter/X Platform Adapter
  * Handles Twitter API v2 for posting, mentions, and DMs
  */
 import { TwitterApi, TweetV2, UserV2, type MediaObjectV2 } from 'twitter-api-v2';
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 import { PlatformAdapter } from './base.js';
 import { ensureTwitterImageWithinLimit, TWITTER_MAX_IMAGE_BYTES } from './twitter-media.js';

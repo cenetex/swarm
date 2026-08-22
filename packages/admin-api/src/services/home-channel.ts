@@ -15,7 +15,7 @@ import {
   PutCommand,
   DeleteCommand,
   QueryCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type { HomeChannelRecord } from '../types.js';
 import { getDynamoClient, _setDynamoClient as _setSharedDynamoClient } from './dynamo-client.js';
 import { createSystemLogger } from './structured-logger.js';

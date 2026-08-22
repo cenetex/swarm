@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Avatar, ChatMessage } from '../types';
 import * as api from '../api/avatars';
+import type { AvatarUpdates } from '../api/chat';
 import { fetchChatHistory as apiFetchChatHistory, clearChatHistory as apiClearChatHistory } from '../api/chat';
 import { useTaskCardStore } from './task-cards';
 
@@ -41,6 +42,7 @@ interface AvatarState {
   // Avatar management
   createAvatar: (name?: string) => Promise<Avatar>;
   updateAvatar: (id: string, updates: Partial<Avatar>) => void;
+  applyAvatarUpdates: (id: string, updates?: AvatarUpdates) => void;
   deleteAvatar: (id: string) => Promise<void>;
   setActiveAvatar: (id: string | null) => void;
   fetchAvatars: () => Promise<void>;
@@ -52,6 +54,7 @@ interface AvatarState {
   clearChat: (avatarId: string) => void;
   syncChatHistory: (avatarId: string) => Promise<void>;
   setChat: (avatarId: string, messages: ChatMessage[]) => void;
+  resetChatState: () => void;
 
   // UI state
   setLoading: (loading: boolean) => void;
@@ -136,6 +139,33 @@ export const useAvatarStore = create<AvatarState>()(
                 }
               : a
           ),
+        }));
+      },
+
+      applyAvatarUpdates: (id, updates) => {
+        if (!updates?.profileImageUrl && !updates?.name) return;
+
+        const avatarUpdates: Partial<Avatar> = {};
+        if (updates.profileImageUrl) avatarUpdates.avatar = updates.profileImageUrl;
+        if (updates.name) avatarUpdates.name = updates.name;
+
+        get().updateAvatar(id, avatarUpdates);
+
+        const name = updates.name;
+        if (!name) return;
+
+        set((state) => ({
+          chats: {
+            ...state.chats,
+            [id]: (state.chats[id] || []).map((message) =>
+              message.id === 'welcome'
+                ? {
+                    ...message,
+                    content: `Hi! I'm **${name}**. Talk to me to configure my integrations!`,
+                  }
+                : message
+            ),
+          },
         }));
       },
 
@@ -345,6 +375,14 @@ export const useAvatarStore = create<AvatarState>()(
             [avatarId]: messages,
           },
         }));
+      },
+
+      resetChatState: () => {
+        const taskStore = useTaskCardStore.getState();
+        for (const avatar of get().avatars) {
+          taskStore.clearForAvatar(avatar.id);
+        }
+        set({ chats: {}, error: null, isLoading: false });
       },
 
       setLoading: (loading) => set({ isLoading: loading }),

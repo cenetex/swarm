@@ -7,7 +7,7 @@ Parameters:
     Default: cenetex
   GitHubRepo:
     Type: String
-    Default: aws-swarm
+    Default: swarm
   GitHubEnvironment:
     Type: String
     Default: staging

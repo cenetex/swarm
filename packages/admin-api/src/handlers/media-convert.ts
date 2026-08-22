@@ -2,7 +2,7 @@
  * Media Conversion Handler
  * Converts audio/video using ffmpeg and stores result in S3.
  */
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, GetObjectCommand } from '@swarm/core';
 import { randomUUID } from 'crypto';
 import { createWriteStream, promises as fs } from 'fs';
 import { pipeline } from 'stream/promises';
@@ -10,8 +10,9 @@ import { spawn } from 'child_process';
 import path from 'path';
 import ffmpegPath from 'ffmpeg-static';
 import { buildMediaUrl } from '../utils/media-url.js';
+import { getS3Client } from '../services/aws-clients.js';
 
-const s3Client = new S3Client({});
+const s3Client = getS3Client();
 
 const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
 const CDN_URL = process.env.CDN_URL || '';

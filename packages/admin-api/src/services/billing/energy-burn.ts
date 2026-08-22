@@ -1,6 +1,6 @@
 import {
   TransactWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import {
   Connection,
   Keypair,

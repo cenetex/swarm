@@ -1,4 +1,4 @@
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpRequest, HttpResponse } from "@swarm/core";
 import { z } from 'zod';
 
 import { getSessionFromCookie, getClearSessionCookies } from '../auth/session-cookie.js';
@@ -60,7 +60,7 @@ function jsonResponse(
   body: unknown,
   headers?: Record<string, string>,
   cookies?: string[],
-): APIGatewayProxyResultV2 {
+): HttpResponse {
   return {
     statusCode,
     headers: {
@@ -72,7 +72,7 @@ function jsonResponse(
   };
 }
 
-function readBody(event: APIGatewayProxyEventV2): string {
+function readBody(event: HttpRequest): string {
   const body = event.body || '';
   if (!body) return '';
   if (event.isBase64Encoded) {
@@ -118,9 +118,9 @@ async function assertAvatarAccess(
 }
 
 async function handleCheckout(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   corsHeaders: Record<string, string>,
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const sessionToken = getSessionFromCookie(event);
   if (!sessionToken) {
     return jsonResponse(401, { error: 'Session expired' }, corsHeaders);
@@ -183,9 +183,9 @@ async function handleCheckout(
 }
 
 async function handlePortal(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   corsHeaders: Record<string, string>,
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const sessionToken = getSessionFromCookie(event);
   if (!sessionToken) {
     return jsonResponse(401, { error: 'Session expired' }, corsHeaders);
@@ -328,9 +328,9 @@ async function upsertStripeEntitlement(params: {
 }
 
 async function handleWebhook(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   corsHeaders: Record<string, string>,
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const signatureHeader = parseSignatureHeader(event.headers);
   if (!signatureHeader) {
     return jsonResponse(400, { error: 'Missing Stripe signature header' }, corsHeaders);
@@ -549,7 +549,7 @@ async function handleWebhook(
   return jsonResponse(200, { received: true }, corsHeaders);
 }
 
-export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
+export async function handler(event: HttpRequest): Promise<HttpResponse> {
   const corsHeaders = getCorsHeaders(event);
   const method = event.requestContext.http.method;
   const path = normalizePath(event.rawPath);

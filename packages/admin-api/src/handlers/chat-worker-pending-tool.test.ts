@@ -79,10 +79,6 @@ mock.module('./chat.js', () => ({
   processChat: processChatSpy,
 }));
 
-mock.module('../services/runtime-config.js', () => ({
-  ensureRuntimeConfig: mock(() => {}),
-}));
-
 mock.module('../services/billing/entitlements.js', () => ({
   incrementUsage: mock(async () => {}),
   checkLimit: mock(async () => ({ allowed: true })),

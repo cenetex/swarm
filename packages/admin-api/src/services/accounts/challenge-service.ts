@@ -10,7 +10,7 @@ import {
   GetCommand,
   PutCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { randomBytes } from 'crypto';
 import { getDynamoClient } from '../dynamo-client.js';
 

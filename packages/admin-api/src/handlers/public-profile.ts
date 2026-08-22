@@ -6,7 +6,7 @@
  *
  * GET /api/profile/{avatarId}
  */
-import type { APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda';
+import type { HttpHandler, HttpResponse } from "@swarm/core";
 import { getAvatar } from '../services/avatars.js';
 import {
   getBurnStatsWithProgress,
@@ -100,7 +100,7 @@ function corsHeaders(): Record<string, string> {
   };
 }
 
-function success(data: unknown): APIGatewayProxyResult {
+function success(data: unknown): HttpResponse {
   return {
     statusCode: 200,
     headers: corsHeaders(),
@@ -108,7 +108,7 @@ function success(data: unknown): APIGatewayProxyResult {
   };
 }
 
-function notFound(message: string): APIGatewayProxyResult {
+function notFound(message: string): HttpResponse {
   return {
     statusCode: 404,
     headers: corsHeaders(),
@@ -116,7 +116,7 @@ function notFound(message: string): APIGatewayProxyResult {
   };
 }
 
-function serverError(message: string): APIGatewayProxyResult {
+function serverError(message: string): HttpResponse {
   return {
     statusCode: 500,
     headers: corsHeaders(),
@@ -128,7 +128,7 @@ function serverError(message: string): APIGatewayProxyResult {
 // Handler
 // =============================================================================
 
-export const handler: APIGatewayProxyHandler = async (event) => {
+export const handler: HttpHandler = async (event) => {
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -252,7 +252,7 @@ export const handler: APIGatewayProxyHandler = async (event) => {
  * Get burn leaderboard
  * GET /api/leaderboard
  */
-export const leaderboardHandler: APIGatewayProxyHandler = async (event) => {
+export const leaderboardHandler: HttpHandler = async (event) => {
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {

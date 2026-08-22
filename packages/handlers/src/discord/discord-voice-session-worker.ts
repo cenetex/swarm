@@ -575,6 +575,59 @@ async function playDiscordVoiceUrl(params: {
   return { playbackMs: Date.now() - startedAt };
 }
 
+export async function playOptionalDiscordVoiceGreeting(params: {
+  avatarId: string;
+  avatarConfig: AvatarConfig;
+  secrets: Record<string, string>;
+  timeoutMs: number;
+  voice?: typeof import('@discordjs/voice');
+  connection?: import('@discordjs/voice').VoiceConnection;
+  buildGreetingAudioUrlFn?: (
+    avatarId: string,
+    avatarConfig: AvatarConfig,
+    secrets: Record<string, string>,
+  ) => Promise<string | undefined>;
+  playDiscordVoiceUrlFn?: (params: { audioUrl: string; timeoutMs: number }) => Promise<unknown>;
+  warnFn?: typeof logger.warn;
+}): Promise<{ attempted: boolean; played: boolean; errorMessage?: string }> {
+  const warn = params.warnFn || logger.warn.bind(logger);
+
+  try {
+    const audioUrl = await (params.buildGreetingAudioUrlFn || buildGreetingAudioUrl)(
+      params.avatarId,
+      params.avatarConfig,
+      params.secrets,
+    );
+    if (!audioUrl) {
+      return { attempted: false, played: false };
+    }
+
+    if (params.playDiscordVoiceUrlFn) {
+      await params.playDiscordVoiceUrlFn({ audioUrl, timeoutMs: params.timeoutMs });
+    } else {
+      if (!params.voice || !params.connection) {
+        throw new Error('Discord voice playback dependencies are required');
+      }
+      await playDiscordVoiceUrl({
+        voice: params.voice,
+        connection: params.connection,
+        audioUrl,
+        timeoutMs: params.timeoutMs,
+      });
+    }
+
+    return { attempted: true, played: true };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    warn('Discord voice greeting failed; continuing voice session', {
+      event: 'discord_voice_greeting_failed',
+      avatarId: params.avatarId,
+      errorMessage,
+    });
+    return { attempted: true, played: false, errorMessage };
+  }
+}
+
 function parsePositiveIntEnv(name: string, fallback: number): number {
   const parsed = Number.parseInt(process.env[name] || '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -763,23 +816,14 @@ async function run(): Promise<void> {
   });
 
   try {
-    try {
-      const audioUrl = await buildGreetingAudioUrl(avatarId, avatarConfig, secrets);
-      if (audioUrl) {
-        await playDiscordVoiceUrl({
-          voice,
-          connection,
-          audioUrl,
-          timeoutMs: Math.min(sessionTimeoutMs, 120_000),
-        });
-      }
-    } catch (err) {
-      logger.warn('Discord voice greeting failed; continuing voice session', {
-        event: 'discord_voice_greeting_failed',
-        avatarId,
-        errorMessage: err instanceof Error ? err.message : String(err),
-      });
-    }
+    await playOptionalDiscordVoiceGreeting({
+      avatarId,
+      avatarConfig,
+      secrets,
+      voice,
+      connection,
+      timeoutMs: Math.min(sessionTimeoutMs, 120_000),
+    });
 
     let lastActivityAt = Date.now();
     let stopped = false;

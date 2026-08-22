@@ -5,7 +5,8 @@
  * All handlers should use sendSqsMessage() instead of directly calling sqs.send()
  * for message bodies that could exceed 256KB (e.g., envelopes with media attachments).
  */
-import { SQSClient, SendMessageCommand, type SendMessageCommandInput } from '@aws-sdk/client-sqs';
+import { SQSClient, SendMessageCommand, type SendMessageCommandInput } from '@swarm/core';
+import { getSQSClient } from './aws-clients.js';
 import {
   createSqsOffloadServiceFromEnv,
   logger,
@@ -17,7 +18,7 @@ let _offloadService: SqsOffloadService | null | undefined;
 
 function getSqsClient(): SQSClient {
   if (!_sqsClient) {
-    _sqsClient = new SQSClient({});
+    _sqsClient = getSQSClient();
   }
   return _sqsClient;
 }
@@ -110,8 +111,14 @@ export async function parseSqsRecordBody(rawBody: string): Promise<{
   }
 
   // No offloader - parse directly
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch (err) {
+    throw new Error("Failed to parse SQS record body as JSON: " + (err instanceof Error ? err.message : String(err)));
+  }
   return {
-    payload: JSON.parse(rawBody),
+    payload,
     rawBody,
     wasOffloaded: false,
   };

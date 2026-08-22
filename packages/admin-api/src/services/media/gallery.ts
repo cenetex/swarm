@@ -6,7 +6,7 @@ import {
   PutCommand,
   QueryCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type { GalleryItem } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
 

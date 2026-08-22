@@ -2,7 +2,7 @@
  * Chat Worker
  * Processes async admin chat jobs from SQS and writes results back to DynamoDB.
  */
-import type { SQSEvent, SQSRecord } from 'aws-lambda';
+import type { MessageBatch, MessageRecord } from "@swarm/core";
 import { logger } from '@swarm/core';
 import * as chatHistory from '../services/chat-history.js';
 import { getChatJob, updateChatJobStatus } from '../services/chat-jobs.js';
@@ -18,7 +18,7 @@ type ChatJobMessage = {
   jobId: string;
 };
 
-function parseRecord(record: SQSRecord): ChatJobMessage {
+function parseRecord(record: MessageRecord): ChatJobMessage {
   const parsed = JSON.parse(record.body) as Partial<ChatJobMessage>;
   if (!parsed.jobId || typeof parsed.jobId !== 'string') {
     throw new Error('Invalid SQS message: missing jobId');
@@ -26,7 +26,7 @@ function parseRecord(record: SQSRecord): ChatJobMessage {
   return { jobId: parsed.jobId };
 }
 
-export async function handler(event: SQSEvent): Promise<void> {
+export async function handler(event: MessageBatch): Promise<void> {
   // Validate critical runtime config on cold start (no-op on warm invocations)
   ensureRuntimeConfig();
 

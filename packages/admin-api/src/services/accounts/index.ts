@@ -62,15 +62,11 @@ export {
   createWalletChallenge,
   authenticateWallet,
   verifyWalletSignature,
-  // Privy auth
-  authenticatePrivy,
   // Identity linking
   createWalletLinkChallenge,
   verifyAndLinkWallet,
-  linkPrivy,
   // Types
   type AuthenticateWalletParams,
-  type AuthenticatePrivyParams,
   type AuthenticateResult,
   type LinkWalletParams,
   type LinkWalletResult,

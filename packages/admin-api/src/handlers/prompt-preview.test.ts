@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from 'aws-lambda';
 
 // Set ALLOWED_ORIGINS so getCorsHeaders emits CORS headers
 process.env.ALLOWED_ORIGINS = 'https://swarm.rati.chat,https://localhost:5173';
@@ -39,7 +39,7 @@ import * as requestAuth from '../auth/request-auth.js';
 const getAvatarMock = avatars.getAvatar as unknown as ReturnType<typeof vi.fn>;
 const authenticateRequestMock = requestAuth.authenticateRequest as unknown as ReturnType<typeof vi.fn>;
 
-function createEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewayProxyEventV2 {
+function createEvent(overrides: Partial<HttpRequest> = {}): HttpRequest {
   return {
     version: '2.0',
     routeKey: '$default',
@@ -70,7 +70,7 @@ function createEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewa
     body: JSON.stringify({ avatarId: 'test-avatar' }),
     isBase64Encoded: false,
     ...overrides,
-  } as APIGatewayProxyEventV2;
+  } as HttpRequest;
 }
 
 /**

@@ -3,14 +3,15 @@
  *
  * Aggregates system status and per-avatar activity for admin tools and APIs.
  */
-import { GetQueueAttributesCommand, SQSClient } from '@aws-sdk/client-sqs';
+import { GetQueueAttributesCommand } from '@swarm/core';
 import * as avatarLogs from './avatar-observability.js';
 import * as autoIssues from './auto-issues.js';
 import * as avatarEvents from './avatar-observability.js';
 import * as mediaJobs from './media-jobs.js';
 import * as credits from './billing/credits.js';
+import { getSQSClient } from './aws-clients.js';
 
-const sqsClient = new SQSClient({});
+const sqsClient = getSQSClient();
 
 const DEFAULT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -176,11 +177,13 @@ async function getQueueDepth(queueUrl?: string): Promise<QueueStatus> {
     return { unavailable: true, reason: 'query_failed' };
   }
 
-  const depth = response.Attributes?.ApproximateNumberOfMessages
-    ? Number.parseInt(response.Attributes.ApproximateNumberOfMessages, 10)
+  const attributes = response?.Attributes;
+
+  const depth = attributes?.ApproximateNumberOfMessages
+    ? Number.parseInt(attributes.ApproximateNumberOfMessages, 10)
     : undefined;
-  const inFlight = response.Attributes?.ApproximateNumberOfMessagesNotVisible
-    ? Number.parseInt(response.Attributes.ApproximateNumberOfMessagesNotVisible, 10)
+  const inFlight = attributes?.ApproximateNumberOfMessagesNotVisible
+    ? Number.parseInt(attributes.ApproximateNumberOfMessagesNotVisible, 10)
     : undefined;
 
   return { depth, inFlight, unavailable: false };

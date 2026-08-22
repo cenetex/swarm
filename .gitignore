@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+packages/local/node_modules
 .pnpm-store/
 
 # Build outputs
@@ -78,3 +79,5 @@ migrations/
 # Ephemeral issue-harvest outputs from scripts/download-issues.sh
 issues/staging/
 issues/prod/
+dist/
+.bun-build

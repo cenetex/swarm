@@ -5,7 +5,7 @@
  * - `swarm_session` cookie, or
  * - Bearer session token
  */
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from "@swarm/core";
 import { getHeaderValue, hasValidInternalTestKey, logger } from '@swarm/core';
 import type { UserSession } from '../types.js';
 import { getSessionFromCookie } from './session-cookie.js';
@@ -14,7 +14,7 @@ import { getAccountSummary, getOrCreateAccountForWallet } from '../services/acco
 import { AuthError, SwarmErrorCode } from '@swarm/core';
 import { checkActiveUserAccess } from '../services/billing/active-user-limit.js';
 
-function getBearerSessionToken(event: APIGatewayProxyEventV2): string | null {
+function getBearerSessionToken(event: HttpRequest): string | null {
   const authorization = getHeaderValue(event.headers, 'authorization');
   if (!authorization) return null;
 
@@ -29,7 +29,7 @@ function getBearerSessionToken(event: APIGatewayProxyEventV2): string | null {
  * Authenticate a request using first-party session auth.
  */
 export async function authenticateRequest(
-  event: APIGatewayProxyEventV2
+  event: HttpRequest
 ): Promise<UserSession> {
   // Internal test key bypass - NEVER allow in production
   const internalTestKey = process.env.INTERNAL_TEST_KEY;

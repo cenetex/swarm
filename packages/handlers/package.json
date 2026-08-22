@@ -13,18 +13,9 @@
     "lint": "eslint --max-warnings 70 src/"
   },
   "dependencies": {
-    "@aws-sdk/client-ecs": "^3.1032.0",
-    "@aws-sdk/client-dynamodb": "^3.1032.0",
-    "@aws-sdk/client-cloudwatch": "^3.1032.0",
-    "@aws-sdk/client-lambda": "^3.1032.0",
-    "@aws-sdk/client-s3": "^3.1032.0",
-    "@aws-sdk/client-secrets-manager": "^3.1032.0",
-    "@aws-sdk/client-sqs": "^3.1032.0",
-    "@aws-sdk/lib-dynamodb": "^3.1032.0",
-    "@aws-sdk/util-dynamodb": "^3.996.2",
-    "@aws-sdk/s3-request-presigner": "^3.1032.0",
     "@discordjs/voice": "0.19.2",
     "@noble/ciphers": "^1.3.0",
+    "@swarm/admin-api": "workspace:*",
     "@swarm/core": "workspace:*",
     "@swarm/mcp-server": "workspace:*",
     "@swarm/sticker-engine": "workspace:*",
@@ -32,7 +23,12 @@
     "opusscript": "^0.0.8",
     "prism-media": "1.3.5",
     "ws": "^8.20.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@aws-sdk/client-cloudwatch": "^3.1032.0",
+    "@aws-sdk/client-dynamodb": "^3.1032.0",
+    "@aws-sdk/client-ecs": "^3.1032.0",
+    "@aws-sdk/s3-request-presigner": "^3.1032.0",
+    "@aws-sdk/util-dynamodb": "^3.996.2"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.161",

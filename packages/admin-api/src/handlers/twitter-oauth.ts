@@ -10,9 +10,9 @@
  * - DELETE /oauth/twitter/{avatarId} - Disconnect Twitter
  */
 import type {
-  APIGatewayProxyEventV2,
+  HttpRequest,
   APIGatewayProxyStructuredResultV2,
-} from 'aws-lambda';
+} from "@swarm/core";
 import { authenticateRequest, requireAdmin } from '../auth/request-auth.js';
 import { getSessionFromCookie } from '../auth/session-cookie.js';
 import { getSessionWithUser } from '../services/wallet-auth.js';
@@ -70,9 +70,9 @@ export interface TwitterOAuthHandlerDeps {
     ) => Promise<AvatarRecord>;
   };
   auth: {
-    authenticateRequest: (event: APIGatewayProxyEventV2) => Promise<UserSession>;
+    authenticateRequest: (event: HttpRequest) => Promise<UserSession>;
     requireAdmin: (session: UserSession) => boolean;
-    getWalletAddress: (event: APIGatewayProxyEventV2) => Promise<string | null>;
+    getWalletAddress: (event: HttpRequest) => Promise<string | null>;
   };
 }
 
@@ -107,7 +107,7 @@ async function canManageAvatar(
 /**
  * Get wallet address from session cookie
  */
-async function getWalletAddressFromEvent(event: APIGatewayProxyEventV2): Promise<string | null> {
+async function getWalletAddressFromEvent(event: HttpRequest): Promise<string | null> {
   const sessionToken = getSessionFromCookie(event);
   if (!sessionToken) return null;
   const session = await getSessionWithUser(sessionToken);
@@ -146,7 +146,7 @@ const ADMIN_UI_URL = process.env.ADMIN_UI_URL || process.env.ALLOWED_ORIGINS?.sp
  * @param depsOrContext - Optional dependencies for testing (Lambda context is passed but ignored)
  */
 export async function handler(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   depsOrContext?: TwitterOAuthHandlerDeps | unknown
 ): Promise<APIGatewayProxyStructuredResultV2> {
   // Check if deps has the expected shape (not Lambda context)
@@ -481,7 +481,7 @@ export async function handler(
  * This is called after the user authorizes on Twitter
  */
 async function handleCallback(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   deps: TwitterOAuthHandlerDeps
 ): Promise<APIGatewayProxyStructuredResultV2> {
   const { twitterOAuth, avatarService } = deps;

@@ -14,7 +14,7 @@ import {
   exportDocument,
   _setDynamoClient,
 } from './long-form.js';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 
 // =============================================================================
 // MOCK SETUP

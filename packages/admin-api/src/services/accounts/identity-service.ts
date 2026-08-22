@@ -11,7 +11,7 @@ import {
   PutCommand,
   QueryCommand,
   DeleteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { randomUUID } from 'crypto';
 import { getDynamoClient } from '../dynamo-client.js';
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from 'aws-lambda';
 import { resolvePublicAvatarIdFromRequest } from './chat-public-access.js';
 
-function makeEvent(headers: Record<string, string>): APIGatewayProxyEventV2 {
+function makeEvent(headers: Record<string, string>): HttpRequest {
   return {
     version: '2.0',
     routeKey: '$default',
@@ -28,7 +28,7 @@ function makeEvent(headers: Record<string, string>): APIGatewayProxyEventV2 {
       timeEpoch: 1704067200000,
     },
     isBase64Encoded: false,
-  } as APIGatewayProxyEventV2;
+  } as HttpRequest;
 }
 
 describe('resolvePublicAvatarIdFromRequest', () => {

@@ -12,15 +12,13 @@
  * `packages/infra/src/constructs/shared-handlers.ts`. If neither is set, this
  * returns `null` and callers must treat the failure as `verification_unavailable`.
  */
-import {
-  SecretsManagerClient,
-  GetSecretValueCommand,
-} from '@aws-sdk/client-secrets-manager';
+import { getSecretsClient } from './aws-clients.js';
+import { GetSecretValueCommand } from '@swarm/core';
 
 let heliusApiKey: string | null = process.env.HELIUS_API_KEY || null;
 let heliusApiKeyFetched = false;
 
-const secretsClient = new SecretsManagerClient({});
+const secretsClient = getSecretsClient();
 
 /** @internal Test-only: reset cached key so env changes take effect. */
 export function _resetHeliusCache(): void {

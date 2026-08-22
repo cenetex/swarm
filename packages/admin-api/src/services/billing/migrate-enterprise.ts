@@ -12,7 +12,7 @@
  *   Called from admin API endpoint or one-off script.
  *   Safe to run multiple times (idempotent).
  */
-import { QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand } from '@swarm/core';
 import type { EntitlementRecord, PlanLimits } from '../../types.js';
 import { PLAN_DEFAULTS } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';

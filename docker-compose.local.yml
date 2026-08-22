@@ -1,0 +1,59 @@
+# Local-first containerized deployment of swarm.
+# No AWS dependencies — SQLite for data, filesystem for blobs, in-memory queues.
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml up --build
+#
+# Services:
+#   api       — Admin API + blob serving (Express, port 3000)
+#   admin-ui  — React admin UI dev server (Vite, port 5173)
+#   worker    — Message/response processor workers
+#
+# Data persists in named volumes.
+
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      target: api
+    ports:
+      - '3000:3000'
+    environment:
+      - PORT=3000
+      - SWARM_DB_PATH=/data/swarm.db
+      - SWARM_BLOB_DIR=/data/blobs
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      # Secrets — set these in .env.local or pass via environment
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - swarm_data:/data
+      - ./packages:/app/packages:ro
+      - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml:ro
+      - ./package.json:/app/package.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - ./tsconfig.base.json:/app/tsconfig.base.json:ro
+    restart: unless-stopped
+
+  admin-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      target: admin-ui-dev
+    ports:
+      - '5173:5173'
+    environment:
+      - VITE_API_URL=http://api:3000
+    volumes:
+      - ./packages/admin-ui:/app/packages/admin-ui:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  swarm_data:

@@ -1,4 +1,4 @@
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from "@swarm/core";
 
 const RESERVED_PUBLIC_SUBDOMAINS = new Set([
   'swarm',
@@ -58,7 +58,7 @@ function extractPublicAvatarIdFromHost(hostname: string): string | null {
   return subdomain;
 }
 
-export function resolvePublicAvatarIdFromRequest(event: APIGatewayProxyEventV2): string | null {
+export function resolvePublicAvatarIdFromRequest(event: HttpRequest): string | null {
   const origin = normalizeHostname(event.headers.origin || event.headers.Origin);
   if (origin) {
     const avatarId = extractPublicAvatarIdFromHost(origin);

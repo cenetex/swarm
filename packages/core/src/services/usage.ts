@@ -9,7 +9,7 @@ import {
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type {
   UsageMeteringService,
   UsageCredit,

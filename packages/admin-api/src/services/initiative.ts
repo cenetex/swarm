@@ -23,7 +23,7 @@ import {
   GetCommand,
   UpdateCommand,
   QueryCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type {
   AvatarStats,
   BufferedMessage,

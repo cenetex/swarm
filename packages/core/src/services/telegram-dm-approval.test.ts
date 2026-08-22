@@ -14,7 +14,7 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import {
   createTelegramDmApprovalStore,
   MAX_FIRST_MESSAGE_CHARS,

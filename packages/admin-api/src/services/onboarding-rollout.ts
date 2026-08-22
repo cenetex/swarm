@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { GetCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand } from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
 import { createSystemLogger } from './structured-logger.js';
 

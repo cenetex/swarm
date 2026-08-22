@@ -10,7 +10,7 @@
  * unchanged from the original implementation so existing admin-api callers
  * and tests do not need to be touched.
  */
-import { type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { type DynamoDBDocumentClient } from '@swarm/core';
 import { createNFTOwnershipCache } from '@swarm/core/services';
 import { getDynamoClient } from './dynamo-client.js';
 import { getHeliusRpcUrl } from './web3/nft-gate.js';

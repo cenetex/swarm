@@ -15,7 +15,7 @@ import {
   PutCommand,
   QueryCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { logger } from '@swarm/core';
 import type {

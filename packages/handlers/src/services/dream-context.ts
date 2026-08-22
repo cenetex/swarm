@@ -5,7 +5,7 @@
  * Dream state is stored by the admin-api dream worker and provides
  * narrative continuity context for autonomous content generation.
  */
-import { GetCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand } from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
 import { logger } from '@swarm/core';
 

@@ -14,7 +14,7 @@ import {
   PutCommand,
   QueryCommand,
   ScanCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '../../commands/index.js';
 import type {
   AvatarConfig,
   ChannelState,

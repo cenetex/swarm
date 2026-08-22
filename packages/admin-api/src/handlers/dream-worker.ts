@@ -13,9 +13,10 @@
  * 5. Save dream state
  * 6. Update job status
  */
-import type { SQSEvent, SQSRecord } from 'aws-lambda';
+import type { MessageBatch, MessageRecord } from "@swarm/core";
 import { logger } from '@swarm/core';
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { GetSecretValueCommand } from '@swarm/core';
+import { getSecretsClient } from '../services/aws-clients.js';
 import {
   getDreamJob,
   updateDreamJobStatus,
@@ -49,7 +50,7 @@ async function getLlmApiKey(): Promise<string> {
     throw new Error('LLM_API_KEY_SECRET_ARN not configured');
   }
 
-  const client = new SecretsManagerClient({});
+  const client = getSecretsClient();
   const response = await client.send(new GetSecretValueCommand({
     SecretId: LLM_API_KEY_SECRET_ARN,
   }));
@@ -74,10 +75,10 @@ async function getLlmApiKey(): Promise<string> {
     }
   }
 
-  return cachedApiKey;
+  return cachedApiKey ?? '';
 }
 
-function parseRecord(record: SQSRecord): DreamJobMessage {
+function parseRecord(record: MessageRecord): DreamJobMessage {
   const parsed = JSON.parse(record.body) as Partial<DreamJobMessage>;
   if (!parsed.jobId || typeof parsed.jobId !== 'string') {
     throw new Error('Invalid SQS message: missing jobId');
@@ -88,7 +89,7 @@ function parseRecord(record: SQSRecord): DreamJobMessage {
   return { jobId: parsed.jobId, avatarId: parsed.avatarId };
 }
 
-export async function handler(event: SQSEvent): Promise<void> {
+export async function handler(event: MessageBatch): Promise<void> {
   for (const record of event.Records) {
     let jobId: string | undefined;
 

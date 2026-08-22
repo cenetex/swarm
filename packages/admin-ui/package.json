@@ -5,20 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build",
+    "build": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && cp dist/index.html dist/404.html",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "lint": "eslint --max-warnings 70 src/",
     "test": "vitest run"
   },
   "dependencies": {
-    "@privy-io/react-auth": "^3.22.1",
     "@solana-program/memo": "^0.11.0",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-phantom": "^0.9.29",
     "@solana/wallet-adapter-react": "^0.15.39",
     "@solana/wallet-adapter-react-ui": "^0.9.39",
     "@solana/web3.js": "^1.98.4",
+    "@swarm/core": "workspace:*",
     "@tailwindcss/postcss": "^4.2.2",
     "bs58": "^6.0.0",
     "i18next": "^25.10.10",

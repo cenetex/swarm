@@ -24,8 +24,8 @@ import {
   createLinkChallenge,
   consumeChallenge,
 } from './challenge-service.js';
-import { recordAccountSession, getAccountSummary, type AccountSummary } from '../accounts.js';
 import { checkNFTGate, type NFTGateResult } from '../web3/nft-gate.js';
+import { recordAccountSession, getAccountSummary, type AccountSummary } from '../accounts.js';
 import {
   buildOnboardingErrorEnvelope,
   type OnboardingErrorEnvelope,
@@ -65,14 +65,6 @@ export interface AuthenticateWalletParams {
   onboarding?: OnboardingOrchestrationContext;
 }
 
-export interface AuthenticatePrivyParams {
-  privyUserId: string;
-  walletAddress?: string;
-  email?: string;
-  userAgent?: string;
-  ipAddress?: string;
-  onboarding?: OnboardingOrchestrationContext;
-}
 
 export interface AuthenticateResult {
   success: boolean;
@@ -360,79 +352,6 @@ export async function authenticateWallet(
  * Authenticate a user with Privy credentials.
  * This should be called after Privy access token verification.
  */
-export async function authenticatePrivy(
-  params: AuthenticatePrivyParams
-): Promise<AuthenticateResult> {
-  const {
-    privyUserId,
-    walletAddress,
-    userAgent,
-    ipAddress,
-    onboarding,
-  } = params;
-  const stepContext: OnboardingStepContext = {
-    state: 'authenticating',
-    step: 'privy_verify',
-  };
-
-  // Build identities to link
-  const primaryIdentity: Identity = { type: 'privy', providerId: privyUserId };
-  const additionalIdentities: Identity[] = [];
-
-  if (walletAddress) {
-    additionalIdentities.push({ type: 'wallet', providerId: walletAddress });
-  }
-
-  // Check NFT gate if we have a wallet
-  let nftGate: NFTGateResult | undefined;
-  if (walletAddress) {
-    nftGate = await checkNFTGate(walletAddress);
-    if (!nftGate.allowed) {
-      logger.info('[AuthOrchestrator] No Orb NFT (limited access)', { wallet: walletAddress.slice(0, 8) });
-    }
-  }
-
-  // Resolve account
-  const accountResult = await resolveAccountForIdentity({
-    primaryIdentity,
-    additionalIdentities,
-    createIfNotFound: true,
-  });
-
-  if (!accountResult.success) {
-    return {
-      success: false,
-      ...buildFailureResponse(accountResult.error, onboarding, stepContext),
-      conflict: accountResult.conflict,
-    };
-  }
-
-  // Record session activity
-  await recordAccountSession(accountResult.accountId);
-
-  // Create session
-  const session = await createSession({
-    accountId: accountResult.accountId,
-    walletAddress: walletAddress || privyUserId, // Use privy ID as fallback
-    authProvider: 'privy',
-    authProviderId: privyUserId,
-    userAgent,
-    ipAddress,
-  });
-
-  // Get account summary
-  const account = await getAccountSummary(accountResult.accountId);
-
-  logger.info('[AuthOrchestrator] Privy auth successful', { privyUser: privyUserId.slice(0, 8) });
-
-  return {
-    success: true,
-    session,
-    account: account ?? undefined,
-    nftGate,
-    ...buildSuccessResponse(onboarding, stepContext),
-  };
-}
 
 // ============================================================================
 // Identity Linking
@@ -545,55 +464,6 @@ export async function verifyAndLinkWallet(params: LinkWalletParams): Promise<Lin
 /**
  * Link a Privy identity to an existing account.
  */
-export async function linkPrivy(
-  accountId: string,
-  privyUserId: string,
-  walletAddress?: string,
-  onboarding?: OnboardingOrchestrationContext
-): Promise<LinkWalletResult> {
-  const stepContext: OnboardingStepContext = {
-    state: 'linking_identity',
-    step: 'privy_link',
-  };
-
-  // Link Privy identity
-  const privyResult = await linkIdentity(accountId, {
-    type: 'privy',
-    providerId: privyUserId,
-  });
-
-  if (!privyResult.success) {
-    return {
-      success: false,
-      ...buildFailureResponse(privyResult.error, onboarding, stepContext),
-      conflict: privyResult.conflict,
-    };
-  }
-
-  // Link wallet if provided
-  if (walletAddress) {
-    const walletResult = await linkIdentity(accountId, {
-      type: 'wallet',
-      providerId: walletAddress,
-    });
-
-    if (!walletResult.success) {
-      return {
-        success: false,
-        ...buildFailureResponse(walletResult.error, onboarding, stepContext),
-        conflict: walletResult.conflict,
-      };
-    }
-  }
-
-  const account = await getAccountSummary(accountId);
-
-  return {
-    success: true,
-    account: account ?? undefined,
-    ...buildSuccessResponse(onboarding, stepContext),
-  };
-}
 
 // ============================================================================
 // Session Management (Re-exports for convenience)

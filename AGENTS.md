@@ -11,7 +11,6 @@
 - `pnpm dev` runs package dev/watch tasks in parallel.
 - `bun test` runs tests across packages (uses Bun's built-in test runner with vitest compatibility).
 - `pnpm lint` runs ESLint where configured (ex: `packages/core`, `packages/admin-ui`).
-- `pnpm cdk diff` or `pnpm synth` previews infra changes via `@swarm/infra`.
 - Deployments are typically handled via GitHub Actions; only run `pnpm deploy:dev`/`pnpm deploy:prod` if explicitly requested.
 
 ## Coding Style & Naming Conventions
@@ -262,7 +261,6 @@ Single file patterns:
 - Runtime handler exports: `packages/handlers/src/index.ts`
 - Admin handler exports: `packages/admin-api/src/handlers/index.ts`
 - Core shared types/services: `packages/core/src/`
-- Infra stacks/constructs: `packages/infra/src/`
 - MCP tool layer: `packages/mcp-server/src/`
 
 ### 6) Working Rules for AI Agents in this Repo

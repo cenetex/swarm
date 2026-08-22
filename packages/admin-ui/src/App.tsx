@@ -10,7 +10,6 @@ import { AvatarSidebar, ChatPanel } from './components';
 import { ConsentBanner } from './components/ConsentBanner';
 
 // Lazy-load route-level components that aren't always needed
-const LandingPage = lazy(() => import('./components/LandingPage').then(m => ({ default: m.LandingPage })));
 const PublicChatPage = lazy(() => import('./components/PublicChatPage').then(m => ({ default: m.PublicChatPage })));
 
 function LazyFallback() {
@@ -459,13 +458,8 @@ function App() {
     );
   }
 
-  // Show landing page for unauthenticated users
-  if (!isAuthenticated) {
-    return <Suspense fallback={<LazyFallback />}><LandingPage /></Suspense>;
-  }
-
   // Show consent banner if user hasn't accepted privacy policy
-  if (!consent || consent.policyVersion !== CURRENT_POLICY_VERSION) {
+  if (isAuthenticated && (!consent || consent.policyVersion !== CURRENT_POLICY_VERSION)) {
     return <ConsentBanner />;
   }
 

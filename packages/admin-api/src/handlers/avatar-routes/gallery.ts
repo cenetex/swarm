@@ -5,7 +5,7 @@
  * - POST /avatars/{id}/gallery/upload-url
  * - POST /avatars/{id}/gallery/save
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { parseJsonBody } from '../../http/request-body.js';
@@ -13,23 +13,50 @@ import * as avatarService from '../../services/avatars.js';
 import * as galleryService from '../../services/gallery.js';
 import * as mediaService from '../../services/media.js';
 
+type GalleryRouteDeps = {
+  getAvatar: typeof avatarService.getAvatar;
+  getGallery: typeof galleryService.getGallery;
+  generateGalleryId: typeof galleryService.generateGalleryId;
+  addToGallery: typeof galleryService.addToGallery;
+  getGalleryUploadUrl: typeof mediaService.getGalleryUploadUrl;
+};
+
+let deps: GalleryRouteDeps = {
+  getAvatar: avatarService.getAvatar,
+  getGallery: galleryService.getGallery,
+  generateGalleryId: galleryService.generateGalleryId,
+  addToGallery: galleryService.addToGallery,
+  getGalleryUploadUrl: mediaService.getGalleryUploadUrl,
+};
+
+export function _setGalleryRouteDeps(overrides: Partial<GalleryRouteDeps> | null): void {
+  deps = {
+    getAvatar: avatarService.getAvatar,
+    getGallery: galleryService.getGallery,
+    generateGalleryId: galleryService.generateGalleryId,
+    addToGallery: galleryService.addToGallery,
+    getGalleryUploadUrl: mediaService.getGalleryUploadUrl,
+    ...(overrides ?? {}),
+  };
+}
+
 export async function handleGalleryRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, corsHeaders } = ctx;
 
   // ── GET /avatars/{id}/gallery ───────────────────────────────────────────
   const galleryMatch = path.match(/^\/avatars\/([^/]+)\/gallery$/);
   if (method === 'GET' && galleryMatch) {
     const avatarId = galleryMatch[1];
-    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, deps.getAvatar);
     if (denied) return denied;
 
     const params = ctx.event.queryStringParameters || {};
     const type = params.type as 'image' | 'video' | 'sticker' | undefined;
     const limit = params.limit ? parseInt(params.limit, 10) : 50;
 
-    const items = await galleryService.getGallery(avatarId, { type, limit });
+    const items = await deps.getGallery(avatarId, { type, limit });
 
     return jsonResponse(corsHeaders, 200, {
       items: items.map(item => ({
@@ -47,13 +74,13 @@ export async function handleGalleryRoutes(
   const uploadUrlMatch = path.match(/^\/avatars\/([^/]+)\/gallery\/upload-url$/);
   if (method === 'POST' && uploadUrlMatch) {
     const avatarId = uploadUrlMatch[1];
-    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, deps.getAvatar);
     if (denied) return denied;
 
     const body = parseJsonBody<{ contentType?: unknown }>(ctx.event);
     const contentType = (typeof body.contentType === 'string' ? body.contentType : undefined) || 'image/png';
 
-    const result = await mediaService.getGalleryUploadUrl(avatarId, contentType);
+    const result = await deps.getGalleryUploadUrl(avatarId, contentType);
     return jsonResponse(corsHeaders, 200, result);
   }
 
@@ -61,7 +88,7 @@ export async function handleGalleryRoutes(
   const saveMatch = path.match(/^\/avatars\/([^/]+)\/gallery\/save$/);
   if (method === 'POST' && saveMatch) {
     const avatarId = saveMatch[1];
-    const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
+    const denied = await requireOwnerOrAdmin(ctx, avatarId, deps.getAvatar);
     if (denied) return denied;
 
     const body = parseJsonBody<{ s3Key?: unknown; publicUrl?: unknown; caption?: unknown }>(ctx.event);
@@ -69,9 +96,9 @@ export async function handleGalleryRoutes(
       return jsonResponse(corsHeaders, 400, { error: 's3Key and publicUrl are required' });
     }
 
-    const id = galleryService.generateGalleryId();
+    const id = deps.generateGalleryId();
     const caption = typeof body.caption === 'string' ? body.caption : '';
-    const item = await galleryService.addToGallery(avatarId, {
+    const item = await deps.addToGallery(avatarId, {
       id,
       type: 'image',
       url: body.publicUrl,

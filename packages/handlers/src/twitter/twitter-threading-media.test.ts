@@ -1,3 +1,4 @@
+import { TwitterAdapter } from '@swarm/core';
 /**
  * Twitter Threaded Replies and Media Attachment Tests
  *
@@ -10,8 +11,6 @@
  * Closes #1108
  */
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
-import { TwitterAdapter } from '@swarm/core';
-import type { AvatarConfig } from '@swarm/core';
 import type { TwitterApi } from 'twitter-api-v2';
 
 // ---------------------------------------------------------------------------

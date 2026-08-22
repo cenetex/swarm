@@ -14,16 +14,16 @@
  * This handler is triggered on a schedule (not directly from SQS) so it can
  * control batch sizes and avoid consuming messages that shouldn't be retried.
  */
-import type { ScheduledEvent, Context } from 'aws-lambda';
+import type { TimerEvent, ExecutionContext } from "@swarm/core";
 import {
-  SQSClient,
   ReceiveMessageCommand,
   DeleteMessageCommand,
   SendMessageCommand,
   GetQueueAttributesCommand,
-} from '@aws-sdk/client-sqs';
-import { PutCommand } from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
+import { PutCommand } from '@swarm/core';
 import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
+import { getSQSClient } from './services/aws-clients.js';
 import { logger } from '@swarm/core';
 import { getDynamoClient } from './services/dynamo-client.js';
 
@@ -115,7 +115,7 @@ const PERMANENT_ERROR_PATTERNS: string[] = [
 // Clients (lazy-init on cold start)
 // ---------------------------------------------------------------------------
 
-const sqsClient = new SQSClient({});
+const sqsClient = getSQSClient();
 const cwClient = new CloudWatchClient({});
 const dynamoClient = getDynamoClient();
 
@@ -510,8 +510,8 @@ async function publishMetrics(result: DlqProcessorResult, categoryCounts: Record
 // ---------------------------------------------------------------------------
 
 export async function handler(
-  _event: ScheduledEvent,
-  context: Context
+  _event: TimerEvent,
+  context: ExecutionContext
 ): Promise<DlqProcessorResult> {
   logger.setContext({
     subsystem: 'dlq-processor',

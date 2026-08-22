@@ -28,7 +28,7 @@ import {
   GetCommand,
   DeleteCommand,
   TransactWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 
 export interface OwnerBindingRecord {

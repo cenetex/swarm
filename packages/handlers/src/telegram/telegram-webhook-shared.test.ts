@@ -16,6 +16,7 @@
  * @see packages/handlers/src/telegram/webhook-chat-access.ts
  */
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import type { AvatarConfig } from '@swarm/core';
 
 process.env.ADMIN_TABLE ||= 'ADMIN_TABLE';
 process.env.STATE_TABLE ||= 'STATE_TABLE';
@@ -25,6 +26,7 @@ const modPromise = import('./telegram-webhook-shared.js');
 const securityModPromise = import('./webhook-security.js');
 const chatAccessModPromise = import('./webhook-chat-access.js');
 const homeChannelModPromise = import('./webhook-home-channel.js');
+const avatarConfig = {} as AvatarConfig;
 
 // =============================================================================
 // Existing tests: Chat access allowlists
@@ -182,11 +184,14 @@ describe('telegram-webhook-shared shared-room queue groups', () => {
   it('uses the room queue group for ambient shared-room messages', async () => {
     const { getSharedRoomMessageGroupId } = await modPromise;
 
-    const groupId = getSharedRoomMessageGroupId({
-      avatarId: 'phantom',
-      conversationId: '-1001',
-      metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k' },
-    } as import('@swarm/core').SwarmEnvelope, 'telegram:-1001');
+    const groupId = getSharedRoomMessageGroupId(
+      {
+        avatarId: 'phantom',
+        conversationId: '-1001',
+        metadata: { receivedAt: 0, priority: 'normal', idempotencyKey: 'k' },
+      },
+      'telegram:-1001',
+    );
 
     expect(groupId).toBe('telegram:-1001');
   });
@@ -194,11 +199,14 @@ describe('telegram-webhook-shared shared-room queue groups', () => {
   it('uses the target avatar queue group for direct shared-room mentions', async () => {
     const { getSharedRoomMessageGroupId } = await modPromise;
 
-    const groupId = getSharedRoomMessageGroupId({
-      avatarId: 'eliza',
-      conversationId: '-1001',
-      metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', isMention: true },
-    } as import('@swarm/core').SwarmEnvelope, 'telegram:-1001');
+    const groupId = getSharedRoomMessageGroupId(
+      {
+        avatarId: 'eliza',
+        conversationId: '-1001',
+        metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', isMention: true },
+      },
+      'telegram:-1001',
+    );
 
     expect(groupId).toBe('eliza#-1001');
   });
@@ -206,11 +214,14 @@ describe('telegram-webhook-shared shared-room queue groups', () => {
   it('uses the target avatar queue group for direct shared-room replies', async () => {
     const { getSharedRoomMessageGroupId } = await modPromise;
 
-    const groupId = getSharedRoomMessageGroupId({
-      avatarId: 'phantom',
-      conversationId: '-1001',
-      metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', isReplyToBot: true },
-    } as import('@swarm/core').SwarmEnvelope, 'telegram:-1001');
+    const groupId = getSharedRoomMessageGroupId(
+      {
+        avatarId: 'phantom',
+        conversationId: '-1001',
+        metadata: { receivedAt: 0, priority: 'high', idempotencyKey: 'k', isReplyToBot: true },
+      },
+      'telegram:-1001',
+    );
 
     expect(groupId).toBe('phantom#-1001');
   });
@@ -248,7 +259,7 @@ describe('telegram-webhook-shared home channel bootstrap', () => {
               botUsername: 'DevilRATiBot',
             },
           },
-        } as unknown as import('@swarm/core').AvatarConfig,
+        },
         envelope: {
           conversationId: '-1001',
           metadata: {
@@ -281,7 +292,7 @@ describe('telegram-webhook-shared home channel bootstrap', () => {
               botUsername: 'DevilRATiBot',
             },
           },
-        } as unknown as import('@swarm/core').AvatarConfig,
+        },
         envelope: {
           conversationId: '123',
           metadata: {
@@ -321,7 +332,7 @@ describe('telegram-webhook-shared home channel bootstrap', () => {
               homeChannelId: '-9999',
             },
           },
-        } as unknown as import('@swarm/core').AvatarConfig,
+        },
         envelope: {
           conversationId: '-1001',
           metadata: {
@@ -456,7 +467,6 @@ describe('webhook-security invalidateAvatarConfigCache', () => {
 
     // Manually populate cache
     avatarConfigCache.set('test-avatar', {
-      value: { name: 'Test' } as unknown as import('@swarm/core').AvatarConfig,
       expiresAt: Date.now() + 60_000,
     });
 
@@ -474,7 +484,6 @@ describe('webhook-security invalidateAvatarConfigCache', () => {
 
   it('uses the shared config cache for avatar status', async () => {
     const { avatarConfigCache, getAvatarStatus } = await securityModPromise;
-    const avatarConfig = { name: 'Test' } as unknown as import('@swarm/core').AvatarConfig;
 
     avatarConfigCache.set('test-avatar', {
       value: avatarConfig,
@@ -503,7 +512,7 @@ describe('webhook-security invalidateAvatarConfigCache', () => {
       getAvatarConfigWithStatus: async () => {
         throw new Error('DDB unavailable');
       },
-    } as unknown as ReturnType<typeof import('@swarm/core').createStateService>);
+    });
 
     await expect(getAvatarStatus('error-avatar')).rejects.toThrow('DDB unavailable');
     expect(avatarConfigCache.has('error-avatar')).toBe(false);

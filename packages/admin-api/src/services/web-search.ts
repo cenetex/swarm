@@ -1,7 +1,8 @@
 /**
  * Web search service for property research.
  */
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { GetSecretValueCommand } from '@swarm/core';
+import { getSecretsClient } from './aws-clients.js';
 import { logger } from '@swarm/core';
 
 export type WebSearchFn = (query: string) => Promise<string>;
@@ -24,7 +25,7 @@ async function getSearchApiKey(): Promise<string> {
     throw new Error('WEB_SEARCH_API_KEY_SECRET_ARN not configured');
   }
 
-  const client = new SecretsManagerClient({});
+  const client = getSecretsClient();
   const response = await client.send(new GetSecretValueCommand({
     SecretId: SEARCH_API_KEY_SECRET_ARN,
   }));

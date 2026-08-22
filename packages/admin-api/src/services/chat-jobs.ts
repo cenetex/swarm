@@ -8,7 +8,7 @@ import {
   UpdateCommand,
   QueryCommand,
   ScanCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { v4 as uuid } from 'uuid';
 import type { ChatJob } from '../types.js';
 import { getDynamoClient } from './dynamo-client.js';

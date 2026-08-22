@@ -1,4 +1,4 @@
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from "@swarm/core";
 import { z } from 'zod';
 
 export class RequestValidationError extends Error {
@@ -17,7 +17,7 @@ export function isRequestValidationError(error: unknown): error is RequestValida
 }
 
 export function validateRequestBody<TSchema extends z.ZodTypeAny>(schema: TSchema) {
-  return async (event: APIGatewayProxyEventV2): Promise<z.infer<TSchema>> => {
+  return async (event: HttpRequest): Promise<z.infer<TSchema>> => {
     if (!event.body) {
       throw new RequestValidationError('Request body required');
     }

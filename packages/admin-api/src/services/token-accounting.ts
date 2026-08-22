@@ -22,8 +22,8 @@
  *
  * All records use TTL for automatic cleanup (90 days for logs, 365 days for rollups).
  */
-import { UpdateCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { UpdateCommand, QueryCommand } from '@swarm/core';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 import { logger } from '@swarm/core';
 import { calculateCostMicroUsd } from './model-pricing.js';
 import { getDynamoClient } from './dynamo-client.js';

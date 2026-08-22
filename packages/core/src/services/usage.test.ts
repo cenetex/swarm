@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DynamoDBUsageMeteringService } from './usage.js';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 
 describe('UsageMeteringService', () => {
   let service: DynamoDBUsageMeteringService;

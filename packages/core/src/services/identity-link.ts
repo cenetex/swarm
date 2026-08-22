@@ -26,7 +26,7 @@ import {
   QueryCommand,
   ScanCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type { Platform } from '../types/platform.js';
 import type {
   ConsentRevocationResult,

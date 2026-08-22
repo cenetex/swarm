@@ -8,7 +8,7 @@
  *
  * See #1385 PR 3 for the design rationale.
  */
-import { type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { type DynamoDBDocumentClient } from '@swarm/core';
 import { createNFTOwnershipCache } from '@swarm/core/services';
 import { getDynamoClient } from './dynamo-client.js';
 import { getHeliusRpcUrl } from './helius-rpc.js';

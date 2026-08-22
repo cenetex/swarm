@@ -41,7 +41,7 @@ async function getGitHubConfig(): Promise<GitHubClientConfig | null> {
   if (!provider) return null;
 
   const token = await provider.getToken();
-  return { token, repo: process.env.GITHUB_REPO || 'cenetex/aws-swarm' };
+  return { token, repo: process.env.GITHUB_REPO || 'atimics/swarm' };
 }
 
 /**

@@ -9,7 +9,8 @@
  * The Irys SDK is imported dynamically so the service degrades gracefully
  * if the optional dependency is not installed.
  */
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { GetSecretValueCommand, SecretsManagerClient } from '@swarm/core';
+import { getSecretsClient as getInjectedSecretsClient } from '../aws-clients.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type IrysClient = any;
@@ -36,9 +37,9 @@ export interface ArweaveServiceConfig {
 const DEFAULT_WALLET_SECRET = process.env.ARWEAVE_WALLET_SECRET || 'swarm/arweave-wallet';
 
 let _secretsClient: SecretsManagerClient | null = null;
-function getSecretsClient(): SecretsManagerClient {
+function getArweaveSecretsClient(): SecretsManagerClient {
   if (!_secretsClient) {
-    _secretsClient = new SecretsManagerClient({});
+    _secretsClient = getInjectedSecretsClient() as SecretsManagerClient;
   }
   return _secretsClient;
 }
@@ -67,7 +68,7 @@ async function resolveWalletKey(config: ArweaveServiceConfig): Promise<string | 
 
   // 3. Secrets Manager
   const secretName = config.walletSecretName || DEFAULT_WALLET_SECRET;
-  const result = await getSecretsClient().send(
+  const result = await getArweaveSecretsClient().send(
     new GetSecretValueCommand({ SecretId: secretName }),
   );
 

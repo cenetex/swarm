@@ -30,7 +30,7 @@ import {
   GetCommand,
   PutCommand,
   DeleteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { logger } from '../utils/logger.js';
 
 // ── Cache knobs ─────────────────────────────────────────────────────────────

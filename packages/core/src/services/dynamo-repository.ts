@@ -34,57 +34,16 @@ import type {
   ScanCommandInput,
   QueryCommandOutput,
 } from '@aws-sdk/lib-dynamodb';
+import type {
+  KeyValueStore,
+  CompositeKey,
+  ConditionalPutOptions,
+  QueryOptions,
+  PaginatedResult,
+} from './key-value-store.js';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/** Composite key used by all DynamoDB tables in this project. */
-export interface CompositeKey {
-  pk: string;
-  sk: string;
-}
-
-/** Options for conditional put operations. */
-export interface ConditionalPutOptions {
-  /** Only write if the item does not already exist (uses attribute_not_exists(pk)). */
-  onlyIfNotExists?: boolean;
-  /** Custom condition expression (overrides onlyIfNotExists). */
-  conditionExpression?: string;
-  /** Expression attribute names for the condition. */
-  expressionAttributeNames?: Record<string, string>;
-  /** Expression attribute values for the condition. */
-  expressionAttributeValues?: Record<string, unknown>;
-}
-
-/** Options for query operations. */
-export interface QueryOptions {
-  /** Sort key condition: 'begins_with', 'between', or exact match. */
-  skCondition?: {
-    type: 'begins_with' | 'eq';
-    value: string;
-  };
-  /** Maximum number of items to return. */
-  limit?: number;
-  /** Scan forward (ascending sort key order). Defaults to true. */
-  scanForward?: boolean;
-  /** Index name for GSI queries. */
-  indexName?: string;
-  /** Projection expression to limit returned attributes. */
-  projectionExpression?: string;
-  /** Filter expression applied after the query. */
-  filterExpression?: string;
-  /** Expression attribute names. */
-  expressionAttributeNames?: Record<string, string>;
-  /** Expression attribute values (merged with auto-generated ones). */
-  expressionAttributeValues?: Record<string, unknown>;
-}
-
-/** Result of a paginated query. */
-export interface PaginatedResult<T> {
-  items: T[];
-  lastEvaluatedKey?: Record<string, unknown>;
-}
+// Re-export for backward compatibility
+export type { CompositeKey, ConditionalPutOptions, QueryOptions, PaginatedResult };
 
 // ============================================================================
 // DynamoRepository
@@ -105,7 +64,7 @@ export interface PaginatedResult<T> {
  * }
  * ```
  */
-export class DynamoRepository {
+export class DynamoRepository implements KeyValueStore {
   protected readonly docClient: DynamoDBDocumentClient;
   protected readonly tableName: string;
 

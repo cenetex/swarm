@@ -7,14 +7,14 @@
  * - DELETE /chat?avatarId=xxx   -- clear chat history
  * - POST /chat/message          -- append a system message
  */
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpRequest, HttpResponse } from "@swarm/core";
 import { logger, extractThinking } from '@swarm/core';
 import { parseJsonBody } from '../../http/request-body.js';
 import * as chatHistory from '../../services/chat-history.js';
 import { redactMediaUrlsFromText } from '../../utils/redact-media-urls.js';
 import type { UserSession } from '../../types.js';
 
-type EnsureAvatarAccess = (avatarId: string | undefined) => Promise<APIGatewayProxyResultV2 | null>;
+type EnsureAvatarAccess = (avatarId: string | undefined) => Promise<HttpResponse | null>;
 
 /**
  * Handle the lightweight health/info endpoint.
@@ -24,7 +24,7 @@ export function handleHealthCheck(
   method: string,
   path: string,
   corsHeaders: Record<string, string>
-): APIGatewayProxyResultV2 | null {
+): HttpResponse | null {
   if (method === 'GET' && (path === '/' || path === '/health' || path === '/healthz')) {
     return {
       statusCode: 200,
@@ -44,11 +44,11 @@ export function handleHealthCheck(
  * Handle GET /chat?avatarId=xxx -- retrieve chat history.
  */
 export async function handleGetHistory(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   session: UserSession,
   ensureAvatarAccess: EnsureAvatarAccess,
   corsHeaders: Record<string, string>
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const avatarId = event.queryStringParameters?.avatarId;
   const accessError = await ensureAvatarAccess(avatarId);
   if (accessError) return accessError;
@@ -84,11 +84,11 @@ export async function handleGetHistory(
  * Handle DELETE /chat?avatarId=xxx -- clear chat history.
  */
 export async function handleDeleteHistory(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   session: UserSession,
   ensureAvatarAccess: EnsureAvatarAccess,
   corsHeaders: Record<string, string>
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const avatarId = event.queryStringParameters?.avatarId;
   const accessError = await ensureAvatarAccess(avatarId);
   if (accessError) return accessError;
@@ -105,11 +105,11 @@ export async function handleDeleteHistory(
  * Handle POST /chat/message -- append a system/user message to chat history.
  */
 export async function handleAppendMessage(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   session: UserSession,
   ensureAvatarAccess: EnsureAvatarAccess,
   corsHeaders: Record<string, string>
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const body = parseJsonBody<{
     avatarId?: unknown;
     message?: {

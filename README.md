@@ -69,7 +69,6 @@ Run persistent AI avatars across Telegram, Discord, and the web — with the gua
 - **Admin API**: [packages/admin-api](packages/admin-api) — Session-authenticated API plus avatar-facing Telegram webhook, media/gallery, credits, wallets, voice tools, and config sync.
 - **Runtime core**: [packages/core](packages/core) — Platform adapters, response generator, state and activity services, and tool registry used by Lambdas.
 - **Handlers**: [packages/handlers](packages/handlers) — Lambda functions for inbound webhooks, SQS message processing, and outbound response sending.
-- **Infra**: [packages/infra](packages/infra) — CDK app/constructs for queues, tables, buckets, and stacks.
 - **MCP Server**: [packages/mcp-server](packages/mcp-server) — Unified tool registry for MCP-compatible clients and Lambda handlers.
 - **Lambda Layer**: [packages/layer](packages/layer) — Shared Lambda layer with native modules (sharp) and fetch shims for Node.js 20+.
 - **Profile Page**: [packages/profile-page](packages/profile-page) — Public avatar profile pages.
@@ -88,8 +87,8 @@ Run persistent AI avatars across Telegram, Discord, and the web — with the gua
 ## Quick Start
 
 ```bash
-git clone https://github.com/cenetex/aws-swarm.git
-cd aws-swarm
+git clone https://github.com/atimics/swarm.git
+cd swarm
 nvm use
 pnpm install
 pnpm build

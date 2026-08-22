@@ -35,7 +35,7 @@
     "failedToLoad": "Échec du chargement"
   },
   "auth": {
-    "loginWithPrivy": "Se connecter avec Privy",
+    "loginWithPrivy": "Se connecter",
     "creatingWallet": "Création du portefeuille...",
     "syncing": "Synchronisation...",
     "connecting": "Connexion...",

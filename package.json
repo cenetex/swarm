@@ -1,6 +1,6 @@
 {
-  "name": "aws-swarm",
-  "description": "Social media avatar swarm framework for AWS",
+  "name": "swarm",
+  "description": "Social media avatar swarm framework",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.19.0",
@@ -30,16 +30,6 @@
     "lint": "pnpm -r --parallel lint",
     "check:circular": "node scripts/check-circular-deps.mjs",
     "clean": "pnpm -r exec rm -rf dist node_modules",
-    "deploy": "pnpm --filter @swarm/infra deploy",
-    "deploy:all": "pnpm --filter @swarm/infra cdk deploy --all",
-    "deploy:avatar": "pnpm --filter @swarm/infra cdk deploy",
-    "deploy:dev": "pnpm --filter @swarm/infra cdk deploy -c environment=dev",
-    "deploy:staging": "pnpm --filter @swarm/infra cdk deploy -c environment=staging",
-    "deploy:prod": "pnpm --filter @swarm/infra cdk deploy -c environment=prod",
-    "synth": "pnpm --filter @swarm/infra synth",
-    "synth:staging": "pnpm --filter @swarm/infra cdk synth -c environment=staging",
-    "cdk": "pnpm --filter @swarm/infra cdk",
-    "diff:staging": "pnpm --filter @swarm/infra cdk diff -c environment=staging",
     "test:browser": "node scripts/test-browser.mjs",
     "issues:mirror": "node scripts/sync-issues-mirror.mjs",
     "issues:sync:internal": "node scripts/sync-internal-issues-to-github.mjs --config .github/policy/internal-issue-sync-policy.json --dry-run",
@@ -67,7 +57,9 @@
     ]
   },
   "dependencies": {
+    "@solana/web3.js": "^1.98.4",
     "bs58": "^6.0.0",
+    "js-sha3": "^0.9.3",
     "tweetnacl": "^1.0.3"
   },
   "devDependencies": {

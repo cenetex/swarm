@@ -71,6 +71,19 @@ export interface AvatarConfig {
   nftMint?: string;
   creatorWallet?: string;
 
+  // Agent identity — Ed25519 keypair (Body 4 of the Five Bodies)
+  identity?: {
+    /** base58-encoded Ed25519 public key */
+    pubkey: string;
+    /** encrypted seed material (base64) — never stored unencrypted */
+    encryptedSeed?: string;
+    /** how the keypair was created */
+    derivation?: {
+      type: "random" | "derived";
+      provenance?: string;
+    };
+  };
+
   platforms: PlatformConfigs;
   llm: LLMConfig;
   media: MediaConfig;

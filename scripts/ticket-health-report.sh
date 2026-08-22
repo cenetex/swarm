@@ -28,7 +28,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Config ───────────────────────────────────────────────────────────────
-REPO="cenetex/aws-swarm"
+REPO="atimics/swarm"
 
 # ── Fetch all open issues ────────────────────────────────────────────────
 # gh issue list with --json gives us structured data. Fetch up to 500 open issues.

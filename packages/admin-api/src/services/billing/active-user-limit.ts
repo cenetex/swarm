@@ -3,7 +3,7 @@ import {
   GetCommand,
   PutCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { getDynamoClient } from '../dynamo-client.js';
 
 const dynamoClient = getDynamoClient();

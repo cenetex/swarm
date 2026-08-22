@@ -29,6 +29,9 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     console.error('[ErrorBoundary] Uncaught render error:', error.message);
+    if (typeof document !== 'undefined') {
+      document.title = `ERROR: ${error.message || 'unknown'}`;
+    }
     console.error('[ErrorBoundary] Component stack:', errorInfo.componentStack);
   }
 

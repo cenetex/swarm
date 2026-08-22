@@ -11,7 +11,7 @@ import {
   PutCommand,
   QueryCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type { Platform, ChannelState } from '../types/index.js';
 
 // =============================================================================

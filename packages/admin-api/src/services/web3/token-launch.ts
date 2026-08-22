@@ -15,7 +15,7 @@ import {
 import bs58 from 'bs58';
 import {
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import {
   createVanityMatcher,
   resolveVanityMintConfig,

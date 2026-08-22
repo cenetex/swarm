@@ -300,7 +300,7 @@ export function PublicChatPage({ botId }: PublicChatPageProps) {
   if (!isAuthenticated) {
     return (
       <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text)] flex flex-col relative overflow-hidden">
-        {/* Background gradients (same pattern as LandingPage) */}
+        {/* Background gradients */}
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(122,99,149,0.3),transparent)]" />
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_40%_at_80%_60%,rgba(167,139,250,0.08),transparent)]" />

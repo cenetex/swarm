@@ -6,14 +6,12 @@
  * 1. HOLDING = Permission to create avatars (1 NFT held = 1 creation slot)
  * 2. BURNING = Permission to abandon an inhabited avatar
  */
-import { GetCommand, PutCommand, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import {
-  SecretsManagerClient,
-  GetSecretValueCommand,
-} from '@aws-sdk/client-secrets-manager';
+import { GetCommand, PutCommand, ScanCommand, UpdateCommand } from '@swarm/core';
+import { GetSecretValueCommand } from '@swarm/core';
 import { getDynamoClient } from '../dynamo-client.js';
 import { createSystemLogger } from '../structured-logger.js';
 import { fetchAllAssetsByOwner } from './helius-pagination.js';
+import { getSecretsClient } from '../aws-clients.js';
 
 const log = createSystemLogger('nft-gate');
 
@@ -38,13 +36,20 @@ const HELIUS_API_KEY_RETRY_MS = 30_000;
  * Re-reads HELIUS_API_KEY and HELIUS_API_KEY_ARN from process.env.
  * @internal
  */
-export function _resetNftGateForTesting(): void {
-  HELIUS_API_KEY_ARN = process.env.HELIUS_API_KEY_ARN;
-  heliusApiKey = process.env.HELIUS_API_KEY || null;
+export function _resetNftGateForTesting(overrides?: {
+  apiKey?: string | null;
+  apiKeyArn?: string | null;
+}): void {
+  HELIUS_API_KEY_ARN = overrides && 'apiKeyArn' in overrides
+    ? overrides.apiKeyArn ?? undefined
+    : process.env.HELIUS_API_KEY_ARN;
+  heliusApiKey = overrides && 'apiKey' in overrides
+    ? overrides.apiKey ?? null
+    : process.env.HELIUS_API_KEY || null;
   heliusApiKeyRetryAfter = 0;
 }
 
-const secretsClient = new SecretsManagerClient({});
+const secretsClient = getSecretsClient();
 
 async function getHeliusApiKey(): Promise<string | null> {
   // If we already have it from env, use it

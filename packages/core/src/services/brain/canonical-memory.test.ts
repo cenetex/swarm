@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 import { createCanonicalMemoryClient, _setDynamoClient } from './canonical-memory.js';
+import { _resetEmbeddingService, _setEmbeddingService } from '../embeddings.js';
 
 describe('Canonical Memory Client', () => {
   let mockSend: ReturnType<typeof mock>;
@@ -9,10 +10,15 @@ describe('Canonical Memory Client', () => {
     mockSend = mock(() => Promise.resolve({}));
     const mockDocClient = { send: mockSend } as unknown as DynamoDBDocumentClient;
     _setDynamoClient(mockDocClient);
+    _setEmbeddingService({
+      modelId: 'test-embedding',
+      embedText: async () => ({ model: 'test-embedding', vector: [1, 0, 0] }),
+    });
   });
 
   afterEach(() => {
     _setDynamoClient(null);
+    _resetEmbeddingService();
   });
 
   describe('createCanonicalMemoryClient', () => {
@@ -240,6 +246,39 @@ describe('Canonical Memory Client', () => {
       const result = await client.recall('avatar', 'dogs');
 
       expect(result.facts).toHaveLength(1);
+    });
+
+    it('uses stored embeddings for semantic recall without keyword overlap', async () => {
+      _setEmbeddingService({
+        modelId: 'test-embedding',
+        embedText: async () => ({ model: 'test-embedding', vector: [1, 0, 0] }),
+      });
+      mockSend.mockImplementation(() =>
+        Promise.resolve({
+          Items: [
+            {
+              content: 'Prefers black coffee before dawn',
+              about: 'routine',
+              createdAt: Date.now(),
+              strength: 1.0,
+              embedding: [0.98, 0.02, 0],
+            },
+            {
+              content: 'Collects vintage synthesizers',
+              about: 'music',
+              createdAt: Date.now(),
+              strength: 1.0,
+              embedding: [0, 1, 0],
+            },
+          ],
+        })
+      );
+
+      const client = createCanonicalMemoryClient('test-table');
+      const result = await client.recall('avatar', 'morning beverage');
+
+      expect(result.facts).toHaveLength(1);
+      expect(result.facts[0].fact).toBe('Prefers black coffee before dawn');
     });
   });
 

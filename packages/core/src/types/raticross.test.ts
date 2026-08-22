@@ -1,159 +1,122 @@
 /**
- * Raticross Protocol Types Tests
- *
- * Validates type contracts and protocol constants.
+ * Raticross protocol type tests.
  */
-import { describe, it, expect } from 'bun:test';
-import {
-  RATICROSS_PROTOCOL_VERSION,
-  type RaticrossEnvelope,
-  type RaticrossActor,
-  type RaticrossHealthRequest,
-  type RaticrossHealthResponse,
-  type RaticrossBridgeConfig,
-  type RaticrossSendResult,
-} from './raticross.js';
+import { describe, it, expect } from "bun:test";
+import type {
+  RaticrossActor,
+  RaticrossEnvelope,
+  RaticrossHealthRequest,
+  RaticrossHealthResponse,
+  RaticrossBridgeConfig,
+  RaticrossSendResult,
+} from "../types/raticross.js";
 
-describe('Raticross Protocol Types', () => {
-  it('exports a protocol version string', () => {
-    expect(RATICROSS_PROTOCOL_VERSION).toBe('0.1');
-    expect(typeof RATICROSS_PROTOCOL_VERSION).toBe('string');
-  });
-
-  it('RaticrossEnvelope satisfies the wire format contract', () => {
+describe("Raticross Protocol Types", () => {
+  it("RaticrossEnvelope satisfies the wire format contract", () => {
     const envelope: RaticrossEnvelope = {
-      id: '550e8400-e29b-41d4-a716-446655440000',
-      traceId: 'trace-1',
-      protocol: '0.1',
+      id: "msg-001",
+      traceId: "trace-abc",
+      protocol: "0.1",
       timestamp: Date.now(),
-      from: { system: 'swarm', agentId: 'avatar-1' },
-      to: { system: 'kyro', agentId: 'kyro-main' },
-      type: 'message',
-      conversationId: 'conv-abc',
-      content: 'Hello from Swarm',
-      context: {
-        summary: 'Greeting exchange',
-        constraints: 'Keep it brief',
-        toolHints: ['search', 'memory'],
-      },
-      meta: {
-        ttl: 60000,
-        priority: 'high',
-        tags: ['test'],
-      },
+      from: { system: "swarm", agentId: "avatar-1", pubkey: "abc123" },
+      to: { system: "kyro", agentId: "kyro-bot", pubkey: "def456" },
+      type: "message",
+      conversationId: "conv-42",
+      content: "hello",
+      context: { priority: "normal", expiresAt: Date.now() + 60000 },
     };
 
-    expect(envelope.id).toBeTruthy();
-    expect(envelope.from.system).toBe('swarm');
-    expect(envelope.to.system).toBe('kyro');
-    expect(envelope.type).toBe('message');
-    expect(envelope.protocol).toBe('0.1');
-    expect(envelope.context?.toolHints).toEqual(['search', 'memory']);
-    expect(envelope.meta?.priority).toBe('high');
+    expect(envelope.id).toBe("msg-001");
+    expect(envelope.from.system).toBe("swarm");
+    expect(envelope.from.agentId).toBe("avatar-1");
+    expect(envelope.from.pubkey).toBe("abc123");
+    expect(envelope.to.pubkey).toBe("def456");
+    expect(envelope.type).toBe("message");
+    expect(envelope.content).toBe("hello");
+    expect(envelope.context?.priority).toBe("normal");
   });
 
-  it('RaticrossEnvelope works with minimal fields', () => {
+  it("RaticrossEnvelope works with minimal fields", () => {
     const minimal: RaticrossEnvelope = {
-      id: 'msg-1',
-      timestamp: 1234567890,
-      from: { system: 'swarm', agentId: 'a1' },
-      to: { system: 'kyro', agentId: 'k1' },
-      type: 'message',
-      conversationId: 'conv-1',
-      content: 'Hi',
+      id: "m1",
+      timestamp: 1700000000000,
+      from: { system: "swarm", agentId: "a1", pubkey: "pk1" },
+      to: { system: "kyro", agentId: "k1", pubkey: "pk2" },
+      type: "message",
+      conversationId: "c1",
+      content: "hi",
     };
-
-    expect(minimal.traceId).toBeUndefined();
-    expect(minimal.context).toBeUndefined();
-    expect(minimal.meta).toBeUndefined();
-    expect(minimal.protocol).toBeUndefined();
+    expect(minimal.id).toBe("m1");
+    expect(minimal.content).toBe("hi");
   });
 
-  it('supports all envelope types', () => {
-    const types: RaticrossEnvelope['type'][] = ['message', 'task', 'result', 'status'];
-    for (const t of types) {
+  it("RaticrossEnvelope supports all message types", () => {
+    const types: RaticrossEnvelope["type"][] = ["message", "task", "result", "status"];
+    for (const type of types) {
       const env: RaticrossEnvelope = {
-        id: `msg-${t}`,
-        timestamp: Date.now(),
-        from: { system: 'swarm', agentId: 'a' },
-        to: { system: 'kyro', agentId: 'b' },
-        type: t,
-        conversationId: 'c',
-        content: '',
+        id: "1",
+        timestamp: 0,
+        from: { system: "swarm", agentId: "a", pubkey: "pk" },
+        to: { system: "kyro", agentId: "b", pubkey: "pk2" },
+        type,
+        conversationId: "c",
+        content: "",
       };
-      expect(env.type).toBe(t);
+      expect(env.type).toBe(type);
     }
   });
 
-  it('RaticrossActor supports optional pubkey', () => {
-    const withKey: RaticrossActor = {
-      system: 'swarm',
-      agentId: 'avatar-1',
-      pubkey: '0xabc123',
+  it("RaticrossActor requires pubkey", () => {
+    const actor: RaticrossActor = {
+      system: "swarm",
+      agentId: "avatar-1",
+      pubkey: "abc123",
     };
-    const withoutKey: RaticrossActor = {
-      system: 'kyro',
-      agentId: 'kyro-main',
-    };
-
-    expect(withKey.pubkey).toBe('0xabc123');
-    expect(withoutKey.pubkey).toBeUndefined();
+    expect(typeof actor.pubkey).toBe("string");
+    expect(actor.pubkey).toBe("abc123");
   });
 
-  it('RaticrossHealthRequest has required fields', () => {
+  it("RaticrossHealthRequest has required fields", () => {
     const req: RaticrossHealthRequest = {
-      type: 'health',
+      type: "health",
       timestamp: Date.now(),
-      from: { system: 'swarm', agentId: 'probe' },
-      protocol: '0.1',
+      from: { system: "swarm", agentId: "probe" },
     };
-
-    expect(req.type).toBe('health');
-    expect(req.protocol).toBe('0.1');
+    expect(req.type).toBe("health");
   });
 
-  it('RaticrossHealthResponse represents healthy and unhealthy states', () => {
+  it("RaticrossHealthResponse represents healthy and unhealthy states", () => {
     const healthy: RaticrossHealthResponse = {
-      ok: true,
-      system: 'kyro',
-      protocol: '0.1',
+      status: "healthy",
       timestamp: Date.now(),
-      uptime: 3600000,
-      agents: ['kyro-main', 'kyro-helper'],
+      relayVersion: "0.1.0",
     };
+    expect(healthy.status).toBe("healthy");
 
     const unhealthy: RaticrossHealthResponse = {
-      ok: false,
-      system: 'kyro',
-      protocol: '0.1',
+      status: "unhealthy",
       timestamp: Date.now(),
+      error: "relay_down",
     };
-
-    expect(healthy.ok).toBe(true);
-    expect(healthy.agents).toHaveLength(2);
-    expect(unhealthy.ok).toBe(false);
-    expect(unhealthy.uptime).toBeUndefined();
+    expect(unhealthy.status).toBe("unhealthy");
   });
 
-  it('RaticrossBridgeConfig has sensible defaults documented', () => {
+  it("RaticrossBridgeConfig has sensible defaults documented", () => {
     const config: RaticrossBridgeConfig = {
-      relayUrl: 'https://relay.example.com',
+      relayUrl: "http://localhost:9876",
     };
-
-    expect(config.relayUrl).toBeTruthy();
-    expect(config.relayKey).toBeUndefined();
-    expect(config.localSystem).toBeUndefined();
-    expect(config.remoteSystem).toBeUndefined();
-    expect(config.timeoutMs).toBeUndefined();
+    expect(config.relayUrl).toBe("http://localhost:9876");
   });
 
-  it('RaticrossSendResult represents success and failure', () => {
-    const success: RaticrossSendResult = { ok: true, id: 'msg-1' };
-    const failure: RaticrossSendResult = { ok: false, id: 'msg-2', error: 'timeout' };
+  it("RaticrossSendResult represents success and failure", () => {
+    const success: RaticrossSendResult = { success: true };
+    expect(success.success).toBe(true);
 
-    expect(success.ok).toBe(true);
-    expect(success.error).toBeUndefined();
-    expect(failure.ok).toBe(false);
-    expect(failure.error).toBe('timeout');
+    const failure: RaticrossSendResult = {
+      success: false,
+      error: "timeout",
+    };
+    expect(failure.success).toBe(false);
+    expect(failure.error).toBe("timeout");
   });
 });

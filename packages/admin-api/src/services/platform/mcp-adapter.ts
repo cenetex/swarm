@@ -19,6 +19,12 @@ import { createNFTServices } from '../mcp/nft-services.js';
 import { createPropertyServices } from '../mcp/property-services.js';
 import { createDesignPartnerServices } from '../mcp/design-partner-services.js';
 import { createSignalStationServices, isSignalStationConfigured } from '../mcp/signal-station-services.js';
+import {
+  DEFAULT_LLM_MAX_TOKENS,
+  DEFAULT_LLM_MODEL,
+  DEFAULT_LLM_TEMPERATURE,
+} from '@swarm/core';
+import type { SecretType } from '../../types.js';
 
 export interface MCPServicesOptions {
   /** When true, skip services that perform write operations (for preview/read-only contexts) */
@@ -44,9 +50,10 @@ export function createMCPServices(
   }
 
   return {
+    ...createCoreMCPServices(_avatarId, session, svc),
     ...createMediaServices(_avatarId, session, svc),
     ...createPlatformServices(_avatarId, session, svc),
-    ...createIdentityServices(_avatarId, session, svc),
+    agentIdentity: createIdentityServices(_avatarId, session, svc),
     ...createAgentServices(_avatarId, session, svc),
     nft: createNFTServices(svc),
     property: createPropertyServices(_avatarId, session, svc),
@@ -70,9 +77,10 @@ function createReadOnlyMCPServices(
   svc: ServiceContainer,
 ): AllServices {
   const full: AllServices = {
+    ...createCoreMCPServices(_avatarId, session, svc),
     ...createMediaServices(_avatarId, session, svc),
     ...createPlatformServices(_avatarId, session, svc),
-    ...createIdentityServices(_avatarId, session, svc),
+    agentIdentity: createIdentityServices(_avatarId, session, svc),
     ...createAgentServices(_avatarId, session, svc),
     nft: createNFTServices(svc),
     property: createPropertyServices(_avatarId, session, svc),
@@ -182,6 +190,145 @@ function createReadOnlyMCPServices(
   }
 
   return full;
+}
+
+function createCoreMCPServices(
+  _avatarId: string,
+  session: UserSession,
+  svc: ServiceContainer,
+): Pick<AllServices, 'wallets' | 'models' | 'profile' | 'secrets'> {
+  return {
+    wallets: {
+      listWallets: async (targetAvatarId) => {
+        const wallets = await svc.wallets.listWallets(targetAvatarId);
+        return wallets.map((wallet) => ({
+          name: wallet.name,
+          publicKey: wallet.publicKey,
+          address: wallet.address,
+          walletType: wallet.walletType,
+        }));
+      },
+      getBalance: async (address, targetAvatarId, chain = 'solana') => {
+        if (chain === 'ethereum') {
+          return svc.wallets.getEthereumBalance(address, targetAvatarId);
+        }
+        return svc.wallets.getSolanaBalance(address, targetAvatarId);
+      },
+    },
+
+    models: {
+      listModels: async (family) => {
+        const normalizedFamily = family?.toLowerCase().trim();
+        return svc.modelsRegistry.AVAILABLE_MODELS
+          .filter((model) => !normalizedFamily || `${model.provider}/${model.id} ${model.name}`.toLowerCase().includes(normalizedFamily))
+          .map((model) => ({
+            id: model.id,
+            name: model.name,
+            contextLength: 0,
+          }));
+      },
+      getConfig: async (targetAvatarId) => {
+        const avatar = await svc.avatars.getAvatar(targetAvatarId);
+        return {
+          model: avatar?.llmConfig?.model || DEFAULT_LLM_MODEL,
+          temperature: avatar?.llmConfig?.temperature ?? DEFAULT_LLM_TEMPERATURE,
+          maxTokens: avatar?.llmConfig?.maxTokens ?? DEFAULT_LLM_MAX_TOKENS,
+          provider: avatar?.llmConfig?.provider,
+        };
+      },
+      updateConfig: async (targetAvatarId, config) => {
+        const avatar = await svc.avatars.getAvatar(targetAvatarId);
+        await svc.avatars.updateAvatar(targetAvatarId, {
+          llmConfig: {
+            provider: avatar?.llmConfig?.provider || 'openrouter',
+            model: config.model ?? avatar?.llmConfig?.model ?? DEFAULT_LLM_MODEL,
+            temperature: config.temperature ?? avatar?.llmConfig?.temperature ?? DEFAULT_LLM_TEMPERATURE,
+            maxTokens: config.maxTokens ?? avatar?.llmConfig?.maxTokens ?? DEFAULT_LLM_MAX_TOKENS,
+            useGlobalKey: avatar?.llmConfig?.useGlobalKey ?? true,
+          },
+        }, session);
+      },
+      getFallbacks: () => [],
+    },
+
+    profile: {
+      getProfile: async (targetAvatarId) => {
+        const avatar = await svc.avatars.getAvatar(targetAvatarId);
+        if (!avatar) throw new Error(`Avatar not found: ${targetAvatarId}`);
+        return {
+          name: avatar.name,
+          description: avatar.description,
+          persona: avatar.persona,
+          profileImage: avatar.profileImage ? { url: avatar.profileImage.url } : undefined,
+          characterReference: avatar.characterReference ? {
+            url: avatar.characterReference.url,
+            description: avatar.characterReference.description,
+          } : undefined,
+        };
+      },
+      updateProfile: async (targetAvatarId, updates) => {
+        await svc.avatars.updateAvatar(targetAvatarId, updates, session);
+      },
+      setProfileImage: async (targetAvatarId, source) => {
+        const result = await svc.media.setProfileImage(targetAvatarId, source);
+        await svc.avatars.updateAvatar(targetAvatarId, {
+          profileImage: {
+            url: result.url,
+            s3Key: result.s3Key,
+            updatedAt: Date.now(),
+          },
+        }, session);
+        return { url: result.url };
+      },
+      getProfileUploadUrl: async (targetAvatarId) => {
+        return svc.media.getProfileImageUploadUrl(targetAvatarId);
+      },
+      saveProfileImage: async (targetAvatarId, s3Key, publicUrl) => {
+        await svc.avatars.updateAvatar(targetAvatarId, {
+          profileImage: {
+            url: publicUrl,
+            s3Key,
+            updatedAt: Date.now(),
+          },
+        }, session);
+      },
+      setCharacterReference: async (targetAvatarId, source, description) => {
+        const result = await svc.media.setCharacterReference(targetAvatarId, source, description);
+        return { url: result.url };
+      },
+      getCharacterReferenceUploadUrl: async (targetAvatarId) => {
+        return svc.media.getCharacterReferenceUploadUrl(targetAvatarId);
+      },
+      saveCharacterReference: async (targetAvatarId, s3Key, publicUrl, description) => {
+        await svc.avatars.updateAvatar(targetAvatarId, {
+          characterReference: {
+            url: publicUrl,
+            s3Key,
+            description,
+            updatedAt: Date.now(),
+          },
+        }, session);
+      },
+    },
+
+    secrets: {
+      listSecrets: async (targetAvatarId) => {
+        const secrets = await svc.secrets.listSecrets(targetAvatarId);
+        return secrets.map((secret) => ({
+          secretType: secret.secretType,
+          name: secret.name,
+          description: secret.description,
+          lastUpdated: secret.updatedAt,
+        }));
+      },
+      storeSecret: async (targetAvatarId, secretType, name, value, description) => {
+        await svc.secrets.storeSecret(targetAvatarId, secretType as SecretType, name, value, session, description);
+      },
+      validateTelegramToken: async (token) => {
+        return svc.telegram.validateTelegramToken(token);
+      },
+    },
+  };
 }
 
 /**

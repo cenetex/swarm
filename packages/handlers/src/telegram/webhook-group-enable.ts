@@ -21,7 +21,7 @@ import {
   createTelegramBindingStore,
   type TelegramBindingStore,
 } from '@swarm/core';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 import type { AvatarConfig } from '@swarm/core';
 
 // Short action verbs keep the callback_data small (Telegram cap = 64 bytes).

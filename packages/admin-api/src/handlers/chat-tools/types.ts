@@ -2,7 +2,7 @@
  * Shared types for chat-tools modules.
  */
 import type { ToolCategory } from '@swarm/core';
-import type { ToolContext, TaskAction } from '@swarm/mcp-server';
+import type { ToolContext as McpToolContext, TaskAction } from '@swarm/mcp-server';
 import type { AdminChatMessage } from '../../types.js';
 import type { MediaItem, SdkToolCall } from '../chat-tool-helpers.js';
 import type { LlmUsage } from '../chat-llm.js';
@@ -63,8 +63,8 @@ export interface LlmAttemptState {
 /**
  * Services/context needed for tool execution.
  */
-export interface ToolExecutionContext {
+export interface ToolContext {
   avatarId: string | undefined;
-  toolContext: ToolContext | null;
+  toolContext: McpToolContext | null;
   mcpServices: unknown | null;
 }

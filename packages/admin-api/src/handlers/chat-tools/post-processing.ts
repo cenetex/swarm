@@ -167,6 +167,7 @@ export async function detectAvatarUpdates(
 ): Promise<{ profileImageUrl?: string; name?: string }> {
   const updates: { profileImageUrl?: string; name?: string } = {};
   const toolCallNames = new Map(toolCalls.map(tc => [String(tc.id), String(tc.name)]));
+  const toolCallArgs = new Map(toolCalls.map(tc => [String(tc.id), tc.arguments]));
 
   for (const result of toolResults) {
     const toolName = toolCallNames.get(String(result.tool_call_id));
@@ -186,13 +187,22 @@ export async function detectAvatarUpdates(
       // Name updates from update_my_profile
       if (toolName === 'update_my_profile') {
         if (parsed.success && parsed.data?.updated?.includes('name')) {
+          const args = toolCallArgs.get(String(result.tool_call_id));
+          const requestedName = args && typeof args === 'object' && 'name' in args && typeof args.name === 'string'
+            ? args.name
+            : undefined;
+          if (requestedName) {
+            updates.name = requestedName;
+          }
+
           if (avatarId) {
             const updatedAgent = await avatars.getAvatar(avatarId);
             if (updatedAgent?.name) {
               updates.name = updatedAgent.name;
-              logger.info('Avatar name updated', { name: updates.name });
             }
           }
+
+          if (updates.name) logger.info('Avatar name updated', { name: updates.name });
         }
       }
     } catch {

@@ -67,6 +67,7 @@ export class RaticrossAdapter extends PlatformAdapter {
       from: {
         system: 'swarm',
         agentId: this.avatarConfig.id,
+        pubkey: this.avatarConfig.identity?.pubkey || '',
       },
       to: {
         system: this.targetSystem,

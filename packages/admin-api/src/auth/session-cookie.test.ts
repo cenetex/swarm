@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from 'aws-lambda';
 
 import { getClearSessionCookies, getSessionFromCookie, getSetSessionCookies } from './session-cookie.js';
 
@@ -35,7 +35,7 @@ describe('session-cookie', () => {
   });
 
   it('getSessionFromCookie returns null when no cookies', () => {
-    const event = { cookies: [] } as unknown as APIGatewayProxyEventV2;
+    const event = { cookies: [] } as unknown as HttpRequest;
     expect(getSessionFromCookie(event)).toBeNull();
   });
 
@@ -47,7 +47,7 @@ describe('session-cookie', () => {
         'swarm_session=token-1',
         'swarm_session=token-2',
       ],
-    } as unknown as APIGatewayProxyEventV2;
+    } as unknown as HttpRequest;
 
     expect(getSessionFromCookie(event)).toBe('token-1');
   });
@@ -57,7 +57,7 @@ describe('session-cookie', () => {
       headers: {
         cookie: 'foo=bar; swarm_session=abc; baz=qux',
       },
-    } as unknown as APIGatewayProxyEventV2;
+    } as unknown as HttpRequest;
 
     expect(getSessionFromCookie(event)).toBe('abc');
   });
@@ -120,7 +120,7 @@ describe('session-cookie', () => {
     process.env.ENVIRONMENT = 'staging';
     const event = {
       cookies: ['swarm_session=prod-token', 'swarm_session_staging=staging-token'],
-    } as unknown as APIGatewayProxyEventV2;
+    } as unknown as HttpRequest;
 
     expect(getSessionFromCookie(event)).toBe('staging-token');
   });

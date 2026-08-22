@@ -4,7 +4,7 @@
  * Provides a factory for RouteContext objects and common mock patterns.
  * Import this in each domain test file.
  */
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from "@swarm/core";
 import type { RouteContext } from './types.js';
 
 export const DEFAULT_SESSION = {
@@ -40,7 +40,7 @@ export function makeCtx(overrides: Partial<RouteContext> & {
   const method = overrides.method ?? 'GET';
   const path = overrides.path ?? '/avatars';
 
-  const event: APIGatewayProxyEventV2 = {
+  const event: HttpRequest = {
     version: '2.0',
     routeKey: `${method} ${path}`,
     rawPath: path,
@@ -61,7 +61,7 @@ export function makeCtx(overrides: Partial<RouteContext> & {
     },
     isBase64Encoded: false,
     body: overrides.body ?? undefined,
-  } as unknown as APIGatewayProxyEventV2;
+  } as unknown as HttpRequest;
 
   return {
     event: overrides.event ?? event,

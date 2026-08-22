@@ -1,7 +1,7 @@
 {
   "name": "@swarm/claude-code-worker",
   "version": "1.0.0",
-  "description": "Claude Code worker for AWS Swarm - processes coding tasks using Claude Code CLI",
+  "description": "Claude Code worker for Swarm - processes coding tasks using Claude Code CLI",
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {

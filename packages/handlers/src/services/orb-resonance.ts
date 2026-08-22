@@ -8,7 +8,7 @@
  * Uses ADMIN_TABLE (where Orb slot records live) via GSI1 to look up
  * the Orb record by avatarId.
  */
-import { QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand, UpdateCommand } from '@swarm/core';
 import { logger } from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
 

@@ -30,7 +30,7 @@ import {
   type TelegramBindingStore,
   type TelegramDmApprovalStore,
 } from '@swarm/core';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 
 export const DM_ACTION_ALLOW = 'd:al';
 export const DM_ACTION_DENY = 'd:dn';

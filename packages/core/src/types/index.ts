@@ -61,7 +61,7 @@ export interface SwarmEnvelope {
   // Content
   content: MessageContent;
   
-  // Context
+  // ExecutionContext
   replyTo?: string; // Message ID being replied to
   mentions: Mention[];
   
@@ -1183,3 +1183,23 @@ export type {
   TransitionLedger,
   AppendResult,
 } from './constitution.js';
+
+// Lambda-compatible types (local-first, no aws-lambda dependency)
+export type {
+  HttpRequest,
+  HttpResponse,
+  APIGatewayProxyStructuredResultV2,
+  HttpHandler,
+  MessageBatch,
+  MessageRecord,
+  MessageAttribute,
+  MessageBatchResponse,
+  ExecutionContext,
+  TimerEvent,
+  DataChangeEvent,
+  DataChangeRecord,
+  DynamoValue,
+  Handler,
+  MessageBatchHandler,
+  TimerHandler,
+} from "./lambda.js";

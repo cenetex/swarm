@@ -4,7 +4,7 @@
  * - GET /avatars/{id}/usage          — today's usage vs limits
  * - GET /avatars/{id}/usage/history  — historical daily usage (last N days)
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import * as avatarService from '../../services/avatars.js';
@@ -17,7 +17,7 @@ import { getAvatarUsageRollups } from '../../services/token-accounting.js';
 
 export async function handleUsageRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, corsHeaders } = ctx;
 
   // ── GET /avatars/{id}/usage ──────────────────────────────────────────────

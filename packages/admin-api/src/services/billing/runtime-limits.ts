@@ -4,7 +4,7 @@
  * Admin API writes a compact, runtime-friendly copy of an avatar's effective limits
  * into STATE_TABLE so Lambda handlers can enforce limits without needing ADMIN_TABLE.
  */
-import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { UpdateCommand } from '@swarm/core';
 import {
   type EntitlementRecord,
   type PlanLimits,

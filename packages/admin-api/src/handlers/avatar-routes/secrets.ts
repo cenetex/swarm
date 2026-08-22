@@ -6,7 +6,7 @@
  * - POST /avatars/{id}/validate-token
  * - POST /avatars/{id}/validate-ai-key
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { logger } from '@swarm/core';
@@ -31,7 +31,7 @@ function resolveActorType(effectiveIsAdmin: boolean): ActorType {
 
 export async function handleSecretsRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, event, corsHeaders, session } = ctx;
 
   const secretsMatch = path.match(/^\/avatars\/([^/]+)\/secrets$/);

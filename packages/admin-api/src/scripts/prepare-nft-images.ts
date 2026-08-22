@@ -29,7 +29,7 @@
  */
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, ScanCommand } from '@swarm/core';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { AvatarRecord } from '../types.js';

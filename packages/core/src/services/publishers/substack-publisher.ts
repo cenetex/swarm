@@ -1,3 +1,4 @@
+import { GetSecretValueCommand, SecretsManagerClient } from '../../commands/index.js';
 /**
  * Substack Publisher Adapter
  *
@@ -7,7 +8,6 @@
  * Authentication uses cookie-based auth (substack.sid, connect.sid) stored in Secrets Manager
  * instead of unreliable email/password login endpoint.
  */
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { logger } from '../../utils/logger.js';
 
 // ============================================================================
@@ -179,7 +179,7 @@ async function withRetry<T>(
  * Credentials should include cookie-based auth (substack_sid, connect_sid)
  */
 async function getSubstackCredentials(subdomain: string): Promise<SubstackCredentials> {
-  const secretName = `/aws-swarm/SUBSTACK_CREDENTIALS_${subdomain.toUpperCase()}`;
+  const secretName = `/swarm/SUBSTACK_CREDENTIALS_${subdomain.toUpperCase()}`;
   const now = Date.now();
 
   // Check cache first

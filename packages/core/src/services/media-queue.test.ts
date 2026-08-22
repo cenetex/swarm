@@ -6,27 +6,15 @@
  * generate_video jobs through MEDIA_QUEUE (see #1493).
  */
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
+import { SendMessageCommand, type SQSClient } from '../commands/index.js';
+import { _setSQSClient, enqueueMediaJob } from './media-queue.js';
 
 const sendMock = mock(async () => ({ MessageId: 'stub' }));
-
-mock.module('@aws-sdk/client-sqs', () => ({
-  SQSClient: class {
-    send = sendMock;
-  },
-  SendMessageCommand: class {
-    public input: unknown;
-    constructor(input: unknown) {
-      this.input = input;
-    }
-  },
-}));
-
-// Import after mock so enqueueMediaJob picks up the stubbed client.
-const { enqueueMediaJob } = await import('./media-queue.js');
 
 describe('enqueueMediaJob', () => {
   beforeEach(() => {
     sendMock.mockClear();
+    _setSQSClient({ send: sendMock } as unknown as SQSClient);
   });
 
   it('defaults action.type to generate_image when jobType is omitted', async () => {
@@ -38,7 +26,7 @@ describe('enqueueMediaJob', () => {
     });
 
     expect(sendMock).toHaveBeenCalledTimes(1);
-    const cmd = sendMock.mock.calls[0][0] as { input: { MessageBody: string } };
+    const cmd = sendMock.mock.calls[0][0] as SendMessageCommand;
     const body = JSON.parse(cmd.input.MessageBody);
     expect(body.action.type).toBe('generate_image');
   });

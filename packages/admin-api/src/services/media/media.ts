@@ -4,10 +4,11 @@
  *
  * Uses core media resolvers for model/API key resolution to avoid duplication.
  */
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@swarm/core';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
-import { PutCommand, QueryCommand, DeleteCommand, UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { getS3Client, getSQSClient } from '../aws-clients.js';
+import { SendMessageCommand } from '@swarm/core';
+import { PutCommand, QueryCommand, DeleteCommand, UpdateCommand, GetCommand } from '@swarm/core';
 import { createHmac } from 'crypto';
 import { v4 as uuid } from 'uuid';
 import {
@@ -33,8 +34,8 @@ import { getSystemOpenRouterApiKey } from '../openrouter-key.js';
 
 const log = createSystemLogger('media');
 
-const s3Client = new S3Client({});
-const sqsClient = new SQSClient({});
+const s3Client = getS3Client();
+const sqsClient = getSQSClient();
 const dynamoClient = getDynamoClient();
 
 const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
@@ -129,7 +130,7 @@ async function makeUrlAccessible(url: string): Promise<string> {
   if (match) {
     const [, bucket, key] = match;
     const command = new GetObjectCommand({ Bucket: bucket, Key: decodeURIComponent(key) });
-    const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+    const signedUrl = await getSignedUrl(s3Client as any, command as any, { expiresIn: 3600 });
     return signedUrl;
   }
 
@@ -166,7 +167,7 @@ const REPLICATE_ENDPOINT = 'https://api.replicate.com/v1/predictions';
 const OPENROUTER_CHAT_COMPLETIONS_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_VIDEOS_ENDPOINT = 'https://openrouter.ai/api/v1/videos';
 const OPENROUTER_SITE_URL = process.env.OPENROUTER_SITE_URL || process.env.PUBLIC_SITE_URL || 'https://swarm.rati.chat';
-const OPENROUTER_APP_TITLE = process.env.OPENROUTER_APP_TITLE || 'aws-swarm';
+const OPENROUTER_APP_TITLE = process.env.OPENROUTER_APP_TITLE || 'swarm';
 const IMAGE_GENERATION_MAX_REFERENCE_IMAGES = 14;
 const SUPPORTED_MEDIA_PROVIDERS = ['openrouter', 'replicate'] as const;
 type SupportedMediaProvider = typeof SUPPORTED_MEDIA_PROVIDERS[number];
@@ -631,7 +632,7 @@ export async function getProfileImageUploadUrl(avatarId: string): Promise<{
     ContentType: 'image/png',
   });
 
-  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  const uploadUrl = await getSignedUrl(s3Client as any, command as any, { expiresIn: 3600 });
   const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
   return { uploadUrl, s3Key, publicUrl };
@@ -658,7 +659,7 @@ export async function getReferenceImageUploadUrl(
     ContentType: contentType,
   });
 
-  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  const uploadUrl = await getSignedUrl(s3Client as any, command as any, { expiresIn: 3600 });
   const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
   return { uploadUrl, s3Key, publicUrl, category };
@@ -683,7 +684,7 @@ export async function getGalleryUploadUrl(
     ContentType: contentType,
   });
 
-  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  const uploadUrl = await getSignedUrl(s3Client as any, command as any, { expiresIn: 3600 });
   const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
   return { uploadUrl, s3Key, publicUrl };
@@ -1774,7 +1775,7 @@ export async function getCharacterReferenceUploadUrl(avatarId: string): Promise<
     ContentType: 'image/png',
   });
 
-  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  const uploadUrl = await getSignedUrl(s3Client as any, command as any, { expiresIn: 3600 });
   const publicUrl = buildMediaUrl(s3Key, MEDIA_BUCKET, CDN_URL);
 
   return { uploadUrl, s3Key, publicUrl };
@@ -2035,7 +2036,7 @@ export async function listReferenceImages(
     },
   }));
 
-  return (result.Items || []).map(item => ({
+  return (result.Items || []).map((item: Record<string, any>) => ({
     id: item.id,
     avatarId: item.avatarId,
     category: item.category,

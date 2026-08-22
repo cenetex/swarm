@@ -1,6 +1,6 @@
 # Security Policy
 
-This document describes the security practices for the AWS Swarm project.
+This document describes the security practices for the Swarm project.
 
 ## Dependency Security
 
@@ -94,7 +94,7 @@ If a vulnerability cannot be fixed immediately (e.g., waiting for upstream fix),
 
 | Package | CVE | Severity | Issue | Reason | Target Resolution |
 |---------|-----|----------|-------|--------|-------------------|
-| `bigint-buffer` | CVE-2025-3194 | High (CVSS 7.5) | [GHSA-3gc7-fjrx-p6mg](https://github.com/advisories/GHSA-3gc7-fjrx-p6mg) | Package unmaintained; no patched version available (`patched_versions: <0.0.0`). Transitive dep via `@solana/spl-token > @solana/buffer-layout-utils > bigint-buffer`. The vulnerable `toBigIntLE()` function is not called directly by our code. Even the latest `@solana/spl-token@0.4.14` still depends on this package. Risk accepted: DoS-only impact (CWE-120), no data exfiltration, and the function is only reachable with attacker-controlled buffer sizes in the Solana token layout path. | Re-evaluate 2026-05-01 or when `@solana/spl-token` removes `bigint-buffer` dependency |
+| `bigint-buffer` | CVE-2025-3194 | High (CVSS 7.7) | [GHSA-3gc7-fjrx-p6mg](https://github.com/advisories/GHSA-3gc7-fjrx-p6mg) | Package unmaintained; no patched version available. Transitive dep via `@solana/spl-token > @solana/buffer-layout-utils > bigint-buffer`. The vulnerable API is not called directly by our code. Reviewed 2026-08-21: the latest `@solana/spl-token@0.4.15` depends on `@solana/buffer-layout-utils@^0.3.0`, whose latest release still requires `bigint-buffer@^1.1.5`. Risk accepted: availability-only impact, no data exfiltration, and reachable SPL Token codecs constrain decoding to fixed-width protocol fields such as eight-byte u64 slices. | Re-evaluate 2026-11-19 or when `@solana/spl-token` removes the `bigint-buffer` dependency |
 
 **Resolved CVEs (previously ignored):**
 
@@ -407,7 +407,7 @@ This project follows security best practices including:
 
 ## License
 
-This security policy is part of the AWS Swarm project and follows the same MIT license.
+This security policy is part of the Swarm project and follows the same MIT license.
 
 ---
 

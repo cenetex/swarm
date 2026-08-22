@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from 'aws-lambda';
 
 process.env.INTERNAL_TEST_KEY = 'test-key';
 process.env.ENVIRONMENT = 'staging';
@@ -58,7 +58,7 @@ const listIssuesMock = autoIssues.listIssues as unknown as ReturnType<typeof vi.
 const updateIssueStatusMock = autoIssues.updateIssueStatus as unknown as ReturnType<typeof vi.fn>;
 const authenticateRequestMock = requestAuth.authenticateRequest as unknown as ReturnType<typeof vi.fn>;
 
-function createEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewayProxyEventV2 {
+function createEvent(overrides: Partial<HttpRequest> = {}): HttpRequest {
   return {
     version: '2.0',
     routeKey: '$default',
@@ -86,7 +86,7 @@ function createEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewa
     },
     isBase64Encoded: false,
     ...overrides,
-  } as APIGatewayProxyEventV2;
+  } as HttpRequest;
 }
 
 describe('issues handler auth and parsing hardening', () => {

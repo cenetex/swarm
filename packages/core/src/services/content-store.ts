@@ -19,7 +19,7 @@ import {
   QueryCommand,
   TransactWriteCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { randomUUID, createHash } from 'crypto';
 import type {
   ContentStorePost,

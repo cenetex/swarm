@@ -3,7 +3,7 @@ import {
   GetCommand,
   PutCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { logger } from '@swarm/core';
 import {
   ONBOARDING_CONTRACT_VERSION,

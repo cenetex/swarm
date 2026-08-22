@@ -3,7 +3,7 @@ import {
   QueryCommand,
   TransactWriteCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { getGateStatus } from './nft-gate.js';
 import type { AvatarRecord } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';

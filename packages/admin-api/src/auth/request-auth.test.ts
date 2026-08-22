@@ -1,19 +1,19 @@
 import { describe, it, expect } from 'bun:test';
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from 'aws-lambda';
 
 import { authenticateRequest } from './request-auth.js';
 
-function makeEvent(partial: Partial<APIGatewayProxyEventV2>): APIGatewayProxyEventV2 {
+function makeEvent(partial: Partial<HttpRequest>): HttpRequest {
   return {
     version: '2.0',
     routeKey: 'GET /test',
     rawPath: '/test',
     rawQueryString: '',
     headers: {},
-    requestContext: {} as APIGatewayProxyEventV2['requestContext'],
+    requestContext: {} as HttpRequest['requestContext'],
     isBase64Encoded: false,
     ...partial,
-  } as APIGatewayProxyEventV2;
+  } as HttpRequest;
 }
 
 describe('request auth', () => {

@@ -12,7 +12,7 @@ import {
   DynamoDBDocumentClient,
   GetCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import {
   type RateLimitState,
   type TwitterApiTier,

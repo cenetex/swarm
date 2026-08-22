@@ -7,7 +7,7 @@
  *
  * Flow: Message Processor → Chat Worker Queue → this handler → Response Queue
  */
-import type { SQSEvent, Context } from 'aws-lambda';
+import type { MessageBatch, ExecutionContext } from "@swarm/core";
 import { DEFAULT_AVATAR_CONFIG } from '@swarm/core';
 import {
   createStateService,
@@ -172,7 +172,7 @@ async function getAvatarRuntime(avatarId: string): Promise<AvatarRuntime> {
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
-export const handler = async (event: SQSEvent, context: Context): Promise<{ batchItemFailures: { itemIdentifier: string }[] }> => {
+export const handler = async (event: MessageBatch, context: ExecutionContext): Promise<{ batchItemFailures: { itemIdentifier: string }[] }> => {
   logger.setContext({
     avatarId: 'chat-worker',
     requestId: context.awsRequestId,

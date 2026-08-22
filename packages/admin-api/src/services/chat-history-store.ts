@@ -4,7 +4,7 @@ import {
   PutCommand,
   DeleteCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type { AdminChatMessage, UserSession } from '../types.js';
 
 export interface ChatHistoryRecord {

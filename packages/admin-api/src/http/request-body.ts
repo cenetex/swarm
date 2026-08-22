@@ -1,4 +1,4 @@
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from "@swarm/core";
 import { RequestValidationError } from '../middleware/validate.js';
 
 interface ParseJsonBodyOptions {
@@ -10,7 +10,7 @@ interface ParseJsonBodyOptions {
  * This keeps invalid-body handling consistent (HTTP 400) across handlers.
  */
 export function parseJsonBody<T = Record<string, unknown>>(
-  event: Pick<APIGatewayProxyEventV2, 'body'>,
+  event: Pick<HttpRequest, 'body'>,
   options: ParseJsonBodyOptions = {}
 ): T {
   const raw = event.body;

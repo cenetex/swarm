@@ -1,10 +1,10 @@
+import { SendMessageCommand, SQSClient } from '@swarm/core';
 /**
  * Claude Code Services
  *
  * Service implementation for Claude Code tools.
  * Used by message handlers to enqueue tasks and check job status.
  */
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
@@ -12,7 +12,7 @@ import {
   GetCommand,
   QueryCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type {
   ClaudeCodeQueueMessage,
   ClaudeCodeJobRecord,

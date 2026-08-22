@@ -1,12 +1,12 @@
-# AWS Swarm Design Philosophy
+# Swarm Design Philosophy
 
-This document defines the core design principles that guide all development on AWS Swarm. These principles are non-negotiable and must be followed in all contributions.
+This document defines the core design principles that guide all development on Swarm. These principles are non-negotiable and must be followed in all contributions.
 
 ---
 
 ## Core Principle: Chat is the Interface
 
-**AWS Swarm is chat-first.** The conversational interface is not just a feature—it is the entire product experience. Every user action, configuration change, and administrative operation must flow through the chat.
+**Swarm is chat-first.** The conversational interface is not just a feature—it is the entire product experience. Every user action, configuration change, and administrative operation must flow through the chat.
 
 ### What This Means
 
@@ -403,7 +403,7 @@ If you find yourself:
 
 ## Summary
 
-AWS Swarm is built on a simple but powerful idea: **the chat is the product**.
+Swarm is built on a simple but powerful idea: **the chat is the product**.
 
 Every feature, every configuration, every action flows through natural conversation with an AI that understands context and can take action. This creates a unified, accessible, and intuitive experience that works the same way across all platforms.
 
@@ -411,4 +411,4 @@ When in doubt, ask: "Can the user do this entirely within the chat?" If not, red
 
 ---
 
-*This document is the canonical reference for AWS Swarm design decisions. All contributors must read and follow these principles.*
+*This document is the canonical reference for Swarm design decisions. All contributors must read and follow these principles.*

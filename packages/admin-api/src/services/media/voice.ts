@@ -2,13 +2,14 @@
  * Voice Service
  * Handles transcription, voice profile creation, and TTS generation.
  */
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { InvokeCommand } from '@swarm/core';
 import {
   GetCommand,
   PutCommand,
-} from '@aws-sdk/lib-dynamodb';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+} from '@swarm/core';
+import { PutObjectCommand, GetObjectCommand } from '@swarm/core';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { getLambdaClient, getS3Client } from '../aws-clients.js';
 import { v4 as uuid } from 'uuid';
 import type { AudioAsset, VoiceProfile, AICapability } from '../../types.js';
 import { _getSecretValueInternal } from '../secrets.js';
@@ -24,7 +25,7 @@ import { buildMediaUrl, canonicalizeMediaUrl } from '../../utils/media-url.js';
 const log = createSystemLogger('voice');
 
 const dynamoClient = getDynamoClient();
-const s3Client = new S3Client({});
+const s3Client = getS3Client();
 
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
@@ -133,7 +134,7 @@ type MediaConvertResponse = { success: boolean; url?: string; format?: string; e
 async function convertAudioToOgg(params: { avatarId: string; sourceUrl: string }): Promise<string | null> {
   if (!MEDIA_CONVERT_FUNCTION) return null;
 
-  const client = new LambdaClient({});
+  const client = getLambdaClient();
   const payload = JSON.stringify({
     avatarId: params.avatarId,
     sourceUrl: params.sourceUrl,
@@ -186,7 +187,7 @@ async function makeUrlAccessible(url: string): Promise<string> {
   if (!parsed) return url;
 
   const command = new GetObjectCommand({ Bucket: parsed.bucket, Key: parsed.key });
-  return getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  return getSignedUrl(s3Client as any, command as any, { expiresIn: 3600 });
 }
 
 async function getSecret(avatarId: string, type: 'openai_api_key' | 'replicate_api_key'): Promise<string | null> {

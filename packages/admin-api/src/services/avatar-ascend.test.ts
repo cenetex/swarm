@@ -1,3 +1,4 @@
+import { DynamoDBDocumentClient } from '@swarm/core';
 /**
  * Avatar Ascension Entitlement Tests
  *
@@ -9,7 +10,6 @@
  */
 import { describe, it, expect, beforeEach, afterEach, spyOn, afterAll, mock } from 'bun:test';
 import { PLAN_DEFAULTS, type EntitlementRecord } from '../types.js';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import * as entitlements from './billing/entitlements.js';
 import * as runtimeLimits from './billing/runtime-limits.js';
 import { _setDynamoClient } from './dynamo-client.js';

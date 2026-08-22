@@ -23,10 +23,10 @@
  *   }'
  * ```
  */
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpRequest, HttpResponse } from "@swarm/core";
 import { z } from 'zod';
 import { createHash, randomBytes } from 'crypto';
-import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand, UpdateCommand } from '@swarm/core';
 import { logger, detectEnabledCategories } from '@swarm/core';
 import { processChat } from './chat.js';
 import {
@@ -199,7 +199,7 @@ export function hashApiKey(key: string): string {
 /**
  * Extract API key from Authorization header
  */
-export function extractApiKey(event: APIGatewayProxyEventV2): string | null {
+export function extractApiKey(event: HttpRequest): string | null {
   const authHeader = event.headers['authorization'] || event.headers['Authorization'];
   if (!authHeader) return null;
 
@@ -632,7 +632,7 @@ function jsonResponse(
   statusCode: number,
   body: unknown,
   headers?: Record<string, string>
-): APIGatewayProxyResultV2 {
+): HttpResponse {
   return {
     statusCode,
     headers: {
@@ -649,7 +649,7 @@ function errorResponse(
   type: string = 'invalid_request_error',
   code?: string,
   headers?: Record<string, string>
-): APIGatewayProxyResultV2 {
+): HttpResponse {
   const error: OpenAIError = {
     error: {
       message,
@@ -663,7 +663,7 @@ function errorResponse(
 function apiKeyValidationErrorResponse(
   validation: ApiKeyValidationResult,
   corsHeaders: Record<string, string>
-): APIGatewayProxyResultV2 {
+): HttpResponse {
   const statusCode = validation.statusCode || 401;
   if (statusCode === 429) {
     return errorResponse(
@@ -770,8 +770,8 @@ export async function resolveApiKeyAvatarAccess(
  * Lambda handler for OpenAI-compatible chat completions API
  */
 export async function handler(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   const corsHeaders = getCorsHeaders(event);
   const requestId = event.requestContext.requestId;
 
@@ -815,9 +815,9 @@ export async function handler(
  * GET /v1/models - List available avatars
  */
 async function handleListModels(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   corsHeaders: Record<string, string>
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   // Validate API key
   const apiKey = extractApiKey(event);
   if (!apiKey) {
@@ -933,10 +933,10 @@ async function handleListModels(
  * GET /v1/models/{model_id} - Get detailed info about a specific avatar
  */
 async function handleGetModel(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   modelId: string,
   corsHeaders: Record<string, string>
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   // Validate API key
   const apiKey = extractApiKey(event);
   if (!apiKey) {
@@ -1037,10 +1037,10 @@ async function handleGetModel(
  * POST /v1/chat/completions - Generate a chat completion
  */
 async function handleChatCompletions(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   corsHeaders: Record<string, string>,
   requestId: string
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   // Validate API key
   const apiKey = extractApiKey(event);
   if (!apiKey) {
@@ -1464,7 +1464,7 @@ export function formatStreamingResponse(
     toolCalls?: OpenAIToolCall[];
     finishReason?: ChatCompletionChoice['finish_reason'];
   },
-): APIGatewayProxyResultV2 {
+): HttpResponse {
   let sseBody = '';
   const toolCalls = options?.toolCalls || [];
   const finishReason = options?.finishReason || (toolCalls.length > 0 ? 'tool_calls' : 'stop');
@@ -1568,7 +1568,7 @@ export function formatStreamingError(
   model: string,
   errorMessage: string,
   corsHeaders: Record<string, string>,
-): APIGatewayProxyResultV2 {
+): HttpResponse {
   let sseBody = '';
 
   // Emit an error as a chunk with empty content and a stop reason

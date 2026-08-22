@@ -11,7 +11,7 @@
  * Uses the same DynamoDB tables (STATE_TABLE, ADMIN_TABLE) and key patterns
  * as the Telegram home-channel module but scoped to Discord.
  */
-import { GetCommand, PutCommand, UpdateCommand, QueryCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand, UpdateCommand, QueryCommand, DeleteCommand } from '@swarm/core';
 import { logger, type AvatarConfig } from '@swarm/core';
 import { getDynamoClient } from '../services/dynamo-client.js';
 

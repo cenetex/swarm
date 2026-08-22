@@ -35,7 +35,7 @@
     "failedToLoad": "加载失败"
   },
   "auth": {
-    "loginWithPrivy": "使用 Privy 登录",
+    "loginWithPrivy": "登录",
     "creatingWallet": "正在创建钱包...",
     "syncing": "同步中...",
     "connecting": "连接中...",

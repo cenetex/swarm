@@ -8,7 +8,7 @@ import {
   DynamoDBDocumentClient,
   PutCommand,
   QueryCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type { Platform, ResponseAction } from '../types/index.js';
 
 export interface ActivityEvent {

@@ -17,8 +17,9 @@
 import WebSocket from 'ws';
 import { sendSqsMessage } from '../services/sqs-send.js';
 import { processSharedRoomMessage, buildRoomKey, isSharedRoom, registerChannelAvatarResolver } from '../services/room-ingress.js';
-import { SQSClient, GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { GetQueueAttributesCommand } from '@swarm/core';
+import { GetSecretValueCommand } from '@swarm/core';
+import { getSQSClient, getSecretsClient } from '../services/aws-clients.js';
 import { randomUUID } from 'node:crypto';
 import {
   assertAvatarStillOwnedByClaimer,
@@ -81,7 +82,7 @@ const DEFAULT_INTENTS = INTENT_GUILDS | INTENT_GUILD_VOICE_STATES | INTENT_GUILD
 
 // ─── Shared Clients ──────────────────────────────────────────────────────────
 
-const secretsClient = new SecretsManagerClient({});
+const secretsClient = getSecretsClient();
 const stateService = createStateService(STATE_TABLE);
 const activityService = ACTIVITY_TABLE ? createActivityService(ACTIVITY_TABLE) : null;
 const voiceStateTracker = new DiscordVoiceStateTracker();
@@ -1572,7 +1573,7 @@ function resolveGatewayIntents(avatars: DiscordAvatarBinding[]): number {
  * instead of silently dropping messages at runtime.
  */
 async function verifyQueueReachable(queueUrl: string): Promise<void> {
-  const sqsClient = new SQSClient({});
+  const sqsClient = getSQSClient();
   try {
     await sqsClient.send(new GetQueueAttributesCommand({
       QueueUrl: queueUrl,
@@ -1625,7 +1626,7 @@ async function verifyQueueReachable(queueUrl: string): Promise<void> {
       errorMessage,
     });
   } finally {
-    sqsClient.destroy();
+    sqsClient.destroy?.();
   }
 }
 

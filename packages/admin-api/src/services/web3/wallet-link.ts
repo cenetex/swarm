@@ -2,7 +2,7 @@ import {
   type DynamoDBDocumentClient,
   PutCommand,
   DeleteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { randomBytes } from 'crypto';
 import { verifySignature } from '../wallet-auth.js';
 import {

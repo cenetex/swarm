@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 
 // ── Guard against global mock pollution ────────────────────────────────────
 // bun:test mock.module is process-global and persistent. Another test file

@@ -1,8 +1,8 @@
 # Portfolio-Inspired Roadmap
 
-This document explains how dormant portfolio projects should influence the active `aws-swarm` roadmap.
+This document explains how dormant portfolio projects should influence the active `swarm` roadmap.
 
-`aws-swarm` is the product. `firehorse`, `kyro`, and `cosyworld` are input signals. They do not carry independent delivery roadmaps unless explicitly reactivated.
+`swarm` is the product. `firehorse`, `kyro`, and `cosyworld` are input signals. They do not carry independent delivery roadmaps unless explicitly reactivated.
 
 **Last reviewed:** 2026-03-16
 
@@ -12,7 +12,7 @@ This document explains how dormant portfolio projects should influence the activ
 
 Use this document during roadmap reviews and issue triage to answer one question:
 
-How should insights from the broader avatar portfolio change what `aws-swarm` builds next?
+How should insights from the broader avatar portfolio change what `swarm` builds next?
 
 The intended result is a stronger Swarm roadmap, not a portfolio museum.
 
@@ -20,14 +20,14 @@ The intended result is a stronger Swarm roadmap, not a portfolio museum.
 
 | Project | Portfolio role | What it contributes to Swarm | What it should not do |
 | --- | --- | --- | --- |
-| `aws-swarm` | Active product | Revenue engine, managed platform, shared-room runtime, memory governance, deployment system | Absorb speculative experiments into the core before they are validated |
+| `swarm` | Active product | Revenue engine, managed platform, shared-room runtime, memory governance, deployment system | Absorb speculative experiments into the core before they are validated |
 | `firehorse` | Dormant custom-delivery reference | Sellability signal, white-label deployment patterns, public-channel behavior, noisy-chat memory synthesis | Become a parallel product roadmap |
 | `kyro` | Dormant R&D reference | Identity continuity, cross-platform memory, user-controlled memory concepts, trust surfaces | Define the default commercial story for Swarm |
 | `cosyworld` | Dormant framework reference | Presence, initiative, affinity, cast behavior, richer avatar sociality | Pull Swarm into unconstrained simulation by default |
 
 ## Product Thesis
 
-`aws-swarm` should become the managed operating system for AI avatars:
+`swarm` should become the managed operating system for AI avatars:
 
 - deterministic shared-room coordination
 - multi-platform runtime and deployment
@@ -170,7 +170,7 @@ Labs ideas should only enter `Roadmap: Later` after:
 
 ## Sequencing View
 
-This is the recommended portfolio-informed order of investment for `aws-swarm` once current operational hardening work is under control.
+This is the recommended portfolio-informed order of investment for `swarm` once current operational hardening work is under control.
 
 1. Productization and deployment velocity
 2. Identity and memory continuity

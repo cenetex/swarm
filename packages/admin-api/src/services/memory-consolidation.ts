@@ -181,7 +181,7 @@ Respond with ONLY the statement, nothing else.`;
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${llmApiKey}`,
           'HTTP-Referer': 'https://swarm.rati.chat',
-          'X-Title': 'AWS Swarm Memory Consolidation',
+          'X-Title': 'Swarm Memory Consolidation',
         },
         body: JSON.stringify(body),
       });
@@ -365,7 +365,7 @@ export async function consolidateAvatar(
 async function getAvatarsNeedingConsolidation(limit: number): Promise<string[]> {
   // Import dynamically to avoid circular dependency
   const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb');
-  const { DynamoDBDocumentClient, ScanCommand } = await import('@aws-sdk/lib-dynamodb');
+  const { DynamoDBDocumentClient, ScanCommand } = await import('@swarm/core');
 
   const ADMIN_TABLE = process.env.ADMIN_TABLE;
   if (!ADMIN_TABLE) {

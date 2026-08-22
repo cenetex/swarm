@@ -3,11 +3,11 @@
  * Handles async media generation (image/video) completion callbacks from Replicate
  */
 import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResultV2,
-} from 'aws-lambda';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+  HttpRequest,
+  HttpResponse,
+} from "@swarm/core";
+import { PutObjectCommand } from '@swarm/core';
+import { SendMessageCommand } from '@swarm/core';
 import { createHmac, timingSafeEqual } from 'crypto';
 import * as mediaJobs from '../services/media-jobs.js';
 import * as gallery from '../services/gallery.js';
@@ -18,9 +18,10 @@ import { parseJsonBody } from '../http/request-body.js';
 import { isRequestValidationError } from '../middleware/validate.js';
 import type { MediaJob } from '../types.js';
 import { buildMediaUrl } from '../utils/media-url.js';
+import { getS3Client, getSQSClient } from '../services/aws-clients.js';
 
-const s3Client = new S3Client({});
-const sqsClient = new SQSClient({});
+const s3Client = getS3Client();
+const sqsClient = getSQSClient();
 
 const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
 const CDN_URL = process.env.CDN_URL;
@@ -87,8 +88,8 @@ function getMediaTypeInfo(jobType: MediaJob['type']): { extension: string; conte
  * Lambda handler for Replicate webhook callbacks
  */
 export async function handler(
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest
+): Promise<HttpResponse> {
   logger.setContext({ subsystem: 'replicate' });
   logger.info('Replicate webhook received', { body: event.body });
 

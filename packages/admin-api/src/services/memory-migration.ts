@@ -10,7 +10,7 @@ import {
   type DynamoDBDocumentClient,
   UpdateCommand,
   QueryCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { logger } from '@swarm/core';
 import { getDynamoClient as getSharedDynamoClient } from './dynamo-client.js';
 import {

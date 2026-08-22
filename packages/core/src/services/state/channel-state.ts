@@ -1,5 +1,4 @@
-import { GetCommand, PutCommand, UpdateCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '../../commands/index.js';
 import type {
   ChannelState,
   ChannelStateMachine,
@@ -196,24 +195,31 @@ export async function addMessageToChannel(
   const ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
   const isDirect = Boolean(message.isMention || message.isReplyToBot);
 
-  // #1552 — idempotency guard. FIFO queue groups by conversationId so
-  // reads/writes for the same conversation are serialized; a plain
-  // read-then-skip here is race-free for our access pattern. Falls through
-  // (non-blocking) if the read errors — worst case a duplicate append,
-  // which is the current behavior.
+  // #1552 — idempotency guard using a DynamoDB dedup key to prevent
+  // duplicate appends across SQS redeliveries and concurrent writes from
+  // different queues.  The dedup key TTL (1 hour) exceeds the maximum
+  // SQS visibility timeout so redeliveries are always caught.
+  const dedupSk = `DEDUP#${channelId}#${message.messageId}`;
+  const dedupKey = { pk: `AVATAR#${avatarId}`, sk: dedupSk };
   try {
-    const existing = await getChannelState(docClient, tableName, avatarId, channelId);
-    if (
-      existing?.recentMessages &&
-      message.messageId &&
-      existing.recentMessages.some(m => m.messageId === message.messageId)
-    ) {
-      // Already recorded. No-op.
-      return existing;
+    await docClient.send(new PutCommand({
+      TableName: tableName,
+      Item: {
+        ...dedupKey,
+        ttl: Math.floor(now / 1000) + 3600,
+      },
+      ConditionExpression: 'attribute_not_exists(pk)',
+    }));
+  } catch (err: unknown) {
+    if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
+      // Already recorded: fetch current state to return a consistent snapshot.
+      const existing = await getChannelState(docClient, tableName, avatarId, channelId);
+      if (existing) return existing;
     }
-  } catch {
-    // Fall through — better to double-append than to fail the inbound path.
+    // Non-duplicate errors (e.g. transient DynamoDB faults) fall through
+    // so the inbound path isn't blocked by the dedup guard.
   }
+
 
   // Data minimization: truncate message content stored in channel state buffers.
   // Full content is available in CloudWatch logs for debugging; the state buffer
@@ -375,7 +381,10 @@ export async function addMessageToChannel(
 }
 
 /**
- * Transition channel to a new state
+ * Transition channel to a new state.
+ *
+ * Uses UpdateCommand to avoid overwriting recentMessages set by concurrent
+ * addMessageToChannel calls (different SQS queues).  #1723.
  */
 export async function transitionState(
   docClient: DynamoDBDocumentClient,
@@ -388,18 +397,53 @@ export async function transitionState(
   if (!current) return null;
 
   const now = Date.now();
-  current.state = newState;
-  current.stateChangedAt = now;
-  current.ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
+  const ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
 
-  await updateChannelState(docClient, tableName, current);
-  return current;
+  const response = await docClient.send(new UpdateCommand({
+    TableName: tableName,
+    Key: {
+      pk: `AVATAR#${avatarId}`,
+      sk: `CHANNEL#${channelId}#STATE`,
+    },
+    ConditionExpression: 'attribute_exists(pk)',
+    UpdateExpression: 'SET #state = :state, stateChangedAt = :now, #ttl = :ttl, updatedAt = :now',
+    ExpressionAttributeNames: { '#state': 'state', '#ttl': 'ttl' },
+    ExpressionAttributeValues: { ':state': newState, ':now': now, ':ttl': ttl },
+    ReturnValues: 'ALL_NEW',
+  }));
+
+  if (!response.Attributes) {
+    console.error('[State] DynamoDB UpdateCommand (transitionState) returned no Attributes');
+    throw new Error('DynamoDB UpdateCommand (transitionState) returned no Attributes');
+  }
+
+  return {
+    avatarId: response.Attributes.avatarId ?? avatarId,
+    channelId: response.Attributes.channelId ?? channelId,
+    platform: response.Attributes.platform,
+    recentMessages: response.Attributes.recentMessages ?? [],
+    lastActivityAt: response.Attributes.lastActivityAt ?? now,
+    messageCount: response.Attributes.messageCount ?? 0,
+    state: response.Attributes.state ?? newState,
+    stateChangedAt: response.Attributes.stateChangedAt,
+    chatType: response.Attributes.chatType,
+    chatTitle: response.Attributes.chatTitle,
+    lastResponseAt: response.Attributes.lastResponseAt,
+    lastResponseMessageId: response.Attributes.lastResponseMessageId,
+    pendingResponseAt: response.Attributes.pendingResponseAt,
+    directEngagementAt: response.Attributes.directEngagementAt,
+    engagedUsers: response.Attributes.engagedUsers,
+    followUpCountByWindow: response.Attributes.followUpCountByWindow,
+    ttl: response.Attributes.ttl,
+  };
 }
-
 /**
  * Mark response sent - transitions to COOLDOWN
  * Note: recentMessages is NOT cleared here to preserve conversation history
  * for context in future interactions. Buffer trimming is handled by addMessageToChannel.
+ *
+ * Uses UpdateCommand to avoid overwriting recentMessages set by concurrent
+ * addMessageToChannel calls (different SQS queues).  #1723.
  *
  * If this is an engaged_user response, increments the follow-up count for the current window.
  */
@@ -415,13 +459,7 @@ export async function markResponseSent(
   if (!current) return null;
 
   const now = Date.now();
-  current.state = 'COOLDOWN';
-  current.stateChangedAt = now;
-  current.lastResponseAt = now;
-  current.lastResponseMessageId = responseMessageId;
-  current.pendingResponseAt = undefined;
-  // Keep recentMessages intact for conversation history/context
-  current.ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
+  const ttl = Math.floor(now / 1000) + CHANNEL_CONFIG.BUFFER_TTL_SECONDS;
 
   // Follow-up cap bookkeeping (#1534). Per-window counter keyed by
   // `windowStart = engagedUntil - ENGAGEMENT_WINDOW_MS`. Only engaged_user
@@ -440,22 +478,82 @@ export async function markResponseSent(
     }
   }
 
-  // Prune stale window entries (end time already passed) so the map can't grow.
+  // Build an UpdateCommand that only touches metadata fields so
+  // concurrent addMessageToChannel calls (which use UpdateCommand to
+  // append to recentMessages) are not overwritten.  #1723.
+  const setParts: string[] = [
+    '#state = :cooldown',
+    'stateChangedAt = :now',
+    'lastResponseAt = :now',
+    'lastResponseMessageId = :rid',
+    '#ttl = :ttl',
+    'updatedAt = :now',
+  ];
+  const removeParts: string[] = ['pendingResponseAt'];
+  const names: Record<string, string> = { '#state': 'state', '#ttl': 'ttl' };
+  const values: Record<string, unknown> = {
+    ':cooldown': 'COOLDOWN',
+    ':now': now,
+    ':rid': responseMessageId,
+    ':ttl': ttl,
+  };
+
+  // Prune stale window entries and compute the final followUpCountByWindow map.
   if (current.followUpCountByWindow) {
     const pruned: Record<number, number> = {};
     for (const [startStr, count] of Object.entries(current.followUpCountByWindow)) {
-      const windowStart = Number(startStr);
-      const windowEnd = windowStart + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS;
-      if (windowEnd > now) pruned[windowStart] = count;
+      const ws = Number(startStr);
+      if (ws + CHANNEL_CONFIG.ENGAGEMENT_WINDOW_MS > now) pruned[ws] = count;
     }
-    current.followUpCountByWindow =
-      Object.keys(pruned).length > 0 ? pruned : undefined;
+    if (Object.keys(pruned).length > 0) {
+      setParts.push('followUpCountByWindow = :fw');
+      values[':fw'] = pruned;
+    } else {
+      removeParts.push('followUpCountByWindow');
+    }
   }
 
-  await updateChannelState(docClient, tableName, current);
-  return current;
-}
+  const updateExpr = `SET ${setParts.join(', ')}`
+    + (removeParts.length > 0 ? ` REMOVE ${removeParts.join(', ')}` : '');
 
+  const response = await docClient.send(new UpdateCommand({
+    TableName: tableName,
+    Key: {
+      pk: `AVATAR#${avatarId}`,
+      sk: `CHANNEL#${channelId}#STATE`,
+    },
+    ConditionExpression: 'attribute_exists(pk)',
+    UpdateExpression: updateExpr,
+    ExpressionAttributeNames: names,
+    ExpressionAttributeValues: values,
+    ReturnValues: 'ALL_NEW',
+  }));
+
+  if (!response.Attributes) {
+    console.error('[State] DynamoDB UpdateCommand (markResponseSent) returned no Attributes');
+    throw new Error('DynamoDB UpdateCommand (markResponseSent) returned no Attributes');
+  }
+
+  return {
+    avatarId: response.Attributes.avatarId ?? avatarId,
+    channelId: response.Attributes.channelId ?? channelId,
+    platform: response.Attributes.platform,
+    recentMessages: response.Attributes.recentMessages ?? [],
+    lastActivityAt: response.Attributes.lastActivityAt ?? now,
+    messageCount: response.Attributes.messageCount ?? 0,
+    state: response.Attributes.state ?? 'COOLDOWN',
+    stateChangedAt: response.Attributes.stateChangedAt,
+    chatType: response.Attributes.chatType,
+    chatTitle: response.Attributes.chatTitle,
+    lastResponseAt: response.Attributes.lastResponseAt,
+    lastResponseMessageId: response.Attributes.lastResponseMessageId,
+    pendingResponseAt: response.Attributes.pendingResponseAt,
+    directEngagementAt: response.Attributes.directEngagementAt,
+    engagedUsers: response.Attributes.engagedUsers,
+    followUpCountByWindow: response.Attributes.followUpCountByWindow,
+    ttl: response.Attributes.ttl,
+  };
+}
 /**
  * Check if cooldown has expired
  */

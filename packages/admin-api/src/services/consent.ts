@@ -26,7 +26,7 @@ import {
   PutCommand,
   QueryCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { createHash } from 'crypto';
 import { getDynamoClient } from './dynamo-client.js';
 

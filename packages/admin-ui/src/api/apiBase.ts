@@ -29,6 +29,9 @@ export function getApiBase(): string {
   // Default for deployed Admin UI: same-origin proxy.
   if (typeof window !== 'undefined' && window.location?.host) {
     const host = window.location.host;
+    if (host.startsWith("localhost") || host.startsWith("127.0.0.1")) {
+      return "/api";
+    }
     if (/^admin[-.]/.test(host) || host.endsWith('.rati.chat')) {
       return '/api';
     }

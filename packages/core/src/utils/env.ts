@@ -221,7 +221,6 @@ export const AdminApiEnvSchema = BaseEnvSchema.extend({
   LLM_MAX_TOKENS: optionalNumber,
 
   /** Privy app ID for auth */
-  PRIVY_APP_ID: optionalString,
 
   /** Session cookie name override */
   SESSION_COOKIE_NAME: optionalString,

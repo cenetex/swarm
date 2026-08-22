@@ -9,10 +9,13 @@ import {
   ScanCommand,
   UpdateCommand,
   TransactWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
+  PutSecretValueCommand,
+} from '@swarm/core';
 import { DEFAULT_LLM_MODEL, DEFAULT_LLM_PROVIDER, DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_MAX_TOKENS } from '@swarm/core';
 import type { AvatarRecord, UserSession } from '../types.js';
 import { syncAvatarConfig } from './config-sync.js';
+import { getSecretsClient } from './aws-clients.js';
+import { generateAgentKeypair, toBase58, toBase64 } from '@swarm/core';
 import {
   getGateStatus,
   decrementCreatorCount,
@@ -81,12 +84,32 @@ export async function createAvatar(
   const avatarId = generateAvatarId(name);
   const now = Date.now();
 
+  // Generate Ed25519 identity keypair
+  const keypair = generateAgentKeypair();
+  const pubkey = toBase58(keypair.pubkey);
+  // Store the encrypted seed via secrets service
+  const secretName = `avatar/${avatarId}/identity-seed`;
+  const secretsClient = getSecretsClient();
+  try {
+    await secretsClient.send(new PutSecretValueCommand({
+      SecretId: secretName,
+      SecretString: toBase64(keypair.seed),
+    }));
+  } catch (err) {
+    // Fall back to storing base64 in the record if secrets client is unavailable
+    log.warn('identity', 'seed_secret_store_failed', { error: (err as Error).message });
+  }
+
   const avatar: AvatarRecord = {
     pk: `AVATAR#${avatarId}`,
     sk: 'CONFIG',
     avatarId,
     name,
     description,
+    identity: {
+      pubkey,
+      derivation: { type: "random" },
+    },
     platforms: {},
     voiceConfig: {
       enabled: true,

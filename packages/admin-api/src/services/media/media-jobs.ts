@@ -9,18 +9,19 @@ import {
   UpdateCommand,
   ScanCommand,
   TransactWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+} from '@swarm/core';
+import { PutObjectCommand } from '@swarm/core';
 import type { MediaJob } from '../../types.js';
 import * as gallery from './gallery.js';
 import { getDynamoClient } from '../dynamo-client.js';
 import { createSystemLogger } from '../structured-logger.js';
 import { buildMediaUrl } from '../../utils/media-url.js';
+import { getS3Client } from '../aws-clients.js';
 
 const log = createSystemLogger('media-jobs');
 
 const dynamoClient = getDynamoClient();
-const s3Client = new S3Client({});
+const s3Client = getS3Client();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
 const CDN_URL = process.env.CDN_URL;

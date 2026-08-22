@@ -11,7 +11,7 @@ import {
   GetCommand,
   PutCommand,
   TransactWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { createTelegramBindingStore } from './telegram-binding.js';
 

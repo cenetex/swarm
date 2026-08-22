@@ -11,6 +11,9 @@ export * from './constants.js';
 // Types
 export * from './types/index.js';
 
+// Hosted platform contracts
+export * from './hosted/index.js';
+
 // Errors
 export * from './errors/index.js';
 

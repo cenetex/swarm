@@ -2,7 +2,7 @@
  * Integrations Service
  * Unified configuration and status management for all integrations.
  */
-import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { UpdateCommand } from '@swarm/core';
 import {
   normalizeOpenRouterMediaCapability,
   resolveDefaultOpenRouterMediaModel,
@@ -21,11 +21,11 @@ export type { IntegrationType, AICapability };
 import { getAvatar } from '../avatars.js';
 import { _getSecretValueInternal, secretExists, storeSecret } from '../secrets.js';
 import { getDefaultModel, getModelsForCapability, type ModelInfo } from '../models-registry.js';
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { GetSecretValueCommand } from '@swarm/core';
+import { getSecretsClient } from '../aws-clients.js';
 import { getDynamoClient } from '../dynamo-client.js';
 import { hasSystemOpenRouterApiKey } from '../openrouter-key.js';
 
-const dynamoClient = getDynamoClient();
 const ADMIN_TABLE = process.env.ADMIN_TABLE!;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -98,7 +98,7 @@ async function hasSystemReplicateKeyConfigured(): Promise<boolean> {
   }
 
   try {
-    const client = new SecretsManagerClient({});
+    const client = getSecretsClient();
     const resp = await client.send(new GetSecretValueCommand({ SecretId: arn }));
     const raw = (resp.SecretString || '').trim();
     const parsed = raw ? parseReplicateApiKeyFromJson(raw) : undefined;
@@ -432,7 +432,7 @@ export async function configureIntegration(params: ConfigureIntegrationParams): 
 
   const update = builder.build();
 
-  await dynamoClient.send(
+  await getDynamoClient().send(
     new UpdateCommand({
       TableName: ADMIN_TABLE,
       Key: { pk: `AVATAR#${avatarId}`, sk: 'CONFIG' },
@@ -450,7 +450,7 @@ export async function setIntegrationEnabled(
   enabled: boolean,
   session: UserSession
 ): Promise<void> {
-  await dynamoClient.send(
+  await getDynamoClient().send(
     new UpdateCommand({
       TableName: ADMIN_TABLE,
       Key: { pk: `AVATAR#${avatarId}`, sk: 'CONFIG' },
@@ -492,7 +492,7 @@ export async function setModelPreference(
     .set('updatedBy', session.email)
     .build();
 
-  await dynamoClient.send(
+  await getDynamoClient().send(
     new UpdateCommand({
       TableName: ADMIN_TABLE,
       Key: { pk: `AVATAR#${avatarId}`, sk: 'CONFIG' },

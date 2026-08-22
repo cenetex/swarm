@@ -3,7 +3,7 @@
  * Handles public access rate limiting for the admin chat handler.
  * Uses daily limits based on Orb NFT ownership.
  */
-import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, UpdateCommand } from '@swarm/core';
 import { logger } from '@swarm/core';
 import { getDynamoClient } from '../services/dynamo-client.js';
 

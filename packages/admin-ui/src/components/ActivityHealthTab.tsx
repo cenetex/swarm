@@ -1,8 +1,8 @@
 /**
  * Activity / Health tab — aggregator for the workspace right-pane (#1639).
  *
- * Composes PlanUsagePanel, UsageMeterPanel, and EnergyPanel into one
- * scrollable view. Replaces the `planUsagePanelOpen` inline panel and the
+ * Composes UsageMeterPanel and EnergyPanel into one scrollable view.
+ * Replaces the `planUsagePanelOpen` inline panel and the
  * scattered admin-only EnergyPanel / UsageMeter mounts that previously
  * lived in different parts of the chat surface.
  *
@@ -15,18 +15,17 @@ import { useActiveAvatar } from '../store';
 import { useAuth } from '../store/auth';
 
 // Lazy-load heavy children — keeps the Activity tab cheap to mount.
-const PlanUsagePanel = lazy(() => import('./PlanUsagePanel').then(m => ({ default: m.PlanUsagePanel })));
 const UsageMeterPanel = lazy(() => import('./UsageMeterPanel').then(m => ({ default: m.UsageMeterPanel })));
 const EnergyPanel = lazy(() => import('./EnergyPanel').then(m => ({ default: m.EnergyPanel })));
 
 interface ActivityHealthTabProps {
-  /** Workspace close callback — used by PlanUsagePanel's internal close button. */
+  /** Workspace close callback retained for the workspace tab contract. */
   onClose: () => void;
-  /** Pre-filled invite code (e.g., from ?invite=DP-XXXX-XXXX query param). */
+  /** Pre-filled invite code retained for the workspace tab contract. */
   initialInviteCode?: string;
 }
 
-export function ActivityHealthTab({ onClose, initialInviteCode }: ActivityHealthTabProps) {
+export function ActivityHealthTab({ onClose: _onClose, initialInviteCode: _initialInviteCode }: ActivityHealthTabProps) {
   const activeAvatar = useActiveAvatar();
   const { account } = useAuth();
   const canEdit = account?.role === 'admin';
@@ -42,22 +41,6 @@ export function ActivityHealthTab({ onClose, initialInviteCode }: ActivityHealth
 
   return (
     <div className="flex flex-col gap-4 -mx-1">
-      {/* Plan & Usage — entitlements, meters, billing, invite redemption */}
-      <section className="space-y-2">
-        <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-tertiary)]">
-          Plan &amp; Usage
-        </h3>
-        <Suspense fallback={null}>
-          <PlanUsagePanel
-            avatarId={activeAvatar.id}
-            avatarName={activeAvatar.name}
-            canEdit={canEdit}
-            onClose={onClose}
-            initialInviteCode={initialInviteCode}
-          />
-        </Suspense>
-      </section>
-
       {/* Usage Meter — concise per-meter view */}
       <section className="space-y-2">
         <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-tertiary)]">

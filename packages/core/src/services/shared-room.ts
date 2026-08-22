@@ -5,7 +5,7 @@ import {
   QueryCommand,
   GetCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type {
   SharedRoomState,
   SharedRoomMessage,

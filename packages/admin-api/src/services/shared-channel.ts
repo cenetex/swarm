@@ -22,7 +22,7 @@ import {
   QueryCommand,
   UpdateCommand,
   DeleteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type { SharedChannelRecord } from '../types.js';
 import { generateAvatarStats } from './avatar-stats.js';
 import { getDynamoClient } from './dynamo-client.js';

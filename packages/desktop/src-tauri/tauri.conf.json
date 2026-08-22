@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
+  "productName": "Swarm",
+  "version": "1.0.0",
+  "identifier": "chat.swarm.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "bun run dev",
+    "beforeBuildCommand": "bun run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Swarm",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/swarm-server"
+    ],
+    "resources": [
+      "admin-ui/**/*"
+    ],
+    "copyright": "",
+    "category": "DeveloperTool",
+    "shortDescription": "Local-first AI avatar swarm",
+    "longDescription": "Run your AI avatar swarm entirely locally \u2014 no AWS, no cloud, no .env files. SQLite backend, encrypted secrets, everything under your control."
+  }
+}

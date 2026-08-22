@@ -1,3 +1,4 @@
+import { AuthError, SwarmErrorCode } from '@swarm/core';
 /**
  * Tests for authentication error handling in the chat handler.
  *
@@ -8,7 +9,6 @@
  * - Valid auth proceeds normally (no 401)
  */
 import { describe, test, expect } from 'bun:test';
-import { AuthError, SwarmErrorCode } from '@swarm/core';
 import { mapAdminChatHandlerError } from './chat-error-mapping.js';
 
 describe('mapAdminChatHandlerError - 401 auth errors', () => {

@@ -1,6 +1,6 @@
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from "@swarm/core";
 
-function getHeader(event: APIGatewayProxyEventV2, name: string): string | undefined {
+function getHeader(event: HttpRequest, name: string): string | undefined {
   const direct = event.headers?.[name];
   if (direct) return direct;
   const lower = name.toLowerCase();
@@ -26,7 +26,7 @@ export interface CorsOptions {
 }
 
 export function getCorsHeaders(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   options: CorsOptions = {}
 ): Record<string, string> {
   const origin = getHeader(event, 'origin') || '';

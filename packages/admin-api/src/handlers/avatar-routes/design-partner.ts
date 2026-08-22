@@ -13,7 +13,7 @@
  * Chat-first philosophy: the redeem endpoint is called via the admin AI chat
  * when a user says something like "I have an invite code: DP-XXXX-XXXX".
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 import { jsonResponse } from './shared.js';
 import { parseJsonBody } from '../../http/request-body.js';
@@ -25,7 +25,7 @@ import * as auditLogService from '../../services/audit-log.js';
 
 export async function handleDesignPartnerRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, event, corsHeaders, walletAddress, effectiveIsAdmin, session } = ctx;
 
   // ── POST /design-partners/invites — Create invite code (admin-only) ─────

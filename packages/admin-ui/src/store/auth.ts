@@ -17,24 +17,6 @@ import { API_BASE } from '../api/apiBase';
 import type { GateStatus } from './gateStatus';
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-async function readErrorMessage(response: Response): Promise<string> {
-  try {
-    const data = (await response.json()) as { error?: string; message?: string };
-    return data.error || data.message || response.statusText || `Request failed (${response.status})`;
-  } catch {
-    try {
-      const text = await response.text();
-      return text || response.statusText || `Request failed (${response.status})`;
-    } catch {
-      return response.statusText || `Request failed (${response.status})`;
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
@@ -76,11 +58,6 @@ interface AuthState {
   walletError: string | null;
 
   // Actions – backend sync
-  syncWithBackend: (accessToken: string, privyUser: {
-    id: string;
-    email?: string;
-    walletAddress?: string;
-  }, options?: { force?: boolean }) => Promise<void>;
 
   // Actions – session lifecycle
   logout: () => Promise<void>;
@@ -120,70 +97,9 @@ const UNAUTHENTICATED_STATE = {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set, _get) => ({
       ...UNAUTHENTICATED_STATE,
 
-      // -- Backend sync (Privy) -----------------------------------------------
-
-      syncWithBackend: async (accessToken, privyUser, options) => {
-        const walletAddress = privyUser.walletAddress;
-        if (!walletAddress) {
-          console.warn('[AuthStore] Wallet address not available yet; skipping backend sync');
-          return;
-        }
-
-        const state = get();
-        if (!options?.force && state.isLoading) return;
-        if (!options?.force && state.isAuthenticated && state.user?.walletAddress === walletAddress) return;
-
-        set({ isLoading: true, error: null });
-        try {
-          const response = await fetch(`${API_BASE}/auth/privy/verify`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              accessToken,
-              userId: privyUser.id,
-              email: privyUser.email,
-              walletAddress,
-            }),
-            credentials: 'include',
-          });
-
-          if (!response.ok) {
-            const message = await readErrorMessage(response);
-            throw new Error(message || 'Failed to verify with backend');
-          }
-
-          const data = await response.json();
-          if (data.success && data.user) {
-            set({
-              isAuthenticated: true,
-              authProvider: 'privy',
-              user: {
-                id: privyUser.id,
-                email: privyUser.email,
-                walletAddress: data.user.walletAddress,
-                displayName: data.user.displayName || privyUser.email,
-                avatarUrl: data.user.avatarUrl,
-              },
-              account: data.account || null,
-              gateWallet: data.gateWallet || null,
-              gateStatusByWallet: data.gateStatusByWallet || null,
-              gateStatus: data.gateStatus || null,
-              isLoading: false,
-            });
-          } else {
-            throw new Error('Backend verification failed');
-          }
-        } catch (error) {
-          console.error('[AuthStore] Sync error:', error instanceof Error ? error.message : String(error));
-          set({
-            ...UNAUTHENTICATED_STATE,
-            error: error instanceof Error ? error.message : 'Authentication failed',
-          });
-        }
-      },
 
       // -- Account refresh (e.g. after linking a wallet) ----------------------
 
@@ -296,16 +212,6 @@ export function useAuth() {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Backward-compat alias
-// ---------------------------------------------------------------------------
-
-/**
- * @deprecated Use `useAuthStore` directly. This alias exists so that
- * call-sites that previously imported `usePrivyAuth` continue to work
- * during the migration window.
- */
-export const usePrivyAuth = useAuthStore;
 
 // Re-export types for convenience
 export type { GateStatus };

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { HttpRequest } from 'aws-lambda';
 
 let statusResponse: { statusCode: number; envelope: Record<string, unknown> };
 let executeResponse: { statusCode: number; envelope: Record<string, unknown> };
@@ -32,7 +32,7 @@ vi.mock('../../services/onboarding/index.js', () => ({
 
 import { handleOnboardingAvatarRoutes } from './onboarding.js';
 
-function makeEvent(method: string, path: string, headers?: Record<string, string>): APIGatewayProxyEventV2 {
+function makeEvent(method: string, path: string, headers?: Record<string, string>): HttpRequest {
   return {
     version: '2.0',
     routeKey: `${method} ${path}`,
@@ -53,7 +53,7 @@ function makeEvent(method: string, path: string, headers?: Record<string, string
     },
     isBase64Encoded: false,
     body: undefined,
-  } as unknown as APIGatewayProxyEventV2;
+  } as unknown as HttpRequest;
 }
 
 function parseBody(result: { body?: string }): unknown {

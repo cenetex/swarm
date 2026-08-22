@@ -1,3 +1,4 @@
+import { GetSecretValueCommand, SecretsManagerClient } from '../commands/index.js';
 /**
  * Blog Posting Service
  *
@@ -7,7 +8,6 @@
  *
  * Supports cross-posting to multiple platforms including Substack.
  */
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { logger } from '../utils/logger.js';
 import { publishToSubstack, markdownToSubstackHtml, type SubstackPublishConfig } from './publishers/substack-publisher.js';
 

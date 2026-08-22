@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearOpenRouterMediaCatalogCache } from '@swarm/core';
 import type { UserSession } from '../../types.js';
 import { _setDynamoClient } from '../dynamo-client.js';
+import { clearOpenRouterMediaCatalogCache } from '@swarm/core';
 
 process.env.ADMIN_TABLE = 'AdminTable';
 process.env.OPENROUTER_MEDIA_CATALOG_TTL_MS = '1';
@@ -51,24 +51,27 @@ const session: UserSession = {
 };
 
 function integrationsValue(): Record<string, unknown> {
-  const command = mockSend.mock.calls.at(-1)?.[0] as {
-    input?: { ExpressionAttributeValues?: Record<string, unknown> };
-  };
-  const values = command?.input?.ExpressionAttributeValues || {};
-  const integrations = Object.values(values).find(
-    (value): value is Record<string, unknown> =>
-      typeof value === 'object' &&
-      value !== null &&
-      !Array.isArray(value) &&
-      'openrouter' in value
-  );
-  if (!integrations) throw new Error('No integrations value found in update expression');
-  return integrations;
+  for (const call of [...mockSend.mock.calls].reverse()) {
+    const command = call[0] as {
+      input?: { ExpressionAttributeValues?: Record<string, unknown> };
+    };
+    const values = command?.input?.ExpressionAttributeValues || {};
+    const integrations = Object.values(values).find(
+      (value): value is Record<string, unknown> =>
+        typeof value === 'object' &&
+        value !== null &&
+        !Array.isArray(value) &&
+        'openrouter' in value
+    );
+    if (integrations) return integrations;
+  }
+  throw new Error('No integrations value found in update expression');
 }
 
 describe('configureIntegration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _setDynamoClient({ send: mockSend } as never);
     globalThis.fetch = originalFetch;
     clearOpenRouterMediaCatalogCache();
     mockSend.mockResolvedValue({});
@@ -139,6 +142,7 @@ describe('configureIntegration', () => {
 describe('setModelPreference', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _setDynamoClient({ send: mockSend } as never);
     mockSend.mockResolvedValue({});
     getAvatarMock.mockResolvedValue({ id: 'avatar-1' });
   });
@@ -167,6 +171,7 @@ describe('setModelPreference', () => {
 describe('getConfiguredModel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _setDynamoClient({ send: mockSend } as never);
     globalThis.fetch = originalFetch;
     clearOpenRouterMediaCatalogCache();
     getAvatarMock.mockResolvedValue({

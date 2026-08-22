@@ -10,6 +10,7 @@
  * and break the rest of the test suite.
  */
 import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
+import { buildDiscordEnvelope } from '@swarm/core';
 
 // ─── Mock Tracking ────────────────────────────────────────────────────────────
 
@@ -475,7 +476,6 @@ describe('MESSAGE_CREATE dispatch', () => {
 
   it('does not enqueue for guild messages without mention (shouldRespond=false)', async () => {
     // This test verifies the evaluator decision using the core module directly
-    const { buildDiscordEnvelope } = await import('@swarm/core');
     const { isDiscordChatAllowed } = await import('./discord/discord-chat-access.js');
 
     const message = makeDiscordMessage({
@@ -509,7 +509,6 @@ describe('MESSAGE_CREATE dispatch', () => {
   });
 
   it('builds envelope with isMention=true when bot is mentioned in guild', async () => {
-    const { buildDiscordEnvelope } = await import('@swarm/core');
 
     const botUserId = '111222333';
     const message = makeDiscordMessage({
@@ -534,7 +533,6 @@ describe('MESSAGE_CREATE dispatch', () => {
   });
 
   it('builds DM envelope that triggers shouldRespond via evaluator', async () => {
-    const { buildDiscordEnvelope } = await import('@swarm/core');
     const { isDiscordChatAllowed } = await import('./discord/discord-chat-access.js');
 
     const message = makeDiscordMessage({
@@ -566,7 +564,6 @@ describe('MESSAGE_CREATE dispatch', () => {
   });
 
   it('filters bot-authored messages via buildDiscordEnvelope', async () => {
-    const { buildDiscordEnvelope } = await import('@swarm/core');
 
     const message = makeDiscordMessage({
       guild_id: undefined,

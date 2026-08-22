@@ -6,10 +6,10 @@
  * in dedicated modules; this file wires them together.
  */
 import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResultV2,
-} from 'aws-lambda';
-import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
+  HttpRequest,
+  HttpResponse,
+} from "@swarm/core";
+import { SendMessageCommand } from '@swarm/core';
 import {
   DEFAULT_LLM_MAX_TOKENS,
   DEFAULT_LLM_MODEL,
@@ -57,6 +57,7 @@ import {
 import {
   buildOpenRouterTools,
   type MediaItem,
+  type Tool,
 } from './chat-tool-helpers.js';
 import {
   checkPublicRateLimit,
@@ -67,6 +68,7 @@ import {
 import { resolvePublicAvatarIdFromRequest } from './chat-public-access.js';
 
 // Per-domain modules
+import { getSQSClient } from '../services/aws-clients.js';
 import {
   type AvatarContext,
   type ProcessChatOptions,
@@ -96,9 +98,9 @@ import {
 export type { AvatarContext, ProcessChatOptions, ProcessChatResult };
 
 const CHAT_QUEUE_URL = process.env.CHAT_QUEUE_URL;
-const sqsClient = CHAT_QUEUE_URL ? new SQSClient({}) : null;
+const sqsClient = CHAT_QUEUE_URL ? getSQSClient() : null;
 
-function prefersAsyncResponse(event: APIGatewayProxyEventV2): boolean {
+function prefersAsyncResponse(event: HttpRequest): boolean {
   const prefer = event.headers['prefer'] || event.headers['Prefer'] || '';
   return typeof prefer === 'string' && prefer.toLowerCase().includes('respond-async');
 }
@@ -108,13 +110,67 @@ function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(value)));
 }
 
+function buildLocalToolDiscoveryTools(enabledCategories?: string[]): Tool[] {
+  const categories = enabledCategories?.length
+    ? enabledCategories
+    : ['profile', 'secrets', 'media', 'gallery', 'wallets', 'diagnostics'];
+
+  const descriptions: Record<string, string> = {
+    profile: 'Set persona, description, profile image, character reference, and avatar status.',
+    secrets: 'Request or store API keys and platform credentials with user confirmation.',
+    media: 'Generate images, videos, stickers, and voice assets when a cloud media provider is configured.',
+    gallery: 'List, search, upload, and reuse avatar media.',
+    wallets: 'Inspect linked wallets and balances.',
+    diagnostics: 'Report issues and inspect system status.',
+    telegram: 'Configure Telegram and send messages to allowed chats.',
+    twitter: 'Connect X/Twitter and manage posts, replies, likes, and timeline reads.',
+    discord: 'Configure Discord and send messages or media to channels.',
+    memory: 'Remember, recall, and maintain long-term avatar memory.',
+    voice: 'Create and send voice messages.',
+    property: 'Research property records and manage research jobs.',
+    nft: 'Claim eligible NFTs as avatars and inspect lineage.',
+    'signal-station': 'Manage Signal Station identity and messages.',
+  };
+
+  return [{
+    type: 'function',
+    function: {
+      name: 'show_tools',
+      description: 'Show avatar capability categories the user can configure or use.',
+      parameters: {
+        type: 'object',
+        properties: {
+          category: {
+            type: 'string',
+            description: 'Optional category to inspect in more detail.',
+          },
+        },
+        additionalProperties: false,
+      },
+      execute: async (params: Record<string, unknown>) => {
+        const requested = typeof params.category === 'string' ? params.category.trim().toLowerCase() : '';
+        const visible = requested ? categories.filter((category) => category === requested) : categories;
+        return {
+          categories: visible.map((category) => ({
+            id: category,
+            description: descriptions[category] || 'Additional avatar capability.',
+          })),
+          guidance: 'Use these categories to answer capability questions or ask what the user wants to set up.',
+        };
+      },
+    },
+  }];
+}
+
 function extractModelIdFromMessage(message: string): string | undefined {
-  const matches = message.match(/[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*/gi) || [];
-  for (const candidate of matches) {
-    const model = getValidModelId(candidate);
-    if (model) return model;
-  }
-  return undefined;
+  // Only extract model IDs from the start of the message to avoid
+  // accidentally consuming prose that happens to mention a model name
+  // while the model-selection tool is pending.  #1723.
+  const trimmed = message.trim();
+  const matches = trimmed.match(/^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*/i);
+  if (!matches) return undefined;
+  const model = getValidModelId(matches[0]);
+  return model || undefined;
 }
 
 async function handlePendingModelSelectionText(params: {
@@ -124,7 +180,7 @@ async function handlePendingModelSelectionText(params: {
   message: string;
   history: AdminChatMessage[];
   corsHeaders: Record<string, string>;
-}): Promise<APIGatewayProxyResultV2 | null> {
+}): Promise<HttpResponse | null> {
   const { session, avatarRecord, avatarId, message, history, corsHeaders } = params;
   if (!session.email || !avatarId) return null;
 
@@ -178,9 +234,12 @@ export async function processChat(
   const chatMetrics = createRuntimeMetricsLogger('AdminChat');
   const chatStartTime = Date.now();
   const avatarId = avatar?.id;
+  const customLlmEndpoint = Boolean(process.env.LLM_ENDPOINT);
+  const customLlmToolsEnabled = process.env.CUSTOM_LLM_ENABLE_TOOLS === 'true';
+  const shouldBuildTools = !customLlmEndpoint || customLlmToolsEnabled;
 
   // --- Tool setup ---
-  const mcpServices = avatarId ? createMCPServices(avatarId, session) : null;
+  const mcpServices = avatarId && shouldBuildTools ? createMCPServices(avatarId, session) : null;
   const toolRegistry = avatarId && mcpServices ? new ToolRegistry() : null;
   if (toolRegistry && mcpServices) registerAllTools(toolRegistry, mcpServices);
   const toolContext: ToolContext | null = avatarId ? {
@@ -189,10 +248,13 @@ export async function processChat(
   } : null;
   const tools = toolRegistry && toolContext
     ? await buildOpenRouterTools(toolRegistry, toolContext, { enabledCategories: avatar?.enabledCategories })
-    : [];
+    : customLlmEndpoint && !customLlmToolsEnabled
+      ? buildLocalToolDiscoveryTools(avatar?.enabledCategories)
+      : [];
 
   logger.info('Tools created', {
     event: 'tools_created', avatarId, toolCount: tools.length,
+    disabledForCustomEndpoint: customLlmEndpoint && !customLlmToolsEnabled,
     toolNames: tools.map((t: { function?: { name?: string }; name?: string }) => t.function?.name ?? t.name),
   });
 
@@ -203,7 +265,8 @@ export async function processChat(
   ];
 
   const allMedia: MediaItem[] = [];
-  const systemPrompt = await buildEnrichedSystemPrompt(avatar, userMessage, options);
+  const baseSystemPrompt = await buildEnrichedSystemPrompt(avatar, userMessage, options);
+  const systemPrompt = baseSystemPrompt;
 
   let transcribedText = '';
   if (userMessage !== null && avatarId && options?.attachments) {
@@ -273,6 +336,7 @@ export async function processChat(
   let toolResults: { tool_call_id: string; role: 'tool'; content: string }[] = [];
 
   if (toolCalls.length > 0 && usedFallback) {
+    logger.info("Entering fallback tool loop", { toolCount: toolCalls.length, toolNames: toolCalls.map(tc => String(tc.name)), hasMcpServices: !!mcpServices, avatarId });
     const fallbackResult = await executeFallbackToolLoop({
       toolCalls, adminToolCalls, fallbackResponse, tools,
       effectiveModel, effectiveMaxOutputTokens, systemPrompt,
@@ -346,7 +410,7 @@ export async function processChat(
 /**
  * Lambda handler for chat API.
  */
-export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
+export async function handler(event: HttpRequest): Promise<HttpResponse> {
   // Validate critical runtime config on cold start (no-op on warm invocations)
   ensureRuntimeConfig();
 
@@ -401,11 +465,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     const { message, history, avatar, systemPrompt: customSystemPrompt, attachments, model, activeTask } = parseResult.data;
 
     if (idempotencyKey) {
-      const cached = await chatIdempotencyStore.get(idempotencyKey) as APIGatewayProxyResultV2 | null;
+      const cached = await chatIdempotencyStore.get(idempotencyKey) as HttpResponse | null;
       if (cached) return cached;
       const claimed = await chatIdempotencyStore.set(idempotencyKey, null);
       if (!claimed) {
-        const recheck = await chatIdempotencyStore.get(idempotencyKey) as APIGatewayProxyResultV2 | null;
+        const recheck = await chatIdempotencyStore.get(idempotencyKey) as HttpResponse | null;
         if (recheck) return recheck;
         return { statusCode: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Duplicate request is already being processed' }) };
       }

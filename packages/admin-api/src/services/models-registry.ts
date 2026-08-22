@@ -293,6 +293,11 @@ export function getValidModelId(value: unknown): string | undefined {
     logger.info('Using OpenRouter catalog model outside local registry', { model: normalized });
     return normalized;
   }
+  // When using a custom LLM endpoint (Ollama, local proxy, etc.), trust the model ID
+  if (process.env.LLM_ENDPOINT) {
+    logger.info('Using custom model via LLM_ENDPOINT', { model: normalized, endpoint: process.env.LLM_ENDPOINT });
+    return normalized;
+  }
   logger.warn('Unknown LLM model configured, falling back to default', { model: normalized });
   return undefined;
 }

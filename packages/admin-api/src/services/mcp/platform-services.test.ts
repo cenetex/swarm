@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChannelInfo, ChannelState } from '@swarm/core';
 import type { ServiceContainer } from '../service-container.js';
 import type { UserSession } from '../../types.js';
+import { createPresenceService, createStateService } from '@swarm/core';
 
 const presenceService = {
   getChannelsForPlatform: vi.fn(),
@@ -16,7 +16,6 @@ vi.mock('@swarm/core', () => ({
   createStateService: vi.fn(() => stateService),
 }));
 
-import { createPresenceService, createStateService } from '@swarm/core';
 import { createPlatformServices } from './platform-services.js';
 
 const createPresenceServiceMock = createPresenceService as unknown as ReturnType<typeof vi.fn>;

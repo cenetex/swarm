@@ -28,7 +28,7 @@ export async function bootstrapAuthFromBackendSession(): Promise<void> {
     useAuthStore.setState({
       isAuthenticated: true,
       isLoading: false,
-      authProvider: 'privy',
+      authProvider: 'wallet',
       error: null,
       user: {
         id: data.account?.accountId || data.user.walletAddress,

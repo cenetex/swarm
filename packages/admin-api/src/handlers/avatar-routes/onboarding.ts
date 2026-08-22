@@ -1,7 +1,7 @@
 import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResultV2,
-} from 'aws-lambda';
+  HttpRequest,
+  HttpResponse,
+} from "@swarm/core";
 import {
   executeOnboardingStep,
   getOnboardingStatus,
@@ -10,7 +10,7 @@ import {
 } from '../../services/onboarding/index.js';
 
 export interface HandleOnboardingAvatarRoutesParams {
-  event: APIGatewayProxyEventV2;
+  event: HttpRequest;
   method: string;
   path: string;
   corsHeaders: Record<string, string>;
@@ -22,7 +22,7 @@ function jsonResponse(
   corsHeaders: Record<string, string>,
   statusCode: number,
   body: unknown
-): APIGatewayProxyResultV2 {
+): HttpResponse {
   return {
     statusCode,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -38,7 +38,7 @@ function decodePathPart(value: string): string {
   }
 }
 
-function getHeaderValue(event: APIGatewayProxyEventV2, headerName: string): string | null {
+function getHeaderValue(event: HttpRequest, headerName: string): string | null {
   const headers = event.headers || {};
   const target = headerName.toLowerCase();
 
@@ -53,7 +53,7 @@ function getHeaderValue(event: APIGatewayProxyEventV2, headerName: string): stri
 
 export async function handleOnboardingAvatarRoutes(
   params: HandleOnboardingAvatarRoutesParams
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { event, method, path, corsHeaders, effectiveIsAdmin, walletAddress } = params;
   const requestId = event.requestContext.requestId || 'unknown-request';
 

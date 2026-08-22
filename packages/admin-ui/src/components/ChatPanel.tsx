@@ -20,13 +20,15 @@ import { ChatInput } from './ChatInput';
 import { AvatarDisplay } from './AvatarSidebar';
 import { getErrorRecovery } from '../utils/error-recovery';
 import { WelcomeMessage } from './WelcomeMessage';
-import { UpgradeNudge } from './UpgradeNudge';
 
 // Lazy-load heavy panel components that are behind user interactions
 const ActivationChecklist = lazy(() => import('./ActivationChecklist').then(m => ({ default: m.ActivationChecklist })));
 const TaskWorkspace = lazy(() => import('./TaskWorkspace').then(m => ({ default: m.TaskWorkspace })));
 
 import { LanguageSelector } from './LanguageSelector';
+import { ApiKeySetup } from "./ApiKeySetup";
+import { NativeClientDownloads } from './NativeClientDownloads';
+import { ArweaveVaultPanel } from './ArweaveVaultPanel';
 
 // Track active polling jobs to avoid duplicate polling
 const activePollers = new Map<string, { controller: AbortController; avatarId: string }>();
@@ -70,12 +72,13 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const taskCards = useTaskCardStore((s) => s.cards);
   // Extract action functions directly — they're stable references and don't
   // need reactive subscriptions, avoiding full-store re-renders.
-  const { addMessage, updateMessage, removeMessage, updateAvatar, setLoading, setError, createAvatar } = useAvatarStore.getState();
+  const { addMessage, updateMessage, removeMessage, updateAvatar, applyAvatarUpdates, setLoading, setError, createAvatar } = useAvatarStore.getState();
   const { user: user, isAuthenticated, gateStatus, account } = useAuth();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isCreatingAvatar, setIsCreatingAvatar] = useState(false);
   const [showHint, setShowHint] = useState(true);
+  const [isLlmReady, setIsLlmReady] = useState(false);
   const settingsOpen = useWorkspaceStore((s) => s.isOpen && s.activeTab === 'settings');
   const pendingIntegrationCard = useMemo(
     () => findPendingIntegrationCard(taskCards, activeAvatar?.id),
@@ -85,12 +88,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
   const pendingIntegrationMessage = pendingIntegrationCard
     ? `Finish ${formatIntegrationName(pendingIntegrationName)} setup before sending another message.`
     : undefined;
-  // Track which limit types have already shown an upgrade nudge this session
-  const shownNudgesRef = useRef(new Set<string>());
-
-  // Auto-open the Activity tab when arriving via ?invite=DP-XXXX-XXXX so the
-  // user lands on the redemption form. Replaces the legacy
-  // `planUsagePanelOpen` auto-open behavior (#1639).
+  // Auto-open the Activity tab when arriving via ?invite=DP-XXXX-XXXX.
   useEffect(() => {
     if (initialInviteCode) {
       useWorkspaceStore.getState().setTab('activity');
@@ -232,6 +230,11 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
+  const handleLlmReadyChange = useCallback((ready: boolean) => {
+    setIsLlmReady(ready);
+    if (ready) setError(null);
+  }, [setError]);
+
   // Cancel pollers when switching avatars or unmounting
   useEffect(() => {
     const currentAvatarId = activeAvatar?.id;
@@ -251,6 +254,11 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
     async (content: string) => {
       // Hide the hint when user starts chatting
       setShowHint(false);
+
+      if (!isLlmReady) {
+        setError('Choose OpenRouter or start Ollama before chatting.');
+        return;
+      }
       
       // If no avatar exists, create one first
       let targetAvatar = activeAvatar;
@@ -261,7 +269,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           targetAvatar = await createAvatar();
         } catch (err) {
           console.error('Failed to create avatar:', err);
-          setError(t('chat.errors.failedToCreateAvatar'));
+          const msg = err instanceof Error ? err.message : String(err);
+          setError(msg || t('chat.errors.failedToCreateAvatar'));
           setIsCreatingAvatar(false);
           return;
         }
@@ -335,15 +344,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           persona: targetAvatar.persona,
         }, sender, activeTaskMeta);
 
-        // Update avatar avatar if profile image was changed
-        if (response.avatarUpdates?.profileImageUrl) {
-          updateAvatar(targetAvatar.id, { avatar: response.avatarUpdates.profileImageUrl });
-        }
-        
-        // Update avatar name if it was changed
-        if (response.avatarUpdates?.name) {
-          updateAvatar(targetAvatar.id, { name: response.avatarUpdates.name });
-        }
+        applyAvatarUpdates(targetAvatar.id, response.avatarUpdates);
 
         // Update the loading message with the response
         const currentMessages = useAvatarStore.getState().chats[targetAvatar.id] || [];
@@ -700,7 +701,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         setLoading(false);
       }
     },
-    [activeAvatar, messages, addMessage, updateMessage, removeMessage, setLoading, setError, createAvatar, isCreatingAvatar, accessMode, isAuthenticated, user, updateAvatar, formatUserFacingError, extractPendingJobsFromText, t]
+    [activeAvatar, messages, addMessage, updateMessage, removeMessage, setLoading, setError, createAvatar, isCreatingAvatar, accessMode, isAuthenticated, user, updateAvatar, applyAvatarUpdates, formatUserFacingError, extractPendingJobsFromText, t, isLlmReady]
   );
 
   // Handle audio message - transcribe and send as text
@@ -809,12 +810,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
 
           updateToolCallStatus();
 
-          if (resumed.avatarUpdates?.profileImageUrl) {
-            updateAvatar(activeAvatar.id, { avatar: resumed.avatarUpdates.profileImageUrl });
-          }
-          if (resumed.avatarUpdates?.name) {
-            updateAvatar(activeAvatar.id, { name: resumed.avatarUpdates.name });
-          }
+          applyAvatarUpdates(activeAvatar.id, resumed.avatarUpdates);
 
           addMessage(activeAvatar.id, {
             role: 'assistant',
@@ -900,12 +896,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
               description: resultObj.description,
             });
 
-            if (resumed.avatarUpdates?.profileImageUrl) {
-              updateAvatar(activeAvatar.id, { avatar: resumed.avatarUpdates.profileImageUrl });
-            }
-            if (resumed.avatarUpdates?.name) {
-              updateAvatar(activeAvatar.id, { name: resumed.avatarUpdates.name });
-            }
+            applyAvatarUpdates(activeAvatar.id, resumed.avatarUpdates);
 
             addMessage(activeAvatar.id, {
               role: 'assistant',
@@ -1021,12 +1012,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           const resumed = await submitToolResult(activeAvatar.id, toolCallId, resultObj);
           updateToolCallStatus();
 
-          if (resumed.avatarUpdates?.profileImageUrl) {
-            updateAvatar(activeAvatar.id, { avatar: resumed.avatarUpdates.profileImageUrl });
-          }
-          if (resumed.avatarUpdates?.name) {
-            updateAvatar(activeAvatar.id, { name: resumed.avatarUpdates.name });
-          }
+          applyAvatarUpdates(activeAvatar.id, resumed.avatarUpdates);
 
           addMessage(activeAvatar.id, {
             role: 'assistant',
@@ -1058,12 +1044,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           const resumed = await submitToolResult(activeAvatar.id, toolCallId, resultObj);
           updateToolCallStatus();
 
-          if (resumed.avatarUpdates?.profileImageUrl) {
-            updateAvatar(activeAvatar.id, { avatar: resumed.avatarUpdates.profileImageUrl });
-          }
-          if (resumed.avatarUpdates?.name) {
-            updateAvatar(activeAvatar.id, { name: resumed.avatarUpdates.name });
-          }
+          applyAvatarUpdates(activeAvatar.id, resumed.avatarUpdates);
 
           addMessage(activeAvatar.id, {
             role: 'assistant',
@@ -1093,7 +1074,7 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
       updateToolCallStatus();
       return { ok: true };
     },
-    [activeAvatar, updateMessage, setError, addMessage, updateAvatar, t]
+    [activeAvatar, updateMessage, setError, addMessage, updateAvatar, applyAvatarUpdates, t]
   );
 
   if (!activeAvatar) {
@@ -1146,14 +1127,26 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
           </div>
         </div>
 
+        <div className="px-3 lg:px-6">
+          <NativeClientDownloads />
+          <ArweaveVaultPanel />
+          <ApiKeySetup onReadyChange={handleLlmReadyChange} />
+        </div>
+
         {/* Input area */}
         <div className="chat-input-container border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-sm px-3 lg:px-6 py-3 lg:py-4">
           <div className="max-w-3xl mx-auto">
             <ChatInput
               onSend={handleSendMessage}
               onSendAudio={handleSendAudio}
-              disabled={isCreatingAvatar}
-              placeholder={isCreatingAvatar ? t('chat.panel.creatingAvatar') : t('chat.panel.sayHelloToCreateAvatar')}
+              disabled={isCreatingAvatar || !isLlmReady}
+              placeholder={
+                !isLlmReady
+                  ? 'Choose OpenRouter or start Ollama to chat'
+                  : isCreatingAvatar
+                    ? t('chat.panel.creatingAvatar')
+                    : t('chat.panel.sayHelloToCreateAvatar')
+              }
             />
           </div>
         </div>
@@ -1251,12 +1244,15 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
         </header>
       ) : null}
 
-      {/* Plan & Usage now lives in the workspace Activity tab (#1639). */}
-
       {/* Messages */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 lg:px-6 py-4">
         <div className="max-w-3xl mx-auto space-y-4 w-full">
           {/* Activation checklist for admin users with newly created avatars */}
+          <NativeClientDownloads />
+          <ArweaveVaultPanel />
+          {!isLlmReady && (
+            <ApiKeySetup onReadyChange={handleLlmReadyChange} />
+          )}
           {accessMode === 'admin' && activeAvatar && (
             <Suspense fallback={null}><ActivationChecklist
               avatar={activeAvatar}
@@ -1282,27 +1278,12 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
                 );
               }
               const message = item.message;
-              // Show upgrade nudge inline after limit-error messages (once per limit type per session)
-              const shouldShowNudge = Boolean(
-                message.limitInfo &&
-                activeAvatar?.id &&
-                !shownNudgesRef.current.has(message.limitInfo.limitType)
-              );
-              if (shouldShowNudge && message.limitInfo) {
-                shownNudgesRef.current.add(message.limitInfo.limitType);
-              }
               return (
                 <div key={message.id}>
                   <ChatMessageComponent
                     message={message}
                     onToolSubmit={handleToolSubmit}
                   />
-                  {shouldShowNudge && message.limitInfo && activeAvatar && (
-                    <UpgradeNudge
-                      avatarId={activeAvatar.id}
-                      limitInfo={message.limitInfo as { limitType: 'messages' | 'media' | 'voice' | 'tools'; current: number; limit: number; remaining: number }}
-                    />
-                  )}
                 </div>
               );
             })
@@ -1326,8 +1307,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             <ChatInput
               onSend={handleSendMessage}
               onSendAudio={handleSendAudio}
-              disabled={Boolean(pendingIntegrationCard)}
-              placeholder={pendingIntegrationMessage}
+              disabled={!isLlmReady || Boolean(pendingIntegrationCard)}
+              placeholder={!isLlmReady ? 'Choose OpenRouter or start Ollama to chat' : pendingIntegrationMessage}
             />
             <div className="flex items-center justify-center gap-2 text-xs text-amber-400">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1343,8 +1324,8 @@ export function ChatPanel({ onMenuClick, initialInviteCode }: ChatPanelProps) {
             <ChatInput
               onSend={handleSendMessage}
               onSendAudio={handleSendAudio}
-              disabled={Boolean(pendingIntegrationCard)}
-              placeholder={pendingIntegrationMessage}
+              disabled={!isLlmReady || Boolean(pendingIntegrationCard)}
+              placeholder={!isLlmReady ? 'Choose OpenRouter or start Ollama to chat' : pendingIntegrationMessage}
             />
           </div>
         </div>

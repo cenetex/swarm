@@ -23,7 +23,7 @@ import {
   DynamoDBDocumentClient,
   QueryCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 
 // ============================================================================
 // Types

@@ -9,7 +9,7 @@ import {
   PutCommand,
   UpdateCommand,
   QueryCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import {
   BURN_TIERS,
   getTierForBurnAmount,
@@ -234,7 +234,7 @@ export async function getBurnHistory(
     Limit: limit,
   }));
 
-  return (result.Items || []).map(item => ({
+  return (result.Items || []).map((item: Record<string, any>) => ({
     avatarId: item.avatarId,
     signature: item.signature,
     amount: item.amount,
@@ -291,7 +291,7 @@ export async function getBurnLeaderboard(limit: number = 100): Promise<Leaderboa
     Limit: limit,
   }));
 
-  return (result.Items || []).map((item, index) => ({
+  return (result.Items || []).map((item: Record<string, any>, index: number) => ({
     avatarId: item.avatarId,
     totalBurned: item.totalBurned,
     tier: item.tier,

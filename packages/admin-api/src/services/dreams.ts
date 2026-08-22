@@ -17,7 +17,7 @@
 import {
   GetCommand,
   PutCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { searchMemories, reinforceMemory } from './memory.js';
 import { enqueueDreamJob } from './dream-jobs.js';
 import { getDynamoClient } from './dynamo-client.js';

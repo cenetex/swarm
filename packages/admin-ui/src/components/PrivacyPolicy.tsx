@@ -32,6 +32,36 @@ const th = 'text-left py-2 pr-4 font-medium text-[var(--color-text)]';
 
 export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
   const { t } = useTranslation();
+
+  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+
+  if (isLocal) {
+    return (
+      <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text)] overflow-y-auto">
+        <div className="max-w-3xl mx-auto px-6 py-12">
+          <div className="flex items-center justify-between mb-8">
+            <h1 className="text-3xl font-bold">{t("privacy.title")}</h1>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors text-2xl"
+                aria-label={t("common.close")}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <div className="prose prose-invert max-w-none space-y-8 text-[var(--color-text-secondary)]">
+            <section>
+              <h2 className={h2}>Local-First Application</h2>
+              <p>This application runs entirely on your device. We do not collect any of these categories of data. All data — including chat history, avatar configuration, API keys, and secrets — is stored locally in an encrypted database on your machine.</p>
+              <p className="mt-4">No data is transmitted to external servers except when you explicitly configure third-party AI providers (such as OpenRouter or OpenAI) for chat functionality.</p>
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text)] overflow-y-auto">
       <div className="max-w-3xl mx-auto px-6 py-12">

@@ -25,7 +25,7 @@ import {
   type DynamoDBDocumentClient,
   PutCommand,
   QueryCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
 
 // Funnel TTL: 365 days

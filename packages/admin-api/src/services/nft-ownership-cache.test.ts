@@ -1,6 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, mock } from 'bun:test';
-import { DeleteCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DeleteCommand, GetCommand, PutCommand } from '@swarm/core';
 
 process.env.ADMIN_TABLE = process.env.ADMIN_TABLE || 'test-admin-table';
 

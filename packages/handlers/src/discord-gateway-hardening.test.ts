@@ -60,7 +60,7 @@ mock.module('@aws-sdk/client-sqs', () => ({
   DeleteMessageCommand: class { constructor(public input: unknown) {} },
 }));
 
-mock.module('@aws-sdk/client-secrets-manager', () => ({
+mock.module('@swarm/core', () => ({
   SecretsManagerClient: class { send() { return Promise.resolve({}); } },
   GetSecretValueCommand: class { constructor(public input: unknown) {} },
   CreateSecretCommand: class { constructor(public input: unknown) {} },

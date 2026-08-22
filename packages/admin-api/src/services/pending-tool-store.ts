@@ -16,7 +16,7 @@ import {
   GetCommand,
   PutCommand,
   DeleteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 
 export interface PendingToolRecord {
   pk: string;

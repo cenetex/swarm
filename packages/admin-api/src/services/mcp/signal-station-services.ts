@@ -2,7 +2,7 @@
  * Signal Station MCP Services
  *
  * HTTP client for the Signal space mining game station REST API.
- * Connects aws-swarm avatars to the game server so they can govern
+ * Connects swarm avatars to the game server so they can govern
  * stations: observe state, set prices, build modules, broadcast hails.
  *
  * Authentication: a single shared bearer token loaded from Secrets Manager
@@ -11,7 +11,8 @@
  * acts on behalf of any avatar; the per-avatar token model used by the
  * scheduled `station-agent-runner` is intentionally separate.
  */
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { GetSecretValueCommand } from '@swarm/core';
+import { getSecretsClient } from '../aws-clients.js';
 import type { SignalStationServices, StationState, CommandResult } from '@swarm/mcp-server';
 
 const SIGNAL_API_BASE = process.env.SIGNAL_API_URL || 'https://signal-ws.ratimics.com';
@@ -35,7 +36,7 @@ async function resolveToken(): Promise<string> {
   }
 
   cachedTokenPromise = (async () => {
-    const client = new SecretsManagerClient({});
+    const client = getSecretsClient();
     const response = await client.send(new GetSecretValueCommand({ SecretId: secretArn }));
     if (!response.SecretString) {
       throw new Error('SIGNAL_API_TOKEN secret value is empty');

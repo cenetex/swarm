@@ -25,7 +25,7 @@ import {
   verifyCallbackData,
   type TelegramBindingStore,
 } from '@swarm/core';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@swarm/core';
 
 export const BIND_ACTION_CONFIRM = 'bind:ok';
 export const BIND_ACTION_CANCEL = 'bind:no';

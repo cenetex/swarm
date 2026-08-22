@@ -24,6 +24,11 @@ interface AvatarConfigModalProps {
    * false (legacy modal mode).
    */
   embedded?: boolean;
+  /**
+   * `workspace` preserves the original full-tab embedded layout.
+   * `section` lets the avatar settings sit below other settings panels.
+   */
+  embeddedLayout?: 'workspace' | 'section';
 }
 
 // Predefined secret templates
@@ -40,7 +45,13 @@ const SECRET_TEMPLATES: { key: string; nameKey: string; descriptionKey: string }
 
 type SecretTemplate = (typeof SECRET_TEMPLATES)[number];
 
-export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }: AvatarConfigModalProps) {
+export function AvatarConfigModal({
+  avatar,
+  isOpen,
+  onClose,
+  embedded = false,
+  embeddedLayout = 'workspace',
+}: AvatarConfigModalProps) {
   const { t } = useTranslation();
   const { updateAvatar, deleteAvatar, clearChat } = useAvatarStore();
   const { gateStatus } = useAuth();
@@ -207,8 +218,13 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
   // workspace tab body becomes the host. The inner sections (tab strip,
   // tab content, footer) are identical in both modes.
   const containerClass = embedded
-    ? 'flex flex-col h-full -mx-4 -my-4'
+    ? embeddedLayout === 'section'
+      ? 'flex flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]'
+      : 'flex flex-col h-full -mx-4 -my-4'
     : 'relative bg-[var(--color-bg-secondary)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-[var(--color-border)]';
+  const contentClass = embedded && embeddedLayout === 'section'
+    ? 'p-4 sm:p-6'
+    : 'flex-1 overflow-y-auto p-6';
 
   const header = embedded ? (
     <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)] flex-shrink-0">
@@ -294,7 +310,7 @@ export function AvatarConfigModal({ avatar, isOpen, onClose, embedded = false }:
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className={contentClass}>
           {activeTab === 'general' && (
             <div className="space-y-4">
               <div>

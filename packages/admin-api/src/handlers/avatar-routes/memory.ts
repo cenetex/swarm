@@ -5,7 +5,7 @@
  * - DELETE /avatars/{id}/memories/{memId}  - Delete a specific memory
  * - GET    /avatars/{id}/memories/export   - Export all memories as JSON
  */
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { HttpResponse } from "@swarm/core";
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { logger } from '@swarm/core';
@@ -15,7 +15,7 @@ import { isMemoryEnabled } from '../../services/billing/entitlements.js';
 
 export async function handleMemoryRoutes(
   ctx: RouteContext,
-): Promise<APIGatewayProxyResultV2 | null> {
+): Promise<HttpResponse | null> {
   const { method, path, corsHeaders } = ctx;
 
   // ── GET /avatars/{id}/memories/export ──────────────────────────────────

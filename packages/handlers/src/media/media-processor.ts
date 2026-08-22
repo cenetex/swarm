@@ -2,8 +2,8 @@
  * Media Processor Handler
  * Consumes media jobs from SQS and enqueues send_media actions back to response queue.
  */
-import type { SQSEvent, Context } from 'aws-lambda';
-import { PutCommand } from '@aws-sdk/lib-dynamodb';
+import type { MessageBatch, ExecutionContext } from "@swarm/core";
+import { PutCommand } from '@swarm/core';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { logger, DEFAULT_LLM_MODEL } from '@swarm/core';
@@ -175,7 +175,7 @@ function getCachedAvatarRuntime(avatarId: string): AvatarMediaRuntime | null {
     return null;
   }
 
-  // Touch for LRU behavior.
+  // Touch for FIFO-with-promotion behavior.
   avatarRuntimeCache.delete(avatarId);
   avatarRuntimeCache.set(avatarId, cached);
   mediaRuntimeCacheMetrics.hits++;
@@ -309,7 +309,7 @@ function getAvatarReferenceImageUrls(avatar: AvatarConfig): string[] {
   return url ? [url] : [];
 }
 
-export const handler = async (event: SQSEvent, context: Context): Promise<{ batchItemFailures: { itemIdentifier: string }[] } | void> => {
+export const handler = async (event: MessageBatch, context: ExecutionContext): Promise<{ batchItemFailures: { itemIdentifier: string }[] } | void> => {
   logger.setContext({
     requestId: context.awsRequestId,
   });

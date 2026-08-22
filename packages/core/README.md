@@ -1,6 +1,6 @@
 # @swarm/core
 
-Core types, platform adapters, message processors, and services for the AWS Swarm avatar platform.
+Core types, platform adapters, message processors, and services for the Swarm avatar platform.
 
 ## Purpose
 

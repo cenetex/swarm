@@ -15,7 +15,7 @@ import {
   GetCommand,
   PutCommand,
   UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import { randomUUID } from 'crypto';
 import type { Platform } from '../types/platform.js';
 import type { LongFormDocument, ChunkMeta } from '../types/long-form.js';

@@ -86,7 +86,12 @@ export interface TaskActionPayload {
   };
 }
 
-interface ChatResponse {
+export interface AvatarUpdates {
+  profileImageUrl?: string;
+  name?: string;
+}
+
+export interface ChatResponse {
   response: string;
   history: Array<{
     role: string;
@@ -97,10 +102,7 @@ interface ChatResponse {
   }>;
   media?: MediaItem[];
   pendingJobs?: PendingJob[];
-  avatarUpdates?: {
-    profileImageUrl?: string;
-    name?: string;
-  };
+  avatarUpdates?: AvatarUpdates;
   pendingToolCall?: PendingToolCall;
   taskActions?: TaskActionPayload[];
   error?: string;

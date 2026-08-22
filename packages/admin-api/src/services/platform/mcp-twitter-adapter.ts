@@ -4,7 +4,7 @@
  * Provides Twitter service methods for the MCP adapter, including media
  * download/upload helpers. Extracted from mcp-adapter.ts for maintainability.
  */
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand } from '@swarm/core';
 import { Readable } from 'stream';
 import {
   ensureTwitterImageWithinLimit,
@@ -14,6 +14,7 @@ import type { AllServices } from '@swarm/mcp-server';
 import * as gallery from '../gallery.js';
 import { createSystemLogger } from '../structured-logger.js';
 import * as twitterOAuth from './twitter-oauth.js';
+import { getS3Client } from '../aws-clients.js';
 
 const log = createSystemLogger('mcp-twitter-adapter');
 
@@ -24,7 +25,7 @@ const log = createSystemLogger('mcp-twitter-adapter');
 const API_TIMEOUT_MS = 10_000;
 const MEDIA_BUCKET = process.env.MEDIA_BUCKET;
 const CDN_URL = process.env.CDN_URL;
-const s3Client = new S3Client({});
+const s3Client = getS3Client();
 
 // =============================================================================
 // Media Helpers

@@ -9,9 +9,9 @@
  *   POST /consent/revoke — revoke consent (body: { policyVersion })
  */
 import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResultV2,
-} from 'aws-lambda';
+  HttpRequest,
+  HttpResponse,
+} from "@swarm/core";
 import { z } from 'zod';
 import { authenticateRequest } from '../auth/request-auth.js';
 import { getCorsHeaders } from '../http/cors.js';
@@ -51,7 +51,7 @@ function jsonResponse(
   statusCode: number,
   body: unknown,
   headers?: Record<string, string>,
-): APIGatewayProxyResultV2 {
+): HttpResponse {
   return {
     statusCode,
     headers: {
@@ -62,7 +62,7 @@ function jsonResponse(
   };
 }
 
-function readBody(event: APIGatewayProxyEventV2): string {
+function readBody(event: HttpRequest): string {
   const body = event.body || '';
   if (!body) return '';
   if (event.isBase64Encoded) {
@@ -84,9 +84,9 @@ function safeParseJson(raw: string): { ok: true; data: unknown } | { ok: false }
 // ============================================================================
 
 async function handleRecordConsent(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   corsHeaders: Record<string, string>,
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const session = await authenticateRequest(event);
 
   const rawBody = readBody(event);
@@ -118,9 +118,9 @@ async function handleRecordConsent(
 }
 
 async function handleGetConsent(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   corsHeaders: Record<string, string>,
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const session = await authenticateRequest(event);
 
   const policyVersion = event.queryStringParameters?.policyVersion;
@@ -150,9 +150,9 @@ async function handleGetConsent(
 }
 
 async function handleRevokeConsent(
-  event: APIGatewayProxyEventV2,
+  event: HttpRequest,
   corsHeaders: Record<string, string>,
-): Promise<APIGatewayProxyResultV2> {
+): Promise<HttpResponse> {
   const session = await authenticateRequest(event);
 
   const rawBody = readBody(event);
@@ -184,8 +184,8 @@ async function handleRevokeConsent(
 // ============================================================================
 
 export async function handler(
-  event: APIGatewayProxyEventV2,
-): Promise<APIGatewayProxyResultV2> {
+  event: HttpRequest,
+): Promise<HttpResponse> {
   const corsHeaders = getCorsHeaders(event);
   const method = event.requestContext.http.method;
   const path = normalizePath(event.rawPath);

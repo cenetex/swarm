@@ -32,9 +32,10 @@ import {
   QueryCommand,
   DeleteCommand,
   ScanCommand,
-} from '@aws-sdk/lib-dynamodb';
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+} from '@swarm/core';
+import { S3Client, DeleteObjectCommand } from '@swarm/core';
 import { getDynamoClient } from './dynamo-client.js';
+import { getS3Client } from './aws-clients.js';
 import {
   recordAuditEventWith,
   listAuditEventsWith,
@@ -105,7 +106,7 @@ function getDefaultDeps(): DSARDeps {
     _defaultDeps = {
       dynamoClient: getDynamoClient(),
       tableName: process.env.ADMIN_TABLE || 'swarm-admin',
-      s3Client: new S3Client({}),
+      s3Client: getS3Client(),
       mediaBucket: process.env.MEDIA_BUCKET,
     };
   }

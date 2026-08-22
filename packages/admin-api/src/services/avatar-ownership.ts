@@ -18,7 +18,7 @@ import {
   GetCommand,
   QueryCommand,
   TransactWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
+} from '@swarm/core';
 import type { AvatarRecord } from '../types.js';
 import { getGateStatus, type GateStatus } from './web3/nft-gate.js';
 import { verifyGateBurn } from './web3/lineage-nft.js';
@@ -638,7 +638,7 @@ export async function reconcileInhabitantMappings(
 
   try {
     // Scan for all INHABITANT# mappings
-    const { ScanCommand } = await import('@aws-sdk/lib-dynamodb');
+    const { ScanCommand } = await import('@swarm/core');
 
     let mappingCount = 0;
     let mappingLastKey: Record<string, unknown> | undefined;
@@ -684,7 +684,7 @@ export async function reconcileInhabitantMappings(
           result.errors.push(`Mapping for non-existent avatar: ${avatarId}`);
 
           if (!dryRun) {
-            const { DeleteCommand } = await import('@aws-sdk/lib-dynamodb');
+            const { DeleteCommand } = await import('@swarm/core');
             await ddb.send(
               new DeleteCommand({
                 TableName: TABLE_NAME,
@@ -705,7 +705,7 @@ export async function reconcileInhabitantMappings(
           );
 
           if (!dryRun) {
-            const { DeleteCommand } = await import('@aws-sdk/lib-dynamodb');
+            const { DeleteCommand } = await import('@swarm/core');
             await ddb.send(
               new DeleteCommand({
                 TableName: TABLE_NAME,
@@ -770,7 +770,7 @@ export async function reconcileInhabitantMappings(
           result.errors.push(`Avatar ${avatarId} has inhabitant ${walletAddress} but no mapping`);
 
           if (!dryRun) {
-            const { PutCommand } = await import('@aws-sdk/lib-dynamodb');
+            const { PutCommand } = await import('@swarm/core');
             await ddb.send(
               new PutCommand({
                 TableName: TABLE_NAME,

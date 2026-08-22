@@ -1,5 +1,5 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { GetObjectCommand, PutObjectCommand } from '@swarm/core';
+import { GetCommand, PutCommand, QueryCommand } from '@swarm/core';
 import { buildMediaUrl, logger, type AvatarConfig, type MediaService } from '@swarm/core';
 import type {
   GalleryItemForSticker,
@@ -14,10 +14,11 @@ import {
 } from '@swarm/sticker-engine';
 import { getDynamoClient } from './dynamo-client.js';
 import { getAdminTable } from './env-validation.js';
+import { getS3Client } from './aws-clients.js';
 
 const TELEGRAM_API = 'https://api.telegram.org/bot';
 const REFERENCE_URL_CHECK_TIMEOUT_MS = 1500;
-const s3Client = new S3Client({});
+const s3Client = getS3Client();
 
 interface TelegramResponse<T> {
   ok: boolean;

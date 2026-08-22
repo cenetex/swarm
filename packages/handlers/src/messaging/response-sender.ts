@@ -2,8 +2,8 @@
  * Response Sender Handler
  * Sends generated responses to platforms
  */
-import type { SQSEvent, Context, SQSBatchResponse, Handler } from 'aws-lambda';
-import { GetCommand, PutCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import type { MessageBatch, ExecutionContext, MessageBatchResponse, Handler } from "@swarm/core";
+import { GetCommand, PutCommand, DeleteCommand } from '@swarm/core';
 import { randomUUID } from 'crypto';
 import {
   TelegramAdapter,
@@ -146,7 +146,7 @@ function getCachedOutboundRuntime(avatarId: string): AvatarOutboundRuntime | nul
     return null;
   }
 
-  // Touch for LRU behavior.
+  // Touch for FIFO-with-promotion behavior.
   outboundCache.delete(avatarId);
   outboundCache.set(avatarId, cached);
   outboundCacheMetrics.hits++;
@@ -339,9 +339,9 @@ async function getOutboundRuntime(avatarId: string): Promise<AvatarOutboundRunti
   return runtime;
 }
 
-export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
-  event: SQSEvent,
-  context: Context
+export const handler: Handler<MessageBatch, MessageBatchResponse> = async (
+  event: MessageBatch,
+  context: ExecutionContext
 ) => {
   logger.setContext({
     avatarId: LEGACY_AVATAR_ID || 'shared',
@@ -359,7 +359,7 @@ export const handler: Handler<SQSEvent, SQSBatchResponse> = async (
   const metrics = createRuntimeMetricsLogger('ResponseSender');
   metrics.incrementCounter('ResponsesReceived', event.Records.length);
 
-  const batchItemFailures: SQSBatchResponse['batchItemFailures'] = [];
+  const batchItemFailures: MessageBatchResponse['batchItemFailures'] = [];
 
   for (const record of event.Records) {
     const recordStartTime = Date.now();

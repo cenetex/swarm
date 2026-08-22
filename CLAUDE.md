@@ -7,8 +7,8 @@ Multi-tenant social media avatar platform on AWS serverless. Chat-first — all 
 ## Quick Start
 
 ```bash
-git clone https://github.com/cenetex/aws-swarm.git
-cd aws-swarm
+git clone https://github.com/atimics/swarm.git
+cd swarm
 pnpm install          # IMPORTANT: Use pnpm, not npm
 pnpm build
 bun test
@@ -29,8 +29,8 @@ Every piece of work MUST be tied to a GitHub issue. No exceptions.
 3. **Create branch** — `<type>/issue-<number>-<short-description>` (e.g., `fix/issue-42-dynamo-query`). The pre-commit hook validates issue readiness, and pre-push enforces the branch pattern.
 4. **For parallel work, use worktrees:**
    ```bash
-   git worktree add ../aws-swarm-042 -b fix/issue-42-dynamo-query main
-   (cd ../aws-swarm-042 && pnpm install)
+   git worktree add ../swarm-042 -b fix/issue-42-dynamo-query main
+   (cd ../swarm-042 && pnpm install)
    scripts/worktree-start.sh 42   # REQUIRED — pushes branch, labels issue in-progress
    ```
 5. **Implement within stated scope.** Do not expand beyond what the issue describes.

@@ -17,7 +17,7 @@
  * pipeline stops after step 4 and records the new Arweave URI so it can
  * be applied manually or by a future on-chain updater.
  */
-import { ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { ScanCommand, UpdateCommand } from '@swarm/core';
 import type { AvatarRecord } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
 import { createSystemLogger } from '../structured-logger.js';
