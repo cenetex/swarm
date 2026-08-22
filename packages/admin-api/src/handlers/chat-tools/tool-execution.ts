@@ -16,6 +16,7 @@ import {
   stringifyToolResultForModel,
   buildPauseToolPayload,
   buildPendingToolResponse,
+  getToolArgs,
   hasExecuteFunction,
   type SdkToolCall,
   type Tool,
@@ -26,15 +27,7 @@ import {
   LLM_MAX_STEPS,
 } from '../chat-llm.js';
 
-/**
- * Safely extract tool call arguments as Record<string, unknown>.
- */
-export function getToolArgs(tc: SdkToolCall): Record<string, unknown> {
-  if (tc.arguments && typeof tc.arguments === 'object') {
-    return tc.arguments as Record<string, unknown>;
-  }
-  return {};
-}
+export { getToolArgs };
 
 export interface FallbackToolLoopResult {
   response: string;

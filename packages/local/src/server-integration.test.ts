@@ -1,5 +1,6 @@
 /**
  * Full integration tests — real SQLite, real Express, real adapters.
+ * @test-isolated Mutates process-global fetch, clients, and circuit-breaker state.
  */
 import { describe, expect, it, beforeAll, afterAll } from 'bun:test';
 import express from 'express';

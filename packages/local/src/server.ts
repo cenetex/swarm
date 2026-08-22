@@ -2116,7 +2116,11 @@ export async function mountAdminRoutes(
       return;
     }
     try {
-      const requestSignal = (req as express.Request & { signal?: AbortSignal }).signal;
+      // Bun 1.4 exposes an inherited Request.signal getter that expects Bun's
+      // internal request slots. Express and test request objects do not have
+      // those slots, so only consume signals explicitly attached by middleware.
+      const ownSignal = Object.getOwnPropertyDescriptor(req, 'signal')?.value;
+      const requestSignal = ownSignal instanceof AbortSignal ? ownSignal : undefined;
       const response = await chatService.complete(body, requestSignal);
       res.json(response);
     } catch (err) {

@@ -10,11 +10,11 @@ import type { AdminChatMessage } from '../../types.js';
 import {
   buildPauseToolPayload,
   buildPendingToolResponse,
+  getToolArgs,
   toAdminToolCall,
   type SdkToolCall,
   type Tool,
 } from '../chat-tool-helpers.js';
-import { getToolArgs } from './tool-execution.js';
 
 export interface PauseToolResult {
   response: string;

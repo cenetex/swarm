@@ -773,6 +773,14 @@ export type SdkToolCall = {
   arguments: unknown;
 };
 
+/** Safely extract parsed tool arguments without depending on execution modules. */
+export function getToolArgs(toolCall: SdkToolCall): Record<string, unknown> {
+  if (toolCall.arguments && typeof toolCall.arguments === 'object') {
+    return toolCall.arguments as Record<string, unknown>;
+  }
+  return {};
+}
+
 export function toAdminToolCall(toolCall: SdkToolCall): ToolCall {
   return {
     id: String(toolCall.id),

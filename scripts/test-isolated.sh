@@ -9,7 +9,8 @@
 # This script:
 #   1. Walks each workspace package independently so package-local bunfig.toml
 #      preloads are honored.
-#   2. Finds all .test.ts files that contain `mock.module(` or `vi.mock(`.
+#   2. Finds all .test.ts files that contain `mock.module(`, `vi.mock(`, or
+#      an explicit `@test-isolated` marker for other process-global state.
 #   3. Runs each of those files in its own bun test process.
 #   4. Runs the remaining mock-free files in one package-local batch.
 #
@@ -42,7 +43,7 @@ echo "$PACKAGE_DIRS" | while IFS= read -r package_dir; do
       exit 0
     fi
 
-    xargs grep -lE 'mock\.module\(|vi\.mock\(' < "$package_tmp/all.txt" \
+    xargs grep -lE 'mock\.module\(|vi\.mock\(|@test-isolated' < "$package_tmp/all.txt" \
       | sort > "$package_tmp/mocking.txt" || true
     grep -Fxv -f "$package_tmp/mocking.txt" "$package_tmp/all.txt" \
       > "$package_tmp/non-mocking.txt" || true
