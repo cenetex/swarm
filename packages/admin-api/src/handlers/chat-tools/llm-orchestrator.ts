@@ -28,6 +28,11 @@ import {
 
 const llmCircuitBreaker = createCircuitBreaker();
 
+/** Reset process-global LLM failure state between isolated integration tests. */
+export function _resetLlmCircuitBreaker(): void {
+  llmCircuitBreaker.reset();
+}
+
 export interface LlmCallResult {
   response: string;
   toolCalls: SdkToolCall[];

@@ -18,6 +18,15 @@ const DB_PATH = resolve(TEST_DIR, 'swarm.db');
 const BLOB_DIR = resolve(TEST_DIR, 'blobs');
 const PASSWORD = 'integration-test-password';
 
+async function resetLlmTestState(): Promise<void> {
+  const [{ _resetApiKeyCache }, { _resetLlmCircuitBreaker }] = await Promise.all([
+    import('../../admin-api/src/handlers/chat-llm.js'),
+    import('../../admin-api/src/handlers/chat-tools/llm-orchestrator.js'),
+  ]);
+  _resetApiKeyCache();
+  _resetLlmCircuitBreaker();
+}
+
 function hitRoute(app: express.Express, method: string, path: string, body?: unknown) {
   return new Promise<{ status: number; body: unknown }>((resolve) => {
     const done = (s: number, d: unknown) => resolve({ status: s, body: d });
@@ -400,13 +409,7 @@ describe('server integration', () => {
       await services.secrets.setSecret('llm-api-key', 'sk-test');
       await services.secrets.flush();
 
-      // Import _resetApiKeyCache to clear LLM key cache
-      try {
-        const { _resetApiKeyCache } = await import('../../admin-api/src/handlers/chat-llm.js');
-        _resetApiKeyCache();
-      } catch {
-        // Optional cache reset is unavailable in some test builds.
-      }
+      await resetLlmTestState();
 
       chatApp = express();
       chatApp.use(express.json());
@@ -508,12 +511,7 @@ describe('server integration', () => {
       await services.secrets.setSecret('llm-api-key', 'sk-test-mock-llm-key');
       await services.secrets.flush();
 
-      try {
-        const { _resetApiKeyCache } = await import('../../admin-api/src/handlers/chat-llm.js');
-        _resetApiKeyCache();
-      } catch {
-        // Optional cache reset is unavailable in some test builds.
-      }
+      await resetLlmTestState();
 
       toolApp = express();
       toolApp.use(express.json());
@@ -586,9 +584,7 @@ describe('server integration', () => {
       await services.secrets.setSecret('llm-api-key', 'sk-mock-llm');
       await services.secrets.flush();
 
-      try { const { _resetApiKeyCache } = await import('../../admin-api/src/handlers/chat-llm.js'); _resetApiKeyCache(); } catch {
-        // Optional cache reset is unavailable in some test builds.
-      }
+      await resetLlmTestState();
 
       // Mock fetch: intercept OpenRouter API calls
       (globalThis as any).fetch = async (url: string, init: any) => {
@@ -782,9 +778,7 @@ describe('server integration', () => {
       await services.secrets.setSecret('llm-api-key', 'sk-loop');
       await services.secrets.flush();
 
-      try { const { _resetApiKeyCache } = await import('../../admin-api/src/handlers/chat-llm.js'); _resetApiKeyCache(); } catch {
-        // Optional cache reset is unavailable in some test builds.
-      }
+      await resetLlmTestState();
 
       // Stateful mock: tracks call count to simulate multi-step conversations
       let callCount = 0;
