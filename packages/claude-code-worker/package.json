@@ -12,7 +12,7 @@
     "lint": "eslint --max-warnings 70 src/"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "^2.1.114",
+    "@anthropic-ai/claude-code": "^2.1.163",
     "@aws-sdk/client-dynamodb": "^3.1032.0",
     "@aws-sdk/client-sqs": "^3.1032.0",
     "@aws-sdk/lib-dynamodb": "^3.1032.0"
