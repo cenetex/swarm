@@ -503,9 +503,11 @@ describe('Cloudflare hosted chat runtime', () => {
 
     let modelCalls = 0;
     let authorization = '';
+    let modelRequest = '';
     const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
       modelCalls += 1;
       authorization = new Headers(init?.headers).get('Authorization') ?? '';
+      modelRequest = String(init?.body ?? '');
       return Response.json({ choices: [{ message: { content: 'Hello from Ada.' } }] });
     }) as typeof fetch;
     await expect(processHostedChatQueueMessage(env, sent[0], fetchImpl, 3_000)).resolves.toEqual({ action: 'ack' });
@@ -519,6 +521,7 @@ describe('Cloudflare hosted chat runtime', () => {
     ]);
     expect(modelCalls).toBe(1);
     expect(authorization).toBe('Bearer sk-secret-user-key');
+    expect(JSON.parse(modelRequest)).toMatchObject({ model: 'openrouter/free' });
     expect(JSON.stringify({ job, sent, db: [...db.jobs.values()] })).not.toContain('sk-secret-user-key');
   });
 
@@ -623,6 +626,34 @@ describe('Cloudflare hosted chat runtime', () => {
       error: 'The AI provider is temporarily unavailable. Try again later.',
     });
     expect(JSON.stringify(job)).not.toContain('upstream secret detail');
+  });
+
+  it('turns a payment rejection into a useful error without exposing provider details', async () => {
+    const db = new ChatMemoryD1();
+    const sent: HostedChatQueueMessage[] = [];
+    const env = testEnv(db, { send: async (message) => sent.push(message as HostedChatQueueMessage) });
+    const owner = session('acct-a');
+    const avatar = await configuredAvatar(env, owner);
+    const queued = await enqueueHostedChat(
+      env,
+      owner,
+      { avatarId: avatar.avatarId, message: 'Use a paid model', requestId: 'request-1' },
+    );
+    const fetchImpl = (async () => new Response('private provider billing detail', {
+      status: 402,
+    })) as typeof fetch;
+
+    await expect(processHostedChatQueueMessage(env, sent[0], fetchImpl)).resolves.toEqual({ action: 'ack' });
+
+    const job = await getHostedChatJob(env, owner, queued.jobId);
+    expect(job).toMatchObject({
+      status: 'failed',
+      error: 'This OpenRouter model needs credits. Add credits or choose a free model, then try again.',
+    });
+    expect(db.jobs.get(`${owner.accountId}|${queued.jobId}`)).toMatchObject({
+      error_code: 'model_payment_required',
+    });
+    expect(JSON.stringify(job)).not.toContain('private provider billing detail');
   });
 
   it('bounds initial Queue send attempts and records a safe failure', async () => {

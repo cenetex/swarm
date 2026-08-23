@@ -78,7 +78,7 @@ export function renderWranglerConfig(baseConfig, values, environment) {
     SWARM_HOSTED_ENABLED: '1',
     SWARM_PUBLIC_URL: publicOrigin(requiredValue(values, 'SWARM_PUBLIC_URL')),
     SWARM_USER_SECRET_KEY_VERSION: keyVersion(requiredValue(values, 'SWARM_USER_SECRET_KEY_VERSION')),
-    SWARM_OPENROUTER_MODEL: values.SWARM_OPENROUTER_MODEL?.trim() || 'openai/gpt-4o-mini',
+    SWARM_OPENROUTER_MODEL: values.SWARM_OPENROUTER_MODEL?.trim() || 'openrouter/free',
     SWARM_HOSTED_CHAT_RATE_LIMIT: rateLimit(values.SWARM_HOSTED_CHAT_RATE_LIMIT?.trim() || '20'),
   };
 

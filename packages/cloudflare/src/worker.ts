@@ -137,6 +137,7 @@ function securedAssetResponse(response: Response, env: CloudflareHostedBindings)
     "base-uri 'none'",
     "object-src 'none'",
     "frame-ancestors 'none'",
+    "frame-src 'self' https://connect.solflare.com",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
@@ -145,7 +146,7 @@ function securedAssetResponse(response: Response, env: CloudflareHostedBindings)
     "worker-src 'self' blob:",
     "form-action 'self' https://openrouter.ai",
   ].join('; '));
-  headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  headers.set('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   headers.set('Cross-Origin-Resource-Policy', 'same-origin');
   headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
   headers.set('Referrer-Policy', 'no-referrer');

@@ -138,7 +138,11 @@ describe('Cloudflare hosted platform scaffold', () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('Swarm Hosted Preview');
-    expect(response.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
+    const contentSecurityPolicy = response.headers.get('Content-Security-Policy');
+    expect(contentSecurityPolicy).toContain("frame-ancestors 'none'");
+    expect(contentSecurityPolicy).toContain("frame-src 'self' https://connect.solflare.com");
+    expect(contentSecurityPolicy).not.toContain('frame-src https:');
+    expect(response.headers.get('Cross-Origin-Opener-Policy')).toBe('same-origin-allow-popups');
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
   });
