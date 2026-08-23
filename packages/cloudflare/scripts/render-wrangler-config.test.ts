@@ -54,4 +54,54 @@ describe('renderWranglerConfig', () => {
       'Environment must be preview or production',
     );
   });
+
+  it('renders a production staging domain without activating the primary hostname', async () => {
+    const config = renderWranglerConfig(
+      await baseConfig(),
+      {
+        ...validValues,
+        SWARM_CF_WORKER_NAME: 'swarm-hosted-production',
+        SWARM_PUBLIC_URL: 'https://next.swarm.rati.chat',
+        SWARM_CF_STAGING_DOMAIN: 'next.swarm.rati.chat',
+        SWARM_CF_ZONE_NAME: 'rati.chat',
+      },
+      'production',
+    );
+
+    expect(config.workers_dev).toBe(false);
+    expect(config.routes).toEqual([
+      { pattern: 'next.swarm.rati.chat', custom_domain: true },
+    ]);
+  });
+
+  it('activates the primary route only when it matches the canonical public origin', async () => {
+    const productionValues = {
+      ...validValues,
+      SWARM_CF_WORKER_NAME: 'swarm-hosted-production',
+      SWARM_PUBLIC_URL: 'https://swarm.rati.chat',
+      SWARM_CF_STAGING_DOMAIN: 'next.swarm.rati.chat',
+      SWARM_CF_ZONE_NAME: 'rati.chat',
+      SWARM_CF_PRIMARY_ROUTE: 'swarm.rati.chat/*',
+    };
+    const config = renderWranglerConfig(await baseConfig(), productionValues, 'production');
+
+    expect(config.routes).toEqual([
+      { pattern: 'next.swarm.rati.chat', custom_domain: true },
+      { pattern: 'swarm.rati.chat/*', zone_name: 'rati.chat' },
+    ]);
+    expect(() => renderWranglerConfig(
+      config,
+      { ...productionValues, SWARM_PUBLIC_URL: 'https://wrong.rati.chat' },
+      'production',
+    )).toThrow('must match the active primary route hostname');
+  });
+
+  it('rejects production routing variables in preview', async () => {
+    const config = await baseConfig();
+    expect(() => renderWranglerConfig(
+      config,
+      { ...validValues, SWARM_CF_STAGING_DOMAIN: 'next.swarm.rati.chat' },
+      'preview',
+    )).toThrow('not allowed in preview');
+  });
 });
