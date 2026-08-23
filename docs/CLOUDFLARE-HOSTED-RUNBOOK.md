@@ -125,6 +125,10 @@ The normal hosted flow is OAuth Authorization Code with PKCE S256. Do not ask a 
 
 Wallet selection must immediately start the selected adapter connection. The hosted UI includes explicit Phantom and Solflare adapters and displays connection errors on the page. Browser wallet extensions are isolated per browser: if a wallet is not detected, open the preview in the browser where that extension is installed, or use the wallet's mobile browser.
 
+Solflare starts its connection UI in a full-page frame from `https://connect.solflare.com`. The hosted Content Security Policy allows that exact origin, while still blocking arbitrary third-party frames. The opener policy uses `same-origin-allow-popups` so a selected wallet can finish its own cross-origin popup handshake without giving unrelated sites permission to frame Swarm.
+
+Preview chat defaults to OpenRouter's zero-cost `openrouter/free` router. A paid model can be selected with `SWARM_OPENROUTER_MODEL`. Provider failures must remain safe but useful: expired authorization, missing credits, unavailable models, rejected input, and temporary outages have separate user messages. Logs may contain the HTTP status and Swarm request ID, but never the OpenRouter key, prompt, response body, wallet address, or account ID.
+
 ## Deploy production resources
 
 Production deployment is allowed only from `main`. Select `production` and enter exactly `DEPLOY_PRODUCTION`. GitHub environment approval should provide a second human check.

@@ -87,7 +87,7 @@ Required chat bindings:
 | ------------------------------ | -------------------------------------------------------------- |
 | `SWARM_QUEUE`                  | Carries `swarm.hosted.chat.request` work.                      |
 | `SWARM_AVATAR_COORDINATORS`    | Durable Object namespace for per-avatar leases.                |
-| `SWARM_OPENROUTER_MODEL`       | Optional model override; defaults to `openai/gpt-4o-mini`.     |
+| `SWARM_OPENROUTER_MODEL`       | Optional model override; defaults to the zero-cost `openrouter/free` router. |
 | `SWARM_OPENROUTER_CHAT_URL`    | Optional OpenRouter-compatible chat endpoint for tests/stacks. |
 | `SWARM_HOSTED_CHAT_RATE_LIMIT` | Optional messages-per-minute override, clamped to 1–100.       |
 

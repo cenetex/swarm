@@ -16,8 +16,47 @@ const MAX_MODEL_ATTEMPTS = 3;
 const MAX_HISTORY_MESSAGES = 20;
 const COORDINATOR_LEASE_MS = 120_000;
 const SAFE_MODEL_ERROR = 'The AI provider is temporarily unavailable. Try again later.';
+const SAFE_MODEL_AUTH_ERROR = 'OpenRouter authorization is no longer valid. Reconnect OpenRouter and try again.';
+const SAFE_MODEL_CREDIT_ERROR = 'This OpenRouter model needs credits. Add credits or choose a free model, then try again.';
+const SAFE_MODEL_NOT_FOUND_ERROR = 'The configured OpenRouter model is unavailable. Choose another model and try again.';
+const SAFE_MODEL_REQUEST_ERROR = 'OpenRouter rejected this message. Try a shorter message or another model.';
 const SAFE_KEY_ERROR = 'Connect OpenRouter before sending a message.';
 const SAFE_RUNTIME_ERROR = 'Hosted chat could not process this message. Try again later.';
+const DEFAULT_OPENROUTER_MODEL = 'openrouter/free';
+
+type OpenRouterFailure = {
+  ok: false;
+  code: string;
+  message: string;
+  retryable: boolean;
+};
+
+function openRouterFailure(status?: number): OpenRouterFailure {
+  if (status === 401 || status === 403) {
+    return { ok: false, code: 'model_unauthorized', message: SAFE_MODEL_AUTH_ERROR, retryable: false };
+  }
+  if (status === 402) {
+    return { ok: false, code: 'model_payment_required', message: SAFE_MODEL_CREDIT_ERROR, retryable: false };
+  }
+  if (status === 404) {
+    return { ok: false, code: 'model_not_found', message: SAFE_MODEL_NOT_FOUND_ERROR, retryable: false };
+  }
+  if (status === 400 || status === 413 || status === 422) {
+    return { ok: false, code: 'model_request_rejected', message: SAFE_MODEL_REQUEST_ERROR, retryable: false };
+  }
+  return { ok: false, code: 'model_unavailable', message: SAFE_MODEL_ERROR, retryable: true };
+}
+
+function logOpenRouterFailure(requestId: string, failure: OpenRouterFailure, status?: number): void {
+  console.warn(JSON.stringify({
+    level: 'WARN',
+    subsystem: 'hosted-chat',
+    event: 'openrouter_request_failed',
+    requestId,
+    code: failure.code,
+    ...(status === undefined ? {} : { status }),
+  }));
+}
 
 type HostedAvatarRow = {
   account_id: string;
@@ -629,7 +668,7 @@ async function callOpenRouter(
   messages: HostedChatMessageRow[],
   requestId: string,
   fetchImpl: typeof fetch,
-): Promise<{ ok: true; content: string } | { ok: false; retryable: boolean }> {
+): Promise<{ ok: true; content: string } | OpenRouterFailure> {
   const endpoint = env.SWARM_OPENROUTER_CHAT_URL?.trim() || 'https://openrouter.ai/api/v1/chat/completions';
   const systemContent = [
     `You are ${avatar.name}.`,
@@ -648,7 +687,7 @@ async function callOpenRouter(
         'X-Request-ID': requestId,
       },
       body: JSON.stringify({
-        model: env.SWARM_OPENROUTER_MODEL?.trim() || 'openai/gpt-4o-mini',
+        model: env.SWARM_OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL,
         max_tokens: 512,
         messages: [
           { role: 'system', content: systemContent },
@@ -657,19 +696,26 @@ async function callOpenRouter(
       }),
     });
   } catch {
-    return { ok: false, retryable: true };
+    const failure = openRouterFailure();
+    logOpenRouterFailure(requestId, failure);
+    return failure;
   }
   if (!response.ok) {
-    return { ok: false, retryable: response.status === 429 || response.status >= 500 };
+    const failure = openRouterFailure(response.status);
+    logOpenRouterFailure(requestId, failure, response.status);
+    return failure;
   }
   try {
     const data = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> };
     const content = data.choices?.[0]?.message?.content;
-    return typeof content === 'string' && content.trim()
-      ? { ok: true, content: content.trim() }
-      : { ok: false, retryable: true };
+    if (typeof content === 'string' && content.trim()) return { ok: true, content: content.trim() };
+    const failure = openRouterFailure();
+    logOpenRouterFailure(requestId, failure, response.status);
+    return failure;
   } catch {
-    return { ok: false, retryable: true };
+    const failure = openRouterFailure();
+    logOpenRouterFailure(requestId, failure);
+    return failure;
   }
 }
 
@@ -726,7 +772,14 @@ async function processClaimedJob(
     const messages = await loadModelMessages(env, job);
     const modelResult = await callOpenRouter(env, apiKey, avatar, messages, job.request_id, fetchImpl);
     if (!modelResult.ok) {
-      return recordProcessingFailure(env, job, 'model_failed', SAFE_MODEL_ERROR, modelResult.retryable, now);
+      return recordProcessingFailure(
+        env,
+        job,
+        modelResult.code,
+        modelResult.message,
+        modelResult.retryable,
+        now,
+      );
     }
     await completeJob(env, job, modelResult.content, now);
     return { action: 'ack' };
