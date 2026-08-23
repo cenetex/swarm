@@ -1,7 +1,8 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
   server: {
     port: 3000,
@@ -30,6 +31,9 @@ export default defineConfig({
     // still catching any chunk that grows beyond ~1 MB.
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
+      ...(mode === 'hosted'
+        ? { input: fileURLToPath(new URL('./hosted.html', import.meta.url)) }
+        : {}),
       onwarn(warning, defaultHandler) {
         // Suppress INVALID_ANNOTATION warnings from third-party dependencies.
         // @privy-io/react-auth and ox emit ~198 "contains an annotation that
@@ -140,4 +144,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

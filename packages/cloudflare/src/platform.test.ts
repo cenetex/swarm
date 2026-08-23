@@ -124,4 +124,39 @@ describe('Cloudflare hosted platform scaffold', () => {
     expect(status.hosted.status).toBe('available');
     expect(status.hosted.entitlement).toBe('none');
   });
+
+  it('serves the hosted app through the asset binding with security headers', async () => {
+    const env = fakeEnv();
+    env.SWARM_ENV = 'preview';
+    env.SWARM_ASSETS = {
+      fetch: async () => new Response('<!doctype html><title>Swarm Hosted Preview</title>', {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      }),
+    };
+
+    const response = await worker.fetch(new Request('https://swarm.example/'), env);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('Swarm Hosted Preview');
+    expect(response.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+  });
+
+  it('does not route unknown API requests to static assets', async () => {
+    let assetRequests = 0;
+    const env = fakeEnv();
+    env.SWARM_ASSETS = {
+      fetch: async () => {
+        assetRequests += 1;
+        return new Response('asset');
+      },
+    };
+
+    const response = await worker.fetch(new Request('https://swarm.example/api/not-implemented'), env);
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get('Content-Type')).toContain('application/json');
+    expect(assetRequests).toBe(0);
+  });
 });

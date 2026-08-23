@@ -76,6 +76,7 @@ packages/infra/prod-resource-mapping.json
 packages/cloudflare/.dev.vars*
 packages/cloudflare/.wrangler/
 packages/cloudflare/wrangler.deploy.json
+packages/admin-ui/dist-hosted/
 migrations/
 .claude/
 

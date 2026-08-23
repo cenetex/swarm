@@ -1,6 +1,6 @@
 # Cloudflare Hosted Worker Runbook
 
-This runbook deploys the browser-chat hosted runtime to an isolated Cloudflare Worker. It does not change `swarm.rati.chat`, the existing static site, or the AWS production system.
+This runbook deploys the browser-chat hosted runtime and its dedicated OAuth setup UI to an isolated Cloudflare Worker. It does not change `swarm.rati.chat`, the existing static site, or the AWS production system.
 
 The normal release path is the **Deploy Cloudflare Hosted Worker** GitHub Actions workflow. Do not deploy production from a developer machine.
 
@@ -13,6 +13,7 @@ Each environment uses its own resources:
 - one private R2 bucket;
 - one Queue used by both the producer and consumer;
 - one Durable Object namespace created with the Worker deployment;
+- one versioned static asset bundle served from the same Worker origin;
 - one cleanup cron that runs every 15 minutes.
 
 Use `preview` first. Production uses a separate set of resources and a separate protected GitHub environment.
@@ -90,6 +91,7 @@ The dry run must show these bindings:
 - `SWARM_BLOBS`
 - `SWARM_QUEUE`
 - `SWARM_AVATAR_COORDINATORS`
+- `SWARM_ASSETS`
 
 ## Deploy preview
 
@@ -103,18 +105,23 @@ The workflow validates the package, renders a temporary configuration from prote
 ```text
 GET /health
 GET /api/hosting/status
+GET /
 ```
 
 A successful status response must report a configured and available hosted runtime with no active entitlement. This means the infrastructure is ready; it does not mean billing or a paid subscription is active.
 
 After the automated checks pass, complete one manual preview flow:
 
-1. request a wallet challenge;
-2. sign and verify it from the same origin;
-3. connect OpenRouter or save a manual OpenRouter key;
-4. create an avatar;
-5. send a browser-chat message and wait for the Queue job to complete;
-6. confirm that another wallet cannot read that avatar, job, or history.
+1. open the Worker root URL and connect a Solana wallet;
+2. sign the domain-bound session message;
+3. select **Connect OpenRouter securely** and complete OpenRouter OAuth;
+4. confirm the UI reports connected without displaying a credential;
+5. create an avatar;
+6. send a browser-chat message and wait for the Queue job to complete;
+7. disconnect OpenRouter and confirm the connected state clears;
+8. confirm that another wallet cannot read that avatar, job, or history.
+
+The normal hosted flow is OAuth Authorization Code with PKCE S256. Do not ask a hosted user to paste an OpenRouter key. The callback exchanges the code inside the Worker, encrypts the resulting user credential for that account, and returns only connection status to the browser.
 
 ## Deploy production resources
 
@@ -150,16 +157,16 @@ The workflow uploads the old key as `SWARM_USER_SECRET_KEK_<old-version>`. Wrang
 
 ## Later DNS cutover
 
-DNS and route changes need a separate issue and review. The Worker does not serve the admin UI, so do not point the whole domain at it.
+DNS and route changes need a separate issue and review. The Worker serves a dedicated hosted UI, but the existing `swarm.rati.chat` site remains unchanged until a separate cutover is approved.
 
-The intended cutover is limited to:
+Possible cutover options must be reviewed separately. The smallest API-only route set remains:
 
 ```text
 swarm.rati.chat/api/*
 swarm.rati.chat/health
 ```
 
-Keep the existing static UI origin in place. Before adding those routes, change the production `SWARM_PUBLIC_URL` to `https://swarm.rati.chat`, deploy again, repeat wallet/OAuth/chat isolation checks, and prepare a route-level rollback.
+Keep the existing static site in place unless the approved cutover explicitly replaces it. Before adding any routes, change the production `SWARM_PUBLIC_URL` to the exact final HTTPS origin, deploy again, repeat wallet/OAuth/chat isolation checks, and prepare a route-level rollback.
 
 ## References
 

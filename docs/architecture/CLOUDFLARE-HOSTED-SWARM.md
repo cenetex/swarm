@@ -64,7 +64,7 @@ The hosted Worker implements the first secure vertical slice:
 5. The returned user-owned OpenRouter key is envelope-encrypted immediately. API responses expose connection status, never credential values.
 6. `DELETE /api/auth/openrouter` removes the encrypted AI credential and provider selection.
 
-The existing admin UI routes are backed by the same store: `/api/llm/status` and the write-only `/api/secrets/llm-api-key` endpoint. Manual OpenRouter keys therefore receive the same encryption and account isolation as OAuth-created keys.
+The dedicated hosted UI is served from the same Worker origin. It starts OAuth through the authenticated route, reads only connection status, and never renders or accepts the exchanged credential. The write-only manual-key route remains a compatibility surface for trusted non-hosted clients; it is not part of normal hosted onboarding.
 
 ## Hosted Web Chat
 
@@ -116,14 +116,15 @@ Production requests fail closed when the canonical public URL or encryption mate
 
 ## Migration Roadmap
 
-1. **Foundation — implemented:** provider-neutral hosted plans, D1/R2/Queue adapters, SIWS sessions, encrypted user secrets, OpenRouter PKCE, and compatible admin UI sign-in/BYOK routes.
-2. **Web chat runtime — implemented:** tenant-owned avatars and history, idempotent Queue jobs, per-avatar serialization, bounded model retries, and safe failed jobs.
-3. **Webhook runtime:** port Telegram ingress onto the same Queue and account-isolation rules.
-4. **Entitlement and quotas:** connect Stripe checkout/portal and optional on-chain entitlement; enforce request, token, storage, and concurrency limits before model calls.
-5. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
-6. **Media and scheduling:** move blobs to R2 and scheduled jobs to D1 plus Cron/Workflows.
-7. **Operational hardening:** KMS-backed root-key wrapping, secret re-encryption jobs, audit reporting, data export/deletion, monitoring, and administrative kill switches.
-8. **Burst compute:** use an external sandbox only for workloads that truly need a Linux computer.
+1. **Foundation — implemented:** provider-neutral hosted plans, D1/R2/Queue adapters, SIWS sessions, encrypted user secrets, and OpenRouter PKCE.
+2. **Hosted web app — implemented:** same-origin wallet sign-in, OAuth connect/status/disconnect, avatar creation, and Queue-backed browser chat without browser-visible AI credentials.
+3. **Web chat runtime — implemented:** tenant-owned avatars and history, idempotent Queue jobs, per-avatar serialization, bounded model retries, and safe failed jobs.
+4. **Webhook runtime:** port Telegram ingress onto the same Queue and account-isolation rules.
+5. **Entitlement and quotas:** connect Stripe checkout/portal and optional on-chain entitlement; enforce request, token, storage, and concurrency limits before model calls.
+6. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
+7. **Media and scheduling:** move blobs to R2 and scheduled jobs to D1 plus Cron/Workflows.
+8. **Operational hardening:** KMS-backed root-key wrapping, secret re-encryption jobs, audit reporting, data export/deletion, monitoring, and administrative kill switches.
+9. **Burst compute:** use an external sandbox only for workloads that truly need a Linux computer.
 
 ## Cost Guardrails
 

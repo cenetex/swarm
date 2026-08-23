@@ -4,6 +4,12 @@
   "main": "src/worker.ts",
   "compatibility_date": "2026-08-22",
   "workers_dev": true,
+  "assets": {
+    "directory": "../admin-ui/dist-hosted",
+    "binding": "SWARM_ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
   "vars": {
     "SWARM_ENV": "development",
     "SWARM_HOSTED_ENABLED": "0",

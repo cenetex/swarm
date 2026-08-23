@@ -117,6 +117,9 @@ jobs:
 
       - name: Validate package and deployment bundle
         run: |
+          pnpm --filter @swarm/admin-ui typecheck
+          pnpm --filter @swarm/admin-ui lint
+          pnpm --filter @swarm/admin-ui test
           pnpm --filter @swarm/cloudflare typecheck
           pnpm --filter @swarm/cloudflare lint
           pnpm --filter @swarm/cloudflare test
@@ -184,8 +187,10 @@ jobs:
           origin="${SWARM_PUBLIC_URL%/}"
           health=$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors "$origin/health")
           hosting=$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors "$origin/api/hosting/status")
+          app=$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors "$origin/")
           echo "$health" | jq -e '.status == "ok" and .backend == "cloudflare" and .mode == "hosted"' >/dev/null
           echo "$hosting" | jq -e '.hosted.configured == true and .hosted.available == true and .hosted.entitlement == "none"' >/dev/null
+          echo "$app" | grep -F '<title>Swarm Hosted Preview</title>' >/dev/null
           echo "Cloudflare hosted Worker smoke checks passed."
 
       - name: Write deployment summary

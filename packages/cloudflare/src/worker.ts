@@ -129,6 +129,36 @@ function hostedChatConfigurationReady(env: CloudflareHostedBindings): boolean {
   return hostedConfigurationReady(env) && !!env.SWARM_QUEUE && !!env.SWARM_AVATAR_COORDINATORS;
 }
 
+function securedAssetResponse(response: Response, env: CloudflareHostedBindings): Response {
+  const headers = new Headers(response.headers);
+  const contentType = headers.get('Content-Type') ?? '';
+  headers.set('Content-Security-Policy', [
+    "default-src 'self'",
+    "base-uri 'none'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' https: wss:",
+    "worker-src 'self' blob:",
+    "form-action 'self' https://openrouter.ai",
+  ].join('; '));
+  headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+  headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  headers.set('Referrer-Policy', 'no-referrer');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  if (contentType.includes('text/html')) headers.set('Cache-Control', 'no-store');
+  if (env.SWARM_ENV !== 'production') headers.set('X-Robots-Tag', 'noindex, nofollow');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 async function handleRequest(request: Request, env: CloudflareHostedBindings): Promise<Response> {
   const url = new URL(request.url);
   const platform = createCloudflareHostedPlatform(env);
@@ -426,6 +456,15 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     if (!validResourceId(jobId)) return json({ error: 'Job id is invalid.' }, { status: 400 });
     const job = await getHostedChatJob(env, session, jobId);
     return job ? json(job) : json({ error: 'Hosted chat job was not found.' }, { status: 404 });
+  }
+
+  if (
+    env.SWARM_ASSETS
+    && (request.method === 'GET' || request.method === 'HEAD')
+    && url.pathname !== '/api'
+    && !url.pathname.startsWith('/api/')
+  ) {
+    return securedAssetResponse(await env.SWARM_ASSETS.fetch(request), env);
   }
 
   return json({ error: 'Cloudflare hosted Swarm route not implemented yet' }, { status: 404 });
