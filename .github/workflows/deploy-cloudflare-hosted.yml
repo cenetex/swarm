@@ -40,6 +40,9 @@ jobs:
       SWARM_CF_D1_DATABASE_ID: ${{ vars.SWARM_CF_D1_DATABASE_ID }}
       SWARM_CF_R2_BUCKET_NAME: ${{ vars.SWARM_CF_R2_BUCKET_NAME }}
       SWARM_CF_QUEUE_NAME: ${{ vars.SWARM_CF_QUEUE_NAME }}
+      SWARM_CF_STAGING_DOMAIN: ${{ vars.SWARM_CF_STAGING_DOMAIN }}
+      SWARM_CF_ZONE_NAME: ${{ vars.SWARM_CF_ZONE_NAME }}
+      SWARM_CF_PRIMARY_ROUTE: ${{ vars.SWARM_CF_PRIMARY_ROUTE }}
       SWARM_PUBLIC_URL: ${{ vars.SWARM_PUBLIC_URL }}
       SWARM_USER_SECRET_KEY_VERSION: ${{ vars.SWARM_USER_SECRET_KEY_VERSION }}
       SWARM_USER_SECRET_KEK: ${{ secrets.SWARM_USER_SECRET_KEK }}
@@ -47,6 +50,7 @@ jobs:
       SWARM_USER_SECRET_PREVIOUS_KEK: ${{ secrets.SWARM_USER_SECRET_PREVIOUS_KEK }}
       SWARM_OPENROUTER_MODEL: ${{ vars.SWARM_OPENROUTER_MODEL }}
       SWARM_HOSTED_CHAT_RATE_LIMIT: ${{ vars.SWARM_HOSTED_CHAT_RATE_LIMIT }}
+      VITE_HOSTED_ENVIRONMENT: ${{ inputs.environment }}
       WRANGLER_SEND_METRICS: 'false'
 
     steps:
@@ -81,6 +85,9 @@ jobs:
             SWARM_USER_SECRET_KEY_VERSION
             SWARM_USER_SECRET_KEK
           )
+          if [ "$SWARM_DEPLOY_ENVIRONMENT" = "production" ]; then
+            required+=(SWARM_CF_STAGING_DOMAIN SWARM_CF_ZONE_NAME)
+          fi
           missing=()
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
@@ -171,6 +178,7 @@ jobs:
           '
 
       - name: Deploy Worker
+        id: deploy
         env:
           SECRETS_FILE: ${{ runner.temp }}/swarm-hosted-secrets.json
         run: >-
@@ -190,8 +198,24 @@ jobs:
           app=$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors "$origin/")
           echo "$health" | jq -e '.status == "ok" and .backend == "cloudflare" and .mode == "hosted"' >/dev/null
           echo "$hosting" | jq -e '.hosted.configured == true and .hosted.available == true and .hosted.entitlement == "none"' >/dev/null
-          echo "$app" | grep -F '<title>Swarm Hosted Preview</title>' >/dev/null
+          echo "$app" | grep -F '<title>Swarm Hosted</title>' >/dev/null
           echo "Cloudflare hosted Worker smoke checks passed."
+
+      - name: Remove primary route after a failed production smoke check
+        if: >-
+          failure() &&
+          inputs.environment == 'production' &&
+          steps.deploy.outcome == 'success' &&
+          env.SWARM_CF_PRIMARY_ROUTE != ''
+        env:
+          SWARM_CF_PRIMARY_ROUTE: ''
+          SWARM_PUBLIC_URL: https://${{ vars.SWARM_CF_STAGING_DOMAIN }}
+        run: |
+          node packages/cloudflare/scripts/render-wrangler-config.mjs \
+            --environment production \
+            --output packages/cloudflare/wrangler.rollback.json
+          pnpm --filter @swarm/cloudflare exec wrangler triggers deploy \
+            --config wrangler.rollback.json
 
       - name: Write deployment summary
         if: success()
@@ -210,4 +234,5 @@ jobs:
         if: always()
         run: |
           rm -f packages/cloudflare/wrangler.deploy.json
+          rm -f packages/cloudflare/wrangler.rollback.json
           rm -f "${{ runner.temp }}/swarm-hosted-secrets.json"

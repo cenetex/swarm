@@ -1,6 +1,6 @@
 # Cloudflare Hosted Worker Runbook
 
-This runbook deploys the browser-chat hosted runtime and its dedicated OAuth setup UI to an isolated Cloudflare Worker. It does not change `swarm.rati.chat`, the existing static site, or the AWS production system.
+This runbook deploys the browser-chat hosted runtime and its dedicated OAuth setup UI to an isolated Cloudflare Worker. Production is staged on `next.swarm.rati.chat`, then can replace the existing `swarm.rati.chat` static site through a reversible Worker route.
 
 The normal release path is the **Deploy Cloudflare Hosted Worker** GitHub Actions workflow. Do not deploy production from a developer machine.
 
@@ -61,13 +61,16 @@ Set these environment variables:
 | `SWARM_CF_D1_DATABASE_ID`                | UUID from `wrangler d1 create`    | D1 identifier.                                           |
 | `SWARM_CF_R2_BUCKET_NAME`                | `swarm-hosted-preview`            | Private R2 bucket.                                       |
 | `SWARM_CF_QUEUE_NAME`                    | `swarm-hosted-preview`            | Queue name.                                              |
+| `SWARM_CF_STAGING_DOMAIN`                | Empty in preview                  | Required production Custom Domain, `next.swarm.rati.chat`. |
+| `SWARM_CF_ZONE_NAME`                     | Empty in preview                  | Required production Cloudflare zone, `rati.chat`.        |
+| `SWARM_CF_PRIMARY_ROUTE`                 | Empty before cutover              | Optional final route, exactly `swarm.rati.chat/*`.       |
 | `SWARM_PUBLIC_URL`                       | Worker `workers.dev` HTTPS origin | SIWS domain, OAuth callback origin, and smoke target.    |
 | `SWARM_USER_SECRET_KEY_VERSION`          | `preview_v1`                      | Active wrapping-key version; letters, numbers, or `_`.   |
 | `SWARM_USER_SECRET_PREVIOUS_KEY_VERSION` | Empty normally                    | Optional previous version during rotation.               |
-| `SWARM_OPENROUTER_MODEL`                 | `openai/gpt-4o-mini`              | Optional default model.                                  |
+| `SWARM_OPENROUTER_MODEL`                 | `openrouter/free`                 | Optional default model.                                  |
 | `SWARM_HOSTED_CHAT_RATE_LIMIT`           | `20`                              | Optional messages per account per minute, from 1 to 100. |
 
-The public URL must be one HTTPS origin with no path. Before DNS cutover it should be the exact `workers.dev` origin assigned to that Worker.
+The public URL must be one HTTPS origin with no path. Preview uses its exact `workers.dev` origin. Production uses `https://next.swarm.rati.chat` before cutover and `https://swarm.rati.chat` only when the primary route is activated. The configuration renderer rejects mismatched public origins and routes.
 
 Generate a wrapping key without printing it to the terminal and save it directly as a GitHub environment secret:
 
@@ -133,7 +136,29 @@ Preview chat defaults to OpenRouter's zero-cost `openrouter/free` router. A paid
 
 Production deployment is allowed only from `main`. Select `production` and enter exactly `DEPLOY_PRODUCTION`. GitHub environment approval should provide a second human check.
 
-This deploys the production Worker to its `workers.dev` origin. It still does not route `swarm.rati.chat` traffic.
+For the first production deployment:
+
+1. leave `SWARM_CF_PRIMARY_ROUTE` empty;
+2. set `SWARM_CF_STAGING_DOMAIN=next.swarm.rati.chat`;
+3. set `SWARM_CF_ZONE_NAME=rati.chat`;
+4. set `SWARM_PUBLIC_URL=https://next.swarm.rati.chat`;
+5. deploy and complete the wallet, OAuth, avatar, queued-chat, disconnect, and tenant-isolation checks.
+
+Production disables the `workers.dev` hostname. The Worker is available only through its configured domains and routes.
+
+## Cut over `swarm.rati.chat`
+
+The current `swarm.rati.chat` record remains proxied to GitHub Pages. Do not delete or replace it during the first cutover. A Worker Route runs in front of that origin and can be removed without a DNS change.
+
+After `next.swarm.rati.chat` passes the production checks:
+
+1. set `SWARM_CF_PRIMARY_ROUTE=swarm.rati.chat/*`;
+2. set `SWARM_PUBLIC_URL=https://swarm.rati.chat`;
+3. deploy production from `main` with the required confirmation;
+4. confirm `/`, `/health`, `/api/hosting/status`, static assets, wallet sign-in, OAuth, and one queued response on the primary hostname;
+5. retain the `next.swarm.rati.chat` Custom Domain for diagnostics and rollback work.
+
+The deployment workflow automatically removes the primary route if its post-deploy smoke check fails. It never deletes the existing static-site DNS record.
 
 ## Rollback
 
@@ -143,11 +168,12 @@ Worker rollback does not undo D1 migrations or stored data. The hosted migration
 
 If the new Worker cannot pass smoke checks:
 
-1. leave `swarm.rati.chat` unchanged;
-2. roll the Worker code back;
-3. inspect Cloudflare Worker and Queue logs;
-4. confirm the D1 migration list and binding names;
-5. fix forward in a new pull request.
+1. remove `swarm.rati.chat/*` from the production Worker's routes in Cloudflare; the existing GitHub Pages origin resumes immediately;
+2. clear `SWARM_CF_PRIMARY_ROUTE` and restore `SWARM_PUBLIC_URL=https://next.swarm.rati.chat` in the protected GitHub environment;
+3. deploy production again so the Worker configuration matches the staging hostname;
+4. inspect Cloudflare Worker and Queue logs;
+5. confirm the D1 migration list and binding names;
+6. fix forward in a new pull request.
 
 ## Rotate the wrapping key
 
@@ -160,19 +186,6 @@ Do not replace the active key without retaining the old key:
 5. run the deployment workflow and complete the preview smoke flow.
 
 The workflow uploads the old key as `SWARM_USER_SECRET_KEK_<old-version>`. Wrangler preserves older secrets that are not included in a later deployment. Keep every old wrapping key until all matching D1 envelopes have been re-encrypted. Automated re-encryption and KMS-backed key custody remain operational-hardening work.
-
-## Later DNS cutover
-
-DNS and route changes need a separate issue and review. The Worker serves a dedicated hosted UI, but the existing `swarm.rati.chat` site remains unchanged until a separate cutover is approved.
-
-Possible cutover options must be reviewed separately. The smallest API-only route set remains:
-
-```text
-swarm.rati.chat/api/*
-swarm.rati.chat/health
-```
-
-Keep the existing static site in place unless the approved cutover explicitly replaces it. Before adding any routes, change the production `SWARM_PUBLIC_URL` to the exact final HTTPS origin, deploy again, repeat wallet/OAuth/chat isolation checks, and prepare a route-level rollback.
 
 ## References
 

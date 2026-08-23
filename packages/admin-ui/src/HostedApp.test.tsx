@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { HostedApp } from './HostedApp';
+import { HostedApp, hostedEnvironmentCopy } from './HostedApp';
 import * as hostedApi from './hosted-api';
 import { useAuthStore } from './store/auth';
 
@@ -46,6 +46,14 @@ beforeEach(() => {
 });
 
 describe('HostedApp', () => {
+  it('uses production-safe environment copy outside preview', () => {
+    expect(hostedEnvironmentCopy('production')).toEqual({
+      label: 'Production',
+      footer: 'Account data is isolated and credentials stay encrypted.',
+    });
+    expect(hostedEnvironmentCopy('preview').label).toBe('Private preview');
+  });
+
   it('offers OAuth PKCE setup without a manual credential field', async () => {
     authenticate();
     render(<HostedApp />);

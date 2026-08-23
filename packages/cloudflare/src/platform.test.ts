@@ -129,7 +129,7 @@ describe('Cloudflare hosted platform scaffold', () => {
     const env = fakeEnv();
     env.SWARM_ENV = 'preview';
     env.SWARM_ASSETS = {
-      fetch: async () => new Response('<!doctype html><title>Swarm Hosted Preview</title>', {
+      fetch: async () => new Response('<!doctype html><title>Swarm Hosted</title>', {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       }),
     };
@@ -137,7 +137,7 @@ describe('Cloudflare hosted platform scaffold', () => {
     const response = await worker.fetch(new Request('https://swarm.example/'), env);
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain('Swarm Hosted Preview');
+    expect(await response.text()).toContain('Swarm Hosted');
     const contentSecurityPolicy = response.headers.get('Content-Security-Policy');
     expect(contentSecurityPolicy).toContain("frame-ancestors 'none'");
     expect(contentSecurityPolicy).toContain("frame-src 'self' https://connect.solflare.com");

@@ -28,11 +28,24 @@ function cleanOpenRouterResult(): void {
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
+export function hostedEnvironmentCopy(environment: string | undefined) {
+  return environment === 'production'
+    ? {
+      label: 'Production',
+      footer: 'Account data is isolated and credentials stay encrypted.',
+    }
+    : {
+      label: 'Private preview',
+      footer: 'Preview data is isolated from production.',
+    };
+}
+
 function StatusDot({ ready }: { ready: boolean }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${ready ? 'bg-emerald-400' : 'bg-amber-400'}`} />;
 }
 
 export function HostedApp() {
+  const environmentCopy = hostedEnvironmentCopy(import.meta.env.VITE_HOSTED_ENVIRONMENT);
   const { isAuthenticated, user } = useAuth();
   const [oauthResult] = useState(() => openRouterResult(window.location.search));
   const [provider, setProvider] = useState<HostedProviderStatus | null>(null);
@@ -176,7 +189,7 @@ export function HostedApp() {
             <img src="/swarm.svg" alt="" className="h-9 w-9" />
             <div>
               <h1 className="text-lg font-semibold">Swarm Hosted</h1>
-              <p className="text-xs text-[var(--color-text-muted)]">Private preview</p>
+              <p className="text-xs text-[var(--color-text-muted)]">{environmentCopy.label}</p>
             </div>
           </div>
           <PrivyLoginButton showIcon={!isAuthenticated} />
@@ -354,7 +367,7 @@ export function HostedApp() {
       </main>
 
       <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 pb-8 text-xs text-[var(--color-text-muted)]">
-        <span>Preview data is isolated from production.</span>
+        <span>{environmentCopy.footer}</span>
         <a href={`${API_BASE}/hosting/status`} className="hover:text-[var(--color-text)]">Runtime status</a>
       </footer>
     </div>

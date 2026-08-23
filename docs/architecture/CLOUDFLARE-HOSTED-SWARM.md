@@ -90,12 +90,17 @@ Required chat bindings:
 | `SWARM_OPENROUTER_MODEL`       | Optional model override; defaults to the zero-cost `openrouter/free` router. |
 | `SWARM_OPENROUTER_CHAT_URL`    | Optional OpenRouter-compatible chat endpoint for tests/stacks. |
 | `SWARM_HOSTED_CHAT_RATE_LIMIT` | Optional messages-per-minute override, clamped to 1–100.       |
+| `SWARM_CF_STAGING_DOMAIN`      | Production Custom Domain used before primary-host cutover.     |
+| `SWARM_CF_ZONE_NAME`           | Cloudflare zone used to validate production routes.            |
+| `SWARM_CF_PRIMARY_ROUTE`       | Optional approved primary route in exact `hostname/*` form.    |
 
 This slice does not activate a paid entitlement and does not report a tenant as subscribed or active.
 
 The Worker deployment configuration and protected manual release workflow are documented in
-[`docs/CLOUDFLARE-HOSTED-RUNBOOK.md`](../CLOUDFLARE-HOSTED-RUNBOOK.md). Merging this runtime does not
-route `swarm.rati.chat` to it; DNS and route cutover remain a separate release step.
+[`docs/CLOUDFLARE-HOSTED-RUNBOOK.md`](../CLOUDFLARE-HOSTED-RUNBOOK.md). Production first uses the
+`next.swarm.rati.chat` Custom Domain. The final `swarm.rati.chat/*` Worker Route is activated only
+when its hostname matches the canonical SIWS and OAuth origin. The existing proxied GitHub Pages
+record stays in place as the route-level rollback origin.
 
 ### Secret envelope
 
