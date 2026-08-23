@@ -69,11 +69,16 @@ export interface CloudflareDurableObjectNamespace {
   get(id: unknown): { fetch(request: Request): Promise<Response> };
 }
 
+export interface CloudflareAssetFetcher {
+  fetch(request: Request): Promise<Response>;
+}
+
 export type CloudflareHostedBindings = {
   SWARM_STATE: CloudflareD1Database;
   SWARM_BLOBS: CloudflareR2Bucket;
   SWARM_QUEUE?: CloudflareQueue;
   SWARM_AVATAR_COORDINATORS?: CloudflareDurableObjectNamespace;
+  SWARM_ASSETS?: CloudflareAssetFetcher;
   SWARM_ENV?: string;
   SWARM_HOSTED_ENABLED?: string;
   SWARM_PUBLIC_URL?: string;

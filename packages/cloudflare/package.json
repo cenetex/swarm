@@ -23,7 +23,7 @@
     "test": "bun test",
     "lint": "eslint --max-warnings 0 src/",
     "deploy:config": "node scripts/render-wrangler-config.mjs",
-    "predeploy:dry-run": "tsc -b",
+    "predeploy:dry-run": "pnpm --filter @swarm/admin-ui build:hosted && tsc -b",
     "deploy:dry-run": "WRANGLER_WRITE_LOGS=false wrangler deploy --dry-run --outdir .wrangler/dry-run"
   },
   "dependencies": {

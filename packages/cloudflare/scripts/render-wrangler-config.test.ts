@@ -27,6 +27,12 @@ describe('renderWranglerConfig', () => {
     expect(config.d1_databases[0].database_id).toBe(validValues.SWARM_CF_D1_DATABASE_ID);
     expect(config.r2_buckets[0].bucket_name).toBe(validValues.SWARM_CF_R2_BUCKET_NAME);
     expect(config.queues.producers[0].queue).toBe(validValues.SWARM_CF_QUEUE_NAME);
+    expect(config.assets).toEqual({
+      directory: '../admin-ui/dist-hosted',
+      binding: 'SWARM_ASSETS',
+      not_found_handling: 'single-page-application',
+      run_worker_first: true,
+    });
     expect(config.vars.SWARM_USER_SECRET_KEK).toBeUndefined();
   });
 

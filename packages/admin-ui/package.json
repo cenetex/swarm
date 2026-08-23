@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && NODE_OPTIONS='--max-old-space-size=4096' vite build && cp dist/index.html dist/404.html",
+    "build:hosted": "tsc && VITE_API_URL=/api NODE_OPTIONS='--max-old-space-size=4096' vite build --mode hosted --outDir dist-hosted && mv dist-hosted/hosted.html dist-hosted/index.html",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "lint": "eslint --max-warnings 70 src/",
