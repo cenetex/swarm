@@ -1,9 +1,16 @@
-import { type ReactNode, createContext, useContext, useMemo } from 'react';
+import { type ReactNode, createContext, useCallback, useContext, useMemo } from 'react';
 import { clusterApiUrl } from '@solana/web3.js';
-import type { WalletAdapter } from '@solana/wallet-adapter-base';
+import {
+  WalletAdapterNetwork,
+  WalletReadyState,
+  type Adapter,
+  type WalletAdapter,
+  type WalletError,
+} from '@solana/wallet-adapter-base';
 import { ConnectionProvider, WalletProvider as SolanaWalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider, useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
+import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 type WalletEnvironment = 'mainnet-beta' | 'devnet' | 'testnet';
@@ -27,6 +34,7 @@ interface UnifiedWalletConfig {
     onConnecting?: (props: { walletName: string }) => void;
     onDisconnect?: (props: { walletName: string }) => void;
     onNotInstalled?: (props: { walletName: string }) => void;
+    onError?: (props: { walletName: string; error: unknown }) => void;
   };
 }
 
@@ -48,6 +56,12 @@ function getEndpointForEnv(env: WalletEnvironment): string {
   return clusterApiUrl('mainnet-beta');
 }
 
+function getNetworkForEnv(env: WalletEnvironment): WalletAdapterNetwork {
+  if (env === 'devnet') return WalletAdapterNetwork.Devnet;
+  if (env === 'testnet') return WalletAdapterNetwork.Testnet;
+  return WalletAdapterNetwork.Mainnet;
+}
+
 function UnifiedWalletContextBridge({ children }: { children: ReactNode }) {
   const { setVisible } = useWalletModal();
   const contextValue = useMemo(
@@ -67,15 +81,36 @@ function UnifiedWalletContextBridge({ children }: { children: ReactNode }) {
 export function UnifiedWalletProvider({ children, wallets, config }: UnifiedWalletProviderProps) {
   const env = config?.env ?? 'mainnet-beta';
   const endpoint = useMemo(() => getEndpointForEnv(env), [env]);
-  const fallbackWallets = useMemo(() => {
-    const hasWalletStandard = typeof window !== 'undefined' && 'wallets' in (window.navigator as Navigator & { wallets?: unknown });
-    return hasWalletStandard ? [] : [new PhantomWalletAdapter()];
-  }, []);
+  const fallbackWallets = useMemo(
+    () => [
+      new PhantomWalletAdapter(),
+      new SolflareWalletAdapter({ network: getNetworkForEnv(env) }),
+    ],
+    [env],
+  );
   const selectedWallets = wallets && wallets.length > 0 ? wallets : fallbackWallets;
+  const handleWalletError = useCallback(
+    (error: WalletError, adapter?: Adapter) => {
+      const walletName = adapter?.name ?? 'Wallet';
+      if (
+        adapter?.readyState === WalletReadyState.NotDetected
+        || adapter?.readyState === WalletReadyState.Unsupported
+      ) {
+        config?.notificationCallback?.onNotInstalled?.({ walletName });
+        return;
+      }
+      config?.notificationCallback?.onError?.({ walletName, error });
+    },
+    [config?.notificationCallback],
+  );
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <SolanaWalletProvider wallets={selectedWallets} autoConnect={Boolean(config?.autoConnect)}>
+      <SolanaWalletProvider
+        wallets={selectedWallets}
+        autoConnect={config?.autoConnect ?? true}
+        onError={handleWalletError}
+      >
         <WalletModalProvider>
           <UnifiedWalletContextBridge>{children}</UnifiedWalletContextBridge>
         </WalletModalProvider>

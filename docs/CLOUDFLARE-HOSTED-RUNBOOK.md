@@ -123,6 +123,8 @@ After the automated checks pass, complete one manual preview flow:
 
 The normal hosted flow is OAuth Authorization Code with PKCE S256. Do not ask a hosted user to paste an OpenRouter key. The callback exchanges the code inside the Worker, encrypts the resulting user credential for that account, and returns only connection status to the browser.
 
+Wallet selection must immediately start the selected adapter connection. The hosted UI includes explicit Phantom and Solflare adapters and displays connection errors on the page. Browser wallet extensions are isolated per browser: if a wallet is not detected, open the preview in the browser where that extension is installed, or use the wallet's mobile browser.
+
 ## Deploy production resources
 
 Production deployment is allowed only from `main`. Select `production` and enter exactly `DEPLOY_PRODUCTION`. GitHub environment approval should provide a second human check.
