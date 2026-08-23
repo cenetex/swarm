@@ -5,13 +5,15 @@
  * password unlock; in cloud mode, wallet-based SIWS is used.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { WalletReadyState } from '@solana/wallet-adapter-base';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../store/auth';
+import { useAuth, useAuthStore } from '../store/auth';
 import { useAvatarStore } from '../store/avatars';
 import { useUnifiedWalletContext } from './unified-wallet';
 import { signInWithHostedWallet } from '../auth/hosted-wallet-sign-in';
 import { applyAuthenticatedBackendSession } from '../auth/bootstrap';
+import { WALLET_NOT_DETECTED_MESSAGE } from '../store/wallet-errors';
 
 interface LoginButtonProps {
   className?: string;
@@ -22,8 +24,10 @@ interface LoginButtonProps {
 export function PrivyLoginButton({ className = '', label, showIcon = true }: LoginButtonProps) {
   const { t } = useTranslation();
   const { isAuthenticated, isLoading, user, logout } = useAuth();
-  const { publicKey, connected, connecting, signMessage } = useWallet();
+  const { publicKey, connected, connecting, signMessage, wallet } = useWallet();
   const { setShowModal } = useUnifiedWalletContext();
+  const walletError = useAuthStore((state) => state.walletError);
+  const clearWalletError = useAuthStore((state) => state.clearWalletError);
   const [pendingSignIn, setPendingSignIn] = useState(false);
   const [signing, setSigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +39,7 @@ export function PrivyLoginButton({ className = '', label, showIcon = true }: Log
   }, [logout]);
 
   const handleSignIn = useCallback(async () => {
+    clearWalletError();
     if (!publicKey || !signMessage) {
       setError(connected ? 'This wallet does not support message signing.' : null);
       if (!connected) {
@@ -57,13 +62,25 @@ export function PrivyLoginButton({ className = '', label, showIcon = true }: Log
       setSigning(false);
       setPendingSignIn(false);
     }
-  }, [connected, publicKey, setShowModal, signMessage]);
+  }, [clearWalletError, connected, publicKey, setShowModal, signMessage]);
 
   useEffect(() => {
     if (pendingSignIn && connected && publicKey && signMessage && !signing) {
       void handleSignIn();
     }
   }, [connected, handleSignIn, pendingSignIn, publicKey, signMessage, signing]);
+
+  useEffect(() => {
+    if (
+      pendingSignIn
+      && wallet
+      && (wallet.readyState === WalletReadyState.NotDetected
+        || wallet.readyState === WalletReadyState.Unsupported)
+    ) {
+      setError(WALLET_NOT_DETECTED_MESSAGE);
+      setPendingSignIn(false);
+    }
+  }, [pendingSignIn, wallet]);
 
   if (isLoading || signing || connecting) {
     return (
@@ -130,7 +147,9 @@ export function PrivyLoginButton({ className = '', label, showIcon = true }: Log
         )}
         <span>{label ?? (connected ? 'Sign in' : 'Connect wallet')}</span>
       </button>
-      {error && <p className="mt-2 max-w-xs text-xs text-red-400">{error}</p>}
+      {(error || walletError) && (
+        <p className="mt-2 max-w-xs text-xs leading-5 text-red-400">{error || walletError}</p>
+      )}
     </div>
   );
 }

@@ -2,6 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { humanizeWalletAdapterError } from './wallet-errors.js';
 
 describe('humanizeWalletAdapterError', () => {
+  it('explains how to recover when no wallet is available in this browser', () => {
+    const error = new Error('Wallet not ready');
+    error.name = 'WalletNotReadyError';
+    const result = humanizeWalletAdapterError(error);
+    expect(result).toContain('No compatible wallet was detected');
+    expect(result).toContain('Phantom or Solflare');
+  });
+
   it('returns user-friendly message for WalletConnectionError with unexpected error', () => {
     const error = new Error('Unexpected error');
     (error as any).name = 'WalletConnectionError';
