@@ -21,6 +21,13 @@ type OAuthTransaction = {
   verifier_envelope: string;
   expires_at: number;
 };
+type MobilePairing = {
+  poll_token_hash: string;
+  status: 'pending' | 'approved' | 'consumed';
+  account_id: string | null;
+  wallet_address: string | null;
+  expires_at: number;
+};
 
 class MemoryD1 implements CloudflareD1Database {
   readonly accounts = new Set<string>();
@@ -30,6 +37,7 @@ class MemoryD1 implements CloudflareD1Database {
   readonly sessions = new Map<string, Session>();
   readonly oauthTransactions = new Map<string, OAuthTransaction>();
   readonly secrets = new Map<string, { envelope: string; keyVersion: string }>();
+  readonly mobilePairings = new Map<string, MobilePairing>();
 
   prepare(query: string): CloudflareD1PreparedStatement {
     return new MemoryStatement(this, query.replace(/\s+/gu, ' ').trim().toLowerCase());
@@ -73,6 +81,46 @@ class MemoryStatement implements CloudflareD1PreparedStatement {
       const session = this.db.sessions.get(sessionHash);
       return (session && session.expires_at > now ? session : null) as T | null;
     }
+    if (this.query.startsWith('select status, account_id, wallet_address, expires_at from swarm_mobile_auth_pairings')) {
+      const [pairingHash, second] = this.values as [string, string | number];
+      const pairing = this.db.mobilePairings.get(pairingHash);
+      if (!pairing) return null;
+      if (typeof second === 'number' && pairing.expires_at <= second) return null;
+      if (typeof second === 'string' && pairing.poll_token_hash !== second) return null;
+      return pairing as T;
+    }
+    if (this.query.startsWith('update swarm_mobile_auth_pairings set status = \'approved\'')) {
+      const [accountId, walletAddress, , pairingHash, now] = this.values as [
+        string,
+        string,
+        number,
+        string,
+        number,
+      ];
+      const pairing = this.db.mobilePairings.get(pairingHash);
+      if (!pairing || pairing.status !== 'pending' || pairing.expires_at <= now) return null;
+      pairing.status = 'approved';
+      pairing.account_id = accountId;
+      pairing.wallet_address = walletAddress;
+      return { status: 'approved' } as T;
+    }
+    if (this.query.startsWith('update swarm_mobile_auth_pairings set status = \'consumed\'')) {
+      const [, pairingHash, pollTokenHash, now] = this.values as [number, string, string, number];
+      const pairing = this.db.mobilePairings.get(pairingHash);
+      if (
+        !pairing
+        || pairing.poll_token_hash !== pollTokenHash
+        || pairing.status !== 'approved'
+        || pairing.expires_at <= now
+        || !pairing.account_id
+        || !pairing.wallet_address
+      ) return null;
+      pairing.status = 'consumed';
+      return {
+        account_id: pairing.account_id,
+        wallet_address: pairing.wallet_address,
+      } as T;
+    }
     if (this.query.startsWith('delete from swarm_oauth_transactions')) {
       const [stateHash, accountId, sessionHash, now] = this.values as [string, string, string, number];
       const transaction = this.db.oauthTransactions.get(stateHash);
@@ -108,6 +156,15 @@ class MemoryStatement implements CloudflareD1PreparedStatement {
       this.db.challenges.set(nonceHash, {
         wallet_address: walletAddress,
         message,
+        expires_at: expiresAt,
+      });
+    } else if (this.query.startsWith('insert into swarm_mobile_auth_pairings')) {
+      const [pairingHash, pollTokenHash, , expiresAt] = this.values as [string, string, number, number];
+      this.db.mobilePairings.set(pairingHash, {
+        poll_token_hash: pollTokenHash,
+        status: 'pending',
+        account_id: null,
+        wallet_address: null,
         expires_at: expiresAt,
       });
     } else if (this.query.startsWith('insert into swarm_accounts')) {
@@ -251,6 +308,114 @@ describe('Cloudflare hosted authentication flow', () => {
     );
     expect(response.status).toBe(403);
     expect(db.challenges.size).toBe(0);
+
+    const pairingResponse = await worker.fetch(
+      new Request('https://swarm.example/api/auth/mobile/start', {
+        method: 'POST',
+        headers: { Origin: 'https://evil.example' },
+      }),
+      env,
+    );
+    expect(pairingResponse.status).toBe(403);
+    expect(db.mobilePairings.size).toBe(0);
+  });
+
+  it('pairs a mobile wallet to the desktop without putting a session in the QR', async () => {
+    const db = new MemoryD1();
+    const env = testEnv(db);
+    const origin = 'https://swarm.example';
+    const startResponse = await worker.fetch(
+      new Request(`${origin}/api/auth/mobile/start`, {
+        method: 'POST',
+        headers: { Origin: origin, 'CF-Connecting-IP': '203.0.113.7' },
+      }),
+      env,
+    );
+    expect(startResponse.status).toBe(201);
+    const pairing = await startResponse.json() as {
+      pairingId: string;
+      pollToken: string;
+      mobileUrl: string;
+      verificationCode: string;
+    };
+    expect(pairing.mobileUrl).toBe(`${origin}/mobile-sign-in?pairing=${pairing.pairingId}`);
+    expect(pairing.mobileUrl).not.toContain(pairing.pollToken);
+
+    const keyPair = nacl.sign.keyPair();
+    const walletAddress = bs58.encode(keyPair.publicKey);
+    const unrelatedChallenge = await createWalletChallenge(
+      env,
+      new Request(`${origin}/api/auth/wallet/challenge`, { method: 'POST' }),
+      walletAddress,
+    );
+    const unrelatedApproval = await worker.fetch(
+      new Request(`${origin}/api/auth/mobile/${pairing.pairingId}/verify`, {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress,
+          nonce: unrelatedChallenge.nonce,
+          signature: bs58.encode(
+            nacl.sign.detached(new TextEncoder().encode(unrelatedChallenge.message), keyPair.secretKey),
+          ),
+        }),
+      }),
+      env,
+    );
+    expect(unrelatedApproval.status).toBe(401);
+
+    const challengeResponse = await worker.fetch(
+      new Request(`${origin}/api/auth/mobile/${pairing.pairingId}/challenge`, {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress }),
+      }),
+      env,
+    );
+    expect(challengeResponse.status).toBe(200);
+    const challenge = await challengeResponse.json() as { nonce: string; message: string };
+    expect(challenge.message).toContain(`Pairing code: ${pairing.verificationCode}`);
+    const signature = bs58.encode(
+      nacl.sign.detached(new TextEncoder().encode(challenge.message), keyPair.secretKey),
+    );
+
+    const approvalResponse = await worker.fetch(
+      new Request(`${origin}/api/auth/mobile/${pairing.pairingId}/verify`, {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress, nonce: challenge.nonce, signature }),
+      }),
+      env,
+    );
+    expect(approvalResponse.status).toBe(200);
+    expect(approvalResponse.headers.get('Set-Cookie')).toBeNull();
+
+    const wrongPoll = await worker.fetch(
+      new Request(`${origin}/api/auth/mobile/${pairing.pairingId}`, {
+        headers: { Authorization: 'Bearer wrong-poll-token-with-enough-characters' },
+      }),
+      env,
+    );
+    expect(wrongPoll.status).toBe(404);
+
+    const pollResponse = await worker.fetch(
+      new Request(`${origin}/api/auth/mobile/${pairing.pairingId}`, {
+        headers: { Authorization: `Bearer ${pairing.pollToken}` },
+      }),
+      env,
+    );
+    expect(pollResponse.status).toBe(200);
+    expect(await pollResponse.json()).toMatchObject({ authenticated: true, walletAddress });
+    const desktopCookie = pollResponse.headers.get('Set-Cookie')?.split(';', 1)[0] ?? '';
+    expect(desktopCookie).toStartWith('swarm_hosted_session=');
+
+    const replay = await worker.fetch(
+      new Request(`${origin}/api/auth/mobile/${pairing.pairingId}`, {
+        headers: { Authorization: `Bearer ${pairing.pollToken}` },
+      }),
+      env,
+    );
+    expect(replay.status).toBe(410);
   });
 
   it('binds PKCE state to the session and stores only encrypted OpenRouter credentials', async () => {

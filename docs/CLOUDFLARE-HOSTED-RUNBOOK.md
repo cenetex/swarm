@@ -72,6 +72,8 @@ Set these environment variables:
 
 The public URL must be one HTTPS origin with no path. Preview uses its exact `workers.dev` origin. Production uses `https://next.swarm.rati.chat` before cutover and `https://swarm.rati.chat` only when the primary route is activated. The configuration renderer rejects mismatched public origins and routes.
 
+Mobile wallet sign-in needs no third-party project ID. The desktop requests a five-minute, one-use pairing from the Worker. The QR contains only the public pairing ID inside the official Phantom or Solflare in-app-browser link. A separate poll token stays in desktop memory, is stored only as a hash in D1, and is required before the Worker can issue the desktop session cookie. The phone signs a domain-bound SIWS message with the visible pairing code; it does not submit a Solana transaction.
+
 Generate a wrapping key without printing it to the terminal and save it directly as a GitHub environment secret:
 
 ```bash
@@ -142,7 +144,8 @@ For the first production deployment:
 2. set `SWARM_CF_STAGING_DOMAIN=next.swarm.rati.chat`;
 3. set `SWARM_CF_ZONE_NAME=rati.chat`;
 4. set `SWARM_PUBLIC_URL=https://next.swarm.rati.chat`;
-5. deploy and complete the wallet, OAuth, avatar, queued-chat, disconnect, and tenant-isolation checks.
+5. deploy migration `0004_mobile_wallet_pairing.sql` and confirm a QR can be approved from both Phantom and Solflare;
+6. complete OAuth, avatar, queued-chat, disconnect, and tenant-isolation checks.
 
 Production disables the `workers.dev` hostname. The Worker is available only through its configured domains and routes.
 

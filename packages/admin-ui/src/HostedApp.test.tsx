@@ -4,8 +4,8 @@ import { HostedApp, hostedEnvironmentCopy } from './HostedApp';
 import * as hostedApi from './hosted-api';
 import { useAuthStore } from './store/auth';
 
-vi.mock('./components/PrivyLoginButton', () => ({
-  PrivyLoginButton: () => <button type="button">Wallet session</button>,
+vi.mock('./components/HostedWalletSignIn', () => ({
+  HostedWalletSignIn: () => <button type="button">Wallet session</button>,
 }));
 
 vi.mock('./hosted-api', async () => {

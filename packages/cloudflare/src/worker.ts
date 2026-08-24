@@ -14,6 +14,12 @@ import {
   verifyWalletChallenge,
 } from './auth.js';
 import {
+  approveMobileWalletPairing,
+  consumeMobileWalletPairing,
+  createMobileWalletChallenge,
+  createMobileWalletPairing,
+} from './mobile-auth.js';
+import {
   beginOpenRouterConnect,
   completeOpenRouterConnect,
   disconnectOpenRouter,
@@ -99,6 +105,33 @@ function optionalStringField(body: Record<string, unknown>, name: string): strin
 
 function validResourceId(value: string): boolean {
   return /^[A-Za-z0-9._:-]{1,160}$/u.test(value);
+}
+
+function bearerToken(request: Request): string {
+  const authorization = request.headers.get('Authorization') ?? '';
+  if (!authorization.startsWith('Bearer ')) throw new Error('Mobile pairing token is required.');
+  return authorization.slice('Bearer '.length).trim();
+}
+
+function authenticatedWalletPayload(session: {
+  accountId: string;
+  walletAddress: string;
+  expiresAt: number;
+}): Record<string, unknown> {
+  return {
+    success: true,
+    authenticated: true,
+    accountId: session.accountId,
+    walletAddress: session.walletAddress,
+    expiresAt: session.expiresAt,
+    session: { expiresAt: session.expiresAt },
+    account: {
+      accountId: session.accountId,
+      role: 'user',
+      identities: [{ type: 'wallet', providerId: session.walletAddress }],
+    },
+    user: { walletAddress: session.walletAddress },
+  };
 }
 
 function openRouterReturnUrl(env: CloudflareHostedBindings, request: Request, result: 'connected' | 'error'): string {
@@ -205,6 +238,54 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     return json({ error: 'Hosted runtime is not configured.' }, { status: 503 });
   }
 
+  if (url.pathname === '/api/auth/mobile/start' && request.method === 'POST') {
+    assertSameOrigin(env, request);
+    return json(await createMobileWalletPairing(env, request), { status: 201 });
+  }
+
+  const mobileAuthMatch = url.pathname.match(
+    /^\/api\/auth\/mobile\/([A-Za-z0-9_-]{24,64})(?:\/(challenge|verify))?$/u,
+  );
+  if (mobileAuthMatch) {
+    const pairingId = mobileAuthMatch[1] ?? '';
+    const action = mobileAuthMatch[2];
+    if (!action && request.method === 'GET') {
+      const result = await consumeMobileWalletPairing(env, pairingId, bearerToken(request));
+      if (result.status === 'not-found') return json({ status: result.status }, { status: 404 });
+      if (result.status === 'expired') return json({ status: result.status }, { status: 410 });
+      if (result.status === 'pending') return json(result, { status: 202 });
+      return json(authenticatedWalletPayload(result.session), {
+        headers: { 'Set-Cookie': hostedSessionCookie(result.session.sessionToken) },
+      });
+    }
+    if (action === 'challenge' && request.method === 'POST') {
+      assertSameOrigin(env, request);
+      const body = await readJsonObject(request);
+      return json(
+        await createMobileWalletChallenge(
+          env,
+          request,
+          pairingId,
+          stringField(body, 'walletAddress'),
+        ),
+      );
+    }
+    if (action === 'verify' && request.method === 'POST') {
+      assertSameOrigin(env, request);
+      const body = await readJsonObject(request);
+      const walletAddress =
+        typeof body.walletAddress === 'string' ? body.walletAddress.trim() : stringField(body, 'publicKey');
+      const approved = await approveMobileWalletPairing(env, pairingId, {
+        walletAddress,
+        nonce: stringField(body, 'nonce'),
+        signature: stringField(body, 'signature'),
+      });
+      if (!approved) return json({ error: 'Mobile wallet approval is invalid or expired.' }, { status: 401 });
+      return json({ success: true, status: 'approved' });
+    }
+    return json({ error: 'Method not allowed.' }, { status: 405 });
+  }
+
   if (
     (url.pathname === '/api/auth/wallet/challenge' || url.pathname === '/api/auth/challenge') &&
     request.method === 'POST'
@@ -229,20 +310,7 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     });
     if (!session) return json({ error: 'Wallet challenge is invalid or expired.' }, { status: 401 });
     return json(
-      {
-        success: true,
-        authenticated: true,
-        accountId: session.accountId,
-        walletAddress: session.walletAddress,
-        expiresAt: session.expiresAt,
-        session: { expiresAt: session.expiresAt },
-        account: {
-          accountId: session.accountId,
-          role: 'user',
-          identities: [{ type: 'wallet', providerId: session.walletAddress }],
-        },
-        user: { walletAddress: session.walletAddress },
-      },
+      authenticatedWalletPayload(session),
       {
         headers: { 'Set-Cookie': hostedSessionCookie(session.sessionToken) },
       },

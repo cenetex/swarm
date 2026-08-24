@@ -5,10 +5,11 @@ import { bootstrapAuthFromBackendSession } from './auth/bootstrap';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { WalletProvider } from './components/WalletProvider';
 import { HostedApp } from './HostedApp';
+import { MobileWalletSignInPage } from './components/MobileWalletSignInPage';
 import i18n from './i18n';
 import './index.css';
 
-function HostedRoot() {
+function HostedSessionRoot() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -23,6 +24,11 @@ function HostedRoot() {
     );
   }
   return <HostedApp />;
+}
+
+function HostedRoot() {
+  if (window.location.pathname === '/mobile-sign-in') return <MobileWalletSignInPage />;
+  return <HostedSessionRoot />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

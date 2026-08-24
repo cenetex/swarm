@@ -119,6 +119,8 @@ Required production bindings:
 
 Production requests fail closed when the canonical public URL or encryption material is missing. Old wrapping keys may decrypt existing envelopes during a controlled re-encryption migration; remove them after rotation completes.
 
+Desktop wallet sign-in uses a short-lived cross-device pairing. The Worker returns a public pairing ID for the Phantom or Solflare browse QR and a separate desktop-only poll token. D1 stores hashes of both. The phone opens Swarm inside its wallet, signs a SIWS message containing the visible pairing code, and marks the pairing approved. Only the desktop poll token can consume that approval and receive the HttpOnly session cookie. Pairings expire after five minutes and can be consumed once. Installed browser adapters remain a fallback. No seed phrase, transaction, or session credential is placed in the QR.
+
 ## Migration Roadmap
 
 1. **Foundation — implemented:** provider-neutral hosted plans, D1/R2/Queue adapters, SIWS sessions, encrypted user secrets, and OpenRouter PKCE.
