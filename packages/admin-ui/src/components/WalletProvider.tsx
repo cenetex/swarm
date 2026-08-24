@@ -12,9 +12,10 @@ import { humanizeWalletAdapterError, WALLET_NOT_DETECTED_MESSAGE } from '../stor
 
 interface WalletProviderProps {
   children: ReactNode;
+  autoConnect?: boolean;
 }
 
-export function WalletProvider({ children }: WalletProviderProps) {
+export function WalletProvider({ children, autoConnect = true }: WalletProviderProps) {
   const setWalletError = useAuthStore((s) => s.setWalletError);
 
   const notificationCallback = useMemo(
@@ -42,7 +43,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     <UnifiedWalletProvider
       wallets={[]} // Empty = use provider defaults from the local unified wrapper
       config={{
-        autoConnect: true,
+        autoConnect,
         env: 'mainnet-beta',
         metadata: {
           name: 'Swarm',
