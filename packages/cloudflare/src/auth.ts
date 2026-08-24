@@ -52,6 +52,11 @@ export type VerifiedWalletSession = HostedSession & {
   sessionToken: string;
 };
 
+export type VerifiedWalletIdentity = {
+  accountId: string;
+  walletAddress: string;
+};
+
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
@@ -105,9 +110,11 @@ export function createWalletSignInMessage(input: {
   issuedAt: Date;
   expiresAt: Date;
   chainId: string;
+  statement?: string;
 }): string {
   const domain = new URL(input.origin).host;
-  return `${domain} wants you to sign in with your Solana account:\n${input.walletAddress}\n\nSign in to Swarm Hosted.\n\nURI: ${input.origin}\nVersion: 1\nChain ID: ${input.chainId}\nNonce: ${input.nonce}\nIssued At: ${input.issuedAt.toISOString()}\nExpiration Time: ${input.expiresAt.toISOString()}`;
+  const statement = input.statement ?? 'Sign in to Swarm Hosted.';
+  return `${domain} wants you to sign in with your Solana account:\n${input.walletAddress}\n\n${statement}\n\nURI: ${input.origin}\nVersion: 1\nChain ID: ${input.chainId}\nNonce: ${input.nonce}\nIssued At: ${input.issuedAt.toISOString()}\nExpiration Time: ${input.expiresAt.toISOString()}`;
 }
 
 async function enforceChallengeRateLimit(
@@ -146,6 +153,7 @@ export async function createWalletChallenge(
   request: Request,
   walletAddress: string,
   now = Date.now(),
+  statement = 'Sign in to Swarm Hosted.',
 ): Promise<{ nonce: string; message: string; expiresAt: number }> {
   validateWalletAddress(walletAddress);
   await enforceChallengeRateLimit(env, request, walletAddress, now);
@@ -159,6 +167,7 @@ export async function createWalletChallenge(
     issuedAt: new Date(now),
     expiresAt: new Date(expiresAt),
     chainId: env.SWARM_SOLANA_CHAIN_ID?.trim() || 'solana:mainnet',
+    statement,
   });
   const result = await env.SWARM_STATE.prepare(
     `insert into swarm_auth_challenges (nonce_hash, wallet_address, message, created_at, expires_at)
@@ -204,11 +213,12 @@ async function getOrCreateAccount(env: CloudflareHostedBindings, walletAddress: 
   return resolved.account_id;
 }
 
-export async function verifyWalletChallenge(
+export async function verifyWalletIdentity(
   env: CloudflareHostedBindings,
   input: { walletAddress: string; nonce: string; signature: string },
   now = Date.now(),
-): Promise<VerifiedWalletSession | null> {
+  expectedStatement?: string,
+): Promise<VerifiedWalletIdentity | null> {
   const publicKey = validateWalletAddress(input.walletAddress);
   if (!input.nonce || input.nonce.length > 256 || !input.signature || input.signature.length > 256) return null;
   const challenge = await env.SWARM_STATE.prepare(
@@ -219,6 +229,7 @@ export async function verifyWalletChallenge(
     .bind(await sha256(input.nonce), input.walletAddress, now)
     .first<ChallengeRow>();
   if (!challenge) return null;
+  if (expectedStatement && !challenge.message.includes(`\n\n${expectedStatement}\n\n`)) return null;
 
   let signature: Uint8Array;
   try {
@@ -233,6 +244,14 @@ export async function verifyWalletChallenge(
     return null;
 
   const accountId = await getOrCreateAccount(env, input.walletAddress, now);
+  return { accountId, walletAddress: input.walletAddress };
+}
+
+export async function createHostedSession(
+  env: CloudflareHostedBindings,
+  identity: VerifiedWalletIdentity,
+  now = Date.now(),
+): Promise<VerifiedWalletSession> {
   const sessionToken = randomToken(48);
   const sessionHash = await sha256(sessionToken);
   const expiresAt = now + SESSION_TTL_MS;
@@ -240,10 +259,20 @@ export async function verifyWalletChallenge(
     `insert into swarm_sessions (session_hash, account_id, wallet_address, created_at, expires_at)
      values (?, ?, ?, ?, ?)`,
   )
-    .bind(sessionHash, accountId, input.walletAddress, now, expiresAt)
+    .bind(sessionHash, identity.accountId, identity.walletAddress, now, expiresAt)
     .run();
   if (!result.success) throw new Error(result.error ?? 'Unable to create hosted session.');
-  return { accountId, walletAddress: input.walletAddress, expiresAt, sessionHash, sessionToken };
+  return { ...identity, expiresAt, sessionHash, sessionToken };
+}
+
+export async function verifyWalletChallenge(
+  env: CloudflareHostedBindings,
+  input: { walletAddress: string; nonce: string; signature: string },
+  now = Date.now(),
+): Promise<VerifiedWalletSession | null> {
+  const identity = await verifyWalletIdentity(env, input, now);
+  if (!identity) return null;
+  return createHostedSession(env, identity, now);
 }
 
 function cookieValue(request: Request, name: string): string | null {
@@ -304,7 +333,13 @@ export function assertSameOrigin(env: CloudflareHostedBindings, request: Request
 }
 
 export async function cleanupExpiredHostedAuth(env: CloudflareHostedBindings, now = Date.now()): Promise<void> {
-  const tables = ['swarm_auth_challenges', 'swarm_auth_rate_limits', 'swarm_sessions', 'swarm_oauth_transactions'];
+  const tables = [
+    'swarm_auth_challenges',
+    'swarm_auth_rate_limits',
+    'swarm_sessions',
+    'swarm_oauth_transactions',
+    'swarm_mobile_auth_pairings',
+  ];
   for (const table of tables) {
     const result = await env.SWARM_STATE.prepare(`delete from ${table} where expires_at <= ?`).bind(now).run();
     if (!result.success) throw new Error(result.error ?? `Unable to clean expired rows from ${table}.`);

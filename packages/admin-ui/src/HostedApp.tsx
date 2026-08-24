@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from './api/apiBase';
-import { PrivyLoginButton } from './components/PrivyLoginButton';
+import { HostedWalletSignIn } from './components/HostedWalletSignIn';
 import {
   createHostedAvatar,
   disconnectHostedProvider,
@@ -192,7 +192,7 @@ export function HostedApp() {
               <p className="text-xs text-[var(--color-text-muted)]">{environmentCopy.label}</p>
             </div>
           </div>
-          <PrivyLoginButton showIcon={!isAuthenticated} />
+          <HostedWalletSignIn showIcon={!isAuthenticated} />
         </div>
       </header>
 
@@ -204,8 +204,10 @@ export function HostedApp() {
               <div className="mt-4 space-y-3">
                 <h2 className="text-xl font-semibold">Sign in with your wallet</h2>
                 <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
-                  Your wallet creates a domain-bound session. Swarm never asks for a seed phrase or transaction.
+                  Scan with Phantom or Solflare. Your phone approves a domain-bound sign-in message;
+                  Swarm never asks for a seed phrase, funds, or a transaction.
                 </p>
+                <HostedWalletSignIn className="w-full justify-center" />
               </div>
             ) : (
               <div className="mt-4 space-y-3">
