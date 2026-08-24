@@ -16,8 +16,8 @@ describe('mobile wallet pairing client', () => {
     expect(decodeURIComponent(phantom.pathname.replace('/ul/browse/', ''))).toBe(target);
     expect(phantom.searchParams.get('ref')).toBe('https://swarm.example');
     expect(solflare.origin).toBe('https://solflare.com');
-    expect(solflare.pathname).toBe('/ul/browse/');
-    expect(solflare.searchParams.get('url')).toBe(target);
+    expect(decodeURIComponent(solflare.pathname.replace('/ul/v1/browse/', ''))).toBe(target);
+    expect(solflare.searchParams.has('url')).toBe(false);
     expect(solflare.searchParams.get('ref')).toBe('https://swarm.example');
   });
 

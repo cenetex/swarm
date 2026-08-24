@@ -110,6 +110,5 @@ export function phantomBrowseUrl(targetUrl: string): string {
 
 export function solflareBrowseUrl(targetUrl: string): string {
   const target = new URL(targetUrl);
-  const params = new URLSearchParams({ url: target.toString(), ref: target.origin });
-  return `https://solflare.com/ul/browse/?${params.toString()}`;
+  return `https://solflare.com/ul/v1/browse/${encodeURIComponent(target.toString())}?ref=${encodeURIComponent(target.origin)}`;
 }
