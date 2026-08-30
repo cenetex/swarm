@@ -375,7 +375,9 @@ class MemoryCoordinatorNamespace {
 function session(accountId: string): HostedSession {
   return {
     accountId,
-    walletAddress: `${accountId}-wallet`,
+    walletAddress: accountId.endsWith('a')
+      ? '11111111111111111111111111111111'
+      : '22222222222222222222222222222222',
     expiresAt: Date.now() + 60_000,
     sessionHash: `${accountId}-session`,
   };
