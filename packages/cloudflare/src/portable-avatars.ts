@@ -200,11 +200,13 @@ async function persistRevision(
     statements.push(
       env.SWARM_STATE.prepare(
         `update swarm_hosted_avatars
-         set slug = ?, visibility = ?, listed = ?, current_revision_id = ?, current_bundle_key = ?,
-             persona = ?, updated_at = ?
+         set slug = ?, name = ?, description = ?, visibility = ?, listed = ?, current_revision_id = ?,
+             current_bundle_key = ?, persona = ?, updated_at = ?
          where account_id = ? and avatar_id = ?`,
       ).bind(
         bundle.identity.slug,
+        bundle.identity.name,
+        bundle.identity.description || null,
         bundle.publication.visibility,
         bundle.publication.listed ? 1 : 0,
         revision.revisionId,
@@ -382,6 +384,52 @@ export async function importPortableHostedAvatar(
     revisionId: revision.revisionId,
     sha256: revision.sha256,
   };
+}
+
+export async function updatePortableAvatarProfile(
+  env: CloudflareHostedBindings,
+  session: HostedSession,
+  avatarId: string,
+  profile: { name: string; description: string; persona: string },
+  now = Date.now(),
+): Promise<PortableHostedAvatar | null> {
+  const current = await getOwnedPortableRevision(env, session, avatarId);
+  const avatar = await getHostedAvatar(env, session, avatarId);
+  if (!current || !avatar) return null;
+  const nextBundle: PortableAvatarBundleV1 = {
+    ...current.bundle,
+    identity: {
+      ...current.bundle.identity,
+      name: profile.name,
+      description: profile.description,
+    },
+    prompts: {
+      ...current.bundle.prompts,
+      system: profile.persona,
+    },
+    lineage: {
+      ...current.bundle.lineage,
+      previousRevisionId: current.revisionId,
+    },
+    revision: { createdAt: new Date(now).toISOString() },
+  };
+  const revision = await portableAvatarRevision(nextBundle);
+  await persistRevision(env, session, revision, now, false);
+  const updated: PortableHostedAvatar = {
+    ...avatar,
+    name: profile.name,
+    ...(profile.description ? { description: profile.description } : {}),
+    ...(profile.persona ? { persona: profile.persona } : {}),
+    slug: nextBundle.identity.slug,
+    visibility: nextBundle.publication.visibility,
+    listed: nextBundle.publication.listed,
+    revisionId: revision.revisionId,
+    sha256: revision.sha256,
+    updatedAt: now,
+  };
+  if (!profile.description) delete updated.description;
+  if (!profile.persona) delete updated.persona;
+  return updated;
 }
 
 export async function updatePortableAvatarPublication(
