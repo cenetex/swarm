@@ -34,6 +34,13 @@ describe('renderWranglerConfig', () => {
       run_worker_first: true,
     });
     expect(config.vars.SWARM_USER_SECRET_KEK).toBeUndefined();
+    expect(config.vars.SWARM_X_API_KEY).toBeUndefined();
+    expect(config.vars.SWARM_X_API_SECRET).toBeUndefined();
+    expect(config.secrets.required).toEqual([
+      'SWARM_USER_SECRET_KEK',
+      'SWARM_X_API_KEY',
+      'SWARM_X_API_SECRET',
+    ]);
     expect(config.vars.SWARM_OPENROUTER_MODEL).toBe('openrouter/free');
   });
 

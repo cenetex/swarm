@@ -1,6 +1,6 @@
 # Cloudflare Hosted Worker Runbook
 
-This runbook deploys the browser-chat and Telegram hosted runtime and its dedicated connector UI to an isolated Cloudflare Worker. Production is staged on `next.swarm.rati.chat`, then can replace the existing `swarm.rati.chat` static site through a reversible Worker route.
+This runbook deploys the browser-chat, Telegram, and X hosted runtime and its dedicated connector UI to an isolated Cloudflare Worker. Production is staged on `next.swarm.rati.chat`, then can replace the existing `swarm.rati.chat` static site through a reversible Worker route.
 
 The normal release path is the **Deploy Cloudflare Hosted Worker** GitHub Actions workflow. Do not deploy production from a developer machine.
 
@@ -14,7 +14,7 @@ Each environment uses its own resources:
 - one Queue used by both the producer and consumer;
 - one Durable Object namespace created with the Worker deployment;
 - one versioned static asset bundle served from the same Worker origin;
-- one cleanup cron that runs every 15 minutes.
+- one one-minute cron that polls X mentions and also runs bounded cleanup work.
 
 Use `preview` first. Production uses a separate set of resources and a separate protected GitHub environment.
 
@@ -51,6 +51,8 @@ Set these secrets in each environment:
 | `CLOUDFLARE_API_TOKEN`           | Narrow deployment token.                        |
 | `SWARM_USER_SECRET_KEK`          | Active base64url-encoded 32-byte wrapping key.  |
 | `SWARM_USER_SECRET_PREVIOUS_KEK` | Optional previous wrapping key during rotation. |
+| `SWARM_X_API_KEY`                | X app API key used only for OAuth signing.      |
+| `SWARM_X_API_SECRET`             | X app API secret used only inside the Worker.   |
 
 Set these environment variables:
 
@@ -71,6 +73,24 @@ Set these environment variables:
 | `SWARM_HOSTED_CHAT_RATE_LIMIT`           | `20`                              | Optional messages per account per minute, from 1 to 100. |
 
 The public URL must be one HTTPS origin with no path. Preview uses its exact `workers.dev` origin. Production uses `https://next.swarm.rati.chat` before cutover and `https://swarm.rati.chat` only when the primary route is activated. The configuration renderer rejects mismatched public origins and routes.
+
+## X app setup
+
+Create one X developer app for each hosted environment. Give it read and write access and enable OAuth 1.0a three-legged authorization. Add the exact callback URL for that environment:
+
+```text
+https://<hosted-origin>/api/auth/x/callback
+```
+
+For production before cutover, the callback is:
+
+```text
+https://next.swarm.rati.chat/api/auth/x/callback
+```
+
+Save the app API key as `SWARM_X_API_KEY` and the app API secret as `SWARM_X_API_SECRET` in the matching protected GitHub environment. Do not store user access tokens in GitHub. The Worker exchanges the short-lived request credential on the callback, encrypts the resulting user token and token secret with the hosted keyring, and scopes them to the owning account and avatar.
+
+The connector uses `GET /2/users/{id}/mentions` and `POST /2/tweets`. X API usage is billed by X under the developer app account, so configure spending limits and usage alerts in the X developer console before production enablement. Existing mentions are used only to establish the initial cursor and are not backfilled; new mentions are checked once per minute.
 
 Mobile wallet sign-in needs no third-party project ID. The desktop requests a five-minute, one-use pairing from the Worker. The QR contains only the public pairing ID inside the official Phantom or Solflare in-app-browser link. A separate poll token stays in desktop memory, is stored only as a hash in D1, and is required before the Worker can issue the desktop session cookie. The phone signs a domain-bound SIWS message with the visible pairing code; it does not submit a Solana transaction.
 
@@ -97,6 +117,8 @@ The dry run must show these bindings:
 - `SWARM_QUEUE`
 - `SWARM_AVATAR_COORDINATORS`
 - `SWARM_ASSETS`
+
+The deployment workflow supplies `SWARM_USER_SECRET_KEK`, `SWARM_X_API_KEY`, and `SWARM_X_API_SECRET` through Wrangler's encrypted secrets file. They must never appear in the rendered plain variables.
 
 ## Deploy preview
 
@@ -126,7 +148,7 @@ After the automated checks pass, complete one manual preview flow:
 7. select **Connect OpenRouter securely** and complete OpenRouter OAuth;
 8. confirm the UI reports connected without displaying a credential;
 9. send a browser-chat message and wait for the Queue job to complete;
-10. create a test bot with BotFather, paste its token into **Telegram — Connector 2**, and confirm the
+10. create a test bot with BotFather, paste its token into **Telegram**, and confirm the
    token field clears without the token appearing in any later response;
 11. open the ownership link, send `/start`, return to Swarm, and refresh Telegram status;
 12. add the bot to a test group from the generated group link and confirm the group appears under **Bound groups**;
@@ -139,9 +161,13 @@ After the automated checks pass, complete one manual preview flow:
 17. remove the bot from the group and refresh Swarm; confirm membership is shown as unavailable;
 18. confirm an unbound private user, an unenabled group, and ordinary unmentioned group messages receive no response;
 19. disconnect Telegram, then confirm Bot API `getWebhookInfo` no longer reports the Swarm webhook;
-20. disconnect OpenRouter and confirm the connected state clears;
-21. confirm that another wallet cannot read that avatar, connector, group list, job, history, or private artifact;
-22. import the downloaded artifact into a clean preview environment and confirm the revision ID is unchanged.
+20. connect a test X account from **X**, confirm the callback returns to Studio with only the username, and verify no token appears in the page or API response;
+21. mention the connected X account from another account, wait for the next one-minute poll, and confirm exactly one reply appears in the same conversation;
+22. repeat the poll and confirm the same mention is not processed twice; revoke X access and confirm Studio changes to **Reconnect** after the next check;
+23. reconnect, then disconnect X and confirm the encrypted X access-token rows and connector metadata are removed;
+24. disconnect OpenRouter and confirm the connected state clears;
+25. confirm that another wallet cannot read that avatar, connector, group list, job, history, or private artifact;
+26. import the downloaded artifact into a clean preview environment and confirm the revision ID is unchanged.
 
 The hosted interface is chat-first. At desktop widths, account, provider, and avatar controls live in the workspace rail. At mobile widths, open **Manage** to reach those controls and confirm that closing it returns directly to the active conversation without horizontal overflow.
 
@@ -165,6 +191,13 @@ and typing are best effort and must not change the final delivery state. A bot w
 rejected during setup with instructions to use BotFather `/setjoingroups`. Incoming binary media is ignored;
 only text and captions are accepted in this release.
 
+X uses OAuth 1.0a user context. D1 stores only account-scoped metadata, durable mention IDs, cursors, and
+delivery state; request-token secrets and access credentials stay in the encrypted hosted secret store. A
+`reauth_required` status means X returned 401 or 403 and the owner must reconnect. `x_rate_limited` waits for
+the next scheduled check. A reply in `unknown` state is intentionally not retried because the POST may have
+reached X. Check the source conversation before attempting any manual recovery. Logs may include the opaque
+integration ID and safe error code, but never an X token, post text, username, wallet, account ID, or avatar ID.
+
 ## Deploy production resources
 
 Production deployment is allowed only from `main`. Select `production` and enter exactly `DEPLOY_PRODUCTION`. GitHub environment approval should provide a second human check.
@@ -175,8 +208,8 @@ For the first production deployment:
 2. set `SWARM_CF_STAGING_DOMAIN=next.swarm.rati.chat`;
 3. set `SWARM_CF_ZONE_NAME=rati.chat`;
 4. set `SWARM_PUBLIC_URL=https://next.swarm.rati.chat`;
-5. deploy every migration through `0007_hosted_telegram_v2.sql` and confirm a QR can be approved from both Phantom and Solflare;
-6. complete public catalog, portable restore, OAuth, queued-chat, disconnect, and tenant-isolation checks.
+5. deploy every migration through `0008_hosted_x.sql` and confirm a QR can be approved from both Phantom and Solflare;
+6. complete public catalog, portable restore, OpenRouter OAuth, X OAuth, Telegram and X messaging, disconnect, and tenant-isolation checks.
 
 Production disables the `workers.dev` hostname. The Worker is available only through its configured domains and routes.
 
