@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  connectHostedTelegram,
+  disconnectHostedTelegram,
   disconnectHostedProvider,
   getHostedProviderStatus,
+  getHostedTelegramStatus,
   openRouterConnectUrl,
   openRouterResult,
 } from './hosted-api';
+
+const testBotToken = `123456789:${'A'.repeat(36)}`;
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -33,6 +38,39 @@ describe('hosted API client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(disconnectHostedProvider()).resolves.toEqual({ connected: false, provider: null });
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'DELETE', credentials: 'include' });
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
+  });
+
+  it('uses an avatar-scoped Telegram API and never receives the BotFather token back', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => Response.json({
+      connected: true,
+      status: 'binding_required',
+      ownerBound: false,
+      bot: { id: '123', username: 'JaxSwarmBot', name: 'Jax' },
+      ownerBindUrl: 'https://t.me/JaxSwarmBot?start=code',
+    }, { status: init?.method === 'POST' ? 201 : 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const status = await connectHostedTelegram(
+      'avatar/one',
+      testBotToken,
+    );
+    expect(status).not.toHaveProperty('botToken');
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/avatars\/avatar%2Fone\/integrations\/telegram$/u);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      botToken: testBotToken,
+    });
+
+    await getHostedTelegramStatus('avatar/one');
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toBeUndefined();
+  });
+
+  it('disconnects Telegram without sending a stored credential', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ disconnected: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await disconnectHostedTelegram('avatar-1');
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'DELETE', credentials: 'include' });
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
   });
