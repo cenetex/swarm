@@ -7,6 +7,7 @@ import {
   disconnectHostedProvider,
   disconnectHostedTelegram,
   enqueueHostedMessage,
+  forgetHostedTelegramGroup,
   getHostedHistory,
   getHostedProviderStatus,
   getHostedTelegramStatus,
@@ -16,6 +17,7 @@ import {
   openRouterResult,
   ownedHostedAvatarBundleUrl,
   repairHostedTelegram,
+  setHostedTelegramGroupEnabled,
   updateHostedAvatarPublication,
   waitForHostedJob,
   type HostedAvatar,
@@ -297,9 +299,44 @@ export function HostedApp() {
     setError('');
     try {
       await disconnectHostedTelegram(activeAvatarId);
-      setTelegram({ connected: false, status: 'disconnected', ownerBound: false });
+      setTelegram({ connected: false, status: 'disconnected', ownerBound: false, groups: [] });
     } catch (disconnectError) {
       setError(disconnectError instanceof Error ? disconnectError.message : 'Unable to disconnect Telegram.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopyGroupBindCommand = async () => {
+    if (!telegram?.groupBindCommand) return;
+    try {
+      await navigator.clipboard.writeText(telegram.groupBindCommand);
+    } catch {
+      setError('Unable to copy the Telegram group command.');
+    }
+  };
+
+  const handleToggleTelegramGroup = async (chatId: string, enabled: boolean) => {
+    if (!activeAvatarId) return;
+    setLoading(true);
+    setError('');
+    try {
+      setTelegram(await setHostedTelegramGroupEnabled(activeAvatarId, chatId, enabled));
+    } catch (groupError) {
+      setError(groupError instanceof Error ? groupError.message : 'Unable to update the Telegram group.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgetTelegramGroup = async (chatId: string, title: string) => {
+    if (!activeAvatarId || !window.confirm(`Forget ${title}? The bot stays in Telegram but Swarm stops answering there.`)) return;
+    setLoading(true);
+    setError('');
+    try {
+      setTelegram(await forgetHostedTelegramGroup(activeAvatarId, chatId));
+    } catch (groupError) {
+      setError(groupError instanceof Error ? groupError.message : 'Unable to forget the Telegram group.');
     } finally {
       setLoading(false);
     }
@@ -739,7 +776,7 @@ export function HostedApp() {
                   </span>
                 </div>
                 <p className="mt-3 text-xs leading-5 text-[var(--color-text-muted)]">
-                  Connect a BotFather bot to {activeAvatar.name}. Its token is write only, and the bot answers only its owner or enabled groups.
+                  Connect a BotFather bot to {activeAvatar.name}. It follows mentions, commands, replies, and forum topics in enabled groups.
                 </p>
                 {telegramLoading ? (
                   <p className="mt-4 text-xs text-[var(--color-text-muted)]">Loading Telegram status…</p>
@@ -797,6 +834,57 @@ export function HostedApp() {
                       >
                         Add bot to a group
                       </a>
+                    )}
+                    {telegram.ownerBound && telegram.groupBindCommand && (
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyGroupBindCommand()}
+                        className="w-full rounded-lg border border-[var(--color-border-secondary)] px-4 py-2.5 text-sm font-medium hover:bg-[var(--color-bg-tertiary)]"
+                      >
+                        Copy command for an existing group
+                      </button>
+                    )}
+                    {telegram.groups.length > 0 && (
+                      <div className="border-t border-[var(--color-border)] pt-3">
+                        <p className="text-xs font-medium text-[var(--color-text-secondary)]">Bound groups</p>
+                        <div className="mt-2 space-y-2">
+                          {telegram.groups.map((group) => {
+                            const unavailable = group.membershipStatus === 'left' || group.membershipStatus === 'kicked';
+                            return (
+                              <div
+                                key={group.chatId}
+                                className="rounded-lg border border-[var(--color-border-secondary)] bg-[var(--color-bg)] p-3"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium">{group.title}</p>
+                                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                                      {unavailable ? group.membershipStatus : group.enabled ? 'Answering' : 'Paused'}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    aria-pressed={group.enabled}
+                                    onClick={() => void handleToggleTelegramGroup(group.chatId, !group.enabled)}
+                                    disabled={loading || unavailable}
+                                    className="rounded-md border border-[var(--color-border-secondary)] px-2.5 py-1.5 text-xs font-medium disabled:opacity-50"
+                                  >
+                                    {group.enabled ? 'Pause' : 'Enable'}
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleForgetTelegramGroup(group.chatId, group.title)}
+                                  disabled={loading}
+                                  className="mt-2 text-xs text-red-300 underline decoration-red-400/40 underline-offset-4 disabled:opacity-50"
+                                >
+                                  Forget group
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                     <button
                       type="button"

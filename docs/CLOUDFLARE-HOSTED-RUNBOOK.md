@@ -129,12 +129,19 @@ After the automated checks pass, complete one manual preview flow:
 10. create a test bot with BotFather, paste its token into **Telegram — Connector 2**, and confirm the
    token field clears without the token appearing in any later response;
 11. open the ownership link, send `/start`, return to Swarm, and refresh Telegram status;
-12. add the bot to a test group from the generated group link, mention it, and confirm the response arrives;
-13. confirm an unbound private user, an unenabled group, and ordinary unmentioned group messages receive no response;
-14. disconnect Telegram, then confirm Bot API `getWebhookInfo` no longer reports the Swarm webhook;
-15. disconnect OpenRouter and confirm the connected state clears;
-16. confirm that another wallet cannot read that avatar, connector, job, history, or private artifact;
-17. import the downloaded artifact into a clean preview environment and confirm the revision ID is unchanged.
+12. add the bot to a test group from the generated group link and confirm the group appears under **Bound groups**;
+13. mention the bot, reply to its response, and use `/ask`; confirm replies attach to the source message and
+    the source receives acknowledgement and completion reactions;
+14. in a forum supergroup, send addressed prompts in two topics and confirm each response stays in its source topic;
+15. send a photo with an addressed caption and confirm the caption is handled without downloading the photo;
+16. pause and enable the group in Swarm, confirming paused groups receive no response; use **Copy command for
+    an existing group** to bind a group where the bot is already present;
+17. remove the bot from the group and refresh Swarm; confirm membership is shown as unavailable;
+18. confirm an unbound private user, an unenabled group, and ordinary unmentioned group messages receive no response;
+19. disconnect Telegram, then confirm Bot API `getWebhookInfo` no longer reports the Swarm webhook;
+20. disconnect OpenRouter and confirm the connected state clears;
+21. confirm that another wallet cannot read that avatar, connector, group list, job, history, or private artifact;
+22. import the downloaded artifact into a clean preview environment and confirm the revision ID is unchanged.
 
 The hosted interface is chat-first. At desktop widths, account, provider, and avatar controls live in the workspace rail. At mobile widths, open **Manage** to reach those controls and confirm that closing it returns directly to the active conversation without horizontal overflow.
 
@@ -152,6 +159,12 @@ must contain only hashes for binding codes. A delivery in `unknown` state is int
 check Telegram before deciding on any manual resend. Use **Repair and refresh links** to register the
 webhook again and rotate expired binding links without asking the user to paste the token again.
 
+Telegram v2 registers `message`, `edited_message`, `my_chat_member`, and `message_reaction` updates. The
+connector uses `reply_parameters`, `message_thread_id`, `sendChatAction`, and `setMessageReaction`; reactions
+and typing are best effort and must not change the final delivery state. A bot with group joining disabled is
+rejected during setup with instructions to use BotFather `/setjoingroups`. Incoming binary media is ignored;
+only text and captions are accepted in this release.
+
 ## Deploy production resources
 
 Production deployment is allowed only from `main`. Select `production` and enter exactly `DEPLOY_PRODUCTION`. GitHub environment approval should provide a second human check.
@@ -162,7 +175,7 @@ For the first production deployment:
 2. set `SWARM_CF_STAGING_DOMAIN=next.swarm.rati.chat`;
 3. set `SWARM_CF_ZONE_NAME=rati.chat`;
 4. set `SWARM_PUBLIC_URL=https://next.swarm.rati.chat`;
-5. deploy every migration through `0006_portable_public_avatars.sql` and confirm a QR can be approved from both Phantom and Solflare;
+5. deploy every migration through `0007_hosted_telegram_v2.sql` and confirm a QR can be approved from both Phantom and Solflare;
 6. complete public catalog, portable restore, OAuth, queued-chat, disconnect, and tenant-isolation checks.
 
 Production disables the `workers.dev` hostname. The Worker is available only through its configured domains and routes.

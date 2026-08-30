@@ -31,6 +31,8 @@ type TelegramIntegrationRow = {
   updated_at: number;
 };
 
+type TelegramMembershipStatus = 'member' | 'administrator' | 'restricted' | 'left' | 'kicked' | 'unknown';
+
 type TelegramChatRow = {
   integration_id: string;
   account_id: string;
@@ -41,6 +43,8 @@ type TelegramChatRow = {
   title: string | null;
   enabled: number;
   bound_by: string;
+  membership_status: TelegramMembershipStatus;
+  last_activity_at: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -60,21 +64,43 @@ type TelegramUpdateRow = {
   response_text: string | null;
   telegram_message_id: string | null;
   error_code: string | null;
+  source_message_id: string | null;
+  message_thread_id: string | null;
   created_at: number;
   updated_at: number;
   completed_at: number | null;
 };
 
-type TelegramUser = { id?: unknown; is_bot?: unknown; first_name?: unknown; username?: unknown };
+type TelegramUser = {
+  id?: unknown;
+  is_bot?: unknown;
+  first_name?: unknown;
+  username?: unknown;
+  can_join_groups?: unknown;
+};
 type TelegramChat = { id?: unknown; type?: unknown; title?: unknown; username?: unknown; first_name?: unknown };
 type TelegramMessage = {
   message_id?: unknown;
+  message_thread_id?: unknown;
   text?: unknown;
+  caption?: unknown;
   from?: TelegramUser;
   chat?: TelegramChat;
   reply_to_message?: { from?: TelegramUser };
 };
-type TelegramUpdate = { update_id?: unknown; message?: TelegramMessage; edited_message?: TelegramMessage };
+type TelegramChatMemberUpdated = {
+  chat?: TelegramChat;
+  from?: TelegramUser;
+  new_chat_member?: { status?: unknown; is_member?: unknown; user?: TelegramUser };
+};
+type TelegramMessageReactionUpdated = { chat?: TelegramChat; message_id?: unknown; user?: TelegramUser };
+type TelegramUpdate = {
+  update_id?: unknown;
+  message?: TelegramMessage;
+  edited_message?: TelegramMessage;
+  my_chat_member?: TelegramChatMemberUpdated;
+  message_reaction?: TelegramMessageReactionUpdated;
+};
 
 type TelegramApiEnvelope<T> = {
   ok?: boolean;
@@ -85,6 +111,15 @@ type TelegramApiEnvelope<T> = {
 };
 type TelegramWebhookInfo = { url?: unknown };
 
+export type HostedTelegramGroup = {
+  chatId: string;
+  title: string;
+  type: string;
+  enabled: boolean;
+  membershipStatus: TelegramMembershipStatus;
+  lastActivityAt?: number;
+};
+
 export type HostedTelegramStatus = {
   connected: boolean;
   status: 'disconnected' | 'binding_required' | 'connected' | 'repair_needed';
@@ -92,6 +127,8 @@ export type HostedTelegramStatus = {
   ownerBound: boolean;
   ownerBindUrl?: string;
   addToGroupUrl?: string;
+  groupBindCommand?: string;
+  groups: HostedTelegramGroup[];
 };
 
 export type HostedTelegramQueueMessage = {
@@ -220,6 +257,9 @@ function validateBot(result: TelegramUser): { id: string; username: string; name
   if (!id || result.is_bot !== true || !/^[A-Za-z0-9_]{5,32}$/u.test(username)) {
     throw new Error('Telegram did not return a valid bot identity.');
   }
+  if (result.can_join_groups === false) {
+    throw new Error('This bot cannot join groups. Enable group access with BotFather /setjoingroups, then try again.');
+  }
   return { id, username, name: name || username };
 }
 
@@ -233,13 +273,20 @@ async function registerWebhook(
   const registered = await telegramApi<boolean>(token, 'setWebhook', {
     url: webhookUrl,
     secret_token: webhookSecret,
-    allowed_updates: ['message', 'edited_message'],
+    allowed_updates: ['message', 'edited_message', 'my_chat_member', 'message_reaction'],
     ...(dropPendingUpdates ? { drop_pending_updates: true } : {}),
     max_connections: 20,
   }, fetchImpl);
   if (registered !== true) throw new Error('Telegram did not register the webhook.');
   const info = await telegramApi<TelegramWebhookInfo>(token, 'getWebhookInfo', undefined, fetchImpl);
   if (info.url !== webhookUrl) throw new Error('Telegram did not confirm the webhook URL.');
+  await telegramApi<boolean>(token, 'setMyCommands', {
+    commands: [
+      { command: 'ask', description: 'Ask the connected Swarm avatar' },
+      { command: 'help', description: 'Show Telegram usage help' },
+      { command: 'status', description: 'Show connector status' },
+    ],
+  }, fetchImpl);
 }
 
 async function codeMatches(code: string, expectedHash: string | null): Promise<boolean> {
@@ -269,6 +316,23 @@ async function statusFromRow(
   const groupCode = row.owner_telegram_user_id && row.group_bind_expires_at > now
     ? await secrets.getUserSecret(scope, GROUP_CODE_SECRET)
     : null;
+  const groupRows = await env.SWARM_STATE.prepare(
+    `select chat_id, chat_type, title, enabled, membership_status, last_activity_at
+     from swarm_hosted_telegram_chats
+     where integration_id = ? and chat_type != 'private'
+     order by coalesce(last_activity_at, updated_at) desc, chat_id asc`,
+  ).bind(row.integration_id).all<Pick<
+    TelegramChatRow,
+    'chat_id' | 'chat_type' | 'title' | 'enabled' | 'membership_status' | 'last_activity_at'
+  >>();
+  const groups = (groupRows.results ?? []).map((chat) => ({
+    chatId: chat.chat_id,
+    title: chat.title ?? chat.chat_id,
+    type: chat.chat_type,
+    enabled: chat.enabled === 1,
+    membershipStatus: chat.membership_status,
+    ...(chat.last_activity_at === null ? {} : { lastActivityAt: chat.last_activity_at }),
+  }));
   return {
     connected: true,
     status: row.status,
@@ -276,6 +340,8 @@ async function statusFromRow(
     ownerBound: !!row.owner_telegram_user_id,
     ...(ownerCode ? { ownerBindUrl: `https://t.me/${row.bot_username}?start=${ownerCode}` } : {}),
     ...(groupCode ? { addToGroupUrl: `https://t.me/${row.bot_username}?startgroup=${groupCode}` } : {}),
+    ...(groupCode ? { groupBindCommand: `/start@${row.bot_username} ${groupCode}` } : {}),
+    groups,
   };
 }
 
@@ -288,7 +354,43 @@ export async function getHostedTelegramStatus(
   const row = await findIntegrationForOwner(env, session.accountId, avatarId);
   return row
     ? statusFromRow(env, row, now)
-    : { connected: false, status: 'disconnected', ownerBound: false };
+    : { connected: false, status: 'disconnected', ownerBound: false, groups: [] };
+}
+
+export async function setHostedTelegramGroupEnabled(
+  env: CloudflareHostedBindings,
+  session: HostedSession,
+  input: { avatarId: string; chatId: string; enabled: boolean },
+  now = Date.now(),
+): Promise<HostedTelegramStatus> {
+  const row = await findIntegrationForOwner(env, session.accountId, input.avatarId);
+  if (!row) throw new HostedTelegramNotFoundError();
+  if (!/^-?\d{1,20}$/u.test(input.chatId)) throw new HostedTelegramNotFoundError('Telegram group was not found.');
+  const updated = await env.SWARM_STATE.prepare(
+    `update swarm_hosted_telegram_chats set enabled = ?, updated_at = ?
+     where integration_id = ? and chat_id = ? and chat_type != 'private'
+     returning chat_id`,
+  ).bind(input.enabled ? 1 : 0, now, row.integration_id, input.chatId).first<{ chat_id: string }>();
+  if (!updated) throw new HostedTelegramNotFoundError('Telegram group was not found.');
+  return statusFromRow(env, row, now);
+}
+
+export async function forgetHostedTelegramGroup(
+  env: CloudflareHostedBindings,
+  session: HostedSession,
+  input: { avatarId: string; chatId: string },
+  now = Date.now(),
+): Promise<HostedTelegramStatus> {
+  const row = await findIntegrationForOwner(env, session.accountId, input.avatarId);
+  if (!row) throw new HostedTelegramNotFoundError();
+  if (!/^-?\d{1,20}$/u.test(input.chatId)) throw new HostedTelegramNotFoundError('Telegram group was not found.');
+  const removed = await env.SWARM_STATE.prepare(
+    `delete from swarm_hosted_telegram_chats
+     where integration_id = ? and chat_id = ? and chat_type != 'private'
+     returning chat_id`,
+  ).bind(row.integration_id, input.chatId).first<{ chat_id: string }>();
+  if (!removed) throw new HostedTelegramNotFoundError('Telegram group was not found.');
+  return statusFromRow(env, row, now);
 }
 
 export async function connectHostedTelegram(
@@ -488,8 +590,32 @@ function addressedToBot(message: TelegramMessage, text: string, row: TelegramInt
   return (typeof repliedTo === 'number' || typeof repliedTo === 'string') && String(repliedTo) === row.bot_user_id;
 }
 
+function telegramCommand(text: string, username: string): { name: string; args: string } | null {
+  const match = text.trim().match(/^\/([A-Za-z0-9_]+)(?:@([A-Za-z0-9_]+))?(?:\s+([\s\S]*))?$/u);
+  if (!match) return null;
+  if (match[2] && match[2].toLowerCase() !== username.toLowerCase()) return null;
+  return { name: (match[1] ?? '').toLowerCase(), args: (match[3] ?? '').trim() };
+}
+
 function promptText(text: string, username: string): string {
+  const command = telegramCommand(text, username);
+  if (command?.name === 'ask') return command.args;
   return text.replace(new RegExp(`@${username}`, 'giu'), '').trim();
+}
+
+function safeTelegramId(value: unknown): string | null {
+  return (typeof value === 'number' && Number.isSafeInteger(value)) || typeof value === 'string'
+    ? String(value)
+    : null;
+}
+
+function membershipStatus(member: TelegramChatMemberUpdated['new_chat_member']): TelegramMembershipStatus {
+  const status = typeof member?.status === 'string' ? member.status : 'unknown';
+  if (status === 'restricted' && member?.is_member === false) return 'left';
+  return status === 'member' || status === 'administrator' || status === 'restricted'
+    || status === 'left' || status === 'kicked'
+    ? status
+    : 'unknown';
 }
 
 async function findTelegramChat(
@@ -499,7 +625,7 @@ async function findTelegramChat(
 ): Promise<TelegramChatRow | null> {
   return env.SWARM_STATE.prepare(
     `select integration_id, account_id, avatar_id, chat_id, chat_type, thread_id, title,
-            enabled, bound_by, created_at, updated_at
+            enabled, bound_by, membership_status, last_activity_at, created_at, updated_at
      from swarm_hosted_telegram_chats where integration_id = ? and chat_id = ?`,
   ).bind(integrationId, chatId).first<TelegramChatRow>();
 }
@@ -513,11 +639,22 @@ async function ensureTelegramChat(
 ): Promise<TelegramChatRow> {
   const chatId = String(message.chat?.id ?? '');
   const existing = await findTelegramChat(env, row.integration_id, chatId);
-  if (existing) return existing;
-  const threadId = `thread_tg_${randomToken(12)}`;
   const chatType = typeof message.chat?.type === 'string' ? message.chat.type : 'unknown';
   const titleValue = message.chat?.title ?? message.chat?.username ?? message.chat?.first_name;
   const title = typeof titleValue === 'string' ? titleValue.slice(0, 200) : null;
+  if (existing) {
+    const refreshed = await env.SWARM_STATE.prepare(
+      `update swarm_hosted_telegram_chats
+       set chat_type = ?, title = coalesce(?, title), enabled = 1, bound_by = ?,
+           membership_status = 'member', last_activity_at = ?, updated_at = ?
+       where integration_id = ? and chat_id = ?`,
+    ).bind(chatType, title, boundBy, now, now, row.integration_id, chatId).run();
+    ensureWrite(refreshed, 'Unable to refresh Telegram chat binding.');
+    const updated = await findTelegramChat(env, row.integration_id, chatId);
+    if (!updated) throw new Error('Telegram chat binding was not stored.');
+    return updated;
+  }
+  const threadId = `thread_tg_${randomToken(12)}`;
   const threadResult = await env.SWARM_STATE.prepare(
     `insert into swarm_hosted_chat_threads (account_id, avatar_id, thread_id, created_at, updated_at)
      values (?, ?, ?, ?, ?) on conflict(account_id, avatar_id, thread_id) do nothing`,
@@ -526,8 +663,8 @@ async function ensureTelegramChat(
   const chatResult = await env.SWARM_STATE.prepare(
     `insert into swarm_hosted_telegram_chats
        (integration_id, account_id, avatar_id, chat_id, chat_type, thread_id, title,
-        enabled, bound_by, created_at, updated_at)
-     values (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+        enabled, bound_by, membership_status, last_activity_at, created_at, updated_at)
+     values (?, ?, ?, ?, ?, ?, ?, 1, ?, 'member', ?, ?, ?)
      on conflict(integration_id, chat_id) do nothing`,
   ).bind(
     row.integration_id,
@@ -540,11 +677,72 @@ async function ensureTelegramChat(
     boundBy,
     now,
     now,
+    now,
   ).run();
   ensureWrite(chatResult, 'Unable to bind Telegram chat.');
   const created = await findTelegramChat(env, row.integration_id, chatId);
   if (!created) throw new Error('Telegram chat binding was not stored.');
   return created;
+}
+
+async function ensureTelegramTopic(
+  env: CloudflareHostedBindings,
+  chat: TelegramChatRow,
+  messageThreadId: string | null,
+  now: number,
+): Promise<string> {
+  if (!messageThreadId) return chat.thread_id;
+  const existing = await env.SWARM_STATE.prepare(
+    `select thread_id from swarm_hosted_telegram_topics
+     where integration_id = ? and chat_id = ? and message_thread_id = ?`,
+  ).bind(chat.integration_id, chat.chat_id, messageThreadId).first<{ thread_id: string }>();
+  if (existing) {
+    await env.SWARM_STATE.prepare(
+      `update swarm_hosted_telegram_topics set updated_at = ?
+       where integration_id = ? and chat_id = ? and message_thread_id = ?`,
+    ).bind(now, chat.integration_id, chat.chat_id, messageThreadId).run();
+    return existing.thread_id;
+  }
+  const threadId = `thread_tg_topic_${randomToken(12)}`;
+  const threadResult = await env.SWARM_STATE.prepare(
+    `insert into swarm_hosted_chat_threads (account_id, avatar_id, thread_id, created_at, updated_at)
+     values (?, ?, ?, ?, ?) on conflict(account_id, avatar_id, thread_id) do nothing`,
+  ).bind(chat.account_id, chat.avatar_id, threadId, now, now).run();
+  ensureWrite(threadResult, 'Unable to create Telegram topic thread.');
+  const topicResult = await env.SWARM_STATE.prepare(
+    `insert into swarm_hosted_telegram_topics
+       (integration_id, account_id, avatar_id, chat_id, message_thread_id, thread_id, created_at, updated_at)
+     values (?, ?, ?, ?, ?, ?, ?, ?)
+     on conflict(integration_id, chat_id, message_thread_id) do nothing`,
+  ).bind(
+    chat.integration_id,
+    chat.account_id,
+    chat.avatar_id,
+    chat.chat_id,
+    messageThreadId,
+    threadId,
+    now,
+    now,
+  ).run();
+  ensureWrite(topicResult, 'Unable to bind Telegram topic.');
+  const created = await env.SWARM_STATE.prepare(
+    `select thread_id from swarm_hosted_telegram_topics
+     where integration_id = ? and chat_id = ? and message_thread_id = ?`,
+  ).bind(chat.integration_id, chat.chat_id, messageThreadId).first<{ thread_id: string }>();
+  if (!created) throw new Error('Telegram topic binding was not stored.');
+  return created.thread_id;
+}
+
+async function touchTelegramChat(
+  env: CloudflareHostedBindings,
+  integrationId: string,
+  chatId: string,
+  now: number,
+): Promise<void> {
+  await env.SWARM_STATE.prepare(
+    `update swarm_hosted_telegram_chats set last_activity_at = ?, updated_at = ?
+     where integration_id = ? and chat_id = ?`,
+  ).bind(now, now, integrationId, chatId).run();
 }
 
 async function updateReserved(
@@ -559,6 +757,8 @@ async function updateReserved(
     requestId?: string;
     responseText?: string;
     errorCode?: string;
+    sourceMessageId?: string;
+    messageThreadId?: string;
     completedAt?: number;
   },
   now: number,
@@ -566,7 +766,7 @@ async function updateReserved(
   const result = await env.SWARM_STATE.prepare(
     `update swarm_hosted_telegram_updates
      set status = ?, chat_id = ?, thread_id = ?, job_id = ?, request_id = ?, response_text = ?,
-         error_code = ?, updated_at = ?, completed_at = ?
+         error_code = ?, source_message_id = ?, message_thread_id = ?, updated_at = ?, completed_at = ?
      where integration_id = ? and update_id = ?`,
   ).bind(
     fields.status,
@@ -576,6 +776,8 @@ async function updateReserved(
     fields.requestId ?? null,
     fields.responseText ?? null,
     fields.errorCode ?? null,
+    fields.sourceMessageId ?? null,
+    fields.messageThreadId ?? null,
     now,
     fields.completedAt ?? null,
     integrationId,
@@ -589,7 +791,13 @@ async function queueTelegramUpdate(
   row: TelegramIntegrationRow,
   updateId: string,
   chat: TelegramChatRow,
-  input: { prompt?: string; responseText?: string },
+  input: {
+    prompt?: string;
+    responseText?: string;
+    threadId?: string;
+    sourceMessageId?: string;
+    messageThreadId?: string;
+  },
   now: number,
 ): Promise<void> {
   if (!env.SWARM_QUEUE) throw new Error('Hosted Telegram Queue binding is missing.');
@@ -604,7 +812,7 @@ async function queueTelegramUpdate(
     ).bind(
       row.account_id,
       row.avatar_id,
-      chat.thread_id,
+      input.threadId ?? chat.thread_id,
       `message_${randomToken(18)}`,
       requestId,
       input.prompt,
@@ -615,10 +823,12 @@ async function queueTelegramUpdate(
   await updateReserved(env, row.integration_id, updateId, {
     status: 'queued',
     chatId: chat.chat_id,
-    threadId: chat.thread_id,
+    threadId: input.threadId ?? chat.thread_id,
     jobId,
     requestId,
     ...(input.responseText ? { responseText: input.responseText } : {}),
+    ...(input.sourceMessageId ? { sourceMessageId: input.sourceMessageId } : {}),
+    ...(input.messageThreadId ? { messageThreadId: input.messageThreadId } : {}),
   }, now);
   const queueMessage: HostedTelegramQueueMessage = {
     type: 'swarm.hosted.telegram.update',
@@ -631,10 +841,12 @@ async function queueTelegramUpdate(
     await updateReserved(env, row.integration_id, updateId, {
       status: 'retry',
       chatId: chat.chat_id,
-      threadId: chat.thread_id,
+      threadId: input.threadId ?? chat.thread_id,
       jobId,
       requestId,
       ...(input.responseText ? { responseText: input.responseText } : {}),
+      ...(input.sourceMessageId ? { sourceMessageId: input.sourceMessageId } : {}),
+      ...(input.messageThreadId ? { messageThreadId: input.messageThreadId } : {}),
       errorCode: 'queue_unavailable',
     }, now);
     throw error;
@@ -675,6 +887,7 @@ export async function handleHostedTelegramWebhook(
     const replay = await env.SWARM_STATE.prepare(
       `select integration_id, update_id, account_id, avatar_id, chat_id, thread_id, job_id, request_id,
               status, attempts, max_attempts, response_text, telegram_message_id, error_code,
+              source_message_id, message_thread_id,
               created_at, updated_at, completed_at
        from swarm_hosted_telegram_updates where integration_id = ? and update_id = ?`,
     ).bind(row.integration_id, updateId).first<TelegramUpdateRow>();
@@ -690,11 +903,56 @@ export async function handleHostedTelegramWebhook(
       return { status: 'duplicate' };
     }
   }
+  if (update.my_chat_member) {
+    const memberUpdate = update.my_chat_member;
+    const chatId = safeTelegramId(memberUpdate.chat?.id);
+    const chatType = typeof memberUpdate.chat?.type === 'string' ? memberUpdate.chat.type : '';
+    const nextMembership = membershipStatus(memberUpdate.new_chat_member);
+    const chat = chatId ? await findTelegramChat(env, row.integration_id, chatId) : null;
+    if (!chat || chatType === 'private') {
+      await updateReserved(env, row.integration_id, updateId, { status: 'ignored', completedAt: now }, now);
+      return { status: 'ignored' };
+    }
+    const titleValue = memberUpdate.chat?.title ?? memberUpdate.chat?.username;
+    const title = typeof titleValue === 'string' ? titleValue.slice(0, 200) : null;
+    const changed = await env.SWARM_STATE.prepare(
+      `update swarm_hosted_telegram_chats
+       set title = coalesce(?, title), membership_status = ?,
+           enabled = case when ? in ('left', 'kicked') then 0 else enabled end,
+           last_activity_at = ?, updated_at = ?
+       where integration_id = ? and chat_id = ?`,
+    ).bind(title, nextMembership, nextMembership, now, now, row.integration_id, chatId).run();
+    ensureWrite(changed, 'Unable to update Telegram membership.');
+    await updateReserved(env, row.integration_id, updateId, {
+      status: 'completed',
+      chatId: chat.chat_id,
+      threadId: chat.thread_id,
+      completedAt: now,
+    }, now);
+    return { status: 'accepted' };
+  }
+
+  if (update.message_reaction) {
+    const chatId = safeTelegramId(update.message_reaction.chat?.id);
+    const chat = chatId ? await findTelegramChat(env, row.integration_id, chatId) : null;
+    if (chat) await touchTelegramChat(env, row.integration_id, chat.chat_id, now);
+    await updateReserved(env, row.integration_id, updateId, {
+      status: chat ? 'completed' : 'ignored',
+      ...(chat ? { chatId: chat.chat_id, threadId: chat.thread_id } : {}),
+      completedAt: now,
+    }, now);
+    return { status: chat ? 'accepted' : 'ignored' };
+  }
+
   const message = update.message ?? update.edited_message;
-  const text = typeof message?.text === 'string' ? message.text.trim() : '';
+  const textValue = typeof message?.text === 'string' ? message.text : message?.caption;
+  const text = typeof textValue === 'string' ? textValue.trim() : '';
   const fromIdValue = message?.from?.id;
   const chatIdValue = message?.chat?.id;
-  if (!message || !text || (typeof fromIdValue !== 'number' && typeof fromIdValue !== 'string')
+  const sourceMessageId = safeTelegramId(message?.message_id);
+  const messageThreadId = safeTelegramId(message?.message_thread_id);
+  if (!message || !text || !sourceMessageId
+    || (typeof fromIdValue !== 'number' && typeof fromIdValue !== 'string')
     || (typeof chatIdValue !== 'number' && typeof chatIdValue !== 'string')) {
     await updateReserved(env, row.integration_id, updateId, { status: 'ignored', completedAt: now }, now);
     return { status: 'ignored' };
@@ -723,6 +981,8 @@ export async function handleHostedTelegramWebhook(
     const chat = await ensureTelegramChat(env, { ...row, owner_telegram_user_id: fromId }, message, fromId, now);
     await queueTelegramUpdate(env, row, updateId, chat, {
       responseText: `Connected to ${row.bot_name}. Return to Swarm to add this bot to a group, or message it here.`,
+      sourceMessageId,
+      ...(messageThreadId ? { messageThreadId } : {}),
     }, now);
     return { status: 'accepted' };
   }
@@ -732,6 +992,8 @@ export async function handleHostedTelegramWebhook(
     const chat = await ensureTelegramChat(env, row, message, fromId, now);
     await queueTelegramUpdate(env, row, updateId, chat, {
       responseText: `${row.bot_name} is connected here. Mention @${row.bot_username} or reply to the bot to chat.`,
+      sourceMessageId,
+      ...(messageThreadId ? { messageThreadId } : {}),
     }, now);
     return { status: 'accepted' };
   }
@@ -744,16 +1006,37 @@ export async function handleHostedTelegramWebhook(
   const chat = chatType === 'private'
     ? await ensureTelegramChat(env, row, message, fromId, now)
     : await findTelegramChat(env, row.integration_id, chatId);
-  if (!chat || chat.enabled !== 1 || (chatType !== 'private' && !addressedToBot(message, text, row))) {
+  if (!chat || chat.enabled !== 1 || chat.membership_status === 'left' || chat.membership_status === 'kicked'
+    || (chatType !== 'private' && !addressedToBot(message, text, row))) {
     await updateReserved(env, row.integration_id, updateId, { status: 'ignored', completedAt: now }, now);
     return { status: 'ignored' };
+  }
+  await touchTelegramChat(env, row.integration_id, chat.chat_id, now);
+  const threadId = await ensureTelegramTopic(env, chat, messageThreadId, now);
+  const command = telegramCommand(text, row.bot_username);
+  if (command?.name === 'help' || command?.name === 'status') {
+    const responseText = command.name === 'help'
+      ? `Ask me with @${row.bot_username}, reply to one of my messages, or use /ask. I keep each chat and topic separate.`
+      : `${row.bot_name} is connected to this ${chatType === 'private' ? 'private chat' : 'group'} and ready.`;
+    await queueTelegramUpdate(env, row, updateId, chat, {
+      responseText,
+      threadId,
+      sourceMessageId,
+      ...(messageThreadId ? { messageThreadId } : {}),
+    }, now);
+    return { status: 'accepted' };
   }
   const prompt = promptText(text, row.bot_username);
   if (!prompt || prompt.length > 4_000) {
     await updateReserved(env, row.integration_id, updateId, { status: 'ignored', completedAt: now }, now);
     return { status: 'ignored' };
   }
-  await queueTelegramUpdate(env, row, updateId, chat, { prompt }, now);
+  await queueTelegramUpdate(env, row, updateId, chat, {
+    prompt,
+    threadId,
+    sourceMessageId,
+    ...(messageThreadId ? { messageThreadId } : {}),
+  }, now);
   return { status: 'accepted' };
 }
 
@@ -776,6 +1059,7 @@ async function findUpdateByJob(
   return env.SWARM_STATE.prepare(
     `select integration_id, update_id, account_id, avatar_id, chat_id, thread_id, job_id, request_id,
             status, attempts, max_attempts, response_text, telegram_message_id, error_code,
+            source_message_id, message_thread_id,
             created_at, updated_at, completed_at
      from swarm_hosted_telegram_updates where integration_id = ? and job_id = ?`,
   ).bind(integrationId, jobId).first<TelegramUpdateRow>();
@@ -793,6 +1077,7 @@ async function claimUpdate(
      where integration_id = ? and job_id = ? and status in ('queued', 'retry') and attempts < max_attempts
      returning integration_id, update_id, account_id, avatar_id, chat_id, thread_id, job_id, request_id,
                status, attempts, max_attempts, response_text, telegram_message_id, error_code,
+               source_message_id, message_thread_id,
                created_at, updated_at, completed_at`,
   ).bind(now, integrationId, jobId).first<TelegramUpdateRow>();
 }
@@ -856,6 +1141,40 @@ async function retryOrFail(
   return { action: 'ack' };
 }
 
+function numericTelegramId(value: string | null): number | null {
+  if (!value || !/^-?\d{1,20}$/u.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+async function bestEffortTelegramApi(
+  token: string,
+  method: string,
+  body: Record<string, unknown>,
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  try {
+    await telegramApi<unknown>(token, method, body, fetchImpl);
+  } catch {
+    // Presence and reaction affordances must never block the actual response.
+  }
+}
+
+async function reactToTelegramSource(
+  token: string,
+  job: TelegramUpdateRow,
+  emoji: string,
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  const messageId = numericTelegramId(job.source_message_id);
+  if (!messageId || !job.chat_id) return;
+  await bestEffortTelegramApi(token, 'setMessageReaction', {
+    chat_id: job.chat_id,
+    message_id: messageId,
+    reaction: [{ type: 'emoji', emoji }],
+  }, fetchImpl);
+}
+
 export async function processHostedTelegramQueueMessage(
   env: CloudflareHostedBindings,
   value: unknown,
@@ -875,16 +1194,28 @@ export async function processHostedTelegramQueueMessage(
       TOKEN_SECRET,
     );
     if (!token) return retryOrFail(env, job, 'telegram_token_missing', false, now);
+    await reactToTelegramSource(token, job, '👀', fetchImpl);
     let content = job.response_text;
     let storeInHistory = false;
     if (!content) {
+      await bestEffortTelegramApi(token, 'sendChatAction', {
+        chat_id: job.chat_id,
+        action: 'typing',
+        ...(numericTelegramId(job.message_thread_id) === null
+          ? {}
+          : { message_thread_id: numericTelegramId(job.message_thread_id) }),
+      }, fetchImpl);
       const model = await generateHostedReply(env, {
         accountId: job.account_id,
         avatarId: job.avatar_id,
         threadId: job.thread_id,
         requestId: job.request_id,
       }, fetchImpl);
-      if (!model.ok) return retryOrFail(env, job, model.code, model.retryable, now);
+      if (!model.ok) {
+        const disposition = await retryOrFail(env, job, model.code, model.retryable, now);
+        if (disposition.action === 'ack') await reactToTelegramSource(token, job, '😕', fetchImpl);
+        return disposition;
+      }
       content = model.content;
       storeInHistory = true;
     }
@@ -894,7 +1225,18 @@ export async function processHostedTelegramQueueMessage(
       sent = await telegramApi<{ message_id?: unknown }>(token, 'sendMessage', {
         chat_id: job.chat_id,
         text: content.slice(0, 4_000),
-        disable_web_page_preview: true,
+        link_preview_options: { is_disabled: true },
+        ...(numericTelegramId(job.message_thread_id) === null
+          ? {}
+          : { message_thread_id: numericTelegramId(job.message_thread_id) }),
+        ...(numericTelegramId(job.source_message_id) === null
+          ? {}
+          : {
+            reply_parameters: {
+              message_id: numericTelegramId(job.source_message_id),
+              allow_sending_without_reply: true,
+            },
+          }),
       }, fetchImpl);
     } catch (error) {
       if (error instanceof TelegramApiError && error.status !== 0) {
@@ -902,7 +1244,7 @@ export async function processHostedTelegramQueueMessage(
           await setJobState(env, job, 'unknown', now, 'telegram_delivery_unknown');
           return { action: 'ack' };
         }
-        return retryOrFail(
+        const disposition = await retryOrFail(
           env,
           job,
           'telegram_send_failed',
@@ -910,10 +1252,13 @@ export async function processHostedTelegramQueueMessage(
           now,
           error.retryAfter,
         );
+        if (disposition.action === 'ack') await reactToTelegramSource(token, job, '😕', fetchImpl);
+        return disposition;
       }
       await setJobState(env, job, 'unknown', now, 'telegram_delivery_unknown');
       return { action: 'ack' };
     }
+    await reactToTelegramSource(token, job, '👍', fetchImpl);
     const messageId = typeof sent.message_id === 'number' || typeof sent.message_id === 'string'
       ? String(sent.message_id)
       : null;
