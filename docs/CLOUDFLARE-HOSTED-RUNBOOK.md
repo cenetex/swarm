@@ -126,6 +126,8 @@ After the automated checks pass, complete one manual preview flow:
 7. disconnect OpenRouter and confirm the connected state clears;
 8. confirm that another wallet cannot read that avatar, job, or history.
 
+The hosted interface is chat-first. At desktop widths, account, provider, and avatar controls live in the workspace rail. At mobile widths, open **Manage** to reach those controls and confirm that closing it returns directly to the active conversation without horizontal overflow.
+
 The normal hosted flow is OAuth Authorization Code with PKCE S256. Do not ask a hosted user to paste an OpenRouter key. The callback exchanges the code inside the Worker, encrypts the resulting user credential for that account, and returns only connection status to the browser.
 
 Wallet selection must immediately start the selected adapter connection. The hosted UI includes explicit Phantom and Solflare adapters and displays connection errors on the page. Browser wallet extensions are isolated per browser: if a wallet is not detected, open the preview in the browser where that extension is installed, or use the wallet's mobile browser.

@@ -41,7 +41,12 @@ export function hostedEnvironmentCopy(environment: string | undefined) {
 }
 
 function StatusDot({ ready }: { ready: boolean }) {
-  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${ready ? 'bg-emerald-400' : 'bg-amber-400'}`} />;
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-block h-2 w-2 shrink-0 rounded-full ${ready ? 'bg-emerald-400' : 'bg-amber-400'}`}
+    />
+  );
 }
 
 export function HostedApp() {
@@ -56,6 +61,7 @@ export function HostedApp() {
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [error, setError] = useState('');
 
   const activeAvatar = useMemo(
@@ -121,6 +127,15 @@ export function HostedApp() {
     };
   }, [activeAvatarId, provider?.connected]);
 
+  useEffect(() => {
+    if (!manageOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setManageOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [manageOpen]);
+
   const handleDisconnect = async () => {
     setLoading(true);
     setError('');
@@ -148,6 +163,7 @@ export function HostedApp() {
       setActiveAvatarId(avatar.avatarId);
       setMessages([]);
       setAvatarName('My hosted avatar');
+      setManageOpen(false);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Unable to create the avatar.');
     } finally {
@@ -181,197 +197,331 @@ export function HostedApp() {
     }
   };
 
+  const selectAvatar = (avatarId: string) => {
+    setActiveAvatarId(avatarId);
+    setManageOpen(false);
+  };
+
+  const providerReady = Boolean(provider?.connected);
+  const workspaceReady = providerReady && Boolean(activeAvatar);
+  const activeName = activeAvatar?.name ?? 'Hosted chat';
+
   return (
-    <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text)]">
-      <header className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <img src="/swarm.svg" alt="" className="h-9 w-9" />
-            <div>
-              <h1 className="text-lg font-semibold">Swarm Hosted</h1>
-              <p className="text-xs text-[var(--color-text-muted)]">{environmentCopy.label}</p>
+    <div className="h-[100dvh] overflow-hidden bg-[var(--color-bg)] text-[var(--color-text)]">
+      <header className="h-16 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
+        <div className="mx-auto flex h-full max-w-[90rem] items-center justify-between gap-3 px-4 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <img src="/swarm.svg" alt="" className="h-8 w-8 shrink-0" />
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2">
+                <h1 className="truncate text-base font-semibold">Swarm</h1>
+                <span className="text-sm text-[var(--color-text-secondary)]">Hosted</span>
+              </div>
+              <p className="hidden text-xs text-[var(--color-text-muted)] sm:block">{environmentCopy.label}</p>
             </div>
           </div>
           <HostedWalletSignIn showIcon={!isAuthenticated} />
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-6xl gap-6 px-5 py-8 lg:grid-cols-[22rem_minmax(0,1fr)]">
-        <section className="space-y-5">
-          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Your runtime</p>
-            {!isAuthenticated || !user ? (
-              <div className="mt-4 space-y-3">
-                <h2 className="text-xl font-semibold">Sign in with your wallet</h2>
-                <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
-                  Scan with Phantom or Solflare. Your phone approves a domain-bound sign-in message;
-                  Swarm never asks for a seed phrase, funds, or a transaction.
-                </p>
-                <HostedWalletSignIn className="w-full justify-center" />
+      <main className="relative mx-auto grid h-[calc(100dvh-4rem)] max-w-[90rem] overflow-hidden lg:grid-cols-[17rem_minmax(0,1fr)] lg:border-x lg:border-[var(--color-border)]">
+        <section
+          aria-label="Hosted chat"
+          className="flex min-h-0 min-w-0 flex-col bg-[var(--color-bg)] lg:col-start-2 lg:row-start-1"
+        >
+          <div className="flex min-h-[4.5rem] items-center justify-between gap-4 border-b border-[var(--color-border)] px-4 py-3 sm:px-6">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                {isAuthenticated && <StatusDot ready={workspaceReady} />}
+                <h2 className="truncate font-semibold">{activeName}</h2>
               </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm text-[var(--color-text-muted)]">Signed in as</p>
-                    <p className="font-mono text-sm">{shortWallet(user.walletAddress)}</p>
-                  </div>
-                  <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">Session active</span>
-                </div>
-                <div className="border-t border-[var(--color-border)] pt-4">
-                  <div className="flex items-center gap-2">
-                    <StatusDot ready={Boolean(provider?.connected)} />
-                    <h2 className="font-semibold">OpenRouter</h2>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
-                    OAuth uses PKCE S256. The exchanged credential is encrypted for your account and never returned to this page.
-                  </p>
-                  {provider?.connected ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleDisconnect()}
-                      disabled={loading}
-                      className="mt-4 w-full rounded-xl border border-red-400/30 px-4 py-2.5 text-sm font-medium text-red-300 transition hover:bg-red-400/10 disabled:opacity-50"
-                    >
-                      Disconnect OpenRouter
-                    </button>
-                  ) : (
-                    <a
-                      href={openRouterConnectUrl()}
-                      className="mt-4 block w-full rounded-xl bg-brand-500 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-brand-600"
-                    >
-                      Connect OpenRouter securely
-                    </a>
-                  )}
-                </div>
-              </div>
-            )}
+              <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]">
+                {loading
+                  ? 'Checking your workspace…'
+                  : workspaceReady
+                    ? 'Available while your browser is closed'
+                    : isAuthenticated
+                      ? 'Finish setup in Manage to start chatting'
+                      : 'Sign in to create an always-on avatar'}
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-controls="hosted-workspace-management"
+              aria-expanded={manageOpen}
+              onClick={() => setManageOpen(true)}
+              className="shrink-0 rounded-lg border border-[var(--color-border-secondary)] px-3 py-2 text-sm font-medium transition hover:bg-[var(--color-bg-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-400 lg:hidden"
+            >
+              Manage
+            </button>
           </div>
 
-          {isAuthenticated && provider?.connected && (
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5">
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold">Hosted avatars</h2>
-                <span className="text-xs text-[var(--color-text-muted)]">{avatars.length}/100</span>
-              </div>
-              {avatars.length > 0 && (
-                <div className="mt-3 space-y-2">
-                  {avatars.map((avatar) => (
-                    <button
-                      type="button"
-                      key={avatar.avatarId}
-                      onClick={() => setActiveAvatarId(avatar.avatarId)}
-                      className={`w-full rounded-xl border px-3 py-2.5 text-left text-sm transition ${
-                        avatar.avatarId === activeAvatarId
-                          ? 'border-brand-400 bg-brand-500/15'
-                          : 'border-[var(--color-border)] hover:bg-[var(--color-bg-tertiary)]'
-                      }`}
-                    >
-                      {avatar.name}
-                    </button>
-                  ))}
+          {(error || oauthResult) && (
+            <div className="border-b border-[var(--color-border)] px-4 py-3 sm:px-6" role="status">
+              {oauthResult === 'connected' && !error && (
+                <p className="border-l-2 border-emerald-400 pl-3 text-sm text-emerald-200">
+                  OpenRouter connected. The credential was exchanged and stored server-side.
+                </p>
+              )}
+              {(oauthResult === 'error' || error) && (
+                <p className="border-l-2 border-red-400 pl-3 text-sm text-red-200">
+                  {error || 'OpenRouter authorization did not complete. Please try again.'}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6" aria-live="polite">
+            <div className="mx-auto flex min-h-full max-w-3xl flex-col">
+              {!isAuthenticated && (
+                <div className="m-auto max-w-lg py-12 text-center">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Your always-on workspace</p>
+                  <h3 className="mt-3 text-2xl font-semibold">Start with one conversation.</h3>
+                  <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">
+                    Sign in with Phantom or Solflare, connect your model provider, and create an avatar that keeps working after this page closes.
+                  </p>
+                  <HostedWalletSignIn className="mx-auto mt-6 justify-center" />
                 </div>
               )}
-              <form onSubmit={(event) => void handleCreateAvatar(event)} className="mt-4 space-y-2">
-                <label htmlFor="avatar-name" className="text-xs text-[var(--color-text-muted)]">New avatar name</label>
+
+              {isAuthenticated && !providerReady && !loading && (
+                <div className="m-auto max-w-lg py-12 text-center">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">One step left</p>
+                  <h3 className="mt-3 text-2xl font-semibold">Connect your model provider.</h3>
+                  <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">
+                    Open Manage to authorize OpenRouter with PKCE. The exchanged credential is stored encrypted for your account.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setManageOpen(true)}
+                    className="mt-6 rounded-lg border border-[var(--color-border-secondary)] px-4 py-2.5 text-sm font-semibold transition hover:bg-[var(--color-bg-secondary)] lg:hidden"
+                  >
+                    Open Manage
+                  </button>
+                </div>
+              )}
+
+              {providerReady && !activeAvatar && !loading && (
+                <div className="m-auto max-w-lg py-12 text-center">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Ready for an avatar</p>
+                  <h3 className="mt-3 text-2xl font-semibold">Give your workspace a voice.</h3>
+                  <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">
+                    Create your first hosted avatar from Manage. It will get its own isolated conversation history.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setManageOpen(true)}
+                    className="mt-6 rounded-lg border border-[var(--color-border-secondary)] px-4 py-2.5 text-sm font-semibold transition hover:bg-[var(--color-bg-secondary)] lg:hidden"
+                  >
+                    Open Manage
+                  </button>
+                </div>
+              )}
+
+              {messages.length > 0 && (
+                <div className="py-2">
+                  {messages.map((message, index) => {
+                    const sender = message.role === 'user' ? 'You' : activeName;
+                    return (
+                      <article
+                        key={`${message.role}-${index}`}
+                        aria-label={`${sender} message`}
+                        data-message-role={message.role}
+                        className={`grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3 border-b border-[var(--color-border)] py-5 sm:grid-cols-[5rem_minmax(0,1fr)] ${
+                          message.role === 'user' ? 'border-l-2 border-l-brand-400 bg-brand-500/10 px-3' : ''
+                        }`}
+                      >
+                        <p className="pt-0.5 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+                          {sender}
+                        </p>
+                        <p className="chat-message whitespace-pre-wrap text-sm leading-6 text-[var(--color-text-secondary)]">
+                          {message.content}
+                        </p>
+                      </article>
+                    );
+                  })}
+                  {sending && (
+                    <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3 border-b border-[var(--color-border)] py-5 sm:grid-cols-[5rem_minmax(0,1fr)]">
+                      <p className="pt-0.5 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+                        {activeName}
+                      </p>
+                      <p className="text-sm text-[var(--color-text-muted)]">Thinking…</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {activeAvatar && providerReady && (
+            <form onSubmit={(event) => void handleSend(event)} className="border-t border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 sm:px-6 sm:py-4">
+              <div className="mx-auto flex max-w-3xl gap-2 sm:gap-3">
+                <label htmlFor="hosted-message" className="sr-only">Message</label>
                 <input
-                  id="avatar-name"
-                  value={avatarName}
-                  onChange={(event) => setAvatarName(event.target.value)}
-                  maxLength={80}
-                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2.5 text-sm outline-none focus:border-brand-400"
+                  id="hosted-message"
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  maxLength={4000}
+                  placeholder={`Message ${activeAvatar.name}`}
+                  className="min-w-0 flex-1 rounded-lg border border-[var(--color-border-secondary)] bg-[var(--color-bg-secondary)] px-4 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
                 />
                 <button
                   type="submit"
-                  disabled={loading || !avatarName.trim()}
-                  className="w-full rounded-xl bg-[var(--color-bg-tertiary)] px-4 py-2.5 text-sm font-medium transition hover:bg-[var(--color-bg-elevated)] disabled:opacity-50"
+                  disabled={sending || !draft.trim()}
+                  className="rounded-lg bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300 disabled:opacity-50 sm:px-5"
                 >
-                  Create hosted avatar
+                  Send
                 </button>
-              </form>
-            </div>
-          )}
-        </section>
-
-        <section className="flex min-h-[34rem] flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
-          <div className="border-b border-[var(--color-border)] px-5 py-4">
-            <h2 className="font-semibold">{activeAvatar?.name ?? 'Hosted chat'}</h2>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              Queue-backed, account-isolated, and available while your browser is closed.
-            </p>
-          </div>
-          <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-5" aria-live="polite">
-            {!isAuthenticated && (
-              <p className="m-auto max-w-md text-center text-sm leading-6 text-[var(--color-text-muted)]">
-                Connect a wallet, then authorize OpenRouter to start a hosted avatar.
-              </p>
-            )}
-            {isAuthenticated && !provider?.connected && !loading && (
-              <p className="m-auto max-w-md text-center text-sm leading-6 text-[var(--color-text-muted)]">
-                OpenRouter is not connected. Authorize it from the secure setup card to enable chat.
-              </p>
-            )}
-            {provider?.connected && !activeAvatar && !loading && (
-              <p className="m-auto max-w-md text-center text-sm leading-6 text-[var(--color-text-muted)]">
-                Create your first hosted avatar to begin.
-              </p>
-            )}
-            {messages.map((message, index) => (
-              <div
-                key={`${message.role}-${index}`}
-                className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 ${
-                  message.role === 'user'
-                    ? 'ml-auto bg-brand-500 text-white'
-                    : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]'
-                }`}
-              >
-                {message.content}
               </div>
-            ))}
-            {sending && <p className="text-sm text-[var(--color-text-muted)]">Waiting for the hosted response…</p>}
-          </div>
-          {activeAvatar && provider?.connected && (
-            <form onSubmit={(event) => void handleSend(event)} className="flex gap-3 border-t border-[var(--color-border)] p-4">
-              <label htmlFor="hosted-message" className="sr-only">Message</label>
-              <input
-                id="hosted-message"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                maxLength={4000}
-                placeholder={`Message ${activeAvatar.name}`}
-                className="min-w-0 flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-sm outline-none focus:border-brand-400"
-              />
-              <button
-                type="submit"
-                disabled={sending || !draft.trim()}
-                className="rounded-xl bg-brand-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
-              >
-                Send
-              </button>
             </form>
           )}
         </section>
 
-        {(error || oauthResult) && (
-          <div className="lg:col-span-2" role="status">
-            {oauthResult === 'connected' && !error && (
-              <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
-                OpenRouter connected. The credential was exchanged and stored server-side.
-              </p>
+        {manageOpen && (
+          <button
+            type="button"
+            aria-label="Close workspace management"
+            onClick={() => setManageOpen(false)}
+            className="fixed inset-0 top-16 z-30 bg-black/60 lg:hidden"
+          />
+        )}
+
+        <aside
+          id="hosted-workspace-management"
+          aria-label="Workspace management"
+          data-mobile-open={manageOpen}
+          className={`fixed inset-x-0 bottom-0 top-16 z-40 flex min-h-0 flex-col border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl transition duration-200 lg:visible lg:relative lg:inset-auto lg:z-auto lg:col-start-1 lg:row-start-1 lg:border-r lg:border-t-0 lg:shadow-none ${
+            manageOpen ? 'visible translate-y-0 opacity-100' : 'invisible translate-y-4 opacity-0 lg:translate-y-0 lg:opacity-100'
+          }`}
+        >
+          <div className="flex h-[4.5rem] shrink-0 items-center justify-between border-b border-[var(--color-border)] px-5">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Workspace</p>
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">{environmentCopy.label}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setManageOpen(false)}
+              className="rounded-lg px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] lg:hidden"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <section aria-labelledby="runtime-heading" className="border-b border-[var(--color-border)] px-5 py-5">
+              <div className="flex items-center justify-between gap-3">
+                <h2 id="runtime-heading" className="text-sm font-semibold">Runtime</h2>
+                <span className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
+                  <StatusDot ready={isAuthenticated && providerReady} />
+                  {loading ? 'Checking' : isAuthenticated && providerReady ? 'Ready' : 'Setup required'}
+                </span>
+              </div>
+              <dl className="mt-4 grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
+                <dt className="text-[var(--color-text-muted)]">Account</dt>
+                <dd className="truncate font-mono text-[var(--color-text-secondary)]">
+                  {user ? shortWallet(user.walletAddress) : 'Not signed in'}
+                </dd>
+                <dt className="text-[var(--color-text-muted)]">Session</dt>
+                <dd className="text-[var(--color-text-secondary)]">{isAuthenticated ? 'Active' : 'Inactive'}</dd>
+              </dl>
+            </section>
+
+            {isAuthenticated && (
+              <section aria-labelledby="provider-heading" className="border-b border-[var(--color-border)] px-5 py-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 id="provider-heading" className="text-sm font-semibold">OpenRouter</h2>
+                  <span className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
+                    <StatusDot ready={providerReady} />
+                    {providerReady ? 'Connected' : 'Not connected'}
+                  </span>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-[var(--color-text-muted)]">
+                  OAuth uses PKCE S256. The exchanged credential is encrypted for your account and never returned to this page.
+                </p>
+                {providerReady ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleDisconnect()}
+                    disabled={loading}
+                    className="mt-3 text-sm font-medium text-red-300 underline decoration-red-400/40 underline-offset-4 hover:text-red-200 disabled:opacity-50"
+                  >
+                    Disconnect OpenRouter
+                  </button>
+                ) : (
+                  <a
+                    href={openRouterConnectUrl()}
+                    className="mt-4 flex w-full justify-center rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-600"
+                  >
+                    Connect OpenRouter securely
+                  </a>
+                )}
+              </section>
             )}
-            {(oauthResult === 'error' || error) && (
-              <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
-                {error || 'OpenRouter authorization did not complete. Please try again.'}
-              </p>
+
+            {isAuthenticated && providerReady && (
+              <section aria-labelledby="avatars-heading" className="px-5 py-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 id="avatars-heading" className="text-sm font-semibold">Avatars</h2>
+                  <span className="text-xs text-[var(--color-text-muted)]">{avatars.length}/100</span>
+                </div>
+                {avatars.length > 0 ? (
+                  <div className="mt-3 border-y border-[var(--color-border)]">
+                    {avatars.map((avatar) => (
+                      <button
+                        type="button"
+                        key={avatar.avatarId}
+                        aria-current={avatar.avatarId === activeAvatarId ? 'true' : undefined}
+                        onClick={() => selectAvatar(avatar.avatarId)}
+                        className={`flex w-full items-center justify-between border-b border-[var(--color-border)] px-3 py-3 text-left text-sm transition last:border-b-0 ${
+                          avatar.avatarId === activeAvatarId
+                            ? 'border-l-2 border-l-brand-400 bg-brand-500/10 text-[var(--color-text)]'
+                            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
+                        }`}
+                      >
+                        <span className="truncate">{avatar.name}</span>
+                        {avatar.avatarId === activeAvatarId && <span className="text-xs text-brand-300">Active</span>}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs leading-5 text-[var(--color-text-muted)]">No avatars yet.</p>
+                )}
+
+                <details className="mt-4 border-t border-[var(--color-border)] pt-4">
+                  <summary className="cursor-pointer text-sm font-medium text-brand-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-400">
+                    Create a new avatar
+                  </summary>
+                  <form onSubmit={(event) => void handleCreateAvatar(event)} className="mt-4 space-y-3">
+                    <label htmlFor="avatar-name" className="block text-xs text-[var(--color-text-muted)]">Avatar name</label>
+                    <input
+                      id="avatar-name"
+                      value={avatarName}
+                      onChange={(event) => setAvatarName(event.target.value)}
+                      maxLength={80}
+                      className="w-full rounded-lg border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                    />
+                    <button
+                      type="submit"
+                      disabled={loading || !avatarName.trim()}
+                      className="w-full rounded-lg bg-[var(--color-bg-tertiary)] px-4 py-2.5 text-sm font-medium transition hover:bg-[var(--color-bg-elevated)] disabled:opacity-50"
+                    >
+                      Create hosted avatar
+                    </button>
+                  </form>
+                </details>
+              </section>
             )}
           </div>
-        )}
-      </main>
 
-      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 pb-8 text-xs text-[var(--color-text-muted)]">
-        <span>{environmentCopy.footer}</span>
-        <a href={`${API_BASE}/hosting/status`} className="hover:text-[var(--color-text)]">Runtime status</a>
-      </footer>
+          <div className="shrink-0 border-t border-[var(--color-border)] px-5 py-4 text-xs text-[var(--color-text-muted)]">
+            <p className="leading-5">{environmentCopy.footer}</p>
+            <a href={`${API_BASE}/hosting/status`} className="mt-2 inline-block text-[var(--color-text-secondary)] underline underline-offset-4 hover:text-[var(--color-text)]">
+              Runtime status
+            </a>
+          </div>
+        </aside>
+      </main>
     </div>
   );
 }
