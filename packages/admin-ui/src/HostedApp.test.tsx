@@ -214,7 +214,7 @@ describe('HostedApp', () => {
 
     const token = await screen.findByLabelText(/botfather token/i);
     fireEvent.change(token, { target: { value: testBotToken } });
-    fireEvent.click(screen.getByRole('button', { name: /connect telegram bot/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /connect telegram bot/i }));
 
     await waitFor(() => expect(hostedApi.connectHostedTelegram).toHaveBeenCalledWith(
       'avatar-1',
