@@ -20,6 +20,9 @@ Run persistent AI avatars across Telegram, Discord, and the web — with the gua
 
 ## Architecture
 
+- [Portable public avatars](docs/architecture/PORTABLE-PUBLIC-AVATARS.md) — content-addressed avatar projects, public discovery, NFT pointers, and recovery.
+- [Portable avatar recovery](docs/PORTABLE-AVATAR-RECOVERY.md) — export, verification, and blank-environment restore drill.
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        CONTROL PLANE                            │

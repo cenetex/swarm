@@ -117,20 +117,24 @@ A successful status response must report a configured and available hosted runti
 
 After the automated checks pass, complete one manual preview flow:
 
-1. open the Worker root URL and connect a Solana wallet;
-2. sign the domain-bound session message;
-3. select **Connect OpenRouter securely** and complete OpenRouter OAuth;
-4. confirm the UI reports connected without displaying a credential;
-5. create an avatar;
-6. send a browser-chat message and wait for the Queue job to complete;
-7. create a test bot with BotFather, paste its token into **Telegram — Connector 2**, and confirm the
+1. open the Worker root URL without a session and confirm the public registry loads;
+2. confirm `/sitemap.xml` and `/api/public/avatars` work without a session;
+3. open **Studio** and connect a Solana wallet;
+4. sign the domain-bound session message;
+5. create a default avatar before connecting a model, confirm it is public and listed, and download its portable artifact;
+6. confirm the anonymous project page exposes the same revision and never exposes a credential or private chat;
+7. select **Connect OpenRouter securely** and complete OpenRouter OAuth;
+8. confirm the UI reports connected without displaying a credential;
+9. send a browser-chat message and wait for the Queue job to complete;
+10. create a test bot with BotFather, paste its token into **Telegram — Connector 2**, and confirm the
    token field clears without the token appearing in any later response;
-8. open the ownership link, send `/start`, return to Swarm, and refresh Telegram status;
-9. add the bot to a test group from the generated group link, mention it, and confirm the response arrives;
-10. confirm an unbound private user, an unenabled group, and ordinary unmentioned group messages receive no response;
-11. disconnect Telegram, then confirm Bot API `getWebhookInfo` no longer reports the Swarm webhook;
-12. disconnect OpenRouter and confirm the connected state clears;
-13. confirm that another wallet cannot read that avatar, connector, job, or history.
+11. open the ownership link, send `/start`, return to Swarm, and refresh Telegram status;
+12. add the bot to a test group from the generated group link, mention it, and confirm the response arrives;
+13. confirm an unbound private user, an unenabled group, and ordinary unmentioned group messages receive no response;
+14. disconnect Telegram, then confirm Bot API `getWebhookInfo` no longer reports the Swarm webhook;
+15. disconnect OpenRouter and confirm the connected state clears;
+16. confirm that another wallet cannot read that avatar, connector, job, history, or private artifact;
+17. import the downloaded artifact into a clean preview environment and confirm the revision ID is unchanged.
 
 The hosted interface is chat-first. At desktop widths, account, provider, and avatar controls live in the workspace rail. At mobile widths, open **Manage** to reach those controls and confirm that closing it returns directly to the active conversation without horizontal overflow.
 
@@ -158,8 +162,8 @@ For the first production deployment:
 2. set `SWARM_CF_STAGING_DOMAIN=next.swarm.rati.chat`;
 3. set `SWARM_CF_ZONE_NAME=rati.chat`;
 4. set `SWARM_PUBLIC_URL=https://next.swarm.rati.chat`;
-5. deploy migration `0004_mobile_wallet_pairing.sql` and confirm a QR can be approved from both Phantom and Solflare;
-6. complete OAuth, avatar, queued-chat, disconnect, and tenant-isolation checks.
+5. deploy every migration through `0006_portable_public_avatars.sql` and confirm a QR can be approved from both Phantom and Solflare;
+6. complete public catalog, portable restore, OAuth, queued-chat, disconnect, and tenant-isolation checks.
 
 Production disables the `workers.dev` hostname. The Worker is available only through its configured domains and routes.
 

@@ -1,4 +1,5 @@
 import { API_BASE } from './api/apiBase';
+import type { PortableAvatarBundleV1 } from '@swarm/core/hosted';
 
 export type HostedProviderStatus = {
   connected: boolean;
@@ -12,6 +13,28 @@ export type HostedAvatar = {
   status: string;
   createdAt: number;
   updatedAt: number;
+  slug?: string;
+  visibility?: 'public' | 'private';
+  listed?: boolean;
+  revisionId?: string;
+};
+
+export type PublicHostedAvatar = {
+  avatarId: string;
+  slug: string;
+  name: string;
+  description: string;
+  visibility: 'public';
+  listed: boolean;
+  revisionId: string;
+  controller: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type PublicHostedAvatarProject = PublicHostedAvatar & {
+  sha256: string;
+  bundle: PortableAvatarBundleV1;
 };
 
 export type HostedChatMessage = {
@@ -76,10 +99,56 @@ export async function listHostedAvatars(): Promise<HostedAvatar[]> {
   return requestJson<HostedAvatar[]>('/avatars');
 }
 
-export async function createHostedAvatar(name: string): Promise<HostedAvatar> {
+export async function listPublicHostedAvatars(): Promise<PublicHostedAvatar[]> {
+  return requestJson<PublicHostedAvatar[]>('/public/avatars');
+}
+
+export async function getPublicHostedAvatar(slug: string): Promise<PublicHostedAvatarProject> {
+  return requestJson<PublicHostedAvatarProject>(`/public/avatars/${encodeURIComponent(slug)}`);
+}
+
+export function publicHostedAvatarBundleUrl(slug: string): string {
+  return `${API_BASE}/public/avatars/${encodeURIComponent(slug)}/bundle`;
+}
+
+export function publicHostedAvatarNftMetadataUrl(slug: string): string {
+  return `${API_BASE}/public/avatars/${encodeURIComponent(slug)}/nft-metadata`;
+}
+
+export type CreateHostedAvatarInput = {
+  name: string;
+  description?: string;
+  persona?: string;
+  visibility?: 'public' | 'private';
+  listed?: boolean;
+};
+
+export async function createHostedAvatar(input: string | CreateHostedAvatarInput): Promise<HostedAvatar> {
+  const body = typeof input === 'string' ? { name: input } : input;
   return requestJson<HostedAvatar>('/avatars', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
+  });
+}
+
+export async function importHostedAvatar(bundle: unknown): Promise<HostedAvatar> {
+  return requestJson<HostedAvatar>('/avatars/import', {
+    method: 'POST',
+    body: JSON.stringify({ bundle }),
+  });
+}
+
+export function ownedHostedAvatarBundleUrl(avatarId: string): string {
+  return `${API_BASE}/avatars/${encodeURIComponent(avatarId)}/bundle`;
+}
+
+export async function updateHostedAvatarPublication(
+  avatarId: string,
+  publication: { visibility: 'public' | 'private'; listed: boolean },
+): Promise<HostedAvatar> {
+  return requestJson<HostedAvatar>(`/avatars/${encodeURIComponent(avatarId)}/publication`, {
+    method: 'PATCH',
+    body: JSON.stringify(publication),
   });
 }
 

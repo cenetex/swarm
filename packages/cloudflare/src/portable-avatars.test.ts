@@ -12,7 +12,9 @@ import {
   getOwnedPortableRevision,
   getPublicAvatar,
   importPortableHostedAvatar,
+  listOwnedPortableAvatars,
   listPublicAvatars,
+  updatePortableAvatarPublication,
 } from './portable-avatars.js';
 import { encodeHostedSecretKey } from './secret-crypto.js';
 import worker from './worker.js';
@@ -109,6 +111,26 @@ afterEach(() => {
 });
 
 describe('portable public avatars', () => {
+  it('keeps pre-migration avatars private and unlisted', () => {
+    const database = new Database(':memory:');
+    database.exec('pragma foreign_keys = on');
+    for (const migration of ['0002_hosted_identity_and_secrets.sql', '0003_hosted_chat_runtime.sql']) {
+      database.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url), 'utf8'));
+    }
+    database.exec("insert into swarm_accounts (account_id, created_at) values ('account-1', 1)");
+    database.exec(`insert into swarm_hosted_avatars
+      (account_id, avatar_id, default_thread_id, name, status, created_by, created_at, updated_at)
+      values ('account-1', 'before-migration', 'thread-1', 'Before', 'shell',
+              '11111111111111111111111111111111', 1, 1)`);
+
+    database.exec(readFileSync(new URL('../migrations/0006_portable_public_avatars.sql', import.meta.url), 'utf8'));
+    const row = database.query(
+      "select visibility, listed from swarm_hosted_avatars where avatar_id = 'before-migration'",
+    ).get() as { visibility: string; listed: number };
+    expect(row).toEqual({ visibility: 'private', listed: 0 });
+    database.close();
+  });
+
   it('creates a public listed project and immutable R2 mirror by default', async () => {
     const { state, env, blobs } = setup();
     resources.push(state);
@@ -128,6 +150,11 @@ describe('portable public avatars', () => {
     const project = await getPublicAvatar(env, created.slug);
     expect(project?.bundle.prompts.system).toBe('Think carefully in public.');
     expect(JSON.stringify(project)).not.toContain('apiKey');
+    const plan = state.db.query(
+      `explain query plan select avatar_id from swarm_hosted_avatars
+       where visibility = 'public' and listed = 1 order by updated_at desc limit 100`,
+    ).all();
+    expect(JSON.stringify(plan)).toContain('swarm_hosted_avatars_catalog_idx');
   });
 
   it('keeps private projects out of anonymous reads but lets the owner export', async () => {
@@ -157,6 +184,42 @@ describe('portable public avatars', () => {
 
     expect(imported.revisionId).toBe(created.revisionId);
     expect((await getPublicAvatar(target.env, imported.slug))?.revisionId).toBe(created.revisionId);
+  });
+
+  it('backfills a legacy avatar as private without changing its identity or owner', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    state.db.exec(`insert into swarm_hosted_avatars
+      (account_id, avatar_id, default_thread_id, name, description, persona, status, created_by, created_at, updated_at)
+      values ('account-1', 'legacy-avatar', 'legacy-thread', 'Legacy Ada', 'Preserved project',
+              'Keep the original prompt.', 'shell', '11111111111111111111111111111111', 1000, 2000)`);
+    state.db.exec(`insert into swarm_hosted_chat_threads
+      (account_id, avatar_id, thread_id, created_at, updated_at)
+      values ('account-1', 'legacy-avatar', 'legacy-thread', 1000, 2000)`);
+
+    const [backfilled] = await listOwnedPortableAvatars(env, owner);
+
+    expect(backfilled).toMatchObject({
+      avatarId: 'legacy-avatar',
+      createdBy: '11111111111111111111111111111111',
+      visibility: 'private',
+      listed: false,
+    });
+    expect(await getPublicAvatar(env, 'legacy-avatar')).toBeNull();
+    expect((await getOwnedPortableRevision(env, owner, 'legacy-avatar'))?.bundle.prompts.system)
+      .toBe('Keep the original prompt.');
+
+    const published = await updatePortableAvatarPublication(
+      env,
+      owner,
+      'legacy-avatar',
+      { visibility: 'public', listed: true },
+      3_000,
+    );
+    expect(published?.revisionId).not.toBe(backfilled?.revisionId);
+    expect(published?.visibility).toBe('public');
+    expect((await getPublicAvatar(env, 'legacy-avatar'))?.bundle.lineage.previousRevisionId)
+      .toBe(backfilled?.revisionId);
   });
 
   it('serves the catalog, portable download, NFT metadata, and sitemap without a session', async () => {

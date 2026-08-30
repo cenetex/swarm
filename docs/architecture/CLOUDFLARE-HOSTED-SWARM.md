@@ -4,6 +4,8 @@ This is the target architecture for the paid hosted tier. Users choose **Local**
 
 The hosted product is a hybrid dApp. Solana provides user identity and may provide entitlement or payment proofs. Secrets, messages, model calls, and always-on execution remain in a shared off-chain runtime. A browser-only or fully on-chain runtime cannot safely retain credentials or keep Telegram and Discord agents alive after the browser closes.
 
+An avatar is not a private runtime record. It is a public, portable project by default. Its content-addressed `swarm.avatar/v1` artifact can move between hosts, while the hosted runtime provides discovery, indexing, credentials, channels, and execution. See [Portable Public Avatars](./PORTABLE-PUBLIC-AVATARS.md).
+
 ## Product Model
 
 ### Local
@@ -25,8 +27,8 @@ The hosted product is a hybrid dApp. Solana provides user identity and may provi
 | -------------------------- | ------------------------- | -------------------------------------------------------------------------------------- |
 | Admin UI                   | Cloudflare Pages          | Static app and public landing/chat pages.                                              |
 | API and webhooks           | Workers                   | SIWS, OAuth callbacks, billing, Telegram webhooks, and chat routes.                    |
-| App state                  | D1                        | Start with a shared tenant-keyed database; shard by cohort as measured limits require. |
-| Media/blobs                | R2                        | Generated images, exports, and attachments.                                            |
+| App state and catalog      | D1                        | Public discovery index plus tenant-keyed runtime state.                                 |
+| Media/blobs                | R2                        | Hosted mirror for portable revisions, generated media, exports, and attachments.        |
 | Background work            | Queues                    | Message processing, integration retries, and media jobs.                               |
 | Multi-step jobs            | Workflows                 | Onboarding, long retry ladders, and approval/post pipelines.                           |
 | Periodic work              | Cron Triggers             | Claim due jobs and enqueue work instead of performing entire jobs in cron.             |
@@ -66,9 +68,11 @@ The hosted Worker implements the first secure vertical slice:
 
 The dedicated hosted UI is served from the same Worker origin. It starts OAuth through the authenticated route, reads only connection status, and never renders or accepts the exchanged credential. The write-only manual-key route remains a compatibility surface for trusted non-hosted clients; it is not part of normal hosted onboarding.
 
-### Hosted workspace presentation
+### Public registry and owner Studio
 
-The hosted UI is one chat-first workspace rather than a dashboard of independent cards. On desktop, a narrow management rail holds account, runtime, provider, and avatar controls beside one continuous conversation surface. On smaller screens, chat remains visible first and the same controls move behind a single **Manage** action. Assistant responses use flat transcript rows; only user-authored turns receive a restrained visual accent. New connectors should extend the management rail instead of adding new top-level panels around chat.
+The hosted root is an anonymous public registry. Each public avatar has a shareable project page showing its public prompt, shared memory summary, capabilities, controller, revision, portable download, and NFT-ready metadata. Search engines receive a dynamic sitemap of listed avatars.
+
+The owner surface lives at `/studio`. On desktop, a narrow management rail holds account, runtime, provider, portability, and avatar controls beside one continuous conversation surface. On smaller screens, chat remains visible first and the same controls move behind one **Manage** action. Creation and restore do not require an AI provider connection; model-backed chat does.
 
 ## Hosted Telegram
 
@@ -114,6 +118,8 @@ The first hosted message path is now implemented for browser chat:
 Model failures retry at most three times with increasing Queue delay. Initial Queue sends also stop after three attempts. Exhausted work enters the `dead` state instead of waiting forever. A request is limited to 4,000 characters, model context is capped at 20 stored messages, and the default account limit is 20 new messages per minute.
 
 Migration `0003_hosted_chat_runtime.sql` adds account-keyed avatars, threads, messages, jobs, and rate-limit rows. Every read and write includes the authenticated account id. The browser's supplied history and avatar text are not trusted as stored state.
+
+Migration `0006_portable_public_avatars.sql` adds public slugs, visibility, listing state, current revision pointers, and immutable revision rows. New avatars are public and listed by default. Private avatars remain owner-only. D1 and R2 are runtime mirrors; owners must keep or permanently anchor the canonical artifact outside the Cloudflare account for full disaster recovery.
 
 Required chat bindings:
 
@@ -161,11 +167,12 @@ Desktop wallet sign-in uses a short-lived cross-device pairing. The Worker retur
 2. **Hosted web app — implemented:** same-origin wallet sign-in, OAuth connect/status/disconnect, avatar creation, and Queue-backed browser chat without browser-visible AI credentials.
 3. **Web chat runtime — implemented:** tenant-owned avatars and history, idempotent Queue jobs, per-avatar serialization, bounded model retries, and safe failed jobs.
 4. **Webhook runtime — implemented:** Telegram ingress, owner/group binding, per-chat history, safe delivery state, and Queue processing.
-5. **Entitlement and quotas:** connect Stripe checkout/portal and optional on-chain entitlement; enforce request, token, storage, and concurrency limits before model calls.
-6. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
-7. **Media and scheduling:** move blobs to R2 and scheduled jobs to D1 plus Cron/Workflows.
-8. **Operational hardening:** KMS-backed root-key wrapping, secret re-encryption jobs, audit reporting, data export/deletion, monitoring, and administrative kill switches.
-9. **Burst compute:** use an external sandbox only for workloads that truly need a Linux computer.
+5. **Portable public projects — implemented:** default-public registry, strict content-addressed artifacts, owner export/import, R2 mirrors, NFT-ready metadata, and blank-environment restore proof.
+6. **Entitlement and quotas:** connect Stripe checkout/portal and optional on-chain entitlement; enforce request, token, storage, and concurrency limits before model calls.
+7. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
+8. **Media and scheduling:** move blobs to R2 and scheduled jobs to D1 plus Cron/Workflows.
+9. **Operational hardening:** permanent artifact anchoring, owner-authorized NFT minting, KMS-backed root-key wrapping, secret re-encryption jobs, audit reporting, monitoring, and kill switches.
+10. **Burst compute:** use an external sandbox only for workloads that truly need a Linux computer.
 
 ## Cost Guardrails
 

@@ -14,6 +14,8 @@ vi.mock('./hosted-api', async () => {
     ...actual,
     getHostedProviderStatus: vi.fn(),
     disconnectHostedProvider: vi.fn(),
+    createHostedAvatar: vi.fn(),
+    importHostedAvatar: vi.fn(),
     connectHostedTelegram: vi.fn(),
     disconnectHostedTelegram: vi.fn(),
     listHostedAvatars: vi.fn(),
@@ -47,6 +49,17 @@ beforeEach(() => {
   vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(disconnected);
   vi.mocked(hostedApi.disconnectHostedProvider).mockResolvedValue(disconnected);
   vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([]);
+  vi.mocked(hostedApi.createHostedAvatar).mockResolvedValue({
+    avatarId: 'avatar-new',
+    name: 'Public Ada',
+    status: 'shell',
+    createdAt: 1,
+    updatedAt: 1,
+    slug: 'public-ada-new',
+    visibility: 'public',
+    listed: true,
+    revisionId: `sha256:${'a'.repeat(64)}`,
+  });
   vi.mocked(hostedApi.getHostedHistory).mockResolvedValue([]);
   vi.mocked(hostedApi.getHostedTelegramStatus).mockResolvedValue({
     connected: false,
@@ -87,7 +100,7 @@ describe('HostedApp', () => {
     expect(connect).toHaveAttribute('href', expect.stringMatching(/\/auth\/openrouter$/u));
     expect(screen.getByText(/oauth uses pkce s256/i)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/sk-or/iu)).not.toBeInTheDocument();
-    expect(hostedApi.listHostedAvatars).not.toHaveBeenCalled();
+    expect(hostedApi.listHostedAvatars).toHaveBeenCalledOnce();
   });
 
   it('shows the callback result, refreshes connected state, and removes callback parameters', async () => {
@@ -183,5 +196,23 @@ describe('HostedApp', () => {
       'href',
       'https://t.me/JaxSwarmBot?start=one-time-code',
     );
+  });
+
+  it('publishes a listed public portable avatar by default', async () => {
+    authenticate();
+    render(<HostedApp />);
+
+    fireEvent.change(await screen.findByLabelText(/avatar name/i), { target: { value: 'Public Ada' } });
+    fireEvent.change(screen.getByLabelText(/public description/i), { target: { value: 'An open research mind.' } });
+    fireEvent.change(screen.getByLabelText(/public starting prompt/i), { target: { value: 'Think in public.' } });
+    fireEvent.click(screen.getByRole('button', { name: /publish portable avatar/i }));
+
+    await waitFor(() => expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith({
+      name: 'Public Ada',
+      description: 'An open research mind.',
+      persona: 'Think in public.',
+      visibility: 'public',
+      listed: true,
+    }));
   });
 });

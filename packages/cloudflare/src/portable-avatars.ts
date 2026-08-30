@@ -11,7 +11,7 @@ import type {
   CloudflareD1PreparedStatement,
   CloudflareHostedBindings,
 } from './bindings.js';
-import { createHostedAvatar, type HostedAvatar } from './hosted-chat.js';
+import { createHostedAvatar, getHostedAvatar, listHostedAvatars, type HostedAvatar } from './hosted-chat.js';
 
 const MAX_PUBLIC_AVATARS = 100;
 
@@ -203,8 +203,9 @@ async function persistRevision(
   statements.push(
     env.SWARM_STATE.prepare(
       `insert into swarm_hosted_avatar_revisions
-         (account_id, avatar_id, revision_id, sha256, bundle_key, bundle_json, previous_revision_id, created_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (account_id, avatar_id, revision_id, sha256, bundle_key, bundle_json, previous_revision_id,
+          publicly_accessible, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       session.accountId,
       bundle.identity.avatarId,
@@ -213,6 +214,7 @@ async function persistRevision(
       key,
       canonicalJson,
       bundle.lineage.previousRevisionId ?? null,
+      bundle.publication.visibility === 'public' ? 1 : 0,
       now,
     ),
   );
@@ -282,6 +284,57 @@ export async function createPortableHostedAvatar(
   };
 }
 
+async function migrateLegacyHostedAvatar(
+  env: CloudflareHostedBindings,
+  session: HostedSession,
+  avatar: HostedAvatar,
+): Promise<PortableHostedAvatar> {
+  const slug = avatar.slug || safeSlug(avatar.name, avatar.avatarId);
+  const bundle: PortableAvatarBundleV1 = {
+    schema: 'swarm.avatar/v1',
+    identity: {
+      avatarId: avatar.avatarId,
+      slug,
+      name: avatar.name,
+      description: avatar.description ?? '',
+      controller: { type: 'solana-wallet', address: avatar.createdBy },
+    },
+    publication: { visibility: 'private', listed: false },
+    prompts: {
+      system: avatar.persona?.trim() || `You are ${avatar.name}, a private Swarm avatar.`,
+      starters: [],
+    },
+    capabilities: [{ id: 'conversation', name: 'Conversation' }],
+    sharedMemory: { summary: '', entries: [] },
+    media: [],
+    lineage: {},
+    revision: { createdAt: new Date(avatar.createdAt).toISOString() },
+  };
+  const revision = await portableAvatarRevision(bundle);
+  await persistRevision(env, session, revision, avatar.updatedAt, false);
+  return {
+    ...avatar,
+    slug,
+    visibility: 'private',
+    listed: false,
+    revisionId: revision.revisionId,
+    sha256: revision.sha256,
+  };
+}
+
+export async function listOwnedPortableAvatars(
+  env: CloudflareHostedBindings,
+  session: HostedSession,
+): Promise<HostedAvatar[]> {
+  const avatars = await listHostedAvatars(env, session);
+  const result: HostedAvatar[] = [];
+  for (const avatar of avatars) {
+    if (avatar.revisionId) result.push(avatar);
+    else result.push(await migrateLegacyHostedAvatar(env, session, avatar));
+  }
+  return result;
+}
+
 export async function importPortableHostedAvatar(
   env: CloudflareHostedBindings,
   session: HostedSession,
@@ -310,6 +363,39 @@ export async function importPortableHostedAvatar(
     slug: bundle.identity.slug,
     visibility: bundle.publication.visibility,
     listed: bundle.publication.listed,
+    revisionId: revision.revisionId,
+    sha256: revision.sha256,
+  };
+}
+
+export async function updatePortableAvatarPublication(
+  env: CloudflareHostedBindings,
+  session: HostedSession,
+  avatarId: string,
+  publication: { visibility: 'public' | 'private'; listed?: boolean },
+  now = Date.now(),
+): Promise<PortableHostedAvatar | null> {
+  const current = await getOwnedPortableRevision(env, session, avatarId);
+  const avatar = await getHostedAvatar(env, session, avatarId);
+  if (!current || !avatar) return null;
+  const visibility = publication.visibility;
+  const listed = visibility === 'public' ? publication.listed ?? true : false;
+  const nextBundle: PortableAvatarBundleV1 = {
+    ...current.bundle,
+    publication: { visibility, listed },
+    lineage: {
+      ...current.bundle.lineage,
+      previousRevisionId: current.revisionId,
+    },
+    revision: { createdAt: new Date(now).toISOString() },
+  };
+  const revision = await portableAvatarRevision(nextBundle);
+  await persistRevision(env, session, revision, now, false);
+  return {
+    ...avatar,
+    slug: nextBundle.identity.slug,
+    visibility,
+    listed,
     revisionId: revision.revisionId,
     sha256: revision.sha256,
   };
@@ -361,10 +447,11 @@ export async function getPublicRevision(
   revisionId: string,
 ): Promise<PortableAvatarRevision | null> {
   const published = await env.SWARM_STATE.prepare(
-    `select avatar_id from swarm_hosted_avatars
-     where visibility = 'public' and current_revision_id = ? limit 1`,
-  ).bind(revisionId).first<{ avatar_id: string }>();
-  return published ? getRevision(env, revisionId) : null;
+    `select revision_id, sha256, bundle_key, bundle_json, created_at
+     from swarm_hosted_avatar_revisions
+     where revision_id = ? and publicly_accessible = 1`,
+  ).bind(revisionId).first<RevisionRow>();
+  return published ? bundleFromRow(published) : null;
 }
 
 export async function getOwnedPortableRevision(

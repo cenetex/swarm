@@ -5,6 +5,7 @@ import { bootstrapAuthFromBackendSession } from './auth/bootstrap';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { WalletProvider } from './components/WalletProvider';
 import { HostedApp } from './HostedApp';
+import { HostedCatalogApp } from './HostedCatalogApp';
 import { MobileWalletSignInPage } from './components/MobileWalletSignInPage';
 import i18n from './i18n';
 import './index.css';
@@ -28,7 +29,8 @@ function HostedSessionRoot() {
 
 function HostedRoot() {
   if (window.location.pathname === '/mobile-sign-in') return <MobileWalletSignInPage />;
-  return <HostedSessionRoot />;
+  if (window.location.pathname === '/studio') return <HostedSessionRoot />;
+  return <HostedCatalogApp />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

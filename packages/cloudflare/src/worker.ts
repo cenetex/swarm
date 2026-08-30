@@ -44,7 +44,6 @@ import {
   HostedChatNotFoundError,
   HostedChatQueueError,
   HostedChatRateLimitError,
-  listHostedAvatars,
   listHostedChatHistory,
   processHostedChatQueueMessage,
 } from './hosted-chat.js';
@@ -66,9 +65,11 @@ import {
   getPublicAvatar,
   getPublicRevision,
   importPortableHostedAvatar,
+  listOwnedPortableAvatars,
   listPublicAvatars,
   PortableAvatarAuthorizationError,
   PortableAvatarConflictError,
+  updatePortableAvatarPublication,
 } from './portable-avatars.js';
 
 export { HostedAvatarCoordinatorDurableObject };
@@ -551,7 +552,7 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
   if (url.pathname === '/api/avatars' && request.method === 'GET') {
     const session = await getHostedSession(env, request);
     if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
-    return json(await listHostedAvatars(env, session));
+    return json(await listOwnedPortableAvatars(env, session));
   }
 
   if (url.pathname === '/api/avatars' && request.method === 'POST') {
@@ -610,6 +611,26 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
         'X-Content-Type-Options': 'nosniff',
       },
     });
+  }
+
+  const ownedPublicationMatch = url.pathname.match(/^\/api\/avatars\/([^/]+)\/publication$/u);
+  if (ownedPublicationMatch && request.method === 'PATCH') {
+    assertSameOrigin(env, request);
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = decodeURIComponent(ownedPublicationMatch[1] ?? '');
+    if (!validResourceId(avatarId)) return json({ error: 'Avatar id is invalid.' }, { status: 400 });
+    const body = await readJsonObject(request);
+    const visibilityValue = stringField(body, 'visibility');
+    if (visibilityValue !== 'public' && visibilityValue !== 'private') {
+      return json({ error: 'visibility must be public or private.' }, { status: 400 });
+    }
+    const listed = optionalBooleanField(body, 'listed');
+    const avatar = await updatePortableAvatarPublication(env, session, avatarId, {
+      visibility: visibilityValue,
+      ...(listed === undefined ? {} : { listed }),
+    });
+    return avatar ? json(avatar) : json({ error: 'Portable avatar was not found.' }, { status: 404 });
   }
 
   const avatarMatch = url.pathname.match(/^\/api\/avatars\/([^/]+)$/u);

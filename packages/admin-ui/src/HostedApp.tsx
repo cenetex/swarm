@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from './api/apiBase';
 import { HostedWalletSignIn } from './components/HostedWalletSignIn';
 import {
@@ -10,10 +10,13 @@ import {
   getHostedHistory,
   getHostedProviderStatus,
   getHostedTelegramStatus,
+  importHostedAvatar,
   listHostedAvatars,
   openRouterConnectUrl,
   openRouterResult,
+  ownedHostedAvatarBundleUrl,
   repairHostedTelegram,
+  updateHostedAvatarPublication,
   waitForHostedJob,
   type HostedAvatar,
   type HostedChatMessage,
@@ -63,6 +66,10 @@ export function HostedApp() {
   const [activeAvatarId, setActiveAvatarId] = useState('');
   const [messages, setMessages] = useState<HostedChatMessage[]>([]);
   const [avatarName, setAvatarName] = useState('My hosted avatar');
+  const [avatarDescription, setAvatarDescription] = useState('');
+  const [avatarPersona, setAvatarPersona] = useState('');
+  const [avatarVisibility, setAvatarVisibility] = useState<'public' | 'private'>('public');
+  const [avatarListed, setAvatarListed] = useState(true);
   const [draft, setDraft] = useState('');
   const [telegram, setTelegram] = useState<HostedTelegramStatus | null>(null);
   const [telegramToken, setTelegramToken] = useState('');
@@ -89,12 +96,8 @@ export function HostedApp() {
     try {
       const nextProvider = await getHostedProviderStatus();
       setProvider(nextProvider);
-      if (nextProvider.connected) await refreshAvatars();
-      else {
-        setAvatars([]);
-        setActiveAvatarId('');
-        setMessages([]);
-      }
+      await refreshAvatars();
+      if (!nextProvider.connected) setMessages([]);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : 'Unable to load hosted status.');
     } finally {
@@ -180,8 +183,6 @@ export function HostedApp() {
     try {
       const nextProvider = await disconnectHostedProvider();
       setProvider(nextProvider);
-      setAvatars([]);
-      setActiveAvatarId('');
       setMessages([]);
     } catch (disconnectError) {
       setError(disconnectError instanceof Error ? disconnectError.message : 'Unable to disconnect OpenRouter.');
@@ -196,14 +197,57 @@ export function HostedApp() {
     setLoading(true);
     setError('');
     try {
-      const avatar = await createHostedAvatar(avatarName.trim());
+      const avatar = await createHostedAvatar({
+        name: avatarName.trim(),
+        ...(avatarDescription.trim() ? { description: avatarDescription.trim() } : {}),
+        ...(avatarPersona.trim() ? { persona: avatarPersona.trim() } : {}),
+        visibility: avatarVisibility,
+        listed: avatarVisibility === 'public' && avatarListed,
+      });
       setAvatars((current) => [avatar, ...current]);
       setActiveAvatarId(avatar.avatarId);
       setMessages([]);
       setAvatarName('My hosted avatar');
+      setAvatarDescription('');
+      setAvatarPersona('');
+      setAvatarVisibility('public');
+      setAvatarListed(true);
       setManageOpen(false);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Unable to create the avatar.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImportAvatar = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setLoading(true);
+    setError('');
+    try {
+      const bundle = JSON.parse(await file.text()) as unknown;
+      const avatar = await importHostedAvatar(bundle);
+      setAvatars((current) => [avatar, ...current]);
+      setActiveAvatarId(avatar.avatarId);
+      setMessages([]);
+      setManageOpen(false);
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : 'Unable to import the portable avatar.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePublishAvatar = async (avatarId: string) => {
+    setLoading(true);
+    setError('');
+    try {
+      const updated = await updateHostedAvatarPublication(avatarId, { visibility: 'public', listed: true });
+      setAvatars((current) => current.map((avatar) => avatar.avatarId === avatarId ? updated : avatar));
+    } catch (publishError) {
+      setError(publishError instanceof Error ? publishError.message : 'Unable to publish the avatar.');
     } finally {
       setLoading(false);
     }
@@ -300,17 +344,20 @@ export function HostedApp() {
     <div className="h-[100dvh] overflow-hidden bg-[var(--color-bg)] text-[var(--color-text)]">
       <header className="h-16 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
         <div className="mx-auto flex h-full max-w-[90rem] items-center justify-between gap-3 px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
+          <a href="/" className="flex min-w-0 items-center gap-3" aria-label="Swarm public registry">
             <img src="/swarm.svg" alt="" className="h-8 w-8 shrink-0" />
             <div className="min-w-0">
               <div className="flex items-baseline gap-2">
                 <h1 className="truncate text-base font-semibold">Swarm</h1>
-                <span className="text-sm text-[var(--color-text-secondary)]">Hosted</span>
+                <span className="text-sm text-[var(--color-text-secondary)]">Studio</span>
               </div>
               <p className="hidden text-xs text-[var(--color-text-muted)] sm:block">{environmentCopy.label}</p>
             </div>
+          </a>
+          <div className="flex items-center gap-2">
+            <a href="/" className="hidden rounded-lg px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] sm:block">Discover</a>
+            <HostedWalletSignIn showIcon={!isAuthenticated} />
           </div>
-          <HostedWalletSignIn showIcon={!isAuthenticated} />
         </div>
       </header>
 
@@ -331,8 +378,8 @@ export function HostedApp() {
                   : workspaceReady
                     ? 'Available while your browser is closed'
                     : isAuthenticated
-                      ? 'Finish setup in Manage to start chatting'
-                      : 'Sign in to create an always-on avatar'}
+                      ? 'Your public project is ready; connect a model to chat'
+                      : 'Sign in to publish or restore an avatar'}
               </p>
             </div>
             <button
@@ -365,10 +412,10 @@ export function HostedApp() {
             <div className="mx-auto flex min-h-full max-w-3xl flex-col">
               {!isAuthenticated && (
                 <div className="m-auto max-w-lg py-12 text-center">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Your always-on workspace</p>
-                  <h3 className="mt-3 text-2xl font-semibold">Start with one conversation.</h3>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Your avatar studio</p>
+                  <h3 className="mt-3 text-2xl font-semibold">Publish a mind you can carry.</h3>
                   <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">
-                    Sign in with Phantom or Solflare, connect your model provider, and create an avatar that keeps working after this page closes.
+                    Sign in with Phantom or Solflare to create, restore, and operate portable avatar projects. Public is the default.
                   </p>
                   <HostedWalletSignIn className="mx-auto mt-6 justify-center" />
                 </div>
@@ -549,7 +596,7 @@ export function HostedApp() {
               </section>
             )}
 
-            {isAuthenticated && providerReady && (
+            {isAuthenticated && (
               <section aria-labelledby="avatars-heading" className="border-b border-[var(--color-border)] px-5 py-5">
                 <div className="flex items-center justify-between gap-3">
                   <h2 id="avatars-heading" className="text-sm font-semibold">Avatars</h2>
@@ -558,20 +605,42 @@ export function HostedApp() {
                 {avatars.length > 0 ? (
                   <div className="mt-3 border-y border-[var(--color-border)]">
                     {avatars.map((avatar) => (
-                      <button
-                        type="button"
+                      <div
                         key={avatar.avatarId}
-                        aria-current={avatar.avatarId === activeAvatarId ? 'true' : undefined}
-                        onClick={() => selectAvatar(avatar.avatarId)}
-                        className={`flex w-full items-center justify-between border-b border-[var(--color-border)] px-3 py-3 text-left text-sm transition last:border-b-0 ${
+                        className={`border-b border-[var(--color-border)] px-3 py-3 text-sm transition last:border-b-0 ${
                           avatar.avatarId === activeAvatarId
                             ? 'border-l-2 border-l-brand-400 bg-brand-500/10 text-[var(--color-text)]'
                             : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]'
                         }`}
                       >
-                        <span className="truncate">{avatar.name}</span>
-                        {avatar.avatarId === activeAvatarId && <span className="text-xs text-brand-300">Active</span>}
-                      </button>
+                        <button
+                          type="button"
+                          aria-current={avatar.avatarId === activeAvatarId ? 'true' : undefined}
+                          onClick={() => selectAvatar(avatar.avatarId)}
+                          className="flex w-full items-center justify-between gap-2 text-left"
+                        >
+                          <span className="truncate">{avatar.name}</span>
+                          <span className={`text-[0.65rem] uppercase tracking-wide ${avatar.visibility === 'private' ? 'text-amber-300' : 'text-emerald-300'}`}>
+                            {avatar.visibility === 'private' ? 'Private' : 'Public'}
+                          </span>
+                        </button>
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                          <a href={ownedHostedAvatarBundleUrl(avatar.avatarId)} className="text-brand-300 underline underline-offset-4">Download</a>
+                          {avatar.visibility !== 'private' && avatar.slug && (
+                            <a href={`/a/${avatar.slug}`} className="text-brand-300 underline underline-offset-4">Public page</a>
+                          )}
+                          {avatar.visibility === 'private' && (
+                            <button
+                              type="button"
+                              onClick={() => void handlePublishAvatar(avatar.avatarId)}
+                              disabled={loading}
+                              className="text-emerald-300 underline underline-offset-4 disabled:opacity-50"
+                            >
+                              Publish
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 ) : (
@@ -580,7 +649,7 @@ export function HostedApp() {
 
                 <details className="mt-4 border-t border-[var(--color-border)] pt-4">
                   <summary className="cursor-pointer text-sm font-medium text-brand-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-400">
-                    Create a new avatar
+                    Publish a new avatar
                   </summary>
                   <form onSubmit={(event) => void handleCreateAvatar(event)} className="mt-4 space-y-3">
                     <label htmlFor="avatar-name" className="block text-xs text-[var(--color-text-muted)]">Avatar name</label>
@@ -591,15 +660,72 @@ export function HostedApp() {
                       maxLength={80}
                       className="w-full rounded-lg border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
                     />
+                    <label htmlFor="avatar-description" className="block text-xs text-[var(--color-text-muted)]">Public description</label>
+                    <textarea
+                      id="avatar-description"
+                      value={avatarDescription}
+                      onChange={(event) => setAvatarDescription(event.target.value)}
+                      maxLength={1000}
+                      rows={3}
+                      placeholder="What this avatar is for"
+                      className="w-full resize-y rounded-lg border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                    />
+                    <label htmlFor="avatar-persona" className="block text-xs text-[var(--color-text-muted)]">Public starting prompt</label>
+                    <textarea
+                      id="avatar-persona"
+                      value={avatarPersona}
+                      onChange={(event) => setAvatarPersona(event.target.value)}
+                      maxLength={50000}
+                      rows={4}
+                      placeholder="How this mind begins"
+                      className="w-full resize-y rounded-lg border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                    />
+                    <label htmlFor="avatar-visibility" className="block text-xs text-[var(--color-text-muted)]">Visibility</label>
+                    <select
+                      id="avatar-visibility"
+                      value={avatarVisibility}
+                      onChange={(event) => setAvatarVisibility(event.target.value as 'public' | 'private')}
+                      className="w-full rounded-lg border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-2.5 text-sm outline-none focus:border-brand-400"
+                    >
+                      <option value="public">Public</option>
+                      <option value="private">Private</option>
+                    </select>
+                    {avatarVisibility === 'public' && (
+                      <label className="flex items-start gap-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+                        <input
+                          type="checkbox"
+                          checked={avatarListed}
+                          onChange={(event) => setAvatarListed(event.target.checked)}
+                          className="mt-1 accent-[var(--color-brand-light)]"
+                        />
+                        List this avatar in the public registry
+                      </label>
+                    )}
+                    <p className="text-xs leading-5 text-[var(--color-text-muted)]">
+                      Public and listed is the default. Secrets and private chat are never included in the portable artifact.
+                    </p>
                     <button
                       type="submit"
                       disabled={loading || !avatarName.trim()}
                       className="w-full rounded-lg bg-[var(--color-bg-tertiary)] px-4 py-2.5 text-sm font-medium transition hover:bg-[var(--color-bg-elevated)] disabled:opacity-50"
                     >
-                      Create hosted avatar
+                      Publish portable avatar
                     </button>
                   </form>
                 </details>
+                <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+                  <label htmlFor="avatar-import" className="block cursor-pointer text-sm font-medium text-brand-300 underline underline-offset-4">
+                    Restore from portable artifact
+                  </label>
+                  <input
+                    id="avatar-import"
+                    type="file"
+                    accept=".json,.swarm-avatar.json,application/json,application/vnd.swarm.avatar+json"
+                    onChange={(event) => void handleImportAvatar(event)}
+                    disabled={loading}
+                    className="sr-only"
+                  />
+                </div>
               </section>
             )}
 

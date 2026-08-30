@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://swarm.rati.chat/sitemap.xml
+Sitemap: https://next.swarm.rati.chat/sitemap.xml
