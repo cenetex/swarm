@@ -14,6 +14,7 @@ import type {
 import { createHostedAvatar, getHostedAvatar, listHostedAvatars, type HostedAvatar } from './hosted-chat.js';
 
 const MAX_PUBLIC_AVATARS = 100;
+const PORTABLE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 type PublicAvatarRow = {
   account_id: string;
@@ -77,6 +78,13 @@ export class PortableAvatarAuthorizationError extends Error {
   }
 }
 
+export class PortableAvatarDataError extends Error {
+  constructor() {
+    super('Portable avatar data could not be loaded.');
+    this.name = 'PortableAvatarDataError';
+  }
+}
+
 function ensureD1Result(success: boolean, error: string | undefined, message: string): void {
   if (!success) throw new Error(error ?? message);
 }
@@ -106,13 +114,21 @@ function safeSlug(name: string, suffix: string): string {
   return `${base}-${safeSuffix}`;
 }
 
+function validPortableSlug(value: string | undefined): value is string {
+  return !!value && value.length <= 80 && PORTABLE_SLUG_PATTERN.test(value);
+}
+
 function bundleKey(avatarId: string, sha256: string): string {
   return `portable-avatars/${avatarId}/revisions/${sha256}.json`;
 }
 
 function bundleFromRow(row: RevisionRow): PortableAvatarRevision {
-  const bundle = parsePortableAvatarBundle(JSON.parse(row.bundle_json) as unknown);
-  return { revisionId: row.revision_id, sha256: row.sha256, bundle };
+  try {
+    const bundle = parsePortableAvatarBundle(JSON.parse(row.bundle_json) as unknown);
+    return { revisionId: row.revision_id, sha256: row.sha256, bundle };
+  } catch {
+    throw new PortableAvatarDataError();
+  }
 }
 
 function publicSummary(row: PublicAvatarRow, revision: PortableAvatarRevision): PublicAvatarSummary {
@@ -289,7 +305,7 @@ async function migrateLegacyHostedAvatar(
   session: HostedSession,
   avatar: HostedAvatar,
 ): Promise<PortableHostedAvatar> {
-  const slug = avatar.slug || safeSlug(avatar.name, avatar.avatarId);
+  const slug = validPortableSlug(avatar.slug) ? avatar.slug : safeSlug(avatar.name, avatar.avatarId);
   const bundle: PortableAvatarBundleV1 = {
     schema: 'swarm.avatar/v1',
     identity: {

@@ -71,6 +71,7 @@ import {
   listPublicAvatars,
   PortableAvatarAuthorizationError,
   PortableAvatarConflictError,
+  PortableAvatarDataError,
   updatePortableAvatarPublication,
 } from './portable-avatars.js';
 
@@ -861,6 +862,7 @@ export default {
       if (error instanceof HostedTelegramNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof PortableAvatarAuthorizationError) return json({ error: detail }, { status: 403 });
       if (error instanceof PortableAvatarConflictError) return json({ error: detail }, { status: 409 });
+      if (error instanceof PortableAvatarDataError) return json({ error: detail }, { status: 500 });
       if (error instanceof HostedChatNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof HostedChatMissingKeyError) return json({ error: detail }, { status: 409 });
       if (error instanceof HostedChatQueueError || error instanceof HostedChatConfigurationError) {

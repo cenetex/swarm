@@ -186,40 +186,72 @@ describe('portable public avatars', () => {
     expect((await getPublicAvatar(target.env, imported.slug))?.revisionId).toBe(created.revisionId);
   });
 
-  it('backfills a legacy avatar as private without changing its identity or owner', async () => {
+  it('backfills a production-shaped legacy avatar and repairs its migrated slug', async () => {
     const { state, env } = setup();
     resources.push(state);
     state.db.exec(`insert into swarm_hosted_avatars
-      (account_id, avatar_id, default_thread_id, name, description, persona, status, created_by, created_at, updated_at)
-      values ('account-1', 'legacy-avatar', 'legacy-thread', 'Legacy Ada', 'Preserved project',
-              'Keep the original prompt.', 'shell', '11111111111111111111111111111111', 1000, 2000)`);
+      (account_id, avatar_id, default_thread_id, name, description, persona, status, created_by, created_at,
+       updated_at, slug, visibility, listed)
+      values ('account-1', 'avatar_LegacyToken', 'legacy-thread', 'Legacy Ada', 'Preserved project',
+              'Keep the original prompt.', 'shell', '11111111111111111111111111111111', 1000, 2000,
+              'avatar_LegacyToken', 'private', 0)`);
     state.db.exec(`insert into swarm_hosted_chat_threads
       (account_id, avatar_id, thread_id, created_at, updated_at)
-      values ('account-1', 'legacy-avatar', 'legacy-thread', 1000, 2000)`);
+      values ('account-1', 'avatar_LegacyToken', 'legacy-thread', 1000, 2000)`);
 
     const [backfilled] = await listOwnedPortableAvatars(env, owner);
 
     expect(backfilled).toMatchObject({
-      avatarId: 'legacy-avatar',
+      avatarId: 'avatar_LegacyToken',
       createdBy: '11111111111111111111111111111111',
       visibility: 'private',
       listed: false,
     });
-    expect(await getPublicAvatar(env, 'legacy-avatar')).toBeNull();
-    expect((await getOwnedPortableRevision(env, owner, 'legacy-avatar'))?.bundle.prompts.system)
+    expect(backfilled?.slug).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
+    expect(backfilled?.slug).not.toBe('avatar_LegacyToken');
+    expect(state.db.query(
+      "select slug from swarm_hosted_avatars where avatar_id = 'avatar_LegacyToken'",
+    ).get()).toEqual({ slug: backfilled?.slug });
+    expect(await getPublicAvatar(env, 'avatar_LegacyToken')).toBeNull();
+    expect((await getOwnedPortableRevision(env, owner, 'avatar_LegacyToken'))?.bundle.prompts.system)
       .toBe('Keep the original prompt.');
 
     const published = await updatePortableAvatarPublication(
       env,
       owner,
-      'legacy-avatar',
+      'avatar_LegacyToken',
       { visibility: 'public', listed: true },
       3_000,
     );
     expect(published?.revisionId).not.toBe(backfilled?.revisionId);
     expect(published?.visibility).toBe('public');
-    expect((await getPublicAvatar(env, 'legacy-avatar'))?.bundle.lineage.previousRevisionId)
+    expect((await getPublicAvatar(env, 'avatar_LegacyToken'))?.bundle.lineage.previousRevisionId)
       .toBe(backfilled?.revisionId);
+  });
+
+  it('does not expose stored portable schema details when revision data is malformed', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    state.db.exec(`insert into swarm_hosted_avatars
+      (account_id, avatar_id, default_thread_id, name, status, created_by, created_at, updated_at,
+       slug, visibility, listed, current_revision_id)
+      values ('account-1', 'avatar-broken', 'broken-thread', 'Broken', 'shell',
+              '11111111111111111111111111111111', 1000, 2000, 'broken', 'public', 1, 'sha256:broken')`);
+    state.db.exec(`insert into swarm_hosted_chat_threads
+      (account_id, avatar_id, thread_id, created_at, updated_at)
+      values ('account-1', 'avatar-broken', 'broken-thread', 1000, 2000)`);
+    state.db.exec(`insert into swarm_hosted_avatar_revisions
+      (account_id, avatar_id, revision_id, sha256, bundle_key, bundle_json, publicly_accessible, created_at)
+      values ('account-1', 'avatar-broken', 'sha256:broken', 'broken', 'broken.json',
+              '{"identity":{"slug":"INVALID_SLUG"}}', 1, 2000)`);
+
+    const response = await worker.fetch(new Request('https://next.swarm.rati.chat/api/public/avatars'), env);
+    const body = await response.json() as { error?: string };
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({ error: 'Portable avatar data could not be loaded.' });
+    expect(JSON.stringify(body)).not.toContain('identity');
+    expect(JSON.stringify(body)).not.toContain('regex');
   });
 
   it('serves the catalog, portable download, NFT metadata, and sitemap without a session', async () => {
