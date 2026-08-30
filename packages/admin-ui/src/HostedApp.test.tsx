@@ -211,7 +211,7 @@ describe('HostedApp', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^settings$/i }));
     const prompt = await screen.findByLabelText(/system prompt/i);
-    expect(prompt).toHaveValue('Be careful and concise.');
+    await waitFor(() => expect(prompt).toHaveValue('Be careful and concise.'));
     fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Ada North' } });
     fireEvent.change(prompt, { target: { value: 'Be direct, curious, and evidence-led.' } });
     fireEvent.click(screen.getByRole('button', { name: /save voice & identity/i }));
