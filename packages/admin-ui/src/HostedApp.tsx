@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from './api/apiBase';
 import { HostedWalletSignIn } from './components/HostedWalletSignIn';
 import {
@@ -10,10 +10,13 @@ import {
   getHostedHistory,
   getHostedProviderStatus,
   getHostedTelegramStatus,
+  importHostedAvatar,
   listHostedAvatars,
   openRouterConnectUrl,
   openRouterResult,
+  ownedHostedAvatarBundleUrl,
   repairHostedTelegram,
+  updateHostedAvatarPublication,
   waitForHostedJob,
   type HostedAvatar,
   type HostedChatMessage,
@@ -173,6 +176,10 @@ export function HostedApp() {
   const [activeView, setActiveView] = useState<HostedView>('chat');
   const [createOpen, setCreateOpen] = useState(false);
   const [avatarName, setAvatarName] = useState('My hosted avatar');
+  const [avatarDescription, setAvatarDescription] = useState('');
+  const [avatarPersona, setAvatarPersona] = useState('');
+  const [avatarVisibility, setAvatarVisibility] = useState<'public' | 'private'>('public');
+  const [avatarListed, setAvatarListed] = useState(true);
   const [draft, setDraft] = useState('');
   const [telegram, setTelegram] = useState<HostedTelegramStatus | null>(null);
   const [telegramToken, setTelegramToken] = useState('');
@@ -198,12 +205,8 @@ export function HostedApp() {
     try {
       const nextProvider = await getHostedProviderStatus();
       setProvider(nextProvider);
-      if (nextProvider.connected) await refreshAvatars();
-      else {
-        setAvatars([]);
-        setActiveAvatarId('');
-        setMessages([]);
-      }
+      await refreshAvatars();
+      if (!nextProvider.connected) setMessages([]);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : 'Unable to load hosted status.');
     } finally {
@@ -280,8 +283,6 @@ export function HostedApp() {
     try {
       const nextProvider = await disconnectHostedProvider();
       setProvider(nextProvider);
-      setAvatars([]);
-      setActiveAvatarId('');
       setMessages([]);
     } catch (disconnectError) {
       setError(disconnectError instanceof Error ? disconnectError.message : 'Unable to disconnect OpenRouter.');
@@ -296,15 +297,59 @@ export function HostedApp() {
     setLoading(true);
     setError('');
     try {
-      const avatar = await createHostedAvatar(avatarName.trim());
+      const avatar = await createHostedAvatar({
+        name: avatarName.trim(),
+        ...(avatarDescription.trim() ? { description: avatarDescription.trim() } : {}),
+        ...(avatarPersona.trim() ? { persona: avatarPersona.trim() } : {}),
+        visibility: avatarVisibility,
+        listed: avatarVisibility === 'public' && avatarListed,
+      });
       setAvatars((current) => [avatar, ...current]);
       setActiveAvatarId(avatar.avatarId);
       setMessages([]);
       setAvatarName('My hosted avatar');
+      setAvatarDescription('');
+      setAvatarPersona('');
+      setAvatarVisibility('public');
+      setAvatarListed(true);
       setCreateOpen(false);
       setActiveView('chat');
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Unable to create the avatar.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImportAvatar = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setLoading(true);
+    setError('');
+    try {
+      const bundle = JSON.parse(await file.text()) as unknown;
+      const avatar = await importHostedAvatar(bundle);
+      setAvatars((current) => [avatar, ...current]);
+      setActiveAvatarId(avatar.avatarId);
+      setMessages([]);
+      setCreateOpen(false);
+      setActiveView('chat');
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : 'Unable to import the portable avatar.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePublishAvatar = async (avatarId: string) => {
+    setLoading(true);
+    setError('');
+    try {
+      const updated = await updateHostedAvatarPublication(avatarId, { visibility: 'public', listed: true });
+      setAvatars((current) => current.map((avatar) => avatar.avatarId === avatarId ? updated : avatar));
+    } catch (publishError) {
+      setError(publishError instanceof Error ? publishError.message : 'Unable to publish the avatar.');
     } finally {
       setLoading(false);
     }
@@ -402,17 +447,20 @@ export function HostedApp() {
     <div className="h-[100dvh] overflow-hidden bg-[var(--color-bg)] text-[var(--color-text)]">
       <header className="h-16 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
         <div className="mx-auto flex h-full max-w-[90rem] items-center justify-between gap-3 px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
+          <a href="/" className="flex min-w-0 items-center gap-3" aria-label="Swarm public registry">
             <img src="/swarm.svg" alt="" className="h-8 w-8 shrink-0" />
             <div className="min-w-0">
-              <h1 className="text-base font-semibold">
-                <span className="sm:hidden">Swarm</span>
-                <span className="hidden sm:inline">Swarm Hosted</span>
-              </h1>
-              <p className="hidden text-xs text-[var(--color-text-muted)] sm:block">Your companions, always on</p>
+              <div className="flex items-baseline gap-2">
+                <h1 className="truncate text-base font-semibold">Swarm</h1>
+                <span className="text-sm text-[var(--color-text-secondary)]">Studio</span>
+              </div>
+              <p className="hidden text-xs text-[var(--color-text-muted)] sm:block">{environmentCopy.label}</p>
             </div>
+          </a>
+          <div className="flex items-center gap-2">
+            <a href="/" className="hidden rounded-lg px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] sm:block">Discover</a>
+            <HostedWalletSignIn showIcon={!isAuthenticated} />
           </div>
-          <HostedWalletSignIn showIcon={!isAuthenticated} />
         </div>
       </header>
 
@@ -442,7 +490,7 @@ export function HostedApp() {
               <h2 className="text-lg font-semibold">Your crew</h2>
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">{avatars.length} companion{avatars.length === 1 ? '' : 's'}</p>
             </div>
-            {isAuthenticated && providerReady && (
+            {isAuthenticated && (
               <button
                 type="button"
                 aria-expanded={createOpen}
@@ -469,6 +517,53 @@ export function HostedApp() {
                   maxLength={80}
                   className="mt-2 w-full rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-base outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
                 />
+                <details className="mt-3 border-t border-brand-400/20 pt-3">
+                  <summary className="cursor-pointer text-xs font-medium text-brand-300">Identity and sharing</summary>
+                  <div className="mt-3 space-y-3">
+                    <label htmlFor="avatar-description" className="block text-xs text-[var(--color-text-muted)]">Public description</label>
+                    <textarea
+                      id="avatar-description"
+                      value={avatarDescription}
+                      onChange={(event) => setAvatarDescription(event.target.value)}
+                      maxLength={1000}
+                      rows={3}
+                      placeholder="What this companion is for"
+                      className="w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                    />
+                    <label htmlFor="avatar-persona" className="block text-xs text-[var(--color-text-muted)]">Starting character</label>
+                    <textarea
+                      id="avatar-persona"
+                      value={avatarPersona}
+                      onChange={(event) => setAvatarPersona(event.target.value)}
+                      maxLength={50000}
+                      rows={4}
+                      placeholder="How this mind begins"
+                      className="w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                    />
+                    <label htmlFor="avatar-visibility" className="block text-xs text-[var(--color-text-muted)]">Visibility</label>
+                    <select
+                      id="avatar-visibility"
+                      value={avatarVisibility}
+                      onChange={(event) => setAvatarVisibility(event.target.value as 'public' | 'private')}
+                      className="w-full rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none focus:border-brand-400"
+                    >
+                      <option value="public">Public</option>
+                      <option value="private">Private</option>
+                    </select>
+                    {avatarVisibility === 'public' && (
+                      <label className="flex items-start gap-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+                        <input
+                          type="checkbox"
+                          checked={avatarListed}
+                          onChange={(event) => setAvatarListed(event.target.checked)}
+                          className="mt-1 accent-[var(--color-brand-light)]"
+                        />
+                        Show this companion in Discover
+                      </label>
+                    )}
+                    <p className="text-xs leading-5 text-[var(--color-text-muted)]">Private chat and secrets are never included in a portable file.</p>
+                  </div>
+                </details>
                 <button
                   type="submit"
                   disabled={loading || !avatarName.trim()}
@@ -509,9 +604,9 @@ export function HostedApp() {
               <div className="px-5 py-10">
                 <p className="text-lg font-semibold">Your first companion starts here.</p>
                 <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
-                  Connect intelligence in Setup, then choose a name and begin with a conversation.
+                  Choose a name now. Intelligence and channels can be added in Setup.
                 </p>
-                {isAuthenticated && providerReady ? (
+                {isAuthenticated ? (
                   <button type="button" onClick={() => setCreateOpen(true)} className="mt-5 rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white">
                     Create a companion
                   </button>
@@ -671,10 +766,10 @@ export function HostedApp() {
             <SetupStep
               title="Companion"
               detail={activeAvatar ? `${activeAvatar.name} is your active companion.` : 'Choose a name and begin the first conversation.'}
-              state={activeAvatar ? 'Ready' : providerReady ? 'Create' : 'Waiting'}
+              state={activeAvatar ? 'Ready' : isAuthenticated ? 'Create' : 'Waiting'}
               ready={Boolean(activeAvatar)}
             >
-              {providerReady && !activeAvatar && (
+              {isAuthenticated && !activeAvatar && (
                 <button
                   type="button"
                   onClick={() => {
@@ -687,6 +782,49 @@ export function HostedApp() {
                 </button>
               )}
             </SetupStep>
+
+            {isAuthenticated && (
+              <SetupStep
+                title="Portable project"
+                detail={activeAvatar ? 'Take this companion with you or share a public page.' : 'Restore a companion from a portable artifact.'}
+                state={activeAvatar ? (activeAvatar.visibility === 'private' ? 'Private' : 'Public') : 'Optional'}
+                ready={Boolean(activeAvatar)}
+              >
+                <div className="flex flex-wrap gap-3 text-sm">
+                  {activeAvatar && (
+                    <a href={ownedHostedAvatarBundleUrl(activeAvatar.avatarId)} className="text-brand-300 underline underline-offset-4">
+                      Download
+                    </a>
+                  )}
+                  {activeAvatar?.visibility !== 'private' && activeAvatar?.slug && (
+                    <a href={`/a/${activeAvatar.slug}`} className="text-brand-300 underline underline-offset-4">
+                      Public page
+                    </a>
+                  )}
+                  {activeAvatar?.visibility === 'private' && (
+                    <button
+                      type="button"
+                      onClick={() => void handlePublishAvatar(activeAvatar.avatarId)}
+                      disabled={loading}
+                      className="text-emerald-300 underline underline-offset-4 disabled:opacity-50"
+                    >
+                      Publish
+                    </button>
+                  )}
+                  <label htmlFor="avatar-import" className="cursor-pointer text-brand-300 underline underline-offset-4">
+                    Restore from file
+                  </label>
+                  <input
+                    id="avatar-import"
+                    type="file"
+                    accept=".json,.swarm-avatar.json,application/json,application/vnd.swarm.avatar+json"
+                    onChange={(event) => void handleImportAvatar(event)}
+                    disabled={loading}
+                    className="sr-only"
+                  />
+                </div>
+              </SetupStep>
+            )}
 
             {isAuthenticated && providerReady && activeAvatar && (
               <SetupStep

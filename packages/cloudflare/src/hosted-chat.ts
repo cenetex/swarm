@@ -69,6 +69,10 @@ type HostedAvatarRow = {
   created_by: string;
   created_at: number;
   updated_at: number;
+  slug?: string | null;
+  visibility?: 'public' | 'private';
+  listed?: number;
+  current_revision_id?: string | null;
 };
 
 type HostedChatMessageRow = {
@@ -105,6 +109,10 @@ export type HostedAvatar = {
   createdAt: number;
   updatedAt: number;
   createdBy: string;
+  slug?: string;
+  visibility?: 'public' | 'private';
+  listed?: boolean;
+  revisionId?: string;
 };
 
 export type HostedChatHistoryMessage = {
@@ -173,6 +181,10 @@ function avatarFromRow(row: HostedAvatarRow): HostedAvatar {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     createdBy: row.created_by,
+    ...(row.slug ? { slug: row.slug } : {}),
+    ...(row.visibility ? { visibility: row.visibility } : {}),
+    ...(row.listed === undefined ? {} : { listed: row.listed === 1 }),
+    ...(row.current_revision_id ? { revisionId: row.current_revision_id } : {}),
   };
 }
 
@@ -238,7 +250,7 @@ export async function listHostedAvatars(
 ): Promise<HostedAvatar[]> {
   const result = await env.SWARM_STATE.prepare(
     `select account_id, avatar_id, default_thread_id, name, description, persona, status,
-            created_by, created_at, updated_at
+            created_by, created_at, updated_at, slug, visibility, listed, current_revision_id
      from swarm_hosted_avatars where account_id = ? order by updated_at desc limit 100`,
   )
     .bind(session.accountId)
@@ -263,7 +275,7 @@ async function findHostedAvatarRow(
 ): Promise<HostedAvatarRow | null> {
   return env.SWARM_STATE.prepare(
     `select account_id, avatar_id, default_thread_id, name, description, persona, status,
-            created_by, created_at, updated_at
+            created_by, created_at, updated_at, slug, visibility, listed, current_revision_id
      from swarm_hosted_avatars where account_id = ? and avatar_id = ?`,
   )
     .bind(accountId, avatarId)

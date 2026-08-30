@@ -5,6 +5,8 @@ import {
   disconnectHostedProvider,
   getHostedProviderStatus,
   getHostedTelegramStatus,
+  importHostedAvatar,
+  listPublicHostedAvatars,
   openRouterConnectUrl,
   openRouterResult,
 } from './hosted-api';
@@ -73,5 +75,21 @@ describe('hosted API client', () => {
     await disconnectHostedTelegram('avatar-1');
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'DELETE', credentials: 'include' });
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
+  });
+
+  it('reads the public registry without auth headers and imports a portable artifact', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => Response.json(
+      init?.method === 'POST' ? { avatarId: 'avatar-1' } : [],
+      { status: init?.method === 'POST' ? 201 : 200 },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await listPublicHostedAvatars();
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/public\/avatars$/u);
+
+    const bundle = { schema: 'swarm.avatar/v1' };
+    await importHostedAvatar(bundle);
+    expect(fetchMock.mock.calls[1]?.[0]).toMatch(/\/avatars\/import$/u);
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ bundle });
   });
 });

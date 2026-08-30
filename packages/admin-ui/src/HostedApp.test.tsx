@@ -15,6 +15,7 @@ vi.mock('./hosted-api', async () => {
     getHostedProviderStatus: vi.fn(),
     disconnectHostedProvider: vi.fn(),
     createHostedAvatar: vi.fn(),
+    importHostedAvatar: vi.fn(),
     connectHostedTelegram: vi.fn(),
     disconnectHostedTelegram: vi.fn(),
     listHostedAvatars: vi.fn(),
@@ -54,6 +55,10 @@ beforeEach(() => {
     status: 'shell',
     createdAt: 1,
     updatedAt: 1,
+    slug: 'nova-new',
+    visibility: 'public',
+    listed: true,
+    revisionId: `sha256:${'a'.repeat(64)}`,
   });
   vi.mocked(hostedApi.getHostedHistory).mockResolvedValue([]);
   vi.mocked(hostedApi.getHostedTelegramStatus).mockResolvedValue({
@@ -95,7 +100,7 @@ describe('HostedApp', () => {
     expect(connect).toHaveAttribute('href', expect.stringMatching(/\/auth\/openrouter$/u));
     expect(screen.getByText(/oauth uses pkce s256/i)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/sk-or/iu)).not.toBeInTheDocument();
-    expect(hostedApi.listHostedAvatars).not.toHaveBeenCalled();
+    expect(hostedApi.listHostedAvatars).toHaveBeenCalledOnce();
   });
 
   it('shows the callback result, refreshes connected state, and removes callback parameters', async () => {
@@ -186,7 +191,11 @@ describe('HostedApp', () => {
     fireEvent.change(name, { target: { value: 'Nova' } });
     fireEvent.click(screen.getByRole('button', { name: /meet this companion/i }));
 
-    await waitFor(() => expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith('Nova'));
+    await waitFor(() => expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith({
+      name: 'Nova',
+      visibility: 'public',
+      listed: true,
+    }));
     expect(screen.getByRole('button', { name: /^chat$/i })).toHaveAttribute('aria-pressed', 'true');
     expect(await screen.findAllByRole('img', { name: /Nova portrait/i })).toHaveLength(2);
   });
@@ -216,5 +225,28 @@ describe('HostedApp', () => {
       'href',
       'https://t.me/JaxSwarmBot?start=one-time-code',
     );
+  });
+
+  it('publishes a listed public portable avatar by default', async () => {
+    authenticate();
+    render(<HostedApp />);
+
+    await waitFor(() => expect(hostedApi.listHostedAvatars).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: /^crew$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^create$/i }));
+
+    fireEvent.change(screen.getByLabelText(/companion name/i), { target: { value: 'Public Ada' } });
+    fireEvent.click(screen.getByText(/identity and sharing/i));
+    fireEvent.change(screen.getByLabelText(/public description/i), { target: { value: 'An open research mind.' } });
+    fireEvent.change(screen.getByLabelText(/starting character/i), { target: { value: 'Think in public.' } });
+    fireEvent.click(screen.getByRole('button', { name: /meet this companion/i }));
+
+    await waitFor(() => expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith({
+      name: 'Public Ada',
+      description: 'An open research mind.',
+      persona: 'Think in public.',
+      visibility: 'public',
+      listed: true,
+    }));
   });
 });
