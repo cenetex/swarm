@@ -229,6 +229,50 @@ function securedAssetResponse(response: Response, env: CloudflareHostedBindings)
   });
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+async function avatarProjectAssetResponse(
+  request: Request,
+  env: CloudflareHostedBindings,
+  slug: string,
+): Promise<Response | null> {
+  if (!env.SWARM_ASSETS) return null;
+  const project = await getPublicAvatar(env, slug);
+  if (!project) return null;
+  const assetResponse = await env.SWARM_ASSETS.fetch(request);
+  const contentType = assetResponse.headers.get('Content-Type') ?? '';
+  if (!contentType.includes('text/html')) return securedAssetResponse(assetResponse, env);
+  const title = escapeHtml(`${project.name} — Swarm`);
+  const description = escapeHtml(project.description || `Explore ${project.name} on Swarm.`);
+  const canonicalUrl = escapeHtml(`${hostedPublicOrigin(env, request)}/a/${project.slug}`);
+  let html = await assetResponse.text();
+  html = html
+    .replace(/<title>[^<]*<\/title>/iu, `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*"\s*\/>/iu, `<meta name="description" content="${description}" />`)
+    .replace(/<meta property="og:title" content="[^"]*"\s*\/>/iu, `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*"\s*\/>/iu, `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*"\s*\/>/iu, `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*"\s*\/>/iu, `<meta name="twitter:description" content="${description}" />`)
+    .replace(/\s*<meta property="og:image" content="[^"]*"\s*\/>/iu, '')
+    .replace(/\s*<meta name="twitter:image" content="[^"]*"\s*\/>/iu, '')
+    .replace('</head>', `<link rel="canonical" href="${canonicalUrl}" /></head>`);
+  const headers = new Headers(assetResponse.headers);
+  headers.delete('Content-Length');
+  headers.delete('ETag');
+  return securedAssetResponse(new Response(html, {
+    status: assetResponse.status,
+    statusText: assetResponse.statusText,
+    headers,
+  }), env);
+}
+
 async function handleRequest(request: Request, env: CloudflareHostedBindings): Promise<Response> {
   const url = new URL(request.url);
   const platform = createCloudflareHostedPlatform(env);
@@ -745,6 +789,15 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     && url.pathname !== '/api'
     && !url.pathname.startsWith('/api/')
   ) {
+    const publicPageMatch = url.pathname.match(/^\/a\/([^/]+)\/?$/u);
+    if (publicPageMatch) {
+      const response = await avatarProjectAssetResponse(
+        request,
+        env,
+        decodeURIComponent(publicPageMatch[1] ?? ''),
+      );
+      if (response) return response;
+    }
     return securedAssetResponse(await env.SWARM_ASSETS.fetch(request), env);
   }
 

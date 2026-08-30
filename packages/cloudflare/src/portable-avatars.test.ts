@@ -249,5 +249,28 @@ describe('portable public avatars', () => {
 
     const sitemapResponse = await worker.fetch(new Request('https://next.swarm.rati.chat/sitemap.xml'), env);
     expect(await sitemapResponse.text()).toContain(`/a/${created.slug}`);
+
+    env.SWARM_ASSETS = {
+      fetch: async () => new Response(`<!doctype html><html><head>
+        <meta name="description" content="Catalog" />
+        <meta property="og:title" content="Swarm" />
+        <meta property="og:description" content="Catalog" />
+        <meta property="og:image" content="https://next.swarm.rati.chat/og.png" />
+        <meta name="twitter:title" content="Swarm" />
+        <meta name="twitter:description" content="Catalog" />
+        <meta name="twitter:image" content="https://next.swarm.rati.chat/og.png" />
+        <title>Swarm</title></head><body></body></html>`, {
+        headers: { 'Content-Type': 'text/html' },
+      }),
+    };
+    const pageResponse = await worker.fetch(
+      new Request(`https://next.swarm.rati.chat/a/${created.slug}`),
+      env,
+    );
+    const pageHtml = await pageResponse.text();
+    expect(pageHtml).toContain('<title>Public Ada — Swarm</title>');
+    expect(pageHtml).toContain('Explore Public Ada on Swarm.');
+    expect(pageHtml).toContain(`rel="canonical" href="https://next.swarm.rati.chat/a/${created.slug}"`);
+    expect(pageHtml).not.toContain('og.png');
   });
 });
