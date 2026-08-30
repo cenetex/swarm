@@ -71,7 +71,7 @@ describe('HostedWalletSignIn', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Solflare' }));
 
     await waitFor(() => expect(mocks.toDataUrl).toHaveBeenLastCalledWith(
-      expect.stringContaining('https://solflare.com/ul/browse/'),
+      expect.stringContaining('https://solflare.com/ul/v1/browse/'),
       expect.any(Object),
     ));
     expect(screen.getByRole('button', { name: 'Use browser wallet' })).toBeInTheDocument();
