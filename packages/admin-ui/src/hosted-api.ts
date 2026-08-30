@@ -50,6 +50,15 @@ export type HostedChatJob = {
   error?: string;
 };
 
+export type HostedTelegramGroup = {
+  chatId: string;
+  title: string;
+  type: string;
+  enabled: boolean;
+  membershipStatus: 'member' | 'administrator' | 'restricted' | 'left' | 'kicked' | 'unknown';
+  lastActivityAt?: number;
+};
+
 export type HostedTelegramStatus = {
   connected: boolean;
   status: 'disconnected' | 'binding_required' | 'connected' | 'repair_needed';
@@ -57,6 +66,8 @@ export type HostedTelegramStatus = {
   ownerBound: boolean;
   ownerBindUrl?: string;
   addToGroupUrl?: string;
+  groupBindCommand?: string;
+  groups: HostedTelegramGroup[];
 };
 
 async function responseError(response: Response, fallback: string): Promise<Error> {
@@ -178,6 +189,27 @@ export async function repairHostedTelegram(avatarId: string): Promise<HostedTele
 export async function disconnectHostedTelegram(avatarId: string): Promise<void> {
   await requestJson<{ disconnected: true }>(
     `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function setHostedTelegramGroupEnabled(
+  avatarId: string,
+  chatId: string,
+  enabled: boolean,
+): Promise<HostedTelegramStatus> {
+  return requestJson<HostedTelegramStatus>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram/groups/${encodeURIComponent(chatId)}`,
+    { method: 'PATCH', body: JSON.stringify({ enabled }) },
+  );
+}
+
+export async function forgetHostedTelegramGroup(
+  avatarId: string,
+  chatId: string,
+): Promise<HostedTelegramStatus> {
+  return requestJson<HostedTelegramStatus>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram/groups/${encodeURIComponent(chatId)}`,
     { method: 'DELETE' },
   );
 }

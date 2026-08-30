@@ -99,10 +99,21 @@ Queue, and Durable Object boundaries as hosted browser chat:
 8. Disconnect first invalidates the Telegram webhook, then removes every avatar-scoped Telegram secret and
    all connector metadata. If Telegram is unavailable, removing the local webhook secret still makes later
    calls to the old endpoint fail closed.
+9. Accepted messages retain the Telegram message id and forum topic id. The Queue consumer sends a typing
+   action, adds best-effort acknowledgement and completion reactions, and replies directly to the source
+   message inside the same topic. Reaction failures never block the text response.
+10. Text captions follow the same mention and reply rules as text messages. Binary photo, file, voice, and
+    video content is not downloaded or sent to the model.
+11. Telegram membership updates mark groups unavailable after the bot leaves or is removed. The hosted owner
+    can list, pause, enable, or forget group bindings. An owner-only bind command supports groups where the bot
+    is already present and the `startgroup` picker cannot add it again.
+12. `/ask`, `/help`, and `/status` are registered with Telegram. Every forum topic maps to a separate hosted
+    thread, while ordinary unaddressed group messages remain ignored for privacy.
 
 Migration `0005_hosted_telegram.sql` adds bot ownership, enabled-chat mappings, deduplication, jobs, and
 delivery state. Bot tokens and binding codes remain in the existing encrypted secret table, not these
-metadata tables.
+metadata tables. Migration `0007_hosted_telegram_v2.sql` adds membership/activity state, reply and topic
+delivery metadata, and per-topic hosted thread mappings.
 
 ## Hosted Web Chat
 
@@ -166,7 +177,7 @@ Desktop wallet sign-in uses a short-lived cross-device pairing. The Worker retur
 1. **Foundation — implemented:** provider-neutral hosted plans, D1/R2/Queue adapters, SIWS sessions, encrypted user secrets, and OpenRouter PKCE.
 2. **Hosted web app — implemented:** same-origin wallet sign-in, OAuth connect/status/disconnect, avatar creation, and Queue-backed browser chat without browser-visible AI credentials.
 3. **Web chat runtime — implemented:** tenant-owned avatars and history, idempotent Queue jobs, per-avatar serialization, bounded model retries, and safe failed jobs.
-4. **Webhook runtime — implemented:** Telegram ingress, owner/group binding, per-chat history, safe delivery state, and Queue processing.
+4. **Webhook runtime — implemented:** Telegram ingress, owner/group binding, per-chat and per-topic history, direct replies, typing/reactions, group controls, safe delivery state, and Queue processing.
 5. **Portable public projects — implemented:** default-public registry, strict content-addressed artifacts, owner export/import, R2 mirrors, NFT-ready metadata, and blank-environment restore proof.
 6. **Entitlement and quotas:** connect Stripe checkout/portal and optional on-chain entitlement; enforce request, token, storage, and concurrency limits before model calls.
 7. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
@@ -186,7 +197,8 @@ Desktop wallet sign-in uses a short-lived cross-device pairing. The Worker retur
 
 ## Known Caveats
 
-- The current implementation processes browser chat and Telegram. Discord, media, tools, and scheduling still use other runtimes.
+- The current implementation processes browser chat and text/caption Telegram conversations. Telegram binary
+  media, Discord, tools, and scheduling still use other runtimes.
 - Hosted status may report `available`; it must not report an active tenant runtime until entitlement state is connected in #1814.
 - D1 is not DynamoDB. Access patterns must be deliberate, and broad scans should be avoided.
 - Durable Objects are appropriate for coordination and inbound realtime clients, not arbitrary long-running processes.

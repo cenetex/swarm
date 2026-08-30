@@ -51,6 +51,7 @@ import {
   cleanupHostedTelegramRuntime,
   connectHostedTelegram,
   disconnectHostedTelegram,
+  forgetHostedTelegramGroup,
   getHostedTelegramStatus,
   handleHostedTelegramWebhook,
   HostedTelegramAuthorizationError,
@@ -58,6 +59,7 @@ import {
   HostedTelegramNotFoundError,
   processHostedTelegramQueueMessage,
   repairHostedTelegram,
+  setHostedTelegramGroupEnabled,
 } from './hosted-telegram.js';
 import {
   createPortableHostedAvatar,
@@ -685,6 +687,29 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     if (!validResourceId(avatarId)) return json({ error: 'Avatar id is invalid.' }, { status: 400 });
     const avatar = await getHostedAvatar(env, session, avatarId);
     return avatar ? json(avatar) : json({ error: 'Hosted avatar was not found.' }, { status: 404 });
+  }
+
+  const telegramGroupMatch = url.pathname.match(
+    /^\/api\/avatars\/([^/]+)\/integrations\/telegram\/groups\/([^/]+)$/u,
+  );
+  if (telegramGroupMatch) {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = decodeURIComponent(telegramGroupMatch[1] ?? '');
+    const chatId = decodeURIComponent(telegramGroupMatch[2] ?? '');
+    if (!validResourceId(avatarId) || !/^-?\d{1,20}$/u.test(chatId)) {
+      return json({ error: 'Telegram group is invalid.' }, { status: 400 });
+    }
+    assertSameOrigin(env, request);
+    if (request.method === 'PATCH') {
+      const body = await readJsonObject(request);
+      if (typeof body.enabled !== 'boolean') return json({ error: 'enabled must be a boolean.' }, { status: 400 });
+      return json(await setHostedTelegramGroupEnabled(env, session, { avatarId, chatId, enabled: body.enabled }));
+    }
+    if (request.method === 'DELETE') {
+      return json(await forgetHostedTelegramGroup(env, session, { avatarId, chatId }));
+    }
+    return json({ error: 'Method not allowed.' }, { status: 405 });
   }
 
   const telegramIntegrationMatch = url.pathname.match(

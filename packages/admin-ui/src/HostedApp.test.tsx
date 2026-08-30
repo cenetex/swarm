@@ -21,6 +21,8 @@ vi.mock('./hosted-api', async () => {
     listHostedAvatars: vi.fn(),
     getHostedHistory: vi.fn(),
     getHostedTelegramStatus: vi.fn(),
+    setHostedTelegramGroupEnabled: vi.fn(),
+    forgetHostedTelegramGroup: vi.fn(),
     repairHostedTelegram: vi.fn(),
   };
 });
@@ -65,6 +67,7 @@ beforeEach(() => {
     connected: false,
     status: 'disconnected',
     ownerBound: false,
+    groups: [],
   });
   vi.mocked(hostedApi.connectHostedTelegram).mockResolvedValue({
     connected: true,
@@ -72,6 +75,7 @@ beforeEach(() => {
     ownerBound: false,
     bot: { id: '123', username: 'JaxSwarmBot', name: 'Jax' },
     ownerBindUrl: 'https://t.me/JaxSwarmBot?start=one-time-code',
+    groups: [],
   });
   vi.mocked(hostedApi.disconnectHostedTelegram).mockResolvedValue();
   vi.mocked(hostedApi.repairHostedTelegram).mockResolvedValue({
@@ -80,6 +84,8 @@ beforeEach(() => {
     ownerBound: true,
     bot: { id: '123', username: 'JaxSwarmBot', name: 'Jax' },
     addToGroupUrl: 'https://t.me/JaxSwarmBot?startgroup=group-code',
+    groupBindCommand: '/start@JaxSwarmBot group-code',
+    groups: [],
   });
 });
 
@@ -248,5 +254,58 @@ describe('HostedApp', () => {
       visibility: 'public',
       listed: true,
     }));
+  });
+
+  it('shows bound groups, copies the existing-group command, and updates group controls', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([{
+      avatarId: 'avatar-1',
+      name: 'Jax',
+      status: 'shell',
+      createdAt: 1,
+      updatedAt: 1,
+    }]);
+    const telegramStatus: hostedApi.HostedTelegramStatus = {
+      connected: true,
+      status: 'connected',
+      ownerBound: true,
+      bot: { id: '123', username: 'JaxSwarmBot', name: 'Jax' },
+      addToGroupUrl: 'https://t.me/JaxSwarmBot?startgroup=group-code',
+      groupBindCommand: '/start@JaxSwarmBot group-code',
+      groups: [{
+        chatId: '-1001',
+        title: 'Penguin HQ',
+        type: 'supergroup',
+        enabled: true,
+        membershipStatus: 'member',
+      }],
+    };
+    vi.mocked(hostedApi.getHostedTelegramStatus).mockResolvedValue(telegramStatus);
+    vi.mocked(hostedApi.setHostedTelegramGroupEnabled).mockResolvedValue({
+      ...telegramStatus,
+      groups: [{ ...telegramStatus.groups[0]!, enabled: false }],
+    });
+    vi.mocked(hostedApi.forgetHostedTelegramGroup).mockResolvedValue({ ...telegramStatus, groups: [] });
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<HostedApp />);
+
+    expect(await screen.findByText('Penguin HQ')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /copy command for an existing group/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('/start@JaxSwarmBot group-code'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    await waitFor(() => expect(hostedApi.setHostedTelegramGroupEnabled).toHaveBeenCalledWith(
+      'avatar-1',
+      '-1001',
+      false,
+    ));
+    fireEvent.click(await screen.findByRole('button', { name: /forget group/i }));
+    await waitFor(() => expect(hostedApi.forgetHostedTelegramGroup).toHaveBeenCalledWith('avatar-1', '-1001'));
+    expect(confirm).toHaveBeenCalled();
+    confirm.mockRestore();
   });
 });
