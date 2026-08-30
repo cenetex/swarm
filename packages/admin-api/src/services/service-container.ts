@@ -12,6 +12,7 @@
 
 // ── Service module imports ─────────────────────────────────────────────────
 import * as avatarService from './avatars.js';
+import * as personaService from './persona.js';
 import * as secretsService from './secrets.js';
 import * as walletsService from './web3/wallets.js';
 import * as telegramService from './telegram.js';
@@ -57,6 +58,7 @@ import {
  */
 export interface ServiceContainer {
   avatars: typeof avatarService;
+  persona: typeof personaService;
   secrets: typeof secretsService;
   wallets: typeof walletsService;
   telegram: typeof telegramService;
@@ -130,6 +132,7 @@ export function createServiceContainer(
 ): ServiceContainer {
   return {
     avatars: avatarService,
+    persona: personaService,
     secrets: secretsService,
     wallets: walletsService,
     telegram: telegramService,

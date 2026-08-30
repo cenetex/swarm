@@ -8,6 +8,7 @@ import { useAuth } from '../store/auth';
 import type { Avatar, AvatarSecret } from '../types';
 import { AvatarDisplay } from './AvatarSidebar';
 import { EnergyPanel } from './EnergyPanel';
+import { PersonaEditor } from './PersonaEditor';
 
 // Lazy-load UsageMeterPanel — only shown in the config modal's usage tab
 const UsageMeterPanel = lazy(() => import('./UsageMeterPanel').then(m => ({ default: m.UsageMeterPanel })));
@@ -58,7 +59,6 @@ export function AvatarConfigModal({
 
   const [name, setName] = useState(avatar.name);
   const [description, setDescription] = useState(avatar.description || '');
-  const [persona, setPersona] = useState(avatar.persona || '');
   const [secrets, setSecrets] = useState<AvatarSecret[]>(avatar.secrets || []);
   const [newSecretKey, setNewSecretKey] = useState('');
   const [activeTab, setActiveTab] = useState<'general' | 'persona' | 'secrets'>('general');
@@ -83,7 +83,6 @@ export function AvatarConfigModal({
   useEffect(() => {
     setName(avatar.name);
     setDescription(avatar.description || '');
-    setPersona(avatar.persona || '');
     setSecrets(avatar.secrets || []);
     setSelectedOrbMint('');
     setOrbError(null);
@@ -118,7 +117,6 @@ export function AvatarConfigModal({
     updateAvatar(avatar.id, {
       name,
       description,
-      persona,
       secrets,
     });
     if (embedded) {
@@ -428,30 +426,11 @@ export function AvatarConfigModal({
           )}
 
           {activeTab === 'persona' && (
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="avatarPersona" className="block text-sm font-medium text-[var(--color-text-secondary)] mb-2">
-                  {t('avatar.systemPersonaLabel')}
-                </label>
-                <p className="text-xs text-[var(--color-text-muted)] mb-2">
-                  {t('avatar.systemPersonaDescription')}
-                </p>
-                <textarea
-                  value={persona}
-                  onChange={(e) => {
-                    clearSaveFeedback();
-                    setPersona(e.target.value);
-                  }}
-                  placeholder={t('avatar.systemPersonaPlaceholder')}
-                  rows={12}
-                  className="w-full px-4 py-3 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono text-sm"
-                  name="avatarPersona"
-                  id="avatarPersona"
-                  data-testid="avatar-persona-input"
-                  aria-label={t('avatar.systemPersonaLabel')}
-                />
-              </div>
-            </div>
+            <PersonaEditor
+              avatarId={avatar.id}
+              initialPersona={avatar.persona}
+              onSaved={(persona) => updateAvatar(avatar.id, { persona })}
+            />
           )}
 
           {activeTab === 'secrets' && (
@@ -563,18 +542,20 @@ export function AvatarConfigModal({
             >
               {t('common.cancel')}
             </button>
-            <button
-              onClick={handleSave}
-              className={`min-w-32 px-6 py-2 text-white rounded-lg font-medium transition-colors ${
-                saveSucceeded
-                  ? 'bg-green-600 hover:bg-green-500'
-                  : 'bg-brand-600 hover:bg-brand-500'
-              }`}
-              data-testid="save-avatar-button"
-              aria-label={saveSucceeded ? t('avatar.savedChanges') : t('avatar.saveChanges')}
-            >
-              {saveSucceeded ? t('avatar.savedChanges') : t('avatar.saveChanges')}
-            </button>
+            {activeTab !== 'persona' && (
+              <button
+                onClick={handleSave}
+                className={`min-w-32 px-6 py-2 text-white rounded-lg font-medium transition-colors ${
+                  saveSucceeded
+                    ? 'bg-green-600 hover:bg-green-500'
+                    : 'bg-brand-600 hover:bg-brand-500'
+                }`}
+                data-testid="save-avatar-button"
+                aria-label={saveSucceeded ? t('avatar.savedChanges') : t('avatar.saveChanges')}
+              >
+                {saveSucceeded ? t('avatar.savedChanges') : t('avatar.saveChanges')}
+              </button>
+            )}
           </div>
         </div>
     </>

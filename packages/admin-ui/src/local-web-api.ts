@@ -258,6 +258,21 @@ function defaultAssistantReply(message: string, avatar?: LocalAvatar): string {
   return `I am running in browser-local mode. I can help configure ${target}, but anything that needs a server, OAuth callback, or background worker should use the native client.`;
 }
 
+function estimateLocalTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function localPersonaDiff(oldPersona: string, newPersona: string) {
+  const oldLines = oldPersona.trim().split('\n').filter((line) => line.trim().length > 0);
+  const newLines = newPersona.trim().split('\n').filter((line) => line.trim().length > 0);
+  const oldSet = new Set(oldLines);
+  const newSet = new Set(newLines);
+  return {
+    added: newLines.filter((line) => !oldSet.has(line)),
+    removed: oldLines.filter((line) => !newSet.has(line)),
+  };
+}
+
 const AGENT_BACKENDS = [
   {
     id: 'swarm-native',
@@ -465,6 +480,50 @@ export function routeLocalApi(request: Request): Response | Promise<Response> | 
         Object.assign(avatar, body, { updatedAt: Date.now(), status: avatar.status === 'draft' ? 'configured' : avatar.status });
         writeState(state);
         return json(toPublicAvatar(avatar));
+      });
+    }
+    if (action === 'persona' && path.endsWith('/persona/preview') && method === 'POST') {
+      return readJson(request).then((body) => {
+        const persona = typeof body.persona === 'string' ? body.persona.trim() : '';
+        if (!persona) return json({ error: 'persona must be a non-empty string' }, { status: 400 });
+        const currentPersona = avatar.persona || '';
+        const oldTokens = estimateLocalTokens(currentPersona);
+        const newTokens = estimateLocalTokens(persona);
+        return json({
+          systemPrompt: `You are ${avatar.name}.\n\n${persona}`,
+          diff: localPersonaDiff(currentPersona, persona),
+          tokenDelta: newTokens - oldTokens,
+          preview: {
+            oldLength: currentPersona.length,
+            newLength: persona.length,
+            oldTokens,
+            newTokens,
+          },
+        });
+      });
+    }
+    if (action === 'persona' && path.endsWith('/persona/history') && method === 'GET') {
+      return json({ avatarId, personas: [], total: 0 });
+    }
+    if (action === 'persona' && method === 'GET') {
+      return json({ avatarId, name: avatar.name, persona: avatar.persona || '' });
+    }
+    if (action === 'persona' && method === 'PATCH') {
+      return readJson(request).then((body) => {
+        const persona = typeof body.persona === 'string' ? body.persona.trim() : '';
+        if (!persona) return json({ error: 'persona must be a non-empty string' }, { status: 400 });
+        const oldTokens = estimateLocalTokens(avatar.persona || '');
+        avatar.persona = persona;
+        avatar.updatedAt = Date.now();
+        writeState(state);
+        return json({
+          avatarId,
+          name: avatar.name,
+          persona,
+          updatedAt: avatar.updatedAt,
+          updatedBy: 'local-web',
+          tokenDelta: estimateLocalTokens(persona) - oldTokens,
+        });
       });
     }
     if (action === 'activate' && method === 'POST') {

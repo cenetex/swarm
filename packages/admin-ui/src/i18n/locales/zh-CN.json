@@ -393,6 +393,23 @@
     "systemPersonaLabel": "系统人设",
     "systemPersonaDescription": "定义该头像的个性、专长和行为。",
     "systemPersonaPlaceholder": "你是一个乐于助人的 AI 助手，专注于……\n\n你擅长：\n- 主题 1\n- 主题 2\n\n你的沟通风格是……",
+    "personaEditor": {
+      "description": "编辑头像的核心个性和行为。预览会在保存前显示提示词变化。",
+      "loading": "正在加载人设...",
+      "loadError": "无法加载人设。",
+      "previewError": "无法预览人设。",
+      "saveError": "无法保存人设。",
+      "previewTitle": "检查更改",
+      "previewSummary": "{{lines}} 行更改 · {{delta}} 个词元",
+      "added": "新增",
+      "removed": "删除",
+      "systemPrompt": "查看完整系统提示词",
+      "previewButton": "预览更改",
+      "previewing": "正在生成预览...",
+      "saveButton": "保存人设",
+      "saving": "正在保存...",
+      "saved": "人设已保存，将从头像的下一条消息开始生效。"
+    },
     "configuredSecretsLabel": "已配置的密钥",
     "secretState": {
       "set": "已设置",

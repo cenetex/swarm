@@ -393,6 +393,23 @@
     "systemPersonaLabel": "System Persona",
     "systemPersonaDescription": "Define the avatar's personality, expertise, and behavior.",
     "systemPersonaPlaceholder": "You are a helpful AI assistant that specializes in...\n\nYou have expertise in:\n- Topic 1\n- Topic 2\n\nYour communication style is...",
+    "personaEditor": {
+      "description": "Edit the avatar's core personality and behavior. Preview shows the prompt impact before anything is saved.",
+      "loading": "Loading persona...",
+      "loadError": "Could not load the persona.",
+      "previewError": "Could not preview the persona.",
+      "saveError": "Could not save the persona.",
+      "previewTitle": "Review changes",
+      "previewSummary": "{{lines}} changed lines · {{delta}} tokens",
+      "added": "Added",
+      "removed": "Removed",
+      "systemPrompt": "View assembled system prompt",
+      "previewButton": "Preview changes",
+      "previewing": "Building preview...",
+      "saveButton": "Save persona",
+      "saving": "Saving...",
+      "saved": "Persona saved. It will be used on the avatar's next message."
+    },
     "configuredSecretsLabel": "Configured Secrets",
     "secretState": {
       "set": "Set",

@@ -402,7 +402,7 @@ export async function processChat(
     response, history: messages,
     media: allMedia.length > 0 ? allMedia : undefined,
     pendingJobs: pendingJobs.length > 0 ? pendingJobs : undefined,
-    avatarUpdates: (avatarUpdates.profileImageUrl || avatarUpdates.name) ? avatarUpdates : undefined,
+    avatarUpdates: (avatarUpdates.profileImageUrl || avatarUpdates.name || avatarUpdates.persona) ? avatarUpdates : undefined,
     taskActions: taskActions.length > 0 ? taskActions : undefined,
   };
 }

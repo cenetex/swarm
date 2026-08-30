@@ -114,7 +114,7 @@ Example metadata:
 | `gallery` | get_my_gallery, search_gallery, send_gallery_image | Gallery management |
 | `wallet` | get_my_wallets, create_solana_wallet, get_wallet_balance | Crypto wallets |
 | `config` | list_available_models, change_my_model, get_my_model_config | LLM config |
-| `profile` | update_my_profile, set_profile_image | Avatar profile |
+| `profile` | update_my_profile, update_my_persona, set_profile_image | Avatar profile and persona |
 | `secrets` | get_my_secrets, store_secret | Secure credentials |
 | `readonly` | get_pending_jobs, get_job_status, get_tool_credits | Status queries |
 
