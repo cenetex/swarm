@@ -198,7 +198,7 @@ jobs:
           app=$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors "$origin/")
           echo "$health" | jq -e '.status == "ok" and .backend == "cloudflare" and .mode == "hosted"' >/dev/null
           echo "$hosting" | jq -e '.hosted.configured == true and .hosted.available == true and .hosted.entitlement == "none"' >/dev/null
-          echo "$app" | grep -F '<title>Swarm Hosted</title>' >/dev/null
+          echo "$app" | grep -F '<div id="root"></div>' >/dev/null
           echo "Cloudflare hosted Worker smoke checks passed."
 
       - name: Remove primary route after a failed production smoke check
