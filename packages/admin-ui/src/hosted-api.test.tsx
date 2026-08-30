@@ -3,12 +3,14 @@ import {
   connectHostedTelegram,
   disconnectHostedTelegram,
   disconnectHostedProvider,
+  forgetHostedTelegramGroup,
   getHostedProviderStatus,
   getHostedTelegramStatus,
   importHostedAvatar,
   listPublicHostedAvatars,
   openRouterConnectUrl,
   openRouterResult,
+  setHostedTelegramGroupEnabled,
 } from './hosted-api';
 
 const testBotToken = `123456789:${'A'.repeat(36)}`;
@@ -91,5 +93,28 @@ describe('hosted API client', () => {
     await importHostedAvatar(bundle);
     expect(fetchMock.mock.calls[1]?.[0]).toMatch(/\/avatars\/import$/u);
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ bundle });
+  });
+
+  it('uses avatar-scoped routes for Telegram group controls', async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      connected: true,
+      status: 'connected',
+      ownerBound: true,
+      groups: [],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await setHostedTelegramGroupEnabled('avatar/one', '-1001', false);
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(
+      /\/avatars\/avatar%2Fone\/integrations\/telegram\/groups\/-1001$/u,
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: 'PATCH',
+      credentials: 'include',
+      body: JSON.stringify({ enabled: false }),
+    });
+
+    await forgetHostedTelegramGroup('avatar/one', '-1001');
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'DELETE', credentials: 'include' });
   });
 });
