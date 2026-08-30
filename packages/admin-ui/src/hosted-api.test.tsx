@@ -11,6 +11,7 @@ import {
   openRouterConnectUrl,
   openRouterResult,
   setHostedTelegramGroupEnabled,
+  updateHostedAvatarProfile,
 } from './hosted-api';
 
 const testBotToken = `123456789:${'A'.repeat(36)}`;
@@ -77,6 +78,32 @@ describe('hosted API client', () => {
     await disconnectHostedTelegram('avatar-1');
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'DELETE', credentials: 'include' });
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
+  });
+
+  it('saves companion identity and prompt through the avatar route', async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      avatarId: 'avatar/one',
+      name: 'Ada',
+      persona: 'Be direct.',
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await updateHostedAvatarProfile('avatar/one', {
+      name: 'Ada',
+      description: 'Research companion',
+      persona: 'Be direct.',
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/avatars\/avatar%2Fone$/u);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: 'PATCH',
+      credentials: 'include',
+      body: JSON.stringify({
+        name: 'Ada',
+        description: 'Research companion',
+        persona: 'Be direct.',
+      }),
+    });
   });
 
   it('reads the public registry without auth headers and imports a portable artifact', async () => {

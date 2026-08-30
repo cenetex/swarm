@@ -18,6 +18,7 @@ import {
   ownedHostedAvatarBundleUrl,
   repairHostedTelegram,
   setHostedTelegramGroupEnabled,
+  updateHostedAvatarProfile,
   updateHostedAvatarPublication,
   waitForHostedJob,
   type HostedAvatar,
@@ -27,7 +28,7 @@ import {
 } from './hosted-api';
 import { useAuth } from './store/auth';
 
-type HostedView = 'chat' | 'crew' | 'setup';
+type HostedView = 'chat' | 'pack' | 'settings';
 
 function shortWallet(walletAddress: string): string {
   return `${walletAddress.slice(0, 5)}…${walletAddress.slice(-4)}`;
@@ -104,7 +105,7 @@ function updatedCopy(timestamp: number): string {
   return 'Ready when you are';
 }
 
-function SetupStep({
+function SettingsSection({
   title,
   detail,
   state,
@@ -151,7 +152,7 @@ function NavIcon({ view }: { view: HostedView }) {
       </svg>
     );
   }
-  if (view === 'crew') {
+  if (view === 'pack') {
     return (
       <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.8">
         <circle cx="9" cy="9" r="3" />
@@ -182,6 +183,10 @@ export function HostedApp() {
   const [avatarPersona, setAvatarPersona] = useState('');
   const [avatarVisibility, setAvatarVisibility] = useState<'public' | 'private'>('public');
   const [avatarListed, setAvatarListed] = useState(true);
+  const [profileName, setProfileName] = useState('');
+  const [profileDescription, setProfileDescription] = useState('');
+  const [profilePersona, setProfilePersona] = useState('');
+  const [profileSaved, setProfileSaved] = useState(false);
   const [draft, setDraft] = useState('');
   const [telegram, setTelegram] = useState<HostedTelegramStatus | null>(null);
   const [telegramToken, setTelegramToken] = useState('');
@@ -194,6 +199,13 @@ export function HostedApp() {
     () => avatars.find((avatar) => avatar.avatarId === activeAvatarId) ?? null,
     [activeAvatarId, avatars],
   );
+
+  useEffect(() => {
+    setProfileName(activeAvatar?.name ?? '');
+    setProfileDescription(activeAvatar?.description ?? '');
+    setProfilePersona(activeAvatar?.persona ?? '');
+    setProfileSaved(false);
+  }, [activeAvatar]);
 
   const refreshAvatars = useCallback(async () => {
     const nextAvatars = await listHostedAvatars();
@@ -357,6 +369,27 @@ export function HostedApp() {
     }
   };
 
+  const handleSaveProfile = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!activeAvatar || !profileName.trim()) return;
+    setLoading(true);
+    setError('');
+    setProfileSaved(false);
+    try {
+      const updated = await updateHostedAvatarProfile(activeAvatar.avatarId, {
+        name: profileName.trim(),
+        description: profileDescription.trim(),
+        persona: profilePersona.trim(),
+      });
+      setAvatars((current) => current.map((avatar) => avatar.avatarId === updated.avatarId ? updated : avatar));
+      setProfileSaved(true);
+    } catch (profileError) {
+      setError(profileError instanceof Error ? profileError.message : 'Unable to save companion settings.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleConnectTelegram = async (event: FormEvent) => {
     event.preventDefault();
     const token = telegramToken.trim();
@@ -477,8 +510,12 @@ export function HostedApp() {
 
   const providerReady = Boolean(provider?.connected);
   const telegramReady = Boolean(telegram?.connected && telegram.ownerBound);
-  const workspaceReady = isAuthenticated && providerReady && Boolean(activeAvatar);
   const activeName = activeAvatar?.name ?? 'Hosted chat';
+  const profileChanged = Boolean(activeAvatar && (
+    profileName.trim() !== activeAvatar.name
+    || profileDescription.trim() !== (activeAvatar.description ?? '')
+    || profilePersona.trim() !== (activeAvatar.persona ?? '')
+  ));
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-[var(--color-bg)] text-[var(--color-text)]">
@@ -518,13 +555,13 @@ export function HostedApp() {
         )}
 
         <aside
-          aria-label="Crew"
-          data-mobile-active={activeView === 'crew'}
-          className={`${activeView === 'crew' ? 'flex' : 'hidden'} min-h-0 flex-col overflow-hidden bg-[var(--color-bg-secondary)] lg:col-start-1 lg:row-start-1 lg:flex lg:border-r lg:border-[var(--color-border)]`}
+          aria-label="Pack"
+          data-mobile-active={activeView === 'pack'}
+          className={`${activeView === 'pack' ? 'flex' : 'hidden'} min-h-0 flex-col overflow-hidden bg-[var(--color-bg-secondary)] lg:col-start-1 lg:row-start-1 lg:flex lg:border-r lg:border-[var(--color-border)]`}
         >
           <div className="flex min-h-[5rem] shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4">
             <div>
-              <h2 className="text-lg font-semibold">Your crew</h2>
+              <h2 className="text-lg font-semibold">Your pack</h2>
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">{avatars.length} companion{avatars.length === 1 ? '' : 's'}</p>
             </div>
             {isAuthenticated && (
@@ -641,15 +678,15 @@ export function HostedApp() {
               <div className="px-5 py-10">
                 <p className="text-lg font-semibold">Your first companion starts here.</p>
                 <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
-                  Choose a name now. Intelligence and channels can be added in Setup.
+                  Choose a name now. Intelligence and channels can be added in Settings.
                 </p>
                 {isAuthenticated ? (
                   <button type="button" onClick={() => setCreateOpen(true)} className="mt-5 rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white">
                     Create a companion
                   </button>
                 ) : (
-                  <button type="button" onClick={() => setActiveView('setup')} className="mt-5 rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-sm font-semibold">
-                    Open Setup
+                  <button type="button" onClick={() => setActiveView('settings')} className="mt-5 rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-sm font-semibold">
+                    Open Settings
                   </button>
                 )}
               </div>
@@ -687,7 +724,7 @@ export function HostedApp() {
               <div className="max-w-md">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Your companions, always on</p>
                 <h2 className="mt-3 text-3xl font-semibold tracking-tight">
-                  {!isAuthenticated ? 'Start with one conversation.' : !providerReady ? 'Give your crew intelligence.' : 'Meet your first companion.'}
+                  {!isAuthenticated ? 'Start with one conversation.' : !providerReady ? 'Give your pack intelligence.' : 'Meet your first companion.'}
                 </h2>
                 <p className="mt-4 text-sm leading-6 text-[var(--color-text-secondary)]">
                   {!isAuthenticated
@@ -701,10 +738,10 @@ export function HostedApp() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setActiveView(providerReady ? 'crew' : 'setup')}
+                    onClick={() => setActiveView(providerReady ? 'pack' : 'settings')}
                     className="mt-6 rounded-xl bg-brand-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 lg:hidden"
                   >
-                    {providerReady ? 'Open Crew' : 'Open Setup'}
+                    {providerReady ? 'Open Pack' : 'Open Settings'}
                   </button>
                 )}
               </div>
@@ -765,106 +802,145 @@ export function HostedApp() {
         </section>
 
         <aside
-          aria-label="Setup"
-          data-mobile-active={activeView === 'setup'}
-          className={`${activeView === 'setup' ? 'flex' : 'hidden'} min-h-0 flex-col overflow-hidden bg-[var(--color-bg-secondary)] lg:col-start-3 lg:row-start-1 lg:flex lg:border-l lg:border-[var(--color-border)]`}
+          aria-label="Settings"
+          data-mobile-active={activeView === 'settings'}
+          className={`${activeView === 'settings' ? 'flex' : 'hidden'} min-h-0 flex-col overflow-hidden bg-[var(--color-bg-secondary)] lg:col-start-3 lg:row-start-1 lg:flex lg:border-l lg:border-[var(--color-border)]`}
         >
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="border-b border-[var(--color-border)] px-5 py-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Setup</p>
-              <h2 className="mt-2 text-2xl font-semibold">{workspaceReady ? 'Ready to work' : 'A clear path to ready'}</h2>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Settings</p>
+              <h2 className="mt-2 text-2xl font-semibold">{activeAvatar ? `Shape ${activeAvatar.name}` : 'Build your workspace'}</h2>
               <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
-                {workspaceReady ? 'Core services are healthy. Optional places can be added when you want them.' : 'Complete each step once. Technical details stay out of the way.'}
+                {activeAvatar ? 'Tune the voice first, then choose where this companion can work.' : 'Complete each step once. Technical details stay out of the way.'}
               </p>
             </div>
 
-            <SetupStep
-              title="Account"
-              detail={isAuthenticated ? 'Your private hosted workspace is available.' : 'Sign in to create a private hosted workspace.'}
-              state={isAuthenticated ? 'Ready' : 'Start here'}
-              ready={isAuthenticated}
-            >
+            {!isAuthenticated && (
+              <SettingsSection
+                title="Account"
+                detail="Sign in to create a private hosted workspace."
+                state="Start here"
+                ready={false}
+              >
               {!isAuthenticated && <HostedWalletSignIn className="w-full justify-center" />}
-            </SetupStep>
+              </SettingsSection>
+            )}
 
-            <SetupStep
-              title="Intelligence"
-              detail={providerReady ? 'OpenRouter is securely connected.' : 'Connect a model provider for conversation and reasoning.'}
+            {isAuthenticated && activeAvatar && (
+              <section className="border-b border-[var(--color-border)] bg-gradient-to-b from-brand-500/10 to-transparent px-5 py-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-300">Companion</p>
+                    <h3 className="mt-2 text-lg font-semibold">Voice &amp; identity</h3>
+                  </div>
+                  <span className={`shrink-0 text-xs ${profileSaved ? 'text-emerald-300' : profileChanged ? 'text-amber-300' : 'text-[var(--color-text-muted)]'}`}>
+                    {profileSaved ? 'Saved' : profileChanged ? 'Unsaved' : 'Current'}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-[var(--color-text-muted)]">
+                  The system prompt is the durable direction behind every Web and Telegram reply.
+                </p>
+                <form onSubmit={(event) => void handleSaveProfile(event)} className="mt-4 space-y-4">
+                  <div>
+                    <label htmlFor="profile-name" className="block text-xs font-medium text-[var(--color-text-secondary)]">Name</label>
+                    <input
+                      id="profile-name"
+                      value={profileName}
+                      onChange={(event) => {
+                        setProfileName(event.target.value);
+                        setProfileSaved(false);
+                      }}
+                      maxLength={80}
+                      className="mt-2 w-full rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-base outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="profile-description" className="block text-xs font-medium text-[var(--color-text-secondary)]">Public description</label>
+                    <textarea
+                      id="profile-description"
+                      value={profileDescription}
+                      onChange={(event) => {
+                        setProfileDescription(event.target.value);
+                        setProfileSaved(false);
+                      }}
+                      maxLength={1000}
+                      rows={2}
+                      placeholder="What this companion is for"
+                      className="mt-2 w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <label htmlFor="profile-persona" className="block text-xs font-medium text-[var(--color-text-secondary)]">System prompt</label>
+                      <span className="text-[0.65rem] text-[var(--color-text-muted)]">{profilePersona.length.toLocaleString()}/50,000</span>
+                    </div>
+                    <textarea
+                      id="profile-persona"
+                      value={profilePersona}
+                      onChange={(event) => {
+                        setProfilePersona(event.target.value);
+                        setProfileSaved(false);
+                      }}
+                      maxLength={50000}
+                      rows={8}
+                      placeholder={`You are ${activeAvatar.name}…`}
+                      className="mt-2 w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 font-mono text-sm leading-6 outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                    />
+                    <p className="mt-2 text-xs leading-5 text-[var(--color-text-muted)]">Saved changes apply to the next message and create a new portable revision.</p>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || !profileName.trim() || !profileChanged}
+                    className="w-full rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                  >
+                    Save voice &amp; identity
+                  </button>
+                </form>
+              </section>
+            )}
+
+            <SettingsSection
+              title="Model"
+              detail={providerReady ? 'OpenRouter is securely connected for conversation and reasoning.' : 'Connect a model provider for conversation and reasoning.'}
               state={providerReady ? 'Ready' : isAuthenticated ? 'Connect' : 'Waiting'}
               ready={providerReady}
             >
+              {providerReady && (
+                <div className="rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3">
+                  <p className="text-xs text-[var(--color-text-muted)]">Current route</p>
+                  <p className="mt-1 text-sm font-medium">OpenRouter Free</p>
+                  <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">Automatically chooses an available free model.</p>
+                </div>
+              )}
               {isAuthenticated && !providerReady && (
                 <a href={openRouterConnectUrl()} className="flex w-full justify-center rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-600">
                   Connect OpenRouter securely
                 </a>
               )}
-            </SetupStep>
+            </SettingsSection>
 
-            <SetupStep
-              title="Companion"
-              detail={activeAvatar ? `${activeAvatar.name} is your active companion.` : 'Choose a name and begin the first conversation.'}
-              state={activeAvatar ? 'Ready' : isAuthenticated ? 'Create' : 'Waiting'}
-              ready={Boolean(activeAvatar)}
-            >
-              {isAuthenticated && !activeAvatar && (
+            {isAuthenticated && !activeAvatar && (
+              <SettingsSection
+                title="Companion"
+                detail="Choose a name and begin the first conversation."
+                state="Create"
+                ready={false}
+              >
                 <button
                   type="button"
                   onClick={() => {
                     setCreateOpen(true);
-                    setActiveView('crew');
+                    setActiveView('pack');
                   }}
                   className="w-full rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-sm font-semibold hover:bg-[var(--color-bg-tertiary)] lg:hidden"
                 >
-                  Open Crew
+                  Open Pack
                 </button>
-              )}
-            </SetupStep>
-
-            {isAuthenticated && (
-              <SetupStep
-                title="Portable project"
-                detail={activeAvatar ? 'Take this companion with you or share a public page.' : 'Restore a companion from a portable artifact.'}
-                state={activeAvatar ? (activeAvatar.visibility === 'private' ? 'Private' : 'Public') : 'Optional'}
-                ready={Boolean(activeAvatar)}
-              >
-                <div className="flex flex-wrap gap-3 text-sm">
-                  {activeAvatar && (
-                    <a href={ownedHostedAvatarBundleUrl(activeAvatar.avatarId)} className="text-brand-300 underline underline-offset-4">
-                      Download
-                    </a>
-                  )}
-                  {activeAvatar?.visibility !== 'private' && activeAvatar?.slug && (
-                    <a href={`/a/${activeAvatar.slug}`} className="text-brand-300 underline underline-offset-4">
-                      Public page
-                    </a>
-                  )}
-                  {activeAvatar?.visibility === 'private' && (
-                    <button
-                      type="button"
-                      onClick={() => void handlePublishAvatar(activeAvatar.avatarId)}
-                      disabled={loading}
-                      className="text-emerald-300 underline underline-offset-4 disabled:opacity-50"
-                    >
-                      Publish
-                    </button>
-                  )}
-                  <label htmlFor="avatar-import" className="cursor-pointer text-brand-300 underline underline-offset-4">
-                    Restore from file
-                  </label>
-                  <input
-                    id="avatar-import"
-                    type="file"
-                    accept=".json,.swarm-avatar.json,application/json,application/vnd.swarm.avatar+json"
-                    onChange={(event) => void handleImportAvatar(event)}
-                    disabled={loading}
-                    className="sr-only"
-                  />
-                </div>
-              </SetupStep>
+              </SettingsSection>
             )}
 
             {isAuthenticated && providerReady && activeAvatar && (
-              <SetupStep
+              <SettingsSection
                 title="Telegram"
                 detail={telegramReady ? `${activeAvatar.name} follows mentions, replies, commands, and topics in enabled groups.` : `Add ${activeAvatar.name} to another place when you are ready.`}
                 state={telegramLoading ? 'Checking' : telegramReady ? 'On' : telegram?.connected ? 'Finish' : 'Optional'}
@@ -985,7 +1061,50 @@ export function HostedApp() {
                     </details>
                   </div>
                 )}
-              </SetupStep>
+              </SettingsSection>
+            )}
+
+            {isAuthenticated && (
+              <SettingsSection
+                title="Portability & sharing"
+                detail={activeAvatar ? 'Take this companion with you or share a public page.' : 'Restore a companion from a portable artifact.'}
+                state={activeAvatar ? (activeAvatar.visibility === 'private' ? 'Private' : 'Public') : 'Optional'}
+                ready={Boolean(activeAvatar)}
+              >
+                <div className="flex flex-wrap gap-3 text-sm">
+                  {activeAvatar && (
+                    <a href={ownedHostedAvatarBundleUrl(activeAvatar.avatarId)} className="text-brand-300 underline underline-offset-4">
+                      Download
+                    </a>
+                  )}
+                  {activeAvatar?.visibility !== 'private' && activeAvatar?.slug && (
+                    <a href={`/a/${activeAvatar.slug}`} className="text-brand-300 underline underline-offset-4">
+                      Public page
+                    </a>
+                  )}
+                  {activeAvatar?.visibility === 'private' && (
+                    <button
+                      type="button"
+                      onClick={() => void handlePublishAvatar(activeAvatar.avatarId)}
+                      disabled={loading}
+                      className="text-emerald-300 underline underline-offset-4 disabled:opacity-50"
+                    >
+                      Publish
+                    </button>
+                  )}
+                  <label htmlFor="avatar-import" className="cursor-pointer text-brand-300 underline underline-offset-4">
+                    Restore from file
+                  </label>
+                  <input
+                    id="avatar-import"
+                    type="file"
+                    accept=".json,.swarm-avatar.json,application/json,application/vnd.swarm.avatar+json"
+                    onChange={(event) => void handleImportAvatar(event)}
+                    disabled={loading}
+                    className="sr-only"
+                  />
+                </div>
+              </SettingsSection>
             )}
 
             <details className="group border-b border-[var(--color-border)] px-5 py-5">
@@ -1016,7 +1135,7 @@ export function HostedApp() {
         </aside>
 
         <nav aria-label="Hosted workspace" className="col-start-1 row-start-2 grid grid-cols-3 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)] lg:hidden">
-          {(['chat', 'crew', 'setup'] as const).map((view) => (
+          {(['chat', 'pack', 'settings'] as const).map((view) => (
             <button
               type="button"
               key={view}

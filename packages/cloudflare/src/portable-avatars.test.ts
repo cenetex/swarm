@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'bun:test';
-import type { HostedSession } from './auth.js';
+import { HOSTED_SESSION_COOKIE, sha256, type HostedSession } from './auth.js';
 import type {
   CloudflareD1Database,
   CloudflareD1PreparedStatement,
@@ -14,6 +14,7 @@ import {
   importPortableHostedAvatar,
   listOwnedPortableAvatars,
   listPublicAvatars,
+  updatePortableAvatarProfile,
   updatePortableAvatarPublication,
 } from './portable-avatars.js';
 import { encodeHostedSecretKey } from './secret-crypto.js';
@@ -170,6 +171,80 @@ describe('portable public avatars', () => {
     expect(await listPublicAvatars(env)).toEqual([]);
     expect(await getPublicAvatar(env, created.slug)).toBeNull();
     expect((await getOwnedPortableRevision(env, owner, created.avatarId))?.revisionId).toBe(created.revisionId);
+  });
+
+  it('saves identity and prompt edits as a new portable revision', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    const created = await createPortableHostedAvatar(env, owner, {
+      name: 'Ada',
+      description: 'Original description.',
+      persona: 'Original prompt.',
+    }, 1_000);
+
+    const updated = await updatePortableAvatarProfile(env, owner, created.avatarId, {
+      name: 'Ada North',
+      description: 'A careful research companion.',
+      persona: 'Be direct, curious, and evidence-led.',
+    }, 2_000);
+
+    expect(updated).toMatchObject({
+      name: 'Ada North',
+      description: 'A careful research companion.',
+      persona: 'Be direct, curious, and evidence-led.',
+      updatedAt: 2_000,
+    });
+    expect(updated?.revisionId).not.toBe(created.revisionId);
+    const revision = await getOwnedPortableRevision(env, owner, created.avatarId);
+    expect(revision?.bundle.identity).toMatchObject({
+      name: 'Ada North',
+      description: 'A careful research companion.',
+    });
+    expect(revision?.bundle.prompts.system).toBe('Be direct, curious, and evidence-led.');
+    expect(revision?.bundle.lineage.previousRevisionId).toBe(created.revisionId);
+    expect(state.db.query(
+      'select name, description, persona from swarm_hosted_avatars where avatar_id = ?',
+    ).get(created.avatarId)).toEqual({
+      name: 'Ada North',
+      description: 'A careful research companion.',
+      persona: 'Be direct, curious, and evidence-led.',
+    });
+  });
+
+  it('accepts same-origin profile edits through the owned avatar API', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    const token = 'profile-session';
+    state.db.query(
+      `insert into swarm_sessions (session_hash, account_id, wallet_address, created_at, expires_at)
+       values (?, ?, ?, ?, ?)`,
+    ).run(await sha256(token), owner.accountId, owner.walletAddress, 1, Date.now() + 60_000);
+    const created = await createPortableHostedAvatar(env, owner, { name: 'Ada' }, 1_000);
+
+    const response = await worker.fetch(new Request(
+      `https://next.swarm.rati.chat/api/avatars/${created.avatarId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Cookie: `${HOSTED_SESSION_COOKIE}=${token}`,
+          Origin: 'https://next.swarm.rati.chat',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Ada North',
+          description: 'Research companion',
+          persona: 'Be direct.',
+        }),
+      },
+    ), env);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      avatarId: created.avatarId,
+      name: 'Ada North',
+      description: 'Research companion',
+      persona: 'Be direct.',
+    });
   });
 
   it('restores an exported artifact into an empty environment with the same revision id', async () => {

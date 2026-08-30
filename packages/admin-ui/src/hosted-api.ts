@@ -10,6 +10,7 @@ export type HostedAvatar = {
   avatarId: string;
   name: string;
   description?: string;
+  persona?: string;
   status: string;
   createdAt: number;
   updatedAt: number;
@@ -151,6 +152,16 @@ export async function importHostedAvatar(bundle: unknown): Promise<HostedAvatar>
 
 export function ownedHostedAvatarBundleUrl(avatarId: string): string {
   return `${API_BASE}/avatars/${encodeURIComponent(avatarId)}/bundle`;
+}
+
+export async function updateHostedAvatarProfile(
+  avatarId: string,
+  profile: { name: string; description: string; persona: string },
+): Promise<HostedAvatar> {
+  return requestJson<HostedAvatar>(`/avatars/${encodeURIComponent(avatarId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(profile),
+  });
 }
 
 export async function updateHostedAvatarPublication(
