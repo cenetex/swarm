@@ -66,6 +66,10 @@ The hosted Worker implements the first secure vertical slice:
 
 The dedicated hosted UI is served from the same Worker origin. It starts OAuth through the authenticated route, reads only connection status, and never renders or accepts the exchanged credential. The write-only manual-key route remains a compatibility surface for trusted non-hosted clients; it is not part of normal hosted onboarding.
 
+### Hosted workspace presentation
+
+The hosted UI is one chat-first workspace rather than a dashboard of independent cards. On desktop, a narrow management rail holds account, runtime, provider, and avatar controls beside one continuous conversation surface. On smaller screens, chat remains visible first and the same controls move behind a single **Manage** action. Assistant responses use flat transcript rows; only user-authored turns receive a restrained visual accent. New connectors should extend the management rail instead of adding new top-level panels around chat.
+
 ## Hosted Telegram
 
 Telegram is the second hosted connector after OpenRouter. It uses the same account, encrypted-secret,

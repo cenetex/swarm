@@ -114,6 +114,49 @@ describe('HostedApp', () => {
     expect(hostedApi.disconnectHostedProvider).toHaveBeenCalledOnce();
   });
 
+  it('keeps chat primary and exposes one responsive workspace management surface', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      {
+        avatarId: 'jax',
+        name: 'Jax',
+        status: 'active',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    vi.mocked(hostedApi.getHostedHistory).mockResolvedValue([
+      { role: 'assistant', content: 'How can I help?' },
+      { role: 'user', content: 'Show me the workspace.' },
+    ]);
+
+    render(<HostedApp />);
+
+    expect(screen.getByRole('region', { name: /hosted chat/i })).toBeInTheDocument();
+    const manage = screen.getByRole('button', { name: /^manage$/i });
+    const management = screen.getByRole('complementary', { name: /workspace management/i });
+    expect(manage).toHaveAttribute('aria-expanded', 'false');
+    expect(management).toHaveAttribute('data-mobile-open', 'false');
+
+    fireEvent.click(manage);
+
+    expect(manage).toHaveAttribute('aria-expanded', 'true');
+    expect(management).toHaveAttribute('data-mobile-open', 'true');
+    expect(await screen.findByRole('button', { name: /^Jax/u })).toHaveAttribute('aria-current', 'true');
+
+    const assistantMessage = await screen.findByLabelText('Jax message');
+    const userMessage = screen.getByLabelText('You message');
+    expect(assistantMessage).toHaveAttribute('data-message-role', 'assistant');
+    expect(assistantMessage).not.toHaveClass('rounded-2xl');
+    expect(userMessage).toHaveAttribute('data-message-role', 'user');
+    expect(userMessage).toHaveClass('border-l-brand-400');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(manage).toHaveAttribute('aria-expanded', 'false');
+    expect(management).toHaveAttribute('data-mobile-open', 'false');
+  });
+
   it('shows Telegram as the second connector and clears the write-only token immediately', async () => {
     authenticate();
     vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
