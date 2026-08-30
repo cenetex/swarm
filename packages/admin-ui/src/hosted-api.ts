@@ -27,6 +27,15 @@ export type HostedChatJob = {
   error?: string;
 };
 
+export type HostedTelegramStatus = {
+  connected: boolean;
+  status: 'disconnected' | 'binding_required' | 'connected' | 'repair_needed';
+  bot?: { id: string; username: string; name: string };
+  ownerBound: boolean;
+  ownerBindUrl?: string;
+  addToGroupUrl?: string;
+};
+
 async function responseError(response: Response, fallback: string): Promise<Error> {
   const body = await response.json().catch(() => null) as { error?: unknown } | null;
   return new Error(typeof body?.error === 'string' ? body.error : fallback);
@@ -72,6 +81,36 @@ export async function createHostedAvatar(name: string): Promise<HostedAvatar> {
     method: 'POST',
     body: JSON.stringify({ name }),
   });
+}
+
+export async function getHostedTelegramStatus(avatarId: string): Promise<HostedTelegramStatus> {
+  return requestJson<HostedTelegramStatus>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram`,
+  );
+}
+
+export async function connectHostedTelegram(
+  avatarId: string,
+  botToken: string,
+): Promise<HostedTelegramStatus> {
+  return requestJson<HostedTelegramStatus>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram`,
+    { method: 'POST', body: JSON.stringify({ botToken }) },
+  );
+}
+
+export async function repairHostedTelegram(avatarId: string): Promise<HostedTelegramStatus> {
+  return requestJson<HostedTelegramStatus>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram/repair`,
+    { method: 'POST' },
+  );
+}
+
+export async function disconnectHostedTelegram(avatarId: string): Promise<void> {
+  await requestJson<{ disconnected: true }>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram`,
+    { method: 'DELETE' },
+  );
 }
 
 export async function getHostedHistory(avatarId: string): Promise<HostedChatMessage[]> {

@@ -66,6 +66,36 @@ The hosted Worker implements the first secure vertical slice:
 
 The dedicated hosted UI is served from the same Worker origin. It starts OAuth through the authenticated route, reads only connection status, and never renders or accepts the exchanged credential. The write-only manual-key route remains a compatibility surface for trusted non-hosted clients; it is not part of normal hosted onboarding.
 
+## Hosted Telegram
+
+Telegram is the second hosted connector after OpenRouter. It uses the same account, encrypted-secret,
+Queue, and Durable Object boundaries as hosted browser chat:
+
+1. An authenticated avatar owner pastes a BotFather token once. The Worker calls `getMe`, claims the
+   Telegram bot id so it cannot be shared between tenants, and registers an opaque HTTPS webhook.
+2. The token and Telegram webhook secret are encrypted with account-and-avatar context. API responses,
+   browser storage, and logs never receive the token again.
+3. The owner opens a one-use Telegram deep link and sends `/start` in a private chat. That Telegram user
+   becomes the connector owner. A separate, expiring `startgroup` link enables groups only when used by
+   that owner.
+4. Private messages are accepted only from the bound owner. Groups are quiet by default and respond only
+   to mentions, bot-addressed commands, or replies to the bot.
+5. The public webhook validates Telegram's secret header, reserves `update_id` in D1, and enqueues accepted
+   work. It does not call the model before returning.
+6. Every Telegram chat maps to a separate hosted thread. The Queue consumer takes the avatar lease, loads
+   only that thread's history, decrypts the user's OpenRouter key for the model call, and sends the result
+   through Telegram.
+7. Delivery is marked `sending` before the outbound request. A request with an unknown network outcome is
+   recorded as `unknown` and is not retried, preventing accidental duplicate replies. Definite rate limits
+   and pre-delivery failures use bounded retries.
+8. Disconnect first invalidates the Telegram webhook, then removes every avatar-scoped Telegram secret and
+   all connector metadata. If Telegram is unavailable, removing the local webhook secret still makes later
+   calls to the old endpoint fail closed.
+
+Migration `0005_hosted_telegram.sql` adds bot ownership, enabled-chat mappings, deduplication, jobs, and
+delivery state. Bot tokens and binding codes remain in the existing encrypted secret table, not these
+metadata tables.
+
 ## Hosted Web Chat
 
 The first hosted message path is now implemented for browser chat:
@@ -126,7 +156,7 @@ Desktop wallet sign-in uses a short-lived cross-device pairing. The Worker retur
 1. **Foundation — implemented:** provider-neutral hosted plans, D1/R2/Queue adapters, SIWS sessions, encrypted user secrets, and OpenRouter PKCE.
 2. **Hosted web app — implemented:** same-origin wallet sign-in, OAuth connect/status/disconnect, avatar creation, and Queue-backed browser chat without browser-visible AI credentials.
 3. **Web chat runtime — implemented:** tenant-owned avatars and history, idempotent Queue jobs, per-avatar serialization, bounded model retries, and safe failed jobs.
-4. **Webhook runtime:** port Telegram ingress onto the same Queue and account-isolation rules.
+4. **Webhook runtime — implemented:** Telegram ingress, owner/group binding, per-chat history, safe delivery state, and Queue processing.
 5. **Entitlement and quotas:** connect Stripe checkout/portal and optional on-chain entitlement; enforce request, token, storage, and concurrency limits before model calls.
 6. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
 7. **Media and scheduling:** move blobs to R2 and scheduled jobs to D1 plus Cron/Workflows.
@@ -145,7 +175,7 @@ Desktop wallet sign-in uses a short-lived cross-device pairing. The Worker retur
 
 ## Known Caveats
 
-- The current implementation processes browser chat only. Telegram, Discord, media, tools, and scheduling still use other runtimes.
+- The current implementation processes browser chat and Telegram. Discord, media, tools, and scheduling still use other runtimes.
 - Hosted status may report `available`; it must not report an active tenant runtime until entitlement state is connected in #1814.
 - D1 is not DynamoDB. Access patterns must be deliberate, and broad scans should be avoided.
 - Durable Objects are appropriate for coordination and inbound realtime clients, not arbitrary long-running processes.
