@@ -42,8 +42,20 @@ import {
   HostedChatRateLimitError,
   listHostedAvatars,
   listHostedChatHistory,
-  processHostedChatQueueBatch,
+  processHostedChatQueueMessage,
 } from './hosted-chat.js';
+import {
+  cleanupHostedTelegramRuntime,
+  connectHostedTelegram,
+  disconnectHostedTelegram,
+  getHostedTelegramStatus,
+  handleHostedTelegramWebhook,
+  HostedTelegramAuthorizationError,
+  HostedTelegramConflictError,
+  HostedTelegramNotFoundError,
+  processHostedTelegramQueueMessage,
+  repairHostedTelegram,
+} from './hosted-telegram.js';
 
 export { HostedAvatarCoordinatorDurableObject };
 
@@ -236,6 +248,12 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
 
   if (env.SWARM_ENV === 'production' && !hostedConfigurationReady(env)) {
     return json({ error: 'Hosted runtime is not configured.' }, { status: 503 });
+  }
+
+  const telegramWebhookMatch = url.pathname.match(/^\/api\/webhooks\/telegram\/([A-Za-z0-9_-]{24,80})$/u);
+  if (telegramWebhookMatch && request.method === 'POST') {
+    const integrationId = telegramWebhookMatch[1] ?? '';
+    return json(await handleHostedTelegramWebhook(env, integrationId, request));
   }
 
   if (url.pathname === '/api/auth/mobile/start' && request.method === 'POST') {
@@ -467,6 +485,42 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     return avatar ? json(avatar) : json({ error: 'Hosted avatar was not found.' }, { status: 404 });
   }
 
+  const telegramIntegrationMatch = url.pathname.match(
+    /^\/api\/avatars\/([^/]+)\/integrations\/telegram(?:\/(repair))?$/u,
+  );
+  if (telegramIntegrationMatch) {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = decodeURIComponent(telegramIntegrationMatch[1] ?? '');
+    if (!validResourceId(avatarId)) return json({ error: 'Avatar id is invalid.' }, { status: 400 });
+    const action = telegramIntegrationMatch[2];
+    if (!action && request.method === 'GET') {
+      return json(await getHostedTelegramStatus(env, session, avatarId));
+    }
+    assertSameOrigin(env, request);
+    if (!action && request.method === 'POST') {
+      if (!hostedChatConfigurationReady(env)) {
+        return json({ error: 'Hosted Telegram is not configured.' }, { status: 503 });
+      }
+      const body = await readJsonObject(request);
+      return json(await connectHostedTelegram(env, session, {
+        avatarId,
+        botToken: stringField(body, 'botToken'),
+        publicOrigin: hostedPublicOrigin(env, request),
+      }), { status: 201 });
+    }
+    if (!action && request.method === 'DELETE') {
+      return json(await disconnectHostedTelegram(env, session, avatarId));
+    }
+    if (action === 'repair' && request.method === 'POST') {
+      return json(await repairHostedTelegram(env, session, {
+        avatarId,
+        publicOrigin: hostedPublicOrigin(env, request),
+      }));
+    }
+    return json({ error: 'Method not allowed.' }, { status: 405 });
+  }
+
   if (url.pathname === '/api/chat' && request.method === 'GET') {
     const session = await getHostedSession(env, request);
     if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
@@ -566,6 +620,9 @@ export default {
       if (error instanceof HostedOriginError) {
         return json({ error: detail }, { status: 403 });
       }
+      if (error instanceof HostedTelegramAuthorizationError) return json({ error: detail }, { status: 403 });
+      if (error instanceof HostedTelegramConflictError) return json({ error: detail }, { status: 409 });
+      if (error instanceof HostedTelegramNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof HostedChatNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof HostedChatMissingKeyError) return json({ error: detail }, { status: 409 });
       if (error instanceof HostedChatQueueError || error instanceof HostedChatConfigurationError) {
@@ -584,6 +641,7 @@ export default {
   async scheduled(controller: ScheduledController, env: CloudflareHostedBindings): Promise<void> {
     await cleanupExpiredHostedAuth(env, controller.scheduledTime);
     await cleanupHostedChatRuntime(env, controller.scheduledTime);
+    await cleanupHostedTelegramRuntime(env, controller.scheduledTime);
     const platform = createCloudflareHostedPlatform(env);
     await platform.queues.send('default', {
       type: 'swarm.cron.tick',
@@ -595,6 +653,19 @@ export default {
   },
 
   async queue(batch: CloudflareQueueBatch, env: CloudflareHostedBindings): Promise<void> {
-    await processHostedChatQueueBatch(batch, env);
+    await Promise.all(batch.messages.map(async (message) => {
+      try {
+        const type = message.body && typeof message.body === 'object'
+          ? (message.body as { type?: unknown }).type
+          : undefined;
+        const disposition = type === 'swarm.hosted.telegram.update'
+          ? await processHostedTelegramQueueMessage(env, message.body)
+          : await processHostedChatQueueMessage(env, message.body);
+        if (disposition.action === 'retry') message.retry({ delaySeconds: disposition.delaySeconds });
+        else message.ack();
+      } catch {
+        message.retry({ delaySeconds: 10 });
+      }
+    }));
   },
 };

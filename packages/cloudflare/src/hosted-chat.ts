@@ -24,14 +24,14 @@ const SAFE_KEY_ERROR = 'Connect OpenRouter before sending a message.';
 const SAFE_RUNTIME_ERROR = 'Hosted chat could not process this message. Try again later.';
 const DEFAULT_OPENROUTER_MODEL = 'openrouter/free';
 
-type OpenRouterFailure = {
+export type HostedModelFailure = {
   ok: false;
   code: string;
   message: string;
   retryable: boolean;
 };
 
-function openRouterFailure(status?: number): OpenRouterFailure {
+function openRouterFailure(status?: number): HostedModelFailure {
   if (status === 401 || status === 403) {
     return { ok: false, code: 'model_unauthorized', message: SAFE_MODEL_AUTH_ERROR, retryable: false };
   }
@@ -47,7 +47,7 @@ function openRouterFailure(status?: number): OpenRouterFailure {
   return { ok: false, code: 'model_unavailable', message: SAFE_MODEL_ERROR, retryable: true };
 }
 
-function logOpenRouterFailure(requestId: string, failure: OpenRouterFailure, status?: number): void {
+function logOpenRouterFailure(requestId: string, failure: HostedModelFailure, status?: number): void {
   console.warn(JSON.stringify({
     level: 'WARN',
     subsystem: 'hosted-chat',
@@ -668,7 +668,7 @@ async function callOpenRouter(
   messages: HostedChatMessageRow[],
   requestId: string,
   fetchImpl: typeof fetch,
-): Promise<{ ok: true; content: string } | OpenRouterFailure> {
+): Promise<{ ok: true; content: string } | HostedModelFailure> {
   const endpoint = env.SWARM_OPENROUTER_CHAT_URL?.trim() || 'https://openrouter.ai/api/v1/chat/completions';
   const systemContent = [
     `You are ${avatar.name}.`,
@@ -717,6 +717,76 @@ async function callOpenRouter(
     logOpenRouterFailure(requestId, failure);
     return failure;
   }
+}
+
+export async function generateHostedReply(
+  env: CloudflareHostedBindings,
+  input: {
+    accountId: string;
+    avatarId: string;
+    threadId: string;
+    requestId: string;
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true; content: string } | HostedModelFailure> {
+  const avatar = await findHostedAvatarRow(env, input.accountId, input.avatarId);
+  if (!avatar) {
+    return { ok: false, code: 'avatar_missing', message: SAFE_RUNTIME_ERROR, retryable: false };
+  }
+  const apiKey = await createCloudflareHostedPlatform(env).secrets.getUserSecret(
+    { accountId: input.accountId },
+    'llm-api-key',
+  );
+  if (!apiKey) {
+    return { ok: false, code: 'key_missing', message: SAFE_KEY_ERROR, retryable: false };
+  }
+  const result = await env.SWARM_STATE.prepare(
+    `select message_id, request_id, role, content, created_at
+     from swarm_hosted_chat_messages
+     where account_id = ? and avatar_id = ? and thread_id = ?
+     order by created_at desc, message_id desc limit ?`,
+  )
+    .bind(input.accountId, input.avatarId, input.threadId, MAX_HISTORY_MESSAGES)
+    .all<HostedChatMessageRow>();
+  ensureD1Result(result.success, result.error, 'Unable to load hosted chat context.');
+  return callOpenRouter(
+    env,
+    apiKey,
+    avatar,
+    (result.results ?? []).reverse(),
+    input.requestId,
+    fetchImpl,
+  );
+}
+
+export async function storeHostedAssistantMessage(
+  env: CloudflareHostedBindings,
+  input: {
+    accountId: string;
+    avatarId: string;
+    threadId: string;
+    requestId: string;
+    content: string;
+    createdAt: number;
+  },
+): Promise<void> {
+  const result = await env.SWARM_STATE.prepare(
+    `insert into swarm_hosted_chat_messages
+       (account_id, avatar_id, thread_id, message_id, request_id, role, content, created_at)
+     values (?, ?, ?, ?, ?, 'assistant', ?, ?)
+     on conflict(account_id, avatar_id, request_id, role) do nothing`,
+  )
+    .bind(
+      input.accountId,
+      input.avatarId,
+      input.threadId,
+      `message_${randomToken(18)}`,
+      input.requestId,
+      input.content,
+      input.createdAt,
+    )
+    .run();
+  ensureD1Result(result.success, result.error, 'Unable to store hosted assistant message.');
 }
 
 async function completeJob(

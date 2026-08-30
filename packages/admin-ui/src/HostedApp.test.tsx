@@ -14,13 +14,18 @@ vi.mock('./hosted-api', async () => {
     ...actual,
     getHostedProviderStatus: vi.fn(),
     disconnectHostedProvider: vi.fn(),
+    connectHostedTelegram: vi.fn(),
+    disconnectHostedTelegram: vi.fn(),
     listHostedAvatars: vi.fn(),
     getHostedHistory: vi.fn(),
+    getHostedTelegramStatus: vi.fn(),
+    repairHostedTelegram: vi.fn(),
   };
 });
 
 const disconnected = { connected: false, provider: null } as const;
 const connected = { connected: true, provider: 'openrouter' } as const;
+const testBotToken = `123456789:${'A'.repeat(36)}`;
 
 function authenticate() {
   useAuthStore.setState({
@@ -43,6 +48,26 @@ beforeEach(() => {
   vi.mocked(hostedApi.disconnectHostedProvider).mockResolvedValue(disconnected);
   vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([]);
   vi.mocked(hostedApi.getHostedHistory).mockResolvedValue([]);
+  vi.mocked(hostedApi.getHostedTelegramStatus).mockResolvedValue({
+    connected: false,
+    status: 'disconnected',
+    ownerBound: false,
+  });
+  vi.mocked(hostedApi.connectHostedTelegram).mockResolvedValue({
+    connected: true,
+    status: 'binding_required',
+    ownerBound: false,
+    bot: { id: '123', username: 'JaxSwarmBot', name: 'Jax' },
+    ownerBindUrl: 'https://t.me/JaxSwarmBot?start=one-time-code',
+  });
+  vi.mocked(hostedApi.disconnectHostedTelegram).mockResolvedValue();
+  vi.mocked(hostedApi.repairHostedTelegram).mockResolvedValue({
+    connected: true,
+    status: 'connected',
+    ownerBound: true,
+    bot: { id: '123', username: 'JaxSwarmBot', name: 'Jax' },
+    addToGroupUrl: 'https://t.me/JaxSwarmBot?startgroup=group-code',
+  });
 });
 
 describe('HostedApp', () => {
@@ -130,5 +155,33 @@ describe('HostedApp', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(manage).toHaveAttribute('aria-expanded', 'false');
     expect(management).toHaveAttribute('data-mobile-open', 'false');
+  });
+
+  it('shows Telegram as the second connector and clears the write-only token immediately', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([{
+      avatarId: 'avatar-1',
+      name: 'Jax',
+      status: 'shell',
+      createdAt: 1,
+      updatedAt: 1,
+    }]);
+    render(<HostedApp />);
+
+    expect(await screen.findByText('Connector 2')).toBeInTheDocument();
+    const token = await screen.findByLabelText(/botfather token/i);
+    fireEvent.change(token, { target: { value: testBotToken } });
+    fireEvent.click(screen.getByRole('button', { name: /connect telegram bot/i }));
+
+    await waitFor(() => expect(hostedApi.connectHostedTelegram).toHaveBeenCalledWith(
+      'avatar-1',
+      testBotToken,
+    ));
+    expect(screen.queryByDisplayValue(testBotToken)).not.toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /prove ownership/i })).toHaveAttribute(
+      'href',
+      'https://t.me/JaxSwarmBot?start=one-time-code',
+    );
   });
 });

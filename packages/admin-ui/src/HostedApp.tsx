@@ -3,17 +3,22 @@ import { API_BASE } from './api/apiBase';
 import { HostedWalletSignIn } from './components/HostedWalletSignIn';
 import {
   createHostedAvatar,
+  connectHostedTelegram,
   disconnectHostedProvider,
+  disconnectHostedTelegram,
   enqueueHostedMessage,
   getHostedHistory,
   getHostedProviderStatus,
+  getHostedTelegramStatus,
   listHostedAvatars,
   openRouterConnectUrl,
   openRouterResult,
+  repairHostedTelegram,
   waitForHostedJob,
   type HostedAvatar,
   type HostedChatMessage,
   type HostedProviderStatus,
+  type HostedTelegramStatus,
 } from './hosted-api';
 import { useAuth } from './store/auth';
 
@@ -59,6 +64,9 @@ export function HostedApp() {
   const [messages, setMessages] = useState<HostedChatMessage[]>([]);
   const [avatarName, setAvatarName] = useState('My hosted avatar');
   const [draft, setDraft] = useState('');
+  const [telegram, setTelegram] = useState<HostedTelegramStatus | null>(null);
+  const [telegramToken, setTelegramToken] = useState('');
+  const [telegramLoading, setTelegramLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -104,10 +112,40 @@ export function HostedApp() {
       setAvatars([]);
       setActiveAvatarId('');
       setMessages([]);
+      setTelegram(null);
+      setTelegramToken('');
+      setTelegramLoading(false);
       return;
     }
     void refreshProvider();
   }, [isAuthenticated, refreshProvider]);
+
+  const refreshTelegram = useCallback(async () => {
+    if (!activeAvatarId) {
+      setTelegram(null);
+      setTelegramLoading(false);
+      return;
+    }
+    setTelegramLoading(true);
+    try {
+      const status = await getHostedTelegramStatus(activeAvatarId);
+      setTelegram(status);
+    } finally {
+      setTelegramLoading(false);
+    }
+  }, [activeAvatarId]);
+
+  useEffect(() => {
+    if (!activeAvatarId || !provider?.connected) {
+      setTelegram(null);
+      setTelegramLoading(false);
+      return;
+    }
+    setTelegram(null);
+    void refreshTelegram().catch((telegramError) => {
+      setError(telegramError instanceof Error ? telegramError.message : 'Unable to load Telegram status.');
+    });
+  }, [activeAvatarId, provider?.connected, refreshTelegram]);
 
   useEffect(() => {
     if (!activeAvatarId || !provider?.connected) {
@@ -166,6 +204,58 @@ export function HostedApp() {
       setManageOpen(false);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Unable to create the avatar.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConnectTelegram = async (event: FormEvent) => {
+    event.preventDefault();
+    const token = telegramToken.trim();
+    if (!activeAvatarId || !token) return;
+    setTelegramToken('');
+    setLoading(true);
+    setError('');
+    try {
+      setTelegram(await connectHostedTelegram(activeAvatarId, token));
+    } catch (connectError) {
+      setError(connectError instanceof Error ? connectError.message : 'Unable to connect Telegram.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRepairTelegram = async () => {
+    if (!activeAvatarId) return;
+    setLoading(true);
+    setError('');
+    try {
+      setTelegram(await repairHostedTelegram(activeAvatarId));
+    } catch (repairError) {
+      setError(repairError instanceof Error ? repairError.message : 'Unable to repair Telegram.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefreshTelegram = async () => {
+    setError('');
+    try {
+      await refreshTelegram();
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : 'Unable to load Telegram status.');
+    }
+  };
+
+  const handleDisconnectTelegram = async () => {
+    if (!activeAvatarId) return;
+    setLoading(true);
+    setError('');
+    try {
+      await disconnectHostedTelegram(activeAvatarId);
+      setTelegram({ connected: false, status: 'disconnected', ownerBound: false });
+    } catch (disconnectError) {
+      setError(disconnectError instanceof Error ? disconnectError.message : 'Unable to disconnect Telegram.');
     } finally {
       setLoading(false);
     }
@@ -460,7 +550,7 @@ export function HostedApp() {
             )}
 
             {isAuthenticated && providerReady && (
-              <section aria-labelledby="avatars-heading" className="px-5 py-5">
+              <section aria-labelledby="avatars-heading" className="border-b border-[var(--color-border)] px-5 py-5">
                 <div className="flex items-center justify-between gap-3">
                   <h2 id="avatars-heading" className="text-sm font-semibold">Avatars</h2>
                   <span className="text-xs text-[var(--color-text-muted)]">{avatars.length}/100</span>
@@ -510,6 +600,107 @@ export function HostedApp() {
                     </button>
                   </form>
                 </details>
+              </section>
+            )}
+
+            {isAuthenticated && providerReady && activeAvatar && (
+              <section aria-labelledby="telegram-heading" className="px-5 py-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 id="telegram-heading" className="text-sm font-semibold">Telegram</h2>
+                  <span className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
+                    <StatusDot ready={Boolean(telegram?.connected && telegram.ownerBound)} />
+                    Connector 2
+                  </span>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-[var(--color-text-muted)]">
+                  Connect a BotFather bot to {activeAvatar.name}. Its token is write only, and the bot answers only its owner or enabled groups.
+                </p>
+                {telegramLoading ? (
+                  <p className="mt-4 text-xs text-[var(--color-text-muted)]">Loading Telegram status…</p>
+                ) : !telegram?.connected ? (
+                  <form onSubmit={(event) => void handleConnectTelegram(event)} className="mt-4 space-y-3">
+                    <label htmlFor="telegram-token" className="block text-xs text-[var(--color-text-muted)]">
+                      BotFather token (write only)
+                    </label>
+                    <input
+                      id="telegram-token"
+                      type="password"
+                      autoComplete="new-password"
+                      value={telegramToken}
+                      onChange={(event) => setTelegramToken(event.target.value)}
+                      placeholder="123456789:bot-token"
+                      className="w-full rounded-lg border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-2.5 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                    />
+                    <button
+                      type="submit"
+                      disabled={loading || !telegramToken.trim()}
+                      className="w-full rounded-lg bg-[#229ED9] px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+                    >
+                      Connect Telegram bot
+                    </button>
+                  </form>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    <p className="flex min-w-0 items-center gap-2 text-xs">
+                      <span className="shrink-0 text-[var(--color-text-muted)]">Bot</span>
+                      <a
+                        href={`https://t.me/${telegram.bot?.username ?? ''}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="truncate text-brand-300 underline underline-offset-4"
+                      >
+                        @{telegram.bot?.username}
+                      </a>
+                    </p>
+                    {!telegram.ownerBound && telegram.ownerBindUrl && (
+                      <a
+                        href={telegram.ownerBindUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block w-full rounded-lg bg-[#229ED9] px-4 py-2.5 text-center text-sm font-semibold text-white"
+                      >
+                        Open Telegram to prove ownership
+                      </a>
+                    )}
+                    {telegram.ownerBound && telegram.addToGroupUrl && (
+                      <a
+                        href={telegram.addToGroupUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block w-full rounded-lg bg-[#229ED9] px-4 py-2.5 text-center text-sm font-semibold text-white"
+                      >
+                        Add bot to a group
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleRefreshTelegram()}
+                      disabled={loading}
+                      className="w-full rounded-lg border border-[var(--color-border-secondary)] px-4 py-2.5 text-sm font-medium hover:bg-[var(--color-bg-tertiary)] disabled:opacity-50"
+                    >
+                      Refresh Telegram status
+                    </button>
+                    {((!telegram.ownerBound && !telegram.ownerBindUrl)
+                      || (telegram.ownerBound && !telegram.addToGroupUrl)) && (
+                      <button
+                        type="button"
+                        onClick={() => void handleRepairTelegram()}
+                        disabled={loading}
+                        className="w-full rounded-lg border border-amber-400/30 px-4 py-2.5 text-sm font-medium text-amber-200 hover:bg-amber-400/10 disabled:opacity-50"
+                      >
+                        Repair and refresh links
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleDisconnectTelegram()}
+                      disabled={loading}
+                      className="text-sm font-medium text-red-300 underline decoration-red-400/40 underline-offset-4 hover:text-red-200 disabled:opacity-50"
+                    >
+                      Disconnect Telegram
+                    </button>
+                  </div>
+                )}
               </section>
             )}
           </div>
