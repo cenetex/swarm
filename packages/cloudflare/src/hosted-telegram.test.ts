@@ -57,6 +57,7 @@ class SqliteD1 implements CloudflareD1Database {
       '0002_hosted_identity_and_secrets.sql',
       '0003_hosted_chat_runtime.sql',
       '0005_hosted_telegram.sql',
+      '0006_portable_public_avatars.sql',
     ]) {
       this.db.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url), 'utf8'));
     }
