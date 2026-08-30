@@ -887,6 +887,9 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
       updateProfile: async () => {
         throw new Error('Profile updates not allowed from platform handlers');
       },
+      updatePersona: async () => {
+        throw new Error('Persona updates not allowed from platform handlers');
+      },
       setProfileImage: async () => {
         throw new Error('Profile uploads not allowed from platform handlers');
       },

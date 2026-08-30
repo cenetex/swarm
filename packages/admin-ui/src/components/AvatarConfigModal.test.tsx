@@ -38,6 +38,14 @@ vi.mock('./UsageMeterPanel', () => ({
   UsageMeterPanel: () => <div data-testid="usage-meter-panel" />,
 }));
 
+vi.mock('./PersonaEditor', () => ({
+  PersonaEditor: ({ onSaved }: { onSaved?: (persona: string) => void }) => (
+    <button data-testid="mock-persona-editor" onClick={() => onSaved?.('Edited persona')}>
+      Persona editor
+    </button>
+  ),
+}));
+
 const avatar: Avatar = {
   id: 'avatar-1',
   name: 'Opus',
@@ -66,7 +74,6 @@ describe('AvatarConfigModal save behavior', () => {
     expect(storeMocks.updateAvatar).toHaveBeenCalledWith('avatar-1', {
       name: 'Updated Opus',
       description: 'Original description',
-      persona: 'Original persona',
       secrets: [],
     });
     expect(onClose).not.toHaveBeenCalled();
@@ -82,5 +89,17 @@ describe('AvatarConfigModal save behavior', () => {
 
     expect(storeMocks.updateAvatar).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the dedicated persona editor and applies its saved value locally', () => {
+    render(<AvatarConfigModal avatar={avatar} embedded isOpen={true} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('avatar.tabs.persona'));
+    expect(screen.queryByTestId('save-avatar-button')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('mock-persona-editor'));
+
+    expect(storeMocks.updateAvatar).toHaveBeenCalledWith('avatar-1', {
+      persona: 'Edited persona',
+    });
   });
 });

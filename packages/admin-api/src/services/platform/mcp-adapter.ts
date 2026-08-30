@@ -91,6 +91,7 @@ function createReadOnlyMCPServices(
     full.profile = {
       ...full.profile,
       updateProfile: async () => {},
+      updatePersona: async () => ({ persona: '', tokenDelta: 0 }),
       setProfileImage: async () => ({ url: '' }),
       saveProfileImage: async () => {},
       setCharacterReference: async () => ({ url: '' }),
@@ -268,6 +269,19 @@ function createCoreMCPServices(
       },
       updateProfile: async (targetAvatarId, updates) => {
         await svc.avatars.updateAvatar(targetAvatarId, updates, session);
+      },
+      updatePersona: async (targetAvatarId, persona) => {
+        if (targetAvatarId !== _avatarId) {
+          throw new Error('Persona tools can only update the active avatar');
+        }
+        const result = await svc.persona.updatePersona({
+          avatarId: _avatarId,
+          persona,
+          session,
+          actorId: session.email,
+          actorType: session.isAdmin ? 'admin' : 'owner',
+        });
+        return { persona: result.persona, tokenDelta: result.tokenDelta };
       },
       setProfileImage: async (targetAvatarId, source) => {
         const result = await svc.media.setProfileImage(targetAvatarId, source);

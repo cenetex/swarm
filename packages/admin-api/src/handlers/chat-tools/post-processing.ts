@@ -7,7 +7,7 @@
  * - Stale text filtering
  * - Media extraction from tool results
  * - Pending job detection
- * - Avatar update detection (profile image, name)
+ * - Avatar update detection (profile image, name, persona)
  * - Model config surfacing
  */
 import { logger, extractThinking } from '@swarm/core';
@@ -158,14 +158,14 @@ export function extractPendingJobs(
 }
 
 /**
- * Detect avatar updates (profile image URL, name) from tool results.
+ * Detect avatar updates (profile image URL, name, persona) from tool results.
  */
 export async function detectAvatarUpdates(
   toolCalls: SdkToolCall[],
   toolResults: ToolResult[],
   avatarId: string | undefined
-): Promise<{ profileImageUrl?: string; name?: string }> {
-  const updates: { profileImageUrl?: string; name?: string } = {};
+): Promise<{ profileImageUrl?: string; name?: string; persona?: string }> {
+  const updates: { profileImageUrl?: string; name?: string; persona?: string } = {};
   const toolCallNames = new Map(toolCalls.map(tc => [String(tc.id), String(tc.name)]));
   const toolCallArgs = new Map(toolCalls.map(tc => [String(tc.id), tc.arguments]));
 
@@ -203,6 +203,13 @@ export async function detectAvatarUpdates(
           }
 
           if (updates.name) logger.info('Avatar name updated', { name: updates.name });
+        }
+      }
+
+      if (toolName === 'update_my_persona' || toolName === 'update_my_profile') {
+        if (parsed.success && typeof parsed.data?.persona === 'string') {
+          updates.persona = parsed.data.persona;
+          logger.info('Avatar persona updated', { avatarId });
         }
       }
     } catch {
