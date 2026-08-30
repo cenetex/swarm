@@ -52,12 +52,12 @@ beforeEach(() => {
   vi.mocked(hostedApi.disconnectHostedProvider).mockResolvedValue(disconnected);
   vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([]);
   vi.mocked(hostedApi.createHostedAvatar).mockResolvedValue({
-    avatarId: 'avatar-new',
-    name: 'Public Ada',
+    avatarId: 'new-companion',
+    name: 'Nova',
     status: 'shell',
     createdAt: 1,
     updatedAt: 1,
-    slug: 'public-ada-new',
+    slug: 'nova-new',
     visibility: 'public',
     listed: true,
     revisionId: `sha256:${'a'.repeat(64)}`,
@@ -133,7 +133,7 @@ describe('HostedApp', () => {
     expect(hostedApi.disconnectHostedProvider).toHaveBeenCalledOnce();
   });
 
-  it('keeps chat primary and exposes one responsive workspace management surface', async () => {
+  it('keeps chat primary and uses permanent Chat, Crew, and Setup destinations', async () => {
     authenticate();
     vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
     vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
@@ -152,28 +152,58 @@ describe('HostedApp', () => {
 
     render(<HostedApp />);
 
-    expect(screen.getByRole('region', { name: /hosted chat/i })).toBeInTheDocument();
-    const manage = screen.getByRole('button', { name: /^manage$/i });
-    const management = screen.getByRole('complementary', { name: /workspace management/i });
-    expect(manage).toHaveAttribute('aria-expanded', 'false');
-    expect(management).toHaveAttribute('data-mobile-open', 'false');
+    const chat = screen.getByRole('button', { name: /^chat$/i });
+    const crew = screen.getByRole('button', { name: /^crew$/i });
+    const setup = screen.getByRole('button', { name: /^setup$/i });
+    const crewRegion = screen.getByRole('complementary', { name: /^crew$/i });
+    const setupRegion = screen.getByRole('complementary', { name: /^setup$/i });
 
-    fireEvent.click(manage);
+    expect(screen.getByRole('region', { name: /hosted chat/i })).toHaveAttribute('data-mobile-active', 'true');
+    expect(chat).toHaveAttribute('aria-pressed', 'true');
+    expect(crewRegion).toHaveAttribute('data-mobile-active', 'false');
+    expect(setupRegion).toHaveAttribute('data-mobile-active', 'false');
+    expect(screen.queryByRole('button', { name: /^manage$/i })).not.toBeInTheDocument();
 
-    expect(manage).toHaveAttribute('aria-expanded', 'true');
-    expect(management).toHaveAttribute('data-mobile-open', 'true');
-    expect(await screen.findByRole('button', { name: /^Jax/u })).toHaveAttribute('aria-current', 'true');
+    fireEvent.click(crew);
+
+    expect(crew).toHaveAttribute('aria-pressed', 'true');
+    expect(crewRegion).toHaveAttribute('data-mobile-active', 'true');
+    expect(await screen.findByRole('button', { name: /Jax/u })).toHaveAttribute('aria-current', 'true');
 
     const assistantMessage = await screen.findByLabelText('Jax message');
     const userMessage = screen.getByLabelText('You message');
     expect(assistantMessage).toHaveAttribute('data-message-role', 'assistant');
-    expect(assistantMessage).not.toHaveClass('rounded-2xl');
+    expect(assistantMessage.className).not.toMatch(/rounded/u);
     expect(userMessage).toHaveAttribute('data-message-role', 'user');
-    expect(userMessage).toHaveClass('border-l-brand-400');
+    expect(userMessage.className).not.toMatch(/rounded/u);
 
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(manage).toHaveAttribute('aria-expanded', 'false');
-    expect(management).toHaveAttribute('data-mobile-open', 'false');
+    fireEvent.click(setup);
+    expect(setup).toHaveAttribute('aria-pressed', 'true');
+    expect(setupRegion).toHaveAttribute('data-mobile-active', 'true');
+    const technicalDetails = screen.getByText(/^Technical details$/u).closest('details');
+    expect(technicalDetails).not.toHaveAttribute('open');
+  });
+
+  it('creates an authored companion from Crew and returns to Chat', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    render(<HostedApp />);
+
+    await waitFor(() => expect(hostedApi.listHostedAvatars).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: /^crew$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^create$/i }));
+
+    const name = screen.getByLabelText(/companion name/i);
+    fireEvent.change(name, { target: { value: 'Nova' } });
+    fireEvent.click(screen.getByRole('button', { name: /meet this companion/i }));
+
+    await waitFor(() => expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith({
+      name: 'Nova',
+      visibility: 'public',
+      listed: true,
+    }));
+    expect(screen.getByRole('button', { name: /^chat$/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findAllByRole('img', { name: /Nova portrait/i })).toHaveLength(2);
   });
 
   it('shows Telegram as the second connector and clears the write-only token immediately', async () => {
@@ -188,10 +218,9 @@ describe('HostedApp', () => {
     }]);
     render(<HostedApp />);
 
-    expect(await screen.findByText('Connector 2')).toBeInTheDocument();
     const token = await screen.findByLabelText(/botfather token/i);
     fireEvent.change(token, { target: { value: testBotToken } });
-    fireEvent.click(screen.getByRole('button', { name: /connect telegram bot/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /connect telegram bot/i }));
 
     await waitFor(() => expect(hostedApi.connectHostedTelegram).toHaveBeenCalledWith(
       'avatar-1',
@@ -208,10 +237,15 @@ describe('HostedApp', () => {
     authenticate();
     render(<HostedApp />);
 
-    fireEvent.change(await screen.findByLabelText(/avatar name/i), { target: { value: 'Public Ada' } });
+    await waitFor(() => expect(hostedApi.listHostedAvatars).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: /^crew$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^create$/i }));
+
+    fireEvent.change(screen.getByLabelText(/companion name/i), { target: { value: 'Public Ada' } });
+    fireEvent.click(screen.getByText(/identity and sharing/i));
     fireEvent.change(screen.getByLabelText(/public description/i), { target: { value: 'An open research mind.' } });
-    fireEvent.change(screen.getByLabelText(/public starting prompt/i), { target: { value: 'Think in public.' } });
-    fireEvent.click(screen.getByRole('button', { name: /publish portable avatar/i }));
+    fireEvent.change(screen.getByLabelText(/starting character/i), { target: { value: 'Think in public.' } });
+    fireEvent.click(screen.getByRole('button', { name: /meet this companion/i }));
 
     await waitFor(() => expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith({
       name: 'Public Ada',
