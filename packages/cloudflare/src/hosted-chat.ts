@@ -682,12 +682,9 @@ async function callOpenRouter(
   fetchImpl: typeof fetch,
 ): Promise<{ ok: true; content: string } | HostedModelFailure> {
   const endpoint = env.SWARM_OPENROUTER_CHAT_URL?.trim() || 'https://openrouter.ai/api/v1/chat/completions';
-  const systemContent = [
-    `You are ${avatar.name}.`,
-    avatar.description || '',
-    avatar.persona || '',
-    'Answer clearly and briefly. Do not claim tools or actions that are not present in this chat.',
-  ].filter(Boolean).join('\n\n');
+  const systemMessages = avatar.persona?.trim()
+    ? [{ role: 'system' as const, content: avatar.persona }]
+    : [];
   let response: Response;
   try {
     response = await fetchImpl(endpoint, {
@@ -702,7 +699,7 @@ async function callOpenRouter(
         model: env.SWARM_OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL,
         max_tokens: 512,
         messages: [
-          { role: 'system', content: systemContent },
+          ...systemMessages,
           ...messages.map((message) => ({ role: message.role, content: message.content })),
         ],
       }),
