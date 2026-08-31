@@ -252,6 +252,38 @@ describe('hosted X connector', () => {
     });
   });
 
+  it('returns a bounded redacted runtime detail for a network failure', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    const sessionToken = 'hosted-x-network-session';
+    const now = Date.now();
+    state.db.query(`insert into swarm_sessions
+      (session_hash, account_id, wallet_address, created_at, expires_at)
+      values (?, 'account-1', 'wallet-1', ?, ?)`).run(await sha256(sessionToken), now, now + 60_000);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new TypeError(`connect failed for ${env.SWARM_X_API_KEY} using ${env.SWARM_X_API_SECRET}`);
+    }) as typeof fetch;
+
+    try {
+      const response = await worker.fetch(new Request(
+        'https://next.swarm.rati.chat/api/auth/x/start?avatarId=avatar-1',
+        { headers: { Cookie: hostedSessionCookie(sessionToken).split(';', 1)[0] ?? '' } },
+      ), env);
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        error: 'X could not be reached.',
+        code: 'x_unavailable',
+        stage: 'network',
+        upstreamStatus: 0,
+        networkDetail: 'TypeError: connect failed for [redacted] using [redacted]',
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('separates an outbound network failure from an X server response', async () => {
     const { state, env } = setup();
     resources.push(state);
@@ -259,13 +291,16 @@ describe('hosted X connector', () => {
     const networkFailure = probeHostedXConfiguration(
       env,
       callbackUrl,
-      (async () => { throw new Error('private network detail'); }) as typeof fetch,
+      (async () => {
+        throw new TypeError(`connection failed for ${env.SWARM_X_API_KEY} using ${env.SWARM_X_API_SECRET}`);
+      }) as typeof fetch,
       1_000,
     );
     await expect(networkFailure).rejects.toMatchObject({
       status: 0,
       stage: 'network',
       message: 'X could not be reached.',
+      networkDetail: 'TypeError: connection failed for [redacted] using [redacted]',
     });
     const providerFailure = probeHostedXConfiguration(
       env,

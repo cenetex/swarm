@@ -971,6 +971,7 @@ export default {
           code,
           upstreamStatus: error.status,
           stage: error.stage,
+          ...(error.networkDetail ? { networkDetail: error.networkDetail } : {}),
         }));
         return json(
           {
@@ -978,6 +979,7 @@ export default {
             code,
             stage: error.stage,
             upstreamStatus: error.status,
+            ...(error.networkDetail ? { networkDetail: error.networkDetail } : {}),
             ...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }),
           },
           {
