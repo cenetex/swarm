@@ -218,6 +218,8 @@ OAuth start failures also return a safe `stage` and numeric `upstreamStatus`. `s
 not create the OAuth signature, `network` with status `0` means the Worker did not receive an HTTP response,
 and `response` means X replied with the displayed status. A `network` failure also includes a bounded runtime
 detail with configured credentials redacted. Provider response bodies remain private.
+The X request layer must call the runtime fetch function with `globalThis` as its receiver. Calling it as a
+property of a request-options object causes Cloudflare's `Illegal invocation` error before X receives the request.
 
 ## Deploy production resources
 
