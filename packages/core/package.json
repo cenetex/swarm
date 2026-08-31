@@ -57,21 +57,21 @@
     "lint": "eslint --max-warnings 70 src/"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.91.1",
-    "@aws-sdk/client-bedrock-runtime": "^3.1032.0",
-    "@aws-sdk/client-dynamodb": "^3.1032.0",
-    "@aws-sdk/client-s3": "^3.1032.0",
-    "@aws-sdk/client-secrets-manager": "^3.1032.0",
-    "@aws-sdk/client-sqs": "^3.1032.0",
-    "@aws-sdk/lib-dynamodb": "^3.1032.0",
-    "@solana/spl-token": "^0.4.0",
+    "@anthropic-ai/sdk": "^0.122.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1120.0",
+    "@aws-sdk/client-dynamodb": "^3.1120.0",
+    "@aws-sdk/client-s3": "^3.1120.0",
+    "@aws-sdk/client-secrets-manager": "^3.1120.0",
+    "@aws-sdk/client-sqs": "^3.1120.0",
+    "@aws-sdk/lib-dynamodb": "^3.1120.0",
+    "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.98.0",
-    "grammy": "^1.42.0",
+    "grammy": "^1.46.0",
     "jimp": "^1.6.1",
     "tweetnacl": "^1.0.3",
-    "twitter-api-v2": "^1.29.0",
-    "yaml": "^2.8.3",
-    "zod": "^4.3.6"
+    "twitter-api-v2": "^1.29.1",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
