@@ -70,6 +70,7 @@ import {
   HostedXConfigurationError,
   HostedXConflictError,
   HostedXNotFoundError,
+  HostedXProviderError,
   pollHostedXIntegrations,
   processHostedXQueueMessage,
 } from './hosted-x.js';
@@ -948,6 +949,40 @@ export default {
       if (error instanceof HostedXConflictError) return json({ error: detail }, { status: 409 });
       if (error instanceof HostedXNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof HostedXConfigurationError) return json({ error: detail }, { status: 503 });
+      if (error instanceof HostedXProviderError) {
+        const code = error.status === 401 || error.status === 403
+          ? 'x_app_configuration_rejected'
+          : error.status === 429
+            ? 'x_rate_limited'
+            : error.status === 0 || error.status >= 500
+              ? 'x_unavailable'
+              : 'x_oauth_rejected';
+        const status = error.status === 429
+          ? 429
+          : error.status === 0 || error.status >= 500
+            ? 503
+            : 502;
+        console.warn(JSON.stringify({
+          level: 'WARN',
+          subsystem: 'hosted-x',
+          event: 'provider_request_failed',
+          code,
+          upstreamStatus: error.status,
+        }));
+        return json(
+          {
+            error: detail,
+            code,
+            ...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }),
+          },
+          {
+            status,
+            ...(error.retryAfter === undefined
+              ? {}
+              : { headers: { 'Retry-After': String(error.retryAfter) } }),
+          },
+        );
+      }
       if (error instanceof PortableAvatarAuthorizationError) return json({ error: detail }, { status: 403 });
       if (error instanceof PortableAvatarConflictError) return json({ error: detail }, { status: 409 });
       if (error instanceof PortableAvatarDataError) return json({ error: detail }, { status: 500 });

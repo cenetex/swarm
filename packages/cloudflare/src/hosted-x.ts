@@ -112,7 +112,7 @@ export class HostedXNotFoundError extends Error {
   }
 }
 
-class XApiError extends Error {
+export class HostedXProviderError extends Error {
   constructor(
     message: string,
     readonly status: number,
@@ -120,7 +120,7 @@ class XApiError extends Error {
     readonly ambiguous = false,
   ) {
     super(message);
-    this.name = 'XApiError';
+    this.name = 'HostedXProviderError';
   }
 }
 
@@ -128,7 +128,9 @@ function ensureWrite(result: { success: boolean; error?: string }, fallback: str
   if (!result.success) throw new Error(result.error ?? fallback);
 }
 
-function xAppCredentials(env: CloudflareHostedBindings): { apiKey: string; apiSecret: string } {
+type HostedXAppBindings = Pick<CloudflareHostedBindings, 'SWARM_X_API_KEY' | 'SWARM_X_API_SECRET'>;
+
+function xAppCredentials(env: HostedXAppBindings): { apiKey: string; apiSecret: string } {
   const apiKey = env.SWARM_X_API_KEY?.trim();
   const apiSecret = env.SWARM_X_API_SECRET?.trim();
   if (!apiKey || !apiSecret) throw new HostedXConfigurationError();
@@ -155,7 +157,7 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-async function oauthAuthorizationHeader(input: {
+export async function createHostedXAuthorizationHeader(input: {
   method: string;
   url: string;
   apiKey: string;
@@ -164,10 +166,11 @@ async function oauthAuthorizationHeader(input: {
   tokenSecret?: string;
   oauth?: Record<string, string>;
   now?: number;
+  nonce?: string;
 }): Promise<string> {
   const oauth: Record<string, string> = {
     oauth_consumer_key: input.apiKey,
-    oauth_nonce: randomToken(24),
+    oauth_nonce: input.nonce ?? randomToken(24),
     oauth_signature_method: 'HMAC-SHA1',
     oauth_timestamp: String(Math.floor((input.now ?? Date.now()) / 1_000)),
     oauth_version: '1.0',
@@ -215,7 +218,7 @@ function retryAfter(response: Response, now: number): number | undefined {
 }
 
 async function oauthFormRequest(input: {
-  env: CloudflareHostedBindings;
+  env: HostedXAppBindings;
   method: 'POST';
   url: string;
   token?: string;
@@ -230,7 +233,7 @@ async function oauthFormRequest(input: {
     response = await input.fetchImpl(input.url, {
       method: input.method,
       headers: {
-        Authorization: await oauthAuthorizationHeader({
+        Authorization: await createHostedXAuthorizationHeader({
           method: input.method,
           url: input.url,
           ...credentials,
@@ -243,18 +246,48 @@ async function oauthFormRequest(input: {
       },
     });
   } catch {
-    throw new XApiError('X is temporarily unavailable.', 0);
+    throw new HostedXProviderError('X is temporarily unavailable.', 0);
   }
   if (!response.ok) {
-    throw new XApiError(
+    throw new HostedXProviderError(
       response.status === 401 || response.status === 403
-        ? 'X rejected the application credentials or callback configuration.'
-        : 'X is temporarily unavailable.',
+        ? 'X rejected the app API Key, API Key Secret, or callback URL.'
+        : response.status === 429
+          ? 'X rate limit reached. Try again later.'
+          : response.status >= 500
+            ? 'X is temporarily unavailable.'
+            : 'X rejected the OAuth request.',
       response.status,
       retryAfter(response, input.now),
     );
   }
   return new URLSearchParams(await response.text());
+}
+
+function xRequestToken(response: URLSearchParams): { requestToken: string; requestSecret: string } {
+  const requestToken = response.get('oauth_token')?.trim() ?? '';
+  const requestSecret = response.get('oauth_token_secret')?.trim() ?? '';
+  if (!requestToken || !requestSecret || response.get('oauth_callback_confirmed') !== 'true') {
+    throw new HostedXConfigurationError('X did not confirm the configured OAuth callback.');
+  }
+  return { requestToken, requestSecret };
+}
+
+export async function probeHostedXConfiguration(
+  env: HostedXAppBindings,
+  callbackUrl: string,
+  fetchImpl: typeof fetch = fetch,
+  now = Date.now(),
+): Promise<void> {
+  const response = await oauthFormRequest({
+    env,
+    method: 'POST',
+    url: `${X_API_ORIGIN}/oauth/request_token`,
+    oauth: { oauth_callback: callbackUrl },
+    fetchImpl,
+    now,
+  });
+  xRequestToken(response);
 }
 
 async function xJsonRequest<T>(input: {
@@ -274,7 +307,7 @@ async function xJsonRequest<T>(input: {
     response = await input.fetchImpl(input.url, {
       method: input.method,
       headers: {
-        Authorization: await oauthAuthorizationHeader({
+        Authorization: await createHostedXAuthorizationHeader({
           method: input.method,
           url: input.url,
           ...credentials,
@@ -288,10 +321,10 @@ async function xJsonRequest<T>(input: {
       ...(input.body ? { body: JSON.stringify(input.body) } : {}),
     });
   } catch {
-    throw new XApiError('X is temporarily unavailable.', 0, undefined, input.delivery === true);
+    throw new HostedXProviderError('X is temporarily unavailable.', 0, undefined, input.delivery === true);
   }
   if (!response.ok) {
-    throw new XApiError(
+    throw new HostedXProviderError(
       response.status === 401 || response.status === 403
         ? 'X authorization is no longer valid.'
         : response.status === 429
@@ -307,7 +340,12 @@ async function xJsonRequest<T>(input: {
   try {
     return await response.json() as T;
   } catch {
-    throw new XApiError('X returned an invalid response.', response.status, undefined, input.delivery === true);
+    throw new HostedXProviderError(
+      'X returned an invalid response.',
+      response.status,
+      undefined,
+      input.delivery === true,
+    );
   }
 }
 
@@ -380,11 +418,7 @@ export async function beginHostedXConnect(
     fetchImpl,
     now,
   });
-  const requestToken = response.get('oauth_token')?.trim() ?? '';
-  const requestSecret = response.get('oauth_token_secret')?.trim() ?? '';
-  if (!requestToken || !requestSecret || response.get('oauth_callback_confirmed') !== 'true') {
-    throw new HostedXConfigurationError('X did not confirm the configured OAuth callback.');
-  }
+  const { requestToken, requestSecret } = xRequestToken(response);
   const tokenHash = await sha256(requestToken);
   const secrets = createCloudflareHostedPlatform(env).secrets;
   const scope = secretScope(session.accountId, input.avatarId);
@@ -506,10 +540,10 @@ export async function completeHostedXConnect(
       now,
     ));
   } catch (error) {
-    if (error instanceof XApiError && (error.status === 401 || error.status === 403)) {
+    if (error instanceof HostedXProviderError && (error.status === 401 || error.status === 403)) {
       throw new HostedXConfigurationError('X did not grant the read and write permissions needed for mentions and replies.');
     }
-    lastErrorCode = error instanceof XApiError && error.status === 429
+    lastErrorCode = error instanceof HostedXProviderError && error.status === 429
       ? 'x_rate_limited'
       : 'x_bootstrap_failed';
   }
@@ -738,10 +772,11 @@ async function recordPollFailure(
   error: unknown,
   now: number,
 ): Promise<void> {
-  const authenticationFailure = error instanceof XApiError && (error.status === 401 || error.status === 403);
+  const authenticationFailure = error instanceof HostedXProviderError
+    && (error.status === 401 || error.status === 403);
   const errorCode = authenticationFailure
     ? 'x_reauthorization_required'
-    : error instanceof XApiError && error.status === 429
+    : error instanceof HostedXProviderError && error.status === 429
       ? 'x_rate_limited'
       : 'x_poll_failed';
   const updated = await env.SWARM_STATE.prepare(
@@ -768,7 +803,7 @@ async function pollIntegration(
   await enqueuePendingMentions(env, row.integration_id, now);
   const credentials = await xCredentialsForRow(env, row);
   if (!credentials) {
-    await recordPollFailure(env, row, new XApiError('X credentials are missing.', 401), now);
+    await recordPollFailure(env, row, new HostedXProviderError('X credentials are missing.', 401), now);
     return;
   }
   try {
@@ -900,7 +935,12 @@ export async function processHostedXQueueMessage(
   }
   const credentials = await xCredentialsForRow(env, integration);
   if (!credentials) {
-    await recordPollFailure(env, integration, new XApiError('X credentials are missing.', 401), now);
+    await recordPollFailure(
+      env,
+      integration,
+      new HostedXProviderError('X credentials are missing.', 401),
+      now,
+    );
     return retryOrFail(env, mention, 'x_credentials_missing', false, now);
   }
   let content = mention.response_text;
@@ -935,7 +975,7 @@ export async function processHostedXQueueMessage(
       delivery: true,
     });
   } catch (error) {
-    if (error instanceof XApiError) {
+    if (error instanceof HostedXProviderError) {
       if (error.ambiguous) {
         await setMentionState(env, mention, 'unknown', now, 'x_delivery_unknown', content);
         return { action: 'ack' };
