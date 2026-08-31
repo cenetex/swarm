@@ -22,6 +22,7 @@ describe('renderWranglerConfig', () => {
     const config = renderWranglerConfig(await baseConfig(), validValues, 'preview');
 
     expect(config.name).toBe('swarm-hosted-preview');
+    expect(config.compatibility_flags).toEqual(['global_fetch_strictly_public']);
     expect(config.vars.SWARM_ENV).toBe('preview');
     expect(config.vars.SWARM_HOSTED_ENABLED).toBe('1');
     expect(config.d1_databases[0].database_id).toBe(validValues.SWARM_CF_D1_DATABASE_ID);

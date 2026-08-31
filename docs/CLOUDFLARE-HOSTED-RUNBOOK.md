@@ -205,6 +205,8 @@ delivery state; request-token secrets and access credentials stay in the encrypt
 the next scheduled check. A reply in `unknown` state is intentionally not retried because the POST may have
 reached X. Check the source conversation before attempting any manual recovery. Logs may include the opaque
 integration ID and safe error code, but never an X token, post text, username, wallet, account ID, or avatar ID.
+The Worker enables Cloudflare's `global_fetch_strictly_public` compatibility flag so calls to X, which is also
+served through Cloudflare, traverse X's public edge instead of trying to bypass its Worker and security layer.
 
 If OAuth start returns `x_app_configuration_rejected`, check all three items together:
 
