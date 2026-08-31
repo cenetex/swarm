@@ -487,6 +487,9 @@ describe('Cloudflare hosted chat runtime', () => {
     const env = testEnv(db, { send: async (message) => sent.push(message as HostedChatQueueMessage) });
     const owner = session('acct-a');
     const avatar = await configuredAvatar(env, owner);
+    const avatarRow = db.avatars.get(key(owner.accountId, avatar.avatarId));
+    if (!avatarRow) throw new Error('Expected configured avatar.');
+    avatarRow.persona = 'Be curious, playful, and direct.';
 
     const first = await enqueueHostedChat(
       env,
@@ -523,8 +526,39 @@ describe('Cloudflare hosted chat runtime', () => {
     ]);
     expect(modelCalls).toBe(1);
     expect(authorization).toBe('Bearer sk-secret-user-key');
-    expect(JSON.parse(modelRequest)).toMatchObject({ model: 'openrouter/free' });
+    const request = JSON.parse(modelRequest) as {
+      model: string;
+      messages: Array<{ role: string; content: string }>;
+    };
+    expect(request.model).toBe('openrouter/free');
+    expect(request.messages).toEqual([
+      { role: 'system', content: 'Be curious, playful, and direct.' },
+      { role: 'user', content: 'Hello' },
+    ]);
     expect(JSON.stringify({ job, sent, db: [...db.jobs.values()] })).not.toContain('sk-secret-user-key');
+  });
+
+  it('sends no system message when the avatar has no persona', async () => {
+    const db = new ChatMemoryD1();
+    const sent: HostedChatQueueMessage[] = [];
+    const env = testEnv(db, { send: async (message) => sent.push(message as HostedChatQueueMessage) });
+    const owner = session('acct-a');
+    const avatar = await configuredAvatar(env, owner);
+    await enqueueHostedChat(
+      env,
+      owner,
+      { avatarId: avatar.avatarId, message: 'Hello', requestId: 'request-1' },
+    );
+
+    let modelRequest = '';
+    const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
+      modelRequest = String(init?.body ?? '');
+      return Response.json({ choices: [{ message: { content: 'Hello.' } }] });
+    }) as typeof fetch;
+    await expect(processHostedChatQueueMessage(env, sent[0], fetchImpl)).resolves.toEqual({ action: 'ack' });
+
+    const request = JSON.parse(modelRequest) as { messages: Array<{ role: string; content: string }> };
+    expect(request.messages).toEqual([{ role: 'user', content: 'Hello' }]);
   });
 
   it('fails before enqueue when the account has no OpenRouter key', async () => {
