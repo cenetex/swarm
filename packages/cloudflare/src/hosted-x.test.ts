@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'bun:test';
-import type { HostedSession } from './auth.js';
+import { hostedSessionCookie, sha256, type HostedSession } from './auth.js';
 import type {
   CloudflareD1Database,
   CloudflareD1PreparedStatement,
@@ -12,12 +12,16 @@ import { encodeHostedSecretKey } from './secret-crypto.js';
 import {
   beginHostedXConnect,
   completeHostedXConnect,
+  createHostedXAuthorizationHeader,
   disconnectHostedX,
   getHostedXStatus,
+  HostedXProviderError,
   pollHostedXIntegrations,
+  probeHostedXConfiguration,
   processHostedXQueueMessage,
   type HostedXQueueMessage,
 } from './hosted-x.js';
+import worker from './worker.js';
 
 class SqliteStatement implements CloudflareD1PreparedStatement {
   private values: unknown[] = [];
@@ -169,6 +173,82 @@ afterEach(() => {
 });
 
 describe('hosted X connector', () => {
+  it('matches the OAuth 1.0 signature example from RFC 5849', async () => {
+    const authorization = await createHostedXAuthorizationHeader({
+      method: 'GET',
+      url: 'http://photos.example.net/photos?file=vacation.jpg&size=original',
+      apiKey: 'dpf43f3p2l4k3l03',
+      apiSecret: 'kd94hf93k423kf44',
+      token: 'nnch734d00sl2jdk',
+      tokenSecret: 'pfkkdhi9sl3r4s00',
+      nonce: 'kllo9940pd9333jh',
+      now: 1_191_242_096_000,
+    });
+
+    expect(authorization).toContain('oauth_signature="tR3%2BTy81lMeYAr%2FFid0kMTYa%2FWM%3D"');
+  });
+
+  it('probes the exact callback without exposing the request token', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    const calls: Array<{ url: string; authorization: string; body?: string }> = [];
+
+    await expect(probeHostedXConfiguration(
+      env,
+      'https://next.swarm.rati.chat/api/auth/x/callback',
+      oauthFetch(calls),
+      1_000,
+    )).resolves.toBeUndefined();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.authorization).toContain(
+      'oauth_callback="https%3A%2F%2Fnext.swarm.rati.chat%2Fapi%2Fauth%2Fx%2Fcallback"',
+    );
+  });
+
+  it('returns a safe error when X rejects the app configuration', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    const sessionToken = 'hosted-x-worker-session';
+    const now = Date.now();
+    state.db.query(`insert into swarm_sessions
+      (session_hash, account_id, wallet_address, created_at, expires_at)
+      values (?, 'account-1', 'wallet-1', ?, ?)`).run(await sha256(sessionToken), now, now + 60_000);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response('private upstream detail', { status: 403 })) as typeof fetch;
+
+    try {
+      const response = await worker.fetch(new Request(
+        'https://next.swarm.rati.chat/api/auth/x/start?avatarId=avatar-1',
+        { headers: { Cookie: hostedSessionCookie(sessionToken).split(';', 1)[0] ?? '' } },
+      ), env);
+
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({
+        error: 'X rejected the app API Key, API Key Secret, or callback URL.',
+        code: 'x_app_configuration_rejected',
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('keeps provider failures typed without retaining upstream response bodies', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    const rejected = probeHostedXConfiguration(
+      env,
+      'https://next.swarm.rati.chat/api/auth/x/callback',
+      (async () => new Response('private upstream detail', { status: 403 })) as typeof fetch,
+      1_000,
+    );
+
+    await expect(rejected).rejects.toBeInstanceOf(HostedXProviderError);
+    await expect(rejected).rejects.toMatchObject({
+      status: 403,
+      message: 'X rejected the app API Key, API Key Secret, or callback URL.',
+    });
+  });
+
   it('uses three-legged OAuth and keeps request and access secrets encrypted', async () => {
     const { state, env } = setup();
     resources.push(state);

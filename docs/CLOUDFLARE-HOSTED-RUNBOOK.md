@@ -88,7 +88,11 @@ For production before cutover, the callback is:
 https://next.swarm.rati.chat/api/auth/x/callback
 ```
 
-Save the app API key as `SWARM_X_API_KEY` and the app API secret as `SWARM_X_API_SECRET` in the matching protected GitHub environment. Do not store user access tokens in GitHub. The Worker exchanges the short-lived request credential on the callback, encrypts the resulting user token and token secret with the hosted keyring, and scopes them to the owning account and avatar.
+Save the OAuth 1.0a **API Key** as `SWARM_X_API_KEY` and its **API Key Secret** as
+`SWARM_X_API_SECRET` in the matching protected GitHub environment. Do not use the OAuth 2.0 Client ID,
+Client Secret, Bearer Token, Access Token, or Access Token Secret for these values. Do not store user access
+tokens in GitHub. The Worker exchanges the short-lived request credential on the callback, encrypts the
+resulting user token and token secret with the hosted keyring, and scopes them to the owning account and avatar.
 
 The connector uses `GET /2/users/{id}/mentions` and `POST /2/tweets`. X API usage is billed by X under the developer app account, so configure spending limits and usage alerts in the X developer console before production enablement. Existing mentions are used only to establish the initial cursor and are not backfilled; new mentions are checked once per minute.
 
@@ -127,7 +131,11 @@ The deployment workflow supplies `SWARM_USER_SECRET_KEK`, `SWARM_X_API_KEY`, and
 3. Select `preview` and leave the production confirmation empty.
 4. Run the workflow.
 
-The workflow validates the package, renders a temporary configuration from protected values, applies D1 migrations, uploads the wrapping key with the Worker, deploys, and checks:
+The workflow validates the package and asks X for a short-lived request token using the protected API Key pair
+and the exact environment callback. This probe never prints or stores the returned token. If X rejects the
+credentials, OAuth 1.0a settings, or callback, the workflow stops before changing the Worker. It then renders a
+temporary configuration from protected values, applies D1 migrations, uploads the wrapping key with the Worker,
+deploys, and checks:
 
 ```text
 GET /health
@@ -197,6 +205,12 @@ delivery state; request-token secrets and access credentials stay in the encrypt
 the next scheduled check. A reply in `unknown` state is intentionally not retried because the POST may have
 reached X. Check the source conversation before attempting any manual recovery. Logs may include the opaque
 integration ID and safe error code, but never an X token, post text, username, wallet, account ID, or avatar ID.
+
+If OAuth start returns `x_app_configuration_rejected`, check all three items together:
+
+1. the GitHub environment contains the OAuth 1.0a API Key and API Key Secret from the same X app;
+2. OAuth 1.0a user authentication is enabled with read and write permission; and
+3. the callback allowlist contains the exact URL, including protocol and path, with no added trailing slash.
 
 ## Deploy production resources
 

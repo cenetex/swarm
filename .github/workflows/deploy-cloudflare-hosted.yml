@@ -136,6 +136,9 @@ jobs:
           pnpm --filter @swarm/cloudflare test
           pnpm --filter @swarm/cloudflare deploy:dry-run
 
+      - name: Probe protected X application configuration
+        run: pnpm --filter @swarm/cloudflare probe:x
+
       - name: Render protected deployment configuration
         run: >-
           node packages/cloudflare/scripts/render-wrangler-config.mjs
