@@ -119,6 +119,7 @@ export class HostedXProviderError extends Error {
     readonly retryAfter?: number,
     readonly ambiguous = false,
     readonly stage: 'signing' | 'network' | 'response' = 'response',
+    readonly networkDetail?: string,
   ) {
     super(message);
     this.name = 'HostedXProviderError';
@@ -136,6 +137,17 @@ function xAppCredentials(env: HostedXAppBindings): { apiKey: string; apiSecret: 
   const apiSecret = env.SWARM_X_API_SECRET?.trim();
   if (!apiKey || !apiSecret) throw new HostedXConfigurationError();
   return { apiKey, apiSecret };
+}
+
+function safeNetworkDetail(error: unknown, sensitiveValues: string[]): string {
+  const rawName = error instanceof Error ? error.name : 'UnknownError';
+  const name = rawName.replace(/[^a-z0-9_.-]/giu, '').slice(0, 40) || 'Error';
+  let message = error instanceof Error ? error.message : String(error);
+  for (const value of sensitiveValues) {
+    if (value) message = message.split(value).join('[redacted]');
+  }
+  message = message.split('\r').join(' ').split('\n').join(' ').trim().slice(0, 200);
+  return message ? `${name}: ${message}` : name;
 }
 
 function secretScope(accountId: string, avatarId: string) {
@@ -252,8 +264,15 @@ async function oauthFormRequest(input: {
         Accept: 'application/x-www-form-urlencoded',
       },
     });
-  } catch {
-    throw new HostedXProviderError('X could not be reached.', 0, undefined, false, 'network');
+  } catch (error) {
+    throw new HostedXProviderError(
+      'X could not be reached.',
+      0,
+      undefined,
+      false,
+      'network',
+      safeNetworkDetail(error, [credentials.apiKey, credentials.apiSecret]),
+    );
   }
   if (!response.ok) {
     throw new HostedXProviderError(
@@ -335,13 +354,19 @@ async function xJsonRequest<T>(input: {
       },
       ...(input.body ? { body: JSON.stringify(input.body) } : {}),
     });
-  } catch {
+  } catch (error) {
     throw new HostedXProviderError(
       'X could not be reached.',
       0,
       undefined,
       input.delivery === true,
       'network',
+      safeNetworkDetail(error, [
+        credentials.apiKey,
+        credentials.apiSecret,
+        input.accessToken,
+        input.accessSecret,
+      ]),
     );
   }
   if (!response.ok) {

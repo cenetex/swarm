@@ -216,7 +216,8 @@ If OAuth start returns `x_app_configuration_rejected`, check all three items tog
 
 OAuth start failures also return a safe `stage` and numeric `upstreamStatus`. `signing` means the Worker could
 not create the OAuth signature, `network` with status `0` means the Worker did not receive an HTTP response,
-and `response` means X replied with the displayed status. Provider response bodies remain private.
+and `response` means X replied with the displayed status. A `network` failure also includes a bounded runtime
+detail with configured credentials redacted. Provider response bodies remain private.
 
 ## Deploy production resources
 
