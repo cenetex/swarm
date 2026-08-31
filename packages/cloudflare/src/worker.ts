@@ -950,7 +950,9 @@ export default {
       if (error instanceof HostedXNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof HostedXConfigurationError) return json({ error: detail }, { status: 503 });
       if (error instanceof HostedXProviderError) {
-        const code = error.status === 401 || error.status === 403
+        const code = error.stage === 'signing'
+          ? 'x_runtime_error'
+          : error.status === 401 || error.status === 403
           ? 'x_app_configuration_rejected'
           : error.status === 429
             ? 'x_rate_limited'
@@ -968,11 +970,14 @@ export default {
           event: 'provider_request_failed',
           code,
           upstreamStatus: error.status,
+          stage: error.stage,
         }));
         return json(
           {
             error: detail,
             code,
+            stage: error.stage,
+            upstreamStatus: error.status,
             ...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }),
           },
           {

@@ -118,6 +118,7 @@ export class HostedXProviderError extends Error {
     readonly status: number,
     readonly retryAfter?: number,
     readonly ambiguous = false,
+    readonly stage: 'signing' | 'network' | 'response' = 'response',
   ) {
     super(message);
     this.name = 'HostedXProviderError';
@@ -228,25 +229,31 @@ async function oauthFormRequest(input: {
   now: number;
 }): Promise<URLSearchParams> {
   const credentials = xAppCredentials(input.env);
+  let authorization: string;
+  try {
+    authorization = await createHostedXAuthorizationHeader({
+      method: input.method,
+      url: input.url,
+      ...credentials,
+      ...(input.token ? { token: input.token } : {}),
+      ...(input.tokenSecret ? { tokenSecret: input.tokenSecret } : {}),
+      ...(input.oauth ? { oauth: input.oauth } : {}),
+      now: input.now,
+    });
+  } catch {
+    throw new HostedXProviderError('Hosted X could not sign the OAuth request.', 0, undefined, false, 'signing');
+  }
   let response: Response;
   try {
     response = await input.fetchImpl(input.url, {
       method: input.method,
       headers: {
-        Authorization: await createHostedXAuthorizationHeader({
-          method: input.method,
-          url: input.url,
-          ...credentials,
-          ...(input.token ? { token: input.token } : {}),
-          ...(input.tokenSecret ? { tokenSecret: input.tokenSecret } : {}),
-          ...(input.oauth ? { oauth: input.oauth } : {}),
-          now: input.now,
-        }),
+        Authorization: authorization,
         Accept: 'application/x-www-form-urlencoded',
       },
     });
   } catch {
-    throw new HostedXProviderError('X is temporarily unavailable.', 0);
+    throw new HostedXProviderError('X could not be reached.', 0, undefined, false, 'network');
   }
   if (!response.ok) {
     throw new HostedXProviderError(
@@ -259,6 +266,8 @@ async function oauthFormRequest(input: {
             : 'X rejected the OAuth request.',
       response.status,
       retryAfter(response, input.now),
+      false,
+      'response',
     );
   }
   return new URLSearchParams(await response.text());
@@ -302,26 +311,38 @@ async function xJsonRequest<T>(input: {
   delivery?: boolean;
 }): Promise<T> {
   const credentials = xAppCredentials(input.env);
+  let authorization: string;
+  try {
+    authorization = await createHostedXAuthorizationHeader({
+      method: input.method,
+      url: input.url,
+      ...credentials,
+      token: input.accessToken,
+      tokenSecret: input.accessSecret,
+      now: input.now,
+    });
+  } catch {
+    throw new HostedXProviderError('Hosted X could not sign the API request.', 0, undefined, false, 'signing');
+  }
   let response: Response;
   try {
     response = await input.fetchImpl(input.url, {
       method: input.method,
       headers: {
-        Authorization: await createHostedXAuthorizationHeader({
-          method: input.method,
-          url: input.url,
-          ...credentials,
-          token: input.accessToken,
-          tokenSecret: input.accessSecret,
-          now: input.now,
-        }),
+        Authorization: authorization,
         Accept: 'application/json',
         ...(input.body ? { 'Content-Type': 'application/json' } : {}),
       },
       ...(input.body ? { body: JSON.stringify(input.body) } : {}),
     });
   } catch {
-    throw new HostedXProviderError('X is temporarily unavailable.', 0, undefined, input.delivery === true);
+    throw new HostedXProviderError(
+      'X could not be reached.',
+      0,
+      undefined,
+      input.delivery === true,
+      'network',
+    );
   }
   if (!response.ok) {
     throw new HostedXProviderError(
@@ -335,6 +356,7 @@ async function xJsonRequest<T>(input: {
       response.status,
       retryAfter(response, input.now),
       input.delivery === true && response.status >= 500,
+      'response',
     );
   }
   try {
@@ -345,6 +367,7 @@ async function xJsonRequest<T>(input: {
       response.status,
       undefined,
       input.delivery === true,
+      'response',
     );
   }
 }

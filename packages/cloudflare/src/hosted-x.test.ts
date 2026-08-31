@@ -226,6 +226,8 @@ describe('hosted X connector', () => {
       expect(await response.json()).toEqual({
         error: 'X rejected the app API Key, API Key Secret, or callback URL.',
         code: 'x_app_configuration_rejected',
+        stage: 'response',
+        upstreamStatus: 403,
       });
     } finally {
       globalThis.fetch = originalFetch;
@@ -245,7 +247,36 @@ describe('hosted X connector', () => {
     await expect(rejected).rejects.toBeInstanceOf(HostedXProviderError);
     await expect(rejected).rejects.toMatchObject({
       status: 403,
+      stage: 'response',
       message: 'X rejected the app API Key, API Key Secret, or callback URL.',
+    });
+  });
+
+  it('separates an outbound network failure from an X server response', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    const callbackUrl = 'https://next.swarm.rati.chat/api/auth/x/callback';
+    const networkFailure = probeHostedXConfiguration(
+      env,
+      callbackUrl,
+      (async () => { throw new Error('private network detail'); }) as typeof fetch,
+      1_000,
+    );
+    await expect(networkFailure).rejects.toMatchObject({
+      status: 0,
+      stage: 'network',
+      message: 'X could not be reached.',
+    });
+    const providerFailure = probeHostedXConfiguration(
+      env,
+      callbackUrl,
+      (async () => new Response('private upstream detail', { status: 503 })) as typeof fetch,
+      1_000,
+    );
+    await expect(providerFailure).rejects.toMatchObject({
+      status: 503,
+      stage: 'response',
+      message: 'X is temporarily unavailable.',
     });
   });
 
