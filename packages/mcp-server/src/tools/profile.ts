@@ -24,6 +24,11 @@ export interface ProfileServices {
     description?: string;
     persona?: string;
   }) => Promise<void>;
+
+  updatePersona: (avatarId: string, persona: string) => Promise<{
+    persona: string;
+    tokenDelta: number;
+  }>;
   
   setProfileImage: (avatarId: string, source: 
     | { type: 'url'; url: string }
@@ -76,17 +81,44 @@ export const createProfileTools = (services: ProfileServices) => [
         return { success: false, error: 'Provide at least one field to update' };
       }
 
-      await services.updateProfile(context.avatarId, {
-        name: input.name,
-        description: input.description,
-        persona: input.persona,
-      });
+      const personaResult = input.persona
+        ? await services.updatePersona(context.avatarId, input.persona)
+        : undefined;
+      if (input.name || input.description) {
+        await services.updateProfile(context.avatarId, {
+          name: input.name,
+          description: input.description,
+        });
+      }
 
       return {
         success: true,
         data: {
           message: 'Profile updated!',
           updated: Object.keys(input).filter(k => input[k as keyof typeof input]),
+          ...(personaResult ? { persona: personaResult.persona, tokenDelta: personaResult.tokenDelta } : {}),
+        },
+      };
+    },
+  }),
+
+  defineTool({
+    name: 'update_my_persona',
+    description: 'Replace my persona to change my personality, expertise, behavior, or communication style.',
+    category: 'profile',
+    platforms: ['admin-ui', 'api'],
+    inputSchema: z.object({
+      persona: z.string().trim().min(1).describe('My complete new persona. This replaces the current persona.'),
+    }),
+    execute: async (input, context): Promise<ToolResult> => {
+      const result = await services.updatePersona(context.avatarId, input.persona);
+      return {
+        success: true,
+        data: {
+          message: 'Persona updated!',
+          persona: result.persona,
+          tokenDelta: result.tokenDelta,
+          updated: ['persona'],
         },
       };
     },

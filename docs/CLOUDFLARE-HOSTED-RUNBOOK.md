@@ -1,6 +1,6 @@
 # Cloudflare Hosted Worker Runbook
 
-This runbook deploys the browser-chat hosted runtime and its dedicated OAuth setup UI to an isolated Cloudflare Worker. Production is staged on `next.swarm.rati.chat`, then can replace the existing `swarm.rati.chat` static site through a reversible Worker route.
+This runbook deploys the browser-chat and Telegram hosted runtime and its dedicated connector UI to an isolated Cloudflare Worker. Production is staged on `next.swarm.rati.chat`, then can replace the existing `swarm.rati.chat` static site through a reversible Worker route.
 
 The normal release path is the **Deploy Cloudflare Hosted Worker** GitHub Actions workflow. Do not deploy production from a developer machine.
 
@@ -117,14 +117,33 @@ A successful status response must report a configured and available hosted runti
 
 After the automated checks pass, complete one manual preview flow:
 
-1. open the Worker root URL and connect a Solana wallet;
-2. sign the domain-bound session message;
-3. select **Connect OpenRouter securely** and complete OpenRouter OAuth;
-4. confirm the UI reports connected without displaying a credential;
-5. create an avatar;
-6. send a browser-chat message and wait for the Queue job to complete;
-7. disconnect OpenRouter and confirm the connected state clears;
-8. confirm that another wallet cannot read that avatar, job, or history.
+1. open the Worker root URL without a session and confirm the public registry loads;
+2. confirm `/sitemap.xml` and `/api/public/avatars` work without a session;
+3. open **Studio** and connect a Solana wallet;
+4. sign the domain-bound session message;
+5. create a default avatar before connecting a model, confirm it is public and listed, and download its portable artifact;
+6. confirm the anonymous project page exposes the same revision and never exposes a credential or private chat;
+7. select **Connect OpenRouter securely** and complete OpenRouter OAuth;
+8. confirm the UI reports connected without displaying a credential;
+9. send a browser-chat message and wait for the Queue job to complete;
+10. create a test bot with BotFather, paste its token into **Telegram — Connector 2**, and confirm the
+   token field clears without the token appearing in any later response;
+11. open the ownership link, send `/start`, return to Swarm, and refresh Telegram status;
+12. add the bot to a test group from the generated group link and confirm the group appears under **Bound groups**;
+13. mention the bot, reply to its response, and use `/ask`; confirm replies attach to the source message and
+    the source receives acknowledgement and completion reactions;
+14. in a forum supergroup, send addressed prompts in two topics and confirm each response stays in its source topic;
+15. send a photo with an addressed caption and confirm the caption is handled without downloading the photo;
+16. pause and enable the group in Swarm, confirming paused groups receive no response; use **Copy command for
+    an existing group** to bind a group where the bot is already present;
+17. remove the bot from the group and refresh Swarm; confirm membership is shown as unavailable;
+18. confirm an unbound private user, an unenabled group, and ordinary unmentioned group messages receive no response;
+19. disconnect Telegram, then confirm Bot API `getWebhookInfo` no longer reports the Swarm webhook;
+20. disconnect OpenRouter and confirm the connected state clears;
+21. confirm that another wallet cannot read that avatar, connector, group list, job, history, or private artifact;
+22. import the downloaded artifact into a clean preview environment and confirm the revision ID is unchanged.
+
+The hosted interface is chat-first. At desktop widths, account, provider, and avatar controls live in the workspace rail. At mobile widths, open **Manage** to reach those controls and confirm that closing it returns directly to the active conversation without horizontal overflow.
 
 The normal hosted flow is OAuth Authorization Code with PKCE S256. Do not ask a hosted user to paste an OpenRouter key. The callback exchanges the code inside the Worker, encrypts the resulting user credential for that account, and returns only connection status to the browser.
 
@@ -133,6 +152,18 @@ Wallet selection must immediately start the selected adapter connection. The hos
 Solflare starts its connection UI in a full-page frame from `https://connect.solflare.com`. The hosted Content Security Policy allows that exact origin, while still blocking arbitrary third-party frames. The opener policy uses `same-origin-allow-popups` so a selected wallet can finish its own cross-origin popup handshake without giving unrelated sites permission to frame Swarm.
 
 Preview chat defaults to OpenRouter's zero-cost `openrouter/free` router. A paid model can be selected with `SWARM_OPENROUTER_MODEL`. Provider failures must remain safe but useful: expired authorization, missing credits, unavailable models, rejected input, and temporary outages have separate user messages. Logs may contain the HTTP status and Swarm request ID, but never the OpenRouter key, prompt, response body, wallet address, or account ID.
+
+Telegram uses the Bot API webhook secret header and an opaque path. The BotFather token, webhook secret,
+and binding codes must never appear in Worker logs. D1 metadata may contain the bot id and username but
+must contain only hashes for binding codes. A delivery in `unknown` state is intentionally not retried;
+check Telegram before deciding on any manual resend. Use **Repair and refresh links** to register the
+webhook again and rotate expired binding links without asking the user to paste the token again.
+
+Telegram v2 registers `message`, `edited_message`, `my_chat_member`, and `message_reaction` updates. The
+connector uses `reply_parameters`, `message_thread_id`, `sendChatAction`, and `setMessageReaction`; reactions
+and typing are best effort and must not change the final delivery state. A bot with group joining disabled is
+rejected during setup with instructions to use BotFather `/setjoingroups`. Incoming binary media is ignored;
+only text and captions are accepted in this release.
 
 ## Deploy production resources
 
@@ -144,8 +175,8 @@ For the first production deployment:
 2. set `SWARM_CF_STAGING_DOMAIN=next.swarm.rati.chat`;
 3. set `SWARM_CF_ZONE_NAME=rati.chat`;
 4. set `SWARM_PUBLIC_URL=https://next.swarm.rati.chat`;
-5. deploy migration `0004_mobile_wallet_pairing.sql` and confirm a QR can be approved from both Phantom and Solflare;
-6. complete OAuth, avatar, queued-chat, disconnect, and tenant-isolation checks.
+5. deploy every migration through `0007_hosted_telegram_v2.sql` and confirm a QR can be approved from both Phantom and Solflare;
+6. complete public catalog, portable restore, OAuth, queued-chat, disconnect, and tenant-isolation checks.
 
 Production disables the `workers.dev` hostname. The Worker is available only through its configured domains and routes.
 

@@ -11,6 +11,11 @@ const mockProfileServices: ProfileServices = {
     return { ...updates };
   },
 
+  updatePersona: async (_avatarId: string, persona: string) => ({
+    persona,
+    tokenDelta: 3,
+  }),
+
   setProfileImage: async (_avatarId: string, _imageUrl: string) => {
     return { success: true };
   },
@@ -82,6 +87,29 @@ describe('Profile Tools - update_my_profile', () => {
     expect(withPersona.success).toBe(true);
   });
 
+  it('routes persona updates through the persona service', async () => {
+    const personaCalls: Array<{ avatarId: string; persona: string }> = [];
+    const tools = createProfileTools({
+      ...mockProfileServices,
+      updatePersona: async (avatarId, persona) => {
+        personaCalls.push({ avatarId, persona });
+        return { persona, tokenDelta: 4 };
+      },
+    });
+    const tool = tools.find(t => t.name === 'update_my_profile');
+
+    const result = await (tool!.execute as any)(
+      { persona: 'You are calm and concise.' },
+      { avatarId: 'avatar-1', platform: 'admin-ui' },
+    );
+
+    expect(personaCalls).toEqual([
+      { avatarId: 'avatar-1', persona: 'You are calm and concise.' },
+    ]);
+    expect(result.data.persona).toBe('You are calm and concise.');
+    expect(result.data.tokenDelta).toBe(4);
+  });
+
   it('has profile category', () => {
     const tools = createProfileTools(mockProfileServices);
     const tool = tools.find(t => t.name === 'update_my_profile');
@@ -94,6 +122,53 @@ describe('Profile Tools - update_my_profile', () => {
     const tool = tools.find(t => t.name === 'update_my_profile');
 
     expect(tool?.platforms).toEqual(['admin-ui', 'api']);
+  });
+});
+
+describe('Profile Tools - update_my_persona', () => {
+  it('updates only the avatar from tool context', async () => {
+    const calls: Array<{ avatarId: string; persona: string }> = [];
+    const tools = createProfileTools({
+      ...mockProfileServices,
+      updatePersona: async (avatarId, persona) => {
+        calls.push({ avatarId, persona });
+        return { persona, tokenDelta: 7 };
+      },
+    });
+    const tool = tools.find(t => t.name === 'update_my_persona');
+
+    const result = await (tool!.execute as any)(
+      { persona: 'You are curious and warm.' },
+      { avatarId: 'active-avatar', platform: 'admin-ui' },
+    );
+
+    expect(calls).toEqual([
+      { avatarId: 'active-avatar', persona: 'You are curious and warm.' },
+    ]);
+    expect(result).toEqual({
+      success: true,
+      data: {
+        message: 'Persona updated!',
+        persona: 'You are curious and warm.',
+        tokenDelta: 7,
+        updated: ['persona'],
+      },
+    });
+  });
+
+  it('rejects an empty persona', () => {
+    const tools = createProfileTools(mockProfileServices);
+    const tool = tools.find(t => t.name === 'update_my_persona');
+
+    expect(tool?.inputSchema.safeParse({ persona: '   ' }).success).toBe(false);
+  });
+
+  it('is available for admin chat and API only', () => {
+    const tools = createProfileTools(mockProfileServices);
+    const tool = tools.find(t => t.name === 'update_my_persona');
+
+    expect(tool?.platforms).toEqual(['admin-ui', 'api']);
+    expect(tool?.category).toBe('profile');
   });
 });
 

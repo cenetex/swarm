@@ -5,4 +5,6 @@ export * from './auth.js';
 export * from './openrouter.js';
 export * from './secret-crypto.js';
 export * from './hosted-chat.js';
+export * from './hosted-telegram.js';
 export * from './mobile-auth.js';
+export * from './portable-avatars.js';

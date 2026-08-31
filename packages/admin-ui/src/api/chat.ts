@@ -90,6 +90,7 @@ export interface TaskActionPayload {
 export interface AvatarUpdates {
   profileImageUrl?: string;
   name?: string;
+  persona?: string;
 }
 
 export interface ChatResponse {

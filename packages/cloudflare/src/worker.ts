@@ -1,4 +1,9 @@
-import { CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN, parseHostingStatus } from '@swarm/core/hosted';
+import {
+  canonicalPortableAvatarJson,
+  CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN,
+  parseHostingStatus,
+  portableAvatarNftMetadata,
+} from '@swarm/core/hosted';
 import type { CloudflareHostedBindings, CloudflareQueueBatch } from './bindings.js';
 import {
   assertSameOrigin,
@@ -30,7 +35,6 @@ import { isHostedSecretKeyValid } from './secret-crypto.js';
 import {
   clearHostedChatHistory,
   cleanupHostedChatRuntime,
-  createHostedAvatar,
   enqueueHostedChat,
   getHostedAvatar,
   getHostedChatJob,
@@ -40,10 +44,37 @@ import {
   HostedChatNotFoundError,
   HostedChatQueueError,
   HostedChatRateLimitError,
-  listHostedAvatars,
   listHostedChatHistory,
-  processHostedChatQueueBatch,
+  processHostedChatQueueMessage,
 } from './hosted-chat.js';
+import {
+  cleanupHostedTelegramRuntime,
+  connectHostedTelegram,
+  disconnectHostedTelegram,
+  forgetHostedTelegramGroup,
+  getHostedTelegramStatus,
+  handleHostedTelegramWebhook,
+  HostedTelegramAuthorizationError,
+  HostedTelegramConflictError,
+  HostedTelegramNotFoundError,
+  processHostedTelegramQueueMessage,
+  repairHostedTelegram,
+  setHostedTelegramGroupEnabled,
+} from './hosted-telegram.js';
+import {
+  createPortableHostedAvatar,
+  getOwnedPortableRevision,
+  getPublicAvatar,
+  getPublicRevision,
+  importPortableHostedAvatar,
+  listOwnedPortableAvatars,
+  listPublicAvatars,
+  PortableAvatarAuthorizationError,
+  PortableAvatarConflictError,
+  PortableAvatarDataError,
+  updatePortableAvatarProfile,
+  updatePortableAvatarPublication,
+} from './portable-avatars.js';
 
 export { HostedAvatarCoordinatorDurableObject };
 
@@ -75,11 +106,11 @@ function redirect(location: string, headers: HeadersInit = {}): Response {
   });
 }
 
-async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
+async function readJsonObject(request: Request, maxBytes = 16_384): Promise<Record<string, unknown>> {
   const contentLength = Number(request.headers.get('Content-Length') ?? '0');
-  if (Number.isFinite(contentLength) && contentLength > 16_384) throw new Error('Request body is too large.');
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) throw new Error('Request body is too large.');
   const text = await request.text();
-  if (text.length > 16_384) throw new Error('Request body is too large.');
+  if (text.length > maxBytes) throw new Error('Request body is too large.');
   let value: unknown;
   try {
     value = JSON.parse(text) as unknown;
@@ -101,6 +132,13 @@ function optionalStringField(body: Record<string, unknown>, name: string): strin
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value !== 'string') throw new Error(`${name} must be a string.`);
   return value.trim() || undefined;
+}
+
+function optionalBooleanField(body: Record<string, unknown>, name: string): boolean | undefined {
+  const value = body[name];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'boolean') throw new Error(`${name} must be a boolean.`);
+  return value;
 }
 
 function validResourceId(value: string): boolean {
@@ -135,8 +173,10 @@ function authenticatedWalletPayload(session: {
 }
 
 function openRouterReturnUrl(env: CloudflareHostedBindings, request: Request, result: 'connected' | 'error'): string {
-  const configuredPath = env.SWARM_OPENROUTER_RETURN_PATH?.trim() || '/?ai=openrouter';
-  const path = configuredPath.startsWith('/') && !configuredPath.startsWith('//') ? configuredPath : '/?ai=openrouter';
+  const configuredPath = env.SWARM_OPENROUTER_RETURN_PATH?.trim() || '/studio?ai=openrouter';
+  const path = configuredPath.startsWith('/') && !configuredPath.startsWith('//')
+    ? configuredPath
+    : '/studio?ai=openrouter';
   const url = new URL(path, hostedPublicOrigin(env, request));
   url.searchParams.set('openrouter', result);
   return url.toString();
@@ -193,6 +233,50 @@ function securedAssetResponse(response: Response, env: CloudflareHostedBindings)
   });
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+async function avatarProjectAssetResponse(
+  request: Request,
+  env: CloudflareHostedBindings,
+  slug: string,
+): Promise<Response | null> {
+  if (!env.SWARM_ASSETS) return null;
+  const project = await getPublicAvatar(env, slug);
+  if (!project) return null;
+  const assetResponse = await env.SWARM_ASSETS.fetch(request);
+  const contentType = assetResponse.headers.get('Content-Type') ?? '';
+  if (!contentType.includes('text/html')) return securedAssetResponse(assetResponse, env);
+  const title = escapeHtml(`${project.name} — Swarm`);
+  const description = escapeHtml(project.description || `Explore ${project.name} on Swarm.`);
+  const canonicalUrl = escapeHtml(`${hostedPublicOrigin(env, request)}/a/${project.slug}`);
+  let html = await assetResponse.text();
+  html = html
+    .replace(/<title>[^<]*<\/title>/iu, `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*"\s*\/>/iu, `<meta name="description" content="${description}" />`)
+    .replace(/<meta property="og:title" content="[^"]*"\s*\/>/iu, `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*"\s*\/>/iu, `<meta property="og:description" content="${description}" />`)
+    .replace(/<meta name="twitter:title" content="[^"]*"\s*\/>/iu, `<meta name="twitter:title" content="${title}" />`)
+    .replace(/<meta name="twitter:description" content="[^"]*"\s*\/>/iu, `<meta name="twitter:description" content="${description}" />`)
+    .replace(/\s*<meta property="og:image" content="[^"]*"\s*\/>/iu, '')
+    .replace(/\s*<meta name="twitter:image" content="[^"]*"\s*\/>/iu, '')
+    .replace('</head>', `<link rel="canonical" href="${canonicalUrl}" /></head>`);
+  const headers = new Headers(assetResponse.headers);
+  headers.delete('Content-Length');
+  headers.delete('ETag');
+  return securedAssetResponse(new Response(html, {
+    status: assetResponse.status,
+    statusText: assetResponse.statusText,
+    headers,
+  }), env);
+}
+
 async function handleRequest(request: Request, env: CloudflareHostedBindings): Promise<Response> {
   const url = new URL(request.url);
   const platform = createCloudflareHostedPlatform(env);
@@ -236,6 +320,85 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
 
   if (env.SWARM_ENV === 'production' && !hostedConfigurationReady(env)) {
     return json({ error: 'Hosted runtime is not configured.' }, { status: 503 });
+  }
+
+  if (url.pathname === '/api/public/avatars' && request.method === 'GET') {
+    return json(await listPublicAvatars(env), {
+      headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=120' },
+    });
+  }
+
+  const publicAvatarMatch = url.pathname.match(
+    /^\/api\/public\/avatars\/([^/]+)(?:\/(bundle|nft-metadata))?$/u,
+  );
+  if (publicAvatarMatch && request.method === 'GET') {
+    const slugOrId = decodeURIComponent(publicAvatarMatch[1] ?? '');
+    if (!validResourceId(slugOrId)) return json({ error: 'Avatar id is invalid.' }, { status: 400 });
+    const project = await getPublicAvatar(env, slugOrId);
+    if (!project) return json({ error: 'Public avatar was not found.' }, { status: 404 });
+    const action = publicAvatarMatch[2];
+    if (action === 'bundle') {
+      return new Response(canonicalPortableAvatarJson(project.bundle), {
+        headers: {
+          'Content-Type': 'application/vnd.swarm.avatar+json',
+          'Content-Disposition': `attachment; filename="${project.slug}-${project.sha256.slice(0, 12)}.swarm-avatar.json"`,
+          'Cache-Control': 'public, max-age=300, immutable',
+          ETag: `"${project.sha256}"`,
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
+    if (action === 'nft-metadata') {
+      const origin = hostedPublicOrigin(env, request);
+      const bundleUrl = `${origin}/api/public/revisions/${encodeURIComponent(project.revisionId)}.json`;
+      return json(
+        portableAvatarNftMetadata(
+          { revisionId: project.revisionId, sha256: project.sha256, bundle: project.bundle },
+          bundleUrl,
+          `${origin}/a/${project.slug}`,
+        ),
+        { headers: { 'Cache-Control': 'public, max-age=300' } },
+      );
+    }
+    return json(project, {
+      headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=120' },
+    });
+  }
+
+  const publicRevisionMatch = url.pathname.match(/^\/api\/public\/revisions\/([^/]+)\.json$/u);
+  if (publicRevisionMatch && request.method === 'GET') {
+    const revisionId = decodeURIComponent(publicRevisionMatch[1] ?? '');
+    const revision = await getPublicRevision(env, revisionId);
+    if (!revision) return json({ error: 'Public avatar revision was not found.' }, { status: 404 });
+    return new Response(canonicalPortableAvatarJson(revision.bundle), {
+      headers: {
+        'Content-Type': 'application/vnd.swarm.avatar+json',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        ETag: `"${revision.sha256}"`,
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  }
+
+  if (url.pathname === '/sitemap.xml' && request.method === 'GET') {
+    const origin = hostedPublicOrigin(env, request);
+    const avatars = await listPublicAvatars(env);
+    const locations = [origin, ...avatars.map((avatar) => `${origin}/a/${avatar.slug}`)];
+    const document = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+      ...locations.map((location) => `<url><loc>${location}</loc></url>`),
+      '</urlset>',
+    ].join('');
+    return new Response(document, {
+      headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=300' },
+    });
+  }
+
+  const telegramWebhookMatch = url.pathname.match(/^\/api\/webhooks\/telegram\/([A-Za-z0-9_-]{24,80})$/u);
+  if (telegramWebhookMatch && request.method === 'POST') {
+    const integrationId = telegramWebhookMatch[1] ?? '';
+    return json(await handleHostedTelegramWebhook(env, integrationId, request));
   }
 
   if (url.pathname === '/api/auth/mobile/start' && request.method === 'POST') {
@@ -437,7 +600,7 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
   if (url.pathname === '/api/avatars' && request.method === 'GET') {
     const session = await getHostedSession(env, request);
     if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
-    return json(await listHostedAvatars(env, session));
+    return json(await listOwnedPortableAvatars(env, session));
   }
 
   if (url.pathname === '/api/avatars' && request.method === 'POST') {
@@ -447,24 +610,166 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     if (!hostedChatConfigurationReady(env)) {
       return json({ error: 'Hosted chat is not configured.' }, { status: 503 });
     }
-    const body = await readJsonObject(request);
+    const body = await readJsonObject(request, 256 * 1024);
     const name = stringField(body, 'name');
     const description = optionalStringField(body, 'description');
+    const persona = optionalStringField(body, 'persona');
+    const visibilityValue = optionalStringField(body, 'visibility');
+    if (visibilityValue && visibilityValue !== 'public' && visibilityValue !== 'private') {
+      return json({ error: 'visibility must be public or private.' }, { status: 400 });
+    }
+    const visibility = visibilityValue as 'public' | 'private' | undefined;
+    const listed = optionalBooleanField(body, 'listed');
     if (name.length > 80) return json({ error: 'Avatar name is too large.' }, { status: 400 });
     if ((description?.length ?? 0) > 1_000) return json({ error: 'Avatar description is too large.' }, { status: 400 });
-    return json(await createHostedAvatar(env, session, { name, ...(description ? { description } : {}) }), {
+    if ((persona?.length ?? 0) > 50_000) return json({ error: 'Avatar persona is too large.' }, { status: 400 });
+    return json(await createPortableHostedAvatar(env, session, {
+      name,
+      ...(description ? { description } : {}),
+      ...(persona ? { persona } : {}),
+      ...(visibility ? { visibility } : {}),
+      ...(listed === undefined ? {} : { listed }),
+    }), {
       status: 201,
     });
   }
 
+  if (url.pathname === '/api/avatars/import' && request.method === 'POST') {
+    assertSameOrigin(env, request);
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const body = await readJsonObject(request, 5 * 1024 * 1024);
+    return json(await importPortableHostedAvatar(env, session, body.bundle ?? body), { status: 201 });
+  }
+
+  const ownedBundleMatch = url.pathname.match(/^\/api\/avatars\/([^/]+)\/bundle$/u);
+  if (ownedBundleMatch && request.method === 'GET') {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = decodeURIComponent(ownedBundleMatch[1] ?? '');
+    if (!validResourceId(avatarId)) return json({ error: 'Avatar id is invalid.' }, { status: 400 });
+    const revision = await getOwnedPortableRevision(env, session, avatarId);
+    if (!revision) return json({ error: 'Portable avatar was not found.' }, { status: 404 });
+    return new Response(canonicalPortableAvatarJson(revision.bundle), {
+      headers: {
+        'Content-Type': 'application/vnd.swarm.avatar+json',
+        'Content-Disposition': `attachment; filename="${revision.bundle.identity.slug}-${revision.sha256.slice(0, 12)}.swarm-avatar.json"`,
+        'Cache-Control': 'private, no-store',
+        ETag: `"${revision.sha256}"`,
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  }
+
+  const ownedPublicationMatch = url.pathname.match(/^\/api\/avatars\/([^/]+)\/publication$/u);
+  if (ownedPublicationMatch && request.method === 'PATCH') {
+    assertSameOrigin(env, request);
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = decodeURIComponent(ownedPublicationMatch[1] ?? '');
+    if (!validResourceId(avatarId)) return json({ error: 'Avatar id is invalid.' }, { status: 400 });
+    const body = await readJsonObject(request);
+    const visibilityValue = stringField(body, 'visibility');
+    if (visibilityValue !== 'public' && visibilityValue !== 'private') {
+      return json({ error: 'visibility must be public or private.' }, { status: 400 });
+    }
+    const listed = optionalBooleanField(body, 'listed');
+    const avatar = await updatePortableAvatarPublication(env, session, avatarId, {
+      visibility: visibilityValue,
+      ...(listed === undefined ? {} : { listed }),
+    });
+    return avatar ? json(avatar) : json({ error: 'Portable avatar was not found.' }, { status: 404 });
+  }
+
   const avatarMatch = url.pathname.match(/^\/api\/avatars\/([^/]+)$/u);
-  if (avatarMatch && request.method === 'GET') {
+  if (avatarMatch && (request.method === 'GET' || request.method === 'PATCH')) {
+    if (request.method === 'PATCH') assertSameOrigin(env, request);
     const session = await getHostedSession(env, request);
     if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
     const avatarId = decodeURIComponent(avatarMatch[1] ?? '');
     if (!validResourceId(avatarId)) return json({ error: 'Avatar id is invalid.' }, { status: 400 });
+    if (request.method === 'PATCH') {
+      const body = await readJsonObject(request, 256 * 1024);
+      const name = stringField(body, 'name');
+      if (typeof body.description !== 'string') {
+        return json({ error: 'description must be a string.' }, { status: 400 });
+      }
+      if (typeof body.persona !== 'string') {
+        return json({ error: 'persona must be a string.' }, { status: 400 });
+      }
+      const description = body.description.trim();
+      const persona = body.persona.trim();
+      if (name.length > 80) return json({ error: 'Avatar name is too large.' }, { status: 400 });
+      if (description.length > 1_000) return json({ error: 'Avatar description is too large.' }, { status: 400 });
+      if (persona.length > 50_000) return json({ error: 'Avatar persona is too large.' }, { status: 400 });
+      const updated = await updatePortableAvatarProfile(env, session, avatarId, {
+        name,
+        description,
+        persona,
+      });
+      return updated ? json(updated) : json({ error: 'Hosted avatar was not found.' }, { status: 404 });
+    }
     const avatar = await getHostedAvatar(env, session, avatarId);
     return avatar ? json(avatar) : json({ error: 'Hosted avatar was not found.' }, { status: 404 });
+  }
+
+  const telegramGroupMatch = url.pathname.match(
+    /^\/api\/avatars\/([^/]+)\/integrations\/telegram\/groups\/([^/]+)$/u,
+  );
+  if (telegramGroupMatch) {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = decodeURIComponent(telegramGroupMatch[1] ?? '');
+    const chatId = decodeURIComponent(telegramGroupMatch[2] ?? '');
+    if (!validResourceId(avatarId) || !/^-?\d{1,20}$/u.test(chatId)) {
+      return json({ error: 'Telegram group is invalid.' }, { status: 400 });
+    }
+    assertSameOrigin(env, request);
+    if (request.method === 'PATCH') {
+      const body = await readJsonObject(request);
+      if (typeof body.enabled !== 'boolean') return json({ error: 'enabled must be a boolean.' }, { status: 400 });
+      return json(await setHostedTelegramGroupEnabled(env, session, { avatarId, chatId, enabled: body.enabled }));
+    }
+    if (request.method === 'DELETE') {
+      return json(await forgetHostedTelegramGroup(env, session, { avatarId, chatId }));
+    }
+    return json({ error: 'Method not allowed.' }, { status: 405 });
+  }
+
+  const telegramIntegrationMatch = url.pathname.match(
+    /^\/api\/avatars\/([^/]+)\/integrations\/telegram(?:\/(repair))?$/u,
+  );
+  if (telegramIntegrationMatch) {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = decodeURIComponent(telegramIntegrationMatch[1] ?? '');
+    if (!validResourceId(avatarId)) return json({ error: 'Avatar id is invalid.' }, { status: 400 });
+    const action = telegramIntegrationMatch[2];
+    if (!action && request.method === 'GET') {
+      return json(await getHostedTelegramStatus(env, session, avatarId));
+    }
+    assertSameOrigin(env, request);
+    if (!action && request.method === 'POST') {
+      if (!hostedChatConfigurationReady(env)) {
+        return json({ error: 'Hosted Telegram is not configured.' }, { status: 503 });
+      }
+      const body = await readJsonObject(request);
+      return json(await connectHostedTelegram(env, session, {
+        avatarId,
+        botToken: stringField(body, 'botToken'),
+        publicOrigin: hostedPublicOrigin(env, request),
+      }), { status: 201 });
+    }
+    if (!action && request.method === 'DELETE') {
+      return json(await disconnectHostedTelegram(env, session, avatarId));
+    }
+    if (action === 'repair' && request.method === 'POST') {
+      return json(await repairHostedTelegram(env, session, {
+        avatarId,
+        publicOrigin: hostedPublicOrigin(env, request),
+      }));
+    }
+    return json({ error: 'Method not allowed.' }, { status: 405 });
   }
 
   if (url.pathname === '/api/chat' && request.method === 'GET') {
@@ -533,6 +838,15 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     && url.pathname !== '/api'
     && !url.pathname.startsWith('/api/')
   ) {
+    const publicPageMatch = url.pathname.match(/^\/a\/([^/]+)\/?$/u);
+    if (publicPageMatch) {
+      const response = await avatarProjectAssetResponse(
+        request,
+        env,
+        decodeURIComponent(publicPageMatch[1] ?? ''),
+      );
+      if (response) return response;
+    }
     return securedAssetResponse(await env.SWARM_ASSETS.fetch(request), env);
   }
 
@@ -566,6 +880,12 @@ export default {
       if (error instanceof HostedOriginError) {
         return json({ error: detail }, { status: 403 });
       }
+      if (error instanceof HostedTelegramAuthorizationError) return json({ error: detail }, { status: 403 });
+      if (error instanceof HostedTelegramConflictError) return json({ error: detail }, { status: 409 });
+      if (error instanceof HostedTelegramNotFoundError) return json({ error: detail }, { status: 404 });
+      if (error instanceof PortableAvatarAuthorizationError) return json({ error: detail }, { status: 403 });
+      if (error instanceof PortableAvatarConflictError) return json({ error: detail }, { status: 409 });
+      if (error instanceof PortableAvatarDataError) return json({ error: detail }, { status: 500 });
       if (error instanceof HostedChatNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof HostedChatMissingKeyError) return json({ error: detail }, { status: 409 });
       if (error instanceof HostedChatQueueError || error instanceof HostedChatConfigurationError) {
@@ -584,6 +904,7 @@ export default {
   async scheduled(controller: ScheduledController, env: CloudflareHostedBindings): Promise<void> {
     await cleanupExpiredHostedAuth(env, controller.scheduledTime);
     await cleanupHostedChatRuntime(env, controller.scheduledTime);
+    await cleanupHostedTelegramRuntime(env, controller.scheduledTime);
     const platform = createCloudflareHostedPlatform(env);
     await platform.queues.send('default', {
       type: 'swarm.cron.tick',
@@ -595,6 +916,19 @@ export default {
   },
 
   async queue(batch: CloudflareQueueBatch, env: CloudflareHostedBindings): Promise<void> {
-    await processHostedChatQueueBatch(batch, env);
+    await Promise.all(batch.messages.map(async (message) => {
+      try {
+        const type = message.body && typeof message.body === 'object'
+          ? (message.body as { type?: unknown }).type
+          : undefined;
+        const disposition = type === 'swarm.hosted.telegram.update'
+          ? await processHostedTelegramQueueMessage(env, message.body)
+          : await processHostedChatQueueMessage(env, message.body);
+        if (disposition.action === 'retry') message.retry({ delaySeconds: disposition.delaySeconds });
+        else message.ack();
+      } catch {
+        message.retry({ delaySeconds: 10 });
+      }
+    }));
   },
 };

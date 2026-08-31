@@ -71,4 +71,21 @@ describe('chat post-processing', () => {
 
     expect(updates).toEqual({ name: 'Mika' });
   });
+
+  it('surfaces conversational persona changes to the active UI', async () => {
+    const updates = await detectAvatarUpdates(
+      [{ id: 'call-persona', name: 'update_my_persona', arguments: { persona: 'Warm and playful' } }],
+      [{
+        tool_call_id: 'call-persona',
+        role: 'tool',
+        content: JSON.stringify({
+          success: true,
+          data: { updated: ['persona'], persona: 'Warm and playful' },
+        }),
+      }],
+      'avatar-1',
+    );
+
+    expect(updates).toEqual({ persona: 'Warm and playful' });
+  });
 });

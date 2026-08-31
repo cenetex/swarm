@@ -1,4 +1,5 @@
 import { API_BASE } from './api/apiBase';
+import type { PortableAvatarBundleV1 } from '@swarm/core/hosted';
 
 export type HostedProviderStatus = {
   connected: boolean;
@@ -9,9 +10,32 @@ export type HostedAvatar = {
   avatarId: string;
   name: string;
   description?: string;
+  persona?: string;
   status: string;
   createdAt: number;
   updatedAt: number;
+  slug?: string;
+  visibility?: 'public' | 'private';
+  listed?: boolean;
+  revisionId?: string;
+};
+
+export type PublicHostedAvatar = {
+  avatarId: string;
+  slug: string;
+  name: string;
+  description: string;
+  visibility: 'public';
+  listed: boolean;
+  revisionId: string;
+  controller: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type PublicHostedAvatarProject = PublicHostedAvatar & {
+  sha256: string;
+  bundle: PortableAvatarBundleV1;
 };
 
 export type HostedChatMessage = {
@@ -25,6 +49,26 @@ export type HostedChatJob = {
   response?: string;
   history?: HostedChatMessage[];
   error?: string;
+};
+
+export type HostedTelegramGroup = {
+  chatId: string;
+  title: string;
+  type: string;
+  enabled: boolean;
+  membershipStatus: 'member' | 'administrator' | 'restricted' | 'left' | 'kicked' | 'unknown';
+  lastActivityAt?: number;
+};
+
+export type HostedTelegramStatus = {
+  connected: boolean;
+  status: 'disconnected' | 'binding_required' | 'connected' | 'repair_needed';
+  bot?: { id: string; username: string; name: string };
+  ownerBound: boolean;
+  ownerBindUrl?: string;
+  addToGroupUrl?: string;
+  groupBindCommand?: string;
+  groups: HostedTelegramGroup[];
 };
 
 async function responseError(response: Response, fallback: string): Promise<Error> {
@@ -67,11 +111,118 @@ export async function listHostedAvatars(): Promise<HostedAvatar[]> {
   return requestJson<HostedAvatar[]>('/avatars');
 }
 
-export async function createHostedAvatar(name: string): Promise<HostedAvatar> {
+export async function listPublicHostedAvatars(): Promise<PublicHostedAvatar[]> {
+  return requestJson<PublicHostedAvatar[]>('/public/avatars');
+}
+
+export async function getPublicHostedAvatar(slug: string): Promise<PublicHostedAvatarProject> {
+  return requestJson<PublicHostedAvatarProject>(`/public/avatars/${encodeURIComponent(slug)}`);
+}
+
+export function publicHostedAvatarBundleUrl(slug: string): string {
+  return `${API_BASE}/public/avatars/${encodeURIComponent(slug)}/bundle`;
+}
+
+export function publicHostedAvatarNftMetadataUrl(slug: string): string {
+  return `${API_BASE}/public/avatars/${encodeURIComponent(slug)}/nft-metadata`;
+}
+
+export type CreateHostedAvatarInput = {
+  name: string;
+  description?: string;
+  persona?: string;
+  visibility?: 'public' | 'private';
+  listed?: boolean;
+};
+
+export async function createHostedAvatar(input: string | CreateHostedAvatarInput): Promise<HostedAvatar> {
+  const body = typeof input === 'string' ? { name: input } : input;
   return requestJson<HostedAvatar>('/avatars', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
+}
+
+export async function importHostedAvatar(bundle: unknown): Promise<HostedAvatar> {
+  return requestJson<HostedAvatar>('/avatars/import', {
+    method: 'POST',
+    body: JSON.stringify({ bundle }),
+  });
+}
+
+export function ownedHostedAvatarBundleUrl(avatarId: string): string {
+  return `${API_BASE}/avatars/${encodeURIComponent(avatarId)}/bundle`;
+}
+
+export async function updateHostedAvatarProfile(
+  avatarId: string,
+  profile: { name: string; description: string; persona: string },
+): Promise<HostedAvatar> {
+  return requestJson<HostedAvatar>(`/avatars/${encodeURIComponent(avatarId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(profile),
+  });
+}
+
+export async function updateHostedAvatarPublication(
+  avatarId: string,
+  publication: { visibility: 'public' | 'private'; listed: boolean },
+): Promise<HostedAvatar> {
+  return requestJson<HostedAvatar>(`/avatars/${encodeURIComponent(avatarId)}/publication`, {
+    method: 'PATCH',
+    body: JSON.stringify(publication),
+  });
+}
+
+export async function getHostedTelegramStatus(avatarId: string): Promise<HostedTelegramStatus> {
+  return requestJson<HostedTelegramStatus>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram`,
+  );
+}
+
+export async function connectHostedTelegram(
+  avatarId: string,
+  botToken: string,
+): Promise<HostedTelegramStatus> {
+  return requestJson<HostedTelegramStatus>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram`,
+    { method: 'POST', body: JSON.stringify({ botToken }) },
+  );
+}
+
+export async function repairHostedTelegram(avatarId: string): Promise<HostedTelegramStatus> {
+  return requestJson<HostedTelegramStatus>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram/repair`,
+    { method: 'POST' },
+  );
+}
+
+export async function disconnectHostedTelegram(avatarId: string): Promise<void> {
+  await requestJson<{ disconnected: true }>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function setHostedTelegramGroupEnabled(
+  avatarId: string,
+  chatId: string,
+  enabled: boolean,
+): Promise<HostedTelegramStatus> {
+  return requestJson<HostedTelegramStatus>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram/groups/${encodeURIComponent(chatId)}`,
+    { method: 'PATCH', body: JSON.stringify({ enabled }) },
+  );
+}
+
+export async function forgetHostedTelegramGroup(
+  avatarId: string,
+  chatId: string,
+): Promise<HostedTelegramStatus> {
+  return requestJson<HostedTelegramStatus>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram/groups/${encodeURIComponent(chatId)}`,
+    { method: 'DELETE' },
+  );
 }
 
 export async function getHostedHistory(avatarId: string): Promise<HostedChatMessage[]> {

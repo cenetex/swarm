@@ -94,4 +94,32 @@ describe('web-local credential boundary', () => {
     expect(isWebLocalHostAllowed('www.rati.chat')).toBe(false);
     expect(isWebLocalHostAllowed('swarm.rati.chat')).toBe(false);
   });
+
+  test('previews and saves persona edits in browser-local mode', async () => {
+    const { routeLocalApi } = await import('./local-web-api');
+    const created = await routeLocalApi(new Request('http://localhost/api/avatars', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Opus' }),
+    })) as Response;
+    const avatar = await created.json() as { avatarId: string };
+
+    const preview = await routeLocalApi(new Request(`http://localhost/api/avatars/${avatar.avatarId}/persona/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ persona: 'Warm and playful' }),
+    })) as Response;
+    const previewBody = await preview.json() as { diff: { added: string[] } };
+    expect(previewBody.diff.added).toEqual(['Warm and playful']);
+
+    const saved = await routeLocalApi(new Request(`http://localhost/api/avatars/${avatar.avatarId}/persona`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ persona: 'Warm and playful' }),
+    })) as Response;
+    expect((await saved.json() as { persona: string }).persona).toBe('Warm and playful');
+
+    const current = await routeLocalApi(new Request(`http://localhost/api/avatars/${avatar.avatarId}/persona`)) as Response;
+    expect((await current.json() as { persona: string }).persona).toBe('Warm and playful');
+  });
 });

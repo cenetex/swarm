@@ -4,6 +4,8 @@ This is the target architecture for the paid hosted tier. Users choose **Local**
 
 The hosted product is a hybrid dApp. Solana provides user identity and may provide entitlement or payment proofs. Secrets, messages, model calls, and always-on execution remain in a shared off-chain runtime. A browser-only or fully on-chain runtime cannot safely retain credentials or keep Telegram and Discord agents alive after the browser closes.
 
+An avatar is not a private runtime record. It is a public, portable project by default. Its content-addressed `swarm.avatar/v1` artifact can move between hosts, while the hosted runtime provides discovery, indexing, credentials, channels, and execution. See [Portable Public Avatars](./PORTABLE-PUBLIC-AVATARS.md).
+
 ## Product Model
 
 ### Local
@@ -25,8 +27,8 @@ The hosted product is a hybrid dApp. Solana provides user identity and may provi
 | -------------------------- | ------------------------- | -------------------------------------------------------------------------------------- |
 | Admin UI                   | Cloudflare Pages          | Static app and public landing/chat pages.                                              |
 | API and webhooks           | Workers                   | SIWS, OAuth callbacks, billing, Telegram webhooks, and chat routes.                    |
-| App state                  | D1                        | Start with a shared tenant-keyed database; shard by cohort as measured limits require. |
-| Media/blobs                | R2                        | Generated images, exports, and attachments.                                            |
+| App state and catalog      | D1                        | Public discovery index plus tenant-keyed runtime state.                                 |
+| Media/blobs                | R2                        | Hosted mirror for portable revisions, generated media, exports, and attachments.        |
 | Background work            | Queues                    | Message processing, integration retries, and media jobs.                               |
 | Multi-step jobs            | Workflows                 | Onboarding, long retry ladders, and approval/post pipelines.                           |
 | Periodic work              | Cron Triggers             | Claim due jobs and enqueue work instead of performing entire jobs in cron.             |
@@ -66,6 +68,53 @@ The hosted Worker implements the first secure vertical slice:
 
 The dedicated hosted UI is served from the same Worker origin. It starts OAuth through the authenticated route, reads only connection status, and never renders or accepts the exchanged credential. The write-only manual-key route remains a compatibility surface for trusted non-hosted clients; it is not part of normal hosted onboarding.
 
+### Public registry and owner Studio
+
+The hosted root is an anonymous public registry. Each public avatar has a shareable project page showing its public prompt, shared memory summary, capabilities, controller, revision, portable download, and NFT-ready metadata. Search engines receive a dynamic sitemap of listed avatars.
+
+The owner surface lives at `/studio`. On desktop, a narrow management rail holds account, runtime, provider, portability, and avatar controls beside one continuous conversation surface. On smaller screens, chat remains visible first and the same controls move behind one **Manage** action. Creation and restore do not require an AI provider connection; model-backed chat does.
+
+## Hosted Telegram
+
+Telegram is the second hosted connector after OpenRouter. It uses the same account, encrypted-secret,
+Queue, and Durable Object boundaries as hosted browser chat:
+
+1. An authenticated avatar owner pastes a BotFather token once. The Worker calls `getMe`, claims the
+   Telegram bot id so it cannot be shared between tenants, and registers an opaque HTTPS webhook.
+2. The token and Telegram webhook secret are encrypted with account-and-avatar context. API responses,
+   browser storage, and logs never receive the token again.
+3. The owner opens a one-use Telegram deep link and sends `/start` in a private chat. That Telegram user
+   becomes the connector owner. A separate, expiring `startgroup` link enables groups only when used by
+   that owner.
+4. Private messages are accepted only from the bound owner. Groups are quiet by default and respond only
+   to mentions, bot-addressed commands, or replies to the bot.
+5. The public webhook validates Telegram's secret header, reserves `update_id` in D1, and enqueues accepted
+   work. It does not call the model before returning.
+6. Every Telegram chat maps to a separate hosted thread. The Queue consumer takes the avatar lease, loads
+   only that thread's history, decrypts the user's OpenRouter key for the model call, and sends the result
+   through Telegram.
+7. Delivery is marked `sending` before the outbound request. A request with an unknown network outcome is
+   recorded as `unknown` and is not retried, preventing accidental duplicate replies. Definite rate limits
+   and pre-delivery failures use bounded retries.
+8. Disconnect first invalidates the Telegram webhook, then removes every avatar-scoped Telegram secret and
+   all connector metadata. If Telegram is unavailable, removing the local webhook secret still makes later
+   calls to the old endpoint fail closed.
+9. Accepted messages retain the Telegram message id and forum topic id. The Queue consumer sends a typing
+   action, adds best-effort acknowledgement and completion reactions, and replies directly to the source
+   message inside the same topic. Reaction failures never block the text response.
+10. Text captions follow the same mention and reply rules as text messages. Binary photo, file, voice, and
+    video content is not downloaded or sent to the model.
+11. Telegram membership updates mark groups unavailable after the bot leaves or is removed. The hosted owner
+    can list, pause, enable, or forget group bindings. An owner-only bind command supports groups where the bot
+    is already present and the `startgroup` picker cannot add it again.
+12. `/ask`, `/help`, and `/status` are registered with Telegram. Every forum topic maps to a separate hosted
+    thread, while ordinary unaddressed group messages remain ignored for privacy.
+
+Migration `0005_hosted_telegram.sql` adds bot ownership, enabled-chat mappings, deduplication, jobs, and
+delivery state. Bot tokens and binding codes remain in the existing encrypted secret table, not these
+metadata tables. Migration `0007_hosted_telegram_v2.sql` adds membership/activity state, reply and topic
+delivery metadata, and per-topic hosted thread mappings.
+
 ## Hosted Web Chat
 
 The first hosted message path is now implemented for browser chat:
@@ -80,6 +129,8 @@ The first hosted message path is now implemented for browser chat:
 Model failures retry at most three times with increasing Queue delay. Initial Queue sends also stop after three attempts. Exhausted work enters the `dead` state instead of waiting forever. A request is limited to 4,000 characters, model context is capped at 20 stored messages, and the default account limit is 20 new messages per minute.
 
 Migration `0003_hosted_chat_runtime.sql` adds account-keyed avatars, threads, messages, jobs, and rate-limit rows. Every read and write includes the authenticated account id. The browser's supplied history and avatar text are not trusted as stored state.
+
+Migration `0006_portable_public_avatars.sql` adds public slugs, visibility, listing state, current revision pointers, and immutable revision rows. New avatars are public and listed by default. Private avatars remain owner-only. D1 and R2 are runtime mirrors; owners must keep or permanently anchor the canonical artifact outside the Cloudflare account for full disaster recovery.
 
 Required chat bindings:
 
@@ -126,12 +177,13 @@ Desktop wallet sign-in uses a short-lived cross-device pairing. The Worker retur
 1. **Foundation — implemented:** provider-neutral hosted plans, D1/R2/Queue adapters, SIWS sessions, encrypted user secrets, and OpenRouter PKCE.
 2. **Hosted web app — implemented:** same-origin wallet sign-in, OAuth connect/status/disconnect, avatar creation, and Queue-backed browser chat without browser-visible AI credentials.
 3. **Web chat runtime — implemented:** tenant-owned avatars and history, idempotent Queue jobs, per-avatar serialization, bounded model retries, and safe failed jobs.
-4. **Webhook runtime:** port Telegram ingress onto the same Queue and account-isolation rules.
-5. **Entitlement and quotas:** connect Stripe checkout/portal and optional on-chain entitlement; enforce request, token, storage, and concurrency limits before model calls.
-6. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
-7. **Media and scheduling:** move blobs to R2 and scheduled jobs to D1 plus Cron/Workflows.
-8. **Operational hardening:** KMS-backed root-key wrapping, secret re-encryption jobs, audit reporting, data export/deletion, monitoring, and administrative kill switches.
-9. **Burst compute:** use an external sandbox only for workloads that truly need a Linux computer.
+4. **Webhook runtime — implemented:** Telegram ingress, owner/group binding, per-chat and per-topic history, direct replies, typing/reactions, group controls, safe delivery state, and Queue processing.
+5. **Portable public projects — implemented:** default-public registry, strict content-addressed artifacts, owner export/import, R2 mirrors, NFT-ready metadata, and blank-environment restore proof.
+6. **Entitlement and quotas:** connect Stripe checkout/portal and optional on-chain entitlement; enforce request, token, storage, and concurrency limits before model calls.
+7. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
+8. **Media and scheduling:** move blobs to R2 and scheduled jobs to D1 plus Cron/Workflows.
+9. **Operational hardening:** permanent artifact anchoring, owner-authorized NFT minting, KMS-backed root-key wrapping, secret re-encryption jobs, audit reporting, monitoring, and kill switches.
+10. **Burst compute:** use an external sandbox only for workloads that truly need a Linux computer.
 
 ## Cost Guardrails
 
@@ -145,7 +197,8 @@ Desktop wallet sign-in uses a short-lived cross-device pairing. The Worker retur
 
 ## Known Caveats
 
-- The current implementation processes browser chat only. Telegram, Discord, media, tools, and scheduling still use other runtimes.
+- The current implementation processes browser chat and text/caption Telegram conversations. Telegram binary
+  media, Discord, tools, and scheduling still use other runtimes.
 - Hosted status may report `available`; it must not report an active tenant runtime until entitlement state is connected in #1814.
 - D1 is not DynamoDB. Access patterns must be deliberate, and broad scans should be avoided.
 - Durable Objects are appropriate for coordination and inbound realtime clients, not arbitrary long-running processes.
