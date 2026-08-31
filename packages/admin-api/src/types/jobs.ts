@@ -46,7 +46,7 @@ export interface ChatJob {
     history: AdminChatMessage[];
     media?: Array<{ type: 'image' | 'video' | 'sticker' | 'audio'; url: string; prompt?: string; id?: string }>;
     pendingJobs?: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string; purpose?: string }>;
-    avatarUpdates?: { profileImageUrl?: string; name?: string };
+    avatarUpdates?: { profileImageUrl?: string; name?: string; persona?: string };
     pendingToolCall?: { id: string; name: string; arguments: Record<string, unknown> };
   };
 

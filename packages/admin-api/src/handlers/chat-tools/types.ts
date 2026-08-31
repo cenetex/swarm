@@ -31,7 +31,7 @@ export interface ProcessChatResult {
   history: AdminChatMessage[];
   media?: MediaItem[];
   pendingJobs?: Array<{ jobId: string; type: 'image' | 'video' | 'sticker'; prompt?: string; purpose?: string }>;
-  avatarUpdates?: { profileImageUrl?: string; name?: string };
+  avatarUpdates?: { profileImageUrl?: string; name?: string; persona?: string };
   pendingToolCall?: {
     id: string;
     name: string;

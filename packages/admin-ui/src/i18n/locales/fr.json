@@ -393,6 +393,23 @@
     "systemPersonaLabel": "Persona système",
     "systemPersonaDescription": "Définissez la personnalité, l'expertise et le comportement de l'avatar.",
     "systemPersonaPlaceholder": "Vous êtes un assistant IA utile, spécialisé dans...\n\nVous avez de l'expertise dans :\n- Sujet 1\n- Sujet 2\n\nVotre style de communication est...",
+    "personaEditor": {
+      "description": "Modifiez la personnalité et le comportement essentiels de l'avatar. L'aperçu montre l'impact avant l'enregistrement.",
+      "loading": "Chargement de la persona...",
+      "loadError": "Impossible de charger la persona.",
+      "previewError": "Impossible de prévisualiser la persona.",
+      "saveError": "Impossible d'enregistrer la persona.",
+      "previewTitle": "Vérifier les modifications",
+      "previewSummary": "{{lines}} lignes modifiées · {{delta}} jetons",
+      "added": "Ajouté",
+      "removed": "Supprimé",
+      "systemPrompt": "Voir le prompt système assemblé",
+      "previewButton": "Prévisualiser",
+      "previewing": "Création de l'aperçu...",
+      "saveButton": "Enregistrer la persona",
+      "saving": "Enregistrement...",
+      "saved": "Persona enregistrée. Elle sera utilisée dès le prochain message de l'avatar."
+    },
     "configuredSecretsLabel": "Secrets configurés",
     "secretState": {
       "set": "Défini",

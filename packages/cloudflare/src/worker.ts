@@ -71,6 +71,8 @@ import {
   listPublicAvatars,
   PortableAvatarAuthorizationError,
   PortableAvatarConflictError,
+  PortableAvatarDataError,
+  updatePortableAvatarProfile,
   updatePortableAvatarPublication,
 } from './portable-avatars.js';
 
@@ -608,7 +610,7 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     if (!hostedChatConfigurationReady(env)) {
       return json({ error: 'Hosted chat is not configured.' }, { status: 503 });
     }
-    const body = await readJsonObject(request);
+    const body = await readJsonObject(request, 256 * 1024);
     const name = stringField(body, 'name');
     const description = optionalStringField(body, 'description');
     const persona = optionalStringField(body, 'persona');
@@ -680,11 +682,33 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
   }
 
   const avatarMatch = url.pathname.match(/^\/api\/avatars\/([^/]+)$/u);
-  if (avatarMatch && request.method === 'GET') {
+  if (avatarMatch && (request.method === 'GET' || request.method === 'PATCH')) {
+    if (request.method === 'PATCH') assertSameOrigin(env, request);
     const session = await getHostedSession(env, request);
     if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
     const avatarId = decodeURIComponent(avatarMatch[1] ?? '');
     if (!validResourceId(avatarId)) return json({ error: 'Avatar id is invalid.' }, { status: 400 });
+    if (request.method === 'PATCH') {
+      const body = await readJsonObject(request, 256 * 1024);
+      const name = stringField(body, 'name');
+      if (typeof body.description !== 'string') {
+        return json({ error: 'description must be a string.' }, { status: 400 });
+      }
+      if (typeof body.persona !== 'string') {
+        return json({ error: 'persona must be a string.' }, { status: 400 });
+      }
+      const description = body.description.trim();
+      const persona = body.persona.trim();
+      if (name.length > 80) return json({ error: 'Avatar name is too large.' }, { status: 400 });
+      if (description.length > 1_000) return json({ error: 'Avatar description is too large.' }, { status: 400 });
+      if (persona.length > 50_000) return json({ error: 'Avatar persona is too large.' }, { status: 400 });
+      const updated = await updatePortableAvatarProfile(env, session, avatarId, {
+        name,
+        description,
+        persona,
+      });
+      return updated ? json(updated) : json({ error: 'Hosted avatar was not found.' }, { status: 404 });
+    }
     const avatar = await getHostedAvatar(env, session, avatarId);
     return avatar ? json(avatar) : json({ error: 'Hosted avatar was not found.' }, { status: 404 });
   }
@@ -861,6 +885,7 @@ export default {
       if (error instanceof HostedTelegramNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof PortableAvatarAuthorizationError) return json({ error: detail }, { status: 403 });
       if (error instanceof PortableAvatarConflictError) return json({ error: detail }, { status: 409 });
+      if (error instanceof PortableAvatarDataError) return json({ error: detail }, { status: 500 });
       if (error instanceof HostedChatNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof HostedChatMissingKeyError) return json({ error: detail }, { status: 409 });
       if (error instanceof HostedChatQueueError || error instanceof HostedChatConfigurationError) {

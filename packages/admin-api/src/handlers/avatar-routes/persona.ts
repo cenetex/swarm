@@ -7,58 +7,18 @@
  * - GET /avatars/{id}/persona/history — List persona edit history
  */
 import type { HttpResponse } from "@swarm/core";
-import { createHash } from 'crypto';
 import type { RouteContext } from './types.js';
 import { jsonResponse, requireOwnerOrAdmin } from './shared.js';
 import { parseJsonBody } from '../../http/request-body.js';
 import * as avatarService from '../../services/avatars.js';
 import * as auditLogService from '../../services/audit-log.js';
-import type { ActorType } from '../../services/audit-log.js';
-import { buildDynamicSystemPrompt } from '@swarm/core';
-import type { ProcessorAvatarConfig } from '@swarm/core';
-import { logger } from '@swarm/core';
+import {
+  previewPersonaChange,
+  updatePersona,
+} from '../../services/persona.js';
 
-function resolveActorType(effectiveIsAdmin: boolean): ActorType {
-  return effectiveIsAdmin ? 'admin' : 'owner';
-}
-
-function hashPersona(persona: string): string {
-  return createHash('sha256').update(persona).digest('hex');
-}
-
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
-/**
- * Compute diff between old and new persona.
- * Returns arrays of added/removed chunks (split by newlines).
- */
-function computePersonaDiff(oldPersona: string, newPersona: string): { added: string[]; removed: string[] } {
-  const oldLines = oldPersona.trim().split('\n').filter(l => l.trim().length > 0);
-  const newLines = newPersona.trim().split('\n').filter(l => l.trim().length > 0);
-
-  const oldSet = new Set(oldLines);
-  const newSet = new Set(newLines);
-
-  const added = newLines.filter(line => !oldSet.has(line));
-  const removed = oldLines.filter(line => !newSet.has(line));
-
-  return { added, removed };
-}
-
-/**
- * Build system prompt for persona preview (reusing existing logic but with overridden persona).
- */
-function buildPersonaPreview(avatar: { avatarId: string; name: string; description?: string }, newPersona: string): string {
-  const config: ProcessorAvatarConfig = {
-    avatarId: avatar.avatarId,
-    name: avatar.name,
-    description: avatar.description,
-    persona: newPersona,
-    enabledCategories: [],
-  };
-  return buildDynamicSystemPrompt(config, 'admin-ui');
+function hasErrorName(error: unknown, name: string): error is Error {
+  return error instanceof Error && error.name === name;
 }
 
 export async function handlePersonaRoutes(
@@ -100,39 +60,14 @@ export async function handlePersonaRoutes(
       return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
     }
 
-    if (typeof body.persona !== 'string') {
-      return jsonResponse(corsHeaders, 400, { error: 'persona must be a non-empty string' });
+    try {
+      return jsonResponse(corsHeaders, 200, previewPersonaChange(avatar, body.persona));
+    } catch (error) {
+      if (hasErrorName(error, 'PersonaValidationError')) {
+        return jsonResponse(corsHeaders, 400, { error: error.message });
+      }
+      throw error;
     }
-
-    const newPersona = body.persona.trim();
-    if (newPersona.length === 0) {
-      return jsonResponse(corsHeaders, 400, { error: 'persona cannot be empty' });
-    }
-
-    const oldPersona = avatar.persona || '';
-
-    // Build new system prompt
-    const newSystemPrompt = buildPersonaPreview(avatar, newPersona);
-
-    // Compute diff
-    const diff = computePersonaDiff(oldPersona, newPersona);
-
-    // Compute token delta
-    const oldTokens = estimateTokens(oldPersona);
-    const newTokens = estimateTokens(newPersona);
-    const tokenDelta = newTokens - oldTokens;
-
-    return jsonResponse(corsHeaders, 200, {
-      systemPrompt: newSystemPrompt,
-      diff,
-      tokenDelta,
-      preview: {
-        oldLength: oldPersona.length,
-        newLength: newPersona.length,
-        oldTokens,
-        newTokens,
-      },
-    });
   }
 
   // ── PATCH /avatars/{id}/persona — Update persona ───────────────────────────
@@ -144,76 +79,35 @@ export async function handlePersonaRoutes(
     const denied = await requireOwnerOrAdmin(ctx, avatarId, avatarService.getAvatar);
     if (denied) return denied;
 
-    const avatar = await avatarService.getAvatar(avatarId);
-    if (!avatar) {
-      return jsonResponse(corsHeaders, 404, { error: 'Avatar not found' });
-    }
-
-    // Check ascended status (persona is locked)
-    if (avatar.isAscended) {
-      return jsonResponse(corsHeaders, 403, {
-        error: 'Cannot update persona of ascended avatar - it is permanently locked',
-      });
-    }
-
-    if (typeof body.persona !== 'string') {
-      return jsonResponse(corsHeaders, 400, { error: 'persona must be a non-empty string' });
-    }
-
-    const newPersona = body.persona.trim();
-    if (newPersona.length === 0) {
-      return jsonResponse(corsHeaders, 400, { error: 'persona cannot be empty' });
-    }
-
-    const oldPersona = avatar.persona || '';
-    const oldHash = hashPersona(oldPersona);
-    const newHash = hashPersona(newPersona);
-
-    // Compute token delta for audit log
-    const oldTokens = estimateTokens(oldPersona);
-    const newTokens = estimateTokens(newPersona);
-    const tokenDelta = newTokens - oldTokens;
-
-    // Update avatar
-    const updated = await avatarService.updateAvatar(
-      avatarId,
-      { persona: newPersona },
-      session,
-    );
-
-    // Record audit event
     try {
       const actorId = walletAddress || session?.email || 'unknown';
-      await auditLogService.recordAuditEvent({
-        avatarId,
-        eventType: 'persona_updated',
-        actorId,
-        actorType: resolveActorType(effectiveIsAdmin),
-        details: {
-          oldHash,
-          newHash,
-          oldLength: oldPersona.length,
-          newLength: newPersona.length,
-          oldTokens,
-          newTokens,
-          tokenDelta,
+      const updated = await updatePersona(
+        {
+          avatarId,
+          persona: body.persona,
+          session,
+          actorId,
+          actorType: effectiveIsAdmin ? 'admin' : 'owner',
         },
-      });
-    } catch (err) {
-      logger.warn('Failed to record persona_updated audit event', {
-        avatarId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+        {
+          getAvatar: avatarService.getAvatar,
+          updateAvatar: avatarService.updateAvatar,
+          recordAuditEvent: auditLogService.recordAuditEvent,
+        },
+      );
+      return jsonResponse(corsHeaders, 200, updated);
+    } catch (error) {
+      if (hasErrorName(error, 'PersonaValidationError')) {
+        return jsonResponse(corsHeaders, 400, { error: error.message });
+      }
+      if (hasErrorName(error, 'PersonaLockedError')) {
+        return jsonResponse(corsHeaders, 403, { error: error.message });
+      }
+      if (hasErrorName(error, 'PersonaNotFoundError')) {
+        return jsonResponse(corsHeaders, 404, { error: error.message });
+      }
+      throw error;
     }
-
-    return jsonResponse(corsHeaders, 200, {
-      avatarId: updated.avatarId,
-      name: updated.name,
-      persona: updated.persona,
-      updatedAt: updated.updatedAt,
-      updatedBy: updated.updatedBy,
-      tokenDelta,
-    });
   }
 
   // ── GET /avatars/{id}/persona/history — List persona edit history ──────────

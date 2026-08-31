@@ -143,11 +143,12 @@ export const useAvatarStore = create<AvatarState>()(
       },
 
       applyAvatarUpdates: (id, updates) => {
-        if (!updates?.profileImageUrl && !updates?.name) return;
+        if (!updates?.profileImageUrl && !updates?.name && !updates?.persona) return;
 
         const avatarUpdates: Partial<Avatar> = {};
         if (updates.profileImageUrl) avatarUpdates.avatar = updates.profileImageUrl;
         if (updates.name) avatarUpdates.name = updates.name;
+        if (updates.persona) avatarUpdates.persona = updates.persona;
 
         get().updateAvatar(id, avatarUpdates);
 
