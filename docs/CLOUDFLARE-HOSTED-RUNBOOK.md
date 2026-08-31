@@ -212,6 +212,10 @@ If OAuth start returns `x_app_configuration_rejected`, check all three items tog
 2. OAuth 1.0a user authentication is enabled with read and write permission; and
 3. the callback allowlist contains the exact URL, including protocol and path, with no added trailing slash.
 
+OAuth start failures also return a safe `stage` and numeric `upstreamStatus`. `signing` means the Worker could
+not create the OAuth signature, `network` with status `0` means the Worker did not receive an HTTP response,
+and `response` means X replied with the displayed status. Provider response bodies remain private.
+
 ## Deploy production resources
 
 Production deployment is allowed only from `main`. Select `production` and enter exactly `DEPLOY_PRODUCTION`. GitHub environment approval should provide a second human check.
