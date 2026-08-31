@@ -6,11 +6,15 @@ import {
   connectHostedTelegram,
   disconnectHostedProvider,
   disconnectHostedTelegram,
+  disconnectHostedX,
   enqueueHostedMessage,
   forgetHostedTelegramGroup,
   getHostedHistory,
   getHostedProviderStatus,
   getHostedTelegramStatus,
+  getHostedXStatus,
+  hostedXConnectUrl,
+  hostedXResult,
   importHostedAvatar,
   listHostedAvatars,
   openRouterConnectUrl,
@@ -25,6 +29,7 @@ import {
   type HostedChatMessage,
   type HostedProviderStatus,
   type HostedTelegramStatus,
+  type HostedXStatus,
 } from './hosted-api';
 import { useAuth } from './store/auth';
 
@@ -34,10 +39,11 @@ function shortWallet(walletAddress: string): string {
   return `${walletAddress.slice(0, 5)}…${walletAddress.slice(-4)}`;
 }
 
-function cleanOpenRouterResult(): void {
+function cleanHostedOAuthResult(): void {
   const url = new URL(window.location.href);
   url.searchParams.delete('ai');
   url.searchParams.delete('openrouter');
+  url.searchParams.delete('x');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
@@ -172,6 +178,7 @@ export function HostedApp() {
   const environmentCopy = hostedEnvironmentCopy(import.meta.env.VITE_HOSTED_ENVIRONMENT);
   const { isAuthenticated, user } = useAuth();
   const [oauthResult] = useState(() => openRouterResult(window.location.search));
+  const [xOauthResult] = useState(() => hostedXResult(window.location.search));
   const [provider, setProvider] = useState<HostedProviderStatus | null>(null);
   const [avatars, setAvatars] = useState<HostedAvatar[]>([]);
   const [activeAvatarId, setActiveAvatarId] = useState('');
@@ -191,6 +198,8 @@ export function HostedApp() {
   const [telegram, setTelegram] = useState<HostedTelegramStatus | null>(null);
   const [telegramToken, setTelegramToken] = useState('');
   const [telegramLoading, setTelegramLoading] = useState(false);
+  const [x, setX] = useState<HostedXStatus | null>(null);
+  const [xLoading, setXLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -229,8 +238,8 @@ export function HostedApp() {
   }, [refreshAvatars]);
 
   useEffect(() => {
-    if (oauthResult) cleanOpenRouterResult();
-  }, [oauthResult]);
+    if (oauthResult || xOauthResult) cleanHostedOAuthResult();
+  }, [oauthResult, xOauthResult]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -241,6 +250,8 @@ export function HostedApp() {
       setTelegram(null);
       setTelegramToken('');
       setTelegramLoading(false);
+      setX(null);
+      setXLoading(false);
       return;
     }
     void refreshProvider();
@@ -272,6 +283,32 @@ export function HostedApp() {
       setError(telegramError instanceof Error ? telegramError.message : 'Unable to load Telegram status.');
     });
   }, [activeAvatarId, provider?.connected, refreshTelegram]);
+
+  const refreshX = useCallback(async () => {
+    if (!activeAvatarId) {
+      setX(null);
+      setXLoading(false);
+      return;
+    }
+    setXLoading(true);
+    try {
+      setX(await getHostedXStatus(activeAvatarId));
+    } finally {
+      setXLoading(false);
+    }
+  }, [activeAvatarId]);
+
+  useEffect(() => {
+    if (!activeAvatarId || !provider?.connected) {
+      setX(null);
+      setXLoading(false);
+      return;
+    }
+    setX(null);
+    void refreshX().catch((xError) => {
+      setError(xError instanceof Error ? xError.message : 'Unable to load X status.');
+    });
+  }, [activeAvatarId, provider?.connected, refreshX]);
 
   useEffect(() => {
     if (!activeAvatarId || !provider?.connected) {
@@ -442,6 +479,29 @@ export function HostedApp() {
     }
   };
 
+  const handleRefreshX = async () => {
+    setError('');
+    try {
+      await refreshX();
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : 'Unable to load X status.');
+    }
+  };
+
+  const handleDisconnectX = async () => {
+    if (!activeAvatarId) return;
+    setLoading(true);
+    setError('');
+    try {
+      await disconnectHostedX(activeAvatarId);
+      setX({ connected: false, status: 'disconnected' });
+    } catch (disconnectError) {
+      setError(disconnectError instanceof Error ? disconnectError.message : 'Unable to disconnect X.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCopyGroupBindCommand = async () => {
     if (!telegram?.groupBindCommand) return;
     try {
@@ -510,12 +570,14 @@ export function HostedApp() {
 
   const providerReady = Boolean(provider?.connected);
   const telegramReady = Boolean(telegram?.connected && telegram.ownerBound);
+  const xReady = Boolean(x?.connected && x.status === 'connected');
   const activeName = activeAvatar?.name ?? 'Hosted chat';
   const profileChanged = Boolean(activeAvatar && (
     profileName.trim() !== activeAvatar.name
     || profileDescription.trim() !== (activeAvatar.description ?? '')
     || profilePersona.trim() !== (activeAvatar.persona ?? '')
   ));
+  const activeChannels = ['Web', ...(telegramReady ? ['Telegram'] : []), ...(xReady ? ['X'] : [])].join(' + ');
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-[var(--color-bg)] text-[var(--color-text)]">
@@ -539,16 +601,23 @@ export function HostedApp() {
       </header>
 
       <main className="relative mx-auto grid h-[calc(100dvh-4rem)] max-w-[90rem] grid-cols-1 grid-rows-[minmax(0,1fr)_4.25rem] overflow-hidden lg:grid-cols-[17rem_minmax(0,1fr)_21rem] lg:grid-rows-1 lg:border-x lg:border-[var(--color-border)]">
-        {(error || oauthResult) && (
+        {(error || oauthResult || xOauthResult) && (
           <div className="absolute inset-x-3 top-3 z-30 mx-auto max-w-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg-elevated)] px-4 py-3 shadow-xl" role="status">
             {oauthResult === 'connected' && !error && (
               <p className="border-l-2 border-emerald-400 pl-3 text-sm text-emerald-200">
                 OpenRouter connected. The credential was exchanged and stored server-side.
               </p>
             )}
-            {(oauthResult === 'error' || error) && (
+            {xOauthResult === 'connected' && !error && (
+              <p className="border-l-2 border-emerald-400 pl-3 text-sm text-emerald-200">
+                X connected. Mentions and replies are now handled by this companion.
+              </p>
+            )}
+            {(oauthResult === 'error' || xOauthResult === 'error' || error) && (
               <p className="border-l-2 border-red-400 pl-3 text-sm text-red-200">
-                {error || 'OpenRouter authorization did not complete. Please try again.'}
+                {error || (xOauthResult === 'error'
+                  ? 'X authorization did not complete. Check the app permissions and try again.'
+                  : 'OpenRouter authorization did not complete. Please try again.')}
               </p>
             )}
           </div>
@@ -652,7 +721,7 @@ export function HostedApp() {
               <div className="grid grid-cols-2 lg:grid-cols-1">
                 {avatars.map((avatar) => {
                   const selected = avatar.avatarId === activeAvatarId;
-                  const channels = selected && telegramReady ? 'Web + Telegram' : 'Web';
+                  const channels = selected ? activeChannels : 'Web';
                   return (
                     <button
                       type="button"
@@ -712,7 +781,7 @@ export function HostedApp() {
                   </p>
                   <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[var(--color-text-secondary)]">
                     <span className="flex items-center gap-2"><StatusDot ready={activeAvatar.status !== 'error'} />{avatarStateCopy(activeAvatar.status)}</span>
-                    <span>{telegramReady ? 'Web + Telegram' : 'Web'}</span>
+                    <span>{activeChannels}</span>
                     <span>{updatedCopy(activeAvatar.updatedAt)}</span>
                   </div>
                 </div>
@@ -838,7 +907,7 @@ export function HostedApp() {
                   </span>
                 </div>
                 <p className="mt-2 text-xs leading-5 text-[var(--color-text-muted)]">
-                  The system prompt is the durable direction behind every Web and Telegram reply.
+                  The system prompt is the durable direction behind every Web, Telegram, and X reply.
                 </p>
                 <form onSubmit={(event) => void handleSaveProfile(event)} className="mt-4 space-y-4">
                   <div>
@@ -1104,6 +1173,92 @@ export function HostedApp() {
                     className="sr-only"
                   />
                 </div>
+              </SettingsSection>
+            )}
+
+            {isAuthenticated && providerReady && activeAvatar && (
+              <SettingsSection
+                title="X"
+                detail={xReady
+                  ? `${activeAvatar.name} checks new mentions and replies in the same X conversation.`
+                  : `Connect ${activeAvatar.name} to an X account for mention-based conversations.`}
+                state={xLoading ? 'Checking' : xReady ? 'On' : x?.status === 'reauth_required' ? 'Reconnect' : 'Optional'}
+                ready={xReady}
+              >
+                {xLoading ? (
+                  <p className="text-xs text-[var(--color-text-muted)]">Loading X status…</p>
+                ) : !x?.connected ? (
+                  <div className="space-y-3">
+                    <a
+                      href={hostedXConnectUrl(activeAvatar.avatarId)}
+                      className="block w-full rounded-xl bg-white px-4 py-3 text-center text-sm font-semibold text-black transition hover:bg-white/90"
+                    >
+                      Connect X account
+                    </a>
+                    <p className="text-xs leading-5 text-[var(--color-text-muted)]">
+                      X shows the authorization screen. Access tokens stay encrypted and are never returned to Studio.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="flex min-w-0 items-center gap-2 text-xs">
+                      <span className="shrink-0 text-[var(--color-text-muted)]">Account</span>
+                      <a
+                        href={`https://x.com/${x.username ?? ''}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="truncate text-brand-300 underline underline-offset-4"
+                      >
+                        @{x.username}
+                      </a>
+                    </p>
+                    {x.status === 'reauth_required' && (
+                      <div className="space-y-3 rounded-lg border border-amber-400/30 bg-amber-400/5 p-3">
+                        <p className="text-xs leading-5 text-amber-100">
+                          X rejected the saved authorization. Reconnect to resume replies.
+                        </p>
+                        <a
+                          href={hostedXConnectUrl(activeAvatar.avatarId)}
+                          className="block w-full rounded-xl bg-white px-4 py-3 text-center text-sm font-semibold text-black"
+                        >
+                          Reconnect X
+                        </a>
+                      </div>
+                    )}
+                    {x.lastPolledAt && (
+                      <p className="text-xs text-[var(--color-text-muted)]">
+                        Last checked {new Date(x.lastPolledAt).toLocaleString()}
+                      </p>
+                    )}
+                    <details className="border-t border-[var(--color-border)] pt-3">
+                      <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-muted)]">X options</summary>
+                      <div className="mt-3 space-y-3">
+                        <button
+                          type="button"
+                          onClick={() => void handleRefreshX()}
+                          disabled={loading}
+                          className="w-full rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-sm font-medium hover:bg-[var(--color-bg-tertiary)] disabled:opacity-50"
+                        >
+                          Refresh X status
+                        </button>
+                        <a
+                          href={hostedXConnectUrl(activeAvatar.avatarId)}
+                          className="block w-full rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-center text-sm font-medium hover:bg-[var(--color-bg-tertiary)]"
+                        >
+                          Reauthorize X
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => void handleDisconnectX()}
+                          disabled={loading}
+                          className="text-sm font-medium text-red-300 underline decoration-red-400/40 underline-offset-4 hover:text-red-200 disabled:opacity-50"
+                        >
+                          Disconnect X
+                        </button>
+                      </div>
+                    </details>
+                  </div>
+                )}
               </SettingsSection>
             )}
 

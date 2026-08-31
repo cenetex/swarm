@@ -71,6 +71,15 @@ export type HostedTelegramStatus = {
   groups: HostedTelegramGroup[];
 };
 
+export type HostedXStatus = {
+  connected: boolean;
+  status: 'disconnected' | 'connected' | 'reauth_required';
+  username?: string;
+  userId?: string;
+  lastPolledAt?: number;
+  lastErrorCode?: string;
+};
+
 async function responseError(response: Response, fallback: string): Promise<Error> {
   const body = await response.json().catch(() => null) as { error?: unknown } | null;
   return new Error(typeof body?.error === 'string' ? body.error : fallback);
@@ -96,6 +105,15 @@ export function openRouterConnectUrl(): string {
 
 export function openRouterResult(search: string): 'connected' | 'error' | null {
   const result = new URLSearchParams(search).get('openrouter');
+  return result === 'connected' || result === 'error' ? result : null;
+}
+
+export function hostedXConnectUrl(avatarId: string): string {
+  return `${API_BASE}/auth/x/start?avatarId=${encodeURIComponent(avatarId)}`;
+}
+
+export function hostedXResult(search: string): 'connected' | 'error' | null {
+  const result = new URLSearchParams(search).get('x');
   return result === 'connected' || result === 'error' ? result : null;
 }
 
@@ -221,6 +239,19 @@ export async function forgetHostedTelegramGroup(
 ): Promise<HostedTelegramStatus> {
   return requestJson<HostedTelegramStatus>(
     `/avatars/${encodeURIComponent(avatarId)}/integrations/telegram/groups/${encodeURIComponent(chatId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function getHostedXStatus(avatarId: string): Promise<HostedXStatus> {
+  return requestJson<HostedXStatus>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/x`,
+  );
+}
+
+export async function disconnectHostedX(avatarId: string): Promise<void> {
+  await requestJson<{ disconnected: true }>(
+    `/avatars/${encodeURIComponent(avatarId)}/integrations/x`,
     { method: 'DELETE' },
   );
 }
