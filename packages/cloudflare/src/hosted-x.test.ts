@@ -234,6 +234,40 @@ describe('hosted X connector', () => {
     }
   });
 
+  it('keeps the Cloudflare fetch receiver when starting OAuth', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    const sessionToken = 'hosted-x-fetch-receiver-session';
+    const now = Date.now();
+    state.db.query(`insert into swarm_sessions
+      (session_hash, account_id, wallet_address, created_at, expires_at)
+      values (?, 'account-1', 'wallet-1', ?, ?)`).run(await sha256(sessionToken), now, now + 60_000);
+    const originalFetch = globalThis.fetch;
+    let called = false;
+    globalThis.fetch = (async function (this: unknown) {
+      expect(this).toBe(globalThis);
+      called = true;
+      return new Response(
+        'oauth_token=request-token&oauth_token_secret=request-secret&oauth_callback_confirmed=true',
+      );
+    }) as typeof fetch;
+
+    try {
+      const response = await worker.fetch(new Request(
+        'https://next.swarm.rati.chat/api/auth/x/start?avatarId=avatar-1',
+        { headers: { Cookie: hostedSessionCookie(sessionToken).split(';', 1)[0] ?? '' } },
+      ), env);
+
+      expect(called).toBeTrue();
+      expect(response.status).toBe(302);
+      expect(response.headers.get('Location')).toBe(
+        'https://api.x.com/oauth/authorize?oauth_token=request-token',
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('keeps provider failures typed without retaining upstream response bodies', async () => {
     const { state, env } = setup();
     resources.push(state);

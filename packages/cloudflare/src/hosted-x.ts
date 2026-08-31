@@ -257,7 +257,7 @@ async function oauthFormRequest(input: {
   }
   let response: Response;
   try {
-    response = await input.fetchImpl(input.url, {
+    response = await input.fetchImpl.call(globalThis, input.url, {
       method: input.method,
       headers: {
         Authorization: authorization,
@@ -345,7 +345,7 @@ async function xJsonRequest<T>(input: {
   }
   let response: Response;
   try {
-    response = await input.fetchImpl(input.url, {
+    response = await input.fetchImpl.call(globalThis, input.url, {
       method: input.method,
       headers: {
         Authorization: authorization,
