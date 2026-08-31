@@ -62,6 +62,18 @@ import {
   setHostedTelegramGroupEnabled,
 } from './hosted-telegram.js';
 import {
+  beginHostedXConnect,
+  cleanupHostedXRuntime,
+  completeHostedXConnect,
+  disconnectHostedX,
+  getHostedXStatus,
+  HostedXConfigurationError,
+  HostedXConflictError,
+  HostedXNotFoundError,
+  pollHostedXIntegrations,
+  processHostedXQueueMessage,
+} from './hosted-x.js';
+import {
   createPortableHostedAvatar,
   getOwnedPortableRevision,
   getPublicAvatar,
@@ -179,6 +191,16 @@ function openRouterReturnUrl(env: CloudflareHostedBindings, request: Request, re
     : '/studio?ai=openrouter';
   const url = new URL(path, hostedPublicOrigin(env, request));
   url.searchParams.set('openrouter', result);
+  return url.toString();
+}
+
+function xReturnUrl(env: CloudflareHostedBindings, request: Request, result: 'connected' | 'error'): string {
+  const configuredPath = env.SWARM_X_RETURN_PATH?.trim() || '/studio';
+  const path = configuredPath.startsWith('/') && !configuredPath.startsWith('//')
+    ? configuredPath
+    : '/studio';
+  const url = new URL(path, hostedPublicOrigin(env, request));
+  url.searchParams.set('x', result);
   return url.toString();
 }
 
@@ -542,6 +564,32 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     return json(await getOpenRouterConnectionStatus(platform.secrets, session));
   }
 
+  if (url.pathname === '/api/auth/x/start' && request.method === 'GET') {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = url.searchParams.get('avatarId')?.trim() ?? '';
+    if (!validResourceId(avatarId)) return json({ error: 'avatarId is required.' }, { status: 400 });
+    const started = await beginHostedXConnect(env, session, {
+      avatarId,
+      publicOrigin: hostedPublicOrigin(env, request),
+    });
+    return redirect(started.authorizationUrl);
+  }
+
+  if (url.pathname === '/api/auth/x/callback' && request.method === 'GET') {
+    const session = await getHostedSession(env, request);
+    if (!session || url.searchParams.has('denied')) return redirect(xReturnUrl(env, request, 'error'));
+    try {
+      await completeHostedXConnect(env, session, {
+        oauthToken: url.searchParams.get('oauth_token') ?? '',
+        oauthVerifier: url.searchParams.get('oauth_verifier') ?? '',
+      });
+      return redirect(xReturnUrl(env, request, 'connected'));
+    } catch {
+      return redirect(xReturnUrl(env, request, 'error'));
+    }
+  }
+
   if (url.pathname === '/api/llm/status' && request.method === 'GET') {
     const session = await getHostedSession(env, request);
     if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
@@ -772,6 +820,20 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     return json({ error: 'Method not allowed.' }, { status: 405 });
   }
 
+  const xIntegrationMatch = url.pathname.match(
+    /^\/api\/avatars\/([^/]+)\/integrations\/x$/u,
+  );
+  if (xIntegrationMatch) {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = decodeURIComponent(xIntegrationMatch[1] ?? '');
+    if (!validResourceId(avatarId)) return json({ error: 'X companion is invalid.' }, { status: 400 });
+    if (request.method === 'GET') return json(await getHostedXStatus(env, session, avatarId));
+    assertSameOrigin(env, request);
+    if (request.method === 'DELETE') return json(await disconnectHostedX(env, session, avatarId));
+    return json({ error: 'Method not allowed.' }, { status: 405 });
+  }
+
   if (url.pathname === '/api/chat' && request.method === 'GET') {
     const session = await getHostedSession(env, request);
     if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
@@ -883,6 +945,9 @@ export default {
       if (error instanceof HostedTelegramAuthorizationError) return json({ error: detail }, { status: 403 });
       if (error instanceof HostedTelegramConflictError) return json({ error: detail }, { status: 409 });
       if (error instanceof HostedTelegramNotFoundError) return json({ error: detail }, { status: 404 });
+      if (error instanceof HostedXConflictError) return json({ error: detail }, { status: 409 });
+      if (error instanceof HostedXNotFoundError) return json({ error: detail }, { status: 404 });
+      if (error instanceof HostedXConfigurationError) return json({ error: detail }, { status: 503 });
       if (error instanceof PortableAvatarAuthorizationError) return json({ error: detail }, { status: 403 });
       if (error instanceof PortableAvatarConflictError) return json({ error: detail }, { status: 409 });
       if (error instanceof PortableAvatarDataError) return json({ error: detail }, { status: 500 });
@@ -905,6 +970,8 @@ export default {
     await cleanupExpiredHostedAuth(env, controller.scheduledTime);
     await cleanupHostedChatRuntime(env, controller.scheduledTime);
     await cleanupHostedTelegramRuntime(env, controller.scheduledTime);
+    await cleanupHostedXRuntime(env, controller.scheduledTime);
+    await pollHostedXIntegrations(env, fetch, controller.scheduledTime);
     const platform = createCloudflareHostedPlatform(env);
     await platform.queues.send('default', {
       type: 'swarm.cron.tick',
@@ -923,6 +990,8 @@ export default {
           : undefined;
         const disposition = type === 'swarm.hosted.telegram.update'
           ? await processHostedTelegramQueueMessage(env, message.body)
+          : type === 'swarm.hosted.x.mention'
+            ? await processHostedXQueueMessage(env, message.body)
           : await processHostedChatQueueMessage(env, message.body);
         if (disposition.action === 'retry') message.retry({ delaySeconds: disposition.delaySeconds });
         else message.ack();

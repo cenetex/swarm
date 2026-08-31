@@ -48,6 +48,8 @@ jobs:
       SWARM_USER_SECRET_KEK: ${{ secrets.SWARM_USER_SECRET_KEK }}
       SWARM_USER_SECRET_PREVIOUS_KEY_VERSION: ${{ vars.SWARM_USER_SECRET_PREVIOUS_KEY_VERSION }}
       SWARM_USER_SECRET_PREVIOUS_KEK: ${{ secrets.SWARM_USER_SECRET_PREVIOUS_KEK }}
+      SWARM_X_API_KEY: ${{ secrets.SWARM_X_API_KEY }}
+      SWARM_X_API_SECRET: ${{ secrets.SWARM_X_API_SECRET }}
       SWARM_OPENROUTER_MODEL: ${{ vars.SWARM_OPENROUTER_MODEL }}
       SWARM_HOSTED_CHAT_RATE_LIMIT: ${{ vars.SWARM_HOSTED_CHAT_RATE_LIMIT }}
       VITE_HOSTED_ENVIRONMENT: ${{ inputs.environment }}
@@ -84,6 +86,8 @@ jobs:
             SWARM_PUBLIC_URL
             SWARM_USER_SECRET_KEY_VERSION
             SWARM_USER_SECRET_KEK
+            SWARM_X_API_KEY
+            SWARM_X_API_SECRET
           )
           if [ "$SWARM_DEPLOY_ENVIRONMENT" = "production" ]; then
             required+=(SWARM_CF_STAGING_DOMAIN SWARM_CF_ZONE_NAME)
@@ -165,7 +169,11 @@ jobs:
           # shellcheck disable=SC2016
           node --input-type=module -e '
             import { writeFileSync } from "node:fs";
-            const secrets = { SWARM_USER_SECRET_KEK: process.env.SWARM_USER_SECRET_KEK };
+            const secrets = {
+              SWARM_USER_SECRET_KEK: process.env.SWARM_USER_SECRET_KEK,
+              SWARM_X_API_KEY: process.env.SWARM_X_API_KEY,
+              SWARM_X_API_SECRET: process.env.SWARM_X_API_SECRET,
+            };
             const previousVersion = process.env.SWARM_USER_SECRET_PREVIOUS_KEY_VERSION;
             if (previousVersion) {
               if (!/^[A-Za-z0-9_]{1,40}$/.test(previousVersion)) throw new Error("Invalid previous key version.");

@@ -18,9 +18,11 @@ vi.mock('./hosted-api', async () => {
     importHostedAvatar: vi.fn(),
     connectHostedTelegram: vi.fn(),
     disconnectHostedTelegram: vi.fn(),
+    disconnectHostedX: vi.fn(),
     listHostedAvatars: vi.fn(),
     getHostedHistory: vi.fn(),
     getHostedTelegramStatus: vi.fn(),
+    getHostedXStatus: vi.fn(),
     setHostedTelegramGroupEnabled: vi.fn(),
     forgetHostedTelegramGroup: vi.fn(),
     repairHostedTelegram: vi.fn(),
@@ -79,6 +81,11 @@ beforeEach(() => {
     groups: [],
   });
   vi.mocked(hostedApi.disconnectHostedTelegram).mockResolvedValue();
+  vi.mocked(hostedApi.getHostedXStatus).mockResolvedValue({
+    connected: false,
+    status: 'disconnected',
+  });
+  vi.mocked(hostedApi.disconnectHostedX).mockResolvedValue();
   vi.mocked(hostedApi.repairHostedTelegram).mockResolvedValue({
     connected: true,
     status: 'connected',
@@ -271,6 +278,36 @@ describe('HostedApp', () => {
     expect(await screen.findByRole('link', { name: /prove ownership/i })).toHaveAttribute(
       'href',
       'https://t.me/JaxSwarmBot?start=one-time-code',
+    );
+  });
+
+  it('offers avatar-scoped X OAuth and disconnects without exposing credentials', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.getHostedXStatus).mockResolvedValue({
+      connected: true,
+      status: 'connected',
+      username: 'JaxOnX',
+      userId: '42',
+      lastPolledAt: 10,
+    });
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([{
+      avatarId: 'avatar/one',
+      name: 'Jax',
+      status: 'shell',
+      createdAt: 1,
+      updatedAt: 1,
+    }]);
+    render(<HostedApp />);
+
+    const account = await screen.findByRole('link', { name: '@JaxOnX' });
+    expect(account).toHaveAttribute('href', 'https://x.com/JaxOnX');
+    fireEvent.click(screen.getByText(/^X options$/u));
+    fireEvent.click(screen.getByRole('button', { name: /disconnect x/i }));
+    await waitFor(() => expect(hostedApi.disconnectHostedX).toHaveBeenCalledWith('avatar/one'));
+    expect(await screen.findByRole('link', { name: /connect x account/i })).toHaveAttribute(
+      'href',
+      expect.stringMatching(/\/auth\/x\/start\?avatarId=avatar%2Fone$/u),
     );
   });
 

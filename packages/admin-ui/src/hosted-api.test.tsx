@@ -2,10 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   connectHostedTelegram,
   disconnectHostedTelegram,
+  disconnectHostedX,
   disconnectHostedProvider,
   forgetHostedTelegramGroup,
   getHostedProviderStatus,
   getHostedTelegramStatus,
+  getHostedXStatus,
+  hostedXConnectUrl,
+  hostedXResult,
   importHostedAvatar,
   listPublicHostedAvatars,
   openRouterConnectUrl,
@@ -26,6 +30,13 @@ describe('hosted API client', () => {
     expect(openRouterResult('?openrouter=error')).toBe('error');
     expect(openRouterResult('?openrouter=sk-secret')).toBeNull();
     expect(openRouterConnectUrl()).toMatch(/\/auth\/openrouter$/u);
+  });
+
+  it('builds avatar-scoped X OAuth URLs and accepts only safe callback results', () => {
+    expect(hostedXConnectUrl('avatar/one')).toMatch(/\/auth\/x\/start\?avatarId=avatar%2Fone$/u);
+    expect(hostedXResult('?x=connected')).toBe('connected');
+    expect(hostedXResult('?x=error')).toBe('error');
+    expect(hostedXResult('?x=access-token')).toBeNull();
   });
 
   it('loads connection status through the cookie-backed same-origin API', async () => {
@@ -104,6 +115,23 @@ describe('hosted API client', () => {
         persona: 'Be direct.',
       }),
     });
+  });
+
+  it('reads and disconnects avatar-scoped X without browser credentials', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => Response.json(
+      init?.method === 'DELETE'
+        ? { disconnected: true }
+        : { connected: true, status: 'connected', username: 'JaxOnX', userId: '42' },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getHostedXStatus('avatar/one')).resolves.toMatchObject({ username: 'JaxOnX' });
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/avatars\/avatar%2Fone\/integrations\/x$/u);
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
+
+    await disconnectHostedX('avatar/one');
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'DELETE', credentials: 'include' });
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toBeUndefined();
   });
 
   it('reads the public registry without auth headers and imports a portable artifact', async () => {

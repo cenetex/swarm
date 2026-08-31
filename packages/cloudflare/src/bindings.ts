@@ -89,5 +89,8 @@ export type CloudflareHostedBindings = {
   SWARM_OPENROUTER_CHAT_URL?: string;
   SWARM_OPENROUTER_MODEL?: string;
   SWARM_HOSTED_CHAT_RATE_LIMIT?: string;
+  SWARM_X_API_KEY?: string;
+  SWARM_X_API_SECRET?: string;
+  SWARM_X_RETURN_PATH?: string;
   [binding: string]: unknown;
 };
