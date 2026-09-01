@@ -554,14 +554,25 @@ describe("mountAdminRoutes integration", () => {
     process.env.SWARM_HOSTED_INSTANCE_ID = "i-test123";
     process.env.SWARM_HOSTED_TENANT_ID = "tenant-1";
     store.set("hosting:global:mode", "hosted");
+    store.set("hosting:global:aws-managed-instance", JSON.stringify({
+      provider: "aws",
+      architecture: "aws-managed-ec2-pool",
+      planId: "starter",
+      status: "running",
+      requestedAt: Date.now() - 10_000,
+      updatedAt: Date.now(),
+      instanceId: "i-placeholder",
+      endpoint: "https://placeholder.swarm.example",
+    }));
     const active = await hitRoute(app, "GET", "/api/hosting/status");
-    expect((active.body as any).mode).toBe("hosted");
-    expect((active.body as any).hosted.status).toBe("active");
-    expect((active.body as any).hosted.entitlement).toBe("active");
-    expect((active.body as any).hosted.instance.status).toBe("running");
-    expect((active.body as any).hosted.instance.endpoint).toBe("https://tenant-1.swarm.example");
-    expect((active.body as any).hosted.instance.instanceId).toBe("i-test123");
-    expect(store.has("hosting:global:aws-managed-instance")).toBe(false);
+    expect((active.body as any).mode).toBe("local");
+    expect((active.body as any).hosted.status).toBe("not-configured");
+    expect((active.body as any).hosted.entitlement).toBe("none");
+    expect((active.body as any).hosted.billing.status).toBe("eligible");
+    expect((active.body as any).hosted.runtime.status).toBe("stopped");
+    expect((active.body as any).hosted.modelWorkAllowed).toBe(false);
+    expect((active.body as any).hosted.instance).toBeUndefined();
+    expect(store.has("hosting:global:aws-managed-instance")).toBe(true);
   });
 
   it("reports auto-detected Ollama as the active provider without a saved provider secret", async () => {

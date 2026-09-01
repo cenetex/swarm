@@ -1,5 +1,11 @@
 import type { CompositeKey } from '../services/key-value-store.js';
 import { z } from 'zod';
+import {
+  canPerformHostedModelWork,
+  HostedBillingStateSchema,
+  HostedRuntimeStateSchema,
+  reconcileHostedLifecycle,
+} from './lifecycle.js';
 
 export type SwarmRunMode = 'local' | 'hosted';
 
@@ -174,6 +180,9 @@ export const HostingStatusSchema = z.object({
       'error',
     ]),
     entitlement: z.enum(['none', 'checkout-pending', 'active']),
+    billing: HostedBillingStateSchema.default({ status: 'eligible', updatedAt: 0 }),
+    runtime: HostedRuntimeStateSchema.default({ status: 'stopped', updatedAt: 0 }),
+    modelWorkAllowed: z.boolean().default(false),
     detail: z.string(),
     plan: z.object({
       id: z.string(),
@@ -201,8 +210,54 @@ export const HostingStatusSchema = z.object({
 
 export type HostingStatus = z.infer<typeof HostingStatusSchema>;
 
-export function parseHostingStatus(value: unknown): HostingStatus {
-  return HostingStatusSchema.parse(value);
+function coarseHostedStatus(runtimeStatus: z.infer<typeof HostedRuntimeStateSchema>): HostingStatus['hosted']['status'] {
+  switch (runtimeStatus.status) {
+    case 'requested':
+      return 'requested';
+    case 'provisioning':
+    case 'health-checking':
+      return 'provisioning';
+    case 'active':
+      return 'active';
+    case 'stopped':
+    case 'cancelled':
+      return 'stopped';
+    case 'failed':
+      return 'error';
+  }
+}
+
+export function parseHostingStatus(value: unknown, now = Date.now()): HostingStatus {
+  const parsed = HostingStatusSchema.parse(value);
+  const lifecycle = reconcileHostedLifecycle({
+    billing: parsed.hosted.billing,
+    runtime: parsed.hosted.runtime,
+  }, now);
+  const modelWorkAllowed = canPerformHostedModelWork(lifecycle, now);
+  const hasLifecycleActivity = lifecycle.billing.status !== 'eligible' || lifecycle.runtime.status !== 'stopped';
+  const status = modelWorkAllowed
+    ? 'active'
+    : hasLifecycleActivity
+      ? coarseHostedStatus(lifecycle.runtime)
+      : parsed.hosted.status === 'not-configured'
+        ? 'not-configured'
+        : 'available';
+  return {
+    ...parsed,
+    mode: parsed.mode === 'hosted' && modelWorkAllowed ? 'hosted' : 'local',
+    hosted: {
+      ...parsed.hosted,
+      status,
+      entitlement: lifecycle.billing.status === 'paid'
+        ? 'active'
+        : lifecycle.billing.status === 'checkout-pending'
+          ? 'checkout-pending'
+          : 'none',
+      billing: lifecycle.billing,
+      runtime: lifecycle.runtime,
+      modelWorkAllowed,
+    },
+  };
 }
 
 export const AWS_MANAGED_SWARM_STARTER_PLAN: ManagedSwarmHostingPlan = {

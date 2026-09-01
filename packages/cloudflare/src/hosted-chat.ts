@@ -8,6 +8,7 @@ import type {
 } from './bindings.js';
 import { createCloudflareHostedPlatform } from './platform.js';
 import { isHostedSecretKeyValid } from './secret-crypto.js';
+import { hostedModelWorkAllowed } from './hosted-lifecycle.js';
 
 const CHAT_RATE_WINDOW_MS = 60_000;
 const DEFAULT_CHAT_RATE_LIMIT = 20;
@@ -157,6 +158,13 @@ export class HostedChatConfigurationError extends Error {
   constructor() {
     super('Hosted chat is not configured.');
     this.name = 'HostedChatConfigurationError';
+  }
+}
+
+export class HostedLifecycleInactiveError extends Error {
+  constructor() {
+    super('Hosted model work is paused until billing, provisioning, and runtime health are confirmed.');
+    this.name = 'HostedLifecycleInactiveError';
   }
 }
 
@@ -391,6 +399,9 @@ export async function enqueueHostedChat(
   now = Date.now(),
 ): Promise<{ jobId: string; replayed: boolean }> {
   assertHostedChatRuntimeReady(env);
+  if (!await hostedModelWorkAllowed(env, session.accountId, now)) {
+    throw new HostedLifecycleInactiveError();
+  }
   if (!input.message.trim() || input.message.length > 4_000) throw new Error('Hosted chat message is invalid.');
   const avatar = await findHostedAvatarRow(env, session.accountId, input.avatarId);
   if (!avatar) throw new HostedChatNotFoundError();
@@ -738,6 +749,14 @@ export async function generateHostedReply(
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ ok: true; content: string } | HostedModelFailure> {
+  if (!await hostedModelWorkAllowed(env, input.accountId)) {
+    return {
+      ok: false,
+      code: 'hosted_lifecycle_inactive',
+      message: 'Hosted model work is paused until billing and runtime health recover.',
+      retryable: false,
+    };
+  }
   const avatar = await findHostedAvatarRow(env, input.accountId, input.avatarId);
   if (!avatar) {
     return { ok: false, code: 'avatar_missing', message: SAFE_RUNTIME_ERROR, retryable: false };
@@ -838,6 +857,16 @@ async function processClaimedJob(
   const job = await claimJob(env, payload, now);
   if (!job) return { action: 'ack' };
   try {
+    if (!await hostedModelWorkAllowed(env, job.account_id, now)) {
+      return recordProcessingFailure(
+        env,
+        job,
+        'hosted_lifecycle_inactive',
+        'Hosted model work is paused until billing and runtime health recover.',
+        false,
+        now,
+      );
+    }
     assertHostedChatRuntimeReady(env);
     const avatar = await findHostedAvatarRow(env, job.account_id, job.avatar_id);
     if (!avatar) {

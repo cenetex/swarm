@@ -7,6 +7,7 @@ import {
   parseHostingStatus,
   type HostedPlatformDescriptor,
 } from './platform.js';
+import { initialHostedBillingState, initialHostedRuntimeState } from './lifecycle.js';
 
 describe('hosted platform contract', () => {
   it('checks capabilities without implying provider details', () => {
@@ -39,6 +40,7 @@ describe('hosted platform contract', () => {
   });
 
   it('validates provider-neutral hosting status responses', () => {
+    const now = Date.now();
     const status = parseHostingStatus({
       mode: 'local',
       local: {
@@ -56,18 +58,34 @@ describe('hosted platform contract', () => {
         architecture: 'cloudflare-worker-scaffold',
         status: 'not-configured',
         entitlement: 'none',
+        billing: initialHostedBillingState(now),
+        runtime: initialHostedRuntimeState(now),
+        modelWorkAllowed: false,
         detail: 'Provisioning is not connected.',
       },
     });
 
     expect(status.hosted.provider).toBe('cloudflare');
     expect(status.hosted.entitlement).toBe('none');
-    expect(() =>
-      parseHostingStatus({
-        ...status,
-        hosted: { ...status.hosted, status: 'active' },
-      }),
-    ).not.toThrow();
+    const falseActive = parseHostingStatus({
+      ...status,
+      mode: 'hosted',
+      hosted: { ...status.hosted, status: 'active', entitlement: 'active', modelWorkAllowed: true },
+    }, now);
+    expect(falseActive.mode).toBe('local');
+    expect(falseActive.hosted.status).not.toBe('active');
+    expect(falseActive.hosted.entitlement).toBe('none');
+    const oldPlaceholder = { ...status, hosted: { ...status.hosted } } as Record<string, unknown>;
+    const oldHosted = oldPlaceholder.hosted as Record<string, unknown>;
+    delete oldHosted.billing;
+    delete oldHosted.runtime;
+    delete oldHosted.modelWorkAllowed;
+    oldHosted.status = 'active';
+    oldHosted.entitlement = 'active';
+    const normalizedOld = parseHostingStatus(oldPlaceholder, now);
+    expect(normalizedOld.mode).toBe('local');
+    expect(normalizedOld.hosted.billing.status).toBe('eligible');
+    expect(normalizedOld.hosted.runtime.status).toBe('stopped');
     expect(() =>
       parseHostingStatus({
         ...status,
@@ -95,6 +113,25 @@ describe('hosted platform contract', () => {
         architecture: 'cloudflare-hybrid-shared-runtime',
         status: 'active',
         entitlement: 'active',
+        billing: {
+          status: 'paid',
+          planId: 'starter',
+          evidence: { provider: 'billing-test', eventId: 'bill-1', occurredAt: now - 2_000 },
+          updatedAt: now - 2_000,
+        },
+        runtime: {
+          status: 'active',
+          provider: 'runtime-test',
+          planId: 'starter',
+          runtimeId: 'runtime-1',
+          endpoint: 'https://tenant-1.example',
+          requestedAt: now - 2_000,
+          provisionedAt: now - 1_000,
+          health: { status: 'healthy', checkedAt: now },
+          evidence: { provider: 'runtime-test', eventId: 'health-1', occurredAt: now },
+          updatedAt: now,
+        },
+        modelWorkAllowed: true,
         detail: 'Hosted runtime active.',
         plan: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN,
         instance: {
@@ -107,8 +144,9 @@ describe('hosted platform contract', () => {
           tenantId: 'tenant-1',
         },
       },
-    });
+    }, now);
 
     expect(status.hosted.instance?.provider).toBe('cloudflare');
+    expect(status.hosted.modelWorkAllowed).toBe(true);
   });
 });

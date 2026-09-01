@@ -151,7 +151,31 @@ Required chat bindings:
 | `SWARM_CF_ZONE_NAME`           | Cloudflare zone used to validate production routes.            |
 | `SWARM_CF_PRIMARY_ROUTE`       | Optional approved primary route in exact `hostname/*` form.    |
 
-This slice does not activate a paid entitlement and does not report a tenant as subscribed or active.
+### Authoritative hosted lifecycle
+
+Billing and runtime availability use one provider-neutral lifecycle shared by core, the Worker, local mode,
+and Studio. Checkout only records `checkout-pending`; it cannot record payment. A payment provider sends an
+HMAC-authenticated event to `/api/webhooks/hosting/billing`, and a runtime provider sends provisioning and
+health events to `/api/webhooks/hosting/runtime`. Provider event ids are durable and idempotent, and older
+events cannot undo a later cancellation or failure.
+
+`paid` requires provider evidence. `active` additionally requires a provisioned runtime id and a successful
+health check no older than five minutes. The minute reconciliation job stops work after cancellation or
+payment failure and moves stale runtimes back to health-checking. Queue workers repeat the same check before
+calling a model, so already queued work cannot continue on stale evidence.
+
+Migration `0010_hosted_lifecycle.sql` stores the lifecycle and processed provider event ids. The migration must
+be applied before enabling strict enforcement. `SWARM_HOSTED_LIFECYCLE_REQUIRED=1` makes accounts without a
+lifecycle row fail closed; the default remains `0` only for a staged migration of existing hosted accounts.
+Accounts that have entered the lifecycle always use the evidence-backed gate regardless of this rollout flag.
+
+Required control-plane secrets:
+
+| Binding                           | Purpose                                                     |
+| --------------------------------- | ----------------------------------------------------------- |
+| `SWARM_BILLING_WEBHOOK_SECRET`    | Verifies authoritative billing events.                     |
+| `SWARM_RUNTIME_CALLBACK_SECRET`   | Verifies provisioning and runtime-health events.           |
+| `SWARM_HOSTED_LIFECYCLE_REQUIRED` | Set to `1` after migration/backfill to block missing state. |
 
 The Worker deployment configuration and protected manual release workflow are documented in
 [`docs/CLOUDFLARE-HOSTED-RUNBOOK.md`](../CLOUDFLARE-HOSTED-RUNBOOK.md). Production first uses the
@@ -185,7 +209,7 @@ Desktop wallet sign-in uses a short-lived cross-device pairing. The Worker retur
 3. **Web chat runtime — implemented:** tenant-owned avatars and history, idempotent Queue jobs, per-avatar serialization, bounded model retries, and safe failed jobs.
 4. **Webhook runtime — implemented:** Telegram ingress, owner/group binding, per-chat and per-topic history, direct replies, typing/reactions, group controls, safe delivery state, and Queue processing.
 5. **Portable public projects — implemented:** default-public registry, strict content-addressed artifacts, owner export/import, R2 mirrors, NFT-ready metadata, and blank-environment restore proof.
-6. **Entitlement and quotas:** connect Stripe checkout/portal and optional on-chain entitlement; enforce request, token, storage, and concurrency limits before model calls.
+6. **Entitlement lifecycle — implemented:** provider-neutral billing, provisioning, health evidence, reconciliation, and model-work gating. A customer-facing checkout/portal adapter can now feed the signed billing webhook.
 7. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
 8. **Media and scheduling:** move blobs to R2 and scheduled jobs to D1 plus Cron/Workflows.
 9. **Operational hardening:** permanent artifact anchoring, owner-authorized NFT minting, KMS-backed root-key wrapping, secret re-encryption jobs, audit reporting, monitoring, and kill switches.
@@ -205,7 +229,7 @@ Desktop wallet sign-in uses a short-lived cross-device pairing. The Worker retur
 
 - The current implementation processes browser chat and text/caption Telegram conversations. Telegram binary
   media, Discord, tools, and scheduling still use other runtimes.
-- Hosted status may report `available`; it must not report an active tenant runtime until entitlement state is connected in #1814.
+- A concrete checkout/portal provider adapter is still required for a public paid launch; it must feed the provider-neutral signed billing webhook instead of writing paid state directly.
 - D1 is not DynamoDB. Access patterns must be deliberate, and broad scans should be avoided.
 - Durable Objects are appropriate for coordination and inbound realtime clients, not arbitrary long-running processes.
 - Discord gateway connections require a persistent specialized service.

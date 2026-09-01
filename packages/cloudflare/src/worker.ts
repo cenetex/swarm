@@ -1,8 +1,15 @@
 import {
+  canPerformHostedModelWork,
   canonicalPortableAvatarJson,
   CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN,
+  initialHostedBillingState,
+  initialHostedRuntimeState,
+  isAuthoritativelyPaid,
   parseHostingStatus,
   portableAvatarNftMetadata,
+  type HostedBillingProviderEvent,
+  type HostedLifecycle,
+  type HostedRuntimeProviderEvent,
 } from '@swarm/core/hosted';
 import type { CloudflareHostedBindings, CloudflareQueueBatch } from './bindings.js';
 import {
@@ -47,6 +54,7 @@ import {
   getHostedChatJob,
   HostedAvatarCoordinatorDurableObject,
   HostedChatConfigurationError,
+  HostedLifecycleInactiveError,
   HostedChatMissingKeyError,
   HostedChatNotFoundError,
   HostedChatQueueError,
@@ -81,6 +89,15 @@ import {
   pollHostedXIntegrations,
   processHostedXQueueMessage,
 } from './hosted-x.js';
+import {
+  beginHostedCheckout,
+  beginHostedProvisioning,
+  getHostedLifecycle,
+  reconcileHostedAccounts,
+  recordHostedBillingEvent,
+  recordHostedRuntimeEvent,
+  verifyHostedProviderSignature,
+} from './hosted-lifecycle.js';
 import {
   createPortableHostedAvatar,
   getOwnedPortableRevision,
@@ -167,6 +184,14 @@ function optionalBooleanField(body: Record<string, unknown>, name: string): bool
   return value;
 }
 
+function numberField(body: Record<string, unknown>, name: string): number {
+  const value = body[name];
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative integer.`);
+  }
+  return value;
+}
+
 function validResourceId(value: string): boolean {
   return /^[A-Za-z0-9._:-]{1,160}$/u.test(value);
 }
@@ -238,6 +263,82 @@ function hostedConfigurationReady(env: CloudflareHostedBindings): boolean {
 
 function hostedChatConfigurationReady(env: CloudflareHostedBindings): boolean {
   return hostedConfigurationReady(env) && !!env.SWARM_QUEUE && !!env.SWARM_AVATAR_COORDINATORS;
+}
+
+function lifecycleStatus(env: CloudflareHostedBindings, lifecycle: HostedLifecycle) {
+  const configured = hostedConfigurationReady(env);
+  const modelWorkAllowed = canPerformHostedModelWork(lifecycle);
+  const detail = modelWorkAllowed
+    ? 'Billing, provisioning, and runtime health are confirmed.'
+    : lifecycle.billing.status === 'checkout-pending'
+      ? 'Checkout is pending provider confirmation.'
+      : lifecycle.billing.status === 'paid'
+        ? lifecycle.runtime.status === 'health-checking'
+          ? 'Provisioning completed; waiting for a fresh runtime health check.'
+          : 'Payment is confirmed; the hosted runtime is not active yet.'
+        : lifecycle.billing.status === 'failed' || lifecycle.billing.status === 'cancelled'
+          ? `Hosted billing is ${lifecycle.billing.status}; model work is stopped.`
+          : configured
+            ? 'Hosted runtime is ready for sign-in and checkout.'
+            : 'Hosted runtime requires its public URL and encrypted secret keyring.';
+  return parseHostingStatus({
+    mode: modelWorkAllowed ? 'hosted' : 'local',
+    local: {
+      available: false,
+      running: !modelWorkAllowed,
+      label: 'This device',
+      detail: 'Local mode runs from the native app and is not managed by this hosted Worker.',
+    },
+    hosted: {
+      available: configured,
+      configured,
+      label: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN.label,
+      priceUsdMonthly: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN.priceUsdMonthly,
+      provider: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN.provider,
+      architecture: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN.architecture,
+      status: configured ? 'available' : 'not-configured',
+      entitlement: 'none',
+      billing: lifecycle.billing,
+      runtime: lifecycle.runtime,
+      modelWorkAllowed,
+      plan: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN,
+      detail,
+    },
+  });
+}
+
+async function readSignedProviderEvent(
+  request: Request,
+  secret: string | undefined,
+): Promise<Record<string, unknown>> {
+  const text = await request.text();
+  if (text.length > 16_384) throw new Error('Request body is too large.');
+  if (!await verifyHostedProviderSignature(text, request.headers.get('X-Swarm-Signature'), secret)) {
+    throw new HostedOriginError();
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text) as unknown;
+  } catch {
+    throw new Error('Invalid JSON request body.');
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('JSON object required.');
+  return value as Record<string, unknown>;
+}
+
+function commonProviderEvent(body: Record<string, unknown>) {
+  const accountId = stringField(body, 'accountId');
+  const provider = stringField(body, 'provider');
+  const eventId = stringField(body, 'eventId');
+  if (![accountId, provider, eventId].every(validResourceId)) throw new Error('Provider event id is invalid.');
+  return {
+    accountId,
+    provider,
+    eventId,
+    occurredAt: numberField(body, 'occurredAt'),
+    ...(optionalStringField(body, 'planId') ? { planId: optionalStringField(body, 'planId') } : {}),
+    ...(optionalStringField(body, 'detail') ? { detail: optionalStringField(body, 'detail') } : {}),
+  };
 }
 
 function securedAssetResponse(response: Response, env: CloudflareHostedBindings): Response {
@@ -330,33 +431,58 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
       environment: env.SWARM_ENV ?? 'development',
     });
   }
+  if (url.pathname === '/api/webhooks/hosting/billing' && request.method === 'POST') {
+    const body = await readSignedProviderEvent(request, env.SWARM_BILLING_WEBHOOK_SECRET);
+    const common = commonProviderEvent(body);
+    const type = stringField(body, 'type');
+    if (![
+      'subscription.paid',
+      'subscription.cancellation-pending',
+      'subscription.cancelled',
+      'payment.failed',
+    ].includes(type)) throw new Error('Billing event type is invalid.');
+    const event: HostedBillingProviderEvent = {
+      ...common,
+      type: type as HostedBillingProviderEvent['type'],
+      ...(optionalStringField(body, 'providerCustomerId')
+        ? { providerCustomerId: optionalStringField(body, 'providerCustomerId') }
+        : {}),
+      ...(optionalStringField(body, 'providerSubscriptionId')
+        ? { providerSubscriptionId: optionalStringField(body, 'providerSubscriptionId') }
+        : {}),
+    };
+    const result = await recordHostedBillingEvent(env, common.accountId, event);
+    return json({ replayed: result.replayed, lifecycle: result.lifecycle });
+  }
+  if (url.pathname === '/api/webhooks/hosting/runtime' && request.method === 'POST') {
+    const body = await readSignedProviderEvent(request, env.SWARM_RUNTIME_CALLBACK_SECRET);
+    const common = commonProviderEvent(body);
+    const type = stringField(body, 'type');
+    if (![
+      'provision.started',
+      'provision.succeeded',
+      'provision.failed',
+      'health.healthy',
+      'health.unhealthy',
+      'runtime.stopped',
+      'runtime.cancelled',
+    ].includes(type)) throw new Error('Runtime event type is invalid.');
+    const event: HostedRuntimeProviderEvent = {
+      ...common,
+      type: type as HostedRuntimeProviderEvent['type'],
+      ...(optionalStringField(body, 'runtimeId') ? { runtimeId: optionalStringField(body, 'runtimeId') } : {}),
+      ...(optionalStringField(body, 'endpoint') ? { endpoint: optionalStringField(body, 'endpoint') } : {}),
+      ...(body.provisionedAt === undefined ? {} : { provisionedAt: numberField(body, 'provisionedAt') }),
+    };
+    const result = await recordHostedRuntimeEvent(env, common.accountId, event);
+    return json({ replayed: result.replayed, lifecycle: result.lifecycle });
+  }
   if (url.pathname === '/api/hosting/status' && request.method === 'GET') {
-    const configured = hostedConfigurationReady(env);
-    return json(
-      parseHostingStatus({
-        mode: 'local',
-        local: {
-          available: false,
-          running: false,
-          label: 'This device',
-          detail: 'Local mode runs from the native app and is not managed by this hosted Worker.',
-        },
-        hosted: {
-          available: configured,
-          configured,
-          label: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN.label,
-          priceUsdMonthly: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN.priceUsdMonthly,
-          provider: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN.provider,
-          architecture: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN.architecture,
-          status: configured ? 'available' : 'not-configured',
-          entitlement: 'none',
-          plan: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN,
-          detail: configured
-            ? 'Hosted runtime is ready for wallet or passkey sign-in and entitlement activation.'
-            : 'Hosted runtime requires its public URL and encrypted secret keyring.',
-        },
-      }),
-    );
+    const session = await getHostedSession(env, request);
+    const lifecycle = session
+      ? await getHostedLifecycle(env, session.accountId)
+      : { billing: initialHostedBillingState(), runtime: initialHostedRuntimeState() };
+    return json(lifecycleStatus(env, lifecycle));
   }
 
   if (env.SWARM_ENV === 'production' && !hostedConfigurationReady(env)) {
@@ -590,6 +716,17 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
         headers: { 'Set-Cookie': clearHostedSessionCookie() },
       },
     );
+  }
+
+  if (url.pathname === '/api/hosting/provision' && request.method === 'POST') {
+    assertSameOrigin(env, request);
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const current = await getHostedLifecycle(env, session.accountId);
+    const lifecycle = isAuthoritativelyPaid(current.billing)
+      ? await beginHostedProvisioning(env, session.accountId)
+      : await beginHostedCheckout(env, session.accountId);
+    return json(lifecycleStatus(env, lifecycle), { status: 202 });
   }
 
   if (url.pathname === '/api/auth/openrouter' && request.method === 'GET') {
@@ -1052,6 +1189,7 @@ export default {
       if (error instanceof PortableAvatarDataError) return json({ error: detail }, { status: 500 });
       if (error instanceof HostedChatNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof HostedChatMissingKeyError) return json({ error: detail }, { status: 409 });
+      if (error instanceof HostedLifecycleInactiveError) return json({ error: detail }, { status: 409 });
       if (error instanceof HostedChatQueueError || error instanceof HostedChatConfigurationError) {
         return json({ error: detail }, { status: 503 });
       }
@@ -1067,6 +1205,7 @@ export default {
 
   async scheduled(controller: ScheduledController, env: CloudflareHostedBindings): Promise<void> {
     await cleanupExpiredHostedAuth(env, controller.scheduledTime);
+    await reconcileHostedAccounts(env, controller.scheduledTime);
     await cleanupHostedChatRuntime(env, controller.scheduledTime);
     await cleanupHostedTelegramRuntime(env, controller.scheduledTime);
     await cleanupHostedXRuntime(env, controller.scheduledTime);
