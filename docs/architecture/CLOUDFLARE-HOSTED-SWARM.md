@@ -164,7 +164,7 @@ health check no older than five minutes. The minute reconciliation job stops wor
 payment failure and moves stale runtimes back to health-checking. Queue workers repeat the same check before
 calling a model, so already queued work cannot continue on stale evidence.
 
-Migration `0010_hosted_lifecycle.sql` stores the lifecycle and processed provider event ids. The migration must
+Migration `0011_hosted_lifecycle.sql` stores the lifecycle and processed provider event ids. The migration must
 be applied before enabling strict enforcement. `SWARM_HOSTED_LIFECYCLE_REQUIRED=1` makes accounts without a
 lifecycle row fail closed; the default remains `0` only for a staged migration of existing hosted accounts.
 Accounts that have entered the lifecycle always use the evidence-backed gate regardless of this rollout flag.
