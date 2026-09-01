@@ -28,7 +28,7 @@ vi.mock('../store/auth', () => ({
 }));
 
 vi.mock('./PrivyLoginButton', () => ({
-  PrivyLoginButton: () => <button type="button">Use browser wallet</button>,
+  PrivyLoginButton: ({ label = 'Use browser wallet' }: { label?: string }) => <button type="button">{label}</button>,
 }));
 
 vi.mock('../auth/bootstrap', () => ({
@@ -63,6 +63,19 @@ describe('HostedWalletSignIn', () => {
     );
   });
 
+  it('keeps the mobile wallet action visible before the desktop QR content', async () => {
+    render(<HostedWalletSignIn />);
+    fireEvent.click(screen.getByRole('button', { name: 'Scan to sign in' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Scan to sign in' });
+    const mobileLink = screen.getByRole('link', { name: 'Open Phantom to sign in' });
+    const qrImage = await screen.findByRole('img', { name: 'QR code for phantom' });
+
+    expect(dialog).toHaveClass('overflow-y-auto');
+    expect(mobileLink).toHaveAttribute('href', expect.stringContaining('https://phantom.app/ul/browse/'));
+    expect(mobileLink.compareDocumentPosition(qrImage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('can switch the QR to Solflare and keeps browser wallets as a fallback', async () => {
     render(<HostedWalletSignIn />);
     fireEvent.click(screen.getByRole('button', { name: 'Scan to sign in' }));
@@ -74,6 +87,10 @@ describe('HostedWalletSignIn', () => {
       expect.stringContaining('https://solflare.com/ul/v1/browse/'),
       expect.any(Object),
     ));
-    expect(screen.getByRole('button', { name: 'Use browser wallet' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Solflare to sign in' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('https://solflare.com/ul/v1/browse/'),
+    );
+    expect(screen.getByRole('button', { name: 'Sign in with browser wallet' })).toBeInTheDocument();
   });
 });
