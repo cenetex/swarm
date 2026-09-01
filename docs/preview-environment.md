@@ -65,7 +65,7 @@ Drops everything. Re-deploy when needed.
 
 ## What this env is NOT for
 
-- **Production smoke tests** — those run on tag deploy via `prod-smoke` job in `deploy.yml`
+- **Production smoke tests** — those run after each Cloudflare production deploy
 - **Long-running canaries** — preview is meant to be torn down between sessions; canaries stay in prod
 - **Persistent test data** — DDB tables are throwaway. Don't seed anything you can't recreate
 - **Per-PR isolation** — last writer wins; coordinate manually
