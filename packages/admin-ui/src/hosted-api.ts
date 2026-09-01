@@ -108,13 +108,27 @@ export function openRouterResult(search: string): 'connected' | 'error' | null {
   return result === 'connected' || result === 'error' ? result : null;
 }
 
-export function hostedXConnectUrl(avatarId: string): string {
-  return `${API_BASE}/auth/x/start?avatarId=${encodeURIComponent(avatarId)}`;
+export async function connectHostedX(avatarId: string): Promise<{ authorizationUrl: string }> {
+  const started = await requestJson<{ authorizationUrl?: unknown }>(
+    '/auth/x/start',
+    { method: 'POST', body: JSON.stringify({ avatarId }) },
+  );
+  if (typeof started.authorizationUrl !== 'string') throw new Error('X returned an invalid authorization link.');
+  const authorizationUrl = new URL(started.authorizationUrl);
+  if (authorizationUrl.origin !== 'https://api.x.com' || authorizationUrl.pathname !== '/oauth/authorize') {
+    throw new Error('X returned an invalid authorization link.');
+  }
+  return { authorizationUrl: authorizationUrl.toString() };
 }
 
 export function hostedXResult(search: string): 'connected' | 'error' | null {
   const result = new URLSearchParams(search).get('x');
   return result === 'connected' || result === 'error' ? result : null;
+}
+
+export function hostedXAvatarId(search: string): string | null {
+  const avatarId = new URLSearchParams(search).get('xAvatarId')?.trim() ?? '';
+  return avatarId && avatarId.length <= 200 ? avatarId : null;
 }
 
 export async function getHostedProviderStatus(): Promise<HostedProviderStatus> {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  connectHostedX,
   connectHostedTelegram,
   disconnectHostedTelegram,
   disconnectHostedX,
@@ -8,7 +9,7 @@ import {
   getHostedProviderStatus,
   getHostedTelegramStatus,
   getHostedXStatus,
-  hostedXConnectUrl,
+  hostedXAvatarId,
   hostedXResult,
   importHostedAvatar,
   listPublicHostedAvatars,
@@ -32,11 +33,12 @@ describe('hosted API client', () => {
     expect(openRouterConnectUrl()).toMatch(/\/auth\/openrouter$/u);
   });
 
-  it('builds avatar-scoped X OAuth URLs and accepts only safe callback results', () => {
-    expect(hostedXConnectUrl('avatar/one')).toMatch(/\/auth\/x\/start\?avatarId=avatar%2Fone$/u);
+  it('accepts only safe X callback results and avatar targets', () => {
     expect(hostedXResult('?x=connected')).toBe('connected');
     expect(hostedXResult('?x=error')).toBe('error');
     expect(hostedXResult('?x=access-token')).toBeNull();
+    expect(hostedXAvatarId('?x=connected&xAvatarId=avatar%2Fone')).toBe('avatar/one');
+    expect(hostedXAvatarId(`?xAvatarId=${'a'.repeat(201)}`)).toBeNull();
   });
 
   it('loads connection status through the cookie-backed same-origin API', async () => {
@@ -132,6 +134,26 @@ describe('hosted API client', () => {
     await disconnectHostedX('avatar/one');
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'DELETE', credentials: 'include' });
     expect(fetchMock.mock.calls[1]?.[1]?.body).toBeUndefined();
+  });
+
+  it('starts X OAuth with a same-origin POST and accepts only the X authorization origin', async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      authorizationUrl: 'https://api.x.com/oauth/authorize?oauth_token=request-token',
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(connectHostedX('avatar/one')).resolves.toEqual({
+      authorizationUrl: 'https://api.x.com/oauth/authorize?oauth_token=request-token',
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/auth\/x\/start$/u);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: 'POST',
+      credentials: 'include',
+      body: JSON.stringify({ avatarId: 'avatar/one' }),
+    });
+
+    fetchMock.mockResolvedValueOnce(Response.json({ authorizationUrl: 'https://example.com/not-x' }));
+    await expect(connectHostedX('avatar/one')).rejects.toThrow('invalid authorization link');
   });
 
   it('reads the public registry without auth headers and imports a portable artifact', async () => {
