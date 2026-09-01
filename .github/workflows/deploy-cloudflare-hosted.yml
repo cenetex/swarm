@@ -49,6 +49,9 @@ jobs:
       SWARM_X_API_SECRET: ${{ secrets.SWARM_X_API_SECRET }}
       SWARM_OPENROUTER_MODEL: ${{ vars.SWARM_OPENROUTER_MODEL }}
       SWARM_HOSTED_CHAT_RATE_LIMIT: ${{ vars.SWARM_HOSTED_CHAT_RATE_LIMIT }}
+      SWARM_HOSTED_LIFECYCLE_REQUIRED: ${{ vars.SWARM_HOSTED_LIFECYCLE_REQUIRED }}
+      SWARM_BILLING_WEBHOOK_SECRET: ${{ secrets.SWARM_BILLING_WEBHOOK_SECRET }}
+      SWARM_RUNTIME_CALLBACK_SECRET: ${{ secrets.SWARM_RUNTIME_CALLBACK_SECRET }}
       VITE_HOSTED_ENVIRONMENT: ${{ github.event_name == 'push' && 'production' || inputs.environment }}
       WRANGLER_SEND_METRICS: 'false'
 
@@ -170,6 +173,9 @@ jobs:
               SWARM_X_API_KEY: process.env.SWARM_X_API_KEY,
               SWARM_X_API_SECRET: process.env.SWARM_X_API_SECRET,
             };
+            for (const name of ["SWARM_BILLING_WEBHOOK_SECRET", "SWARM_RUNTIME_CALLBACK_SECRET"]) {
+              if (process.env[name]) secrets[name] = process.env[name];
+            }
             const previousVersion = process.env.SWARM_USER_SECRET_PREVIOUS_KEY_VERSION;
             if (previousVersion) {
               if (!/^[A-Za-z0-9_]{1,40}$/.test(previousVersion)) throw new Error("Invalid previous key version.");

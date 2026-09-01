@@ -28,9 +28,7 @@
     "required": [
       "SWARM_USER_SECRET_KEK",
       "SWARM_X_API_KEY",
-      "SWARM_X_API_SECRET",
-      "SWARM_BILLING_WEBHOOK_SECRET",
-      "SWARM_RUNTIME_CALLBACK_SECRET"
+      "SWARM_X_API_SECRET"
     ]
   },
   "d1_databases": [

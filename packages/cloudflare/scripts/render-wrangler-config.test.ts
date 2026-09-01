@@ -42,8 +42,6 @@ describe('renderWranglerConfig', () => {
       'SWARM_USER_SECRET_KEK',
       'SWARM_X_API_KEY',
       'SWARM_X_API_SECRET',
-      'SWARM_BILLING_WEBHOOK_SECRET',
-      'SWARM_RUNTIME_CALLBACK_SECRET',
     ]);
     expect(config.vars.SWARM_OPENROUTER_MODEL).toBe('openrouter/free');
     expect(config.vars.SWARM_HOSTED_LIFECYCLE_REQUIRED).toBe('0');
