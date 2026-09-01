@@ -55,6 +55,10 @@ import {
   decideDiscordVoiceLaunch,
 } from './discord-voice-control.js';
 import { DiscordVoiceTaskLauncher } from './discord-voice-task-launcher.js';
+import {
+  listGlobalDiscordBotTokenSecretIds,
+  parseDiscordTokenSecret,
+} from './discord-bot-token-secrets.js';
 
 // ─── Environment ─────────────────────────────────────────────────────────────
 
@@ -98,7 +102,7 @@ const rateLimiter = new DiscordRateLimiter({
 // ─── Avatar Discovery ────────────────────────────────────────────────────────
 
 /** Represents a Discord-enabled avatar with its runtime config */
-interface DiscordAvatarBinding {
+export interface DiscordAvatarBinding {
   avatarId: string;
   config: AvatarConfig;
   botToken: string;
@@ -188,21 +192,6 @@ const botTokenCache = new Map<string, { value: string; expiresAt: number }>();
 let globalBotTokenCache: { value: string; expiresAt: number } | null = null;
 
 /**
- * Parse a Discord bot token from a secret string that may be JSON-wrapped.
- * Supports `{"DISCORD_BOT_TOKEN":"..."}`, `{"discord_bot_token":"..."}`,
- * `{"token":"..."}`, or a plain token string.
- */
-function parseDiscordTokenSecret(raw: string): string {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, string>;
-    return parsed.DISCORD_BOT_TOKEN || parsed.discord_bot_token || parsed.token || raw;
-  } catch {
-    // Not JSON — use raw string as token
-    return raw;
-  }
-}
-
-/**
  * Fetch the global Discord bot token from Secrets Manager.
  * Tries both underscore and hyphen naming conventions.
  */
@@ -213,12 +202,7 @@ async function getGlobalBotToken(): Promise<string | null> {
   }
   cacheStats.secretMisses++;
 
-  for (const name of [
-    `${SECRET_PREFIX}/global/discord_bot_token/global-bot`,
-    `${SECRET_PREFIX}/global/discord-bot-token/global-bot`,
-    `${SECRET_PREFIX}/global/discord_bot_token/default`,
-    `${SECRET_PREFIX}/global/discord-bot-token/default`,
-  ]) {
+  for (const name of listGlobalDiscordBotTokenSecretIds(SECRET_PREFIX)) {
     try {
       const r = await secretsClient.send(new GetSecretValueCommand({ SecretId: name }));
       if (r.SecretString) {
@@ -741,19 +725,24 @@ function selectSharedRoomEnvelopeBinding(
   return fallback ? { binding: fallback, reason: 'fallback' } : null;
 }
 
-async function maybeLaunchDiscordVoiceSession(
+export interface DiscordVoiceLaunchDependencies {
+  tracker: DiscordVoiceStateTracker;
+  launcher: Pick<DiscordVoiceTaskLauncher, 'launch'>;
+}
+
+export async function maybeLaunchDiscordVoiceSession(
   message: DiscordMessage,
   binding: DiscordAvatarBinding,
+  dependencies: DiscordVoiceLaunchDependencies = {
+    tracker: voiceStateTracker,
+    launcher: voiceTaskLauncher,
+  },
 ): Promise<boolean> {
-  if (binding.isGlobalMode) {
-    return false;
-  }
-
   const decision = decideDiscordVoiceLaunch({
     message,
     avatarConfig: binding.config,
     botUserId: binding.botUserId,
-    tracker: voiceStateTracker,
+    tracker: dependencies.tracker,
   });
 
   if (!decision.shouldLaunch) {
@@ -781,7 +770,7 @@ async function maybeLaunchDiscordVoiceSession(
     return false;
   }
 
-  const result = await voiceTaskLauncher.launch({
+  const result = await dependencies.launcher.launch({
     avatarId: binding.avatarId,
     avatarConfig: binding.config,
     botUserId: binding.botUserId,
