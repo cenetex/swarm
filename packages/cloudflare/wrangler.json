@@ -15,6 +15,7 @@
     "SWARM_ENV": "development",
     "SWARM_HOSTED_ENABLED": "0",
     "SWARM_PUBLIC_URL": "http://localhost:8787",
+    "SWARM_PASSKEY_RP_ID": "localhost",
     "SWARM_SOLANA_CHAIN_ID": "mainnet",
     "SWARM_USER_SECRET_KEY_VERSION": "local_v1",
     "SWARM_OPENROUTER_RETURN_PATH": "/studio?ai=openrouter",

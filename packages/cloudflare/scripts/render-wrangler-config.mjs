@@ -104,6 +104,15 @@ function rateLimit(value) {
   return String(parsed);
 }
 
+function passkeyRpID(value, canonicalOrigin) {
+  const hostname = new URL(canonicalOrigin).hostname;
+  const rpID = dnsName(value, 'SWARM_PASSKEY_RP_ID');
+  if (hostname !== rpID && !hostname.endsWith(`.${rpID}`)) {
+    throw new Error('SWARM_PASSKEY_RP_ID must match SWARM_PUBLIC_URL or one of its parent domains.');
+  }
+  return rpID;
+}
+
 export function renderWranglerConfig(baseConfig, values, environment) {
   if (environment !== 'preview' && environment !== 'production') {
     throw new Error('Environment must be preview or production.');
@@ -118,11 +127,15 @@ export function renderWranglerConfig(baseConfig, values, environment) {
 
   config.name = workerName;
   const canonicalOrigin = publicOrigin(requiredValue(values, 'SWARM_PUBLIC_URL'));
+  const defaultPasskeyRpID = environment === 'production'
+    ? requiredValue(values, 'SWARM_CF_ZONE_NAME')
+    : new URL(canonicalOrigin).hostname;
   config.vars = {
     ...config.vars,
     SWARM_ENV: environment,
     SWARM_HOSTED_ENABLED: '1',
     SWARM_PUBLIC_URL: canonicalOrigin,
+    SWARM_PASSKEY_RP_ID: passkeyRpID(values.SWARM_PASSKEY_RP_ID?.trim() || defaultPasskeyRpID, canonicalOrigin),
     SWARM_USER_SECRET_KEY_VERSION: keyVersion(requiredValue(values, 'SWARM_USER_SECRET_KEY_VERSION')),
     SWARM_OPENROUTER_MODEL: values.SWARM_OPENROUTER_MODEL?.trim() || 'openrouter/free',
     SWARM_HOSTED_CHAT_RATE_LIMIT: rateLimit(values.SWARM_HOSTED_CHAT_RATE_LIMIT?.trim() || '20'),

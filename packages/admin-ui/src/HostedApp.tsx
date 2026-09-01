@@ -1,6 +1,7 @@
 import { ChangeEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from './api/apiBase';
 import { HostedWalletSignIn } from './components/HostedWalletSignIn';
+import { HostedPasskeyAuth } from './components/HostedPasskeyAuth';
 import {
   createHostedAvatar,
   connectHostedTelegram,
@@ -803,7 +804,15 @@ export function HostedApp() {
                       : 'Choose a name, say hello, and let a distinct identity grow from shared work and memory.'}
                 </p>
                 {!isAuthenticated ? (
-                  <HostedWalletSignIn className="mx-auto mt-6 justify-center" />
+                  <div className="mx-auto mt-6 w-full max-w-xs space-y-3">
+                    <HostedPasskeyAuth />
+                    <div className="flex items-center gap-3 text-xs text-[var(--color-text-muted)]" aria-hidden="true">
+                      <span className="h-px flex-1 bg-[var(--color-border)]" />
+                      <span>or use a wallet</span>
+                      <span className="h-px flex-1 bg-[var(--color-border)]" />
+                    </div>
+                    <HostedWalletSignIn className="w-full justify-center" />
+                  </div>
                 ) : (
                   <button
                     type="button"
@@ -891,7 +900,21 @@ export function HostedApp() {
                 state="Start here"
                 ready={false}
               >
-              {!isAuthenticated && <HostedWalletSignIn className="w-full justify-center" />}
+                <div className="space-y-3">
+                  <HostedPasskeyAuth />
+                  <HostedWalletSignIn className="w-full justify-center" />
+                </div>
+              </SettingsSection>
+            )}
+
+            {isAuthenticated && (
+              <SettingsSection
+                title="Passkey sign-in"
+                detail="Add a device or synced passkey. Your wallet stays available as the recovery path."
+                state="Protected"
+                ready
+              >
+                <HostedPasskeyAuth />
               </SettingsSection>
             )}
 

@@ -61,10 +61,16 @@ The hosted Worker implements the first secure vertical slice:
 
 1. `POST /api/auth/challenge` creates a ten-minute, domain-bound Sign In With Solana challenge. Challenge creation is rate-limited by source and wallet.
 2. `POST /api/auth/verify` atomically consumes the challenge, verifies the Ed25519 signature, and issues a seven-day `HttpOnly; Secure; SameSite=Lax` session cookie.
-3. `GET /api/auth/openrouter` creates a one-use PKCE S256 transaction bound to the account and current session. Only a hash of OAuth state is stored.
-4. The PKCE verifier is envelope-encrypted while pending. The callback consumes it once before exchanging the authorization code.
-5. The returned user-owned OpenRouter key is envelope-encrypted immediately. API responses expose connection status, never credential values.
-6. `DELETE /api/auth/openrouter` removes the encrypted AI credential and provider selection.
+3. A wallet-authenticated owner can enroll a discoverable passkey through `/api/auth/passkey/register/*`. Registration requires user verification and is bound to the configured WebAuthn RP ID and exact hosted origin.
+4. A returning owner can sign in through `/api/auth/passkey/authenticate/*` without entering an account name. The Worker consumes the one-use challenge, finds the credential by its opaque ID, verifies the signature and user-presence flags, updates the counter, and issues the same protected session cookie for the existing wallet-backed account.
+5. `GET /api/auth/openrouter` creates a one-use PKCE S256 transaction bound to the account and current session. Only a hash of OAuth state is stored.
+6. The PKCE verifier is envelope-encrypted while pending. The callback consumes it once before exchanging the authorization code.
+7. The returned user-owned OpenRouter key is envelope-encrypted immediately. API responses expose connection status, never credential values.
+8. `DELETE /api/auth/openrouter` removes the encrypted AI credential and provider selection.
+
+Passkey rows contain only credential public keys, opaque credential/user IDs, device metadata, transports, and signature counters. Biometric data stays on the authenticator. Challenge handles are random and stored only as hashes; challenges expire after ten minutes and are consumed on the first verification attempt. Wallet sign-in remains the recovery path.
+
+Migration `0009_passkeys.sql` adds passkey credentials, one-use challenges, and session-provider metadata. The production RP ID is the stable zone (`rati.chat`), while verification still requires the exact active origin. This lets passkeys survive the planned move from `next.swarm.rati.chat` to `swarm.rati.chat` without allowing an unrelated origin.
 
 The dedicated hosted UI is served from the same Worker origin. It starts OAuth through the authenticated route, reads only connection status, and never renders or accepts the exchanged credential. The write-only manual-key route remains a compatibility surface for trusted non-hosted clients; it is not part of normal hosted onboarding.
 

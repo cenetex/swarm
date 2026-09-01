@@ -80,6 +80,7 @@ const session: HostedSession = {
   walletAddress: 'wallet-1',
   expiresAt: 9_999_999,
   sessionHash: 'session-1',
+  authProvider: 'wallet',
 };
 const testBotToken = `123456789:${'A'.repeat(36)}`;
 

@@ -82,6 +82,7 @@ export type CloudflareHostedBindings = {
   SWARM_ENV?: string;
   SWARM_HOSTED_ENABLED?: string;
   SWARM_PUBLIC_URL?: string;
+  SWARM_PASSKEY_RP_ID?: string;
   SWARM_SOLANA_CHAIN_ID?: string;
   SWARM_USER_SECRET_KEK?: string;
   SWARM_USER_SECRET_KEY_VERSION?: string;

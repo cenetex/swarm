@@ -94,7 +94,7 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
   }
 
   async first<T = unknown>(): Promise<T | null> {
-    if (this.query.startsWith('select account_id, wallet_address, expires_at from swarm_sessions')) {
+    if (this.query.startsWith('select account_id, wallet_address, expires_at, auth_provider from swarm_sessions')) {
       const [sessionHash, now] = this.values as [string, number];
       const sessionRow = this.db.sessions.get(sessionHash);
       return (sessionRow && sessionRow.expires_at > now ? sessionRow : null) as T | null;
@@ -380,6 +380,7 @@ function session(accountId: string): HostedSession {
       : '22222222222222222222222222222222',
     expiresAt: Date.now() + 60_000,
     sessionHash: `${accountId}-session`,
+    authProvider: 'wallet',
   };
 }
 
