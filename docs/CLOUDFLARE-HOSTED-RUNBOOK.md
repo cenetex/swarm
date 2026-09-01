@@ -2,7 +2,7 @@
 
 This runbook deploys the browser-chat, Telegram, and X hosted runtime and its dedicated connector UI to an isolated Cloudflare Worker. Production is staged on `next.swarm.rati.chat`, then can replace the existing `swarm.rati.chat` static site through a reversible Worker route.
 
-The normal release path is the **Deploy Cloudflare Hosted Worker** GitHub Actions workflow. Do not deploy production from a developer machine.
+The normal release path is automatic: every accepted push to `main` runs the **Deploy Cloudflare Hosted Worker** workflow for production and performs smoke checks. The workflow can also be started directly for preview or production.
 
 ## What the deployment creates
 
@@ -41,7 +41,7 @@ Create two GitHub environments:
 - `cloudflare-preview`
 - `cloudflare-production`
 
-Require a reviewer for `cloudflare-production`.
+Keep production limited to protected branches. A separate reviewer ceremony is not required for this solo project because CI and rollback are the release controls.
 
 Set these secrets in each environment:
 

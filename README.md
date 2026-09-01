@@ -105,7 +105,7 @@ pnpm build        # Build all packages
 pnpm lint         # Lint configured packages
 pnpm typecheck    # Type-check all packages
 pnpm test         # Run isolated workspace tests
-pnpm cdk diff     # Preview infra changes
+pnpm --filter @swarm/cloudflare deploy:dry-run  # Preview the hosted deploy
 ```
 
 ## AI Agent Onboarding
@@ -114,7 +114,7 @@ Start with [AGENTS.md](AGENTS.md). Respect the chat-first product constraint in 
 
 ## Deployment
 
-Every accepted push to `main` deploys to production through GitHub Actions and runs a smoke check. Developers and agents may also start the workflow directly or use the established local recovery path when the target account is verified.
+Every accepted push to `main` deploys the Cloudflare hosted runtime to production and runs a smoke check. Developers and agents may also start the workflow directly for preview or production.
 
 Environment variables handlers rely on: `ADMIN_TABLE`, `STATE_TABLE`, `ACTIVITY_TABLE`, `MESSAGE_QUEUE_URL`, `RESPONSE_QUEUE_URL`, `MEDIA_BUCKET`, `SECRETS_ARN`, `LLM_API_KEY_SECRET_ARN`.
 
