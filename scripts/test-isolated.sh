@@ -23,6 +23,11 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 FAILED=0
 
+echo "─── Script: signal-with-swarm smoke test ───"
+if ! ./scripts/signal-with-swarm.test.sh; then
+  FAILED=1
+fi
+
 PACKAGE_DIRS=$(find packages -mindepth 2 -maxdepth 2 -name package.json \
   -not -path '*/node_modules/*' -exec dirname {} \; | sort)
 
