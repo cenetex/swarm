@@ -326,33 +326,67 @@ describe("mountAdminRoutes integration", () => {
     expect((body as any).code).toBe("AI_PROVIDER_REQUIRED");
   });
 
-  it("allows only local origins for mutating local API requests", async () => {
+  it("guards writes with trusted origins or the per-launch token", async () => {
     const { isAllowedLocalOrigin, isLocalApiWriteAllowed } = await import("./server.js");
-    expect(isAllowedLocalOrigin(undefined, 3001)).toBe(true);
+    expect(isAllowedLocalOrigin(undefined, 3001)).toBe(false);
     expect(isAllowedLocalOrigin("http://localhost:3001", 3001)).toBe(true);
     expect(isAllowedLocalOrigin("http://127.0.0.1:3001", 3001)).toBe(true);
     expect(isAllowedLocalOrigin("https://evil.example", 3001)).toBe(false);
-    expect(isLocalApiWriteAllowed({
-      method: "POST",
-      port: 3001,
-      expectedToken: "token",
-      providedToken: undefined,
-    })).toBe(false);
-    expect(isLocalApiWriteAllowed({
-      method: "POST",
-      port: 3001,
-      expectedToken: "token",
-      providedToken: "token",
-    })).toBe(true);
-    expect(isLocalApiWriteAllowed({
-      method: "POST",
-      port: 3001,
-      origin: undefined,
-      expectedToken: undefined,
-    })).toBe(true);
+
+    const cases = [
+      { label: "read without origin", method: "GET", allowed: true },
+      { label: "trusted localhost write", method: "POST", origin: "http://localhost:3001", allowed: true },
+      { label: "trusted loopback write", method: "DELETE", origin: "http://127.0.0.1:3001", allowed: true },
+      { label: "hostile origin write", method: "PATCH", origin: "https://evil.example", allowed: false },
+      { label: "missing origin write", method: "PUT", allowed: false },
+      { label: "missing origin with invalid token", method: "POST", expectedToken: "token", providedToken: "wrong", allowed: false },
+      { label: "trusted origin with missing configured token", method: "POST", origin: "http://localhost:3001", expectedToken: "token", allowed: false },
+      { label: "hostile origin with valid token", method: "POST", origin: "https://evil.example", expectedToken: "token", providedToken: "token", allowed: true },
+      { label: "missing origin with valid token", method: "POST", expectedToken: "token", providedToken: "token", allowed: true },
+    ];
+
+    for (const testCase of cases) {
+      expect(isLocalApiWriteAllowed({
+        method: testCase.method,
+        origin: testCase.origin,
+        providedToken: testCase.providedToken,
+        expectedToken: testCase.expectedToken,
+        port: 3001,
+      }), testCase.label).toBe(testCase.allowed);
+    }
   });
 
-  it("rejects arbitrary runtime launch commands", async () => {
+  it("allows only exact built-in runtime launch commands", async () => {
+    const { isAllowedRuntimeLaunchCommand } = await import("./server.js");
+
+    expect(isAllowedRuntimeLaunchCommand("hermes", "hermes proxy start --port 8645")).toBe(true);
+    expect(isAllowedRuntimeLaunchCommand(
+      "hermes",
+      "docker run --rm --name swarm-rt-hermes -p 8645:8645 your-hermes-image proxy start --host 0.0.0.0 --port 8645",
+    )).toBe(true);
+    expect(isAllowedRuntimeLaunchCommand("hermes", "hermes proxy start --port 8645; touch /tmp/swarm-pwned")).toBe(false);
+    expect(isAllowedRuntimeLaunchCommand("custom", "touch /tmp/swarm-pwned")).toBe(false);
+  });
+
+  it("authorizes custom runtime commands only with explicit opt-in and the launch token", async () => {
+    const { isAuthorizedCustomRuntimeCommand } = await import("./server.js");
+    const request = (providedToken?: string) => ({
+      get: (name: string) => name.toLowerCase() === "x-swarm-local-token" ? providedToken : undefined,
+    }) as any;
+
+    process.env.SWARM_LOCAL_API_TOKEN = "token";
+    expect(isAuthorizedCustomRuntimeCommand(request("token"))).toBe(false);
+
+    process.env.SWARM_LOCAL_ALLOW_CUSTOM_RUNTIME_COMMANDS = "1";
+    expect(isAuthorizedCustomRuntimeCommand(request())).toBe(false);
+    expect(isAuthorizedCustomRuntimeCommand(request("wrong"))).toBe(false);
+    expect(isAuthorizedCustomRuntimeCommand(request("token"))).toBe(true);
+
+    delete process.env.SWARM_LOCAL_API_TOKEN;
+    expect(isAuthorizedCustomRuntimeCommand(request("token"))).toBe(false);
+  });
+
+  it("rejects arbitrary runtime launch commands at the route", async () => {
     const { mountAdminRoutes } = await import("./server.js");
     const app = express();
     await mountAdminRoutes(app, stubSvc as any);
@@ -405,6 +439,70 @@ describe("mountAdminRoutes integration", () => {
     expect(status).toBe(200);
     expect((body as any).selected).toBe("custom");
     expect((body as any).endpoint).toBe("http://legacy-runtime.test/chat");
+  });
+
+  it("namespaces runtime secrets and limits legacy fallback to the global scope", async () => {
+    const {
+      agentRuntimeSecretKey,
+      legacyAgentRuntimeSecretKey,
+      legacyRuntimeSecretKey,
+      mountAdminRoutes,
+      runtimeSecretKey,
+    } = await import("./server.js");
+
+    expect(agentRuntimeSecretKey("agent-backend", "avatar-one")).toBe("agent:avatar-one:agent-backend");
+    expect(agentRuntimeSecretKey("agent-backend")).toBe("agent:global:agent-backend");
+    expect(legacyAgentRuntimeSecretKey("agent-backend", "avatar-one")).toBe("agent:avatar-one:agent-backend");
+    expect(legacyAgentRuntimeSecretKey("agent-backend")).toBe("agent-backend");
+    expect(runtimeSecretKey("launch", "hermes", "avatar-one")).toBe("runtime:avatar-one:hermes:launch");
+    expect(runtimeSecretKey("launch", "hermes")).toBe("runtime:global:hermes:launch");
+    expect(legacyRuntimeSecretKey("launch", "hermes", "avatar-one")).toBe("runtime:avatar-one:hermes:launch");
+    expect(legacyRuntimeSecretKey("launch", "hermes")).toBe("runtime-launch:hermes");
+
+    const store = new Map<string, string>([
+      ["runtime-launch:hermes", "legacy-global-command"],
+      ["runtime-endpoint:hermes", "http://legacy-global.test"],
+      ["runtime:avatar-one:hermes:launch", "avatar-one-command"],
+      ["runtime:avatar-one:hermes:endpoint", "http://avatar-one.test"],
+      ["runtime:avatar-two:hermes:launch", "avatar-two-command"],
+      ["runtime:avatar-two:hermes:endpoint", "http://avatar-two.test"],
+    ]);
+    const services = {
+      secrets: {
+        setSecret: async (name: string, value: string) => { store.set(name, value); },
+        flush: async () => {},
+        listSecrets: async () => [] as string[],
+        getSecret: async (name: string) => {
+          if (!store.has(name)) throw new Error("missing secret");
+          return store.get(name);
+        },
+        deleteSecret: async (name: string) => { store.delete(name); },
+      },
+    };
+    const app = express();
+    await mountAdminRoutes(app, services as any);
+
+    const legacyGlobal = await hitRoute(app, "GET", "/api/runtime/status?backend=hermes");
+    expect((legacyGlobal.body as any).command).toBe("legacy-global-command");
+    expect((legacyGlobal.body as any).endpoint).toBe("http://legacy-global.test");
+
+    store.set("runtime:global:hermes:launch", "current-global-command");
+    store.set("runtime:global:hermes:endpoint", "http://current-global.test");
+    const currentGlobal = await hitRoute(app, "GET", "/api/runtime/status?backend=hermes");
+    expect((currentGlobal.body as any).command).toBe("current-global-command");
+    expect((currentGlobal.body as any).endpoint).toBe("http://current-global.test");
+
+    const avatarOne = await hitRoute(app, "GET", "/api/runtime/status?backend=hermes&avatarId=avatar-one");
+    expect((avatarOne.body as any).command).toBe("avatar-one-command");
+    expect((avatarOne.body as any).endpoint).toBe("http://avatar-one.test");
+
+    const avatarTwo = await hitRoute(app, "GET", "/api/runtime/status?backend=hermes&avatarId=avatar-two");
+    expect((avatarTwo.body as any).command).toBe("avatar-two-command");
+    expect((avatarTwo.body as any).endpoint).toBe("http://avatar-two.test");
+
+    const unconfiguredAvatar = await hitRoute(app, "GET", "/api/runtime/status?backend=hermes&avatarId=avatar-three");
+    expect((unconfiguredAvatar.body as any).command).toBe("hermes proxy start --port 8645");
+    expect((unconfiguredAvatar.body as any).endpoint).toBe("http://localhost:8645");
   });
 
   it("reports hosted service only after entitlement and runtime health are authoritative", async () => {

@@ -1255,19 +1255,19 @@ function normalizeAvatarScope(value: unknown): string | undefined {
   return trimmed.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || undefined;
 }
 
-function agentRuntimeSecretKey(name: string, avatarId?: string): string {
+export function agentRuntimeSecretKey(name: string, avatarId?: string): string {
   return avatarId ? `agent:${avatarId}:${name}` : `agent:global:${name}`;
 }
 
-function legacyAgentRuntimeSecretKey(name: string, avatarId?: string): string {
+export function legacyAgentRuntimeSecretKey(name: string, avatarId?: string): string {
   return avatarId ? agentRuntimeSecretKey(name, avatarId) : name;
 }
 
-function runtimeSecretKey(name: string, backend: AgentBackendId, avatarId?: string): string {
+export function runtimeSecretKey(name: string, backend: AgentBackendId, avatarId?: string): string {
   return avatarId ? `runtime:${avatarId}:${backend}:${name}` : `runtime:global:${backend}:${name}`;
 }
 
-function legacyRuntimeSecretKey(name: string, backend: AgentBackendId, avatarId?: string): string {
+export function legacyRuntimeSecretKey(name: string, backend: AgentBackendId, avatarId?: string): string {
   return avatarId ? runtimeSecretKey(name, backend, avatarId) : `runtime-${name}:${backend}`;
 }
 
@@ -1760,7 +1760,7 @@ function localAppOrigins(port: number): Set<string> {
 }
 
 export function isAllowedLocalOrigin(origin: string | undefined, port: number): boolean {
-  if (!origin) return true;
+  if (!origin) return false;
   return localAppOrigins(port).has(origin);
 }
 
@@ -1768,7 +1768,9 @@ function localCorsOptions(port: number): CorsOptions {
   return {
     credentials: true,
     origin(origin, callback) {
-      callback(null, isAllowedLocalOrigin(origin, port));
+      // CORS is not authentication. Requests without Origin still need the
+      // write guard below, while reads and command-line clients remain usable.
+      callback(null, !origin || isAllowedLocalOrigin(origin, port));
     },
   };
 }
@@ -1805,7 +1807,7 @@ function installLocalRequestGuard(app: express.Express, port: number): void {
   });
 }
 
-function isAllowedRuntimeLaunchCommand(backend: AgentBackendId, command: string): boolean {
+export function isAllowedRuntimeLaunchCommand(backend: AgentBackendId, command: string): boolean {
   const definition = getAgentBackendDefinition(backend);
   const allowed = new Set<string>();
   if (definition.launch?.command) allowed.add(definition.launch.command);
@@ -1813,7 +1815,7 @@ function isAllowedRuntimeLaunchCommand(backend: AgentBackendId, command: string)
   return allowed.has(command);
 }
 
-function isAuthorizedCustomRuntimeCommand(req: express.Request): boolean {
+export function isAuthorizedCustomRuntimeCommand(req: express.Request): boolean {
   const token = process.env.SWARM_LOCAL_API_TOKEN?.trim();
   return Boolean(
     token &&
