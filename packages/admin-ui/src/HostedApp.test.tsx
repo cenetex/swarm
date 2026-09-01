@@ -12,6 +12,7 @@ vi.mock('./hosted-api', async () => {
   const actual = await vi.importActual<typeof import('./hosted-api')>('./hosted-api');
   return {
     ...actual,
+    connectHostedX: vi.fn(),
     getHostedProviderStatus: vi.fn(),
     disconnectHostedProvider: vi.fn(),
     createHostedAvatar: vi.fn(),
@@ -86,6 +87,9 @@ beforeEach(() => {
     status: 'disconnected',
   });
   vi.mocked(hostedApi.disconnectHostedX).mockResolvedValue();
+  vi.mocked(hostedApi.connectHostedX).mockResolvedValue({
+    authorizationUrl: 'https://api.x.com/oauth/authorize?oauth_token=request-token',
+  });
   vi.mocked(hostedApi.repairHostedTelegram).mockResolvedValue({
     connected: true,
     status: 'connected',
@@ -313,10 +317,41 @@ describe('HostedApp', () => {
     fireEvent.click(screen.getByText(/^X options$/u));
     fireEvent.click(screen.getByRole('button', { name: /disconnect x/i }));
     await waitFor(() => expect(hostedApi.disconnectHostedX).toHaveBeenCalledWith('avatar/one'));
-    expect(await screen.findByRole('link', { name: /connect x account/i })).toHaveAttribute(
-      'href',
-      expect.stringMatching(/\/auth\/x\/start\?avatarId=avatar%2Fone$/u),
-    );
+    expect(await screen.findByRole('button', { name: /connect x account/i })).toBeInTheDocument();
+  });
+
+  it('starts X connection for the active avatar and shows the connecting state', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([{
+      avatarId: 'avatar-1',
+      name: 'Jax',
+      status: 'shell',
+      createdAt: 1,
+      updatedAt: 1,
+    }]);
+    vi.mocked(hostedApi.connectHostedX).mockImplementation(() => new Promise(() => undefined));
+    render(<HostedApp />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /connect x account/i }));
+
+    await waitFor(() => expect(hostedApi.connectHostedX).toHaveBeenCalledWith('avatar-1'));
+    expect(screen.getByText('Connecting X…')).toBeInTheDocument();
+  });
+
+  it('returns from X OAuth to the companion that started the flow', async () => {
+    authenticate();
+    window.history.replaceState({}, '', '/?x=connected&xAvatarId=avatar-2');
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      { avatarId: 'avatar-1', name: 'Jax', status: 'shell', createdAt: 1, updatedAt: 1 },
+      { avatarId: 'avatar-2', name: 'Nova', status: 'shell', createdAt: 1, updatedAt: 1 },
+    ]);
+    render(<HostedApp />);
+
+    expect(await screen.findByText(/x connected.*mentions and replies/iu)).toBeInTheDocument();
+    await waitFor(() => expect(hostedApi.getHostedXStatus).toHaveBeenCalledWith('avatar-2'));
+    expect(window.location.search).toBe('');
   });
 
   it('publishes a listed public portable avatar by default', async () => {

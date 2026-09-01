@@ -94,8 +94,12 @@ Save the OAuth 1.0a **API Key** as `SWARM_X_API_KEY` and its **API Key Secret** 
 Client Secret, Bearer Token, Access Token, or Access Token Secret for these values. Do not store user access
 tokens in GitHub. The Worker exchanges the short-lived request credential on the callback, encrypts the
 resulting user token and token secret with the hosted keyring, and scopes them to the owning account and avatar.
+Studio starts the flow with a same-origin authenticated request before navigating to X. The callback returns to
+the companion that started the flow, including when the account owns several companions.
 
 The connector uses `GET /2/users/{id}/mentions` and `POST /2/tweets`. X API usage is billed by X under the developer app account, so configure spending limits and usage alerts in the X developer console before production enablement. Existing mentions are used only to establish the initial cursor and are not backfilled; new mentions are checked once per minute.
+When X rate-limits mention reads, the Worker stores the provider retry time in D1 and skips that connection until
+the delay has passed. Reply delivery uses the same provider delay and reuses the already generated response.
 
 Mobile wallet sign-in needs no third-party project ID. The desktop requests a five-minute, one-use pairing from the Worker. The QR contains only the public pairing ID inside the official Phantom or Solflare in-app-browser link. A separate poll token stays in desktop memory, is stored only as a hash in D1, and is required before the Worker can issue the desktop session cookie. The phone signs a domain-bound SIWS message with the visible pairing code; it does not submit a Solana transaction.
 
@@ -238,7 +242,7 @@ For the first production deployment:
 2. set `SWARM_CF_STAGING_DOMAIN=next.swarm.rati.chat`;
 3. set `SWARM_CF_ZONE_NAME=rati.chat`;
 4. set `SWARM_PUBLIC_URL=https://next.swarm.rati.chat`;
-5. deploy every migration through `0008_hosted_x.sql` and confirm a QR can be approved from both Phantom and Solflare;
+5. deploy every migration through `0010_hosted_x_poll_backoff.sql` and confirm a QR can be approved from both Phantom and Solflare;
 6. complete public catalog, portable restore, OpenRouter OAuth, X OAuth, Telegram and X messaging, disconnect, and tenant-isolation checks.
 
 Production disables the `workers.dev` hostname. The Worker is available only through its configured domains and routes.

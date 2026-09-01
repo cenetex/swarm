@@ -22,6 +22,7 @@ type XIntegrationRow = {
   status: 'connected' | 'reauth_required';
   since_id: string | null;
   last_polled_at: number | null;
+  poll_after: number | null;
   last_error_code: string | null;
   created_at: number;
   updated_at: number;
@@ -84,6 +85,8 @@ export type HostedXStatus = {
   lastPolledAt?: number;
   lastErrorCode?: string;
 };
+
+export type HostedXConnectResult = HostedXStatus & { avatarId: string };
 
 export type HostedXQueueMessage = {
   type: 'swarm.hosted.x.mention';
@@ -399,7 +402,7 @@ async function xJsonRequest<T>(input: {
 
 function integrationSelect(where: string): string {
   return `select account_id, avatar_id, integration_id, x_user_id, username, status, since_id,
-                 last_polled_at, last_error_code, created_at, updated_at
+                 last_polled_at, poll_after, last_error_code, created_at, updated_at
           from swarm_hosted_x_integrations where ${where}`;
 }
 
@@ -539,7 +542,7 @@ export async function completeHostedXConnect(
   input: { oauthToken: string; oauthVerifier: string },
   fetchImpl: typeof fetch = fetch,
   now = Date.now(),
-): Promise<HostedXStatus> {
+): Promise<HostedXConnectResult> {
   const tokenHash = await sha256(input.oauthToken);
   const transaction = await env.SWARM_STATE.prepare(
     `delete from swarm_hosted_x_oauth_transactions
@@ -613,14 +616,15 @@ export async function completeHostedXConnect(
   const saved = await env.SWARM_STATE.prepare(
     `insert into swarm_hosted_x_integrations
        (account_id, avatar_id, integration_id, x_user_id, username, status, since_id,
-        last_polled_at, last_error_code, created_at, updated_at)
-     values (?, ?, ?, ?, ?, 'connected', ?, ?, ?, ?, ?)
+        last_polled_at, poll_after, last_error_code, created_at, updated_at)
+     values (?, ?, ?, ?, ?, 'connected', ?, ?, null, ?, ?, ?)
      on conflict(account_id, avatar_id) do update set
        x_user_id = excluded.x_user_id,
        username = excluded.username,
        status = 'connected',
        since_id = excluded.since_id,
        last_polled_at = excluded.last_polled_at,
+       poll_after = null,
        last_error_code = excluded.last_error_code,
        updated_at = excluded.updated_at`,
   ).bind(
@@ -644,7 +648,7 @@ export async function completeHostedXConnect(
   }
   const row = await findOwnedIntegration(env, session.accountId, transaction.avatar_id);
   if (!row) throw new Error('Unable to read the connected X account.');
-  return statusFromRow(row);
+  return { ...statusFromRow(row), avatarId: row.avatar_id };
 }
 
 export async function getHostedXStatus(
@@ -827,11 +831,21 @@ async function recordPollFailure(
     : error instanceof HostedXProviderError && error.status === 429
       ? 'x_rate_limited'
       : 'x_poll_failed';
+  const pollAfter = error instanceof HostedXProviderError && error.status === 429
+    ? now + (error.retryAfter ?? 60) * 1_000
+    : null;
   const updated = await env.SWARM_STATE.prepare(
     `update swarm_hosted_x_integrations
-     set status = ?, last_polled_at = ?, last_error_code = ?, updated_at = ?
+     set status = ?, last_polled_at = ?, poll_after = ?, last_error_code = ?, updated_at = ?
      where integration_id = ?`,
-  ).bind(authenticationFailure ? 'reauth_required' : row.status, now, errorCode, now, row.integration_id).run();
+  ).bind(
+    authenticationFailure ? 'reauth_required' : row.status,
+    now,
+    pollAfter,
+    errorCode,
+    now,
+    row.integration_id,
+  ).run();
   ensureWrite(updated, 'Unable to record the X polling failure.');
   console.warn(JSON.stringify({
     level: 'WARN',
@@ -869,7 +883,8 @@ async function pollIntegration(
     for (const mention of mentions) await storeMention(env, row, mention, usernames, now);
     const updated = await env.SWARM_STATE.prepare(
       `update swarm_hosted_x_integrations
-       set since_id = coalesce(?, since_id), last_polled_at = ?, last_error_code = null, updated_at = ?
+       set since_id = coalesce(?, since_id), last_polled_at = ?, poll_after = null,
+           last_error_code = null, updated_at = ?
        where integration_id = ?`,
     ).bind(newestId, now, now, row.integration_id).run();
     ensureWrite(updated, 'Unable to update the X polling cursor.');
@@ -886,8 +901,9 @@ export async function pollHostedXIntegrations(
 ): Promise<void> {
   if (!env.SWARM_QUEUE || !env.SWARM_X_API_KEY || !env.SWARM_X_API_SECRET) return;
   const integrations = await env.SWARM_STATE.prepare(
-    `${integrationSelect("status = 'connected'")} order by coalesce(last_polled_at, 0) asc limit 50`,
-  ).all<XIntegrationRow>();
+    `${integrationSelect("status = 'connected' and coalesce(poll_after, 0) <= ?")}
+     order by coalesce(last_polled_at, 0) asc limit 50`,
+  ).bind(now).all<XIntegrationRow>();
   for (const row of integrations.results ?? []) await pollIntegration(env, row, fetchImpl, now);
 }
 
