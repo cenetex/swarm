@@ -272,7 +272,7 @@ jobs:
           VITE_API_URL: /api
           VITE_CROSSMINT_PROJECT_ID: ${{ secrets.VITE_CROSSMINT_PROJECT_ID }}
           VITE_PRIVY_APP_ID: ${{ secrets.VITE_PRIVY_APP_ID }}
-        run: pnpm --filter @swarm/admin-ui build
+        run: pnpm --filter @swarm/core build && pnpm --filter @swarm/admin-ui build
 
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
