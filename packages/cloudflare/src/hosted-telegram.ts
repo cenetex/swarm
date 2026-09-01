@@ -3,6 +3,7 @@ import { randomToken, sha256 } from './auth.js';
 import type { CloudflareHostedBindings } from './bindings.js';
 import { createCloudflareHostedPlatform } from './platform.js';
 import { generateHostedReply, getHostedAvatar, storeHostedAssistantMessage } from './hosted-chat.js';
+import { hostedModelWorkAllowed } from './hosted-lifecycle.js';
 
 const TELEGRAM_API = 'https://api.telegram.org';
 const OWNER_BIND_TTL_MS = 24 * 60 * 60 * 1_000;
@@ -1189,6 +1190,9 @@ export async function processHostedTelegramQueueMessage(
   try {
     const job = await claimUpdate(env, value.payload.integrationId, value.payload.jobId, now);
     if (!job || !job.chat_id || !job.thread_id || !job.request_id || !job.job_id) return { action: 'ack' };
+    if (!await hostedModelWorkAllowed(env, job.account_id, now)) {
+      return retryOrFail(env, job, 'hosted_lifecycle_inactive', false, now);
+    }
     const token = await createCloudflareHostedPlatform(env).secrets.getUserSecret(
       secretScope(job.account_id, job.avatar_id),
       TOKEN_SECRET,

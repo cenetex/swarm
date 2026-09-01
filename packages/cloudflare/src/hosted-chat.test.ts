@@ -9,6 +9,7 @@ import type {
 import {
   createHostedAvatar,
   enqueueHostedChat,
+  generateHostedReply,
   getHostedAvatar,
   getHostedChatJob,
   HostedChatMissingKeyError,
@@ -410,6 +411,46 @@ async function configuredAvatar(env: CloudflareHostedBindings, owner: HostedSess
 }
 
 describe('Cloudflare hosted chat runtime', () => {
+  it('blocks model calls when strict lifecycle evidence is missing', async () => {
+    const db = new ChatMemoryD1();
+    const env = testEnv(db, { send: async () => {} });
+    env.SWARM_HOSTED_LIFECYCLE_REQUIRED = '1';
+    const result = await generateHostedReply(env, {
+      accountId: 'acct-a',
+      avatarId: 'avatar-1',
+      threadId: 'thread-1',
+      requestId: 'request-1',
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'hosted_lifecycle_inactive',
+      retryable: false,
+    });
+  });
+
+  it('fails already queued work when lifecycle evidence becomes unavailable', async () => {
+    const db = new ChatMemoryD1();
+    const queued: HostedChatQueueMessage[] = [];
+    const env = testEnv(db, { send: async (message) => queued.push(message as HostedChatQueueMessage) });
+    const owner = session('acct-a');
+    const avatar = await configuredAvatar(env, owner);
+    const job = await enqueueHostedChat(env, owner, {
+      avatarId: avatar.avatarId,
+      message: 'Do not call the model',
+      requestId: 'request-gated',
+    }, 2_000);
+    env.SWARM_HOSTED_LIFECYCLE_REQUIRED = '1';
+    let modelCalls = 0;
+    const disposition = await processHostedChatQueueMessage(env, queued[0], (async () => {
+      modelCalls += 1;
+      return Response.json({ choices: [{ message: { content: 'unsafe' } }] });
+    }) as typeof fetch, 2_001);
+
+    expect(disposition).toEqual({ action: 'ack' });
+    expect(modelCalls).toBe(0);
+    expect((await getHostedChatJob(env, owner, job.jobId))?.status).toBe('failed');
+  });
+
   it('serves the authenticated avatar, async chat, job, and history routes', async () => {
     const db = new ChatMemoryD1();
     const sent: HostedChatQueueMessage[] = [];

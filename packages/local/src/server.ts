@@ -14,6 +14,8 @@ import { createLocalServices } from './factories.js';
 import { RuntimeSupervisor } from './runtime-supervisor.js';
 import {
   AWS_MANAGED_SWARM_STARTER_PLAN,
+  initialHostedBillingState,
+  initialHostedRuntimeState,
   parseHostingStatus,
   type HostingStatus,
   type ManagedSwarmInstance,
@@ -1146,10 +1148,6 @@ const HOSTING_MODE_SECRET = 'hosting:global:mode';
 const AWS_MANAGED_INSTANCE_SECRET = 'hosting:global:aws-managed-instance';
 const HOSTING_SUBSTRATE_SECRET = 'hosting:global:substrate';
 
-function hostedEntitlementActive(): boolean {
-  return process.env.SWARM_HOSTED_ENTITLEMENT_ACTIVE === '1';
-}
-
 function isHostingSubstrateProvider(value: unknown): value is HostingSubstrateProvider {
   return value === 'fly' || value === 'aws' || value === 'ascii-box';
 }
@@ -1164,36 +1162,6 @@ async function readAwsManagedInstance(services: LocalServices): Promise<ManagedS
   } catch {
     return undefined;
   }
-}
-
-async function readActiveAwsManagedInstance(services: LocalServices): Promise<ManagedSwarmInstance | undefined> {
-  if (!hostedEntitlementActive()) return undefined;
-  const persisted = await readAwsManagedInstance(services);
-  const endpoint = process.env.SWARM_HOSTED_INSTANCE_ENDPOINT?.trim();
-  const instanceId = process.env.SWARM_HOSTED_INSTANCE_ID?.trim();
-  if (!endpoint || !instanceId) {
-    if (
-      persisted?.status === 'running'
-      && persisted.endpoint
-      && persisted.instanceId
-    ) {
-      return persisted;
-    }
-    return undefined;
-  }
-  const now = Date.now();
-  return {
-    provider: 'aws',
-    architecture: 'aws-managed-ec2-pool',
-    planId: AWS_MANAGED_SWARM_STARTER_PLAN.id,
-    status: 'running',
-    requestedAt: persisted?.requestedAt ?? now,
-    updatedAt: now,
-    region: process.env.SWARM_AWS_HOSTED_REGION || process.env.AWS_REGION || persisted?.region || 'us-east-1',
-    tenantId: process.env.SWARM_HOSTED_TENANT_ID || persisted?.tenantId || 'local-dev',
-    instanceId,
-    endpoint,
-  };
 }
 
 async function readHostingMode(services: LocalServices): Promise<HostingMode> {
@@ -1217,33 +1185,39 @@ async function writeHostingSubstrate(services: LocalServices, provider: HostingS
 
 async function getHostingStatus(services: LocalServices, mode?: HostingMode): Promise<HostingStatus> {
   const requestedMode = mode ?? await readHostingMode(services);
-  const entitlement = hostedEntitlementActive() ? 'active' as const : 'none' as const;
-  const instance = await readActiveAwsManagedInstance(services);
-  const hostedActive = Boolean(instance);
+  const legacyInstance = await readAwsManagedInstance(services);
+  const now = Date.now();
+  const billing = initialHostedBillingState(now);
+  const runtime = {
+    ...initialHostedRuntimeState(now),
+    ...(legacyInstance
+      ? { error: 'Legacy local placeholder ignored; hosted control-plane evidence is required.' }
+      : {}),
+  };
   return parseHostingStatus({
-    mode: requestedMode === 'hosted' && hostedActive ? 'hosted' : 'local',
+    mode: requestedMode,
     local: {
       available: true,
-      running: requestedMode !== 'hosted' || !hostedActive,
+      running: true,
       label: 'This device',
       detail: 'Runs while the app is open. Uses local encrypted storage and local runtime supervision.',
     },
     hosted: {
-      available: hostedActive,
-      configured: hostedActive,
+      available: false,
+      configured: false,
       label: AWS_MANAGED_SWARM_STARTER_PLAN.label,
       priceUsdMonthly: AWS_MANAGED_SWARM_STARTER_PLAN.priceUsdMonthly,
       provider: 'aws',
       architecture: AWS_MANAGED_SWARM_STARTER_PLAN.architecture,
-      status: hostedActive ? 'active' : 'not-configured',
-      entitlement,
+      status: 'not-configured',
+      entitlement: 'none',
+      billing,
+      runtime,
+      modelWorkAllowed: false,
       plan: AWS_MANAGED_SWARM_STARTER_PLAN,
-      ...(instance ? { instance } : {}),
-      detail: hostedActive
-        ? 'Hosted entitlement and runtime health are confirmed.'
-        : entitlement === 'active'
-          ? 'Hosted entitlement is active, but no healthy provisioned runtime is configured.'
-          : 'Hosted checkout and provisioning are not connected in this build.',
+      detail: legacyInstance
+        ? 'A legacy hosted placeholder was found, but only the hosted control plane can confirm billing and health.'
+        : 'Hosted checkout and provisioning are not connected in this local build.',
     },
   });
 }

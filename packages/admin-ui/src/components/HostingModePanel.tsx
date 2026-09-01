@@ -54,6 +54,42 @@ function hostedSecondaryLabel(status: HostingStatus | null): string {
   }
 }
 
+export function hostedBillingLabel(status: HostingStatus['hosted']['billing']['status']): string {
+  switch (status) {
+    case 'eligible':
+      return 'Not subscribed';
+    case 'checkout-pending':
+      return 'Checkout pending confirmation';
+    case 'paid':
+      return 'Payment confirmed';
+    case 'cancellation-pending':
+      return 'Cancellation pending';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'failed':
+      return 'Payment failed';
+  }
+}
+
+export function hostedRuntimeLabel(status: HostingStatus['hosted']['runtime']['status']): string {
+  switch (status) {
+    case 'requested':
+      return 'Requested';
+    case 'provisioning':
+      return 'Provisioning';
+    case 'health-checking':
+      return 'Checking health';
+    case 'active':
+      return 'Healthy';
+    case 'stopped':
+      return 'Stopped';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'failed':
+      return 'Failed';
+  }
+}
+
 export function HostingModePanel() {
   const [status, setStatus] = useState<HostingStatus | null>(null);
   const [busy, setBusy] = useState<HostingMode | 'provision' | null>(null);
@@ -134,11 +170,8 @@ export function HostingModePanel() {
 
   const activeMode = status?.mode ?? 'local';
   const hostedDisabled = !status?.hosted.available;
-  const hostedStatus = status?.hosted.status ?? 'not-configured';
   const hostedBusy = busy === 'hosted' || busy === 'provision';
-  const hostedSubscribed = status?.hosted.entitlement === 'active'
-    && activeMode === 'hosted'
-    && (hostedStatus === 'provisioning' || hostedStatus === 'active');
+  const hostedSubscribed = status?.hosted.billing.status === 'paid';
 
   return (
     <div className="mt-4 max-w-3xl mx-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-4 text-left">
@@ -196,6 +229,23 @@ export function HostingModePanel() {
         </button>
       </div>
 
+      {status ? (
+        <div className="mt-3 grid gap-2 text-[11px] text-[var(--color-text-muted)] sm:grid-cols-2">
+          <div className="rounded-lg bg-[var(--color-bg-secondary)] px-3 py-2">
+            <span className="text-[var(--color-text-tertiary)]">Billing</span>
+            <span className="ml-2 font-medium text-[var(--color-text-secondary)]">
+              {hostedBillingLabel(status.hosted.billing.status)}
+            </span>
+          </div>
+          <div className="rounded-lg bg-[var(--color-bg-secondary)] px-3 py-2">
+            <span className="text-[var(--color-text-tertiary)]">Runtime</span>
+            <span className="ml-2 font-medium text-[var(--color-text-secondary)]">
+              {hostedRuntimeLabel(status.hosted.runtime.status)}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
       {hostedSubscribed ? (
         <div className="mt-3 flex items-center gap-2">
           <button
@@ -206,7 +256,7 @@ export function HostingModePanel() {
             Subscribed
           </button>
           <span className="text-[11px] text-[var(--color-text-tertiary)]">
-            {hostedStatus === 'active' ? 'Hosted runtime is online' : 'Setting up hosted runtime'}
+            {status?.hosted.modelWorkAllowed ? 'Hosted runtime is online' : 'Waiting for a healthy hosted runtime'}
           </span>
         </div>
       ) : (

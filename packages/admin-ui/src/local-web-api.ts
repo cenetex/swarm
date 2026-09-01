@@ -264,6 +264,7 @@ export function acknowledgeCredentialRotation(): void {
 }
 
 function localHostingStatus(_state: LocalState) {
+  const now = Date.now();
   return {
     mode: 'local' as const,
     local: {
@@ -281,6 +282,9 @@ function localHostingStatus(_state: LocalState) {
       architecture: 'not-configured',
       status: 'not-configured' as const,
       entitlement: 'none' as const,
+      billing: { status: 'eligible' as const, updatedAt: now },
+      runtime: { status: 'stopped' as const, updatedAt: now },
+      modelWorkAllowed: false,
       detail: 'Hosted service is not available from browser-local mode. Use the native app after hosted checkout and provisioning are connected.',
     },
   };

@@ -3,6 +3,7 @@ import { randomToken, sha256 } from './auth.js';
 import type { CloudflareHostedBindings } from './bindings.js';
 import { generateHostedReply, getHostedAvatar, storeHostedAssistantMessage } from './hosted-chat.js';
 import { createCloudflareHostedPlatform } from './platform.js';
+import { hostedModelWorkAllowed } from './hosted-lifecycle.js';
 
 const X_API_ORIGIN = 'https://api.x.com';
 const OAUTH_TTL_MS = 10 * 60 * 1_000;
@@ -991,6 +992,9 @@ export async function processHostedXQueueMessage(
   if (!validQueueMessage(value)) return { action: 'ack' };
   const mention = await claimMention(env, value.payload.integrationId, value.payload.jobId, now);
   if (!mention) return { action: 'ack' };
+  if (!await hostedModelWorkAllowed(env, mention.account_id, now)) {
+    return retryOrFail(env, mention, 'hosted_lifecycle_inactive', false, now);
+  }
   const integration = await env.SWARM_STATE.prepare(integrationSelect('integration_id = ?'))
     .bind(mention.integration_id)
     .first<XIntegrationRow>();

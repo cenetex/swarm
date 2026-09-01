@@ -104,6 +104,11 @@ function rateLimit(value) {
   return String(parsed);
 }
 
+function booleanFlag(value, name) {
+  if (value !== '0' && value !== '1') throw new Error(`${name} must be 0 or 1.`);
+  return value;
+}
+
 function passkeyRpID(value, canonicalOrigin) {
   const hostname = new URL(canonicalOrigin).hostname;
   const rpID = dnsName(value, 'SWARM_PASSKEY_RP_ID');
@@ -139,6 +144,10 @@ export function renderWranglerConfig(baseConfig, values, environment) {
     SWARM_USER_SECRET_KEY_VERSION: keyVersion(requiredValue(values, 'SWARM_USER_SECRET_KEY_VERSION')),
     SWARM_OPENROUTER_MODEL: values.SWARM_OPENROUTER_MODEL?.trim() || 'openrouter/free',
     SWARM_HOSTED_CHAT_RATE_LIMIT: rateLimit(values.SWARM_HOSTED_CHAT_RATE_LIMIT?.trim() || '20'),
+    SWARM_HOSTED_LIFECYCLE_REQUIRED: booleanFlag(
+      values.SWARM_HOSTED_LIFECYCLE_REQUIRED?.trim() || '0',
+      'SWARM_HOSTED_LIFECYCLE_REQUIRED',
+    ),
   };
 
   config.d1_databases[0].database_name = d1Name;

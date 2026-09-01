@@ -44,6 +44,7 @@ describe('renderWranglerConfig', () => {
       'SWARM_X_API_SECRET',
     ]);
     expect(config.vars.SWARM_OPENROUTER_MODEL).toBe('openrouter/free');
+    expect(config.vars.SWARM_HOSTED_LIFECYCLE_REQUIRED).toBe('0');
   });
 
   it('rejects non-HTTPS public origins', async () => {
@@ -62,6 +63,18 @@ describe('renderWranglerConfig', () => {
     expect(() => renderWranglerConfig(config, validValues, 'staging')).toThrow(
       'Environment must be preview or production',
     );
+  });
+
+  it('only accepts an explicit lifecycle rollout flag', async () => {
+    const base = await baseConfig();
+    expect(renderWranglerConfig(base, {
+      ...validValues,
+      SWARM_HOSTED_LIFECYCLE_REQUIRED: '1',
+    }, 'preview').vars.SWARM_HOSTED_LIFECYCLE_REQUIRED).toBe('1');
+    expect(() => renderWranglerConfig(base, {
+      ...validValues,
+      SWARM_HOSTED_LIFECYCLE_REQUIRED: 'true',
+    }, 'preview')).toThrow('must be 0 or 1');
   });
 
   it('renders a production staging domain without activating the primary hostname', async () => {

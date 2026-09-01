@@ -21,10 +21,15 @@
     "SWARM_OPENROUTER_RETURN_PATH": "/studio?ai=openrouter",
     "SWARM_X_RETURN_PATH": "/studio",
     "SWARM_OPENROUTER_MODEL": "openrouter/free",
-    "SWARM_HOSTED_CHAT_RATE_LIMIT": "20"
+    "SWARM_HOSTED_CHAT_RATE_LIMIT": "20",
+    "SWARM_HOSTED_LIFECYCLE_REQUIRED": "0"
   },
   "secrets": {
-    "required": ["SWARM_USER_SECRET_KEK", "SWARM_X_API_KEY", "SWARM_X_API_SECRET"]
+    "required": [
+      "SWARM_USER_SECRET_KEK",
+      "SWARM_X_API_KEY",
+      "SWARM_X_API_SECRET"
+    ]
   },
   "d1_databases": [
     {
