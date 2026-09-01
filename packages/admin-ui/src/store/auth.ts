@@ -20,7 +20,7 @@ import type { GateStatus } from './gateStatus';
 // Public types
 // ---------------------------------------------------------------------------
 
-export type AuthProvider = 'wallet' | 'privy' | null;
+export type AuthProvider = 'wallet' | 'passkey' | 'privy' | null;
 
 export interface AuthUser {
   id: string;
@@ -33,7 +33,7 @@ export interface AuthUser {
 export interface AccountSummary {
   accountId: string;
   role: 'user' | 'admin';
-  identities: Array<{ type: 'wallet' | 'privy'; providerId: string }>;
+  identities: Array<{ type: 'wallet' | 'passkey' | 'privy'; providerId: string }>;
 }
 
 // ---------------------------------------------------------------------------

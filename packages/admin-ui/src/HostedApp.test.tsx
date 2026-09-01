@@ -110,11 +110,19 @@ describe('HostedApp', () => {
     authenticate();
     render(<HostedApp />);
 
+    expect(screen.getByRole('button', { name: /add a passkey/i })).toBeInTheDocument();
     const connect = await screen.findByRole('link', { name: /connect openrouter securely/i });
     expect(connect).toHaveAttribute('href', expect.stringMatching(/\/auth\/openrouter$/u));
     expect(screen.getByText(/oauth uses pkce s256/i)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/sk-or/iu)).not.toBeInTheDocument();
     expect(hostedApi.listHostedAvatars).toHaveBeenCalledOnce();
+  });
+
+  it('offers passkey sign-in alongside wallet recovery', () => {
+    render(<HostedApp />);
+
+    expect(screen.getAllByRole('button', { name: /sign in with a passkey/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /wallet session/i }).length).toBeGreaterThan(0);
   });
 
   it('shows the callback result, refreshes connected state, and removes callback parameters', async () => {

@@ -5,10 +5,11 @@ type Fetch = typeof fetch;
 
 export type HostedWalletSessionResponse = {
   authenticated: true;
+  authProvider?: 'wallet' | 'passkey';
   account: {
     accountId: string;
     role: 'user' | 'admin';
-    identities: Array<{ type: 'wallet' | 'privy'; providerId: string }>;
+    identities: Array<{ type: 'wallet' | 'privy' | 'passkey'; providerId: string }>;
   };
   user: {
     walletAddress: string;

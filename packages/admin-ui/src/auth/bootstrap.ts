@@ -4,6 +4,7 @@ import type { AccountSummary, AuthUser, GateStatus } from '../store/auth';
 
 export type BackendAuthSessionPayload = {
   authenticated?: boolean;
+  authProvider?: 'wallet' | 'passkey' | 'privy';
   user?: Partial<AuthUser> & { walletAddress?: string };
   account?: AccountSummary | null;
   gateStatus?: GateStatus | null;
@@ -16,7 +17,7 @@ export function applyAuthenticatedBackendSession(data: BackendAuthSessionPayload
   useAuthStore.setState({
     isAuthenticated: true,
     isLoading: false,
-    authProvider: 'wallet',
+    authProvider: data.authProvider ?? 'wallet',
     error: null,
     user: {
       id: data.account?.accountId || data.user.walletAddress,

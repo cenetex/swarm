@@ -28,6 +28,7 @@
     "deploy:dry-run": "WRANGLER_WRITE_LOGS=false wrangler deploy --dry-run --outdir .wrangler/dry-run"
   },
   "dependencies": {
+    "@simplewebauthn/server": "13.3.2",
     "@swarm/core": "workspace:*",
     "bs58": "^6.0.0",
     "tweetnacl": "^1.0.3"

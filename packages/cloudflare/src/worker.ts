@@ -19,6 +19,13 @@ import {
   verifyWalletChallenge,
 } from './auth.js';
 import {
+  beginPasskeyAuthentication,
+  beginPasskeyRegistration,
+  finishPasskeyAuthentication,
+  finishPasskeyRegistration,
+} from './passkeys.js';
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
+import {
   approveMobileWalletPairing,
   consumeMobileWalletPairing,
   createMobileWalletChallenge,
@@ -147,6 +154,12 @@ function optionalStringField(body: Record<string, unknown>, name: string): strin
   return value.trim() || undefined;
 }
 
+function objectField(body: Record<string, unknown>, name: string): Record<string, unknown> {
+  const value = body[name];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${name} is required.`);
+  return value as Record<string, unknown>;
+}
+
 function optionalBooleanField(body: Record<string, unknown>, name: string): boolean | undefined {
   const value = body[name];
   if (value === undefined || value === null) return undefined;
@@ -168,6 +181,7 @@ function authenticatedWalletPayload(session: {
   accountId: string;
   walletAddress: string;
   expiresAt: number;
+  authProvider: 'wallet' | 'passkey';
 }): Record<string, unknown> {
   return {
     success: true,
@@ -175,6 +189,7 @@ function authenticatedWalletPayload(session: {
     accountId: session.accountId,
     walletAddress: session.walletAddress,
     expiresAt: session.expiresAt,
+    authProvider: session.authProvider,
     session: { expiresAt: session.expiresAt },
     account: {
       accountId: session.accountId,
@@ -244,7 +259,10 @@ function securedAssetResponse(response: Response, env: CloudflareHostedBindings)
   ].join('; '));
   headers.set('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   headers.set('Cross-Origin-Resource-Policy', 'same-origin');
-  headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  headers.set(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=(), payment=(), publickey-credentials-create=(self), publickey-credentials-get=(self)',
+  );
   headers.set('Referrer-Policy', 'no-referrer');
   headers.set('X-Content-Type-Options', 'nosniff');
   if (contentType.includes('text/html')) headers.set('Cache-Control', 'no-store');
@@ -334,7 +352,7 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
           entitlement: 'none',
           plan: CLOUDFLARE_HOSTED_SWARM_STARTER_PLAN,
           detail: configured
-            ? 'Hosted runtime is ready for wallet sign-in and entitlement activation.'
+            ? 'Hosted runtime is ready for wallet or passkey sign-in and entitlement activation.'
             : 'Hosted runtime requires its public URL and encrypted secret keyring.',
         },
       }),
@@ -503,6 +521,45 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     );
   }
 
+  if (url.pathname === '/api/auth/passkey/register/options' && request.method === 'POST') {
+    assertSameOrigin(env, request);
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    return json(await beginPasskeyRegistration(env, request, session));
+  }
+
+  if (url.pathname === '/api/auth/passkey/register/verify' && request.method === 'POST') {
+    assertSameOrigin(env, request);
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const body = await readJsonObject(request);
+    const verified = await finishPasskeyRegistration(env, request, session, {
+      challengeId: stringField(body, 'challengeId'),
+      response: objectField(body, 'response') as unknown as RegistrationResponseJSON,
+    });
+    return verified
+      ? json({ verified: true }, { status: 201 })
+      : json({ error: 'Passkey registration is invalid or expired.' }, { status: 400 });
+  }
+
+  if (url.pathname === '/api/auth/passkey/authenticate/options' && request.method === 'POST') {
+    assertSameOrigin(env, request);
+    return json(await beginPasskeyAuthentication(env, request));
+  }
+
+  if (url.pathname === '/api/auth/passkey/authenticate/verify' && request.method === 'POST') {
+    assertSameOrigin(env, request);
+    const body = await readJsonObject(request);
+    const session = await finishPasskeyAuthentication(env, request, {
+      challengeId: stringField(body, 'challengeId'),
+      response: objectField(body, 'response') as unknown as AuthenticationResponseJSON,
+    });
+    if (!session) return json({ error: 'Passkey sign-in is invalid or expired.' }, { status: 401 });
+    return json(authenticatedWalletPayload(session), {
+      headers: { 'Set-Cookie': hostedSessionCookie(session.sessionToken) },
+    });
+  }
+
   if (url.pathname === '/api/auth/me' && request.method === 'GET') {
     const session = await getHostedSession(env, request);
     if (!session) return json({ authenticated: false }, { status: 401 });
@@ -511,7 +568,7 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
       accountId: session.accountId,
       walletAddress: session.walletAddress,
       expiresAt: session.expiresAt,
-      authProvider: 'wallet',
+      authProvider: session.authProvider,
       account: {
         accountId: session.accountId,
         role: 'user',

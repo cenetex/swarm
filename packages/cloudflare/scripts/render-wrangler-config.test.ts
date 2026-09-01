@@ -25,6 +25,7 @@ describe('renderWranglerConfig', () => {
     expect(config.compatibility_flags).toEqual(['global_fetch_strictly_public']);
     expect(config.vars.SWARM_ENV).toBe('preview');
     expect(config.vars.SWARM_HOSTED_ENABLED).toBe('1');
+    expect(config.vars.SWARM_PASSKEY_RP_ID).toBe('swarm-hosted-preview.example.workers.dev');
     expect(config.d1_databases[0].database_id).toBe(validValues.SWARM_CF_D1_DATABASE_ID);
     expect(config.r2_buckets[0].bucket_name).toBe(validValues.SWARM_CF_R2_BUCKET_NAME);
     expect(config.queues.producers[0].queue).toBe(validValues.SWARM_CF_QUEUE_NAME);
@@ -80,6 +81,7 @@ describe('renderWranglerConfig', () => {
     expect(config.routes).toEqual([
       { pattern: 'next.swarm.rati.chat', custom_domain: true },
     ]);
+    expect(config.vars.SWARM_PASSKEY_RP_ID).toBe('rati.chat');
   });
 
   it('activates the primary route only when it matches the canonical public origin', async () => {
@@ -111,5 +113,14 @@ describe('renderWranglerConfig', () => {
       { ...validValues, SWARM_CF_STAGING_DOMAIN: 'next.swarm.rati.chat' },
       'preview',
     )).toThrow('not allowed in preview');
+  });
+
+  it('rejects a passkey RP ID outside the public origin hierarchy', async () => {
+    const config = await baseConfig();
+    expect(() => renderWranglerConfig(
+      config,
+      { ...validValues, SWARM_PASSKEY_RP_ID: 'unrelated.example' },
+      'preview',
+    )).toThrow('SWARM_PASSKEY_RP_ID');
   });
 });

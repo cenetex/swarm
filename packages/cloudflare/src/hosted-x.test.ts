@@ -62,6 +62,7 @@ class SqliteD1 implements CloudflareD1Database {
       '0003_hosted_chat_runtime.sql',
       '0006_portable_public_avatars.sql',
       '0008_hosted_x.sql',
+      '0009_passkeys.sql',
     ]) {
       this.db.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url), 'utf8'));
     }
@@ -81,6 +82,7 @@ const session: HostedSession = {
   walletAddress: 'wallet-1',
   expiresAt: 9_999_999,
   sessionHash: 'session-1',
+  authProvider: 'wallet',
 };
 
 const otherSession: HostedSession = {
@@ -88,6 +90,7 @@ const otherSession: HostedSession = {
   walletAddress: 'wallet-2',
   expiresAt: 9_999_999,
   sessionHash: 'session-2',
+  authProvider: 'wallet',
 };
 
 function insertAccountAndAvatar(state: SqliteD1, accountId: string, avatarId: string, wallet: string): void {

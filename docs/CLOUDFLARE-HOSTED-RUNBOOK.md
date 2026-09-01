@@ -67,12 +67,13 @@ Set these environment variables:
 | `SWARM_CF_ZONE_NAME`                     | Empty in preview                  | Required production Cloudflare zone, `rati.chat`.        |
 | `SWARM_CF_PRIMARY_ROUTE`                 | Empty before cutover              | Optional final route, exactly `swarm.rati.chat/*`.       |
 | `SWARM_PUBLIC_URL`                       | Worker `workers.dev` HTTPS origin | SIWS domain, OAuth callback origin, and smoke target.    |
+| `SWARM_PASSKEY_RP_ID`                    | Derived from the hosted domain    | WebAuthn relying-party domain; production defaults to the stable Cloudflare zone. |
 | `SWARM_USER_SECRET_KEY_VERSION`          | `preview_v1`                      | Active wrapping-key version; letters, numbers, or `_`.   |
 | `SWARM_USER_SECRET_PREVIOUS_KEY_VERSION` | Empty normally                    | Optional previous version during rotation.               |
 | `SWARM_OPENROUTER_MODEL`                 | `openrouter/free`                 | Optional default model.                                  |
 | `SWARM_HOSTED_CHAT_RATE_LIMIT`           | `20`                              | Optional messages per account per minute, from 1 to 100. |
 
-The public URL must be one HTTPS origin with no path. Preview uses its exact `workers.dev` origin. Production uses `https://next.swarm.rati.chat` before cutover and `https://swarm.rati.chat` only when the primary route is activated. The configuration renderer rejects mismatched public origins and routes.
+The public URL must be one HTTPS origin with no path. Preview uses its exact `workers.dev` origin and that full hostname as the passkey RP ID. Production uses `https://next.swarm.rati.chat` before cutover and `https://swarm.rati.chat` only when the primary route is activated; the renderer uses the stable `rati.chat` zone as the production RP ID. An explicit `SWARM_PASSKEY_RP_ID` is allowed only when it equals the public hostname or one of its parent domains. Never change the RP ID after users enroll unless wallet recovery and passkey re-enrollment are planned.
 
 ## X app setup
 
@@ -97,6 +98,10 @@ resulting user token and token secret with the hosted keyring, and scopes them t
 The connector uses `GET /2/users/{id}/mentions` and `POST /2/tweets`. X API usage is billed by X under the developer app account, so configure spending limits and usage alerts in the X developer console before production enablement. Existing mentions are used only to establish the initial cursor and are not backfilled; new mentions are checked once per minute.
 
 Mobile wallet sign-in needs no third-party project ID. The desktop requests a five-minute, one-use pairing from the Worker. The QR contains only the public pairing ID inside the official Phantom or Solflare in-app-browser link. A separate poll token stays in desktop memory, is stored only as a hash in D1, and is required before the Worker can issue the desktop session cookie. The phone signs a domain-bound SIWS message with the visible pairing code; it does not submit a Solana transaction.
+
+Passkey enrollment starts only from an existing authenticated wallet session. In Studio, select **Add a passkey**, approve the device prompt, sign out, and use **Sign in with a passkey**. The authenticator must provide a discoverable credential and user verification such as Touch ID, Face ID, Windows Hello, a device PIN, or a security-key PIN. Swarm stores no biometric data. If the device or browser cannot use the passkey, sign in with the linked Solana wallet and enroll another passkey.
+
+Passkey rollback is application-only: keep migration `0009_passkeys.sql` and its data, remove or disable the passkey UI/routes, and leave wallet sign-in available. Do not drop credential rows during rollback. Restoring the same RP ID and origin makes enrolled passkeys usable again; changing either one requires wallet recovery and re-enrollment.
 
 Generate a wrapping key without printing it to the terminal and save it directly as a GitHub environment secret:
 
@@ -151,6 +156,8 @@ After the automated checks pass, complete one manual preview flow:
 2. confirm `/sitemap.xml` and `/api/public/avatars` work without a session;
 3. open **Studio** and connect a Solana wallet;
 4. sign the domain-bound session message;
+   - add a passkey, sign out, and confirm **Sign in with a passkey** restores the same companions and provider state;
+   - sign out again and confirm wallet sign-in still works as the recovery path;
 5. create a default avatar before connecting a model, confirm it is public and listed, and download its portable artifact;
 6. confirm the anonymous project page exposes the same revision and never exposes a credential or private chat;
 7. select **Connect OpenRouter securely** and complete OpenRouter OAuth;

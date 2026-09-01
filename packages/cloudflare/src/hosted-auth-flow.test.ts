@@ -14,7 +14,12 @@ import { encodeHostedSecretKey } from './secret-crypto.js';
 import worker from './worker.js';
 
 type Challenge = { wallet_address: string; message: string; expires_at: number };
-type Session = { account_id: string; wallet_address: string; expires_at: number };
+type Session = {
+  account_id: string;
+  wallet_address: string;
+  expires_at: number;
+  auth_provider: 'wallet' | 'passkey';
+};
 type OAuthTransaction = {
   account_id: string;
   session_hash: string;
@@ -76,7 +81,7 @@ class MemoryStatement implements CloudflareD1PreparedStatement {
       this.db.challenges.delete(nonceHash);
       return challenge as T;
     }
-    if (this.query.startsWith('select account_id, wallet_address, expires_at from swarm_sessions')) {
+    if (this.query.startsWith('select account_id, wallet_address, expires_at, auth_provider from swarm_sessions')) {
       const [sessionHash, now] = this.values as [string, number];
       const session = this.db.sessions.get(sessionHash);
       return (session && session.expires_at > now ? session : null) as T | null;
@@ -173,17 +178,19 @@ class MemoryStatement implements CloudflareD1PreparedStatement {
       const [walletAddress, accountId] = this.values.map(String);
       if (!this.db.identities.has(walletAddress)) this.db.identities.set(walletAddress, accountId);
     } else if (this.query.startsWith('insert into swarm_sessions')) {
-      const [sessionHash, accountId, walletAddress, , expiresAt] = this.values as [
+      const [sessionHash, accountId, walletAddress, , expiresAt, authProvider] = this.values as [
         string,
         string,
         string,
         number,
         number,
+        'wallet' | 'passkey',
       ];
       this.db.sessions.set(sessionHash, {
         account_id: accountId,
         wallet_address: walletAddress,
         expires_at: expiresAt,
+        auth_provider: authProvider,
       });
     } else if (this.query.startsWith('delete from swarm_sessions')) {
       this.db.sessions.delete(String(this.values[0]));

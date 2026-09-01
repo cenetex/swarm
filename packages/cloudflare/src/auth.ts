@@ -11,8 +11,8 @@ export const HOSTED_SESSION_COOKIE = 'swarm_hosted_session';
 export class HostedRateLimitError extends Error {
   readonly retryAfter: number;
 
-  constructor(retryAfter: number) {
-    super('Too many wallet challenges. Try again shortly.');
+  constructor(retryAfter: number, message = 'Too many wallet challenges. Try again shortly.') {
+    super(message);
     this.name = 'HostedRateLimitError';
     this.retryAfter = retryAfter;
   }
@@ -39,13 +39,17 @@ type SessionRow = {
   account_id: string;
   wallet_address: string;
   expires_at: number;
+  auth_provider?: HostedAuthProvider;
 };
+
+export type HostedAuthProvider = 'wallet' | 'passkey';
 
 export type HostedSession = {
   accountId: string;
   walletAddress: string;
   expiresAt: number;
   sessionHash: string;
+  authProvider: HostedAuthProvider;
 };
 
 export type VerifiedWalletSession = HostedSession & {
@@ -249,20 +253,21 @@ export async function verifyWalletIdentity(
 
 export async function createHostedSession(
   env: CloudflareHostedBindings,
-  identity: VerifiedWalletIdentity,
+  identity: VerifiedWalletIdentity & { authProvider?: HostedAuthProvider },
   now = Date.now(),
 ): Promise<VerifiedWalletSession> {
   const sessionToken = randomToken(48);
   const sessionHash = await sha256(sessionToken);
   const expiresAt = now + SESSION_TTL_MS;
+  const authProvider = identity.authProvider ?? 'wallet';
   const result = await env.SWARM_STATE.prepare(
-    `insert into swarm_sessions (session_hash, account_id, wallet_address, created_at, expires_at)
-     values (?, ?, ?, ?, ?)`,
+    `insert into swarm_sessions (session_hash, account_id, wallet_address, created_at, expires_at, auth_provider)
+     values (?, ?, ?, ?, ?, ?)`,
   )
-    .bind(sessionHash, identity.accountId, identity.walletAddress, now, expiresAt)
+    .bind(sessionHash, identity.accountId, identity.walletAddress, now, expiresAt, authProvider)
     .run();
   if (!result.success) throw new Error(result.error ?? 'Unable to create hosted session.');
-  return { ...identity, expiresAt, sessionHash, sessionToken };
+  return { ...identity, authProvider, expiresAt, sessionHash, sessionToken };
 }
 
 export async function verifyWalletChallenge(
@@ -295,7 +300,7 @@ export async function getHostedSession(
   if (!sessionToken) return null;
   const sessionHash = await sha256(sessionToken);
   const row = await env.SWARM_STATE.prepare(
-    `select account_id, wallet_address, expires_at from swarm_sessions
+    `select account_id, wallet_address, expires_at, auth_provider from swarm_sessions
      where session_hash = ? and expires_at > ?`,
   )
     .bind(sessionHash, now)
@@ -306,6 +311,7 @@ export async function getHostedSession(
     walletAddress: row.wallet_address,
     expiresAt: row.expires_at,
     sessionHash,
+    authProvider: row.auth_provider ?? 'wallet',
   };
 }
 
@@ -337,6 +343,7 @@ export async function cleanupExpiredHostedAuth(env: CloudflareHostedBindings, no
     'swarm_auth_challenges',
     'swarm_auth_rate_limits',
     'swarm_sessions',
+    'swarm_passkey_challenges',
     'swarm_oauth_transactions',
     'swarm_mobile_auth_pairings',
   ];
