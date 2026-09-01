@@ -11,10 +11,6 @@ on:
           - preview
           - production
         default: preview
-      confirm_production:
-        description: Type DEPLOY_PRODUCTION when environment is production
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -32,7 +28,6 @@ jobs:
       name: cloudflare-${{ inputs.environment }}
     env:
       SWARM_DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
-      SWARM_PRODUCTION_CONFIRMATION: ${{ inputs.confirm_production }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       SWARM_CF_WORKER_NAME: ${{ vars.SWARM_CF_WORKER_NAME }}
@@ -56,15 +51,11 @@ jobs:
       WRANGLER_SEND_METRICS: 'false'
 
     steps:
-      - name: Guard production deployment
+      - name: Verify production branch
         shell: bash
         run: |
           set -euo pipefail
           if [ "$SWARM_DEPLOY_ENVIRONMENT" = "production" ]; then
-            if [ "$SWARM_PRODUCTION_CONFIRMATION" != "DEPLOY_PRODUCTION" ]; then
-              echo "::error::Production requires confirm_production=DEPLOY_PRODUCTION."
-              exit 1
-            fi
             if [ "$GITHUB_REF" != "refs/heads/main" ]; then
               echo "::error::Production deployments must run from main."
               exit 1
