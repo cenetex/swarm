@@ -7,7 +7,6 @@ import type {
   HttpResponse,
 } from "@swarm/core";
 import { PutObjectCommand } from '@swarm/core';
-import { SendMessageCommand } from '@swarm/core';
 import { createHmac, timingSafeEqual } from 'crypto';
 import * as mediaJobs from '../services/media-jobs.js';
 import * as gallery from '../services/gallery.js';
@@ -18,18 +17,17 @@ import { parseJsonBody } from '../http/request-body.js';
 import { isRequestValidationError } from '../middleware/validate.js';
 import type { MediaJob } from '../types.js';
 import { buildMediaUrl } from '../utils/media-url.js';
-import { getS3Client, getSQSClient } from '../services/aws-clients.js';
+import { getS3Client } from '../services/aws-clients.js';
+import {
+  publishMediaFailedContinuation,
+  publishMediaGeneratedContinuation,
+} from '../services/media/media-continuation.js';
 
 const s3Client = getS3Client();
-const sqsClient = getSQSClient();
 
 const MEDIA_BUCKET = process.env.MEDIA_BUCKET!;
 const CDN_URL = process.env.CDN_URL;
-const RESPONSE_QUEUE_URL = process.env.RESPONSE_QUEUE_URL;
 const REPLICATE_WEBHOOK_SECRET = process.env.REPLICATE_WEBHOOK_SECRET || '';
-
-/** Platforms that use push delivery via the response queue (not polling-based like admin-ui) */
-const PUSH_PLATFORMS = new Set(['telegram', 'discord']);
 
 function verifyWebhookSignature(jobId: string, provided: string | undefined): boolean {
   if (!REPLICATE_WEBHOOK_SECRET || !provided) {
@@ -116,16 +114,17 @@ export async function handler(
       logger.error('Job not found', undefined, { jobId });
       return { statusCode: 404, body: 'Job not found' };
     }
-
     // Handle completion
     if (prediction.status === 'succeeded' && prediction.output) {
       // Get the output URL (handle different Replicate output formats)
       const outputUrl = extractOutputUrl(prediction.output);
 
       if (!outputUrl) {
+        const errorMessage = 'No output URL in prediction response';
         await mediaJobs.updateJobStatus(jobId, 'failed', {
-          error: 'No output URL in prediction response',
+          error: errorMessage,
         });
+        await publishMediaFailedContinuation(job, errorMessage);
         return { statusCode: 200, body: 'Processed (no output)' };
       }
 
@@ -135,9 +134,11 @@ export async function handler(
       // Download the media and store in S3
       const response = await fetch(outputUrl);
       if (!response.ok) {
+        const errorMessage = `Failed to download ${job.type}: ${response.statusText}`;
         await mediaJobs.updateJobStatus(jobId, 'failed', {
-          error: `Failed to download ${job.type}: ${response.statusText}`,
+          error: errorMessage,
         });
+        await publishMediaFailedContinuation(job, errorMessage);
         return { statusCode: 200, body: 'Processed (download failed)' };
       }
 
@@ -192,32 +193,7 @@ export async function handler(
         }
       }
 
-      // Send callback message to response queue if configured
-      // Allow sending when we have conversationId (will post to chat) or replyToMessageId (will reply to specific message)
-      // Only send to response queue for platforms that need push delivery (not polling-based like admin-ui)
-      if (RESPONSE_QUEUE_URL && PUSH_PLATFORMS.has(job.platform) && (job.conversationId || job.replyToMessageId)) {
-        // Send as a continuation message that can trigger the avatar
-        const continuationMessage = {
-          type: 'media_generated',
-          avatarId: job.avatarId,
-          platform: job.platform,
-          conversationId: job.conversationId,
-          replyToMessageId: job.replyToMessageId,
-          jobId,
-          timestamp: Date.now(),
-          data: {
-            mediaType: job.type,
-            mediaUrl: publicUrl,
-            prompt: job.prompt,
-            purpose: job.purpose, // e.g., 'post_to_twitter'
-          },
-        };
-
-        await sqsClient.send(new SendMessageCommand({
-          QueueUrl: RESPONSE_QUEUE_URL,
-          MessageBody: JSON.stringify(continuationMessage),
-        }));
-      }
+      await publishMediaGeneratedContinuation(job, publicUrl);
 
       logger.info('Media generation complete', { type: job.type, url: publicUrl });
       return { statusCode: 200, body: 'Success' };
@@ -230,28 +206,7 @@ export async function handler(
         error: errorMessage,
       });
 
-      // Send failure callback as continuation message
-      if (RESPONSE_QUEUE_URL && PUSH_PLATFORMS.has(job.platform) && (job.conversationId || job.replyToMessageId)) {
-        const continuationMessage = {
-          type: 'media_failed',
-          avatarId: job.avatarId,
-          platform: job.platform,
-          conversationId: job.conversationId,
-          replyToMessageId: job.replyToMessageId,
-          jobId,
-          timestamp: Date.now(),
-          data: {
-            mediaType: job.type,
-            error: errorMessage,
-            prompt: job.prompt,
-          },
-        };
-
-        await sqsClient.send(new SendMessageCommand({
-          QueueUrl: RESPONSE_QUEUE_URL,
-          MessageBody: JSON.stringify(continuationMessage),
-        }));
-      }
+      await publishMediaFailedContinuation(job, errorMessage);
 
       logger.warn('Media generation failed', { type: job.type, error: errorMessage });
       return { statusCode: 200, body: 'Processed failure' };

@@ -104,8 +104,9 @@ You have media generation capabilities:
 Image and video generation are ASYNC. When you call generate_image:
 1. You get a job ID immediately
 2. Generation happens in background (30-60 seconds)
-3. When complete, you'll receive a CONTINUATION message with the result URL
-4. You can then use that URL in another action (e.g., post to Twitter, send to chat)
+3. Telegram/Discord jobs record their exact destination and deliver there automatically when complete
+4. Use an explicit destination only when the user names a different supported chat/channel
+5. Profile, gallery, and Twitter workflows still use their dedicated follow-up actions
 
 **RATE LIMITING**: Only generate ONE image or video per user message.
 

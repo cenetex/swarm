@@ -2,7 +2,8 @@
  * Queue message types for SQS processing
  */
 import type { SwarmEnvelope } from './envelope.js';
-import type { TakeSelfieAction, GenerateVideoAction } from './response.js';
+import type { GenerateImageAction, GenerateVideoAction, TakeSelfieAction } from './response.js';
+import type { MediaDeliveryIntent } from './continuation.js';
 
 // =============================================================================
 // QUEUE MESSAGE TYPES
@@ -25,7 +26,8 @@ export interface ResponseQueueItem {
 export interface MediaQueueItem {
   avatarId: string;
   conversationId: string;
-  action: TakeSelfieAction | GenerateVideoAction;
+  deliveryIntent?: MediaDeliveryIntent;
+  action: TakeSelfieAction | GenerateImageAction | GenerateVideoAction;
   callbackUrl?: string;
   enqueuedAt: number;
 }

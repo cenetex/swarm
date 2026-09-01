@@ -64,6 +64,40 @@ describe('enqueueMediaJob', () => {
     const body = JSON.parse(cmd.input.MessageBody);
     expect(body.usageAccounted).toBe(true);
     expect(body.response.replyToMessageId).toBe('msg-42');
+    expect(body.deliveryIntent).toEqual({
+      platform: 'telegram',
+      conversationId: 'c1',
+      replyToMessageId: 'msg-42',
+      expectedAction: 'send_media',
+    });
     expect(cmd.input.MessageAttributes?.traceId?.StringValue).toBe('trace-xyz');
+  });
+
+  it('preserves an explicit cross-platform delivery target separately from the origin', async () => {
+    await enqueueMediaJob('queue-url', {
+      avatarId: 'a1',
+      conversationId: 'admin-session-1',
+      platform: 'web',
+      prompt: 'launch image',
+      deliveryIntent: {
+        platform: 'discord',
+        conversationId: 'discord-channel-42',
+        replyToMessageId: 'discord-message-7',
+        expectedAction: 'discord_send_media_to_channel',
+      },
+    });
+
+    const cmd = sendMock.mock.calls[0][0] as { input: { MessageBody: string } };
+    const body = JSON.parse(cmd.input.MessageBody);
+    expect(body.response).toMatchObject({
+      platform: 'web',
+      conversationId: 'admin-session-1',
+    });
+    expect(body.deliveryIntent).toEqual({
+      platform: 'discord',
+      conversationId: 'discord-channel-42',
+      replyToMessageId: 'discord-message-7',
+      expectedAction: 'discord_send_media_to_channel',
+    });
   });
 });

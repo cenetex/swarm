@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test';
-import { formatContinuationAsSystemMessage } from './continuation.js';
+import {
+  buildMediaDeliveryResponse,
+  createMediaDeliveryIntent,
+  formatContinuationAsSystemMessage,
+} from './continuation.js';
 import type { MediaFailedContinuation, MediaGeneratedContinuation, ResumeContext } from './continuation.js';
 
 const BASE = {
@@ -169,5 +173,95 @@ describe('formatContinuationAsSystemMessage', () => {
       expect(result).not.toContain('[Resuming agent loop]');
       expect(result).toContain('[ASYNC RESULT @');
     });
+  });
+
+  it('includes the exact delivery target and expected action', () => {
+    const msg = makeMediaGenerated();
+    msg.data.deliveryIntent = {
+      platform: 'telegram',
+      conversationId: '-1001234567890',
+      replyToMessageId: '456',
+      expectedAction: 'telegram_send_media_to_chat',
+    };
+
+    const result = formatContinuationAsSystemMessage(msg);
+
+    expect(result).toContain('telegram:-1001234567890');
+    expect(result).toContain('telegram_send_media_to_chat');
+    expect(result).toContain('Reply to: 456');
+  });
+});
+
+describe('media delivery intent', () => {
+  it('builds direct delivery back to the same Telegram group and reply target', () => {
+    const msg = makeMediaGenerated();
+    msg.conversationId = '-1001234567890';
+    msg.replyToMessageId = '456';
+    msg.data.deliveryIntent = createMediaDeliveryIntent({
+      platform: msg.platform,
+      conversationId: msg.conversationId,
+      replyToMessageId: msg.replyToMessageId,
+    });
+
+    expect(buildMediaDeliveryResponse(msg)).toEqual({
+      avatarId: 'avatar-1',
+      platform: 'telegram',
+      conversationId: '-1001234567890',
+      replyToMessageId: '456',
+      actions: [{
+        type: 'send_media',
+        mediaType: 'image',
+        url: 'https://example.com/image.png',
+        caption: 'a beautiful sunset',
+        replyToMessageId: '456',
+      }],
+      generatedAt: 1700000000000,
+      llmModel: 'continuation-direct-delivery',
+      tokensUsed: 0,
+    });
+  });
+
+  it('uses an explicit supported cross-platform destination without changing the origin', () => {
+    const msg: MediaGeneratedContinuation = {
+      ...makeMediaGenerated(),
+      platform: 'admin-ui',
+      conversationId: 'admin-session-1',
+      data: {
+        ...makeMediaGenerated().data,
+        mediaType: 'sticker',
+        deliveryIntent: {
+          platform: 'discord',
+          conversationId: 'discord-channel-42',
+          replyToMessageId: 'discord-message-7',
+          expectedAction: 'discord_send_media_to_channel',
+        },
+      },
+    };
+
+    const response = buildMediaDeliveryResponse(msg);
+
+    expect(response?.platform).toBe('discord');
+    expect(response?.conversationId).toBe('discord-channel-42');
+    expect(response?.replyToMessageId).toBe('discord-message-7');
+    // The outbound pipeline sends generated stickers as an image attachment.
+    expect(response?.actions[0]).toMatchObject({
+      type: 'send_media',
+      mediaType: 'image',
+      url: 'https://example.com/image.png',
+    });
+    expect(msg.platform).toBe('admin-ui');
+    expect(msg.conversationId).toBe('admin-session-1');
+  });
+
+  it('does not create push intent for polling-only or invalid destinations', () => {
+    expect(createMediaDeliveryIntent({
+      platform: 'admin-ui',
+      conversationId: 'session-1',
+    })).toBeUndefined();
+    expect(createMediaDeliveryIntent({
+      platform: 'telegram',
+      conversationId: '-1001',
+      expectedAction: 'discord_send_media_to_channel',
+    })).toBeUndefined();
   });
 });

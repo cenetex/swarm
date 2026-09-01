@@ -27,10 +27,12 @@ import { _getSecretValueInternal } from '../secrets.js';
 import { getModelById, getReplicateVersion } from '../models-registry.js';
 import { validateReplicateInputWithSchema } from './replicate-schema.js';
 import type { MediaJob, GalleryItem, SecretType, AICapability } from '../../types.js';
+import type { MediaDeliveryIntent } from '@swarm/core';
 import { getDynamoClient } from '../dynamo-client.js';
 import { createSystemLogger } from '../structured-logger.js';
 import { buildMediaUrl, canonicalizeMediaUrl } from '../../utils/media-url.js';
 import { getSystemOpenRouterApiKey } from '../openrouter-key.js';
+import { publishMediaGeneratedContinuation } from './media-continuation.js';
 
 const log = createSystemLogger('media');
 
@@ -464,6 +466,7 @@ interface GenerateVideoOptions {
   replyToMessageId?: string;
   model?: string;
   referenceImageUrl?: string;
+  deliveryIntent?: MediaDeliveryIntent;
 }
 
 interface GenerateStickerOptions {
@@ -1077,6 +1080,7 @@ interface GenerateImageAsyncOptions extends GenerateImageOptions {
   replyToMessageId?: string;
   apiKey?: string;
   purpose?: 'profile' | 'post_to_twitter' | 'send_to_chat' | 'gallery';
+  deliveryIntent?: MediaDeliveryIntent;
 }
 
 /**
@@ -1098,6 +1102,7 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     chargeEnergy = true,
     apiKey: apiKeyOverride,
     purpose,
+    deliveryIntent,
   } = options;
 
   // Unified burst pool check: entitlement-first, energy-fallback
@@ -1132,10 +1137,12 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
       replyToMessageId,
       provider: 'openrouter',
       purpose,
+      deliveryIntent,
     });
 
+    let galleryItem: GalleryItem;
     try {
-      const galleryItem = await generateImageWithOpenRouter({
+      galleryItem = await generateImageWithOpenRouter({
         prompt,
         avatarId,
         platform,
@@ -1151,13 +1158,24 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
         resultS3Key: galleryItem.s3Key,
       });
       await credits.consumeCredit(avatarId, 'generate_image');
-
-      return await mediaJobs.getJob(jobId) || job;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await mediaJobs.updateJobStatus(jobId, 'failed', { error: message });
       throw error;
     }
+
+    // Same-conversation OpenRouter images are already returned inline by the
+    // MCP tool. Only queue a continuation when the caller named a different
+    // supported destination, so immediate delivery remains unchanged.
+    if (deliveryIntent && (
+      deliveryIntent.platform !== platform
+      || deliveryIntent.conversationId !== conversationId
+      || deliveryIntent.replyToMessageId !== replyToMessageId
+    )) {
+      await publishMediaGeneratedContinuation(job, galleryItem.url);
+    }
+
+    return await mediaJobs.getJob(jobId) || job;
   }
 
   // Get Replicate API key
@@ -1246,6 +1264,7 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
     replyToMessageId,
     provider: 'replicate',
     purpose,
+    deliveryIntent,
   });
 
   log.info('async_image', 'async_job_start', {
@@ -1362,7 +1381,7 @@ export async function generateImageAsync(options: GenerateImageAsyncOptions): Pr
 export async function generateVideo(options: GenerateVideoOptions): Promise<MediaJob> {
   const {
     prompt, avatarId, platform, conversationId, replyToMessageId,
-    model, referenceImageUrl
+    model, referenceImageUrl, deliveryIntent
   } = options;
 
   // Unified burst pool check: entitlement-first, energy-fallback
@@ -1389,6 +1408,7 @@ export async function generateVideo(options: GenerateVideoOptions): Promise<Medi
       platform: platform || 'unknown',
       replyToMessageId,
       provider: 'openrouter',
+      deliveryIntent,
     });
 
     const accessibleReferenceImageUrl = referenceImageUrl
@@ -1472,6 +1492,7 @@ export async function generateVideo(options: GenerateVideoOptions): Promise<Medi
     platform: platform || 'unknown',
     replyToMessageId,
     provider: 'replicate',
+    deliveryIntent,
   });
 
   // Start Replicate prediction with webhook

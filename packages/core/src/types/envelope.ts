@@ -134,6 +134,11 @@ export interface EnvelopeMetadata {
   isMention?: boolean;      // Message contains @botUsername
   isReplyToBot?: boolean;   // Message is a reply to bot's message
 
+  // Async continuation context
+  isContinuation?: boolean;
+  continuationType?: string;
+  originalJobId?: string;
+
   // Telegram-specific context (preserved for channel state)
   chatType?: 'private' | 'group' | 'supergroup' | 'channel';
   chatTitle?: string;

@@ -40,6 +40,7 @@ export function createMediaServices(
           aspectRatio: params.aspectRatio as '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9' | undefined,
           conversationId: params.conversationId || `admin-ui-${Date.now()}`,
           replyToMessageId: params.replyToMessageId,
+          deliveryIntent: params.deliveryIntent,
         });
         if (job.status === 'completed' && job.resultUrl) {
           return {
@@ -58,6 +59,7 @@ export function createMediaServices(
           referenceImageUrl: params.referenceImageUrl,
           conversationId: params.conversationId || `mcp-${Date.now()}`,
           replyToMessageId: params.replyToMessageId,
+          deliveryIntent: params.deliveryIntent,
         });
         return { jobId: result.jobId, status: result.status };
       },

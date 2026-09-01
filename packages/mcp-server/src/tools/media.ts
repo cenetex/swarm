@@ -5,6 +5,56 @@
  */
 import { z } from 'zod';
 import { defineTool, type ToolResult } from '../registry.js';
+import type { ToolContext } from '../registry.js';
+
+type MediaDeliveryIntent = {
+  platform: 'telegram' | 'discord';
+  conversationId: string;
+  replyToMessageId?: string;
+  expectedAction:
+    | 'send_media'
+    | 'telegram_send_media_to_chat'
+    | 'discord_send_media_to_channel';
+};
+
+const mediaDestinationSchema = z.object({
+  platform: z.enum(['telegram', 'discord'])
+    .describe('Connected platform that should receive the completed media'),
+  conversationId: z.string().min(1)
+    .describe('Exact Telegram chat ID or Discord channel ID'),
+  replyToMessageId: z.string().optional()
+    .describe('Optional message ID in the destination conversation to reply to'),
+});
+
+function resolveMediaDeliveryIntent(
+  destination: z.infer<typeof mediaDestinationSchema> | undefined,
+  context: ToolContext,
+): MediaDeliveryIntent | undefined {
+  const platform = destination?.platform ?? context.platform;
+  const conversationId = destination?.conversationId ?? context.conversationId;
+  if ((platform !== 'telegram' && platform !== 'discord') || !conversationId) return undefined;
+
+  return {
+    platform,
+    conversationId,
+    replyToMessageId: destination ? destination.replyToMessageId : context.replyToMessageId,
+    expectedAction: destination
+      ? platform === 'telegram'
+        ? 'telegram_send_media_to_chat'
+        : 'discord_send_media_to_channel'
+      : 'send_media',
+  };
+}
+
+function destinationIsCurrentConversation(
+  destination: z.infer<typeof mediaDestinationSchema> | undefined,
+  context: ToolContext,
+): boolean {
+  if (!destination) return true;
+  return destination.platform === context.platform
+    && destination.conversationId === context.conversationId
+    && destination.replyToMessageId === context.replyToMessageId;
+}
 
 // ============================================================================
 // Service Interface
@@ -23,6 +73,7 @@ export interface MediaServices {
     aspectRatio?: string;
     conversationId?: string;
     replyToMessageId?: string;
+    deliveryIntent?: MediaDeliveryIntent;
   }) => Promise<{ url: string; id: string } | { jobId: string; status: string; url?: string; id?: string }>;
 
   generateVideo: (params: {
@@ -32,6 +83,7 @@ export interface MediaServices {
     referenceImageUrl?: string;
     conversationId?: string;
     replyToMessageId?: string;
+    deliveryIntent?: MediaDeliveryIntent;
   }) => Promise<{ jobId: string; status: string }>;
 
   generateSticker: (params: {
@@ -77,6 +129,8 @@ export const createMediaTools = (
         .optional()
         .default(true)
         .describe('Use character reference (or profile image) for consistency'),
+      destination: mediaDestinationSchema.optional()
+        .describe('Explicit supported destination when media should be delivered outside the current conversation'),
     }),
     execute: async (input, context): Promise<ToolResult> => {
       // Check credits
@@ -115,6 +169,7 @@ export const createMediaTools = (
         aspectRatio: input.aspectRatio,
         conversationId: context.conversationId,
         replyToMessageId: context.replyToMessageId,
+        deliveryIntent: resolveMediaDeliveryIntent(input.destination, context),
       });
 
       // If synchronous result with URL
@@ -122,7 +177,12 @@ export const createMediaTools = (
         return {
           success: true,
           data: { id: result.id, url: result.url },
-          media: { type: 'image', url: result.url, caption: input.prompt },
+          // A cross-conversation synchronous completion is published by the
+          // backing service using the captured intent. Do not also attach it
+          // to the origin response.
+          media: destinationIsCurrentConversation(input.destination, context)
+            ? { type: 'image', url: result.url, caption: input.prompt }
+            : undefined,
         };
       }
 
@@ -154,6 +214,8 @@ export const createMediaTools = (
         .optional()
         .default(true)
         .describe('Use character reference (or profile image) as starting frame'),
+      destination: mediaDestinationSchema.optional()
+        .describe('Explicit supported destination when the video should be delivered outside the current conversation'),
     }),
     execute: async (input, context): Promise<ToolResult> => {
       const canUse = await credits.canUseTool(context.avatarId, 'generate_video');
@@ -187,6 +249,7 @@ export const createMediaTools = (
         referenceImageUrl,
         conversationId: context.conversationId,
         replyToMessageId: context.replyToMessageId,
+        deliveryIntent: resolveMediaDeliveryIntent(input.destination, context),
       });
 
       return {

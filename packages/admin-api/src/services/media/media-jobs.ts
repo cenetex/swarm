@@ -17,6 +17,10 @@ import { getDynamoClient } from '../dynamo-client.js';
 import { createSystemLogger } from '../structured-logger.js';
 import { buildMediaUrl } from '../../utils/media-url.js';
 import { getS3Client } from '../aws-clients.js';
+import {
+  publishMediaFailedContinuation,
+  publishMediaGeneratedContinuation,
+} from './media-continuation.js';
 
 const log = createSystemLogger('media-jobs');
 
@@ -429,7 +433,9 @@ export async function pollAndCompleteJob(
     if (prediction.status === 'succeeded' && prediction.output) {
       const outputUrl = extractOutputUrl(prediction.output);
       if (!outputUrl) {
-        await updateJobStatus(jobId, 'failed', { error: 'No output URL' });
+        const errorMessage = 'No output URL';
+        await updateJobStatus(jobId, 'failed', { error: errorMessage });
+        await publishMediaFailedContinuation(job, errorMessage);
         return await getJob(jobId);
       }
 
@@ -438,7 +444,9 @@ export async function pollAndCompleteJob(
       // Download and store in S3
       const mediaResponse = await fetch(outputUrl);
       if (!mediaResponse.ok) {
-        await updateJobStatus(jobId, 'failed', { error: `Download failed: ${mediaResponse.statusText}` });
+        const errorMessage = `Download failed: ${mediaResponse.statusText}`;
+        await updateJobStatus(jobId, 'failed', { error: errorMessage });
+        await publishMediaFailedContinuation(job, errorMessage);
         return await getJob(jobId);
       }
 
@@ -474,12 +482,16 @@ export async function pollAndCompleteJob(
         metadata: { jobId, predictionId: prediction.id, polled: true },
       });
 
+      await publishMediaGeneratedContinuation(job, publicUrl);
+
       log.info('poll', 'job_completed_via_poll', { jobId, publicUrl });
       return await getJob(jobId);
     }
 
     if (prediction.status === 'failed' || prediction.status === 'canceled') {
-      await updateJobStatus(jobId, 'failed', { error: prediction.error || `Prediction ${prediction.status}` });
+      const errorMessage = prediction.error || `Prediction ${prediction.status}`;
+      await updateJobStatus(jobId, 'failed', { error: errorMessage });
+      await publishMediaFailedContinuation(job, errorMessage);
       return await getJob(jobId);
     }
 
@@ -532,7 +544,9 @@ export async function pollAndCompleteOpenRouterJob(
     if (status === 'completed' || status === 'succeeded' || (!status && extractOpenRouterVideoUrl(payload))) {
       const outputUrl = extractOpenRouterVideoUrl(payload);
       if (!outputUrl) {
-        await updateJobStatus(jobId, 'failed', { error: 'No output URL' });
+        const errorMessage = 'No output URL';
+        await updateJobStatus(jobId, 'failed', { error: errorMessage });
+        await publishMediaFailedContinuation(job, errorMessage);
         return await getJob(jobId);
       }
 
@@ -564,14 +578,16 @@ export async function pollAndCompleteOpenRouterJob(
         metadata: { jobId, externalId: job.externalId, provider: 'openrouter', polled: true },
       });
 
+      await publishMediaGeneratedContinuation(job, publicUrl);
+
       log.info('poll', 'openrouter_job_completed_via_poll', { jobId, publicUrl });
       return await getJob(jobId);
     }
 
     if (status === 'failed' || status === 'canceled' || status === 'cancelled') {
-      await updateJobStatus(jobId, 'failed', {
-        error: extractOpenRouterVideoError(payload) || `OpenRouter video job ${status}`,
-      });
+      const errorMessage = extractOpenRouterVideoError(payload) || `OpenRouter video job ${status}`;
+      await updateJobStatus(jobId, 'failed', { error: errorMessage });
+      await publishMediaFailedContinuation(job, errorMessage);
       return await getJob(jobId);
     }
 
