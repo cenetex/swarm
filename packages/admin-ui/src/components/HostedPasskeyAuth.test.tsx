@@ -52,4 +52,16 @@ describe('HostedPasskeyAuth', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/use wallet sign-in instead/i);
     expect(passkeys.signInWithHostedPasskey).not.toHaveBeenCalled();
   });
+
+  it('shows wallet recovery guidance when passkey verification fails', async () => {
+    vi.mocked(passkeys.signInWithHostedPasskey).mockRejectedValue(
+      new Error('Passkey sign-in is invalid or expired.'),
+    );
+    render(<HostedPasskeyAuth />);
+    fireEvent.click(screen.getByRole('button', { name: /sign in with a passkey/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /sign in with your wallet, then add the passkey again/i,
+    );
+  });
 });

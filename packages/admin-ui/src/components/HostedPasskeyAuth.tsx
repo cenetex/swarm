@@ -14,6 +14,9 @@ function passkeyErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof DOMException && error.name === 'NotAllowedError') {
     return 'Passkey prompt was cancelled or timed out.';
   }
+  if (error instanceof Error && error.message === 'Passkey sign-in is invalid or expired.') {
+    return 'This passkey could not be verified. Sign in with your wallet, then add the passkey again.';
+  }
   return error instanceof Error ? error.message : fallback;
 }
 
