@@ -604,8 +604,8 @@ export async function startServer(options: ServerOptions = {}) {
 
   app.get("/api/secrets/:name", async (req, res) => {
     try {
-      const value = await services.secrets.getSecret(req.params.name);
-      res.json({ name: req.params.name, exists: true, value });
+      await services.secrets.getSecret(req.params.name);
+      res.json({ name: req.params.name, exists: true });
     } catch {
       res.json({ name: req.params.name, exists: false });
     }

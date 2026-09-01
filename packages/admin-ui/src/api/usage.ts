@@ -3,6 +3,7 @@
  * Fetches avatar usage data and limits for inline chat display.
  */
 import { API_BASE } from './apiBase';
+import { apiFetch as fetch } from './client';
 
 export interface UsageMeter {
   used: number;

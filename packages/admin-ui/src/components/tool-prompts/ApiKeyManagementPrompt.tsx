@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useActiveAvatar } from '../../store';
 import { API_BASE, type ToolPromptProps } from './types';
 import { PromptError } from './PromptStatus';
+import { apiFetch as fetch } from '../../api/client';
 
 interface ApiKey {
   keyPrefix: string;

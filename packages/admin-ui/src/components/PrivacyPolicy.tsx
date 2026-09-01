@@ -54,8 +54,8 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
           <div className="prose prose-invert max-w-none space-y-8 text-[var(--color-text-secondary)]">
             <section>
               <h2 className={h2}>Local-First Application</h2>
-              <p>This application runs entirely on your device. We do not collect any of these categories of data. All data — including chat history, avatar configuration, API keys, and secrets — is stored locally in an encrypted database on your machine.</p>
-              <p className="mt-4">No data is transmitted to external servers except when you explicitly configure third-party AI providers (such as OpenRouter or OpenAI) for chat functionality.</p>
+              <p>This application runs entirely on your device. We do not collect any of these categories of data. The browser-local client keeps bounded chat history and avatar configuration in browser storage and does not accept API keys or avatar secrets. The native app keeps credentials in its encrypted local store.</p>
+              <p className="mt-4">Data is sent to a third-party AI provider only when you explicitly configure one for chat functionality.</p>
             </section>
           </div>
         </div>

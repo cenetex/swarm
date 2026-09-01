@@ -3,6 +3,7 @@
  */
 import { useState, useRef, useEffect } from 'react';
 import { API_BASE } from '../types';
+import { apiFetch as fetch } from '../../../api/client';
 import type {
   TelegramDiagnosis,
   TelegramUserRef,

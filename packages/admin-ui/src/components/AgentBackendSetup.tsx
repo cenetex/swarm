@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { apiFetch as fetch } from '../api/client';
 
 type AgentBackendId =
   | 'swarm-native'

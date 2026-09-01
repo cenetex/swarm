@@ -56,7 +56,7 @@ export function ConsentBanner() {
               This application runs entirely on your device. <strong>We do not collect any data.</strong>
             </p>
             <p>
-              All chat history, avatar configuration, API keys, and secrets are stored locally in an encrypted database. No data is transmitted to external servers except when you explicitly configure third-party AI providers (such as OpenRouter) for chat.
+              The browser-local client keeps bounded chat history and avatar configuration in browser storage, but it does not accept or store API keys or avatar secrets. The native app keeps credentials in its encrypted local store. Data is sent to a third-party AI provider only when you explicitly configure one.
             </p>
           </div>
           <div className="flex justify-end pt-2">

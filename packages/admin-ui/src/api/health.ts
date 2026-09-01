@@ -2,6 +2,7 @@
  * Avatar Health API — fetches health summaries for admin dashboard.
  */
 import { API_BASE } from './apiBase';
+import { apiFetch as fetch } from './client';
 
 export interface AvatarHealthSummary {
   avatarId: string;

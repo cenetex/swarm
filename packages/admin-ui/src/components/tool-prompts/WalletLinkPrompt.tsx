@@ -16,6 +16,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { ToolPromptProps } from './types';
 import { API_BASE } from './types';
+import { apiFetch as fetch } from '../../api/client';
 import { PromptSuccess, PromptError } from './PromptStatus';
 import { signWalletLinkMessage, type PhantomProvider } from '../../auth/wallet-linking';
 import { humanizeWalletSignatureError } from '../../auth/wallet-errors';

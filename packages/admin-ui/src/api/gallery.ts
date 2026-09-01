@@ -2,6 +2,7 @@
  * Gallery API - Backend calls for gallery operations
  */
 import { API_BASE } from './apiBase';
+import { apiFetch as fetch } from './client';
 
 export interface GalleryItem {
   id: string;
