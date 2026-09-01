@@ -124,69 +124,86 @@ export function HostedWalletSignIn({ className = '', showIcon = true }: HostedWa
 
       {pairing && (
         <div
-          className="fixed inset-0 z-[100] grid place-items-center bg-black/70 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] overflow-y-auto bg-black/70 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-labelledby="mobile-wallet-title"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closePairing();
-          }}
         >
-          <div className="w-full max-w-sm rounded-3xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Mobile wallet</p>
-                <h2 id="mobile-wallet-title" className="mt-1 text-xl font-semibold">Scan to sign in</h2>
-              </div>
-              <button
-                type="button"
-                onClick={closePairing}
-                className="rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-bg)] hover:text-[var(--color-text)]"
-                aria-label="Close wallet QR"
-              >
-                <span aria-hidden="true">×</span>
-              </button>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 rounded-xl bg-[var(--color-bg)] p-1">
-              {(['phantom', 'solflare'] as const).map((option) => (
+          <div
+            className="flex min-h-full items-start justify-center p-3 sm:items-center sm:p-4"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closePairing();
+            }}
+          >
+            <div className="max-h-[calc(100dvh-1.5rem)] w-full max-w-sm overflow-y-auto overscroll-contain rounded-3xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5 shadow-2xl sm:max-h-[calc(100dvh-2rem)]">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Mobile wallet</p>
+                  <h2 id="mobile-wallet-title" className="mt-1 text-xl font-semibold">Scan to sign in</h2>
+                </div>
                 <button
-                  key={option}
                   type="button"
-                  onClick={() => setWallet(option)}
-                  className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                    wallet === option
-                      ? 'bg-brand-500 text-white'
-                      : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-                  }`}
+                  onClick={closePairing}
+                  className="rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-bg)] hover:text-[var(--color-text)]"
+                  aria-label="Close wallet QR"
                 >
-                  {option === 'phantom' ? 'Phantom' : 'Solflare'}
+                  <span aria-hidden="true">×</span>
                 </button>
-              ))}
-            </div>
+              </div>
 
-            <div className="mx-auto mt-4 grid h-[304px] w-[304px] max-w-full place-items-center rounded-2xl bg-white p-2">
-              {qrDataUrl ? (
-                <img src={qrDataUrl} alt={`QR code for ${wallet}`} className="h-full w-full" />
-              ) : (
-                <span className="h-7 w-7 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
-              )}
-            </div>
+              <div className="mt-4 grid grid-cols-2 rounded-xl bg-[var(--color-bg)] p-1">
+                {(['phantom', 'solflare'] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setWallet(option)}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      wallet === option
+                        ? 'bg-brand-500 text-white'
+                        : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+                    }`}
+                  >
+                    {option === 'phantom' ? 'Phantom' : 'Solflare'}
+                  </button>
+                ))}
+              </div>
 
-            <p className="mt-4 text-center text-sm text-[var(--color-text-secondary)]">
-              Open the QR scanner in {wallet === 'phantom' ? 'Phantom' : 'Solflare'}, then approve the sign-in message.
-            </p>
-            <p className="mt-2 text-center font-mono text-xs text-[var(--color-text-muted)]">
-              Pairing code {pairing.verificationCode}
-            </p>
-            <p className="mt-3 text-center text-xs leading-5 text-[var(--color-text-muted)]">
-              This does not send a transaction or move funds. The QR expires in five minutes.
-            </p>
-            {error && <p className="mt-3 text-center text-xs leading-5 text-red-400">{error}</p>}
+              <a
+                href={selectedWalletLink}
+                className="mt-4 flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-brand-500 to-brand-600 px-4 py-3 font-medium text-white shadow-lg shadow-brand-500/25 sm:hidden"
+              >
+                Open {wallet === 'phantom' ? 'Phantom' : 'Solflare'} to sign in
+              </a>
+              <p className="mt-2 text-center text-xs leading-5 text-[var(--color-text-muted)] sm:hidden">
+                Continue in the selected wallet app. No transaction is sent.
+              </p>
 
-            <div className="mt-4 border-t border-[var(--color-border)] pt-3 text-center">
-              <p className="mb-2 text-xs text-[var(--color-text-muted)]">Wallet installed in this browser?</p>
-              <PrivyLoginButton label="Use browser wallet" showIcon={false} className="w-full justify-center shadow-none" />
+              {error && <p className="mt-3 text-center text-xs leading-5 text-red-400">{error}</p>}
+
+              <div className="hidden sm:block">
+                <div className="mx-auto mt-4 grid h-[304px] w-[304px] max-w-full place-items-center rounded-2xl bg-white p-2">
+                  {qrDataUrl ? (
+                    <img src={qrDataUrl} alt={`QR code for ${wallet}`} className="h-full w-full" />
+                  ) : (
+                    <span className="h-7 w-7 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+                  )}
+                </div>
+
+                <p className="mt-4 text-center text-sm text-[var(--color-text-secondary)]">
+                  Scan with {wallet === 'phantom' ? 'Phantom' : 'Solflare'}, then approve the sign-in message.
+                </p>
+                <p className="mt-2 text-center font-mono text-xs text-[var(--color-text-muted)]">
+                  Pairing code {pairing.verificationCode}
+                </p>
+                <p className="mt-2 text-center text-xs leading-5 text-[var(--color-text-muted)]">
+                  No transaction is sent. The QR expires in five minutes.
+                </p>
+              </div>
+
+              <div className="mt-4 border-t border-[var(--color-border)] pt-3 text-center">
+                <p className="mb-2 text-xs text-[var(--color-text-muted)]">Already inside a wallet browser?</p>
+                <PrivyLoginButton label="Sign in with browser wallet" showIcon={false} className="w-full justify-center shadow-none" />
+              </div>
             </div>
           </div>
         </div>
