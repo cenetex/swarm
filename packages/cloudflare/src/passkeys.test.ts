@@ -402,6 +402,65 @@ describe('hosted passkeys', () => {
     )).resolves.toBeNull();
   });
 
+  it('rejects expired authentication challenges and unknown credentials', async () => {
+    const test = setup();
+    const enrolledCredential = await enrollPasskey(test, 3_500_000);
+    const stored = test.state.db.query(
+      'select webauthn_user_id from swarm_passkeys where credential_id = ?',
+    ).get(enrolledCredential.credentialId) as { webauthn_user_id: string };
+
+    const expiredStart = await beginPasskeyAuthentication(test.env, test.request, 3_500_100);
+    const expiredResponse = await authenticationResponse({
+      credential: enrolledCredential,
+      challenge: expiredStart.options.challenge,
+      userHandle: stored.webauthn_user_id,
+    });
+    await expect(finishPasskeyAuthentication(
+      test.env,
+      test.request,
+      { challengeId: expiredStart.challengeId, response: expiredResponse },
+      expiredStart.expiresAt,
+    )).resolves.toBeNull();
+
+    const unknownCredential = await testCredential();
+    const unknownStart = await beginPasskeyAuthentication(test.env, test.request, 3_500_200);
+    const unknownResponse = await authenticationResponse({
+      credential: unknownCredential,
+      challenge: unknownStart.options.challenge,
+      userHandle: stored.webauthn_user_id,
+    });
+    await expect(finishPasskeyAuthentication(
+      test.env,
+      test.request,
+      { challengeId: unknownStart.challengeId, response: unknownResponse },
+      3_500_201,
+    )).resolves.toBeNull();
+    expect(test.state.db.query('select count(*) as count from swarm_sessions').get()).toEqual({ count: 0 });
+  });
+
+  it('rejects assertions bound to another relying-party ID', async () => {
+    const test = setup();
+    const credential = await enrollPasskey(test, 3_600_000);
+    const stored = test.state.db.query(
+      'select webauthn_user_id from swarm_passkeys where credential_id = ?',
+    ).get(credential.credentialId) as { webauthn_user_id: string };
+    const start = await beginPasskeyAuthentication(test.env, test.request, 3_600_100);
+    const response = await authenticationResponse({
+      credential,
+      challenge: start.options.challenge,
+      userHandle: stored.webauthn_user_id,
+      rpID: 'rati.chat',
+    });
+
+    await expect(finishPasskeyAuthentication(
+      test.env,
+      test.request,
+      { challengeId: start.challengeId, response },
+      3_600_101,
+    )).resolves.toBeNull();
+    expect(test.state.db.query('select count(*) as count from swarm_sessions').get()).toEqual({ count: 0 });
+  });
+
   it('rate-limits unauthenticated challenge creation by source', async () => {
     const test = setup();
     for (let attempt = 0; attempt < 10; attempt += 1) {
