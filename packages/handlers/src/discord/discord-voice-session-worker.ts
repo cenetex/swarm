@@ -21,6 +21,7 @@ import { buildSystemPrompt } from '../messaging/context-builder.js';
 import { loadAvatarSecrets } from '../utils/load-avatar-secrets.js';
 import { ensureOpenRouterKey } from '../utils/system-openrouter-key.js';
 import { INTENT_GUILD_VOICE_STATES } from './discord-voice-control.js';
+import { resolveDiscordVoiceBotToken } from './discord-bot-token-secrets.js';
 
 const DEFAULT_GATEWAY_URL = 'wss://gateway.discord.gg/?v=10&encoding=json';
 const INTENT_GUILDS = 1 << 0;
@@ -788,8 +789,13 @@ async function run(): Promise<void> {
       avatarId,
     });
   }
-  const botToken = secrets.DISCORD_BOT_TOKEN || secrets.discord_bot_token;
-  if (!botToken) {
+  const botTokenLookup = await resolveDiscordVoiceBotToken({
+    avatarId,
+    loadedSecrets: secrets,
+    secretsService,
+    secretPrefix: process.env.SECRET_PREFIX || 'swarm',
+  });
+  if (!botTokenLookup) {
     throw new Error(`Discord bot token not configured for avatar ${avatarId}`);
   }
   const voiceServices = createVoiceServices({
@@ -801,7 +807,7 @@ async function run(): Promise<void> {
   });
 
   const voice = await import('@discordjs/voice');
-  const gateway = new MinimalDiscordGateway(botToken);
+  const gateway = new MinimalDiscordGateway(botTokenLookup.token);
   gateway.start();
   await gateway.waitReady();
 
