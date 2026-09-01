@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
-import { createWalletChallenge, getHostedSession, hostedSessionCookie, verifyWalletChallenge } from './auth.js';
+import {
+  createHostedSession,
+  createWalletChallenge,
+  getHostedSession,
+  hostedSessionCookie,
+  verifyWalletChallenge,
+} from './auth.js';
 import type { CloudflareD1Database, CloudflareD1PreparedStatement, CloudflareHostedBindings } from './bindings.js';
 import {
   beginOpenRouterConnect,
@@ -152,6 +158,13 @@ class MemoryStatement implements CloudflareD1PreparedStatement {
   }
 
   async all<T = unknown>(): Promise<{ success: boolean; results: T[] }> {
+    if (this.query.startsWith('select provider_id from swarm_identities')) {
+      const accountId = String(this.values[0]);
+      const results = [...this.db.identities.entries()]
+        .filter(([, linkedAccountId]) => linkedAccountId === accountId)
+        .map(([providerId]) => ({ provider_id: providerId })) as T[];
+      return { success: true, results };
+    }
     return { success: true, results: [] };
   }
 
@@ -251,7 +264,7 @@ async function signedInSession(env: CloudflareHostedBindings, now = 1_000_000) {
     now + 100,
   );
   if (!session) throw new Error('Expected wallet session.');
-  return { challenge, session, walletAddress };
+  return { challenge, keyPair, session, walletAddress };
 }
 
 describe('Cloudflare hosted authentication flow', () => {
@@ -296,6 +309,130 @@ describe('Cloudflare hosted authentication flow', () => {
     await expect(createWalletChallenge(env, request, walletAddress, 3_000_010)).rejects.toMatchObject({
       name: 'HostedRateLimitError',
       retryAfter: 60,
+    });
+  });
+
+  it('links a signed wallet to a passkey-authenticated account and lists every wallet', async () => {
+    const db = new MemoryD1();
+    const env = testEnv(db);
+    const origin = 'https://swarm.example';
+    const now = Date.now();
+    const { session, walletAddress: primaryWallet } = await signedInSession(env, now);
+    const passkeySession = await createHostedSession(env, {
+      accountId: session.accountId,
+      walletAddress: primaryWallet,
+      authProvider: 'passkey',
+    }, now + 200);
+    const linkedKeyPair = nacl.sign.keyPair();
+    const linkedWallet = bs58.encode(linkedKeyPair.publicKey);
+    const cookie = hostedSessionCookie(passkeySession.sessionToken).split(';', 1)[0] ?? '';
+
+    const challengeResponse = await worker.fetch(new Request(`${origin}/api/auth/wallet/link/challenge`, {
+      method: 'POST',
+      headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ walletAddress: linkedWallet }),
+    }), env);
+    expect(challengeResponse.status).toBe(200);
+    const challenge = await challengeResponse.json() as { nonce: string; message: string };
+    expect(challenge.message).toContain('Link this Solana wallet to your Swarm passkey account.');
+    const signature = bs58.encode(
+      nacl.sign.detached(new TextEncoder().encode(challenge.message), linkedKeyPair.secretKey),
+    );
+
+    const verifyRequest = () => new Request(`${origin}/api/auth/wallet/link/verify`, {
+      method: 'POST',
+      headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ walletAddress: linkedWallet, nonce: challenge.nonce, signature }),
+    });
+    const verifyResponse = await worker.fetch(verifyRequest(), env);
+    expect(verifyResponse.status).toBe(200);
+    expect(await verifyResponse.json()).toMatchObject({
+      linked: true,
+      status: 'linked',
+      walletAddress: linkedWallet,
+      account: {
+        accountId: session.accountId,
+        identities: expect.arrayContaining([
+          { type: 'wallet', providerId: primaryWallet },
+          { type: 'wallet', providerId: linkedWallet },
+        ]),
+      },
+    });
+
+    const meResponse = await worker.fetch(new Request(`${origin}/api/auth/me`, {
+      headers: { Cookie: cookie },
+    }), env);
+    expect(await meResponse.json()).toMatchObject({
+      authProvider: 'passkey',
+      account: {
+        identities: expect.arrayContaining([
+          { type: 'wallet', providerId: primaryWallet },
+          { type: 'wallet', providerId: linkedWallet },
+        ]),
+      },
+    });
+
+    const replayResponse = await worker.fetch(verifyRequest(), env);
+    expect(replayResponse.status).toBe(401);
+  });
+
+  it('requires a passkey session and rejects wallets owned by another account', async () => {
+    const db = new MemoryD1();
+    const env = testEnv(db);
+    const origin = 'https://swarm.example';
+    const now = Date.now();
+    const first = await signedInSession(env, now);
+    const second = await signedInSession(env, now + 1_000);
+    const walletCookie = hostedSessionCookie(first.session.sessionToken).split(';', 1)[0] ?? '';
+
+    const walletSessionResponse = await worker.fetch(new Request(`${origin}/api/auth/wallet/link/challenge`, {
+      method: 'POST',
+      headers: { Cookie: walletCookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ walletAddress: second.walletAddress }),
+    }), env);
+    expect(walletSessionResponse.status).toBe(403);
+
+    const missingSessionResponse = await worker.fetch(new Request(`${origin}/api/auth/wallet/link/challenge`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ walletAddress: second.walletAddress }),
+    }), env);
+    expect(missingSessionResponse.status).toBe(401);
+
+    const passkeySession = await createHostedSession(env, {
+      accountId: first.session.accountId,
+      walletAddress: first.walletAddress,
+      authProvider: 'passkey',
+    }, now + 2_000);
+    const passkeyCookie = hostedSessionCookie(passkeySession.sessionToken).split(';', 1)[0] ?? '';
+    const crossOriginResponse = await worker.fetch(new Request(`${origin}/api/auth/wallet/link/challenge`, {
+      method: 'POST',
+      headers: { Cookie: passkeyCookie, Origin: 'https://evil.example', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ walletAddress: second.walletAddress }),
+    }), env);
+    expect(crossOriginResponse.status).toBe(403);
+
+    const challengeResponse = await worker.fetch(new Request(`${origin}/api/auth/wallet/link/challenge`, {
+      method: 'POST',
+      headers: { Cookie: passkeyCookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ walletAddress: second.walletAddress }),
+    }), env);
+    const challenge = await challengeResponse.json() as { nonce: string; message: string };
+    const signature = bs58.encode(
+      nacl.sign.detached(new TextEncoder().encode(challenge.message), second.keyPair.secretKey),
+    );
+    const conflictResponse = await worker.fetch(new Request(`${origin}/api/auth/wallet/link/verify`, {
+      method: 'POST',
+      headers: { Cookie: passkeyCookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        walletAddress: second.walletAddress,
+        nonce: challenge.nonce,
+        signature,
+      }),
+    }), env);
+    expect(conflictResponse.status).toBe(409);
+    expect(await conflictResponse.json()).toEqual({
+      error: 'This wallet belongs to a different hosted account.',
     });
   });
 

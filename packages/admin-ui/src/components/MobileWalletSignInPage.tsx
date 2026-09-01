@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WalletReadyState } from '@solana/wallet-adapter-base';
 import { useWallet } from '@solana/wallet-adapter-react';
-import {
-  approveMobileWalletPairing,
-  phantomBrowseUrl,
-  solflareBrowseUrl,
-} from '../auth/mobile-wallet-pairing';
+import { approveMobileWalletPairing } from '../auth/mobile-wallet-pairing';
 import { useAuthStore } from '../store/auth';
 import { humanizeWalletAdapterError } from '../store/wallet-errors';
 
@@ -24,7 +20,6 @@ export function MobileWalletSignInPage() {
   const [error, setError] = useState('');
   const approvalStarted = useRef(false);
   const pairingCode = pairingId?.slice(0, 6).toUpperCase() ?? '';
-  const currentUrl = window.location.href;
   const installedWallet = wallets.find(({ readyState }) => readyState === WalletReadyState.Installed)
     ?? wallets.find(({ readyState }) => readyState === WalletReadyState.Loadable);
 
@@ -146,23 +141,6 @@ export function MobileWalletSignInPage() {
             {(error || walletError) && (
               <p className="mt-3 text-xs leading-5 text-red-300">{error || walletError}</p>
             )}
-            <div className="mt-5 border-t border-[var(--color-border)] pt-4">
-              <p className="text-xs text-[var(--color-text-muted)]">Not inside a wallet browser?</p>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <a
-                  href={phantomBrowseUrl(currentUrl)}
-                  className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm hover:border-brand-400 hover:text-brand-300"
-                >
-                  Open Phantom
-                </a>
-                <a
-                  href={solflareBrowseUrl(currentUrl)}
-                  className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm hover:border-brand-400 hover:text-brand-300"
-                >
-                  Open Solflare
-                </a>
-              </div>
-            </div>
           </>
         )}
       </section>

@@ -63,17 +63,17 @@ describe('HostedWalletSignIn', () => {
     );
   });
 
-  it('keeps the mobile wallet action visible before the desktop QR content', async () => {
+  it('shows the QR on the responsive modal without same-device wallet links', async () => {
     render(<HostedWalletSignIn />);
     fireEvent.click(screen.getByRole('button', { name: 'Scan to sign in' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Scan to sign in' });
-    const mobileLink = screen.getByRole('link', { name: 'Open Phantom to sign in' });
     const qrImage = await screen.findByRole('img', { name: 'QR code for phantom' });
 
     expect(dialog).toHaveClass('overflow-y-auto');
-    expect(mobileLink).toHaveAttribute('href', expect.stringContaining('https://phantom.app/ul/browse/'));
-    expect(mobileLink.compareDocumentPosition(qrImage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(qrImage.closest('div')).not.toHaveClass('hidden');
+    expect(screen.queryByRole('link', { name: /open phantom/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /open solflare/i })).not.toBeInTheDocument();
   });
 
   it('can switch the QR to Solflare and keeps browser wallets as a fallback', async () => {
@@ -87,10 +87,9 @@ describe('HostedWalletSignIn', () => {
       expect.stringContaining('https://solflare.com/ul/v1/browse/'),
       expect.any(Object),
     ));
-    expect(screen.getByRole('link', { name: 'Open Solflare to sign in' })).toHaveAttribute(
-      'href',
-      expect.stringContaining('https://solflare.com/ul/v1/browse/'),
-    );
-    expect(screen.getByRole('button', { name: 'Sign in with browser wallet' })).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'QR code for solflare' })).toBeInTheDocument();
+    const browserWallet = screen.getByRole('button', { name: 'Sign in with browser wallet' });
+    expect(browserWallet).toBeInTheDocument();
+    expect(browserWallet.closest('div')).toHaveClass('hidden', 'sm:block');
   });
 });

@@ -105,6 +105,8 @@ Mobile wallet sign-in needs no third-party project ID. The desktop requests a fi
 
 Passkey enrollment starts only from an existing authenticated wallet session. In Studio, select **Add a passkey**, approve the device prompt, sign out, and use **Sign in with a passkey**. The authenticator must provide a discoverable credential and user verification such as Touch ID, Face ID, Windows Hello, a device PIN, or a security-key PIN. Swarm stores no biometric data. If the device or browser cannot use the passkey, sign in with the linked Solana wallet and enroll another passkey.
 
+Passkeys are the primary Studio sign-in action. Wallet recovery uses **Scan to sign in** and shows the selected Phantom or Solflare QR, pairing code, and expiry on both phone and desktop layouts. **Sign in with browser wallet** is shown only on desktop. After signing in with a passkey, use **Link wallet** to add an unused Solana wallet to the same account: the user must sign the one-use, domain-bound link message, and no transaction or fund movement occurs. A wallet already linked to another hosted account is rejected; account data is never merged implicitly.
+
 Passkey rollback is application-only: keep migration `0009_passkeys.sql` and its data, remove or disable the passkey UI/routes, and leave wallet sign-in available. Do not drop credential rows during rollback. Restoring the same RP ID and origin makes enrolled passkeys usable again; changing either one requires wallet recovery and re-enrollment.
 
 Generate a wrapping key without printing it to the terminal and save it directly as a GitHub environment secret:

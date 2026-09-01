@@ -13,6 +13,7 @@ import { PrivyLoginButton } from './PrivyLoginButton';
 
 interface HostedWalletSignInProps {
   className?: string;
+  label?: string;
   showIcon?: boolean;
 }
 
@@ -24,7 +25,7 @@ function walletLink(pairing: MobileWalletPairing, wallet: MobileWallet): string 
     : solflareBrowseUrl(pairing.mobileUrl);
 }
 
-export function HostedWalletSignIn({ className = '', showIcon = true }: HostedWalletSignInProps) {
+export function HostedWalletSignIn({ className = '', label, showIcon = true }: HostedWalletSignInProps) {
   const { isAuthenticated } = useAuth();
   const [creating, setCreating] = useState(false);
   const [pairing, setPairing] = useState<MobileWalletPairing | null>(null);
@@ -109,7 +110,7 @@ export function HostedWalletSignIn({ className = '', showIcon = true }: HostedWa
         type="button"
         onClick={() => void startPairing()}
         disabled={creating}
-        className={`flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand-500 to-brand-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-brand-500/25 transition-all hover:from-brand-600 hover:to-brand-700 disabled:cursor-wait disabled:opacity-70 ${className}`}
+        className={`flex items-center gap-2 rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg-secondary)] px-4 py-2.5 text-sm font-medium text-[var(--color-text)] transition-all hover:border-brand-400 hover:text-brand-200 disabled:cursor-wait disabled:opacity-70 ${className}`}
       >
         {creating ? (
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -118,7 +119,7 @@ export function HostedWalletSignIn({ className = '', showIcon = true }: HostedWa
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h6v6H3V3zm12 0h6v6h-6V3zM3 15h6v6H3v-6zm12 0h2m4 0h-2v2m-4 4h2v-2m4 2v-2h-2m-2-2h2" />
           </svg>
         ) : null}
-        <span>{creating ? 'Preparing secure QR' : 'Scan to sign in'}</span>
+        <span>{creating ? 'Preparing secure QR' : label ?? 'Scan to sign in'}</span>
       </button>
       {!pairing && error && <p className="mt-2 max-w-xs text-xs leading-5 text-red-400">{error}</p>}
 
@@ -168,20 +169,10 @@ export function HostedWalletSignIn({ className = '', showIcon = true }: HostedWa
                 ))}
               </div>
 
-              <a
-                href={selectedWalletLink}
-                className="mt-4 flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-brand-500 to-brand-600 px-4 py-3 font-medium text-white shadow-lg shadow-brand-500/25 sm:hidden"
-              >
-                Open {wallet === 'phantom' ? 'Phantom' : 'Solflare'} to sign in
-              </a>
-              <p className="mt-2 text-center text-xs leading-5 text-[var(--color-text-muted)] sm:hidden">
-                Continue in the selected wallet app. No transaction is sent.
-              </p>
-
               {error && <p className="mt-3 text-center text-xs leading-5 text-red-400">{error}</p>}
 
-              <div className="hidden sm:block">
-                <div className="mx-auto mt-4 grid h-[304px] w-[304px] max-w-full place-items-center rounded-2xl bg-white p-2">
+              <div>
+                <div className="mx-auto mt-4 grid h-[244px] w-[244px] max-w-full place-items-center rounded-2xl bg-white p-2 sm:h-[304px] sm:w-[304px]">
                   {qrDataUrl ? (
                     <img src={qrDataUrl} alt={`QR code for ${wallet}`} className="h-full w-full" />
                   ) : (
@@ -200,7 +191,7 @@ export function HostedWalletSignIn({ className = '', showIcon = true }: HostedWa
                 </p>
               </div>
 
-              <div className="mt-4 border-t border-[var(--color-border)] pt-3 text-center">
+              <div className="mt-4 hidden border-t border-[var(--color-border)] pt-3 text-center sm:block">
                 <p className="mb-2 text-xs text-[var(--color-text-muted)]">Already inside a wallet browser?</p>
                 <PrivyLoginButton label="Sign in with browser wallet" showIcon={false} className="w-full justify-center shadow-none" />
               </div>

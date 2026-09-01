@@ -7,6 +7,7 @@ const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CHALLENGE_RATE_WINDOW_MS = 60 * 1000;
 const CHALLENGE_RATE_LIMIT = 5;
 export const HOSTED_SESSION_COOKIE = 'swarm_hosted_session';
+export const HOSTED_WALLET_LINK_STATEMENT = 'Link this Solana wallet to your Swarm passkey account.';
 
 export class HostedRateLimitError extends Error {
   readonly retryAfter: number;
@@ -60,6 +61,12 @@ export type VerifiedWalletIdentity = {
   accountId: string;
   walletAddress: string;
 };
+
+export type HostedWalletLinkResult =
+  | { status: 'linked'; walletAddress: string }
+  | { status: 'already-linked'; walletAddress: string }
+  | { status: 'conflict' }
+  | { status: 'invalid' };
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -223,8 +230,20 @@ export async function verifyWalletIdentity(
   now = Date.now(),
   expectedStatement?: string,
 ): Promise<VerifiedWalletIdentity | null> {
+  const verified = await verifyWalletOwnership(env, input, now, expectedStatement);
+  if (!verified) return null;
+  const accountId = await getOrCreateAccount(env, input.walletAddress, now);
+  return { accountId, walletAddress: input.walletAddress };
+}
+
+async function verifyWalletOwnership(
+  env: CloudflareHostedBindings,
+  input: { walletAddress: string; nonce: string; signature: string },
+  now: number,
+  expectedStatement?: string,
+): Promise<boolean> {
   const publicKey = validateWalletAddress(input.walletAddress);
-  if (!input.nonce || input.nonce.length > 256 || !input.signature || input.signature.length > 256) return null;
+  if (!input.nonce || input.nonce.length > 256 || !input.signature || input.signature.length > 256) return false;
   const challenge = await env.SWARM_STATE.prepare(
     `delete from swarm_auth_challenges
      where nonce_hash = ? and wallet_address = ? and expires_at > ?
@@ -232,23 +251,78 @@ export async function verifyWalletIdentity(
   )
     .bind(await sha256(input.nonce), input.walletAddress, now)
     .first<ChallengeRow>();
-  if (!challenge) return null;
-  if (expectedStatement && !challenge.message.includes(`\n\n${expectedStatement}\n\n`)) return null;
+  if (!challenge) return false;
+  if (expectedStatement && !challenge.message.includes(`\n\n${expectedStatement}\n\n`)) return false;
 
   let signature: Uint8Array;
   try {
     signature = bs58.decode(input.signature);
   } catch {
-    return null;
+    return false;
   }
   if (
     signature.byteLength !== nacl.sign.signatureLength ||
     !nacl.sign.detached.verify(new TextEncoder().encode(challenge.message), signature, publicKey)
   )
-    return null;
+    return false;
 
-  const accountId = await getOrCreateAccount(env, input.walletAddress, now);
-  return { accountId, walletAddress: input.walletAddress };
+  return true;
+}
+
+export async function linkWalletToHostedAccount(
+  env: CloudflareHostedBindings,
+  session: HostedSession,
+  input: { walletAddress: string; nonce: string; signature: string },
+  now = Date.now(),
+): Promise<HostedWalletLinkResult> {
+  if (session.authProvider !== 'passkey') return { status: 'invalid' };
+  const verified = await verifyWalletOwnership(env, input, now, HOSTED_WALLET_LINK_STATEMENT);
+  if (!verified) return { status: 'invalid' };
+
+  const existing = await env.SWARM_STATE.prepare(
+    `select account_id from swarm_identities where provider = 'solana' and provider_id = ?`,
+  )
+    .bind(input.walletAddress)
+    .first<IdentityRow>();
+  if (existing) {
+    return existing.account_id === session.accountId
+      ? { status: 'already-linked', walletAddress: input.walletAddress }
+      : { status: 'conflict' };
+  }
+
+  const linked = await env.SWARM_STATE.prepare(
+    `insert into swarm_identities (provider, provider_id, account_id, created_at)
+     values ('solana', ?, ?, ?)
+     on conflict(provider, provider_id) do nothing`,
+  )
+    .bind(input.walletAddress, session.accountId, now)
+    .run();
+  if (!linked.success) throw new Error(linked.error ?? 'Unable to link hosted wallet.');
+
+  const resolved = await env.SWARM_STATE.prepare(
+    `select account_id from swarm_identities where provider = 'solana' and provider_id = ?`,
+  )
+    .bind(input.walletAddress)
+    .first<IdentityRow>();
+  if (!resolved) throw new Error('Unable to resolve hosted wallet after linking.');
+  return resolved.account_id === session.accountId
+    ? { status: 'linked', walletAddress: input.walletAddress }
+    : { status: 'conflict' };
+}
+
+export async function listHostedWalletAddresses(
+  env: CloudflareHostedBindings,
+  accountId: string,
+): Promise<string[]> {
+  const result = await env.SWARM_STATE.prepare(
+    `select provider_id from swarm_identities
+     where account_id = ? and provider = 'solana'
+     order by created_at, provider_id`,
+  )
+    .bind(accountId)
+    .all<{ provider_id: string }>();
+  if (!result.success) throw new Error(result.error ?? 'Unable to list hosted wallet identities.');
+  return (result.results ?? []).map((row) => row.provider_id);
 }
 
 export async function createHostedSession(
