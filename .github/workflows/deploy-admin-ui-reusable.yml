@@ -66,6 +66,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build Admin UI workspace dependencies
+        run: pnpm --filter @swarm/core build
+
       - name: Build Admin UI
         run: |
           cd packages/admin-ui
