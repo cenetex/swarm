@@ -14,36 +14,36 @@
     "test:tools:verbose": "tsx src/test-tool-calling.ts --direct --aws --verbose"
   },
   "dependencies": {
-    "@solana/spl-token": "^0.4.0",
+    "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.98.0",
     "@swarm/core": "workspace:*",
     "@swarm/mcp-server": "workspace:*",
     "bs58": "^6.0.0",
-    "ethers": "^6.16.0",
+    "ethers": "^6.17.0",
     "ffmpeg-static": "^5.2.0",
     "form-data": "^4.0.6",
     "jimp": "^1.6.1",
-    "sharp": "^0.35.0",
+    "sharp": "^0.35.4",
     "tweetnacl": "^1.0.3",
-    "twitter-api-v2": "^1.29.0",
+    "twitter-api-v2": "^1.29.1",
     "uuid": "^14.0.2",
-    "zod": "^4.3.6",
-    "@aws-sdk/client-bedrock-runtime": "^3.1032.0",
-    "@aws-sdk/client-cloudwatch-logs": "^3.1032.0",
-    "@aws-sdk/client-dynamodb": "^3.1032.0",
-    "@aws-sdk/client-ecs": "^3.1032.0",
-    "@aws-sdk/s3-request-presigner": "^3.1032.0",
-    "@aws-sdk/util-dynamodb": "^3.996.2"
+    "zod": "^4.5.2",
+    "@aws-sdk/client-bedrock-runtime": "^3.1121.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.1121.0",
+    "@aws-sdk/client-dynamodb": "^3.1121.0",
+    "@aws-sdk/client-ecs": "^3.1121.0",
+    "@aws-sdk/s3-request-presigner": "^3.1121.0",
+    "@aws-sdk/util-dynamodb": "^3.996.9"
   },
   "devDependencies": {
-    "@types/aws-lambda": "^8.10.161",
+    "@types/aws-lambda": "^8.10.162",
     "@types/node": "^22.0.0",
     "@types/uuid": "^11.0.0",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.12",
     "typescript": "^5.7.0"
   },
   "optionalDependencies": {
-    "@img/sharp-darwin-arm64": "^0.34.5",
-    "@img/sharp-linux-x64": "^0.34.5"
+    "@img/sharp-darwin-arm64": "^0.35.4",
+    "@img/sharp-linux-x64": "^0.35.4"
   }
 }
