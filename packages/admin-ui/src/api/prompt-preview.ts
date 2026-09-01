@@ -2,6 +2,7 @@
  * Prompt Preview API - Shows what would be sent to the LLM.
  */
 import { API_BASE } from './apiBase';
+import { apiFetch as fetch } from './client';
 
 export interface ToolPreview {
   name: string;

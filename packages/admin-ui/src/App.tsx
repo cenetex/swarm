@@ -8,6 +8,7 @@ import { getTwitterConnectionStatus } from './api/twitter';
 import { appendSystemMessage } from './api/chat';
 import { AvatarSidebar, ChatPanel } from './components';
 import { ConsentBanner } from './components/ConsentBanner';
+import { CredentialMigrationNotice } from './components/CredentialMigrationNotice';
 
 // Lazy-load route-level components that aren't always needed
 const PublicChatPage = lazy(() => import('./components/PublicChatPage').then(m => ({ default: m.PublicChatPage })));
@@ -470,6 +471,8 @@ function App() {
         className="flex-shrink-0 bg-[var(--color-bg-secondary)]" 
         style={{ height: 'env(safe-area-inset-top, 0px)' }} 
       />
+
+      <CredentialMigrationNotice />
       
       {/* Main content area */}
       <div className="flex-1 flex min-h-0 relative">

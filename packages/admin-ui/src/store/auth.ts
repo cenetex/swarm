@@ -14,6 +14,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import { API_BASE } from '../api/apiBase';
+import { apiFetch as fetch } from '../api/client';
 import type { GateStatus } from './gateStatus';
 
 // ---------------------------------------------------------------------------

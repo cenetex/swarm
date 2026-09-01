@@ -2,6 +2,7 @@
  * Issues API - Avatar-reported issues endpoint.
  */
 import { API_BASE } from './apiBase';
+import { apiFetch as fetch } from './client';
 
 export interface AvatarIssue {
   id: string;

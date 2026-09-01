@@ -5,6 +5,7 @@
  * state (one round-trip), and per-row revoke.
  */
 import { getApiBase } from './apiBase.js';
+import { apiFetch as fetch } from './client';
 
 const API_BASE = getApiBase();
 

@@ -3,6 +3,7 @@
  * Note: API paths remain as /avatars/* for backend compatibility
  */
 import { API_BASE } from './apiBase';
+import { apiFetch as fetch } from './client';
 
 export interface LlmConfig {
   provider: string;

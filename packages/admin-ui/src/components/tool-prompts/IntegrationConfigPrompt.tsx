@@ -7,6 +7,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useActiveAvatar } from '../../store';
 import { API_BASE, type ToolPromptProps } from './types';
 import { TelegramAccessPanel } from './TelegramAccessPanel';
+import { apiFetch as fetch } from '../../api/client';
 
 // Model info for AI provider configuration
 interface ModelOption {

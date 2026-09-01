@@ -2,6 +2,7 @@
  * API Key Setup — shown in local/desktop mode when no API key is configured.
  */
 import { useState, useEffect } from 'react';
+import { apiFetch as fetch } from '../api/client';
 
 interface LlmStatus {
   configured: boolean;
