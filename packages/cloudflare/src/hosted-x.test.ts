@@ -63,6 +63,7 @@ class SqliteD1 implements CloudflareD1Database {
       '0006_portable_public_avatars.sql',
       '0008_hosted_x.sql',
       '0009_passkeys.sql',
+      '0010_hosted_x_poll_backoff.sql',
     ]) {
       this.db.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url), 'utf8'));
     }
@@ -170,6 +171,18 @@ async function connect(env: CloudflareHostedBindings, calls: Array<{ url: string
   return { started, status };
 }
 
+function xStartRequest(sessionToken: string, origin = 'https://next.swarm.rati.chat'): Request {
+  return new Request('https://next.swarm.rati.chat/api/auth/x/start', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: hostedSessionCookie(sessionToken).split(';', 1)[0] ?? '',
+      Origin: origin,
+    },
+    body: JSON.stringify({ avatarId: 'avatar-1' }),
+  });
+}
+
 const resources: SqliteD1[] = [];
 afterEach(() => {
   while (resources.length) resources.pop()?.close();
@@ -220,10 +233,7 @@ describe('hosted X connector', () => {
     globalThis.fetch = (async () => new Response('private upstream detail', { status: 403 })) as typeof fetch;
 
     try {
-      const response = await worker.fetch(new Request(
-        'https://next.swarm.rati.chat/api/auth/x/start?avatarId=avatar-1',
-        { headers: { Cookie: hostedSessionCookie(sessionToken).split(';', 1)[0] ?? '' } },
-      ), env);
+      const response = await worker.fetch(xStartRequest(sessionToken), env);
 
       expect(response.status).toBe(502);
       expect(await response.json()).toEqual({
@@ -256,15 +266,61 @@ describe('hosted X connector', () => {
     }) as typeof fetch;
 
     try {
+      const response = await worker.fetch(xStartRequest(sessionToken), env);
+
+      expect(called).toBeTrue();
+      expect(response.status).toBe(201);
+      expect(await response.json()).toEqual({
+        authorizationUrl: 'https://api.x.com/oauth/authorize?oauth_token=request-token',
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('rejects a cross-origin request before starting OAuth', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    const sessionToken = 'hosted-x-origin-session';
+    const now = Date.now();
+    state.db.query(`insert into swarm_sessions
+      (session_hash, account_id, wallet_address, created_at, expires_at)
+      values (?, 'account-1', 'wallet-1', ?, ?)`).run(await sha256(sessionToken), now, now + 60_000);
+
+    const response = await worker.fetch(xStartRequest(sessionToken, 'https://attacker.example'), env);
+
+    expect(response.status).toBe(403);
+    expect(state.db.query('select count(*) as count from swarm_hosted_x_oauth_transactions').get())
+      .toEqual({ count: 0 });
+  });
+
+  it('returns from the callback with the companion that started OAuth', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    const sessionToken = 'hosted-x-callback-session';
+    const now = Date.now();
+    const sessionHash = await sha256(sessionToken);
+    state.db.query(`insert into swarm_sessions
+      (session_hash, account_id, wallet_address, created_at, expires_at)
+      values (?, 'account-1', 'wallet-1', ?, ?)`).run(sessionHash, now, now + 60_000);
+    const calls: Array<{ url: string; authorization: string; body?: string }> = [];
+    const fetchImpl = oauthFetch(calls);
+    await beginHostedXConnect(env, { ...session, sessionHash }, {
+      avatarId: 'avatar-1',
+      publicOrigin: 'https://next.swarm.rati.chat',
+    }, fetchImpl, now);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchImpl;
+
+    try {
       const response = await worker.fetch(new Request(
-        'https://next.swarm.rati.chat/api/auth/x/start?avatarId=avatar-1',
+        'https://next.swarm.rati.chat/api/auth/x/callback?oauth_token=request-token&oauth_verifier=verifier',
         { headers: { Cookie: hostedSessionCookie(sessionToken).split(';', 1)[0] ?? '' } },
       ), env);
 
-      expect(called).toBeTrue();
       expect(response.status).toBe(302);
       expect(response.headers.get('Location')).toBe(
-        'https://api.x.com/oauth/authorize?oauth_token=request-token',
+        'https://next.swarm.rati.chat/studio?x=connected&xAvatarId=avatar-1',
       );
     } finally {
       globalThis.fetch = originalFetch;
@@ -303,10 +359,7 @@ describe('hosted X connector', () => {
     }) as typeof fetch;
 
     try {
-      const response = await worker.fetch(new Request(
-        'https://next.swarm.rati.chat/api/auth/x/start?avatarId=avatar-1',
-        { headers: { Cookie: hostedSessionCookie(sessionToken).split(';', 1)[0] ?? '' } },
-      ), env);
+      const response = await worker.fetch(xStartRequest(sessionToken), env);
 
       expect(response.status).toBe(503);
       expect(await response.json()).toEqual({
@@ -538,6 +591,37 @@ describe('hosted X connector', () => {
     expect(state.db.query(
       'select status, reply_post_id from swarm_hosted_x_mentions where mention_id = ?',
     ).get('101')).toEqual({ status: 'completed', reply_post_id: '501' });
+  });
+
+  it('persists the mention polling rate-limit delay across scheduled runs', async () => {
+    const { state, env } = setup();
+    resources.push(state);
+    await connect(env, []);
+    let pollCalls = 0;
+    const rateLimitedPoll = (async () => {
+      pollCalls += 1;
+      if (pollCalls === 1) {
+        return Response.json({ title: 'Too Many Requests' }, {
+          status: 429,
+          headers: { 'Retry-After': '120' },
+        });
+      }
+      return Response.json({ data: [], meta: { newest_id: '100' } });
+    }) as typeof fetch;
+
+    await pollHostedXIntegrations(env, rateLimitedPoll, 2_000);
+    expect(state.db.query(
+      'select poll_after, last_error_code from swarm_hosted_x_integrations where avatar_id = ?',
+    ).get('avatar-1')).toEqual({ poll_after: 122_000, last_error_code: 'x_rate_limited' });
+
+    await pollHostedXIntegrations(env, rateLimitedPoll, 62_000);
+    expect(pollCalls).toBe(1);
+
+    await pollHostedXIntegrations(env, rateLimitedPoll, 122_001);
+    expect(pollCalls).toBe(2);
+    expect(state.db.query(
+      'select poll_after, last_error_code from swarm_hosted_x_integrations where avatar_id = ?',
+    ).get('avatar-1')).toEqual({ poll_after: null, last_error_code: null });
   });
 
   it('marks the connector for reauthorization when X rejects polling credentials', async () => {

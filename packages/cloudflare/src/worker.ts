@@ -210,13 +210,19 @@ function openRouterReturnUrl(env: CloudflareHostedBindings, request: Request, re
   return url.toString();
 }
 
-function xReturnUrl(env: CloudflareHostedBindings, request: Request, result: 'connected' | 'error'): string {
+function xReturnUrl(
+  env: CloudflareHostedBindings,
+  request: Request,
+  result: 'connected' | 'error',
+  avatarId?: string,
+): string {
   const configuredPath = env.SWARM_X_RETURN_PATH?.trim() || '/studio';
   const path = configuredPath.startsWith('/') && !configuredPath.startsWith('//')
     ? configuredPath
     : '/studio';
   const url = new URL(path, hostedPublicOrigin(env, request));
   url.searchParams.set('x', result);
+  if (avatarId) url.searchParams.set('xAvatarId', avatarId);
   return url.toString();
 }
 
@@ -622,27 +628,29 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     return json(await getOpenRouterConnectionStatus(platform.secrets, session));
   }
 
-  if (url.pathname === '/api/auth/x/start' && request.method === 'GET') {
+  if (url.pathname === '/api/auth/x/start' && request.method === 'POST') {
+    assertSameOrigin(env, request);
     const session = await getHostedSession(env, request);
     if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
-    const avatarId = url.searchParams.get('avatarId')?.trim() ?? '';
+    const body = await readJsonObject(request);
+    const avatarId = stringField(body, 'avatarId');
     if (!validResourceId(avatarId)) return json({ error: 'avatarId is required.' }, { status: 400 });
     const started = await beginHostedXConnect(env, session, {
       avatarId,
       publicOrigin: hostedPublicOrigin(env, request),
     });
-    return redirect(started.authorizationUrl);
+    return json(started, { status: 201 });
   }
 
   if (url.pathname === '/api/auth/x/callback' && request.method === 'GET') {
     const session = await getHostedSession(env, request);
     if (!session || url.searchParams.has('denied')) return redirect(xReturnUrl(env, request, 'error'));
     try {
-      await completeHostedXConnect(env, session, {
+      const connected = await completeHostedXConnect(env, session, {
         oauthToken: url.searchParams.get('oauth_token') ?? '',
         oauthVerifier: url.searchParams.get('oauth_verifier') ?? '',
       });
-      return redirect(xReturnUrl(env, request, 'connected'));
+      return redirect(xReturnUrl(env, request, 'connected', connected.avatarId));
     } catch {
       return redirect(xReturnUrl(env, request, 'error'));
     }

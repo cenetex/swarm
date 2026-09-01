@@ -4,6 +4,7 @@ import { HostedWalletSignIn } from './components/HostedWalletSignIn';
 import { HostedPasskeyAuth } from './components/HostedPasskeyAuth';
 import {
   createHostedAvatar,
+  connectHostedX,
   connectHostedTelegram,
   disconnectHostedProvider,
   disconnectHostedTelegram,
@@ -14,7 +15,7 @@ import {
   getHostedProviderStatus,
   getHostedTelegramStatus,
   getHostedXStatus,
-  hostedXConnectUrl,
+  hostedXAvatarId,
   hostedXResult,
   importHostedAvatar,
   listHostedAvatars,
@@ -45,6 +46,7 @@ function cleanHostedOAuthResult(): void {
   url.searchParams.delete('ai');
   url.searchParams.delete('openrouter');
   url.searchParams.delete('x');
+  url.searchParams.delete('xAvatarId');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
@@ -180,6 +182,7 @@ export function HostedApp() {
   const { isAuthenticated, user } = useAuth();
   const [oauthResult] = useState(() => openRouterResult(window.location.search));
   const [xOauthResult] = useState(() => hostedXResult(window.location.search));
+  const [xOauthAvatarId] = useState(() => hostedXAvatarId(window.location.search));
   const [provider, setProvider] = useState<HostedProviderStatus | null>(null);
   const [avatars, setAvatars] = useState<HostedAvatar[]>([]);
   const [activeAvatarId, setActiveAvatarId] = useState('');
@@ -201,6 +204,7 @@ export function HostedApp() {
   const [telegramLoading, setTelegramLoading] = useState(false);
   const [x, setX] = useState<HostedXStatus | null>(null);
   const [xLoading, setXLoading] = useState(false);
+  const [xConnecting, setXConnecting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -220,8 +224,11 @@ export function HostedApp() {
   const refreshAvatars = useCallback(async () => {
     const nextAvatars = await listHostedAvatars();
     setAvatars(nextAvatars);
-    setActiveAvatarId((current) => current || nextAvatars[0]?.avatarId || '');
-  }, []);
+    setActiveAvatarId((current) => current
+      || nextAvatars.find((avatar) => avatar.avatarId === xOauthAvatarId)?.avatarId
+      || nextAvatars[0]?.avatarId
+      || '');
+  }, [xOauthAvatarId]);
 
   const refreshProvider = useCallback(async () => {
     setLoading(true);
@@ -253,6 +260,7 @@ export function HostedApp() {
       setTelegramLoading(false);
       setX(null);
       setXLoading(false);
+      setXConnecting(false);
       return;
     }
     void refreshProvider();
@@ -486,6 +494,19 @@ export function HostedApp() {
       await refreshX();
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : 'Unable to load X status.');
+    }
+  };
+
+  const handleConnectX = async () => {
+    if (!activeAvatarId) return;
+    setXConnecting(true);
+    setError('');
+    try {
+      const started = await connectHostedX(activeAvatarId);
+      window.location.assign(started.authorizationUrl);
+    } catch (connectError) {
+      setError(connectError instanceof Error ? connectError.message : 'Unable to connect X.');
+      setXConnecting(false);
     }
   };
 
@@ -1205,19 +1226,21 @@ export function HostedApp() {
                 detail={xReady
                   ? `${activeAvatar.name} checks new mentions and replies in the same X conversation.`
                   : `Connect ${activeAvatar.name} to an X account for mention-based conversations.`}
-                state={xLoading ? 'Checking' : xReady ? 'On' : x?.status === 'reauth_required' ? 'Reconnect' : 'Optional'}
+                state={xConnecting ? 'Connecting' : xLoading ? 'Checking' : xReady ? 'On' : x?.status === 'reauth_required' ? 'Reconnect' : 'Optional'}
                 ready={xReady}
               >
                 {xLoading ? (
                   <p className="text-xs text-[var(--color-text-muted)]">Loading X status…</p>
                 ) : !x?.connected ? (
                   <div className="space-y-3">
-                    <a
-                      href={hostedXConnectUrl(activeAvatar.avatarId)}
+                    <button
+                      type="button"
+                      onClick={() => void handleConnectX()}
+                      disabled={xConnecting}
                       className="block w-full rounded-xl bg-white px-4 py-3 text-center text-sm font-semibold text-black transition hover:bg-white/90"
                     >
-                      Connect X account
-                    </a>
+                      {xConnecting ? 'Connecting X…' : 'Connect X account'}
+                    </button>
                     <p className="text-xs leading-5 text-[var(--color-text-muted)]">
                       X shows the authorization screen. Access tokens stay encrypted and are never returned to Studio.
                     </p>
@@ -1240,12 +1263,14 @@ export function HostedApp() {
                         <p className="text-xs leading-5 text-amber-100">
                           X rejected the saved authorization. Reconnect to resume replies.
                         </p>
-                        <a
-                          href={hostedXConnectUrl(activeAvatar.avatarId)}
+                        <button
+                          type="button"
+                          onClick={() => void handleConnectX()}
+                          disabled={xConnecting}
                           className="block w-full rounded-xl bg-white px-4 py-3 text-center text-sm font-semibold text-black"
                         >
-                          Reconnect X
-                        </a>
+                          {xConnecting ? 'Connecting X…' : 'Reconnect X'}
+                        </button>
                       </div>
                     )}
                     {x.lastPolledAt && (
@@ -1264,12 +1289,14 @@ export function HostedApp() {
                         >
                           Refresh X status
                         </button>
-                        <a
-                          href={hostedXConnectUrl(activeAvatar.avatarId)}
+                        <button
+                          type="button"
+                          onClick={() => void handleConnectX()}
+                          disabled={xConnecting}
                           className="block w-full rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-center text-sm font-medium hover:bg-[var(--color-bg-tertiary)]"
                         >
-                          Reauthorize X
-                        </a>
+                          {xConnecting ? 'Connecting X…' : 'Reauthorize X'}
+                        </button>
                         <button
                           type="button"
                           onClick={() => void handleDisconnectX()}
