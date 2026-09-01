@@ -1,4 +1,5 @@
 import { API_BASE } from './apiBase';
+import { apiFetch as fetch } from './client';
 
 export type PlanType = 'free' | 'pro' | 'enterprise' | 'team';
 

@@ -1,5 +1,6 @@
 import { useAuthStore } from '../store/auth';
 import { API_BASE } from '../api/apiBase';
+import { apiFetch as fetch } from '../api/client';
 import type { AccountSummary, AuthUser, GateStatus } from '../store/auth';
 
 export type BackendAuthSessionPayload = {

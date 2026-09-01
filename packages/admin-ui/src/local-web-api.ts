@@ -1,3 +1,8 @@
+import {
+  localWebChatStore,
+  sanitizeLocalChatHistories,
+} from './local-web-chat-store';
+
 type LocalAvatar = {
   avatarId: string;
   name: string;
@@ -21,7 +26,6 @@ type LocalAvatar = {
 
 type LocalState = {
   avatars: LocalAvatar[];
-  chats: Record<string, Array<{ role: string; content: string; media?: unknown[] }>>;
   agentBackends: Record<string, {
     backend: string;
     endpoint?: string;
@@ -34,9 +38,105 @@ type LocalState = {
 };
 
 const STORAGE_KEY = 'swarm:web-local:v1';
-const MAX_CHAT_MESSAGES = 100;
 
 const isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+let pendingChatMigration: Promise<void> = Promise.resolve();
+
+const SAFE_AVATAR_UPDATE_FIELDS = new Set([
+  'name',
+  'description',
+  'persona',
+  'systemPromptOverride',
+  'mediaConfig',
+  'voiceConfig',
+  'platforms',
+  'profileImage',
+  'characterReference',
+  'llmConfig',
+]);
+
+function isSensitiveFieldName(key: string): boolean {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return normalized === 'secret'
+    || normalized === 'secrets'
+    || normalized === 'token'
+    || normalized.endsWith('apikey')
+    || normalized.endsWith('accesstoken')
+    || normalized.endsWith('refreshtoken')
+    || normalized.endsWith('bottoken')
+    || normalized.endsWith('privatekey')
+    || normalized.endsWith('mnemonic')
+    || normalized.endsWith('password')
+    || normalized.endsWith('credential');
+}
+
+function isSensitiveUrlParameter(key: string): boolean {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return isSensitiveFieldName(key)
+    || normalized === 'key'
+    || normalized === 'auth'
+    || normalized === 'authorization'
+    || normalized === 'signature'
+    || normalized === 'sig';
+}
+
+function stripSensitiveFields(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripSensitiveFields);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !isSensitiveFieldName(key))
+      .map(([key, nestedValue]) => [key, stripSensitiveFields(nestedValue)]),
+  );
+}
+
+function sanitizeAvatarUpdates(value: Record<string, unknown>): Partial<LocalAvatar> {
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => SAFE_AVATAR_UPDATE_FIELDS.has(key))
+      .map(([key, fieldValue]) => [key, stripSensitiveFields(fieldValue)]),
+  ) as Partial<LocalAvatar>;
+}
+
+function sanitizeStoredAvatar(value: unknown): LocalAvatar | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.avatarId !== 'string') return null;
+  const status = candidate.status === 'shell'
+    || candidate.status === 'configured'
+    || candidate.status === 'active'
+    || candidate.status === 'error'
+    || candidate.status === 'draft'
+    || candidate.status === 'paused'
+    ? candidate.status
+    : 'draft';
+  return {
+    ...sanitizeAvatarUpdates(candidate),
+    avatarId: candidate.avatarId,
+    name: typeof candidate.name === 'string' ? candidate.name : 'Avatar',
+    status,
+    createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : Date.now(),
+    updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now(),
+    createdBy: typeof candidate.createdBy === 'string' ? candidate.createdBy : 'local-web',
+    slotType: candidate.slotType === 'orb' || candidate.slotType === 'nft' ? candidate.slotType : 'free',
+  };
+}
+
+function sanitizeEndpoint(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  try {
+    const endpoint = new URL(value);
+    endpoint.username = '';
+    endpoint.password = '';
+    endpoint.hash = '';
+    for (const key of [...endpoint.searchParams.keys()]) {
+      if (isSensitiveUrlParameter(key)) endpoint.searchParams.delete(key);
+    }
+    return endpoint.toString();
+  } catch {
+    return undefined;
+  }
+}
 
 export function isWebLocalHostAllowed(hostname: string): boolean {
   const host = hostname.toLowerCase();
@@ -52,24 +152,35 @@ export function shouldInstallLocalWebApi(): boolean {
   return params.get('local') === '1';
 }
 
-function sanitizeChatHistory(value: unknown): LocalState['chats'] {
-  if (!value || typeof value !== 'object') return {};
-  const histories: LocalState['chats'] = {};
-  for (const [avatarId, history] of Object.entries(value)) {
-    if (!Array.isArray(history)) continue;
-    histories[avatarId] = history
-      .filter((message): message is { role: string; content: string; media?: unknown[] } => (
-        Boolean(message)
-        && typeof message === 'object'
-        && typeof (message as { role?: unknown }).role === 'string'
-        && typeof (message as { content?: unknown }).content === 'string'
-      ))
-      .slice(-MAX_CHAT_MESSAGES);
+function containsCredentialValue(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (!value || typeof value !== 'object') return false;
+  return Object.values(value).some(containsCredentialValue);
+}
+
+function containsSensitiveNamedValue(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  return Object.entries(value).some(([key, fieldValue]) => (
+    (isSensitiveFieldName(key) && containsCredentialValue(fieldValue))
+    || containsSensitiveNamedValue(fieldValue)
+  ));
+}
+
+function endpointContainsCredentials(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    const endpoint = new URL(value);
+    return Boolean(endpoint.username || endpoint.password)
+      || [...endpoint.searchParams.entries()].some(([key, fieldValue]) => (
+        isSensitiveUrlParameter(key) && fieldValue.trim().length > 0
+      ));
+  } catch {
+    return false;
   }
-  return histories;
 }
 
 export function readLocalWebState(): LocalState {
+  if (!isBrowser) return emptyState();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -80,23 +191,26 @@ export function readLocalWebState(): LocalState {
       const agentBackends = Object.fromEntries(
         Object.entries(legacyBackends).map(([scope, backend]) => [scope, {
           backend: typeof backend.backend === 'string' ? backend.backend : 'swarm-native',
-          endpoint: typeof backend.endpoint === 'string' ? backend.endpoint : undefined,
+          endpoint: sanitizeEndpoint(backend.endpoint),
           deploymentTarget: backend.deploymentTarget === 'ascii-box' ? 'ascii-box' as const : 'local' as const,
         }]),
       );
       const hadPlaintextCredentials = Boolean(
-        parsed.secrets
-        || parsed.avatarSecrets
-        || Object.values(legacyBackends).some((backend) => typeof backend.apiKey === 'string'),
+        containsCredentialValue(parsed.secrets)
+        || containsCredentialValue(parsed.avatarSecrets)
+        || containsSensitiveNamedValue(parsed.avatars)
+        || Object.values(legacyBackends).some((backend) => (
+          containsCredentialValue(backend.apiKey) || endpointContainsCredentials(backend.endpoint)
+        )),
       );
       const credentialMigrationRequired = hadPlaintextCredentials || parsed.credentialMigrationRequired === true;
-      const chatHistoryRequiredSanitizing = parsed.chats && typeof parsed.chats === 'object'
-        ? Object.values(parsed.chats).some((history) => !Array.isArray(history) || history.length > MAX_CHAT_MESSAGES)
-        : Boolean(parsed.chats);
+      const legacyChats = sanitizeLocalChatHistories(parsed.chats);
+      const hadLegacyChats = parsed.chats !== undefined;
       const sanitized: LocalState = {
         ...emptyState(),
-        avatars: Array.isArray(parsed.avatars) ? parsed.avatars as LocalAvatar[] : [],
-        chats: sanitizeChatHistory(parsed.chats),
+        avatars: Array.isArray(parsed.avatars)
+          ? parsed.avatars.map(sanitizeStoredAvatar).filter((avatar): avatar is LocalAvatar => avatar !== null)
+          : [],
         agentBackends,
         hostingMode: parsed.hostingMode === 'hosted' ? 'hosted' : 'local',
         hostingSubstrate: parsed.hostingSubstrate === 'fly'
@@ -107,13 +221,18 @@ export function readLocalWebState(): LocalState {
         consentAcceptedAt: typeof parsed.consentAcceptedAt === 'number' ? parsed.consentAcceptedAt : undefined,
         credentialMigrationRequired,
       };
-      if (hadPlaintextCredentials || chatHistoryRequiredSanitizing) {
+      if (hadPlaintextCredentials || hadLegacyChats || parsed.credentialMigrationRequired !== credentialMigrationRequired) {
         writeState(sanitized);
+      }
+      if (hadLegacyChats) {
+        pendingChatMigration = pendingChatMigration.then(() => localWebChatStore.migrateLegacy(legacyChats));
       }
       return sanitized;
     }
   } catch {
-    // Fall through to a fresh local store.
+    const sanitized = { ...emptyState(), credentialMigrationRequired: true };
+    writeState(sanitized);
+    return sanitized;
   }
   return emptyState();
 }
@@ -121,13 +240,27 @@ export function readLocalWebState(): LocalState {
 function emptyState(): LocalState {
   return {
     avatars: [],
-    chats: {},
     agentBackends: {},
   };
 }
 
 function writeState(state: LocalState): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Storage can be disabled or full. Browser-local mode remains usable in memory.
+  }
+}
+
+export function migrateLegacyLocalWebState(): boolean {
+  return Boolean(readLocalWebState().credentialMigrationRequired);
+}
+
+export function acknowledgeCredentialRotation(): void {
+  const state = readLocalWebState();
+  if (!state.credentialMigrationRequired) return;
+  state.credentialMigrationRequired = false;
+  writeState(state);
 }
 
 function localHostingStatus(_state: LocalState) {
@@ -431,7 +564,7 @@ export function routeLocalApi(request: Request): Response | Promise<Response> | 
 
   if (path === '/avatars' && method === 'GET') return json(state.avatars.map(toPublicAvatar));
   if (path === '/avatars' && method === 'POST') {
-    return readJson(request).then((body) => {
+    return readJson(request).then(async (body) => {
       const now = Date.now();
       const name = String(body.name || `Avatar ${state.avatars.length + 1}`);
       const avatar: LocalAvatar = {
@@ -448,10 +581,11 @@ export function routeLocalApi(request: Request): Response | Promise<Response> | 
         platforms: {},
       };
       state.avatars.unshift(avatar);
-      state.chats[avatar.avatarId] = [{
+      await pendingChatMigration;
+      await localWebChatStore.replaceHistory(avatar.avatarId, [{
         role: 'assistant',
         content: `Hi! I'm ${name}. Talk to me to configure my integrations.`,
-      }];
+      }]);
       writeState(state);
       return json(toPublicAvatar(avatar));
     });
@@ -471,13 +605,17 @@ export function routeLocalApi(request: Request): Response | Promise<Response> | 
     if (!action && method === 'GET') return json(toPublicAvatar(avatar));
     if (!action && method === 'DELETE') {
       state.avatars = state.avatars.filter((item) => item.avatarId !== avatarId);
-      delete state.chats[avatarId];
       writeState(state);
-      return json({ ok: true });
+      return pendingChatMigration
+        .then(() => localWebChatStore.deleteHistory(avatarId))
+        .then(() => json({ ok: true }));
     }
     if (!action && (method === 'PUT' || method === 'PATCH')) {
       return readJson(request).then((body) => {
-        Object.assign(avatar, body, { updatedAt: Date.now(), status: avatar.status === 'draft' ? 'configured' : avatar.status });
+        Object.assign(avatar, sanitizeAvatarUpdates(body), {
+          updatedAt: Date.now(),
+          status: avatar.status === 'draft' ? 'configured' : avatar.status,
+        });
         writeState(state);
         return json(toPublicAvatar(avatar));
       });
@@ -553,40 +691,40 @@ export function routeLocalApi(request: Request): Response | Promise<Response> | 
 
   if (path === '/chat' && method === 'GET') {
     const avatarId = url.searchParams.get('avatarId') || 'global';
-    return json({ history: state.chats[avatarId] ?? [] });
+    const limit = Number.parseInt(url.searchParams.get('limit') || '', 10);
+    const before = url.searchParams.get('before');
+    return pendingChatMigration
+      .then(() => localWebChatStore.getPage(avatarId, limit, before))
+      .then((page) => json(page));
   }
   if (path === '/chat' && method === 'DELETE') {
     const avatarId = url.searchParams.get('avatarId') || 'global';
-    state.chats[avatarId] = [];
-    writeState(state);
-    return json({ history: [] });
+    return pendingChatMigration
+      .then(() => localWebChatStore.deleteHistory(avatarId))
+      .then(() => json({ history: [], nextCursor: null }));
   }
   if (path === '/chat/message' && method === 'POST') {
-    return readJson(request).then((body) => {
+    return readJson(request).then(async (body) => {
       const avatarId = String(body.avatarId || 'global');
       const message = body.message as { role?: string; content?: string } | undefined;
-      state.chats[avatarId] = [
-        ...(state.chats[avatarId] ?? []),
+      await pendingChatMigration;
+      const history = await localWebChatStore.append(avatarId, [
         { role: message?.role || 'assistant', content: message?.content || '' },
-      ].slice(-MAX_CHAT_MESSAGES);
-      writeState(state);
-      return json({ history: state.chats[avatarId] });
+      ]);
+      return json({ history });
     });
   }
   if (path === '/chat' && method === 'POST') {
-    return readJson(request).then((body) => {
+    return readJson(request).then(async (body) => {
       const message = String(body.message || '');
       const avatarId = (body.avatar as { id?: string } | undefined)?.id || 'global';
       const avatar = state.avatars.find((item) => item.avatarId === avatarId);
-      const history = [...(body.history as Array<{ role: string; content: string }> || [])];
       const reply = defaultAssistantReply(message, avatar);
-      const nextHistory = [
-        ...history,
+      await pendingChatMigration;
+      const nextHistory = await localWebChatStore.append(avatarId, [
         { role: 'user', content: message },
         { role: 'assistant', content: reply },
-      ].slice(-MAX_CHAT_MESSAGES);
-      state.chats[avatarId] = nextHistory;
-      writeState(state);
+      ]);
       return json({ response: reply, history: nextHistory });
     });
   }
@@ -640,7 +778,7 @@ export function routeLocalApi(request: Request): Response | Promise<Response> | 
       const key = avatarId || 'global';
       state.agentBackends[key] = {
         backend: String(body.backend || 'swarm-native'),
-        endpoint: typeof body.endpoint === 'string' ? body.endpoint : undefined,
+        endpoint: sanitizeEndpoint(body.endpoint),
         deploymentTarget: body.deploymentTarget === 'ascii-box' ? body.deploymentTarget : 'local',
       };
       writeState(state);
@@ -725,14 +863,8 @@ export function routeLocalApi(request: Request): Response | Promise<Response> | 
   return json({ error: `Web-local route not implemented: ${path}` }, { status: 404 });
 }
 
-export function installLocalWebApi(): void {
+export function initializeLocalWebApi(): void {
+  migrateLegacyLocalWebState();
   if (!shouldInstallLocalWebApi()) return;
-  const originalFetch = window.fetch.bind(window);
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const request = new Request(input, init);
-    const routed = routeLocalApi(request);
-    if (routed) return Promise.resolve(routed);
-    return originalFetch(input, init);
-  };
   document.documentElement.dataset.swarmWebLocal = 'true';
 }

@@ -2,6 +2,7 @@
  * Avatar Events API - Issues and feedback from DynamoDB (fast)
  */
 import { API_BASE } from './apiBase';
+import { apiFetch as fetch } from './client';
 
 export type EventType = 'issue' | 'feedback';
 export type IssueSeverity = 'low' | 'medium' | 'high' | 'critical';

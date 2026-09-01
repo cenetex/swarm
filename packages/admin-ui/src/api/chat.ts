@@ -1,4 +1,5 @@
 import { API_BASE } from './apiBase';
+import { apiFetch as fetch } from './client';
 
 /**
  * Check if we're on a public subdomain (e.g., agent-name.rati.chat)

@@ -7,8 +7,12 @@ import { WalletProvider } from './components/WalletProvider';
 import { HostedApp } from './HostedApp';
 import { HostedCatalogApp } from './HostedCatalogApp';
 import { MobileWalletSignInPage } from './components/MobileWalletSignInPage';
+import { CredentialMigrationNotice } from './components/CredentialMigrationNotice';
+import { initializeLocalWebApi } from './local-web-api';
 import i18n from './i18n';
 import './index.css';
+
+initializeLocalWebApi();
 
 function HostedSessionRoot() {
   const [ready, setReady] = useState(false);
@@ -38,7 +42,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <I18nextProvider i18n={i18n}>
         <WalletProvider autoConnect={false}>
-          <HostedRoot />
+          <div className="flex min-h-[100dvh] flex-col">
+            <CredentialMigrationNotice />
+            <div className="min-h-0 flex-1">
+              <HostedRoot />
+            </div>
+          </div>
         </WalletProvider>
       </I18nextProvider>
     </ErrorBoundary>

@@ -2,6 +2,7 @@
  * Avatars API - Backend calls for avatar CRUD operations
  */
 import { API_BASE } from './apiBase';
+import { apiFetch as fetch } from './client';
 
 export interface LlmConfig {
   provider: string;
