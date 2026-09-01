@@ -2,6 +2,7 @@ import { ChangeEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, use
 import { API_BASE } from './api/apiBase';
 import { HostedWalletSignIn } from './components/HostedWalletSignIn';
 import { HostedPasskeyAuth } from './components/HostedPasskeyAuth';
+import { HostedWalletLink } from './components/HostedWalletLink';
 import {
   createHostedAvatar,
   connectHostedX,
@@ -179,7 +180,7 @@ function NavIcon({ view }: { view: HostedView }) {
 
 export function HostedApp() {
   const environmentCopy = hostedEnvironmentCopy(import.meta.env.VITE_HOSTED_ENVIRONMENT);
-  const { isAuthenticated, user } = useAuth();
+  const { authProvider, isAuthenticated, user } = useAuth();
   const [oauthResult] = useState(() => openRouterResult(window.location.search));
   const [xOauthResult] = useState(() => hostedXResult(window.location.search));
   const [xOauthAvatarId] = useState(() => hostedXAvatarId(window.location.search));
@@ -617,7 +618,12 @@ export function HostedApp() {
           </a>
           <div className="flex items-center gap-2">
             <a href="/" className="hidden rounded-lg px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] sm:block">Discover</a>
-            <HostedWalletSignIn showIcon={!isAuthenticated} />
+            {!isAuthenticated && <HostedPasskeyAuth label="Passkey" />}
+            <HostedWalletSignIn
+              className={isAuthenticated ? '' : 'hidden sm:flex'}
+              label={isAuthenticated ? undefined : 'Wallet'}
+              showIcon={!isAuthenticated}
+            />
           </div>
         </div>
       </header>
@@ -930,12 +936,17 @@ export function HostedApp() {
 
             {isAuthenticated && (
               <SettingsSection
-                title="Passkey sign-in"
-                detail="Add a device or synced passkey. Your wallet stays available as the recovery path."
-                state="Protected"
+                title="Passkey & wallets"
+                detail="Use passkeys for everyday access. Link wallets by signing when you need recovery or wallet-backed ownership."
+                state={authProvider === 'passkey' ? 'Passkey active' : 'Protected'}
                 ready
               >
-                <HostedPasskeyAuth />
+                <div className="space-y-4">
+                  <HostedPasskeyAuth />
+                  <div className="border-t border-[var(--color-border)] pt-4">
+                    <HostedWalletLink />
+                  </div>
+                </div>
               </SettingsSection>
             )}
 

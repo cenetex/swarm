@@ -19,10 +19,13 @@ import {
   createWalletChallenge,
   deleteHostedSession,
   getHostedSession,
+  HOSTED_WALLET_LINK_STATEMENT,
   hostedPublicOrigin,
   HostedOriginError,
   HostedRateLimitError,
   hostedSessionCookie,
+  linkWalletToHostedAccount,
+  listHostedWalletAddresses,
   verifyWalletChallenge,
 } from './auth.js';
 import {
@@ -202,12 +205,14 @@ function bearerToken(request: Request): string {
   return authorization.slice('Bearer '.length).trim();
 }
 
-function authenticatedWalletPayload(session: {
+async function authenticatedWalletPayload(env: CloudflareHostedBindings, session: {
   accountId: string;
   walletAddress: string;
   expiresAt: number;
   authProvider: 'wallet' | 'passkey';
-}): Record<string, unknown> {
+}): Promise<Record<string, unknown>> {
+  const linkedWallets = await listHostedWalletAddresses(env, session.accountId);
+  const walletAddresses = linkedWallets.length > 0 ? linkedWallets : [session.walletAddress];
   return {
     success: true,
     authenticated: true,
@@ -219,9 +224,9 @@ function authenticatedWalletPayload(session: {
     account: {
       accountId: session.accountId,
       role: 'user',
-      identities: [{ type: 'wallet', providerId: session.walletAddress }],
+      identities: walletAddresses.map((providerId) => ({ type: 'wallet', providerId })),
     },
-    user: { walletAddress: session.walletAddress },
+    user: { id: session.accountId, walletAddress: session.walletAddress },
   };
 }
 
@@ -590,7 +595,7 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
       if (result.status === 'not-found') return json({ status: result.status }, { status: 404 });
       if (result.status === 'expired') return json({ status: result.status }, { status: 410 });
       if (result.status === 'pending') return json(result, { status: 202 });
-      return json(authenticatedWalletPayload(result.session), {
+      return json(await authenticatedWalletPayload(env, result.session), {
         headers: { 'Set-Cookie': hostedSessionCookie(result.session.sessionToken) },
       });
     }
@@ -646,11 +651,62 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     });
     if (!session) return json({ error: 'Wallet challenge is invalid or expired.' }, { status: 401 });
     return json(
-      authenticatedWalletPayload(session),
+      await authenticatedWalletPayload(env, session),
       {
         headers: { 'Set-Cookie': hostedSessionCookie(session.sessionToken) },
       },
     );
+  }
+
+  if (url.pathname === '/api/auth/wallet/link/challenge' && request.method === 'POST') {
+    assertSameOrigin(env, request);
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    if (session.authProvider !== 'passkey') {
+      return json({ error: 'Sign in with a passkey before linking a wallet.' }, { status: 403 });
+    }
+    const body = await readJsonObject(request);
+    return json(await createWalletChallenge(
+      env,
+      request,
+      stringField(body, 'walletAddress'),
+      Date.now(),
+      HOSTED_WALLET_LINK_STATEMENT,
+    ));
+  }
+
+  if (url.pathname === '/api/auth/wallet/link/verify' && request.method === 'POST') {
+    assertSameOrigin(env, request);
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    if (session.authProvider !== 'passkey') {
+      return json({ error: 'Sign in with a passkey before linking a wallet.' }, { status: 403 });
+    }
+    const body = await readJsonObject(request);
+    const walletAddress =
+      typeof body.walletAddress === 'string' ? body.walletAddress.trim() : stringField(body, 'publicKey');
+    const result = await linkWalletToHostedAccount(env, session, {
+      walletAddress,
+      nonce: stringField(body, 'nonce'),
+      signature: stringField(body, 'signature'),
+    });
+    if (result.status === 'invalid') {
+      return json({ error: 'Wallet link challenge is invalid or expired.' }, { status: 401 });
+    }
+    if (result.status === 'conflict') {
+      return json({ error: 'This wallet belongs to a different hosted account.' }, { status: 409 });
+    }
+    return json({
+      linked: true,
+      status: result.status,
+      walletAddress: result.walletAddress,
+      account: {
+        accountId: session.accountId,
+        role: 'user',
+        identities: (await listHostedWalletAddresses(env, session.accountId))
+          .map((providerId) => ({ type: 'wallet', providerId })),
+      },
+    });
   }
 
   if (url.pathname === '/api/auth/passkey/register/options' && request.method === 'POST') {
@@ -695,7 +751,7 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
       }));
       return json({ error: 'Passkey sign-in is invalid or expired.' }, { status: 401 });
     }
-    return json(authenticatedWalletPayload(result.session), {
+    return json(await authenticatedWalletPayload(env, result.session), {
       headers: { 'Set-Cookie': hostedSessionCookie(result.session.sessionToken) },
     });
   }
@@ -703,22 +759,7 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
   if (url.pathname === '/api/auth/me' && request.method === 'GET') {
     const session = await getHostedSession(env, request);
     if (!session) return json({ authenticated: false }, { status: 401 });
-    return json({
-      authenticated: true,
-      accountId: session.accountId,
-      walletAddress: session.walletAddress,
-      expiresAt: session.expiresAt,
-      authProvider: session.authProvider,
-      account: {
-        accountId: session.accountId,
-        role: 'user',
-        identities: [{ type: 'wallet', providerId: session.walletAddress }],
-      },
-      user: {
-        id: session.walletAddress,
-        walletAddress: session.walletAddress,
-      },
-    });
+    return json(await authenticatedWalletPayload(env, session));
   }
 
   if (url.pathname === '/api/auth/logout' && request.method === 'POST') {

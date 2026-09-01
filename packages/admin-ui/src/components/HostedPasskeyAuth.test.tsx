@@ -24,7 +24,9 @@ beforeEach(() => {
 describe('HostedPasskeyAuth', () => {
   it('signs a logged-out owner in and records the passkey session provider', async () => {
     render(<HostedPasskeyAuth />);
-    fireEvent.click(screen.getByRole('button', { name: /sign in with a passkey/i }));
+    const button = screen.getByRole('button', { name: /sign in with a passkey/i });
+    expect(button).toHaveClass('from-brand-500', 'to-brand-600');
+    fireEvent.click(button);
 
     await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(true));
     expect(useAuthStore.getState().authProvider).toBe('passkey');

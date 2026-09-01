@@ -65,6 +65,8 @@ describe('MobileWalletSignInPage', () => {
 
     expect(mocks.select).toHaveBeenCalledWith('Phantom');
     expect(screen.getByText('Pairing code')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /open phantom/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /open solflare/i })).not.toBeInTheDocument();
 
     mocks.walletState.wallet = { readyState: 'Installed' };
     rerender(<MobileWalletSignInPage />);

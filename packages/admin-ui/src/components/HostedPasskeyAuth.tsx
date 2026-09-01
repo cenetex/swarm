@@ -9,6 +9,7 @@ import { useAuth } from '../store/auth';
 
 interface HostedPasskeyAuthProps {
   className?: string;
+  label?: string;
 }
 function passkeyErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof DOMException && error.name === 'NotAllowedError') {
@@ -20,7 +21,7 @@ function passkeyErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-export function HostedPasskeyAuth({ className = '' }: HostedPasskeyAuthProps) {
+export function HostedPasskeyAuth({ className = '', label }: HostedPasskeyAuthProps) {
   const { isAuthenticated } = useAuth();
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState('');
@@ -58,7 +59,11 @@ export function HostedPasskeyAuth({ className = '' }: HostedPasskeyAuthProps) {
         type="button"
         onClick={() => void handlePasskey()}
         disabled={working}
-        className="flex w-full items-center justify-center gap-2 rounded-xl border border-brand-400/40 bg-brand-400/10 px-4 py-2.5 text-sm font-semibold text-brand-200 transition hover:bg-brand-400/20 disabled:cursor-wait disabled:opacity-60"
+        className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-wait disabled:opacity-60 ${
+          isAuthenticated
+            ? 'border border-brand-400/40 bg-brand-400/10 text-brand-200 hover:bg-brand-400/20'
+            : 'bg-gradient-to-r from-brand-500 to-brand-600 text-white shadow-lg shadow-brand-500/25 hover:from-brand-600 hover:to-brand-700'
+        }`}
       >
         {working ? (
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -67,7 +72,7 @@ export function HostedPasskeyAuth({ className = '' }: HostedPasskeyAuthProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V8a4 4 0 118 0v3m-7 0h6a2 2 0 012 2v6H7v-6a2 2 0 012-2zm3 4h.01" />
           </svg>
         )}
-        <span>{working ? 'Waiting for your device' : isAuthenticated ? 'Add a passkey' : 'Sign in with a passkey'}</span>
+        <span>{working ? 'Waiting for your device' : label ?? (isAuthenticated ? 'Add a passkey' : 'Sign in with a passkey')}</span>
       </button>
       {message && <p className="mt-2 text-xs leading-5 text-emerald-300" role="status">{message}</p>}
       {error && <p className="mt-2 text-xs leading-5 text-red-400" role="alert">{error}</p>}

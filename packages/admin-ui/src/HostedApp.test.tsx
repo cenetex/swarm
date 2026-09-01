@@ -8,6 +8,10 @@ vi.mock('./components/HostedWalletSignIn', () => ({
   HostedWalletSignIn: () => <button type="button">Wallet session</button>,
 }));
 
+vi.mock('./components/HostedWalletLink', () => ({
+  HostedWalletLink: () => <button type="button">Link wallet</button>,
+}));
+
 vi.mock('./hosted-api', async () => {
   const actual = await vi.importActual<typeof import('./hosted-api')>('./hosted-api');
   return {
@@ -127,6 +131,15 @@ describe('HostedApp', () => {
 
     expect(screen.getAllByRole('button', { name: /sign in with a passkey/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: /wallet session/i }).length).toBeGreaterThan(0);
+  });
+
+  it('offers wallet linking after passkey sign-in', () => {
+    authenticate();
+    useAuthStore.setState({ authProvider: 'passkey' });
+    render(<HostedApp />);
+
+    expect(screen.getByText('Passkey active')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Link wallet' })).toBeInTheDocument();
   });
 
   it('shows the callback result, refreshes connected state, and removes callback parameters', async () => {
