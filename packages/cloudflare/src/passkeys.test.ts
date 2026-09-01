@@ -184,7 +184,7 @@ async function registrationResponse(input: {
 async function authenticationResponse(input: {
   credential: TestCredential;
   challenge: string;
-  userHandle: string;
+  userHandle?: string;
   counter?: number;
   origin?: string;
   rpID?: string;
@@ -302,17 +302,20 @@ describe('hosted passkeys', () => {
       userHandle: stored.webauthn_user_id,
     });
 
-    const session = await finishPasskeyAuthentication(
+    const result = await finishPasskeyAuthentication(
       test.env,
       test.request,
       { challengeId: start.challengeId, response },
       authNow + 1,
     );
 
-    expect(session).toMatchObject({
-      accountId: 'account-1',
-      walletAddress: 'wallet-1',
-      authProvider: 'passkey',
+    expect(result).toMatchObject({
+      verified: true,
+      session: {
+        accountId: 'account-1',
+        walletAddress: 'wallet-1',
+        authProvider: 'passkey',
+      },
     });
     expect(test.state.db.query(
       'select counter from swarm_passkeys where credential_id = ?',
@@ -320,9 +323,9 @@ describe('hosted passkeys', () => {
     expect(test.state.db.query(
       "select auth_provider from swarm_sessions where auth_provider = 'passkey'",
     ).get()).toEqual({ auth_provider: 'passkey' });
-    if (!session) throw new Error('Expected a passkey session.');
+    if (!result.verified) throw new Error('Expected a passkey session.');
     const meResponse = await worker.fetch(new Request('https://next.swarm.rati.chat/api/auth/me', {
-      headers: { Cookie: hostedSessionCookie(session.sessionToken) },
+      headers: { Cookie: hostedSessionCookie(result.session.sessionToken) },
     }), test.env);
     expect(meResponse.status).toBe(200);
     expect(await meResponse.json()).toMatchObject({
@@ -336,7 +339,47 @@ describe('hosted passkeys', () => {
       test.request,
       { challengeId: start.challengeId, response },
       authNow + 2,
-    )).resolves.toBeNull();
+    )).resolves.toEqual({ verified: false, stage: 'challenge_invalid' });
+  });
+
+  it('accepts a valid discoverable assertion when the authenticator omits userHandle', async () => {
+    const test = setup();
+    const credential = await enrollPasskey(test, 1_500_000);
+    const start = await beginPasskeyAuthentication(test.env, test.request, 1_500_100);
+    const response = await authenticationResponse({
+      credential,
+      challenge: start.options.challenge,
+    });
+
+    const result = await finishPasskeyAuthentication(
+      test.env,
+      test.request,
+      { challengeId: start.challengeId, response },
+      1_500_101,
+    );
+
+    expect(result).toMatchObject({
+      verified: true,
+      session: { accountId: 'account-1', authProvider: 'passkey' },
+    });
+  });
+
+  it('rejects a mismatched userHandle when the authenticator provides one', async () => {
+    const test = setup();
+    const credential = await enrollPasskey(test, 1_600_000);
+    const start = await beginPasskeyAuthentication(test.env, test.request, 1_600_100);
+    const response = await authenticationResponse({
+      credential,
+      challenge: start.options.challenge,
+      userHandle: 'another-account',
+    });
+
+    await expect(finishPasskeyAuthentication(
+      test.env,
+      test.request,
+      { challengeId: start.challengeId, response },
+      1_600_101,
+    )).resolves.toEqual({ verified: false, stage: 'user_handle_mismatch' });
   });
 
   it('rejects an invalid origin and consumes the registration challenge once', async () => {
@@ -385,7 +428,7 @@ describe('hosted passkeys', () => {
       test.request,
       { challengeId: badSignatureStart.challengeId, response: badSignature },
       3_000_101,
-    )).resolves.toBeNull();
+    )).resolves.toEqual({ verified: false, stage: 'assertion_invalid' });
 
     const noVerificationStart = await beginPasskeyAuthentication(test.env, test.request, 3_000_200);
     const noVerification = await authenticationResponse({
@@ -399,7 +442,7 @@ describe('hosted passkeys', () => {
       test.request,
       { challengeId: noVerificationStart.challengeId, response: noVerification },
       3_000_201,
-    )).resolves.toBeNull();
+    )).resolves.toEqual({ verified: false, stage: 'assertion_invalid' });
   });
 
   it('rejects expired authentication challenges and unknown credentials', async () => {
@@ -420,7 +463,7 @@ describe('hosted passkeys', () => {
       test.request,
       { challengeId: expiredStart.challengeId, response: expiredResponse },
       expiredStart.expiresAt,
-    )).resolves.toBeNull();
+    )).resolves.toEqual({ verified: false, stage: 'challenge_invalid' });
 
     const unknownCredential = await testCredential();
     const unknownStart = await beginPasskeyAuthentication(test.env, test.request, 3_500_200);
@@ -434,7 +477,7 @@ describe('hosted passkeys', () => {
       test.request,
       { challengeId: unknownStart.challengeId, response: unknownResponse },
       3_500_201,
-    )).resolves.toBeNull();
+    )).resolves.toEqual({ verified: false, stage: 'credential_unknown' });
     expect(test.state.db.query('select count(*) as count from swarm_sessions').get()).toEqual({ count: 0 });
   });
 
@@ -457,7 +500,7 @@ describe('hosted passkeys', () => {
       test.request,
       { challengeId: start.challengeId, response },
       3_600_101,
-    )).resolves.toBeNull();
+    )).resolves.toEqual({ verified: false, stage: 'assertion_invalid' });
     expect(test.state.db.query('select count(*) as count from swarm_sessions').get()).toEqual({ count: 0 });
   });
 

@@ -59,6 +59,18 @@ export type PasskeyAuthenticationStart = {
   expiresAt: number;
 };
 
+export type PasskeyAuthenticationFailureStage =
+  | 'challenge_invalid'
+  | 'credential_unknown'
+  | 'user_handle_mismatch'
+  | 'assertion_invalid'
+  | 'counter_conflict'
+  | 'wallet_identity_missing';
+
+export type PasskeyAuthenticationResult =
+  | { verified: true; session: VerifiedWalletSession }
+  | { verified: false; stage: PasskeyAuthenticationFailureStage };
+
 function passkeyRelyingParty(env: CloudflareHostedBindings, request: Request): {
   origin: string;
   rpID: string;
@@ -293,13 +305,13 @@ export async function finishPasskeyAuthentication(
   request: Request,
   input: { challengeId: string; response: AuthenticationResponseJSON },
   now = Date.now(),
-): Promise<VerifiedWalletSession | null> {
+): Promise<PasskeyAuthenticationResult> {
   const challenge = await consumeChallenge(env, {
     challengeId: input.challengeId,
     purpose: 'authentication',
     now,
   });
-  if (!challenge || input.response.response.userHandle === undefined) return null;
+  if (!challenge) return { verified: false, stage: 'challenge_invalid' };
   const passkey = await env.SWARM_STATE.prepare(
     `select credential_id, account_id, webauthn_user_id, public_key, counter,
             device_type, backed_up, transports
@@ -307,7 +319,11 @@ export async function finishPasskeyAuthentication(
   )
     .bind(input.response.id)
     .first<PasskeyRow>();
-  if (!passkey || input.response.response.userHandle !== passkey.webauthn_user_id) return null;
+  if (!passkey) return { verified: false, stage: 'credential_unknown' };
+  const userHandle = input.response.response.userHandle;
+  if (userHandle !== undefined && userHandle !== passkey.webauthn_user_id) {
+    return { verified: false, stage: 'user_handle_mismatch' };
+  }
   const { origin, rpID } = passkeyRelyingParty(env, request);
   try {
     const verification = await verifyAuthenticationResponse({
@@ -323,7 +339,9 @@ export async function finishPasskeyAuthentication(
       },
       requireUserVerification: true,
     });
-    if (!verification.verified || !verification.authenticationInfo.userVerified) return null;
+    if (!verification.verified || !verification.authenticationInfo.userVerified) {
+      return { verified: false, stage: 'assertion_invalid' };
+    }
     const updated = await env.SWARM_STATE.prepare(
       `update swarm_passkeys set counter = ?, last_used_at = ?
        where credential_id = ? and counter = ?
@@ -331,7 +349,7 @@ export async function finishPasskeyAuthentication(
     )
       .bind(verification.authenticationInfo.newCounter, now, passkey.credential_id, passkey.counter)
       .first<{ credential_id: string }>();
-    if (!updated) return null;
+    if (!updated) return { verified: false, stage: 'counter_conflict' };
     const wallet = await env.SWARM_STATE.prepare(
       `select provider_id from swarm_identities
        where account_id = ? and provider = 'solana'
@@ -339,13 +357,14 @@ export async function finishPasskeyAuthentication(
     )
       .bind(passkey.account_id)
       .first<WalletIdentityRow>();
-    if (!wallet) return null;
-    return createHostedSession(env, {
+    if (!wallet) return { verified: false, stage: 'wallet_identity_missing' };
+    const session = await createHostedSession(env, {
       accountId: passkey.account_id,
       walletAddress: wallet.provider_id,
       authProvider: 'passkey',
     }, now);
+    return { verified: true, session };
   } catch {
-    return null;
+    return { verified: false, stage: 'assertion_invalid' };
   }
 }

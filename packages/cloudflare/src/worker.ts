@@ -682,13 +682,21 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
   if (url.pathname === '/api/auth/passkey/authenticate/verify' && request.method === 'POST') {
     assertSameOrigin(env, request);
     const body = await readJsonObject(request);
-    const session = await finishPasskeyAuthentication(env, request, {
+    const result = await finishPasskeyAuthentication(env, request, {
       challengeId: stringField(body, 'challengeId'),
       response: objectField(body, 'response') as unknown as AuthenticationResponseJSON,
     });
-    if (!session) return json({ error: 'Passkey sign-in is invalid or expired.' }, { status: 401 });
-    return json(authenticatedWalletPayload(session), {
-      headers: { 'Set-Cookie': hostedSessionCookie(session.sessionToken) },
+    if (!result.verified) {
+      console.warn(JSON.stringify({
+        level: 'WARN',
+        subsystem: 'hosted-auth',
+        event: 'passkey_authentication_rejected',
+        stage: result.stage,
+      }));
+      return json({ error: 'Passkey sign-in is invalid or expired.' }, { status: 401 });
+    }
+    return json(authenticatedWalletPayload(result.session), {
+      headers: { 'Set-Cookie': hostedSessionCookie(result.session.sessionToken) },
     });
   }
 
