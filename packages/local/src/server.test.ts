@@ -13,10 +13,10 @@ function hitRoute(
   body?: unknown,
   headers: Record<string, string> = {},
 ) {
-  return new Promise<{ status: number; body: unknown }>((resolve) => {
+  return new Promise<{ status: number; body: unknown; headers: Record<string, string> }>((resolve) => {
     const parsed = new URL(path, "http://localhost");
     const query = Object.fromEntries(parsed.searchParams.entries());
-    const done = (s: number, d: unknown) => resolve({ status: s, body: d });
+    const done = (s: number, d: unknown) => resolve({ status: s, body: d, headers: res._headers });
     const res: any = {
       _status: 200, statusCode: 200, _headers: {}, locals: {}, headersSent: false,
       status(c: number) { this._status = c; this.statusCode = c; return this; },
@@ -75,6 +75,31 @@ describe("chat response shaping", () => {
   it("rejects empty chat body", () => {
     expect(validateChatBody({})).toMatch(/message or history/);
     expect(validateChatBody({ message: "hi" })).toBeNull();
+  });
+});
+
+describe("local avatar HTTP serialization", () => {
+  it("removes a legacy encryptedSeed without mutating the stored avatar", async () => {
+    const { avatarForLocalHttp } = await import("./server.js");
+    const legacyAvatar = {
+      avatarId: "legacy-avatar",
+      identity: {
+        pubkey: "public-test-key",
+        encryptedSeed: "synthetic-test-seed",
+        derivation: { type: "random" as const },
+      },
+    };
+
+    const responseAvatar = avatarForLocalHttp(legacyAvatar);
+
+    expect(responseAvatar).toEqual({
+      avatarId: "legacy-avatar",
+      identity: {
+        pubkey: "public-test-key",
+        derivation: { type: "random" },
+      },
+    });
+    expect(legacyAvatar.identity.encryptedSeed).toBe("synthetic-test-seed");
   });
 });
 
@@ -217,27 +242,75 @@ describe("mountAdminRoutes integration", () => {
     expect(bad).toEqual([]);
   });
 
-  it("does not expose avatar private seed material over HTTP", async () => {
+  it("always denies legacy seed export attempts without reading secret material", async () => {
+    let secretReads = 0;
+    const services = {
+      ...stubSvc,
+      secrets: {
+        ...stubSvc.secrets,
+        getSecret: async () => {
+          secretReads += 1;
+          return "synthetic-test-seed";
+        },
+      },
+    };
     const { mountAdminRoutes } = await import("./server.js");
     const app = express();
-    await mountAdminRoutes(app, stubSvc as any);
+    await mountAdminRoutes(app, services as any);
 
-    const response = await hitRoute(app, "GET", "/api/signal/keypair");
+    const attempts = [
+      await hitRoute(app, "GET", "/api/signal/keypair", undefined, {
+        origin: "http://localhost:3001",
+      }),
+      await hitRoute(app, "GET", "/api/signal/keypair", undefined, {
+        "x-swarm-local-token": "test-token",
+      }),
+      await hitRoute(app, "GET", "/api/signal/keypair", undefined, {
+        origin: "https://evil.example",
+        "x-swarm-local-token": "test-token",
+      }),
+      await hitRoute(app, "GET", "/api/signal/keypair", undefined, {
+        origin: "http://localhost:3001",
+        "x-swarm-local-token": "test-token",
+        "x-swarm-interactive-confirmation": "false",
+      }),
+    ];
+    const replayHeaders = {
+      origin: "http://localhost:3001",
+      "x-swarm-local-token": "test-token",
+      "x-swarm-interactive-confirmation": "true",
+      "x-swarm-seed-capability": "replayed-test-capability",
+    };
+    attempts.push(await hitRoute(app, "GET", "/api/signal/keypair", undefined, replayHeaders));
+    attempts.push(await hitRoute(app, "GET", "/api/signal/keypair", undefined, replayHeaders));
 
-    expect(response.status).toBe(404);
+    expect(attempts.map((response) => response.status)).toEqual([404, 404, 404, 404, 404, 404]);
+    for (const response of attempts) {
+      expect(response.headers["Cache-Control"]).toBe("no-store");
+      expect(JSON.stringify(response.body)).not.toContain("seedBase64");
+      expect(JSON.stringify(response.body)).not.toContain("encryptedSeed");
+      expect(JSON.stringify(response.body)).not.toContain("synthetic-test-seed");
+    }
+    expect(secretReads).toBe(0);
   });
 
   it("passes pendingToolCall through /api/chat", async () => {
     const { mountAdminRoutes } = await import("./server.js");
     const app = express();
     await mountAdminRoutes(app, stubSvc as any, async () => ({
-      response: "ok", history: [], avatar: { id: AID },
+      response: "ok",
+      history: [],
+      avatar: {
+        id: AID,
+        identity: { pubkey: "public-test-key", encryptedSeed: "synthetic-test-seed" },
+      },
       pendingToolCall: { id: "tc-99", name: "configure_integration", arguments: { integration: "discord" } },
       taskActions: [{ id: "ta-1" }], media: [], pendingJobs: [], avatarUpdates: {},
     }) as any);
     const { status, body } = await hitRoute(app, "POST", "/api/chat", { message: "t" });
     expect(status).toBe(200);
     expect((body as any).pendingToolCall.id).toBe("tc-99");
+    expect((body as any).avatar.identity).toEqual({ pubkey: "public-test-key" });
   });
 
   it("returns 400 on empty chat body", async () => {

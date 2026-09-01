@@ -55,23 +55,38 @@ export { createLocalServices } from './factories.js';
 
 type LocalServices = ReturnType<typeof createLocalServices>;
 
-// Module-level state for cross-route communication
-interface SignalIdentity {
-  pubkey?: string;
-  encryptedSeed?: string;
-}
-
 const _signalState: {
   latestAvatarId: string | null;
   latestPubkey: string | null;
-  latestIdentity: SignalIdentity | null;
   treasuryConfig: { minerShare: number; treasuryShare: number; lpPoolAddress?: string };
 } = {
   latestAvatarId: null,
   latestPubkey: null,
-  latestIdentity: null,
   treasuryConfig: { minerShare: 0.10, treasuryShare: 0.90 },
 };
+
+type AvatarWithLegacyIdentity = {
+  identity?: Record<string, unknown>;
+};
+
+/**
+ * Keep legacy seed material available to the internal signing service, but
+ * never serialize it through the local HTTP API.
+ */
+export function avatarForLocalHttp<T>(avatar: T): T {
+  if (!avatar || typeof avatar !== 'object' || Array.isArray(avatar)) {
+    return avatar;
+  }
+
+  const candidate = avatar as T & AvatarWithLegacyIdentity;
+  if (!candidate.identity || !Object.prototype.hasOwnProperty.call(candidate.identity, 'encryptedSeed')) {
+    return avatar;
+  }
+
+  const safeIdentity = { ...candidate.identity };
+  delete safeIdentity.encryptedSeed;
+  return { ...candidate, identity: safeIdentity };
+}
 export { SqliteRepository } from './sqlite-repository.js';
 export { LocalBlobStore } from './blob-store.js';
 export { InMemoryQueue } from './queue.js';
@@ -2046,6 +2061,14 @@ export async function mountAdminRoutes(
   chatService?: LocalLlamaChatService,
   embeddedLlmEndpoint = '',
 ) {
+  // This endpoint previously exported the avatar's long-lived private seed.
+  // Keep an explicit tombstone so no authentication, origin, or capability
+  // header can make the legacy route reachable again by accident.
+  app.all('/api/signal/keypair', (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.status(404).json({ error: 'Not found' });
+  });
+
   const { processChat } = await import(
     '../../admin-api/src/handlers/chat.js'
   );
@@ -2199,7 +2222,7 @@ export async function mountAdminRoutes(
       res.json({
         response: result.response,
         history: result.history,
-        avatar: result.avatar,
+        avatar: avatarForLocalHttp(result.avatar),
         pendingToolCall,
         taskActions: result.taskActions,
         media: result.media,
@@ -2893,7 +2916,7 @@ export async function mountAdminRoutes(
         '../../admin-api/src/services/avatars.js'
       );
       const avatars = await listAvatars();
-      res.json(avatars);
+      res.json(avatars.map((avatar) => avatarForLocalHttp(avatar)));
     } catch (err) {
       console.error('[local] Avatars error:', err);
       res.status(500).json({ error: (err as Error).message });
@@ -2913,8 +2936,7 @@ export async function mountAdminRoutes(
       const avatar = await createAvatar(name, session, description);
       _signalState.latestAvatarId = avatar.avatarId;
       _signalState.latestPubkey = avatar.identity?.pubkey || null;
-      _signalState.latestIdentity = avatar.identity || null;
-      res.json(avatar);
+      res.json(avatarForLocalHttp(avatar));
     } catch (err) {
       console.error("[local] Create avatar error:", err);
       res.status(500).json({ error: (err as Error).message });
@@ -2981,7 +3003,7 @@ export async function mountAdminRoutes(
       const session = localAdminSession();
       console.log(`[local] Updating avatar ${req.params.id}:`, JSON.stringify(req.body).slice(0, 200));
       const result = await updateAvatar(req.params.id, req.body, session);
-      res.json(result);
+      res.json(avatarForLocalHttp(result));
     } catch (err) {
       console.error(`[local] Avatar update error for ${req.params.id}:`, err);
       res.status(500).json({ error: (err as Error).message });
@@ -2993,7 +3015,7 @@ export async function mountAdminRoutes(
       const { updateAvatar } = await import("../../admin-api/src/services/avatars.js");
       const session = localAdminSession();
       const result = await updateAvatar(req.params.id, req.body, session);
-      res.json(result);
+      res.json(avatarForLocalHttp(result));
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }
@@ -3042,7 +3064,7 @@ export async function mountAdminRoutes(
       const { updateAvatar } = await import("../../admin-api/src/services/avatars.js");
       const session = localAdminSession();
       const result = await updateAvatar(req.params.id, req.body, session);
-      res.json(result);
+      res.json(avatarForLocalHttp(result));
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }
@@ -3072,7 +3094,7 @@ export async function mountAdminRoutes(
     try {
       const { getAvatar } = await import("../../admin-api/src/services/avatars.js");
       const avatar = await getAvatar(req.params.id);
-      res.json(avatar);
+      res.json(avatar ? avatarForLocalHttp(avatar) : null);
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }
