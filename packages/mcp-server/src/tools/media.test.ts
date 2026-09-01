@@ -326,6 +326,12 @@ describe('Media Tools - Context and Conversation', () => {
 
     expect(capturedParams.conversationId).toBe('chat123');
     expect(capturedParams.replyToMessageId).toBe('msg456');
+    expect(capturedParams.deliveryIntent).toEqual({
+      platform: 'telegram',
+      conversationId: 'chat123',
+      replyToMessageId: 'msg456',
+      expectedAction: 'send_media',
+    });
   });
 
   it('passes conversation context to video generation', async () => {
@@ -353,5 +359,111 @@ describe('Media Tools - Context and Conversation', () => {
 
     expect(capturedParams.conversationId).toBe('chat789');
     expect(capturedParams.replyToMessageId).toBe('msg012');
+    expect(capturedParams.deliveryIntent).toEqual({
+      platform: 'telegram',
+      conversationId: 'chat789',
+      replyToMessageId: 'msg012',
+      expectedAction: 'send_media',
+    });
+  });
+
+  it('captures an explicit supported cross-platform destination', async () => {
+    let capturedParams: any;
+    const services: MediaServices = {
+      ...mockMediaServices,
+      generateImage: async (params) => {
+        capturedParams = params;
+        return { jobId: 'job-cross-platform', status: 'pending' };
+      },
+    };
+
+    const tool = createMediaTools(services, mockCreditServices)
+      .find(t => t.name === 'generate_image');
+
+    await (tool!.execute as any)(
+      {
+        prompt: 'post this in Discord',
+        destination: {
+          platform: 'discord',
+          conversationId: 'discord-channel-42',
+          replyToMessageId: 'discord-message-7',
+        },
+      },
+      {
+        avatarId: 'test',
+        platform: 'admin-ui',
+        conversationId: 'admin-session-1',
+      },
+    );
+
+    expect(capturedParams.platform).toBe('admin-ui');
+    expect(capturedParams.conversationId).toBe('admin-session-1');
+    expect(capturedParams.deliveryIntent).toEqual({
+      platform: 'discord',
+      conversationId: 'discord-channel-42',
+      replyToMessageId: 'discord-message-7',
+      expectedAction: 'discord_send_media_to_channel',
+    });
+  });
+
+  it('does not duplicate a synchronous cross-platform result into the origin', async () => {
+    const tool = createMediaTools(mockMediaServices, mockCreditServices)
+      .find(t => t.name === 'generate_image');
+
+    const result = await (tool!.execute as any)(
+      {
+        prompt: 'sync',
+        destination: {
+          platform: 'discord',
+          conversationId: 'discord-channel-42',
+        },
+      },
+      {
+        avatarId: 'test',
+        platform: 'admin-ui',
+        conversationId: 'admin-session-1',
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data.url).toBe('https://example.com/image.jpg');
+    expect(result.media).toBeUndefined();
+  });
+
+  it('does not copy an origin reply ID into a different destination', async () => {
+    let capturedParams: any;
+    const services: MediaServices = {
+      ...mockMediaServices,
+      generateVideo: async (params) => {
+        capturedParams = params;
+        return { jobId: 'video-cross-platform', status: 'pending' };
+      },
+    };
+
+    const tool = createMediaTools(services, mockCreditServices)
+      .find(t => t.name === 'generate_video');
+
+    await (tool!.execute as any)(
+      {
+        prompt: 'send this elsewhere',
+        destination: {
+          platform: 'discord',
+          conversationId: 'discord-channel-42',
+        },
+      },
+      {
+        avatarId: 'test',
+        platform: 'telegram',
+        conversationId: '-1001',
+        replyToMessageId: 'telegram-message-9',
+      },
+    );
+
+    expect(capturedParams.deliveryIntent).toEqual({
+      platform: 'discord',
+      conversationId: 'discord-channel-42',
+      replyToMessageId: undefined,
+      expectedAction: 'discord_send_media_to_channel',
+    });
   });
 });

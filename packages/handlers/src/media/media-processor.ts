@@ -6,7 +6,7 @@ import type { MessageBatch, ExecutionContext } from "@swarm/core";
 import { PutCommand } from '@swarm/core';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { logger, DEFAULT_LLM_MODEL } from '@swarm/core';
+import { logger, DEFAULT_LLM_MODEL, createMediaDeliveryIntent } from '@swarm/core';
 import {
   createMediaServiceWithDeps,
   createMediaDependencies,
@@ -36,6 +36,16 @@ const MediaQueueItemSchema = z.object({
   traceId: z.string().optional(),
   usageAccounted: z.boolean().optional(),
   conversationId: z.string(),
+  deliveryIntent: z.object({
+    platform: z.enum(['telegram', 'discord']),
+    conversationId: z.string().min(1),
+    replyToMessageId: z.string().optional(),
+    expectedAction: z.enum([
+      'send_media',
+      'telegram_send_media_to_chat',
+      'discord_send_media_to_channel',
+    ]),
+  }).optional(),
   action: ResponseActionSchema,
   response: SwarmResponseSchema,
 });
@@ -496,11 +506,23 @@ export const handler = async (event: MessageBatch, context: ExecutionContext): P
         continue;
       }
 
+      const deliveryIntent = item.deliveryIntent
+        ? createMediaDeliveryIntent(item.deliveryIntent)
+        : undefined;
       const mediaResponse: SwarmResponse = {
         ...item.response,
+        platform: deliveryIntent?.platform ?? item.response.platform,
+        conversationId: deliveryIntent?.conversationId ?? item.response.conversationId,
+        replyToMessageId: deliveryIntent
+          ? deliveryIntent.replyToMessageId
+          : item.response.replyToMessageId,
         actions: [mediaAction],
         generatedAt: Date.now(),
       };
+
+      if (mediaAction.type === 'send_media' && deliveryIntent) {
+        mediaAction.replyToMessageId = deliveryIntent.replyToMessageId;
+      }
 
       await sendSqsMessage({
         QueueUrl: getResponseQueueUrl(),
@@ -510,7 +532,7 @@ export const handler = async (event: MessageBatch, context: ExecutionContext): P
             StringValue: traceId,
           },
         },
-        MessageGroupId: item.conversationId,
+        MessageGroupId: deliveryIntent?.conversationId ?? item.conversationId,
         MessageDeduplicationId: `media_${item.jobId}`,
       }, mediaResponse);
 

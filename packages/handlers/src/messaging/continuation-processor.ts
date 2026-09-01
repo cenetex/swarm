@@ -10,7 +10,7 @@
  * - Summarizing research results
  * - Responding to code task completions
  */
-import type { MessageBatch, ExecutionContext, MessageBatchResponse } from "@swarm/core";
+import type { MessageBatch, ExecutionContext, MessageBatchResponse, SwarmEnvelope } from "@swarm/core";
 import { sendSqsMessage } from '../services/sqs-send.js';
 import { randomUUID } from 'node:crypto';
 import { GetCommand, UpdateCommand } from '@swarm/core';
@@ -25,6 +25,7 @@ import {
   formatContinuationAsSystemMessage,
   shouldTriggerAvatarLoop,
   isProgressUpdate,
+  buildMediaDeliveryResponse,
 } from '@swarm/core';
 import { getAdminTable } from '../services/env-validation.js';
 import { getDynamoClient } from '../services/dynamo-client.js';
@@ -35,6 +36,7 @@ const secretsClient = getSecretsClient();
 
 // Environment variables — ADMIN_TABLE is validated lazily via getAdminTable()
 const MESSAGE_QUEUE_URL = process.env.MESSAGE_QUEUE_URL;
+const RESPONSE_QUEUE_URL = process.env.RESPONSE_QUEUE_URL;
 
 // For direct responses (progress updates)
 const TELEGRAM_TIMEOUT_MS = 10000;
@@ -316,33 +318,7 @@ async function triggerAvatarLoop(
     return;
   }
 
-  // Create a synthetic "system" envelope that will trigger the avatar
-  const envelope = {
-    avatarId: msg.avatarId,
-    platform: msg.platform,
-    traceId,
-    messageId: `continuation_${msg.jobId || Date.now()}`,
-    conversationId: msg.conversationId,
-    timestamp: msg.timestamp,
-    sender: {
-      id: 'system',
-      username: 'system',
-      displayName: 'System',
-      isBot: true,
-    },
-    content: {
-      text: systemMessage,
-    },
-    metadata: {
-      isContinuation: true,
-      continuationType: msg.type,
-      originalJobId: msg.jobId,
-      shouldRespond: true,
-      responseReason: 'continuation',
-      priority: 'high',
-    },
-    replyTo: msg.replyToMessageId,
-  };
+  const envelope = buildContinuationEnvelope(msg, systemMessage, traceId);
 
   await sendSqsMessage({
     QueueUrl: MESSAGE_QUEUE_URL,
@@ -352,7 +328,7 @@ async function triggerAvatarLoop(
         StringValue: traceId,
       },
     },
-    MessageGroupId: msg.conversationId,
+    MessageGroupId: envelope.conversationId,
     MessageDeduplicationId: `cont_${msg.jobId || msg.timestamp}`,
   }, {
     envelope,
@@ -363,9 +339,98 @@ async function triggerAvatarLoop(
 
   logger.info('Triggered avatar loop for continuation', {
     avatarId: msg.avatarId,
-    conversationId: msg.conversationId,
+    conversationId: envelope.conversationId,
     type: msg.type,
   });
+}
+
+function toEnvelopePlatform(platform: ContinuationMessage['platform']): SwarmEnvelope['platform'] {
+  if (platform === 'admin-ui' || platform === 'api') return 'web';
+  return platform;
+}
+
+/**
+ * Create a schema-valid synthetic inbound message for continuations that still
+ * need the avatar loop (failures, research, and legacy media callbacks).
+ */
+export function buildContinuationEnvelope(
+  msg: ContinuationMessage,
+  systemMessage: string,
+  traceId: string,
+): SwarmEnvelope {
+  const deliveryIntent = (
+    msg.type === 'media_generated' || msg.type === 'media_failed' || msg.type === 'media_progress'
+  ) ? msg.data.deliveryIntent : undefined;
+  const platform = toEnvelopePlatform(deliveryIntent?.platform ?? msg.platform);
+  const conversationId = deliveryIntent?.conversationId ?? msg.conversationId;
+  const replyToMessageId = deliveryIntent
+    ? deliveryIntent.replyToMessageId
+    : msg.replyToMessageId;
+  const messageId = `continuation_${msg.jobId || msg.timestamp}`;
+
+  return {
+    avatarId: msg.avatarId,
+    platform,
+    traceId,
+    messageId,
+    conversationId,
+    timestamp: msg.timestamp,
+    sender: {
+      id: 'system',
+      username: 'system',
+      displayName: 'System',
+      isBot: true,
+      platform,
+      platformUserId: 'system',
+    },
+    content: {
+      text: systemMessage,
+    },
+    mentions: [],
+    raw: msg,
+    metadata: {
+      receivedAt: Date.now(),
+      isContinuation: true,
+      continuationType: msg.type,
+      originalJobId: msg.jobId,
+      shouldRespond: true,
+      responseReason: 'continuation',
+      priority: 'high',
+      idempotencyKey: messageId,
+      // A continuation is a direct follow-up to completed work. Marking it as
+      // direct engagement prevents group-chat policy from suppressing it.
+      isReplyToBot: true,
+    },
+    replyTo: replyToMessageId,
+  };
+}
+
+async function deliverCompletedMedia(msg: ContinuationMessage, traceId: string): Promise<boolean> {
+  if (msg.type !== 'media_generated' || !RESPONSE_QUEUE_URL) return false;
+
+  const response = buildMediaDeliveryResponse(msg);
+  if (!response) return false;
+
+  await sendSqsMessage({
+    QueueUrl: RESPONSE_QUEUE_URL,
+    MessageAttributes: {
+      traceId: {
+        DataType: 'String',
+        StringValue: traceId,
+      },
+    },
+    MessageGroupId: `${msg.avatarId}#${response.conversationId}`,
+    MessageDeduplicationId: `cont_media_${msg.jobId || msg.timestamp}`,
+  }, response);
+
+  logger.info('Delivered media continuation without avatar tool selection', {
+    avatarId: msg.avatarId,
+    platform: response.platform,
+    conversationId: response.conversationId,
+    expectedAction: msg.data.deliveryIntent?.expectedAction,
+  });
+
+  return true;
 }
 
 /**
@@ -403,6 +468,10 @@ async function processMessage(msg: ContinuationMessage, traceId: string): Promis
 
   // Handle actionable events - trigger the avatar loop
   if (shouldTriggerAvatarLoop(msg)) {
+    // Successful media with explicit intent is already a complete outbound
+    // action. Deliver it directly instead of asking the LLM to choose a tool.
+    if (await deliverCompletedMedia(msg, traceId)) return;
+
     // Build resume context for the system message
     const stateService = createStateService(getAdminTable());
     const resumeContext = await buildResumeContext(msg, stateService);

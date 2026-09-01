@@ -55,6 +55,63 @@ export type ContinuationType =
 /**
  * Media generation completed
  */
+export type MediaDeliveryPlatform = 'telegram' | 'discord';
+
+export type MediaDeliveryAction =
+  | 'send_media'
+  | 'telegram_send_media_to_chat'
+  | 'discord_send_media_to_channel';
+
+/**
+ * Exact destination captured when an async media job starts.
+ *
+ * This is intentionally narrower than ContinuationMessageBase.platform:
+ * admin chat polls job state, while Twitter requires a separate upload/post
+ * flow. Only Telegram and Discord support direct URL delivery here.
+ */
+export interface MediaDeliveryIntent {
+  platform: MediaDeliveryPlatform;
+  conversationId: string;
+  replyToMessageId?: string;
+  expectedAction: MediaDeliveryAction;
+}
+
+export interface CreateMediaDeliveryIntentInput {
+  platform: string;
+  conversationId?: string;
+  replyToMessageId?: string;
+  expectedAction?: MediaDeliveryAction;
+}
+
+const MEDIA_DELIVERY_ACTIONS: Record<MediaDeliveryPlatform, ReadonlySet<MediaDeliveryAction>> = {
+  telegram: new Set(['send_media', 'telegram_send_media_to_chat']),
+  discord: new Set(['send_media', 'discord_send_media_to_channel']),
+};
+
+/**
+ * Build a valid push-delivery intent, or return undefined for polling-only or
+ * unsupported platforms. Callers use this at job creation time so a later
+ * callback never has to infer the destination from natural language.
+ */
+export function createMediaDeliveryIntent(
+  input: CreateMediaDeliveryIntentInput,
+): MediaDeliveryIntent | undefined {
+  if (input.platform !== 'telegram' && input.platform !== 'discord') return undefined;
+
+  const conversationId = input.conversationId?.trim();
+  if (!conversationId || conversationId === 'unknown') return undefined;
+
+  const expectedAction = input.expectedAction ?? 'send_media';
+  if (!MEDIA_DELIVERY_ACTIONS[input.platform].has(expectedAction)) return undefined;
+
+  return {
+    platform: input.platform,
+    conversationId,
+    replyToMessageId: input.replyToMessageId,
+    expectedAction,
+  };
+}
+
 export interface MediaGeneratedContinuation extends ContinuationMessageBase {
   type: 'media_generated';
   data: {
@@ -63,6 +120,8 @@ export interface MediaGeneratedContinuation extends ContinuationMessageBase {
     prompt: string;
     /** Purpose hint for the avatar */
     purpose?: 'profile' | 'post_to_twitter' | 'send_to_chat' | 'gallery';
+    /** Exact push destination and action captured when the job started. */
+    deliveryIntent?: MediaDeliveryIntent;
   };
 }
 
@@ -75,6 +134,8 @@ export interface MediaFailedContinuation extends ContinuationMessageBase {
     mediaType: 'image' | 'video' | 'sticker';
     error: string;
     prompt: string;
+    /** Exact push destination captured when the job started. */
+    deliveryIntent?: MediaDeliveryIntent;
   };
 }
 
@@ -88,6 +149,8 @@ export interface MediaProgressContinuation extends ContinuationMessageBase {
     status: string;
     progress?: number;
     estimatedTimeMs?: number;
+    /** Exact push destination captured when the job started. */
+    deliveryIntent?: MediaDeliveryIntent;
   };
 }
 
@@ -235,6 +298,63 @@ export interface ResumeContext {
   failureClass?: string;
 }
 
+export interface MediaDeliveryResponse {
+  avatarId: string;
+  platform: MediaDeliveryPlatform;
+  conversationId: string;
+  replyToMessageId?: string;
+  actions: Array<{
+    type: 'send_media';
+    mediaType: 'image' | 'video';
+    url: string;
+    caption?: string;
+    replyToMessageId?: string;
+  }>;
+  generatedAt: number;
+  llmModel: 'continuation-direct-delivery';
+  tokensUsed: 0;
+}
+
+/** Telegram captions are limited to 1024 characters; using the same safe
+ * ceiling for Discord keeps callback behavior portable across both targets. */
+const MEDIA_DELIVERY_CAPTION_LIMIT = 1024;
+
+/**
+ * Convert an explicit successful media continuation into the normal outbound
+ * response contract. Platform-specific intent names are normalized to the
+ * response pipeline's send_media action, so no LLM tool-selection pass is
+ * needed after the job completes.
+ */
+export function buildMediaDeliveryResponse(
+  msg: MediaGeneratedContinuation,
+): MediaDeliveryResponse | undefined {
+  const intent = msg.data.deliveryIntent;
+  if (!intent) return undefined;
+
+  const validatedIntent = createMediaDeliveryIntent(intent);
+  if (!validatedIntent) return undefined;
+
+  const caption = msg.data.prompt.trim().slice(0, MEDIA_DELIVERY_CAPTION_LIMIT) || undefined;
+  const mediaType = msg.data.mediaType === 'video' ? 'video' : 'image';
+
+  return {
+    avatarId: msg.avatarId,
+    platform: validatedIntent.platform,
+    conversationId: validatedIntent.conversationId,
+    replyToMessageId: validatedIntent.replyToMessageId,
+    actions: [{
+      type: 'send_media',
+      mediaType,
+      url: msg.data.mediaUrl,
+      caption,
+      replyToMessageId: validatedIntent.replyToMessageId,
+    }],
+    generatedAt: msg.timestamp,
+    llmModel: 'continuation-direct-delivery',
+    tokensUsed: 0,
+  };
+}
+
 /**
  * Format a continuation message as a system prompt injection
  * This creates a message the avatar will see and can act upon
@@ -267,24 +387,34 @@ export function formatContinuationAsSystemMessage(msg: ContinuationMessage, resu
   }
 
   switch (msg.type) {
-    case 'media_generated':
+    case 'media_generated': {
+      const deliveryIntent = msg.data.deliveryIntent;
+      const deliveryInstruction = deliveryIntent
+        ? `\n- Delivery target: ${deliveryIntent.platform}:${deliveryIntent.conversationId}\n- Expected action: ${deliveryIntent.expectedAction}${deliveryIntent.replyToMessageId ? `\n- Reply to: ${deliveryIntent.replyToMessageId}` : ''}\n\nDeliver this media to that exact target. Do not choose a different platform or conversation.`
+        : '';
       return resumePrefix + `[ASYNC RESULT @ ${timestamp}]
-Your image generation completed successfully!
+Your ${msg.data.mediaType} generation completed successfully!
 - Type: ${msg.data.mediaType}
 - URL: ${msg.data.mediaUrl}
 - Prompt: "${msg.data.prompt}"
+${deliveryInstruction}
 ${msg.data.purpose === 'post_to_twitter' ? '\n⚠️ This was intended for Twitter. You should now call twitter_post with this mediaUrl.' : ''}
 ${msg.data.purpose === 'profile' ? '\n⚠️ This was for your profile picture update.' : ''}
 
 You can now use this media URL in your response or next action.`;
+    }
 
     case 'media_failed': {
       const isPromptRejection =
         msg.data.error.includes('E006') || msg.data.error.includes('Prompt was rejected');
+      const deliveryTarget = msg.data.deliveryIntent
+        ? `\n- Intended destination: ${msg.data.deliveryIntent.platform}:${msg.data.deliveryIntent.conversationId}`
+        : '';
       if (isPromptRejection) {
         return resumePrefix + `[ASYNC RESULT @ ${timestamp}]
 Your ${msg.data.mediaType} generation failed because the prompt was flagged by the image model's content filter.
 - Original prompt: "${msg.data.prompt}"
+${deliveryTarget}
 
 Tell the user their prompt was rejected by the content filter and ask them to rephrase it. Do not echo the raw error code or any prediction IDs.`;
       }
@@ -292,6 +422,7 @@ Tell the user their prompt was rejected by the content filter and ask them to re
 Your ${msg.data.mediaType} generation failed.
 - Error: ${msg.data.error}
 - Original prompt: "${msg.data.prompt}"
+${deliveryTarget}
 
 You should inform the user about this failure and optionally offer to retry.`;
     }

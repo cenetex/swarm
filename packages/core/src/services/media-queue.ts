@@ -6,6 +6,7 @@ import { SendMessageCommand, SQSClient } from '../commands/index.js';
  * Similar to post-queue.ts but for image/video generation.
  */
 import type { SwarmResponse } from '../types/index.js';
+import { createMediaDeliveryIntent, type MediaDeliveryIntent } from '../types/continuation.js';
 import { randomUUID } from 'node:crypto';
 
 let sqsClient: SQSClient | null = null;
@@ -30,6 +31,7 @@ export interface MediaQueueMessage {
   traceId?: string;
   usageAccounted?: boolean;
   conversationId: string;
+  deliveryIntent?: MediaDeliveryIntent;
   action: {
     type: 'generate_image' | 'take_selfie' | 'generate_video';
     prompt: string;
@@ -56,6 +58,7 @@ export async function enqueueMediaJob(
     traceId?: string;
     usageAccounted?: boolean;
     jobType?: 'generate_image' | 'generate_video';
+    deliveryIntent?: MediaDeliveryIntent;
   }
 ): Promise<{ jobId: string }> {
   const jobId = randomUUID();
@@ -67,6 +70,11 @@ export async function enqueueMediaJob(
     traceId: params.traceId,
     usageAccounted: params.usageAccounted === true,
     conversationId: params.conversationId,
+    deliveryIntent: params.deliveryIntent ?? createMediaDeliveryIntent({
+      platform: params.platform,
+      conversationId: params.conversationId,
+      replyToMessageId: params.replyToMessageId,
+    }),
     action: {
       type: params.jobType || 'generate_image',
       prompt: params.prompt,

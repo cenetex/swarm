@@ -21,6 +21,7 @@ import type {
   MediaService,
   ContentStoreService,
   PostMedia,
+  MediaDeliveryIntent,
 } from '@swarm/core';
 import { TwitterAdapter, DiscordAdapter, createContentStoreService, enqueuePost, isPostQueueConfigured, getPostQueueUrl, enqueueMediaJob, isMediaQueueConfigured, getMediaQueueUrl } from '@swarm/core';
 import { GetCommand, QueryCommand } from '@swarm/core';
@@ -408,7 +409,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
     // Media Services
     // =========================================================================
     media: {
-      generateImage: async (params: { prompt: string; aspectRatio?: string; platform?: string; referenceImageUrls?: string[]; conversationId?: string; replyToMessageId?: string }) => {
+      generateImage: async (params: { prompt: string; aspectRatio?: string; platform?: string; referenceImageUrls?: string[]; conversationId?: string; replyToMessageId?: string; deliveryIntent?: MediaDeliveryIntent }) => {
         // Unified burst pool: entitlement-first, energy-fallback
         const usageCheck = await checkMediaWithEnergyFallback(avatarId);
         if (!usageCheck.allowed) {
@@ -432,6 +433,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
             aspectRatio,
             referenceImageUrls: params.referenceImageUrls,
             usageAccounted: true,
+            deliveryIntent: params.deliveryIntent,
           });
           return { jobId, status: 'processing' };
         }
@@ -461,6 +463,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
         platform?: string;
         conversationId?: string;
         replyToMessageId?: string;
+        deliveryIntent?: MediaDeliveryIntent;
       }) => {
         // Unified burst pool: entitlement-first, energy-fallback (video has higher energy cost)
         const usageCheck = await checkVideoWithEnergyFallback(avatarId);
@@ -484,6 +487,7 @@ export function createPlatformMCPServices(config: PlatformServicesConfig): AllSe
           prompt: params.prompt,
           usageAccounted: true,
           jobType: 'generate_video',
+          deliveryIntent: params.deliveryIntent,
         });
         return { jobId, status: 'processing' };
       },

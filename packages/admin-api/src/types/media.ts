@@ -1,6 +1,7 @@
 /**
  * Media types — voice, audio, gallery, media jobs, MCP config
  */
+import type { MediaDeliveryIntent } from '@swarm/core';
 
 export interface VoiceConfig {
   enabled: boolean;
@@ -110,6 +111,10 @@ export interface MediaJob {
   conversationId: string;
   platform: string;
   replyToMessageId?: string;
+
+  // Exact push target captured when the job starts. Undefined means the
+  // caller uses polling/gallery state rather than automatic delivery.
+  deliveryIntent?: MediaDeliveryIntent;
 
   // Purpose hint for avatar continuation
   // e.g., 'post_to_twitter' tells the avatar to chain this to a tweet

@@ -1,6 +1,7 @@
 /**
  * Response Sender Handler
- * Sends media (images/videos) back to Telegram after async generation completes
+ * Sends media back to its explicit Telegram or Discord destination after
+ * async generation completes.
  * 
  * Triggered by SQS messages from the Replicate webhook handler
  */
@@ -10,6 +11,8 @@ import { GetSecretValueCommand } from '@swarm/core';
 import { logger } from '@swarm/core';
 import { getDynamoClient } from '../services/dynamo-client.js';
 import { getSecretsClient } from '../services/aws-clients.js';
+import * as discord from '../services/discord.js';
+import type { MediaDeliveryIntent } from '@swarm/core';
 
 const dynamoClient = getDynamoClient();
 const secretsClient = getSecretsClient();
@@ -67,6 +70,7 @@ interface ContinuationMediaGenerated {
     mediaUrl: string;
     prompt: string;
     purpose?: 'profile' | 'post_to_twitter' | 'send_to_chat' | 'gallery';
+    deliveryIntent?: MediaDeliveryIntent;
   };
 }
 
@@ -82,6 +86,7 @@ interface ContinuationMediaFailed {
     mediaType: 'image' | 'video' | 'sticker';
     error: string;
     prompt: string;
+    deliveryIntent?: MediaDeliveryIntent;
   };
 }
 
@@ -380,11 +385,14 @@ function normalizeMessage(message: ResponseMessage): {
 } {
   // Handle new continuation format
   if (message.type === 'media_generated') {
+    const deliveryIntent = message.data.deliveryIntent;
     return {
       avatarId: message.avatarId,
-      platform: message.platform,
-      conversationId: message.conversationId,
-      replyToMessageId: message.replyToMessageId,
+      platform: deliveryIntent?.platform ?? message.platform,
+      conversationId: deliveryIntent?.conversationId ?? message.conversationId,
+      replyToMessageId: deliveryIntent
+        ? deliveryIntent.replyToMessageId
+        : message.replyToMessageId,
       type: `${message.data.mediaType}_complete`,
       success: true,
       mediaUrl: message.data.mediaUrl,
@@ -395,11 +403,14 @@ function normalizeMessage(message: ResponseMessage): {
   }
 
   if (message.type === 'media_failed') {
+    const deliveryIntent = message.data.deliveryIntent;
     return {
       avatarId: message.avatarId,
-      platform: message.platform,
-      conversationId: message.conversationId,
-      replyToMessageId: message.replyToMessageId,
+      platform: deliveryIntent?.platform ?? message.platform,
+      conversationId: deliveryIntent?.conversationId ?? message.conversationId,
+      replyToMessageId: deliveryIntent
+        ? deliveryIntent.replyToMessageId
+        : message.replyToMessageId,
       type: `${message.data.mediaType}_failed`,
       success: false,
       mediaType: message.data.mediaType,
@@ -441,8 +452,8 @@ async function processMessage(message: ResponseMessage): Promise<void> {
   logger.setContext({ avatarId, platform, conversationId });
   logger.info('Processing response message', { type, success, purpose });
 
-  // Only handle Telegram for now
-  if (platform !== 'telegram') {
+  // Admin chat is polling-based and Twitter needs its own upload/post flow.
+  if (platform !== 'telegram' && platform !== 'discord') {
     logger.info('Skipping non-push platform in response sender', { platform });
     return;
   }
@@ -452,7 +463,41 @@ async function processMessage(message: ResponseMessage): Promise<void> {
     throw new Error('Missing conversationId for response sender');
   }
 
-  // Get bot token
+  if (platform === 'discord') {
+    if (type.includes('failed') || !success) {
+      const result = await discord.sendMessage(
+        avatarId,
+        conversationId,
+        `❌ ${error || 'Media generation failed'}`,
+        { replyTo: replyToMessageId },
+      );
+      if (!result) throw new Error('Failed to send media error to Discord');
+      return;
+    }
+
+    if (!mediaUrl) {
+      logger.error('No media URL in success response');
+      return;
+    }
+
+    const caption = prompt
+      ? `🎨 ${prompt.slice(0, 200)}${prompt.length > 200 ? '...' : ''}`
+      : undefined;
+    const result = await discord.sendMediaToChannel(
+      avatarId,
+      conversationId,
+      mediaUrl,
+      {
+        mediaType: mediaType === 'video' ? 'video' : mediaType === 'sticker' ? 'sticker' : 'image',
+        caption,
+        replyToMessageId,
+      },
+    );
+    if (!result) throw new Error('Failed to send media to Discord');
+    return;
+  }
+
+  // Telegram delivery
   const token = await getTelegramToken(avatarId);
   if (!token) {
     logger.error('No Telegram token found for avatar', undefined, { avatarId });

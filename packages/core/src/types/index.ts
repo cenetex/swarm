@@ -3,6 +3,7 @@
  */
 import { z } from 'zod';
 import type { Platform } from './platform.js';
+import type { MediaDeliveryIntent } from './continuation.js';
 
 // =============================================================================
 // PLATFORM & CONFIG TYPES (defined in platform.ts to avoid circular deps)
@@ -166,6 +167,11 @@ export interface EnvelopeMetadata {
   isMention?: boolean;      // Message contains @botUsername
   isReplyToBot?: boolean;   // Message is a reply to bot's message
 
+  // Async continuation context
+  isContinuation?: boolean;
+  continuationType?: string;
+  originalJobId?: string;
+
   // Telegram-specific context (preserved for channel state)
   chatType?: 'private' | 'group' | 'supergroup' | 'channel';
   chatTitle?: string;
@@ -313,7 +319,8 @@ export interface ResponseQueueItem {
 export interface MediaQueueItem {
   avatarId: string;
   conversationId: string;
-  action: TakeSelfieAction | GenerateVideoAction;
+  deliveryIntent?: MediaDeliveryIntent;
+  action: TakeSelfieAction | GenerateImageAction | GenerateVideoAction;
   callbackUrl?: string;
   enqueuedAt: number;
 }
@@ -767,6 +774,9 @@ export const EnvelopeMetadataSchema = z.object({
   idempotencyKey: z.string(),
   isMention: z.boolean().optional(),
   isReplyToBot: z.boolean().optional(),
+  isContinuation: z.boolean().optional(),
+  continuationType: z.string().optional(),
+  originalJobId: z.string().optional(),
   chatType: z.enum(['private', 'group', 'supergroup', 'channel']).optional(),
   chatTitle: z.string().optional(),
   forwardMetadata: ForwardMetadataSchema.optional(),
@@ -921,6 +931,16 @@ export const ResponseQueueItemSchema = z.object({
 export const MediaQueueItemSchema = z.object({
   avatarId: z.string(),
   conversationId: z.string(),
+  deliveryIntent: z.object({
+    platform: z.enum(['telegram', 'discord']),
+    conversationId: z.string().min(1),
+    replyToMessageId: z.string().optional(),
+    expectedAction: z.enum([
+      'send_media',
+      'telegram_send_media_to_chat',
+      'discord_send_media_to_channel',
+    ]),
+  }).optional(),
   action: z.union([TakeSelfieActionSchema, GenerateVideoActionSchema, GenerateImageActionSchema]),
   callbackUrl: z.string().optional(),
   enqueuedAt: z.number(),
