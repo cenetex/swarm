@@ -1,14 +1,13 @@
 name: Deploy
 
-# Staging was decommissioned 2026-05-01 (#1642). main pushes no longer
-# trigger a deploy; only tag pushes (vX.Y.Z) deploy to production.
+# Staging is retired. Every accepted change on main deploys to production.
 
 run-name: >-
   Deploy ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'Production' }}
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
 
   workflow_dispatch:
     inputs:
@@ -95,7 +94,7 @@ jobs:
       deploy_reason: ${{ steps.env.outputs.deploy_reason }}
 
     steps:
-      - name: Checkout (for tag detection)
+      - name: Checkout
         if: github.event_name != 'workflow_dispatch'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -118,10 +117,10 @@ jobs:
           else
             REF="${{ github.ref }}"
 
-            if [[ "$REF" == refs/tags/v* ]]; then
+            if [ "$REF" = "refs/heads/main" ]; then
               ENV="production"
             else
-              echo "::error::Unsupported ref for deployment (ref='$REF'). Staging was decommissioned (#1642); only tag pushes deploy."
+              echo "::error::Unsupported ref for deployment (ref='$REF')."
               exit 1
             fi
           fi
@@ -158,13 +157,13 @@ jobs:
               echo "::notice::Auto-enabled useExistingBuckets for production (S3 buckets have RETAIN policy)"
             fi
           else
-            # Tag pushes deploy production. Production buckets have
+            # Main deploys production. Production buckets have
             # DeletionPolicy: Retain so useExistingBuckets must be true.
             USE_EXISTING_RESOURCES="true"
             USE_EXISTING_BUCKETS="true"
             SKIP_DOMAIN_ALIASES="false"
             RUN_PROD_SMOKE="true"
-            # Production tag deploys should use full CloudFormation deploys.
+            # Production deploys use full CloudFormation deploys.
             # Hotswap requires extra CloudFormation resource permissions and
             # can drift from the deployed template after emergency fixes.
             USE_HOTSWAP="false"
@@ -172,16 +171,13 @@ jobs:
             STACK=""
             RUN_BROWSER_TESTS="false"
 
-            PREV_RELEASE_TAG=$(git tag --merged HEAD^ --list 'v[0-9]*' --sort=-v:refname | head -n 1 || true)
-            if [ -z "$PREV_RELEASE_TAG" ]; then
-              PREV_RELEASE_TAG=$(git rev-parse HEAD^ 2>/dev/null || true)
-            fi
+            PREVIOUS_SHA=$(git rev-parse HEAD^ 2>/dev/null || true)
 
-            if [ -n "$PREV_RELEASE_TAG" ]; then
-              echo "Diffing release against ${PREV_RELEASE_TAG}"
-              git diff --name-only "$PREV_RELEASE_TAG"..HEAD > changed-files.txt
+            if [ -n "$PREVIOUS_SHA" ]; then
+              echo "Diffing deployment against ${PREVIOUS_SHA}"
+              git diff --name-only "$PREVIOUS_SHA"..HEAD > changed-files.txt
             else
-              echo "::notice::No previous release found; using full deploy"
+              echo "::notice::No previous commit found; using full deploy"
               : > changed-files.txt
             fi
 
@@ -209,13 +205,13 @@ jobs:
             if [ "$APP_ONLY" = "true" ] && [ -s changed-files.txt ]; then
               STACK="SwarmApi-${CDK_ENV}"
               DEPLOY_ADMIN_UI="false"
-              DEPLOY_REASON="app-only release diff from ${PREV_RELEASE_TAG}; targeting ${STACK}"
+              DEPLOY_REASON="app-only main diff from ${PREVIOUS_SHA}; targeting ${STACK}"
             else
-              DEPLOY_REASON="full release diff from ${PREV_RELEASE_TAG:-unknown}; deploying all stacks"
+              DEPLOY_REASON="full main diff from ${PREVIOUS_SHA:-unknown}; deploying all stacks"
             fi
 
             if [ "$HANDLER_ONLY" = "true" ] && [ -s changed-files.txt ]; then
-              echo "::notice::Handler-only release detected. For emergency code-only updates with no ECS/image/infra changes, consider Deploy Lambda Hotpatch instead of a full tag deploy."
+              echo "::notice::Handler-only change detected. For emergency code-only updates with no ECS/image/infra changes, Deploy Lambda Hotpatch remains available."
             fi
           fi
 
@@ -363,7 +359,7 @@ jobs:
     if: >-
       always() &&
       needs.setup.outputs.environment == 'production' &&
-      (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.run_prod_smoke == true))
+      (github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.run_prod_smoke == true))
     steps:
       - name: Smoke check UI + API endpoints
         env:
