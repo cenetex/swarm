@@ -8,6 +8,7 @@ import { getGateStatus } from './nft-gate.js';
 import type { AvatarRecord } from '../../types.js';
 import { getDynamoClient } from '../dynamo-client.js';
 import { logger } from '@swarm/core';
+import { recordAuditEventWith } from '../audit-log.js';
 
 const TABLE_NAME = process.env.ADMIN_TABLE || 'SwarmAdminTable';
 
@@ -293,6 +294,26 @@ export async function incrementOrbResonance(
         },
       }),
     );
+
+    // Continuity trace (OQ-002): the resonance layer is the L6 carrier site.
+    // Record it non-blocking so a failed audit write never breaks the pulse.
+    try {
+      await recordAuditEventWith(
+        { dynamoClient: resolvedDdb, tableName: resolvedTableName },
+        {
+          avatarId,
+          eventType: 'resonance_changed',
+          actorId: avatarId,
+          actorType: 'system',
+          details: { amount, mintAddress: orbRecord.mintAddress, resonanceUpdatedAt: now },
+        },
+      );
+    } catch (auditErr) {
+      logger.warn('Failed to record resonance_changed audit event', {
+        avatarId,
+        error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+      });
+    }
   } catch (err) {
     logger.warn('Failed to increment Orb resonance', {
       avatarId,

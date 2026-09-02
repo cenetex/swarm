@@ -70,6 +70,35 @@ export async function incrementOrbResonance(
         },
       }),
     );
+
+    // Continuity trace (OQ-002): the resonance layer is the L6 carrier site.
+    // Record it non-blocking so a failed audit write never breaks the pulse.
+    // Lazy-import avoids a static dependency on @swarm/admin-api in handlers.
+    try {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore - dynamic import avoids static dependency on admin-api
+      const { recordAuditEvent } = (await import('@swarm/admin-api')) as {
+        recordAuditEvent: (params: {
+          avatarId: string;
+          eventType: 'resonance_changed';
+          actorId: string;
+          actorType: 'system';
+          details: Record<string, unknown>;
+        }) => Promise<unknown>;
+      };
+      await recordAuditEvent({
+        avatarId,
+        eventType: 'resonance_changed',
+        actorId: avatarId,
+        actorType: 'system',
+        details: { amount, mintAddress, resonanceUpdatedAt: Date.now() },
+      });
+    } catch (auditErr) {
+      logger.warn('Failed to record resonance_changed audit event', {
+        avatarId,
+        error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+      });
+    }
   } catch (err) {
     logger.warn('Failed to increment Orb resonance', {
       avatarId,
