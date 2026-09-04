@@ -8,13 +8,14 @@ import {
   type PublicHostedAvatarProject,
 } from './hosted-api';
 
-function shortIdentity(value: string): string {
-  return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
-}
-
 function avatarMonogram(name: string): string {
   const words = name.trim().split(/\s+/u).filter(Boolean);
-  return words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join('') || '∴';
+  return (
+    words
+      .slice(0, 2)
+      .map((word) => word[0]?.toUpperCase())
+      .join('') || '∴'
+  );
 }
 
 function setPageMetadata(title: string, description: string, preserveSocialImage = true): void {
@@ -48,22 +49,29 @@ function setPageMetadata(title: string, description: string, preserveSocialImage
 function CatalogHeader() {
   return (
     <header className="border-b border-[var(--color-border)] bg-[var(--color-bg)]/95 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <div className="flex h-16 w-full items-center justify-between gap-4 px-4 sm:px-8">
         <a href="/" className="flex min-w-0 items-center gap-3" aria-label="Swarm catalog home">
           <img src="/swarm.svg" alt="" className="h-8 w-8 shrink-0" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold tracking-wide">SWARM</p>
             <p className="hidden text-[0.65rem] uppercase tracking-[0.2em] text-[var(--color-text-muted)] sm:block">
-              Public avatar registry
+              Companions
             </p>
           </div>
         </a>
         <nav className="flex items-center gap-2" aria-label="Primary navigation">
-          <a href="/" aria-current="page" className="rounded-lg px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text)]">
+          <a
+            href="/"
+            aria-current={window.location.pathname === '/' ? 'page' : undefined}
+            className="rounded-lg px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+          >
             Discover
           </a>
-          <a href="/studio" className="rounded-lg border border-brand-400/60 bg-brand-500/10 px-3 py-2 text-sm font-semibold text-brand-200 transition hover:bg-brand-500/20">
-            Open studio
+          <a
+            href="/studio"
+            className="rounded-lg border border-brand-400/60 bg-brand-500/10 px-3 py-2 text-sm font-semibold text-brand-200 transition hover:bg-brand-500/20"
+          >
+            Open Studio
           </a>
         </nav>
       </div>
@@ -72,13 +80,21 @@ function CatalogHeader() {
 }
 
 function CatalogCard({ avatar }: { avatar: PublicHostedAvatar }) {
+  const colors = [
+    'bg-brand-500/20 text-brand-100',
+    'bg-teal-500/20 text-teal-200',
+    'bg-amber-500/20 text-amber-200',
+    'bg-sky-500/20 text-sky-200',
+  ];
+  const color =
+    colors[Array.from(avatar.avatarId).reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % colors.length];
   return (
     <a
       href={`/a/${avatar.slug}`}
-      className="group flex min-h-64 flex-col border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5 transition hover:-translate-y-0.5 hover:border-brand-400/70 hover:bg-[var(--color-bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-400"
+      className="group flex min-h-64 flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6 transition hover:-translate-y-0.5 hover:border-brand-400/70 hover:bg-[var(--color-bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-400"
     >
       <div className="flex items-start justify-between gap-4">
-        <div className="grid h-14 w-14 place-items-center border border-brand-400/40 bg-brand-500/10 font-mono text-lg font-semibold text-brand-200">
+        <div className={'grid h-14 w-14 place-items-center rounded-2xl text-lg font-semibold ' + color}>
           {avatarMonogram(avatar.name)}
         </div>
         <span className="flex items-center gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-emerald-300">
@@ -87,12 +103,12 @@ function CatalogCard({ avatar }: { avatar: PublicHostedAvatar }) {
         </span>
       </div>
       <h2 className="mt-6 text-xl font-semibold tracking-tight group-hover:text-brand-100">{avatar.name}</h2>
-      <p className="mt-2 line-clamp-3 flex-1 text-sm leading-6 text-[var(--color-text-secondary)]">
-        {avatar.description || 'An open Swarm avatar project.'}
+      <p className="mt-2 line-clamp-3 flex-1 text-base leading-7 text-[var(--color-text-secondary)]">
+        {avatar.description || 'A companion ready for a new conversation.'}
       </p>
-      <div className="mt-6 flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4 font-mono text-[0.65rem] text-[var(--color-text-muted)]">
-        <span>{shortIdentity(avatar.controller)}</span>
-        <span>{shortIdentity(avatar.revisionId)}</span>
+      <div className="mt-6 flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4 text-sm font-medium text-brand-200">
+        <span>Meet {avatar.name}</span>
+        <span aria-hidden="true">→</span>
       </div>
     </a>
   );
@@ -117,7 +133,9 @@ function CatalogIndex() {
       .finally(() => {
         if (active) setLoading(false);
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
   const visibleAvatars = useMemo(() => {
@@ -127,23 +145,29 @@ function CatalogIndex() {
   }, [avatars, query]);
 
   return (
-    <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text)]">
+    <div className="hosted-catalog min-h-[100dvh] w-full bg-[var(--color-bg)] text-[var(--color-text)]">
       <CatalogHeader />
-      <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
+      <main className="mx-auto w-full max-w-[110rem] px-4 py-10 sm:px-8 sm:py-14">
         <section aria-labelledby="catalog-heading" className="border-b border-[var(--color-border)] pb-8">
-          <p className="font-mono text-xs uppercase tracking-[0.22em] text-brand-300">Agents as public infrastructure</p>
+          <p className="text-sm font-medium text-brand-200">Find your next companion</p>
           <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
             <div>
-              <h1 id="catalog-heading" className="max-w-3xl text-4xl font-semibold leading-tight tracking-[-0.035em] sm:text-5xl">
-                Discover minds that can outlive their host.
+              <h1
+                id="catalog-heading"
+                className="max-w-3xl text-4xl font-semibold leading-tight tracking-[-0.035em] sm:text-5xl"
+              >
+                Good company. Great conversations.
               </h1>
               <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--color-text-secondary)]">
-                Each avatar is an open project: a public identity, prompt, capabilities, memory, lineage, and portable revision you can verify or carry elsewhere.
+                Meet a companion. Bring it into your Studio. Start talking.
               </p>
             </div>
             <div>
-              <label htmlFor="catalog-search" className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
-                Search the registry
+              <label
+                htmlFor="catalog-search"
+                className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-text-muted)]"
+              >
+                Find a companion
               </label>
               <input
                 id="catalog-search"
@@ -151,7 +175,7 @@ function CatalogIndex() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Name or purpose"
-                className="mt-2 w-full border border-[var(--color-border-secondary)] bg-[var(--color-bg-secondary)] px-4 py-3 text-sm outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                className="mt-2 w-full rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg-secondary)] px-4 py-3 text-base outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
               />
             </div>
           </div>
@@ -160,27 +184,59 @@ function CatalogIndex() {
         <section aria-label="Public avatars" className="py-8">
           <div className="mb-5 flex items-center justify-between gap-4">
             <p className="text-sm text-[var(--color-text-secondary)]">
-              {loading ? 'Reading the registry…' : `${visibleAvatars.length} public ${visibleAvatars.length === 1 ? 'avatar' : 'avatars'}`}
+              {loading
+                ? 'Reading the registry…'
+                : `${visibleAvatars.length} public ${visibleAvatars.length === 1 ? 'avatar' : 'avatars'}`}
             </p>
-            <p className="hidden font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[var(--color-text-muted)] sm:block">
-              schema: swarm.avatar/v1
-            </p>
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-brand-200 hover:bg-[var(--color-bg-secondary)]"
+              >
+                Clear search
+              </button>
+            )}
           </div>
           {error && (
-            <div role="alert" className="border border-red-400/30 bg-red-400/5 p-5 text-sm text-red-200">{error}</div>
+            <div role="alert" className="border border-red-400/30 bg-red-400/5 p-5 text-sm text-red-200">
+              {error}
+            </div>
           )}
           {!loading && !error && visibleAvatars.length === 0 && (
             <div className="border border-dashed border-[var(--color-border-secondary)] px-6 py-16 text-center">
-              <h2 className="text-xl font-semibold">{avatars.length ? 'No matching avatars' : 'The public registry is ready'}</h2>
+              <h2 className="text-xl font-semibold">
+                {avatars.length ? 'Try another name or purpose' : 'Meet the first companion'}
+              </h2>
               <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-[var(--color-text-secondary)]">
-                {avatars.length ? 'Try another name or purpose.' : 'Create the first portable avatar in Studio. New avatars are public and listed by default.'}
+                {avatars.length
+                  ? 'Browse all companions to find a new starting point.'
+                  : 'Create a companion in Studio. Give it a name and start a conversation.'}
               </p>
-              {!avatars.length && <a href="/studio" className="mt-6 inline-flex border border-brand-400/60 px-4 py-2.5 text-sm font-semibold text-brand-200">Create the first avatar</a>}
+              {!avatars.length && (
+                <a
+                  href="/studio"
+                  className="mt-6 inline-flex border border-brand-400/60 px-4 py-2.5 text-sm font-semibold text-brand-200"
+                >
+                  Create the first avatar
+                </a>
+              )}
+              {avatars.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="mt-6 rounded-xl bg-brand-500 px-5 py-3 text-base font-semibold text-white"
+                >
+                  Show all companions
+                </button>
+              )}
             </div>
           )}
           {visibleAvatars.length > 0 && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {visibleAvatars.map((avatar) => <CatalogCard key={avatar.avatarId} avatar={avatar} />)}
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              {visibleAvatars.map((avatar) => (
+                <CatalogCard key={avatar.avatarId} avatar={avatar} />
+              ))}
             </div>
           )}
         </section>
@@ -199,24 +255,28 @@ function AvatarProject({ slug }: { slug: string }) {
       .then((result) => {
         if (!active) return;
         setProject(result);
-        setPageMetadata(
-          `${result.name} — Swarm`,
-          result.description || `Explore ${result.name} on Swarm.`,
-          false,
-        );
+        setPageMetadata(`${result.name} — Swarm`, result.description || `Explore ${result.name} on Swarm.`, false);
       })
       .catch((reason) => {
         if (active) setError(reason instanceof Error ? reason.message : 'Unable to load this public avatar.');
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [slug]);
 
   return (
-    <div className="min-h-[100dvh] bg-[var(--color-bg)] text-[var(--color-text)]">
+    <div className="hosted-catalog min-h-[100dvh] w-full bg-[var(--color-bg)] text-[var(--color-text)]">
       <CatalogHeader />
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
-        <a href="/" className="text-sm text-brand-300 hover:text-brand-200">← Back to registry</a>
-        {error && <div role="alert" className="mt-8 border border-red-400/30 bg-red-400/5 p-5 text-red-200">{error}</div>}
+      <main className="mx-auto w-full max-w-[110rem] px-4 py-10 sm:px-8 sm:py-14">
+        <a href="/" className="text-sm text-brand-300 hover:text-brand-200">
+          ← Back to registry
+        </a>
+        {error && (
+          <div role="alert" className="mt-8 border border-red-400/30 bg-red-400/5 p-5 text-red-200">
+            {error}
+          </div>
+        )}
         {!error && !project && <p className="mt-8 text-sm text-[var(--color-text-muted)]">Reading avatar project…</p>}
         {project && (
           <article className="mt-8">
@@ -236,14 +296,20 @@ function AvatarProject({ slug }: { slug: string }) {
                 </p>
               </div>
               <div className="space-y-3 border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5">
-                <a href={publicHostedAvatarBundleUrl(project.slug)} className="block w-full bg-brand-500 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-brand-600">
+                <a
+                  href={'/studio?companion=' + encodeURIComponent(project.slug)}
+                  className="block w-full rounded-xl bg-brand-500 px-4 py-3 text-center text-base font-semibold text-white hover:bg-brand-600"
+                >
+                  Open in Studio
+                </a>
+                <a
+                  href={publicHostedAvatarBundleUrl(project.slug)}
+                  className="block w-full rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-center text-sm font-semibold hover:bg-[var(--color-bg-tertiary)]"
+                >
                   Download portable avatar
                 </a>
-                <a href={publicHostedAvatarNftMetadataUrl(project.slug)} className="block w-full border border-[var(--color-border-secondary)] px-4 py-3 text-center text-sm font-medium hover:bg-[var(--color-bg-tertiary)]">
-                  View NFT metadata
-                </a>
-                <p className="pt-2 text-xs leading-5 text-[var(--color-text-muted)]">
-                  The download is canonical JSON. Its revision ID is the SHA-256 hash of its contents.
+                <p className="pt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
+                  Add your own copy, then start a conversation.
                 </p>
               </div>
             </div>
@@ -252,27 +318,71 @@ function AvatarProject({ slug }: { slug: string }) {
               <div className="space-y-8">
                 <section aria-labelledby="public-prompt-heading">
                   <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-brand-300">Public prompt</p>
-                  <h2 id="public-prompt-heading" className="mt-2 text-2xl font-semibold">How this mind begins</h2>
-                  <p className="mt-4 whitespace-pre-wrap border-l-2 border-brand-400 bg-brand-500/5 px-5 py-4 text-sm leading-7 text-[var(--color-text-secondary)]">
-                    {project.bundle.prompts.system || 'No public system prompt has been written yet.'}
-                  </p>
+                  <h2 id="public-prompt-heading" className="mt-2 text-2xl font-semibold">
+                    How this mind begins
+                  </h2>
+                  {project.bundle.prompts.system.length > 400 ? (
+                    <details className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-5 py-4">
+                      <summary className="cursor-pointer text-base font-medium text-brand-200">
+                        Read the full prompt
+                      </summary>
+                      <p className="mt-4 whitespace-pre-wrap break-words text-base leading-7 text-[var(--color-text-secondary)]">
+                        {project.bundle.prompts.system}
+                      </p>
+                    </details>
+                  ) : (
+                    <p className="mt-4 whitespace-pre-wrap break-words border-l-2 border-brand-400 px-5 py-4 text-base leading-7 text-[var(--color-text-secondary)]">
+                      {project.bundle.prompts.system || 'Ready for a new direction.'}
+                    </p>
+                  )}
                 </section>
                 <section aria-labelledby="memory-heading">
                   <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-brand-300">Shared memory</p>
-                  <h2 id="memory-heading" className="mt-2 text-2xl font-semibold">What it carries forward</h2>
+                  <h2 id="memory-heading" className="mt-2 text-2xl font-semibold">
+                    What it carries forward
+                  </h2>
                   <p className="mt-4 text-sm leading-7 text-[var(--color-text-secondary)]">
                     {project.bundle.sharedMemory.summary || 'This revision has no shared memory summary yet.'}
                   </p>
                 </section>
               </div>
-              <aside aria-label="Avatar manifest" className="h-fit border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5">
-                <h2 className="text-sm font-semibold">Manifest</h2>
-                <dl className="mt-4 space-y-4 text-xs">
-                  <div><dt className="text-[var(--color-text-muted)]">Controller</dt><dd className="mt-1 break-all font-mono text-[var(--color-text-secondary)]">{project.controller}</dd></div>
-                  <div><dt className="text-[var(--color-text-muted)]">Revision</dt><dd className="mt-1 break-all font-mono text-[var(--color-text-secondary)]">{project.revisionId}</dd></div>
-                  <div><dt className="text-[var(--color-text-muted)]">Schema</dt><dd className="mt-1 font-mono text-[var(--color-text-secondary)]">{project.bundle.schema}</dd></div>
-                  <div><dt className="text-[var(--color-text-muted)]">Capabilities</dt><dd className="mt-1 text-[var(--color-text-secondary)]">{project.bundle.capabilities.map((capability) => capability.name).join(', ') || 'None declared'}</dd></div>
-                </dl>
+              <aside
+                aria-label="Avatar manifest"
+                className="h-fit border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5"
+              >
+                <details>
+                  <summary className="cursor-pointer text-base font-semibold">Project details</summary>
+                  <dl className="mt-4 space-y-4 text-xs">
+                    <div>
+                      <dt className="text-[var(--color-text-muted)]">Controller</dt>
+                      <dd className="mt-1 break-all font-mono text-[var(--color-text-secondary)]">
+                        {project.controller}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--color-text-muted)]">Revision</dt>
+                      <dd className="mt-1 break-all font-mono text-[var(--color-text-secondary)]">
+                        {project.revisionId}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--color-text-muted)]">Schema</dt>
+                      <dd className="mt-1 font-mono text-[var(--color-text-secondary)]">{project.bundle.schema}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--color-text-muted)]">Capabilities</dt>
+                      <dd className="mt-1 text-[var(--color-text-secondary)]">
+                        {project.bundle.capabilities.map((capability) => capability.name).join(', ') || 'None declared'}
+                      </dd>
+                    </div>
+                  </dl>
+                  <a
+                    href={publicHostedAvatarNftMetadataUrl(project.slug)}
+                    className="mt-5 inline-block text-sm text-brand-200 underline"
+                  >
+                    View NFT metadata
+                  </a>
+                </details>
               </aside>
             </div>
           </article>

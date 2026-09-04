@@ -142,6 +142,15 @@ body {
   min-height: 100dvh; /* Dynamic viewport height - accounts for iOS chrome */
 }
 
+/* Hosted chat keeps small labels readable in both themes. */
+.hosted-chat, .hosted-catalog {
+  --color-text-muted: #b8aec7;
+}
+
+.light .hosted-chat, .light .hosted-catalog {
+  --color-text-muted: #6d5e7c;
+}
+
 /* Prevent iOS double-tap zoom */
 * {
   touch-action: manipulation;
