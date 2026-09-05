@@ -144,27 +144,15 @@ function ActionSection({
   children?: ReactNode;
 }) {
   return (
-    <section className="border-t border-[var(--color-border)] px-5 py-5 first:border-t-0">
-      <div className="flex items-start gap-3">
-        <span
-          aria-hidden="true"
-          className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl border text-sm ${
-            ready
-              ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
-              : 'border-brand-400/30 bg-brand-400/10 text-brand-300'
-          }`}
-        >
-          {ready ? '✓' : '→'}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="text-sm font-semibold">{title}</h3>
-            <span className={`shrink-0 text-sm ${ready ? 'text-emerald-300' : 'text-brand-300'}`}>{state}</span>
-          </div>
-          <p className="mt-1 text-sm leading-5 text-[var(--color-text-muted)]">{detail}</p>
-          {children && <div className="mt-4">{children}</div>}
-        </div>
+    <section
+      aria-label={`${title} details`}
+      className="border-t border-[var(--color-border)] px-4 pb-4 pt-3 sm:px-5 sm:pb-5"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <p className="min-w-0 text-sm leading-5 text-[var(--color-text-muted)]">{detail}</p>
+        <span className={`shrink-0 text-sm ${ready ? 'text-emerald-300' : 'text-brand-300'}`}>{state}</span>
       </div>
+      {children && <div className="mt-4">{children}</div>}
     </section>
   );
 }
@@ -181,33 +169,41 @@ function ConversationCard({
   children: ReactNode;
 }) {
   return (
-    <article aria-label={`${title} chat card`} className="py-3 sm:py-4">
-      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--color-text-secondary)]">
-        <img src="/swarm.svg" alt="" className="h-6 w-6" />
-        <span>Swarm</span>
-      </div>
-      <div className="overflow-hidden rounded-2xl border border-[var(--color-border-secondary)] bg-[var(--color-bg-secondary)] shadow-sm">
-        <div className="flex items-start justify-between gap-4 px-5 py-5">
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
-            {intro && <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{intro}</p>}
+    <article
+      aria-label={`${title} chat card`}
+      className="my-3 overflow-hidden rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg-secondary)] sm:my-4"
+    >
+      <header className="flex items-start justify-between gap-4 px-4 py-4 sm:px-5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-muted)]">
+            <img src="/swarm.svg" alt="" className="h-4 w-4" />
+            <span>Swarm</span>
           </div>
-          {onClose && (
-            <button
-              type="button"
-              aria-label={`Close ${title}`}
-              onClick={onClose}
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-xl text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text)]"
-            >
-              ×
-            </button>
-          )}
+          <h2 className="mt-2 text-lg font-semibold tracking-tight">{title}</h2>
+          {intro && <p className="mt-1 text-sm leading-5 text-[var(--color-text-secondary)]">{intro}</p>}
         </div>
-        {children}
-      </div>
+        {onClose && (
+          <button
+            type="button"
+            aria-label={`Close ${title}`}
+            onClick={onClose}
+            className="shrink-0 px-1 py-0.5 text-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+          >
+            ×
+          </button>
+        )}
+      </header>
+      {children}
     </article>
   );
 }
+
+const inlineFieldClass =
+  'w-full rounded-none border-x-0 border-t-0 border-b border-[var(--color-border-secondary)] bg-transparent px-0 py-3 outline-none transition focus:border-brand-400 focus:ring-0';
+const inlinePrimaryButtonClass =
+  'block w-full rounded-lg bg-brand-500 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50';
+const inlineSecondaryButtonClass =
+  'text-left text-sm font-medium text-brand-300 underline decoration-brand-400/40 underline-offset-4 hover:text-brand-200 disabled:opacity-50';
 
 export function HostedApp() {
   const environmentCopy = hostedEnvironmentCopy(import.meta.env.VITE_HOSTED_ENVIRONMENT);
@@ -1107,7 +1103,7 @@ export function HostedApp() {
                     onClose={activeAction ? closeAction : undefined}
                   >
                     {shownAction === 'help' && (
-                      <div className="grid gap-2 px-5 pb-5 sm:grid-cols-2">
+                      <div className="divide-y divide-[var(--color-border)] border-t border-[var(--color-border)] px-4 pb-1 sm:grid sm:grid-cols-2 sm:divide-y-0 sm:px-5">
                         {(Object.keys(hostedActionLabels) as HostedAction[])
                           .filter((action) => action !== 'help')
                           .map((action) => (
@@ -1117,13 +1113,17 @@ export function HostedApp() {
                               disabled={
                                 sending ||
                                 loading ||
-                                (['profile', 'telegram', 'x', 'memory', 'schedule'].includes(action) && !activeAvatar) ||
+                                (['profile', 'telegram', 'x', 'memory', 'schedule'].includes(action) &&
+                                  !activeAvatar) ||
                                 (['telegram', 'x', 'schedule'].includes(action) && !providerReady)
                               }
                               onClick={() => setActiveAction(action)}
-                              className="rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-left text-sm font-medium hover:bg-[var(--color-bg-tertiary)] disabled:opacity-40"
+                              className="flex items-center justify-between gap-3 py-3 text-left text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text)] disabled:opacity-40 sm:odd:pr-4 sm:even:pl-4"
                             >
-                              {hostedActionLabels[action]}
+                              <span>{hostedActionLabels[action]}</span>
+                              <span aria-hidden="true" className="text-[var(--color-text-muted)]">
+                                →
+                              </span>
                             </button>
                           ))}
                       </div>
@@ -1138,7 +1138,7 @@ export function HostedApp() {
                           value={avatarName}
                           onChange={(event) => setAvatarName(event.target.value)}
                           maxLength={80}
-                          className="mt-2 w-full rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-base outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                          className={`${inlineFieldClass} mt-1 text-base`}
                         />
                         <details className="mt-3 border-t border-brand-400/20 pt-3">
                           <summary className="cursor-pointer text-sm font-medium text-brand-300">Add details</summary>
@@ -1156,7 +1156,7 @@ export function HostedApp() {
                               maxLength={1000}
                               rows={3}
                               placeholder="What this companion is for"
-                              className="w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                              className={`${inlineFieldClass} resize-y text-sm`}
                             />
                             <label htmlFor="avatar-persona" className="block text-sm text-[var(--color-text-muted)]">
                               Starting character
@@ -1168,7 +1168,7 @@ export function HostedApp() {
                               maxLength={50000}
                               rows={4}
                               placeholder="How this mind begins"
-                              className="w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                              className={`${inlineFieldClass} resize-y text-sm`}
                             />
                             <label htmlFor="avatar-visibility" className="block text-sm text-[var(--color-text-muted)]">
                               Visibility
@@ -1177,7 +1177,7 @@ export function HostedApp() {
                               id="avatar-visibility"
                               value={avatarVisibility}
                               onChange={(event) => setAvatarVisibility(event.target.value as 'public' | 'private')}
-                              className="w-full rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none focus:border-brand-400"
+                              className={`${inlineFieldClass} text-sm`}
                             >
                               <option value="private">Private</option>
                               <option value="public">Public</option>
@@ -1206,31 +1206,20 @@ export function HostedApp() {
                         <button
                           type="submit"
                           disabled={loading || !avatarName.trim()}
-                          className="mt-3 w-full rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                          className={`${inlinePrimaryButtonClass} mt-3`}
                         >
                           Create companion
                         </button>
                       </form>
                     )}
                     {shownAction === 'profile' && activeAvatar && (
-                      <section className="border-b border-[var(--color-border)] bg-gradient-to-b from-brand-500/10 to-transparent px-5 py-5">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-brand-300">
-                              Companion
-                            </p>
-                            <h3 className="mt-2 text-lg font-semibold">Voice &amp; identity</h3>
-                          </div>
-                          <span
-                            className={`shrink-0 text-sm ${profileSaved ? 'text-emerald-300' : profileChanged ? 'text-amber-300' : 'text-[var(--color-text-muted)]'}`}
-                          >
-                            {profileSaved ? 'Saved' : profileChanged ? 'Unsaved' : 'Current'}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-sm leading-5 text-[var(--color-text-muted)]">
-                          The system prompt is the durable direction behind every Web, Telegram, and X reply.
-                        </p>
-                        <form onSubmit={(event) => void handleSaveProfile(event)} className="mt-4 space-y-4">
+                      <ActionSection
+                        title="Voice & identity"
+                        detail="The system prompt guides every Web, Telegram, and X reply."
+                        state={profileSaved ? 'Saved' : profileChanged ? 'Unsaved' : 'Current'}
+                        ready={profileSaved}
+                      >
+                        <form onSubmit={(event) => void handleSaveProfile(event)} className="space-y-4">
                           <div>
                             <label
                               htmlFor="profile-name"
@@ -1246,7 +1235,7 @@ export function HostedApp() {
                                 setProfileSaved(false);
                               }}
                               maxLength={80}
-                              className="mt-2 w-full rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-base outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                              className={`${inlineFieldClass} mt-1 text-base`}
                             />
                           </div>
                           <div>
@@ -1266,7 +1255,7 @@ export function HostedApp() {
                               maxLength={1000}
                               rows={2}
                               placeholder="What this companion is for"
-                              className="mt-2 w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                              className={`${inlineFieldClass} mt-1 resize-y text-sm`}
                             />
                           </div>
                           <div>
@@ -1291,7 +1280,7 @@ export function HostedApp() {
                               maxLength={50000}
                               rows={8}
                               placeholder={`You are ${activeAvatar.name}…`}
-                              className="mt-2 w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 font-mono text-sm leading-6 outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                              className={`${inlineFieldClass} mt-1 resize-y font-mono text-sm leading-6`}
                             />
                             <p className="mt-2 text-sm leading-5 text-[var(--color-text-muted)]">
                               Saved changes apply to the next message and create a new portable revision.
@@ -1300,12 +1289,12 @@ export function HostedApp() {
                           <button
                             type="submit"
                             disabled={loading || !profileName.trim() || !profileChanged}
-                            className="w-full rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                            className={inlinePrimaryButtonClass}
                           >
                             Save voice &amp; identity
                           </button>
                         </form>
-                      </section>
+                      </ActionSection>
                     )}
                     {shownAction === 'model' && (
                       <>
@@ -1320,7 +1309,7 @@ export function HostedApp() {
                           ready={providerReady}
                         >
                           {providerReady && (
-                            <div className="rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3">
+                            <div className="border-l-2 border-brand-400/30 pl-3">
                               <p className="text-sm text-[var(--color-text-muted)]">Current route</p>
                               <p className="mt-1 text-sm font-medium">OpenRouter Free</p>
                               <p className="mt-1 text-sm leading-5 text-[var(--color-text-muted)]">
@@ -1329,10 +1318,7 @@ export function HostedApp() {
                             </div>
                           )}
                           {isAuthenticated && !providerReady && (
-                            <a
-                              href={openRouterConnectUrl()}
-                              className="flex w-full justify-center rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-600"
-                            >
+                            <a href={openRouterConnectUrl()} className={inlinePrimaryButtonClass}>
                               Connect OpenRouter securely
                             </a>
                           )}
@@ -1387,12 +1373,12 @@ export function HostedApp() {
                               value={telegramToken}
                               onChange={(event) => setTelegramToken(event.target.value)}
                               placeholder="123456789:bot-token"
-                              className="w-full rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-base outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                              className={`${inlineFieldClass} text-base`}
                             />
                             <button
                               type="submit"
                               disabled={loading || !telegramToken.trim()}
-                              className="w-full rounded-xl bg-[#229ED9] px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+                              className={`${inlinePrimaryButtonClass} bg-[#229ED9] hover:brightness-110`}
                             >
                               Connect Telegram bot
                             </button>
@@ -1415,7 +1401,7 @@ export function HostedApp() {
                                 href={telegram.ownerBindUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="block w-full rounded-xl bg-[#229ED9] px-4 py-3 text-center text-sm font-semibold text-white"
+                                className={`${inlinePrimaryButtonClass} bg-[#229ED9] hover:brightness-110`}
                               >
                                 Open Telegram to prove ownership
                               </a>
@@ -1425,7 +1411,7 @@ export function HostedApp() {
                                 href={telegram.addToGroupUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="block w-full rounded-xl bg-[#229ED9] px-4 py-3 text-center text-sm font-semibold text-white"
+                                className={`${inlinePrimaryButtonClass} bg-[#229ED9] hover:brightness-110`}
                               >
                                 Add bot to a group
                               </a>
@@ -1433,15 +1419,12 @@ export function HostedApp() {
                             {telegram.groups.length > 0 && (
                               <div className="border-t border-[var(--color-border)] pt-3">
                                 <p className="text-sm font-medium text-[var(--color-text-secondary)]">Bound groups</p>
-                                <div className="mt-2 space-y-2">
+                                <div className="mt-2 divide-y divide-[var(--color-border)]">
                                   {telegram.groups.map((group) => {
                                     const unavailable =
                                       group.membershipStatus === 'left' || group.membershipStatus === 'kicked';
                                     return (
-                                      <div
-                                        key={group.chatId}
-                                        className="rounded-lg border border-[var(--color-border-secondary)] bg-[var(--color-bg)] p-3"
-                                      >
+                                      <div key={group.chatId} className="py-3">
                                         <div className="flex items-start justify-between gap-3">
                                           <div className="min-w-0">
                                             <p className="truncate text-sm font-medium">{group.title}</p>
@@ -1458,7 +1441,7 @@ export function HostedApp() {
                                             aria-pressed={group.enabled}
                                             onClick={() => void handleToggleTelegramGroup(group.chatId, !group.enabled)}
                                             disabled={loading || unavailable}
-                                            className="rounded-md border border-[var(--color-border-secondary)] px-2.5 py-1.5 text-sm font-medium disabled:opacity-50"
+                                            className={inlineSecondaryButtonClass}
                                           >
                                             {group.enabled ? 'Pause' : 'Enable'}
                                           </button>
@@ -1486,7 +1469,7 @@ export function HostedApp() {
                                   <button
                                     type="button"
                                     onClick={() => void handleCopyGroupBindCommand()}
-                                    className="w-full rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-sm font-medium hover:bg-[var(--color-bg-tertiary)]"
+                                    className={inlineSecondaryButtonClass}
                                   >
                                     Copy command for an existing group
                                   </button>
@@ -1495,7 +1478,7 @@ export function HostedApp() {
                                   type="button"
                                   onClick={() => void handleRefreshTelegram()}
                                   disabled={loading}
-                                  className="w-full rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-sm font-medium hover:bg-[var(--color-bg-tertiary)] disabled:opacity-50"
+                                  className={inlineSecondaryButtonClass}
                                 >
                                   Refresh Telegram status
                                 </button>
@@ -1505,7 +1488,7 @@ export function HostedApp() {
                                     type="button"
                                     onClick={() => void handleRepairTelegram()}
                                     disabled={loading}
-                                    className="w-full rounded-xl border border-amber-400/30 px-4 py-3 text-sm font-medium text-amber-200 hover:bg-amber-400/10 disabled:opacity-50"
+                                    className={`${inlineSecondaryButtonClass} text-amber-200`}
                                   >
                                     Repair and refresh links
                                   </button>
@@ -1553,7 +1536,7 @@ export function HostedApp() {
                               type="button"
                               onClick={() => void handleConnectX()}
                               disabled={xConnecting}
-                              className="block w-full rounded-xl bg-white px-4 py-3 text-center text-sm font-semibold text-black transition hover:bg-white/90"
+                              className={`${inlinePrimaryButtonClass} bg-white text-black hover:bg-white/90`}
                             >
                               {xConnecting ? 'Connecting X…' : 'Connect X account'}
                             </button>
@@ -1576,7 +1559,7 @@ export function HostedApp() {
                               </a>
                             </p>
                             {x.status === 'reauth_required' && (
-                              <div className="space-y-3 rounded-lg border border-amber-400/30 bg-amber-400/5 p-3">
+                              <div className="space-y-3 border-l-2 border-amber-400/40 pl-3">
                                 <p className="text-sm leading-5 text-amber-100">
                                   X rejected the saved authorization. Reconnect to resume replies.
                                 </p>
@@ -1584,7 +1567,7 @@ export function HostedApp() {
                                   type="button"
                                   onClick={() => void handleConnectX()}
                                   disabled={xConnecting}
-                                  className="block w-full rounded-xl bg-white px-4 py-3 text-center text-sm font-semibold text-black"
+                                  className={`${inlinePrimaryButtonClass} bg-white text-black hover:bg-white/90`}
                                 >
                                   {xConnecting ? 'Connecting X…' : 'Reconnect X'}
                                 </button>
@@ -1604,7 +1587,7 @@ export function HostedApp() {
                                   type="button"
                                   onClick={() => void handleRefreshX()}
                                   disabled={loading}
-                                  className="w-full rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-sm font-medium hover:bg-[var(--color-bg-tertiary)] disabled:opacity-50"
+                                  className={inlineSecondaryButtonClass}
                                 >
                                   Refresh X status
                                 </button>
@@ -1612,7 +1595,7 @@ export function HostedApp() {
                                   type="button"
                                   onClick={() => void handleConnectX()}
                                   disabled={xConnecting}
-                                  className="block w-full rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-center text-sm font-medium hover:bg-[var(--color-bg-tertiary)]"
+                                  className={inlineSecondaryButtonClass}
                                 >
                                   {xConnecting ? 'Connecting X…' : 'Reauthorize X'}
                                 </button>
@@ -1648,7 +1631,7 @@ export function HostedApp() {
                             maxLength={1000}
                             rows={3}
                             placeholder="I prefer short weekly summaries."
-                            className="w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                            className={`${inlineFieldClass} resize-y text-sm`}
                           />
                           <label className="flex items-start gap-2 text-sm leading-5 text-[var(--color-text-secondary)]">
                             <input
@@ -1665,15 +1648,15 @@ export function HostedApp() {
                           <button
                             type="submit"
                             disabled={loading || !memoryDraft.trim()}
-                            className="w-full rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                            className={inlinePrimaryButtonClass}
                           >
                             Remember
                           </button>
                         </form>
                         {memories.length > 0 && (
-                          <div className="mt-5 space-y-2 border-t border-[var(--color-border)] pt-4">
+                          <div className="mt-5 divide-y divide-[var(--color-border)] border-t border-[var(--color-border)]">
                             {memories.map((memory) => (
-                              <div key={memory.memoryId} className="rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] p-3">
+                              <div key={memory.memoryId} className="py-3">
                                 <p className="text-sm leading-5 text-[var(--color-text-secondary)]">{memory.content}</p>
                                 <div className="mt-2 flex items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]">
                                   <span>{memory.shareable ? 'Portable' : 'Private'}</span>
@@ -1710,7 +1693,7 @@ export function HostedApp() {
                             maxLength={4000}
                             rows={3}
                             placeholder="Check in about the launch plan."
-                            className="w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                            className={`${inlineFieldClass} resize-y text-sm`}
                           />
                           <label htmlFor="follow-up-at" className="block text-sm text-[var(--color-text-muted)]">
                             Date and time
@@ -1720,20 +1703,20 @@ export function HostedApp() {
                             type="datetime-local"
                             value={followUpAt}
                             onChange={(event) => setFollowUpAt(event.target.value)}
-                            className="w-full rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                            className={`${inlineFieldClass} text-sm`}
                           />
                           <button
                             type="submit"
                             disabled={loading || !followUpPrompt.trim() || !followUpAt}
-                            className="w-full rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                            className={inlinePrimaryButtonClass}
                           >
                             Schedule follow-up
                           </button>
                         </form>
                         {followUps.length > 0 && (
-                          <div className="mt-5 space-y-2 border-t border-[var(--color-border)] pt-4">
+                          <div className="mt-5 divide-y divide-[var(--color-border)] border-t border-[var(--color-border)]">
                             {followUps.map((followUp) => (
-                              <div key={followUp.id} className="rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] p-3">
+                              <div key={followUp.id} className="py-3">
                                 <p className="text-sm leading-5 text-[var(--color-text-secondary)]">{followUp.summary}</p>
                                 <div className="mt-2 flex items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]">
                                   <span>{new Date(followUp.runAt).toLocaleString()} · {followUp.status}</span>

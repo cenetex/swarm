@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HostedApp, hostedEnvironmentCopy } from './HostedApp';
 import * as hostedApi from './hosted-api';
@@ -576,9 +576,14 @@ describe('HostedApp', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
-    expect(await screen.findByLabelText(/what should this companion remember/i)).toHaveValue(
-      'I prefer short weekly summaries',
-    );
+    const memoryField = await screen.findByLabelText(/what should this companion remember/i);
+    const memoryCard = screen.getByRole('article', { name: 'Memory chat card' });
+
+    expect(memoryField).toHaveValue('I prefer short weekly summaries');
+    expect(memoryField).toHaveClass('rounded-none', 'border-x-0', 'border-t-0');
+    expect(within(memoryCard).getAllByRole('heading', { name: 'Memory' })).toHaveLength(1);
+    expect(within(memoryCard).getByRole('region', { name: 'Memory details' })).toBeInTheDocument();
+    expect(memoryCard.querySelectorAll('.rounded-xl')).toHaveLength(0);
   });
 
   it('removes a polite request prefix from the follow-up card', async () => {
