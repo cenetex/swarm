@@ -42,7 +42,11 @@ describe('MobileWalletSignInPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.connect.mockResolvedValue(undefined);
-    mocks.approve.mockResolvedValue(undefined);
+    mocks.approve.mockResolvedValue({
+      success: true,
+      status: 'approved',
+      walletAddress: 'mobile-wallet-address',
+    });
     window.history.replaceState(
       {},
       '',
@@ -83,5 +87,18 @@ describe('MobileWalletSignInPage', () => {
       walletAddress: 'mobile-wallet-address',
       signMessage,
     }));
+  });
+
+  it('uses wallet-link copy for a link pairing', () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/mobile-sign-in?pairing=pairing-id-abcdefghijklmnopqrstuvwxyz&purpose=link',
+    );
+
+    render(<MobileWalletSignInPage />);
+
+    expect(screen.getByRole('heading', { name: 'Link this wallet' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve wallet link' })).toBeInTheDocument();
   });
 });

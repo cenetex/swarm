@@ -6,7 +6,9 @@ import {
   hostedPublicOrigin,
   randomToken,
   sha256,
+  verifyAndLinkWalletToHostedAccount,
   verifyWalletIdentity,
+  HOSTED_WALLET_LINK_STATEMENT,
   type VerifiedWalletSession,
 } from './auth.js';
 
@@ -16,10 +18,13 @@ const PAIRING_RATE_LIMIT = 10;
 
 type PairingRow = {
   status: 'pending' | 'approved' | 'consumed';
+  purpose: MobileWalletPairingPurpose;
   account_id: string | null;
   wallet_address: string | null;
   expires_at: number;
 };
+
+export type MobileWalletPairingPurpose = 'sign-in' | 'link';
 
 export type MobileWalletPairing = {
   pairingId: string;
@@ -27,13 +32,22 @@ export type MobileWalletPairing = {
   mobileUrl: string;
   verificationCode: string;
   expiresAt: number;
+  purpose: MobileWalletPairingPurpose;
 };
 
 export type MobileWalletPairingResult =
   | { status: 'pending'; expiresAt: number }
   | { status: 'expired' }
   | { status: 'not-found' }
+  | { status: 'linked'; walletAddress: string }
   | { status: 'authenticated'; session: VerifiedWalletSession };
+
+export type MobileWalletPairingApproval =
+  | { status: 'approved'; walletAddress: string }
+  | { status: 'linked'; walletAddress: string }
+  | { status: 'already-linked'; walletAddress: string }
+  | { status: 'conflict' }
+  | { status: 'invalid' };
 
 function validToken(value: string, minLength: number, maxLength: number): boolean {
   return value.length >= minLength && value.length <= maxLength && /^[A-Za-z0-9_-]+$/u.test(value);
@@ -43,8 +57,11 @@ export function mobilePairingVerificationCode(pairingId: string): string {
   return pairingId.slice(0, 6).toUpperCase();
 }
 
-function mobilePairingStatement(pairingId: string): string {
-  return `Approve sign-in on another device. Pairing code: ${mobilePairingVerificationCode(pairingId)}.`;
+function mobilePairingStatement(pairingId: string, purpose: MobileWalletPairingPurpose): string {
+  const action = purpose === 'link'
+    ? HOSTED_WALLET_LINK_STATEMENT
+    : 'Approve sign-in on another device.';
+  return `${action} Pairing code: ${mobilePairingVerificationCode(pairingId)}.`;
 }
 
 async function enforcePairingRateLimit(
@@ -86,7 +103,7 @@ async function loadPairing(
 ): Promise<PairingRow | null> {
   if (!validToken(pairingId, 24, 64)) return null;
   return env.SWARM_STATE.prepare(
-    `select status, account_id, wallet_address, expires_at
+    `select status, purpose, account_id, wallet_address, expires_at
      from swarm_mobile_auth_pairings
      where pairing_hash = ? and expires_at > ?`,
   )
@@ -97,6 +114,7 @@ async function loadPairing(
 export async function createMobileWalletPairing(
   env: CloudflareHostedBindings,
   request: Request,
+  input: { purpose: 'sign-in' } | { purpose: 'link'; accountId: string } = { purpose: 'sign-in' },
   now = Date.now(),
 ): Promise<MobileWalletPairing> {
   await enforcePairingRateLimit(env, request, now);
@@ -105,20 +123,29 @@ export async function createMobileWalletPairing(
   const expiresAt = now + PAIRING_TTL_MS;
   const result = await env.SWARM_STATE.prepare(
     `insert into swarm_mobile_auth_pairings
-       (pairing_hash, poll_token_hash, status, created_at, expires_at)
-     values (?, ?, 'pending', ?, ?)`,
+       (pairing_hash, poll_token_hash, status, purpose, account_id, created_at, expires_at)
+     values (?, ?, 'pending', ?, ?, ?, ?)`,
   )
-    .bind(await sha256(pairingId), await sha256(pollToken), now, expiresAt)
+    .bind(
+      await sha256(pairingId),
+      await sha256(pollToken),
+      input.purpose,
+      input.purpose === 'link' ? input.accountId : null,
+      now,
+      expiresAt,
+    )
     .run();
   if (!result.success) throw new Error(result.error ?? 'Unable to create mobile wallet pairing.');
   const mobileUrl = new URL('/mobile-sign-in', hostedPublicOrigin(env, request));
   mobileUrl.searchParams.set('pairing', pairingId);
+  if (input.purpose === 'link') mobileUrl.searchParams.set('purpose', 'link');
   return {
     pairingId,
     pollToken,
     mobileUrl: mobileUrl.toString(),
     verificationCode: mobilePairingVerificationCode(pairingId),
     expiresAt,
+    purpose: input.purpose,
   };
 }
 
@@ -138,7 +165,7 @@ export async function createMobileWalletChallenge(
     request,
     walletAddress,
     now,
-    mobilePairingStatement(pairingId),
+    mobilePairingStatement(pairingId, pairing.purpose),
   );
 }
 
@@ -147,26 +174,53 @@ export async function approveMobileWalletPairing(
   pairingId: string,
   input: { walletAddress: string; nonce: string; signature: string },
   now = Date.now(),
-): Promise<boolean> {
+): Promise<MobileWalletPairingApproval> {
   const pairing = await loadPairing(env, pairingId, now);
-  if (!pairing || pairing.status !== 'pending') return false;
-  const identity = await verifyWalletIdentity(env, input, now, mobilePairingStatement(pairingId));
-  if (!identity) return false;
+  if (!pairing || pairing.status !== 'pending') return { status: 'invalid' };
+
+  let accountId: string;
+  let approvalStatus: 'approved' | 'linked' | 'already-linked';
+  if (pairing.purpose === 'link') {
+    if (!pairing.account_id) return { status: 'invalid' };
+    const linked = await verifyAndLinkWalletToHostedAccount(
+      env,
+      pairing.account_id,
+      input,
+      mobilePairingStatement(pairingId, pairing.purpose),
+      now,
+    );
+    if (linked.status === 'conflict' || linked.status === 'invalid') return linked;
+    accountId = pairing.account_id;
+    approvalStatus = linked.status;
+  } else {
+    const identity = await verifyWalletIdentity(
+      env,
+      input,
+      now,
+      mobilePairingStatement(pairingId, pairing.purpose),
+    );
+    if (!identity) return { status: 'invalid' };
+    accountId = identity.accountId;
+    approvalStatus = 'approved';
+  }
   const approved = await env.SWARM_STATE.prepare(
     `update swarm_mobile_auth_pairings
      set status = 'approved', account_id = ?, wallet_address = ?, approved_at = ?
      where pairing_hash = ? and status = 'pending' and expires_at > ?
      returning status`,
   )
-    .bind(identity.accountId, identity.walletAddress, now, await sha256(pairingId), now)
+    .bind(accountId, input.walletAddress, now, await sha256(pairingId), now)
     .first<{ status: 'approved' }>();
-  return !!approved;
+  return approved
+    ? { status: approvalStatus, walletAddress: input.walletAddress }
+    : { status: 'invalid' };
 }
 
 export async function consumeMobileWalletPairing(
   env: CloudflareHostedBindings,
   pairingId: string,
   pollToken: string,
+  linkAccountId?: string,
   now = Date.now(),
 ): Promise<MobileWalletPairingResult> {
   if (!validToken(pairingId, 24, 64) || !validToken(pollToken, 32, 96)) {
@@ -175,13 +229,14 @@ export async function consumeMobileWalletPairing(
   const pairingHash = await sha256(pairingId);
   const pollTokenHash = await sha256(pollToken);
   const pairing = await env.SWARM_STATE.prepare(
-    `select status, account_id, wallet_address, expires_at
+    `select status, purpose, account_id, wallet_address, expires_at
      from swarm_mobile_auth_pairings
      where pairing_hash = ? and poll_token_hash = ?`,
   )
     .bind(pairingHash, pollTokenHash)
     .first<PairingRow>();
   if (!pairing) return { status: 'not-found' };
+  if (pairing.purpose === 'link' && pairing.account_id !== linkAccountId) return { status: 'not-found' };
   if (pairing.expires_at <= now || pairing.status === 'consumed') return { status: 'expired' };
   if (pairing.status === 'pending') return { status: 'pending', expiresAt: pairing.expires_at };
   if (!pairing.account_id || !pairing.wallet_address) return { status: 'expired' };
@@ -195,6 +250,9 @@ export async function consumeMobileWalletPairing(
     .bind(now, pairingHash, pollTokenHash, now)
     .first<{ account_id: string; wallet_address: string }>();
   if (!consumed) return { status: 'expired' };
+  if (pairing.purpose === 'link') {
+    return { status: 'linked', walletAddress: consumed.wallet_address };
+  }
   const session = await createHostedSession(
     env,
     { accountId: consumed.account_id, walletAddress: consumed.wallet_address },

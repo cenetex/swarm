@@ -10,8 +10,13 @@ function pairingFromLocation(): string | null {
   return /^[A-Za-z0-9_-]{24,64}$/u.test(pairingId) ? pairingId : null;
 }
 
+function pairingPurposeFromLocation(): 'sign-in' | 'link' {
+  return new URLSearchParams(window.location.search).get('purpose') === 'link' ? 'link' : 'sign-in';
+}
+
 export function MobileWalletSignInPage() {
   const pairingId = useMemo(pairingFromLocation, []);
+  const purpose = useMemo(pairingPurposeFromLocation, []);
   const { connect, connected, connecting, publicKey, select, signMessage, wallet, wallets } = useWallet();
   const walletError = useAuthStore((state) => state.walletError);
   const clearWalletError = useAuthStore((state) => state.clearWalletError);
@@ -30,11 +35,14 @@ export function MobileWalletSignInPage() {
     setError('');
     clearWalletError();
     try {
-      await approveMobileWalletPairing({
+      const approval = await approveMobileWalletPairing({
         pairingId,
         walletAddress: publicKey.toBase58(),
         signMessage,
       });
+      if (purpose === 'link' && approval.status === 'approved') {
+        throw new Error('Wallet link approval response is invalid.');
+      }
       setSuccess(true);
     } catch (approvalError) {
       setError(approvalError instanceof Error ? approvalError.message : 'Wallet approval failed.');
@@ -42,7 +50,7 @@ export function MobileWalletSignInPage() {
     } finally {
       setPending(false);
     }
-  }, [clearWalletError, pairingId, publicKey, signMessage]);
+  }, [clearWalletError, pairingId, publicKey, purpose, signMessage]);
 
   useEffect(() => {
     if (pending && connected && publicKey && signMessage && !success) {
@@ -113,17 +121,21 @@ export function MobileWalletSignInPage() {
         {success ? (
           <>
             <div className="mx-auto mt-5 grid h-12 w-12 place-items-center rounded-full bg-emerald-400/15 text-2xl text-emerald-300">✓</div>
-            <h1 className="mt-4 text-2xl font-semibold">Sign-in approved</h1>
+            <h1 className="mt-4 text-2xl font-semibold">
+              {purpose === 'link' ? 'Wallet linked' : 'Sign-in approved'}
+            </h1>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
-              Return to your computer. This page can now be closed.
+              Return to Swarm on your other device. This page can now be closed.
             </p>
           </>
         ) : (
           <>
             <p className="mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Swarm Hosted</p>
-            <h1 className="mt-1 text-2xl font-semibold">Approve computer sign-in</h1>
+            <h1 className="mt-1 text-2xl font-semibold">
+              {purpose === 'link' ? 'Link this wallet' : 'Approve sign-in'}
+            </h1>
             <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">
-              Your wallet will sign a domain-bound login message. No transaction is sent and no funds move.
+              Your wallet will sign a message for Swarm. No transaction is sent and no funds move.
             </p>
             <div className="mt-4 rounded-xl bg-[var(--color-bg)] px-4 py-3">
               <p className="text-xs text-[var(--color-text-muted)]">Pairing code</p>
@@ -136,7 +148,11 @@ export function MobileWalletSignInPage() {
               className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-500 to-brand-600 px-4 py-3 font-medium text-white shadow-lg shadow-brand-500/25 disabled:cursor-wait disabled:opacity-70"
             >
               {(pending || connecting) && <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />}
-              <span>{connected ? 'Sign login message' : 'Approve sign-in'}</span>
+              <span>
+                {connected
+                  ? purpose === 'link' ? 'Sign wallet link' : 'Sign login message'
+                  : purpose === 'link' ? 'Approve wallet link' : 'Approve sign-in'}
+              </span>
             </button>
             {(error || walletError) && (
               <p className="mt-3 text-xs leading-5 text-red-300">{error || walletError}</p>

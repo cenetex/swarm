@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
 import { useAuthStore } from '../store/auth';
 import { HostedWalletLink } from './HostedWalletLink';
 import * as walletLink from '../auth/hosted-wallet-link';
@@ -20,6 +21,21 @@ vi.mock('@solana/wallet-adapter-react', () => ({
 
 vi.mock('./unified-wallet', () => ({
   useUnifiedWalletContext: () => ({ setShowModal: mocks.setShowModal }),
+}));
+
+vi.mock('./HostedWalletSignIn', () => ({
+  HostedWalletSignIn: ({
+    browserWalletFallback,
+    onLinked,
+  }: {
+    browserWalletFallback?: ReactNode;
+    onLinked?: (walletAddress: string) => void | Promise<void>;
+  }) => (
+    <div>
+      <button type="button" onClick={() => void onLinked?.('mobile-wallet-33333333')}>Link a wallet</button>
+      {browserWalletFallback}
+    </div>
+  ),
 }));
 
 vi.mock('../auth/hosted-wallet-link', () => ({
@@ -54,11 +70,21 @@ describe('HostedWalletLink', () => {
     });
   });
 
-  it('links the connected wallet by signature and refreshes the account', async () => {
+  it('refreshes the account after a phone or QR wallet link', async () => {
     render(<HostedWalletLink />);
     expect(screen.getByLabelText('Linked wallets')).toHaveTextContent('prim…1111');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Link wallet' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Link a wallet' }));
+
+    await waitFor(() => expect(useAuthStore.getState().refreshAccount).toHaveBeenCalledOnce());
+    expect(await screen.findByRole('status')).toHaveTextContent('Wallet linked: mobi…3333');
+    expect(walletLink.linkHostedWallet).not.toHaveBeenCalled();
+  });
+
+  it('links an available browser wallet by signature', async () => {
+    render(<HostedWalletLink />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use browser wallet' }));
 
     await waitFor(() => expect(walletLink.linkHostedWallet).toHaveBeenCalledWith({
       walletAddress: 'linked-wallet-22222222',
@@ -68,11 +94,11 @@ describe('HostedWalletLink', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Wallet linked: link…2222');
   });
 
-  it('opens the browser-wallet chooser when no signer is connected', () => {
+  it('opens the browser-wallet chooser when a signer is available after selection', () => {
     Object.assign(mocks.wallet, { connected: false, publicKey: null, signMessage: undefined });
     render(<HostedWalletLink />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Link wallet' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use browser wallet' }));
 
     expect(mocks.setShowModal).toHaveBeenCalledWith(true);
     expect(walletLink.linkHostedWallet).not.toHaveBeenCalled();
@@ -83,6 +109,6 @@ describe('HostedWalletLink', () => {
     render(<HostedWalletLink />);
 
     expect(screen.getByText(/sign in with your passkey to link another wallet/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Link wallet' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Link a wallet' })).not.toBeInTheDocument();
   });
 });

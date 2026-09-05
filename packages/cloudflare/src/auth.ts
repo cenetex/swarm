@@ -276,7 +276,23 @@ export async function linkWalletToHostedAccount(
   now = Date.now(),
 ): Promise<HostedWalletLinkResult> {
   if (session.authProvider !== 'passkey') return { status: 'invalid' };
-  const verified = await verifyWalletOwnership(env, input, now, HOSTED_WALLET_LINK_STATEMENT);
+  return verifyAndLinkWalletToHostedAccount(
+    env,
+    session.accountId,
+    input,
+    HOSTED_WALLET_LINK_STATEMENT,
+    now,
+  );
+}
+
+export async function verifyAndLinkWalletToHostedAccount(
+  env: CloudflareHostedBindings,
+  accountId: string,
+  input: { walletAddress: string; nonce: string; signature: string },
+  expectedStatement: string,
+  now = Date.now(),
+): Promise<HostedWalletLinkResult> {
+  const verified = await verifyWalletOwnership(env, input, now, expectedStatement);
   if (!verified) return { status: 'invalid' };
 
   const existing = await env.SWARM_STATE.prepare(
@@ -285,7 +301,7 @@ export async function linkWalletToHostedAccount(
     .bind(input.walletAddress)
     .first<IdentityRow>();
   if (existing) {
-    return existing.account_id === session.accountId
+    return existing.account_id === accountId
       ? { status: 'already-linked', walletAddress: input.walletAddress }
       : { status: 'conflict' };
   }
@@ -295,7 +311,7 @@ export async function linkWalletToHostedAccount(
      values ('solana', ?, ?, ?)
      on conflict(provider, provider_id) do nothing`,
   )
-    .bind(input.walletAddress, session.accountId, now)
+    .bind(input.walletAddress, accountId, now)
     .run();
   if (!linked.success) throw new Error(linked.error ?? 'Unable to link hosted wallet.');
 
@@ -305,7 +321,7 @@ export async function linkWalletToHostedAccount(
     .bind(input.walletAddress)
     .first<IdentityRow>();
   if (!resolved) throw new Error('Unable to resolve hosted wallet after linking.');
-  return resolved.account_id === session.accountId
+  return resolved.account_id === accountId
     ? { status: 'linked', walletAddress: input.walletAddress }
     : { status: 'conflict' };
 }

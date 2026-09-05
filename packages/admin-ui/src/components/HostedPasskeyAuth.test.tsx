@@ -48,10 +48,13 @@ describe('HostedPasskeyAuth', () => {
 
   it('keeps wallet recovery visible when the browser lacks passkey support', async () => {
     vi.mocked(passkeys.supportsPasskeys).mockReturnValue(false);
-    render(<HostedPasskeyAuth />);
+    const useWallet = vi.fn();
+    render(<HostedPasskeyAuth onUseWallet={useWallet} />);
     fireEvent.click(screen.getByRole('button', { name: /sign in with a passkey/i }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/use wallet sign-in instead/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/passkeys are unavailable here/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Use a wallet' }));
+    expect(useWallet).toHaveBeenCalledOnce();
     expect(passkeys.signInWithHostedPasskey).not.toHaveBeenCalled();
   });
 
@@ -63,7 +66,41 @@ describe('HostedPasskeyAuth', () => {
     fireEvent.click(screen.getByRole('button', { name: /sign in with a passkey/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /sign in with your wallet, then add the passkey again/i,
+      /use your wallet once, then add a fresh passkey/i,
     );
+  });
+
+  it('turns the raw iOS browser rejection into a short retry path', async () => {
+    const rawMessage = 'The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.';
+    vi.mocked(passkeys.signInWithHostedPasskey)
+      .mockRejectedValueOnce(new Error(rawMessage))
+      .mockResolvedValueOnce({
+        authenticated: true,
+        authProvider: 'passkey',
+        account: { accountId: 'acct-1', role: 'user', identities: [] },
+        user: { walletAddress: 'wallet-1' },
+      });
+    render(<HostedPasskeyAuth />);
+
+    fireEvent.click(screen.getByRole('button', { name: /sign in with a passkey/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Passkey did not open');
+    expect(alert).toHaveTextContent(/open it in Safari or Chrome/i);
+    expect(screen.queryByText(rawMessage)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try passkey again' }));
+    await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(true));
+    expect(passkeys.signInWithHostedPasskey).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses a calm generic message for unknown browser errors', async () => {
+    vi.mocked(passkeys.signInWithHostedPasskey).mockRejectedValue(new Error('Internal platform detail 7819'));
+    render(<HostedPasskeyAuth />);
+    fireEvent.click(screen.getByRole('button', { name: /sign in with a passkey/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Passkey sign-in paused');
+    expect(alert).not.toHaveTextContent('Internal platform detail 7819');
   });
 });

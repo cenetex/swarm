@@ -111,6 +111,24 @@ createServer(async (req, res) => {
       });
     if (path === '/auth/openrouter/status')
       return send({ connected: preview !== 'model', provider: preview === 'model' ? null : 'openrouter' });
+    if (path === '/auth/mobile/start') {
+      const pairingId = 'sample-mobile-pairing-1234567890';
+      const purpose = input.purpose === 'link' ? 'link' : 'sign-in';
+      const mobileUrl = new URL('/mobile-sign-in', `http://${req.headers.host}`);
+      mobileUrl.searchParams.set('pairing', pairingId);
+      if (purpose === 'link') mobileUrl.searchParams.set('purpose', 'link');
+      return send({
+        pairingId,
+        pollToken: 'sample-private-poll-token-1234567890',
+        mobileUrl: mobileUrl.toString(),
+        verificationCode: 'SAMPLE',
+        expiresAt: Date.now() + 300_000,
+        purpose,
+      }, 201);
+    }
+    if (/^\/auth\/mobile\/[A-Za-z0-9_-]+$/u.test(path) && req.method === 'GET') {
+      return send({ status: 'pending', expiresAt: Date.now() + 300_000 }, 202);
+    }
     if (path === '/public/avatars') return send(seed);
     if (path.startsWith('/public/avatars/'))
       return send(project(seed.find((avatar) => avatar.slug === path.split('/')[3]) || seed[0]));

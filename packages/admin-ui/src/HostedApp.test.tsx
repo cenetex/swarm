@@ -5,7 +5,9 @@ import * as hostedApi from './hosted-api';
 import { useAuthStore } from './store/auth';
 
 vi.mock('./components/HostedWalletSignIn', () => ({
-  HostedWalletSignIn: () => <button type="button">Wallet session</button>,
+  HostedWalletSignIn: ({ label = 'Use a wallet' }: { label?: string }) => (
+    <button type="button">{label}</button>
+  ),
 }));
 
 vi.mock('./components/HostedWalletLink', () => ({
@@ -141,8 +143,7 @@ describe('HostedApp', () => {
     render(<HostedApp />);
 
     expect(screen.getAllByRole('button', { name: /sign in with a passkey/i }).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByText('Use a wallet'));
-    expect(screen.getByRole('button', { name: /wallet session/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use a wallet' })).toBeInTheDocument();
   });
 
   it('offers wallet linking after passkey sign-in', async () => {

@@ -224,6 +224,7 @@ export function HostedApp() {
   const conversationEnd = useRef<HTMLDivElement>(null);
   const actionCard = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLInputElement>(null);
+  const walletSignInButton = useRef<HTMLButtonElement>(null);
 
   const activeAvatar = useMemo(
     () => avatars.find((avatar) => avatar.avatarId === activeAvatarId) ?? null,
@@ -811,13 +812,14 @@ export function HostedApp() {
               {!isAuthenticated && (
                 <ConversationCard title="Start a conversation" intro="Sign in. We will take it one step at a time.">
                   <div className="space-y-4 px-5 pb-5">
-                    <HostedPasskeyAuth />
-                    <details>
-                      <summary className="cursor-pointer py-2 text-sm text-[var(--color-text-secondary)]">
-                        Use a wallet
-                      </summary>
-                      <HostedWalletSignIn className="mt-3 w-full justify-center" />
-                    </details>
+                    <HostedPasskeyAuth onUseWallet={() => walletSignInButton.current?.click()} />
+                    <div>
+                      <p className="mb-2 text-center text-sm text-[var(--color-text-muted)]">or</p>
+                      <HostedWalletSignIn
+                        buttonRef={walletSignInButton}
+                        className="w-full justify-center"
+                      />
+                    </div>
                   </div>
                 </ConversationCard>
               )}
@@ -1492,7 +1494,6 @@ export function HostedApp() {
                     )}
                     {shownAction === 'account' && (
                       <div className="px-5 pb-5">
-                        <HostedWalletSignIn className="w-full justify-center" />
                         <details className="mt-4">
                           <summary className="cursor-pointer py-2 text-sm text-[var(--color-text-secondary)]">
                             Technical details

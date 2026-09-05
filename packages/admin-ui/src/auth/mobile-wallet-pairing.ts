@@ -10,11 +10,19 @@ export type MobileWalletPairing = {
   mobileUrl: string;
   verificationCode: string;
   expiresAt: number;
+  purpose: 'sign-in' | 'link';
 };
 
 export type MobileWalletPairingPoll =
   | { status: 'pending'; expiresAt: number }
+  | { linked: true; status: 'linked'; walletAddress: string }
   | HostedWalletSessionResponse;
+
+export type MobileWalletPairingApproval = {
+  success: true;
+  status: 'approved' | 'linked' | 'already-linked';
+  walletAddress: string;
+};
 
 async function responseError(response: Response, fallback: string): Promise<Error> {
   const body = await response.json().catch(() => null) as { error?: unknown; status?: unknown } | null;
@@ -26,11 +34,17 @@ async function responseError(response: Response, fallback: string): Promise<Erro
   return new Error(detail);
 }
 
-export async function startMobileWalletPairing(fetchImpl: Fetch = fetch): Promise<MobileWalletPairing> {
+export async function startMobileWalletPairing(input: {
+  purpose?: 'sign-in' | 'link';
+  fetchImpl?: Fetch;
+} = {}): Promise<MobileWalletPairing> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const purpose = input.purpose ?? 'sign-in';
   const response = await fetchImpl(`${API_BASE}/auth/mobile/start`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ purpose }),
   });
   if (!response.ok) throw await responseError(response, 'Unable to start mobile wallet sign-in.');
   const pairing = await response.json() as Partial<MobileWalletPairing>;
@@ -40,6 +54,7 @@ export async function startMobileWalletPairing(fetchImpl: Fetch = fetch): Promis
     || !pairing.mobileUrl
     || !pairing.verificationCode
     || typeof pairing.expiresAt !== 'number'
+    || pairing.purpose !== purpose
   ) {
     throw new Error('Mobile wallet pairing response is invalid.');
   }
@@ -68,7 +83,7 @@ export async function approveMobileWalletPairing(input: {
   walletAddress: string;
   signMessage: (message: Uint8Array) => Promise<Uint8Array>;
   fetchImpl?: Fetch;
-}): Promise<void> {
+}): Promise<MobileWalletPairingApproval> {
   const fetchImpl = input.fetchImpl ?? fetch;
   const path = `${API_BASE}/auth/mobile/${encodeURIComponent(input.pairingId)}`;
   const challengeResponse = await fetchImpl(`${path}/challenge`, {
@@ -101,6 +116,15 @@ export async function approveMobileWalletPairing(input: {
   if (!verifyResponse.ok) {
     throw await responseError(verifyResponse, 'The mobile wallet approval was rejected.');
   }
+  const approval = await verifyResponse.json() as Partial<MobileWalletPairingApproval>;
+  if (
+    approval.success !== true
+    || !['approved', 'linked', 'already-linked'].includes(approval.status ?? '')
+    || approval.walletAddress !== input.walletAddress
+  ) {
+    throw new Error('Mobile wallet approval response is invalid.');
+  }
+  return approval as MobileWalletPairingApproval;
 }
 
 export function phantomBrowseUrl(targetUrl: string): string {

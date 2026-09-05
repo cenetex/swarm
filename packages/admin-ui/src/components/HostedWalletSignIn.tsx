@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode, type Ref } from 'react';
 import QRCode from 'qrcode';
 import { applyAuthenticatedBackendSession } from '../auth/bootstrap';
 import {
@@ -12,12 +12,17 @@ import { useAuth } from '../store/auth';
 import { PrivyLoginButton } from './PrivyLoginButton';
 
 interface HostedWalletSignInProps {
+  browserWalletFallback?: ReactNode;
+  buttonRef?: Ref<HTMLButtonElement>;
   className?: string;
   label?: string;
+  mode?: 'sign-in' | 'link';
+  onLinked?: (walletAddress: string) => void | Promise<void>;
   showIcon?: boolean;
 }
 
 type MobileWallet = 'phantom' | 'solflare';
+type PairingPhase = 'waiting' | 'paused' | 'expired';
 
 function walletLink(pairing: MobileWalletPairing, wallet: MobileWallet): string {
   return wallet === 'phantom'
@@ -25,17 +30,50 @@ function walletLink(pairing: MobileWalletPairing, wallet: MobileWallet): string 
     : solflareBrowseUrl(pairing.mobileUrl);
 }
 
-export function HostedWalletSignIn({ className = '', label, showIcon = true }: HostedWalletSignInProps) {
+function pairingErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (message.includes('expired')) return 'This code expired. Create a new one.';
+  if (message.includes('different hosted account')) return 'This wallet is linked to another account.';
+  if (message.includes('authentication required') || message.includes('sign in with a passkey')) {
+    return 'Your passkey session ended. Sign in again, then link the wallet.';
+  }
+  if (message.includes('network') || message.includes('fetch')) {
+    return 'Connection interrupted. Check your connection, then try again.';
+  }
+  return 'Wallet connection paused. Try again.';
+}
+
+function countdown(expiresAt: number, now: number): string {
+  const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1_000));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+export function HostedWalletSignIn({
+  browserWalletFallback,
+  buttonRef,
+  className = '',
+  label,
+  mode = 'sign-in',
+  onLinked,
+  showIcon = true,
+}: HostedWalletSignInProps) {
   const { isAuthenticated } = useAuth();
   const [creating, setCreating] = useState(false);
   const [pairing, setPairing] = useState<MobileWalletPairing | null>(null);
   const [wallet, setWallet] = useState<MobileWallet>('phantom');
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [phase, setPhase] = useState<PairingPhase>('waiting');
+  const [now, setNow] = useState(Date.now());
   const selectedWalletLink = useMemo(
     () => pairing ? walletLink(pairing, wallet) : '',
     [pairing, wallet],
   );
+  const phantomLink = pairing ? walletLink(pairing, 'phantom') : '';
+  const solflareLink = pairing ? walletLink(pairing, 'solflare') : '';
+  const timeLeft = pairing ? countdown(pairing.expiresAt, now) : '';
 
   useEffect(() => {
     let active = true;
@@ -51,28 +89,64 @@ export function HostedWalletSignIn({ className = '', label, showIcon = true }: H
         if (active) setQrDataUrl(dataUrl);
       })
       .catch(() => {
-        if (active) setError('Unable to draw the wallet QR code.');
+        if (active) {
+          setError('The QR code could not be prepared. Open a wallet app on this phone.');
+          setPhase('paused');
+        }
       });
     return () => { active = false; };
   }, [selectedWalletLink]);
 
   useEffect(() => {
     if (!pairing) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [pairing]);
+
+  useEffect(() => {
+    if (pairing && now >= pairing.expiresAt && phase !== 'expired') {
+      setError('This code expired. Create a new one.');
+      setPhase('expired');
+    }
+  }, [now, pairing, phase]);
+
+  useEffect(() => {
+    if (!pairing || phase !== 'waiting') return;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
+      if (Date.now() >= pairing.expiresAt) {
+        if (active) {
+          setError('This code expired. Create a new one.');
+          setPhase('expired');
+        }
+        return;
+      }
       try {
         const result = await pollMobileWalletPairing(pairing);
         if (!active) return;
-        if ('status' in result) {
+        if ('status' in result && result.status === 'pending') {
           timer = setTimeout(() => void poll(), 1_250);
           return;
         }
-        applyAuthenticatedBackendSession(result);
+        if ('linked' in result) {
+          await onLinked?.(result.walletAddress);
+          if (!active) return;
+          if (!onLinked) setMessage('Wallet linked.');
+          setPairing(null);
+          return;
+        }
+        if (!applyAuthenticatedBackendSession(result)) {
+          setError('Wallet approved. Refresh the page to finish signing in.');
+          setPhase('paused');
+          return;
+        }
         setPairing(null);
       } catch (pollError) {
         if (!active) return;
-        setError(pollError instanceof Error ? pollError.message : 'Mobile wallet sign-in failed.');
+        setError(pairingErrorMessage(pollError));
+        setPhase('paused');
       }
     };
     timer = setTimeout(() => void poll(), 750);
@@ -80,19 +154,23 @@ export function HostedWalletSignIn({ className = '', label, showIcon = true }: H
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [pairing]);
+  }, [onLinked, pairing, phase]);
 
-  if (isAuthenticated) {
+  if (isAuthenticated && mode === 'sign-in') {
     return <PrivyLoginButton className={className} showIcon={showIcon} />;
   }
 
   const startPairing = async () => {
     setCreating(true);
+    setPairing(null);
+    setQrDataUrl('');
     setError('');
+    setMessage('');
+    setPhase('waiting');
     try {
-      setPairing(await startMobileWalletPairing());
+      setPairing(await startMobileWalletPairing({ purpose: mode }));
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : 'Unable to start wallet sign-in.');
+      setError(pairingErrorMessage(startError));
     } finally {
       setCreating(false);
     }
@@ -102,11 +180,28 @@ export function HostedWalletSignIn({ className = '', label, showIcon = true }: H
     setPairing(null);
     setQrDataUrl('');
     setError('');
+    setPhase('waiting');
   };
+
+  const qrPanel = (
+    <>
+      <div className="mx-auto grid h-[244px] w-[244px] max-w-full place-items-center rounded-2xl bg-white p-2 sm:h-[304px] sm:w-[304px]">
+        {qrDataUrl ? (
+          <img src={qrDataUrl} alt={`QR code for ${wallet}`} className="h-full w-full" />
+        ) : (
+          <span className="h-7 w-7 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+        )}
+      </div>
+      <p className="mt-3 text-center text-sm text-[var(--color-text-secondary)]">
+        Scan with {wallet === 'phantom' ? 'Phantom' : 'Solflare'}, then approve the message.
+      </p>
+    </>
+  );
 
   return (
     <div className="contents">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => void startPairing()}
         disabled={creating}
@@ -119,9 +214,10 @@ export function HostedWalletSignIn({ className = '', label, showIcon = true }: H
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h6v6H3V3zm12 0h6v6h-6V3zM3 15h6v6H3v-6zm12 0h2m4 0h-2v2m-4 4h2v-2m4 2v-2h-2m-2-2h2" />
           </svg>
         ) : null}
-        <span>{creating ? 'Preparing secure QR' : label ?? 'Scan to sign in'}</span>
+        <span>{creating ? 'Preparing wallet connection' : label ?? (mode === 'link' ? 'Link a wallet' : 'Use a wallet')}</span>
       </button>
-      {!pairing && error && <p className="mt-2 max-w-xs text-xs leading-5 text-red-400">{error}</p>}
+      {!pairing && error && <p className="mt-2 max-w-xs text-sm leading-5 text-red-300" role="alert">{error}</p>}
+      {!pairing && message && <p className="mt-2 text-sm leading-5 text-emerald-300" role="status">{message}</p>}
 
       {pairing && (
         <div
@@ -139,62 +235,131 @@ export function HostedWalletSignIn({ className = '', label, showIcon = true }: H
             <div className="max-h-[calc(100dvh-1.5rem)] w-full max-w-sm overflow-y-auto overscroll-contain rounded-3xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5 shadow-2xl sm:max-h-[calc(100dvh-2rem)]">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Mobile wallet</p>
-                  <h2 id="mobile-wallet-title" className="mt-1 text-xl font-semibold">Scan to sign in</h2>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">Optional wallet</p>
+                  <h2 id="mobile-wallet-title" className="mt-1 text-xl font-semibold">
+                    {mode === 'link' ? 'Link a wallet' : 'Use a wallet'}
+                  </h2>
                 </div>
                 <button
                   type="button"
                   onClick={closePairing}
                   className="rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-bg)] hover:text-[var(--color-text)]"
-                  aria-label="Close wallet QR"
+                  aria-label="Close wallet connection"
                 >
                   <span aria-hidden="true">×</span>
                 </button>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 rounded-xl bg-[var(--color-bg)] p-1">
-                {(['phantom', 'solflare'] as const).map((option) => (
+              {phase === 'expired' ? (
+                <div className="mt-6 rounded-2xl bg-[var(--color-bg)] p-5 text-center">
+                  <p className="font-semibold">This code expired</p>
+                  <p className="mt-2 text-sm text-[var(--color-text-secondary)]">Create a fresh code to continue.</p>
                   <button
-                    key={option}
                     type="button"
-                    onClick={() => setWallet(option)}
-                    className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                      wallet === option
-                        ? 'bg-brand-500 text-white'
-                        : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-                    }`}
+                    onClick={() => void startPairing()}
+                    className="mt-4 w-full rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white"
                   >
-                    {option === 'phantom' ? 'Phantom' : 'Solflare'}
+                    Create a new code
                   </button>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <>
+                  <div className="mt-5 sm:hidden">
+                    <p className="text-sm font-semibold">On this phone</p>
+                    <div className="mt-3 grid gap-2">
+                      <a
+                        href={phantomLink}
+                        className="rounded-xl bg-brand-500 px-4 py-3 text-center text-sm font-semibold text-white"
+                      >
+                        Open Phantom
+                      </a>
+                      <a
+                        href={solflareLink}
+                        className="rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-center text-sm font-semibold text-[var(--color-text)]"
+                      >
+                        Open Solflare
+                      </a>
+                    </div>
+                  </div>
 
-              {error && <p className="mt-3 text-center text-xs leading-5 text-red-400">{error}</p>}
+                  <div className="mt-5 hidden sm:block">
+                    <div className="grid grid-cols-2 rounded-xl bg-[var(--color-bg)] p-1">
+                      {(['phantom', 'solflare'] as const).map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => setWallet(option)}
+                          className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                            wallet === option
+                              ? 'bg-brand-500 text-white'
+                              : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+                          }`}
+                        >
+                          {option === 'phantom' ? 'Phantom' : 'Solflare'}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-4">{qrPanel}</div>
+                  </div>
 
-              <div>
-                <div className="mx-auto mt-4 grid h-[244px] w-[244px] max-w-full place-items-center rounded-2xl bg-white p-2 sm:h-[304px] sm:w-[304px]">
-                  {qrDataUrl ? (
-                    <img src={qrDataUrl} alt={`QR code for ${wallet}`} className="h-full w-full" />
-                  ) : (
-                    <span className="h-7 w-7 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+                  <details className="mt-5 sm:hidden">
+                    <summary className="cursor-pointer py-2 text-center text-sm font-medium text-brand-200">
+                      Scan from another device
+                    </summary>
+                    <div className="mt-3 grid grid-cols-2 rounded-xl bg-[var(--color-bg)] p-1">
+                      {(['phantom', 'solflare'] as const).map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => setWallet(option)}
+                          className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                            wallet === option ? 'bg-brand-500 text-white' : 'text-[var(--color-text-muted)]'
+                          }`}
+                        >
+                          {option === 'phantom' ? 'Phantom' : 'Solflare'}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-4">{qrPanel}</div>
+                  </details>
+
+                  <div className="mt-4 rounded-xl bg-[var(--color-bg)] px-4 py-3 text-center" aria-live="polite">
+                    <p className="text-sm font-medium">
+                      {phase === 'paused' ? 'Connection paused' : 'Waiting for wallet approval'}
+                    </p>
+                    <p className="mt-1 font-mono text-xs text-[var(--color-text-muted)]">
+                      Code {pairing.verificationCode} · {timeLeft}
+                    </p>
+                  </div>
+
+                  {error && <p className="mt-3 text-center text-sm leading-5 text-red-300" role="alert">{error}</p>}
+                  {phase === 'paused' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError('');
+                        setPhase('waiting');
+                      }}
+                      className="mt-3 w-full rounded-xl border border-[var(--color-border-secondary)] px-4 py-2.5 text-sm font-semibold"
+                    >
+                      Try this code again
+                    </button>
+                  )}
+
+                  <p className="mt-3 text-center text-xs leading-5 text-[var(--color-text-muted)]">
+                    A signature confirms this wallet. No transaction is sent.
+                  </p>
+                </>
+              )}
+
+              {phase !== 'expired' && (
+                <div className="mt-4 border-t border-[var(--color-border)] pt-3 text-center">
+                  <p className="mb-2 text-xs text-[var(--color-text-muted)]">Wallet already available in this browser?</p>
+                  {browserWalletFallback ?? (
+                    <PrivyLoginButton label="Use browser wallet" showIcon={false} className="w-full justify-center shadow-none" />
                   )}
                 </div>
-
-                <p className="mt-4 text-center text-sm text-[var(--color-text-secondary)]">
-                  Scan with {wallet === 'phantom' ? 'Phantom' : 'Solflare'}, then approve the sign-in message.
-                </p>
-                <p className="mt-2 text-center font-mono text-xs text-[var(--color-text-muted)]">
-                  Pairing code {pairing.verificationCode}
-                </p>
-                <p className="mt-2 text-center text-xs leading-5 text-[var(--color-text-muted)]">
-                  No transaction is sent. The QR expires in five minutes.
-                </p>
-              </div>
-
-              <div className="mt-4 hidden border-t border-[var(--color-border)] pt-3 text-center sm:block">
-                <p className="mb-2 text-xs text-[var(--color-text-muted)]">Already inside a wallet browser?</p>
-                <PrivyLoginButton label="Sign in with browser wallet" showIcon={false} className="w-full justify-center shadow-none" />
-              </div>
+              )}
             </div>
           </div>
         </div>
