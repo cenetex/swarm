@@ -28,30 +28,57 @@ describe('mobile wallet pairing client', () => {
       mobileUrl: 'https://swarm.example/mobile-sign-in?pairing=pairing-id-abcdefghijklmnopqrstuvwxyz',
       verificationCode: 'PAIRIN',
       expiresAt: Date.now() + 300_000,
+      purpose: 'sign-in',
     }, { status: 201 })) as unknown as typeof fetch;
 
-    const pairing = await startMobileWalletPairing(fetchImpl);
+    const pairing = await startMobileWalletPairing({ fetchImpl });
 
     expect(pairing.mobileUrl).not.toContain(pairing.pollToken);
     expect(fetchImpl).toHaveBeenCalledWith(expect.stringMatching(/\/auth\/mobile\/start$/u), expect.objectContaining({
       method: 'POST',
       credentials: 'include',
+      body: JSON.stringify({ purpose: 'sign-in' }),
+    }));
+  });
+
+  it('requests a link pairing through the active passkey session', async () => {
+    const fetchImpl = vi.fn(async () => Response.json({
+      pairingId: 'pairing-id-abcdefghijklmnopqrstuvwxyz',
+      pollToken: 'desktop-only-poll-token-abcdefghijklmnopqrstuvwxyz',
+      mobileUrl: 'https://swarm.example/mobile-sign-in?pairing=pairing-id-abcdefghijklmnopqrstuvwxyz&purpose=link',
+      verificationCode: 'PAIRIN',
+      expiresAt: Date.now() + 300_000,
+      purpose: 'link',
+    }, { status: 201 })) as unknown as typeof fetch;
+
+    const pairing = await startMobileWalletPairing({ purpose: 'link', fetchImpl });
+
+    expect(pairing.purpose).toBe('link');
+    expect(pairing.mobileUrl).not.toContain(pairing.pollToken);
+    expect(fetchImpl).toHaveBeenCalledWith(expect.stringMatching(/\/auth\/mobile\/start$/u), expect.objectContaining({
+      credentials: 'include',
+      body: JSON.stringify({ purpose: 'link' }),
     }));
   });
 
   it('signs the pairing challenge and sends the signature only to Swarm', async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(Response.json({ nonce: 'nonce-1', message: 'Approve this login' }))
-      .mockResolvedValueOnce(Response.json({ success: true, status: 'approved' })) as unknown as typeof fetch;
+      .mockResolvedValueOnce(Response.json({
+        success: true,
+        status: 'approved',
+        walletAddress: 'wallet-address',
+      })) as unknown as typeof fetch;
     const signMessage = vi.fn(async () => new Uint8Array(64).fill(7));
 
-    await approveMobileWalletPairing({
+    const approval = await approveMobileWalletPairing({
       pairingId: 'pairing-id-abcdefghijklmnopqrstuvwxyz',
       walletAddress: 'wallet-address',
       signMessage,
       fetchImpl,
     });
 
+    expect(approval).toMatchObject({ success: true, status: 'approved' });
     expect(signMessage).toHaveBeenCalledWith(new TextEncoder().encode('Approve this login'));
     expect(fetchImpl).toHaveBeenNthCalledWith(
       2,

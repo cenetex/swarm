@@ -3,6 +3,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { linkHostedWallet } from '../auth/hosted-wallet-link';
 import { humanizeWalletSignatureError } from '../auth/wallet-errors';
 import { useAuthStore } from '../store/auth';
+import { HostedWalletSignIn } from './HostedWalletSignIn';
 import { useUnifiedWalletContext } from './unified-wallet';
 
 function shortWallet(walletAddress: string): string {
@@ -61,6 +62,13 @@ export function HostedWalletLink() {
     if (waitingForWallet && walletError && !connecting && !connected) setWaitingForWallet(false);
   }, [connected, connecting, waitingForWallet, walletError]);
 
+  const handleMobileLinked = useCallback(async (walletAddress: string) => {
+    const refreshed = await refreshAccount();
+    setMessage(refreshed
+      ? `Wallet linked: ${shortWallet(walletAddress)}`
+      : `Wallet linked: ${shortWallet(walletAddress)}. Reload to refresh the wallet list.`);
+  }, [refreshAccount]);
+
   if (authProvider !== 'passkey') {
     return (
       <p className="text-xs leading-5 text-[var(--color-text-muted)]">
@@ -69,7 +77,7 @@ export function HostedWalletLink() {
     );
   }
 
-  const handleLink = () => {
+  const handleBrowserLink = () => {
     setMessage('');
     setError('');
     clearWalletError();
@@ -98,17 +106,25 @@ export function HostedWalletLink() {
           ))}
         </div>
       )}
-      <button
-        type="button"
-        onClick={handleLink}
-        disabled={working || connecting}
-        className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--color-border-secondary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-text)] transition hover:border-brand-400 hover:text-brand-200 disabled:cursor-wait disabled:opacity-60"
-      >
-        {(working || connecting) && (
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+      <HostedWalletSignIn
+        mode="link"
+        label="Link a wallet"
+        className="mt-3 w-full justify-center"
+        onLinked={handleMobileLinked}
+        browserWalletFallback={(
+          <button
+            type="button"
+            onClick={handleBrowserLink}
+            disabled={working || connecting}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--color-border-secondary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-text)] transition hover:border-brand-400 hover:text-brand-200 disabled:cursor-wait disabled:opacity-60"
+          >
+            {(working || connecting) && (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            )}
+            <span>{working ? 'Waiting for signature' : connecting ? 'Connecting wallet' : 'Use browser wallet'}</span>
+          </button>
         )}
-        <span>{working ? 'Waiting for signature' : connecting ? 'Connecting wallet' : 'Link wallet'}</span>
-      </button>
+      />
       {message && <p className="mt-2 text-xs leading-5 text-emerald-300" role="status">{message}</p>}
       {(error || walletError) && <p className="mt-2 text-xs leading-5 text-red-400" role="alert">{error || walletError}</p>}
     </div>

@@ -581,6 +581,24 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
 
   if (url.pathname === '/api/auth/mobile/start' && request.method === 'POST') {
     assertSameOrigin(env, request);
+    const body = request.headers.get('Content-Type')?.includes('application/json')
+      ? await readJsonObject(request)
+      : {};
+    const purpose = body.purpose ?? 'sign-in';
+    if (purpose !== 'sign-in' && purpose !== 'link') {
+      return json({ error: 'Wallet pairing purpose is invalid.' }, { status: 400 });
+    }
+    if (purpose === 'link') {
+      const session = await getHostedSession(env, request);
+      if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+      if (session.authProvider !== 'passkey') {
+        return json({ error: 'Sign in with a passkey before linking a wallet.' }, { status: 403 });
+      }
+      return json(
+        await createMobileWalletPairing(env, request, { purpose, accountId: session.accountId }),
+        { status: 201 },
+      );
+    }
     return json(await createMobileWalletPairing(env, request), { status: 201 });
   }
 
@@ -591,10 +609,24 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     const pairingId = mobileAuthMatch[1] ?? '';
     const action = mobileAuthMatch[2];
     if (!action && request.method === 'GET') {
-      const result = await consumeMobileWalletPairing(env, pairingId, bearerToken(request));
+      const session = await getHostedSession(env, request);
+      const linkAccountId = session?.authProvider === 'passkey' ? session.accountId : undefined;
+      const result = await consumeMobileWalletPairing(
+        env,
+        pairingId,
+        bearerToken(request),
+        linkAccountId,
+      );
       if (result.status === 'not-found') return json({ status: result.status }, { status: 404 });
       if (result.status === 'expired') return json({ status: result.status }, { status: 410 });
       if (result.status === 'pending') return json(result, { status: 202 });
+      if (result.status === 'linked') {
+        return json({
+          linked: true,
+          status: result.status,
+          walletAddress: result.walletAddress,
+        });
+      }
       return json(await authenticatedWalletPayload(env, result.session), {
         headers: { 'Set-Cookie': hostedSessionCookie(result.session.sessionToken) },
       });
@@ -616,13 +648,18 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
       const body = await readJsonObject(request);
       const walletAddress =
         typeof body.walletAddress === 'string' ? body.walletAddress.trim() : stringField(body, 'publicKey');
-      const approved = await approveMobileWalletPairing(env, pairingId, {
+      const approval = await approveMobileWalletPairing(env, pairingId, {
         walletAddress,
         nonce: stringField(body, 'nonce'),
         signature: stringField(body, 'signature'),
       });
-      if (!approved) return json({ error: 'Mobile wallet approval is invalid or expired.' }, { status: 401 });
-      return json({ success: true, status: 'approved' });
+      if (approval.status === 'invalid') {
+        return json({ error: 'Mobile wallet approval is invalid or expired.' }, { status: 401 });
+      }
+      if (approval.status === 'conflict') {
+        return json({ error: 'This wallet belongs to a different hosted account.' }, { status: 409 });
+      }
+      return json({ success: true, ...approval });
     }
     return json({ error: 'Method not allowed.' }, { status: 405 });
   }

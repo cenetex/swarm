@@ -35,6 +35,7 @@ type OAuthTransaction = {
 type MobilePairing = {
   poll_token_hash: string;
   status: 'pending' | 'approved' | 'consumed';
+  purpose: 'sign-in' | 'link';
   account_id: string | null;
   wallet_address: string | null;
   expires_at: number;
@@ -92,7 +93,7 @@ class MemoryStatement implements CloudflareD1PreparedStatement {
       const session = this.db.sessions.get(sessionHash);
       return (session && session.expires_at > now ? session : null) as T | null;
     }
-    if (this.query.startsWith('select status, account_id, wallet_address, expires_at from swarm_mobile_auth_pairings')) {
+    if (this.query.startsWith('select status, purpose, account_id, wallet_address, expires_at from swarm_mobile_auth_pairings')) {
       const [pairingHash, second] = this.values as [string, string | number];
       const pairing = this.db.mobilePairings.get(pairingHash);
       if (!pairing) return null;
@@ -177,11 +178,19 @@ class MemoryStatement implements CloudflareD1PreparedStatement {
         expires_at: expiresAt,
       });
     } else if (this.query.startsWith('insert into swarm_mobile_auth_pairings')) {
-      const [pairingHash, pollTokenHash, , expiresAt] = this.values as [string, string, number, number];
+      const [pairingHash, pollTokenHash, purpose, accountId, , expiresAt] = this.values as [
+        string,
+        string,
+        'sign-in' | 'link',
+        string | null,
+        number,
+        number,
+      ];
       this.db.mobilePairings.set(pairingHash, {
         poll_token_hash: pollTokenHash,
         status: 'pending',
-        account_id: null,
+        purpose,
+        account_id: accountId,
         wallet_address: null,
         expires_at: expiresAt,
       });
@@ -484,6 +493,7 @@ describe('Cloudflare hosted authentication flow', () => {
     };
     expect(pairing.mobileUrl).toBe(`${origin}/mobile-sign-in?pairing=${pairing.pairingId}`);
     expect(pairing.mobileUrl).not.toContain(pairing.pollToken);
+    expect(pairing).toMatchObject({ purpose: 'sign-in' });
 
     const keyPair = nacl.sign.keyPair();
     const walletAddress = bs58.encode(keyPair.publicKey);
@@ -560,6 +570,91 @@ describe('Cloudflare hosted authentication flow', () => {
       env,
     );
     expect(replay.status).toBe(410);
+  });
+
+  it('links a mobile wallet to the active passkey account without replacing its session', async () => {
+    const db = new MemoryD1();
+    const env = testEnv(db);
+    const origin = 'https://swarm.example';
+    const now = Date.now();
+    const first = await signedInSession(env, now);
+    const passkeySession = await createHostedSession(env, {
+      accountId: first.session.accountId,
+      walletAddress: first.walletAddress,
+      authProvider: 'passkey',
+    }, now + 100);
+    const cookie = hostedSessionCookie(passkeySession.sessionToken).split(';', 1)[0] ?? '';
+
+    const startResponse = await worker.fetch(new Request(`${origin}/api/auth/mobile/start`, {
+      method: 'POST',
+      headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ purpose: 'link' }),
+    }), env);
+    expect(startResponse.status).toBe(201);
+    const pairing = await startResponse.json() as {
+      pairingId: string;
+      pollToken: string;
+      mobileUrl: string;
+      purpose: string;
+    };
+    expect(pairing).toMatchObject({ purpose: 'link' });
+    expect(pairing.mobileUrl).toContain('purpose=link');
+    expect(pairing.mobileUrl).not.toContain(pairing.pollToken);
+
+    const linkedKeyPair = nacl.sign.keyPair();
+    const linkedWallet = bs58.encode(linkedKeyPair.publicKey);
+    const challengeResponse = await worker.fetch(new Request(
+      `${origin}/api/auth/mobile/${pairing.pairingId}/challenge`,
+      {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress: linkedWallet }),
+      },
+    ), env);
+    const challenge = await challengeResponse.json() as { nonce: string; message: string };
+    expect(challenge.message).toContain('Link this Solana wallet to your Swarm passkey account.');
+    const signature = bs58.encode(
+      nacl.sign.detached(new TextEncoder().encode(challenge.message), linkedKeyPair.secretKey),
+    );
+    const approvalResponse = await worker.fetch(new Request(
+      `${origin}/api/auth/mobile/${pairing.pairingId}/verify`,
+      {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress: linkedWallet, nonce: challenge.nonce, signature }),
+      },
+    ), env);
+    expect(approvalResponse.status).toBe(200);
+    expect(await approvalResponse.json()).toMatchObject({
+      success: true,
+      status: 'linked',
+      walletAddress: linkedWallet,
+    });
+
+    const missingSessionPoll = await worker.fetch(new Request(
+      `${origin}/api/auth/mobile/${pairing.pairingId}`,
+      { headers: { Authorization: `Bearer ${pairing.pollToken}` } },
+    ), env);
+    expect(missingSessionPoll.status).toBe(404);
+
+    const pollResponse = await worker.fetch(new Request(
+      `${origin}/api/auth/mobile/${pairing.pairingId}`,
+      { headers: { Authorization: `Bearer ${pairing.pollToken}`, Cookie: cookie } },
+    ), env);
+    expect(pollResponse.status).toBe(200);
+    expect(pollResponse.headers.get('Set-Cookie')).toBeNull();
+    expect(await pollResponse.json()).toEqual({
+      linked: true,
+      status: 'linked',
+      walletAddress: linkedWallet,
+    });
+    expect(db.identities.get(linkedWallet)).toBe(first.session.accountId);
+    expect(db.accounts.size).toBe(1);
+
+    const meResponse = await worker.fetch(new Request(`${origin}/api/auth/me`, {
+      headers: { Cookie: cookie },
+    }), env);
+    expect(await meResponse.json()).toMatchObject({ authProvider: 'passkey' });
   });
 
   it('binds PKCE state to the session and stores only encrypted OpenRouter credentials', async () => {

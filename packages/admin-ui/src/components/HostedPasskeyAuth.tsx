@@ -10,28 +10,101 @@ import { useAuth } from '../store/auth';
 interface HostedPasskeyAuthProps {
   className?: string;
   label?: string;
-}
-function passkeyErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof DOMException && error.name === 'NotAllowedError') {
-    return 'Passkey prompt was cancelled or timed out.';
-  }
-  if (error instanceof Error && error.message === 'Passkey sign-in is invalid or expired.') {
-    return 'This passkey could not be verified. Sign in with your wallet, then add the passkey again.';
-  }
-  return error instanceof Error ? error.message : fallback;
+  onUseWallet?: () => void;
 }
 
-export function HostedPasskeyAuth({ className = '', label }: HostedPasskeyAuthProps) {
+type PasskeyIssue = {
+  title: string;
+  detail: string;
+};
+
+function errorName(error: unknown): string {
+  return typeof error === 'object' && error !== null && 'name' in error
+    ? String(error.name)
+    : '';
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message.toLowerCase() : '';
+}
+
+export function passkeyIssue(error: unknown, isRegistration: boolean): PasskeyIssue {
+  const name = errorName(error);
+  const message = errorMessage(error);
+
+  if (
+    name === 'NotAllowedError'
+    || name === 'AbortError'
+    || name === 'TimeoutError'
+    || message.includes('not allowed by the user agent')
+    || message.includes('denied permission')
+  ) {
+    return {
+      title: 'Passkey did not open',
+      detail: 'Try again. If this page opened inside another app, open it in Safari or Chrome.',
+    };
+  }
+  if (name === 'SecurityError' || message.includes('secure context') || message.includes('permissions policy')) {
+    return {
+      title: 'Open Swarm in your browser',
+      detail: 'Passkeys work from the secure Swarm page in Safari or Chrome.',
+    };
+  }
+  if (message.includes('invalid or expired')) {
+    return {
+      title: 'This passkey needs a refresh',
+      detail: isRegistration
+        ? 'Try adding it again.'
+        : 'Use your wallet once, then add a fresh passkey from your account card.',
+    };
+  }
+  if (
+    name === 'NetworkError'
+    || name === 'TypeError'
+    || message.includes('network')
+    || message.includes('fetch')
+  ) {
+    return {
+      title: 'Connection interrupted',
+      detail: 'Check your connection, then try again.',
+    };
+  }
+  return {
+    title: isRegistration ? 'Passkey was not added' : 'Passkey sign-in paused',
+    detail: 'Try again. You can also use a wallet.',
+  };
+}
+
+function passkeyContextIssue(): PasskeyIssue | null {
+  if (typeof window === 'undefined') return null;
+  if (window.isSecureContext === false) {
+    return {
+      title: 'Open the secure Swarm page',
+      detail: 'Passkeys need the HTTPS version of Swarm in Safari or Chrome.',
+    };
+  }
+  return null;
+}
+
+export function HostedPasskeyAuth({ className = '', label, onUseWallet }: HostedPasskeyAuthProps) {
   const { isAuthenticated } = useAuth();
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [issue, setIssue] = useState<PasskeyIssue | null>(null);
 
   const handlePasskey = async () => {
     setMessage('');
-    setError('');
+    setIssue(null);
     if (!supportsPasskeys()) {
-      setError('This browser does not support passkeys. Use wallet sign-in instead.');
+      setIssue({
+        title: 'Passkeys are unavailable here',
+        detail: 'Open Swarm in Safari or Chrome, or use a wallet.',
+      });
+      return;
+    }
+    const contextIssue = passkeyContextIssue();
+    if (contextIssue) {
+      setIssue(contextIssue);
       return;
     }
     setWorking(true);
@@ -44,10 +117,7 @@ export function HostedPasskeyAuth({ className = '', label }: HostedPasskeyAuthPr
         if (!applyAuthenticatedBackendSession(session)) throw new Error('Passkey session could not be applied.');
       }
     } catch (passkeyError) {
-      setError(passkeyErrorMessage(
-        passkeyError,
-        isAuthenticated ? 'Passkey setup failed.' : 'Passkey sign-in failed.',
-      ));
+      setIssue(passkeyIssue(passkeyError, isAuthenticated));
     } finally {
       setWorking(false);
     }
@@ -75,7 +145,30 @@ export function HostedPasskeyAuth({ className = '', label }: HostedPasskeyAuthPr
         <span>{working ? 'Waiting for your device' : label ?? (isAuthenticated ? 'Add a passkey' : 'Sign in with a passkey')}</span>
       </button>
       {message && <p className="mt-2 text-xs leading-5 text-emerald-300" role="status">{message}</p>}
-      {error && <p className="mt-2 text-xs leading-5 text-red-400" role="alert">{error}</p>}
+      {issue && (
+        <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3" role="alert">
+          <p className="text-sm font-semibold text-amber-100">{issue.title}</p>
+          <p className="mt-1 text-sm leading-5 text-[var(--color-text-secondary)]">{issue.detail}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handlePasskey()}
+              className="rounded-lg bg-[var(--color-text)] px-3 py-2 text-xs font-semibold text-[var(--color-bg)]"
+            >
+              Try passkey again
+            </button>
+            {!isAuthenticated && onUseWallet && (
+              <button
+                type="button"
+                onClick={onUseWallet}
+                className="rounded-lg border border-[var(--color-border-secondary)] px-3 py-2 text-xs font-semibold text-[var(--color-text)]"
+              >
+                Use a wallet
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

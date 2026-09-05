@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HostedWalletSignIn } from './HostedWalletSignIn';
 
 const mocks = vi.hoisted(() => ({
+  applySession: vi.fn(),
   poll: vi.fn(),
   start: vi.fn(),
   toDataUrl: vi.fn(),
@@ -32,64 +33,111 @@ vi.mock('./PrivyLoginButton', () => ({
 }));
 
 vi.mock('../auth/bootstrap', () => ({
-  applyAuthenticatedBackendSession: vi.fn(),
+  applyAuthenticatedBackendSession: mocks.applySession,
 }));
+
+const pairing = {
+  pairingId: 'pairing-id-abcdefghijklmnopqrstuvwxyz',
+  pollToken: 'desktop-only-poll-token-abcdefghijklmnopqrstuvwxyz',
+  mobileUrl: 'https://swarm.example/mobile-sign-in?pairing=pairing-id-abcdefghijklmnopqrstuvwxyz',
+  verificationCode: 'PAIRIN',
+  expiresAt: Date.now() + 300_000,
+  purpose: 'sign-in' as const,
+};
 
 describe('HostedWalletSignIn', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    pairing.expiresAt = Date.now() + 300_000;
     mocks.toDataUrl.mockResolvedValue('data:image/png;base64,qr');
     mocks.poll.mockImplementation(() => new Promise(() => {}));
-    mocks.start.mockResolvedValue({
-      pairingId: 'pairing-id-abcdefghijklmnopqrstuvwxyz',
-      pollToken: 'desktop-only-poll-token-abcdefghijklmnopqrstuvwxyz',
-      mobileUrl: 'https://swarm.example/mobile-sign-in?pairing=pairing-id-abcdefghijklmnopqrstuvwxyz',
-      verificationCode: 'PAIRIN',
-      expiresAt: Date.now() + 300_000,
-    });
+    mocks.start.mockResolvedValue(pairing);
+    mocks.applySession.mockReturnValue(true);
   });
 
-  it('opens a Phantom QR first instead of a desktop wallet chooser', async () => {
+  it('opens a Phantom QR first and keeps the private polling token out of it', async () => {
     render(<HostedWalletSignIn />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Scan to sign in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use a wallet' }));
 
-    expect(await screen.findByRole('dialog', { name: 'Scan to sign in' })).toBeInTheDocument();
-    expect(screen.getByText('Pairing code PAIRIN')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('img', { name: 'QR code for phantom' })).toBeInTheDocument());
+    expect(await screen.findByRole('dialog', { name: 'Use a wallet' })).toBeInTheDocument();
+    expect(screen.getByText(/Code PAIRIN/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByRole('img', { name: 'QR code for phantom' })).toHaveLength(2));
     expect(mocks.toDataUrl).toHaveBeenCalledWith(
       expect.stringContaining('https://phantom.app/ul/browse/'),
       expect.any(Object),
     );
+    expect(mocks.toDataUrl.mock.calls[0]?.[0]).not.toContain(pairing.pollToken);
+    expect(mocks.start).toHaveBeenCalledWith({ purpose: 'sign-in' });
   });
 
-  it('shows the QR on the responsive modal without same-device wallet links', async () => {
+  it('offers direct Phantom and Solflare links on the current phone', async () => {
     render(<HostedWalletSignIn />);
-    fireEvent.click(screen.getByRole('button', { name: 'Scan to sign in' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use a wallet' }));
+    await screen.findByRole('dialog', { name: 'Use a wallet' });
 
-    const dialog = await screen.findByRole('dialog', { name: 'Scan to sign in' });
-    const qrImage = await screen.findByRole('img', { name: 'QR code for phantom' });
-
-    expect(dialog).toHaveClass('overflow-y-auto');
-    expect(qrImage.closest('div')).not.toHaveClass('hidden');
-    expect(screen.queryByRole('link', { name: /open phantom/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /open solflare/i })).not.toBeInTheDocument();
+    const phantom = screen.getByRole('link', { name: 'Open Phantom' });
+    const solflare = screen.getByRole('link', { name: 'Open Solflare' });
+    expect(phantom).toHaveAttribute('href', expect.stringContaining('https://phantom.app/ul/browse/'));
+    expect(solflare).toHaveAttribute('href', expect.stringContaining('https://solflare.com/ul/v1/browse/'));
+    expect(phantom.getAttribute('href')).not.toContain(pairing.pollToken);
+    expect(solflare.getAttribute('href')).not.toContain(pairing.pollToken);
+    expect(screen.getByText('Scan from another device')).toBeInTheDocument();
   });
 
-  it('can switch the QR to Solflare and keeps browser wallets as a fallback', async () => {
+  it('switches the desktop QR to Solflare and keeps a browser-wallet choice', async () => {
     render(<HostedWalletSignIn />);
-    fireEvent.click(screen.getByRole('button', { name: 'Scan to sign in' }));
-    await screen.findByRole('dialog', { name: 'Scan to sign in' });
+    fireEvent.click(screen.getByRole('button', { name: 'Use a wallet' }));
+    await screen.findByRole('dialog', { name: 'Use a wallet' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Solflare' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Solflare' })[0]!);
 
     await waitFor(() => expect(mocks.toDataUrl).toHaveBeenLastCalledWith(
       expect.stringContaining('https://solflare.com/ul/v1/browse/'),
       expect.any(Object),
     ));
-    expect(await screen.findByRole('img', { name: 'QR code for solflare' })).toBeInTheDocument();
-    const browserWallet = screen.getByRole('button', { name: 'Sign in with browser wallet' });
-    expect(browserWallet).toBeInTheDocument();
-    expect(browserWallet.closest('div')).toHaveClass('hidden', 'sm:block');
+    expect(await screen.findAllByRole('img', { name: 'QR code for solflare' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Use browser wallet' })).toBeInTheDocument();
+  });
+
+  it('links a mobile wallet through a pairing bound to the passkey account', async () => {
+    const onLinked = vi.fn();
+    mocks.start.mockResolvedValue({
+      ...pairing,
+      mobileUrl: `${pairing.mobileUrl}&purpose=link`,
+      purpose: 'link',
+    });
+    mocks.poll.mockResolvedValue({
+      linked: true,
+      status: 'linked',
+      walletAddress: 'linked-wallet-address',
+    });
+    render(<HostedWalletSignIn mode="link" onLinked={onLinked} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Link a wallet' }));
+
+    await waitFor(() => expect(onLinked).toHaveBeenCalledWith('linked-wallet-address'), { timeout: 2_000 });
+    expect(mocks.start).toHaveBeenCalledWith({ purpose: 'link' });
+    expect(mocks.applySession).not.toHaveBeenCalled();
+  });
+
+  it('stops on an expired code and offers a fresh one', async () => {
+    mocks.start.mockResolvedValue({ ...pairing, expiresAt: Date.now() - 1 });
+    render(<HostedWalletSignIn />);
+    fireEvent.click(screen.getByRole('button', { name: 'Use a wallet' }));
+
+    expect(await screen.findByText('This code expired')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create a new code' })).toBeInTheDocument();
+    expect(mocks.poll).not.toHaveBeenCalled();
+  });
+
+  it('pauses polling after a connection error and offers a retry', async () => {
+    mocks.poll.mockRejectedValue(new TypeError('Failed to fetch'));
+    render(<HostedWalletSignIn />);
+    fireEvent.click(screen.getByRole('button', { name: 'Use a wallet' }));
+
+    expect(await screen.findByRole('alert', {}, { timeout: 2_000 })).toHaveTextContent('Connection interrupted');
+    expect(screen.getByRole('button', { name: 'Try this code again' })).toBeInTheDocument();
+    expect(mocks.poll).toHaveBeenCalledTimes(1);
   });
 });

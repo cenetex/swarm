@@ -5,7 +5,9 @@ import * as hostedApi from './hosted-api';
 import { useAuthStore } from './store/auth';
 
 vi.mock('./components/HostedWalletSignIn', () => ({
-  HostedWalletSignIn: () => <button type="button">Wallet session</button>,
+  HostedWalletSignIn: ({ label = 'Use a wallet' }: { label?: string }) => (
+    <button type="button">{label}</button>
+  ),
 }));
 
 vi.mock('./components/HostedWalletLink', () => ({
@@ -17,6 +19,9 @@ vi.mock('./hosted-api', async () => {
   return {
     ...actual,
     connectHostedX: vi.fn(),
+    enqueueHostedMessage: vi.fn(),
+    waitForHostedJob: vi.fn(),
+    getPublicHostedAvatar: vi.fn(),
     getHostedProviderStatus: vi.fn(),
     disconnectHostedProvider: vi.fn(),
     createHostedAvatar: vi.fn(),
@@ -53,7 +58,15 @@ function authenticate() {
   });
 }
 
+async function openAction(name: string) {
+  fireEvent.click(await screen.findByRole('button', { name: 'More', exact: true }));
+  const action = screen.getByRole('button', { name, exact: true });
+  await waitFor(() => expect(action).toBeEnabled());
+  fireEvent.click(action);
+}
+
 beforeEach(() => {
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
   window.history.replaceState({}, '', '/');
   useAuthStore.getState().resetLocal();
   vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(disconnected);
@@ -118,10 +131,10 @@ describe('HostedApp', () => {
     authenticate();
     render(<HostedApp />);
 
-    expect(screen.getByRole('button', { name: /add a passkey/i })).toBeInTheDocument();
+    await openAction('Connect a model');
     const connect = await screen.findByRole('link', { name: /connect openrouter securely/i });
     expect(connect).toHaveAttribute('href', expect.stringMatching(/\/auth\/openrouter$/u));
-    expect(screen.getByText(/oauth uses pkce s256/i)).toBeInTheDocument();
+
     expect(screen.queryByPlaceholderText(/sk-or/iu)).not.toBeInTheDocument();
     expect(hostedApi.listHostedAvatars).toHaveBeenCalledOnce();
   });
@@ -130,14 +143,15 @@ describe('HostedApp', () => {
     render(<HostedApp />);
 
     expect(screen.getAllByRole('button', { name: /sign in with a passkey/i }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('button', { name: /wallet session/i }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Use a wallet' })).toBeInTheDocument();
   });
 
-  it('offers wallet linking after passkey sign-in', () => {
+  it('offers wallet linking after passkey sign-in', async () => {
     authenticate();
     useAuthStore.setState({ authProvider: 'passkey' });
     render(<HostedApp />);
 
+    await openAction('Your account');
     expect(screen.getByText('Passkey active')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Link wallet' })).toBeInTheDocument();
   });
@@ -149,8 +163,10 @@ describe('HostedApp', () => {
 
     render(<HostedApp />);
 
-    expect(await screen.findByText(/credential was exchanged and stored server-side/i)).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /disconnect openrouter/i })).toBeInTheDocument();
+    expect(await screen.findByText(/openrouter is connected/i)).toBeInTheDocument();
+    await openAction('Connect a model');
+    fireEvent.click(screen.getByText('Connection actions'));
+    expect(screen.getByRole('button', { name: /disconnect openrouter/i })).toBeInTheDocument();
     await waitFor(() => expect(window.location.search).toBe(''));
     expect(hostedApi.listHostedAvatars).toHaveBeenCalledOnce();
   });
@@ -160,75 +176,58 @@ describe('HostedApp', () => {
     vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
     render(<HostedApp />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /disconnect openrouter/i }));
+    await openAction('Connect a model');
+    fireEvent.click(screen.getByText('Connection actions'));
+    fireEvent.click(screen.getByRole('button', { name: /disconnect openrouter/i }));
 
     expect(await screen.findByRole('link', { name: /connect openrouter securely/i })).toBeInTheDocument();
     expect(hostedApi.disconnectHostedProvider).toHaveBeenCalledOnce();
   });
 
-  it('keeps chat primary and uses permanent Chat, Pack, and Settings destinations', async () => {
+  it('keeps one chat surface and opens one action at a time', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      { avatarId: 'jax', name: 'Jax', status: 'active', createdAt: 1, updatedAt: 1 },
+    ]);
+    vi.mocked(hostedApi.getHostedHistory).mockResolvedValue([
+      { role: 'assistant', content: '<thinking>Private provider reasoning</thinking>How can I help?' },
+      { role: 'user', content: 'Show me the workspace.' },
+    ]);
+    render(<HostedApp />);
+    expect(await screen.findByText('How can I help?')).toBeInTheDocument();
+    expect(screen.queryByText(/Private provider reasoning/)).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Choose companion' })).toHaveValue('jax');
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^settings$/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/system prompt/i)).not.toBeInTheDocument();
+
+    await openAction('Shape this companion');
+    expect(screen.getByLabelText(/system prompt/i)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Hosted chat' })).toContainElement(
+      screen.getByLabelText(/system prompt/i),
+    );
+    expect(screen.getByLabelText('Message')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/botfather token/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close Shape this companion' }));
+    expect(screen.queryByLabelText(/system prompt/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toHaveFocus();
+  });
+
+  it('shows and persists the active companion system prompt in a chat card', async () => {
     authenticate();
     vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
     vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
       {
-        avatarId: 'jax',
-        name: 'Jax',
+        avatarId: 'ada',
+        name: 'Ada',
+        description: 'A careful research companion.',
+        persona: 'Be careful and concise.',
         status: 'active',
         createdAt: 1,
         updatedAt: 1,
       },
     ]);
-    vi.mocked(hostedApi.getHostedHistory).mockResolvedValue([
-      { role: 'assistant', content: 'How can I help?' },
-      { role: 'user', content: 'Show me the workspace.' },
-    ]);
-
-    render(<HostedApp />);
-
-    const chat = screen.getByRole('button', { name: /^chat$/i });
-    const pack = screen.getByRole('button', { name: /^pack$/i });
-    const settings = screen.getByRole('button', { name: /^settings$/i });
-    const packRegion = screen.getByRole('complementary', { name: /^pack$/i });
-    const settingsRegion = screen.getByRole('complementary', { name: /^settings$/i });
-
-    expect(screen.getByRole('region', { name: /hosted chat/i })).toHaveAttribute('data-mobile-active', 'true');
-    expect(chat).toHaveAttribute('aria-pressed', 'true');
-    expect(packRegion).toHaveAttribute('data-mobile-active', 'false');
-    expect(settingsRegion).toHaveAttribute('data-mobile-active', 'false');
-    expect(screen.queryByRole('button', { name: /^manage$/i })).not.toBeInTheDocument();
-
-    fireEvent.click(pack);
-
-    expect(pack).toHaveAttribute('aria-pressed', 'true');
-    expect(packRegion).toHaveAttribute('data-mobile-active', 'true');
-    expect(await screen.findByRole('button', { name: /Jax/u })).toHaveAttribute('aria-current', 'true');
-
-    const assistantMessage = await screen.findByLabelText('Jax message');
-    const userMessage = screen.getByLabelText('You message');
-    expect(assistantMessage).toHaveAttribute('data-message-role', 'assistant');
-    expect(assistantMessage.className).not.toMatch(/rounded/u);
-    expect(userMessage).toHaveAttribute('data-message-role', 'user');
-    expect(userMessage.className).not.toMatch(/rounded/u);
-
-    fireEvent.click(settings);
-    expect(settings).toHaveAttribute('aria-pressed', 'true');
-    expect(settingsRegion).toHaveAttribute('data-mobile-active', 'true');
-    const technicalDetails = screen.getByText(/^Technical details$/u).closest('details');
-    expect(technicalDetails).not.toHaveAttribute('open');
-  });
-
-  it('shows and persists the active companion system prompt in Settings', async () => {
-    authenticate();
-    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
-    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([{
-      avatarId: 'ada',
-      name: 'Ada',
-      description: 'A careful research companion.',
-      persona: 'Be careful and concise.',
-      status: 'active',
-      createdAt: 1,
-      updatedAt: 1,
-    }]);
     vi.mocked(hostedApi.updateHostedAvatarProfile).mockResolvedValue({
       avatarId: 'ada',
       name: 'Ada North',
@@ -241,64 +240,67 @@ describe('HostedApp', () => {
 
     render(<HostedApp />);
 
-    fireEvent.click(screen.getByRole('button', { name: /^settings$/i }));
+    await openAction('Shape this companion');
     const prompt = await screen.findByLabelText(/system prompt/i);
     await waitFor(() => expect(prompt).toHaveValue('Be careful and concise.'));
     fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'Ada North' } });
     fireEvent.change(prompt, { target: { value: 'Be direct, curious, and evidence-led.' } });
     fireEvent.click(screen.getByRole('button', { name: /save voice & identity/i }));
 
-    await waitFor(() => expect(hostedApi.updateHostedAvatarProfile).toHaveBeenCalledWith('ada', {
-      name: 'Ada North',
-      description: 'A careful research companion.',
-      persona: 'Be direct, curious, and evidence-led.',
-    }));
+    await waitFor(() =>
+      expect(hostedApi.updateHostedAvatarProfile).toHaveBeenCalledWith('ada', {
+        name: 'Ada North',
+        description: 'A careful research companion.',
+        persona: 'Be direct, curious, and evidence-led.',
+      }),
+    );
     expect(await screen.findByText('Saved')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Ada North' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Ada North' })).toBeInTheDocument();
   });
 
-  it('creates an authored companion from Pack and returns to Chat', async () => {
+  it('creates a companion from a name card inside chat', async () => {
     authenticate();
     vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
     render(<HostedApp />);
 
     await waitFor(() => expect(hostedApi.listHostedAvatars).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole('button', { name: /^pack$/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /^create$/i }));
+    await screen.findByLabelText(/companion name/i);
 
     const name = screen.getByLabelText(/companion name/i);
     fireEvent.change(name, { target: { value: 'Nova' } });
-    fireEvent.click(screen.getByRole('button', { name: /meet this companion/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^create companion$/i }));
 
-    await waitFor(() => expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith({
-      name: 'Nova',
-      visibility: 'public',
-      listed: true,
-    }));
-    expect(screen.getByRole('button', { name: /^chat$/i })).toHaveAttribute('aria-pressed', 'true');
-    expect(await screen.findAllByRole('img', { name: /Nova portrait/i })).toHaveLength(2);
+    await waitFor(() =>
+      expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith({
+        name: 'Nova',
+        visibility: 'public',
+        listed: true,
+      }),
+    );
+    expect(await screen.findByLabelText('Message')).toHaveAttribute('placeholder', 'Message Nova');
+    expect(screen.getByRole('region', { name: 'Hosted chat' })).toBeInTheDocument();
   });
 
   it('shows Telegram as the second connector and clears the write-only token immediately', async () => {
     authenticate();
     vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
-    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([{
-      avatarId: 'avatar-1',
-      name: 'Jax',
-      status: 'shell',
-      createdAt: 1,
-      updatedAt: 1,
-    }]);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      {
+        avatarId: 'avatar-1',
+        name: 'Jax',
+        status: 'shell',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
     render(<HostedApp />);
 
+    await openAction('Connect Telegram');
     const token = await screen.findByLabelText(/botfather token/i);
     fireEvent.change(token, { target: { value: testBotToken } });
     fireEvent.click(await screen.findByRole('button', { name: /connect telegram bot/i }));
 
-    await waitFor(() => expect(hostedApi.connectHostedTelegram).toHaveBeenCalledWith(
-      'avatar-1',
-      testBotToken,
-    ));
+    await waitFor(() => expect(hostedApi.connectHostedTelegram).toHaveBeenCalledWith('avatar-1', testBotToken));
     expect(screen.queryByDisplayValue(testBotToken)).not.toBeInTheDocument();
     expect(await screen.findByRole('link', { name: /prove ownership/i })).toHaveAttribute(
       'href',
@@ -316,15 +318,18 @@ describe('HostedApp', () => {
       userId: '42',
       lastPolledAt: 10,
     });
-    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([{
-      avatarId: 'avatar/one',
-      name: 'Jax',
-      status: 'shell',
-      createdAt: 1,
-      updatedAt: 1,
-    }]);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      {
+        avatarId: 'avatar/one',
+        name: 'Jax',
+        status: 'shell',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
     render(<HostedApp />);
 
+    await openAction('Connect X');
     const account = await screen.findByRole('link', { name: '@JaxOnX' });
     expect(account).toHaveAttribute('href', 'https://x.com/JaxOnX');
     fireEvent.click(screen.getByText(/^X options$/u));
@@ -336,16 +341,19 @@ describe('HostedApp', () => {
   it('starts X connection for the active avatar and shows the connecting state', async () => {
     authenticate();
     vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
-    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([{
-      avatarId: 'avatar-1',
-      name: 'Jax',
-      status: 'shell',
-      createdAt: 1,
-      updatedAt: 1,
-    }]);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      {
+        avatarId: 'avatar-1',
+        name: 'Jax',
+        status: 'shell',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
     vi.mocked(hostedApi.connectHostedX).mockImplementation(() => new Promise(() => undefined));
     render(<HostedApp />);
 
+    await openAction('Connect X');
     fireEvent.click(await screen.findByRole('button', { name: /connect x account/i }));
 
     await waitFor(() => expect(hostedApi.connectHostedX).toHaveBeenCalledWith('avatar-1'));
@@ -362,7 +370,7 @@ describe('HostedApp', () => {
     ]);
     render(<HostedApp />);
 
-    expect(await screen.findByText(/x connected.*mentions and replies/iu)).toBeInTheDocument();
+    expect(await screen.findByText(/x is connected.*mentions and replies/iu)).toBeInTheDocument();
     await waitFor(() => expect(hostedApi.getHostedXStatus).toHaveBeenCalledWith('avatar-2'));
     expect(window.location.search).toBe('');
   });
@@ -372,34 +380,37 @@ describe('HostedApp', () => {
     render(<HostedApp />);
 
     await waitFor(() => expect(hostedApi.listHostedAvatars).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole('button', { name: /^pack$/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /^create$/i }));
+    await screen.findByLabelText(/companion name/i);
 
     fireEvent.change(screen.getByLabelText(/companion name/i), { target: { value: 'Public Ada' } });
-    fireEvent.click(screen.getByText(/identity and sharing/i));
+    fireEvent.click(screen.getByText(/^add details$/i));
     fireEvent.change(screen.getByLabelText(/public description/i), { target: { value: 'An open research mind.' } });
     fireEvent.change(screen.getByLabelText(/starting character/i), { target: { value: 'Think in public.' } });
-    fireEvent.click(screen.getByRole('button', { name: /meet this companion/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^create companion$/i }));
 
-    await waitFor(() => expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith({
-      name: 'Public Ada',
-      description: 'An open research mind.',
-      persona: 'Think in public.',
-      visibility: 'public',
-      listed: true,
-    }));
+    await waitFor(() =>
+      expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith({
+        name: 'Public Ada',
+        description: 'An open research mind.',
+        persona: 'Think in public.',
+        visibility: 'public',
+        listed: true,
+      }),
+    );
   });
 
   it('shows bound groups, copies the existing-group command, and updates group controls', async () => {
     authenticate();
     vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
-    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([{
-      avatarId: 'avatar-1',
-      name: 'Jax',
-      status: 'shell',
-      createdAt: 1,
-      updatedAt: 1,
-    }]);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      {
+        avatarId: 'avatar-1',
+        name: 'Jax',
+        status: 'shell',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
     const telegramStatus: hostedApi.HostedTelegramStatus = {
       connected: true,
       status: 'connected',
@@ -407,13 +418,15 @@ describe('HostedApp', () => {
       bot: { id: '123', username: 'JaxSwarmBot', name: 'Jax' },
       addToGroupUrl: 'https://t.me/JaxSwarmBot?startgroup=group-code',
       groupBindCommand: '/start@JaxSwarmBot group-code',
-      groups: [{
-        chatId: '-1001',
-        title: 'Penguin HQ',
-        type: 'supergroup',
-        enabled: true,
-        membershipStatus: 'member',
-      }],
+      groups: [
+        {
+          chatId: '-1001',
+          title: 'Penguin HQ',
+          type: 'supergroup',
+          enabled: true,
+          membershipStatus: 'member',
+        },
+      ],
     };
     vi.mocked(hostedApi.getHostedTelegramStatus).mockResolvedValue(telegramStatus);
     vi.mocked(hostedApi.setHostedTelegramGroupEnabled).mockResolvedValue({
@@ -427,19 +440,151 @@ describe('HostedApp', () => {
 
     render(<HostedApp />);
 
+    await openAction('Connect Telegram');
     expect(await screen.findByText('Penguin HQ')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Telegram options'));
     fireEvent.click(screen.getByRole('button', { name: /copy command for an existing group/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('/start@JaxSwarmBot group-code'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
-    await waitFor(() => expect(hostedApi.setHostedTelegramGroupEnabled).toHaveBeenCalledWith(
-      'avatar-1',
-      '-1001',
-      false,
-    ));
+    await waitFor(() =>
+      expect(hostedApi.setHostedTelegramGroupEnabled).toHaveBeenCalledWith('avatar-1', '-1001', false),
+    );
     fireEvent.click(await screen.findByRole('button', { name: /forget group/i }));
     await waitFor(() => expect(hostedApi.forgetHostedTelegramGroup).toHaveBeenCalledWith('avatar-1', '-1001'));
     expect(confirm).toHaveBeenCalled();
     confirm.mockRestore();
+  });
+  it('opens a service card from a short chat request', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      { avatarId: 'jax', name: 'Jax', status: 'active', createdAt: 1, updatedAt: 1 },
+    ]);
+    render(<HostedApp />);
+    fireEvent.change(await screen.findByLabelText('Message'), { target: { value: 'connect Telegram' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await screen.findByLabelText(/BotFather token/i)).toBeInTheDocument();
+    expect(hostedApi.enqueueHostedMessage).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Message')).toHaveValue('');
+  });
+
+  it('sends ordinary messages and shows only the final answer', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      { avatarId: 'jax', name: 'Jax', status: 'active', createdAt: 1, updatedAt: 1 },
+    ]);
+    vi.mocked(hostedApi.enqueueHostedMessage).mockResolvedValue({ jobId: 'job-1' });
+    vi.mocked(hostedApi.waitForHostedJob).mockResolvedValue({
+      jobId: 'job-1',
+      status: 'completed',
+      response: '<think>provider reasoning</think>Here is a simple plan.',
+    });
+    render(<HostedApp />);
+    fireEvent.change(await screen.findByLabelText('Message'), { target: { value: 'Help me make a plan' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await screen.findByText('Here is a simple plan.')).toBeInTheDocument();
+    expect(hostedApi.enqueueHostedMessage).toHaveBeenCalledWith('jax', 'Help me make a plan');
+    expect(screen.queryByText(/provider reasoning/)).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Choose companion' })).toBeEnabled();
+  });
+
+  it.each([
+    ['Connect a model', 'Connection actions', 'Disconnect OpenRouter', 'disconnectHostedProvider'],
+    ['Connect Telegram', 'Telegram options', 'Disconnect Telegram', 'disconnectHostedTelegram'],
+    ['Connect X', 'X options', 'Disconnect X', 'disconnectHostedX'],
+  ] as const)('asks before changing %s access', async (action, details, button, method) => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      { avatarId: 'jax', name: 'Jax', status: 'active', createdAt: 1, updatedAt: 1 },
+    ]);
+    vi.mocked(hostedApi.getHostedTelegramStatus).mockResolvedValue({
+      connected: true,
+      status: 'connected',
+      ownerBound: true,
+      groups: [],
+      bot: { id: '1', username: 'SampleBot', name: 'Sample' },
+    });
+    vi.mocked(hostedApi.getHostedXStatus).mockResolvedValue({
+      connected: true,
+      status: 'connected',
+      username: 'Sample',
+    });
+    vi.mocked(window.confirm).mockReturnValue(false);
+    render(<HostedApp />);
+    await openAction(action);
+    fireEvent.click(await screen.findByText(details));
+    fireEvent.click(screen.getByRole('button', { name: button, exact: true }));
+    expect(window.confirm).toHaveBeenCalledOnce();
+    expect(hostedApi[method]).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Message')).toBeInTheDocument();
+  });
+
+  it('lets a new companion stay private', async () => {
+    authenticate();
+    render(<HostedApp />);
+    fireEvent.change(await screen.findByLabelText(/companion name/i), { target: { value: 'Private Ada' } });
+    fireEvent.click(screen.getByText('Add details'));
+    fireEvent.change(screen.getByLabelText('Visibility'), { target: { value: 'private' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create companion' }));
+    await waitFor(() =>
+      expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith({
+        name: 'Private Ada',
+        visibility: 'private',
+        listed: false,
+      }),
+    );
+  });
+
+  it('asks before importing the public companion selected in Discover', async () => {
+    authenticate();
+    window.history.replaceState({}, '', '/studio?companion=public-ada');
+    const publicProject: hostedApi.PublicHostedAvatarProject = {
+      avatarId: 'public-ada',
+      slug: 'public-ada',
+      name: 'Public Ada',
+      description: 'A research companion.',
+      visibility: 'public',
+      listed: true,
+      revisionId: 'sha256:sample',
+      controller: 'sample-controller',
+      createdAt: 1,
+      updatedAt: 1,
+      sha256: 'sample',
+      bundle: {
+        schema: 'swarm.avatar/v1',
+        identity: {
+          avatarId: 'public-ada',
+          slug: 'public-ada',
+          name: 'Public Ada',
+          description: 'A research companion.',
+          controller: { type: 'solana-wallet', address: 'sample-controller' },
+        },
+        publication: { visibility: 'public', listed: true },
+        prompts: { system: 'Be helpful.', starters: [] },
+        capabilities: [],
+        sharedMemory: { summary: '', entries: [] },
+        media: [],
+        lineage: {},
+        revision: { createdAt: '2026-09-02T00:00:00Z' },
+      },
+    };
+    vi.mocked(hostedApi.getPublicHostedAvatar).mockResolvedValue(publicProject);
+    vi.mocked(hostedApi.importHostedAvatar).mockResolvedValue({
+      avatarId: 'my-ada',
+      name: 'Public Ada',
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    render(<HostedApp />);
+    const add = await screen.findByRole('button', { name: 'Add to my companions' });
+    expect(hostedApi.importHostedAvatar).not.toHaveBeenCalled();
+    fireEvent.click(add);
+    await waitFor(() => expect(hostedApi.importHostedAvatar).toHaveBeenCalledWith(publicProject.bundle));
+    expect(window.location.search).toBe('');
+    expect(await screen.findByRole('link', { name: /connect openrouter securely/i })).toBeInTheDocument();
   });
 });
