@@ -703,14 +703,14 @@ export function HostedApp() {
         const remembered = message.replace(
           /^(?:please\s+)?(?:(?:can|could|would)\s+(?:we|you)\s+)?(?:remember(?:\s+that)?|save to memory|add to memory)\s*/iu,
           '',
-        ).trim();
+        ).trim().replace(/\?$/u, '').trim();
         if (remembered) setMemoryDraft(remembered);
       }
       if (action === 'schedule') {
         const followUp = message.replace(
           /^(?:please\s+)?(?:(?:can|could|would)\s+(?:we|you)\s+)?(?:remind me to|schedule|follow up|check back)\s*/iu,
           '',
-        ).trim();
+        ).trim().replace(/\?$/u, '').trim();
         if (followUp) setFollowUpPrompt(followUp);
       }
       setActiveAction(action);
