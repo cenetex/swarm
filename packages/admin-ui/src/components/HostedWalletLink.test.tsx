@@ -108,7 +108,7 @@ describe('HostedWalletLink', () => {
     useAuthStore.setState({ authProvider: 'wallet' });
     render(<HostedWalletLink />);
 
-    expect(screen.getByText(/sign in with your passkey to link another wallet/i)).toBeInTheDocument();
+    expect(screen.getByText(/next time you return, sign in with the passkey you add above/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Link a wallet' })).not.toBeInTheDocument();
   });
 });

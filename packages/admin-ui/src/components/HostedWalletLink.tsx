@@ -72,7 +72,7 @@ export function HostedWalletLink() {
   if (authProvider !== 'passkey') {
     return (
       <p className="text-xs leading-5 text-[var(--color-text-muted)]">
-        Sign in with your passkey to link another wallet to this account.
+        Next time you return, sign in with the passkey you add above to unlock wallet linking.
       </p>
     );
   }

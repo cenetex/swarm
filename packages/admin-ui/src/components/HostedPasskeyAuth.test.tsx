@@ -24,6 +24,7 @@ beforeEach(() => {
 describe('HostedPasskeyAuth', () => {
   it('signs a logged-out owner in and records the passkey session provider', async () => {
     render(<HostedPasskeyAuth />);
+    expect(screen.getByText(/face id, your fingerprint, or your device passcode/i)).toBeInTheDocument();
     const button = screen.getByRole('button', { name: /sign in with a passkey/i });
     expect(button).toHaveClass('from-brand-500', 'to-brand-600');
     fireEvent.click(button);
@@ -46,15 +47,14 @@ describe('HostedPasskeyAuth', () => {
     expect(passkeys.registerHostedPasskey).toHaveBeenCalledOnce();
   });
 
-  it('keeps wallet recovery visible when the browser lacks passkey support', async () => {
+  it('keeps wallet recovery guidance concise when the browser lacks passkey support', async () => {
     vi.mocked(passkeys.supportsPasskeys).mockReturnValue(false);
-    const useWallet = vi.fn();
-    render(<HostedPasskeyAuth onUseWallet={useWallet} />);
+    render(<HostedPasskeyAuth />);
     fireEvent.click(screen.getByRole('button', { name: /sign in with a passkey/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/passkeys are unavailable here/i);
-    fireEvent.click(screen.getByRole('button', { name: 'Use a wallet' }));
-    expect(useWallet).toHaveBeenCalledOnce();
+    expect(screen.getByRole('alert')).toHaveTextContent(/use a wallet/i);
+    expect(screen.queryByRole('button', { name: 'Use a wallet' })).not.toBeInTheDocument();
     expect(passkeys.signInWithHostedPasskey).not.toHaveBeenCalled();
   });
 

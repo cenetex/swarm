@@ -10,7 +10,6 @@ import { useAuth } from '../store/auth';
 interface HostedPasskeyAuthProps {
   className?: string;
   label?: string;
-  onUseWallet?: () => void;
 }
 
 type PasskeyIssue = {
@@ -86,7 +85,7 @@ function passkeyContextIssue(): PasskeyIssue | null {
   return null;
 }
 
-export function HostedPasskeyAuth({ className = '', label, onUseWallet }: HostedPasskeyAuthProps) {
+export function HostedPasskeyAuth({ className = '', label }: HostedPasskeyAuthProps) {
   const { isAuthenticated } = useAuth();
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState('');
@@ -125,6 +124,11 @@ export function HostedPasskeyAuth({ className = '', label, onUseWallet }: Hosted
 
   return (
     <div className={className}>
+      {!isAuthenticated && (
+        <p className="mb-3 text-sm leading-5 text-[var(--color-text-secondary)]">
+          Use Face ID, your fingerprint, or your device passcode. Nothing to remember.
+        </p>
+      )}
       <button
         type="button"
         onClick={() => void handlePasskey()}
@@ -157,15 +161,6 @@ export function HostedPasskeyAuth({ className = '', label, onUseWallet }: Hosted
             >
               Try passkey again
             </button>
-            {!isAuthenticated && onUseWallet && (
-              <button
-                type="button"
-                onClick={onUseWallet}
-                className="rounded-lg border border-[var(--color-border-secondary)] px-3 py-2 text-xs font-semibold text-[var(--color-text)]"
-              >
-                Use a wallet
-              </button>
-            )}
           </div>
         </div>
       )}

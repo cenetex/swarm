@@ -1,4 +1,5 @@
 import { ChangeEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { API_BASE } from './api/apiBase';
 import { HostedWalletSignIn } from './components/HostedWalletSignIn';
 import { HostedPasskeyAuth } from './components/HostedPasskeyAuth';
@@ -108,6 +109,15 @@ function avatarStateCopy(status: string): string {
   if (status === 'error') return 'Needs attention';
   if (status === 'paused') return 'Paused';
   return 'Getting ready';
+}
+
+function avatarIsReady(status: string): boolean {
+  return status === 'active' || status === 'configured';
+}
+
+function shortAvatarId(avatarId: string): string {
+  if (avatarId.length <= 9) return avatarId;
+  return `${avatarId.slice(0, 4)}…${avatarId.slice(-4)}`;
 }
 
 function ActionSection({
@@ -224,12 +234,36 @@ export function HostedApp() {
   const conversationEnd = useRef<HTMLDivElement>(null);
   const actionCard = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLInputElement>(null);
-  const walletSignInButton = useRef<HTMLButtonElement>(null);
 
   const activeAvatar = useMemo(
     () => avatars.find((avatar) => avatar.avatarId === activeAvatarId) ?? null,
     [activeAvatarId, avatars],
   );
+  const avatarOptionLabels = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const avatar of avatars) {
+      const name = avatar.name.trim().toLocaleLowerCase();
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    const baseLabels = avatars.map((avatar) => {
+      const name = avatar.name.trim().toLocaleLowerCase();
+      return counts.get(name) === 1
+        ? avatar.name
+        : `${avatar.name} · ${shortAvatarId(avatar.avatarId)}`;
+    });
+    const baseCounts = new Map<string, number>();
+    for (const label of baseLabels) baseCounts.set(label, (baseCounts.get(label) ?? 0) + 1);
+    const positions = new Map<string, number>();
+    return new Map(avatars.map((avatar, index) => {
+      const baseLabel = baseLabels[index];
+      const position = (positions.get(baseLabel) ?? 0) + 1;
+      positions.set(baseLabel, position);
+      return [
+        avatar.avatarId,
+        baseCounts.get(baseLabel) === 1 ? baseLabel : `${baseLabel} · ${position}`,
+      ];
+    }));
+  }, [avatars]);
 
   useEffect(() => {
     setProfileName(activeAvatar?.name ?? '');
@@ -745,12 +779,12 @@ export function HostedApp() {
                       >
                         {avatars.map((avatar) => (
                           <option key={avatar.avatarId} value={avatar.avatarId}>
-                            {avatar.name}
+                            {avatarOptionLabels.get(avatar.avatarId)}
                           </option>
                         ))}
                       </select>
                       <p className="mt-1 flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-                        <StatusDot ready={providerReady && activeAvatar.status !== 'error'} />
+                        <StatusDot ready={providerReady && avatarIsReady(activeAvatar.status)} />
                         {providerReady ? avatarStateCopy(activeAvatar.status) : 'Connect a model to chat'}
                         <span className="hidden sm:inline">· {activeChannels}</span>
                       </p>
@@ -812,11 +846,10 @@ export function HostedApp() {
               {!isAuthenticated && (
                 <ConversationCard title="Start a conversation" intro="Sign in. We will take it one step at a time.">
                   <div className="space-y-4 px-5 pb-5">
-                    <HostedPasskeyAuth onUseWallet={() => walletSignInButton.current?.click()} />
+                    <HostedPasskeyAuth />
                     <div>
                       <p className="mb-2 text-center text-sm text-[var(--color-text-muted)]">or</p>
                       <HostedWalletSignIn
-                        buttonRef={walletSignInButton}
                         className="w-full justify-center"
                       />
                     </div>
@@ -875,9 +908,15 @@ export function HostedApp() {
                     className="border-b border-[var(--color-border)] py-5"
                   >
                     <p className="mb-2 text-sm font-semibold text-brand-200">{sender}</p>
-                    <p className="chat-message whitespace-pre-wrap break-words text-base leading-7 text-[var(--color-text-secondary)]">
-                      {message.content}
-                    </p>
+                    {message.role === 'assistant' ? (
+                      <div className="hosted-markdown chat-message break-words text-base leading-7 text-[var(--color-text-secondary)]">
+                        <ReactMarkdown skipHtml>{message.content}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <p className="chat-message whitespace-pre-wrap break-words text-base leading-7 text-[var(--color-text-secondary)]">
+                        {message.content}
+                      </p>
+                    )}
                   </article>
                 );
               })}
@@ -1480,13 +1519,23 @@ export function HostedApp() {
                     {shownAction === 'account' && (
                       <ActionSection
                         title="Passkey & wallets"
-                        detail="Use passkeys for everyday access. Link wallets by signing when you need recovery or wallet-backed ownership."
-                        state={authProvider === 'passkey' ? 'Passkey active' : 'Protected'}
+                        detail={authProvider === 'passkey'
+                          ? 'Your passkey signs you in. Add another passkey or link a wallet below.'
+                          : 'Your wallet is active. Add a passkey for everyday sign-in, then use it to link another wallet.'}
+                        state={authProvider === 'passkey' ? 'Passkey active' : 'Wallet active'}
                         ready
                       >
                         <div className="space-y-4">
-                          <HostedPasskeyAuth />
+                          <div>
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-brand-300">
+                              {authProvider === 'passkey' ? 'Passkeys' : 'Step 1 · Add a passkey'}
+                            </p>
+                            <HostedPasskeyAuth label={authProvider === 'passkey' ? 'Add another passkey' : 'Add a passkey'} />
+                          </div>
                           <div className="border-t border-[var(--color-border)] pt-4">
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-brand-300">
+                              {authProvider === 'passkey' ? 'Optional · Wallets' : 'Step 2 · Link another wallet'}
+                            </p>
                             <HostedWalletLink />
                           </div>
                         </div>
