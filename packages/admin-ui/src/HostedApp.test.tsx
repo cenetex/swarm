@@ -143,7 +143,20 @@ describe('HostedApp', () => {
     render(<HostedApp />);
 
     expect(screen.getAllByRole('button', { name: /sign in with a passkey/i }).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Use a wallet' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Use a wallet' })).toHaveLength(1);
+    expect(screen.getByText(/face id, your fingerprint, or your device passcode/i)).toBeInTheDocument();
+  });
+
+  it('shows a wallet-backed account as two clear passkey and wallet steps', async () => {
+    authenticate();
+    render(<HostedApp />);
+
+    await openAction('Your account');
+
+    expect(screen.getByText('Wallet active')).toBeInTheDocument();
+    expect(screen.getByText('Step 1 · Add a passkey')).toBeInTheDocument();
+    expect(screen.getByText('Step 2 · Link another wallet')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add a passkey' })).toBeInTheDocument();
   });
 
   it('offers wallet linking after passkey sign-in', async () => {
@@ -212,6 +225,45 @@ describe('HostedApp', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close Shape this companion' }));
     expect(screen.queryByLabelText(/system prompt/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText('Message')).toHaveFocus();
+  });
+
+  it('renders assistant Markdown as readable safe content', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      { avatarId: 'jax', name: 'Jax', status: 'active', createdAt: 1, updatedAt: 1 },
+    ]);
+    vi.mocked(hostedApi.getHostedHistory).mockResolvedValue([
+      {
+        role: 'assistant',
+        content: '**Clear answer**\n\n- First step\n\nUse `inline code`.\n\n```ts\nconst answer = 42;\n```\n\n[Read more](https://example.com)\n\n<script>unsafe()</script>',
+      },
+    ]);
+
+    const { container } = render(<HostedApp />);
+
+    expect((await screen.findByText('Clear answer')).tagName).toBe('STRONG');
+    expect(screen.getByText('First step').closest('li')).not.toBeNull();
+    expect(screen.getByText('inline code').tagName).toBe('CODE');
+    expect(screen.getByText('const answer = 42;').closest('pre')).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'Read more' })).toHaveAttribute('href', 'https://example.com');
+    expect(container.querySelector('.hosted-markdown script')).toBeNull();
+  });
+
+  it('disambiguates duplicate companion names and matches the readiness dot to the status', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      { avatarId: 'penguinz-alpha', name: 'PENGUINZ', status: 'shell', createdAt: 1, updatedAt: 1 },
+      { avatarId: 'penguinz-beta', name: 'PENGUINZ', status: 'active', createdAt: 2, updatedAt: 2 },
+    ]);
+
+    render(<HostedApp />);
+
+    expect(await screen.findByRole('option', { name: 'PENGUINZ · peng…lpha' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'PENGUINZ · peng…beta' })).toBeInTheDocument();
+    const status = screen.getByText('Getting ready');
+    expect(status.parentElement?.querySelector('span')).toHaveClass('bg-amber-400');
   });
 
   it('shows and persists the active companion system prompt in a chat card', async () => {

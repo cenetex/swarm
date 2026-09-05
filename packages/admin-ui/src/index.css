@@ -273,6 +273,55 @@ body {
   word-break: break-word;
 }
 
+.hosted-markdown > * + * {
+  margin-top: 0.75rem;
+}
+
+.hosted-markdown ul,
+.hosted-markdown ol {
+  padding-left: 1.5rem;
+}
+
+.hosted-markdown ul {
+  list-style: disc;
+}
+
+.hosted-markdown ol {
+  list-style: decimal;
+}
+
+.hosted-markdown a {
+  color: var(--color-brand-light);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.hosted-markdown blockquote {
+  border-left: 2px solid var(--color-border-secondary);
+  padding-left: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.hosted-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  background: var(--color-bg-tertiary);
+  padding: 0.875rem;
+}
+
+.hosted-markdown code {
+  border-radius: 0.25rem;
+  background: var(--color-bg-elevated);
+  padding: 0.125rem 0.25rem;
+  font-size: 0.875em;
+}
+
+.hosted-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
 /* ============================================
    Code Blocks
    ============================================ */

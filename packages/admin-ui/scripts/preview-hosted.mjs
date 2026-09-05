@@ -43,18 +43,18 @@ const seed = [
     status: 'active',
   },
   {
-    avatarId: 'nova',
-    slug: 'nova',
-    name: 'Nova',
-    description: 'Turn a small idea into your next creative project.',
+    avatarId: 'penguinz-research',
+    slug: 'penguinz-research',
+    name: 'PENGUINZ',
+    description: 'Research a topic and turn it into a clear brief.',
     persona: 'Help people explore creative ideas.',
-    status: 'active',
+    status: 'shell',
   },
   {
-    avatarId: 'atlas',
-    slug: 'atlas',
-    name: 'Atlas',
-    description: 'Make a plan for your next trip, project, or busy week.',
+    avatarId: 'penguinz-planning',
+    slug: 'penguinz-planning',
+    name: 'PENGUINZ',
+    description: 'Make a plan for your next project or busy week.',
     persona: 'Make the next step simple.',
     status: 'active',
   },
@@ -102,13 +102,19 @@ createServer(async (req, res) => {
       res.end(JSON.stringify(data));
     };
     const path = url.pathname.slice(4);
-    if (path === '/auth/me')
+    if (path === '/auth/me') {
+      const authProvider = preview === 'wallet-account' ? 'wallet' : 'passkey';
       return send({
         authenticated: preview !== 'signed-out',
-        authProvider: 'passkey',
+        authProvider,
         user: { walletAddress: '11111111111111111111111111111111' },
-        account: { accountId: 'review', role: 'user', identities: [] },
+        account: {
+          accountId: 'review',
+          role: 'user',
+          identities: [{ type: 'wallet', providerId: '11111111111111111111111111111111' }],
+        },
       });
+    }
     if (path === '/auth/openrouter/status')
       return send({ connected: preview !== 'model', provider: preview === 'model' ? null : 'openrouter' });
     if (path === '/auth/mobile/start') {
@@ -166,7 +172,7 @@ createServer(async (req, res) => {
           {
             role: 'assistant',
             content:
-              '<thinking>Sample internal reasoning.</thinking>Start with the result you want. What would a good first version look like?',
+              '<thinking>Sample internal reasoning.</thinking>**Start with the result you want.**\n\n- Name the smallest useful outcome.\n- Pick one action for today.\n\n```text\nA clear first version\n```\n\nWhat would a good first version look like?',
           },
         ],
       });
