@@ -577,8 +577,24 @@ describe('HostedApp', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
     expect(await screen.findByLabelText(/what should this companion remember/i)).toHaveValue(
-      'I prefer short weekly summaries?',
+      'I prefer short weekly summaries',
     );
+  });
+
+  it('removes a polite request prefix from the follow-up card', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      { avatarId: 'jax', name: 'Jax', status: 'ready', createdAt: 1, updatedAt: 1 },
+    ]);
+    render(<HostedApp />);
+
+    fireEvent.change(await screen.findByLabelText('Message'), {
+      target: { value: 'Can you remind me to review the launch plan tomorrow?' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByLabelText('Follow-up request')).toHaveValue('review the launch plan tomorrow');
   });
 
   it('sends ordinary messages and shows only the final answer', async () => {
