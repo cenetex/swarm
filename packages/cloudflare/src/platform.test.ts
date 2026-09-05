@@ -44,7 +44,7 @@ describe('Cloudflare hosted platform scaffold', () => {
     expect(platform.descriptor.mode).toBe('hosted');
     expect(platform.descriptor.capabilities).toContain('state');
     expect(platform.descriptor.capabilities).toContain('platform-secrets');
-    expect(platform.descriptor.capabilities).not.toContain('cron');
+    expect(platform.descriptor.capabilities).toContain('cron');
     expect(platform.descriptor.capabilities).not.toContain('workflows');
     expect(platform.descriptor.capabilities).not.toContain('coordination');
     expect(platform.descriptor.capabilities).not.toContain('realtime');

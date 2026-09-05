@@ -164,33 +164,36 @@ After the automated checks pass, complete one manual preview flow:
 4. sign the domain-bound session message;
    - add a passkey, sign out, and confirm **Sign in with a passkey** restores the same companions and provider state;
    - sign out again and confirm wallet sign-in still works as the recovery path;
-5. create a default avatar before connecting a model, confirm it is public and listed, and download its portable artifact;
-6. confirm the anonymous project page exposes the same revision and never exposes a credential or private chat;
+5. create a default avatar before connecting a model, confirm it is private and ready, and download its portable artifact;
+6. publish it from the inline share card, then confirm the anonymous project page exposes the same revision and only chosen shared memory;
 7. select **Connect OpenRouter securely** and complete OpenRouter OAuth;
 8. confirm the UI reports connected without displaying a credential;
-9. send a browser-chat message and wait for the Queue job to complete;
-10. create a test bot with BotFather, paste its token into **Telegram**, and confirm the
+9. send a browser-chat message, confirm the queued and working receipt, and wait for it to complete;
+10. say “Can we configure Telegram?” and confirm the Telegram card opens inside the conversation;
+11. save one private memory and one portable memory, then confirm only the portable item appears in the downloaded artifact;
+12. schedule a follow-up at least one minute ahead and confirm it starts once through the chat queue;
+13. create a test bot with BotFather, paste its token into **Telegram**, and confirm the
    token field clears without the token appearing in any later response;
-11. open the ownership link, send `/start`, return to Swarm, and refresh Telegram status;
-12. add the bot to a test group from the generated group link and confirm the group appears under **Bound groups**;
-13. mention the bot, reply to its response, and use `/ask`; confirm replies attach to the source message and
+14. open the ownership link, send `/start`, return to Swarm, and refresh Telegram status;
+15. add the bot to a test group from the generated group link and confirm the group appears under **Bound groups**;
+16. mention the bot, reply to its response, and use `/ask`; confirm replies attach to the source message and
     the source receives acknowledgement and completion reactions;
-14. in a forum supergroup, send addressed prompts in two topics and confirm each response stays in its source topic;
-15. send a photo with an addressed caption and confirm the caption is handled without downloading the photo;
-16. pause and enable the group in Swarm, confirming paused groups receive no response; use **Copy command for
+17. in a forum supergroup, send addressed prompts in two topics and confirm each response stays in its source topic;
+18. send a photo with an addressed caption and confirm the caption is handled without downloading the photo;
+19. pause and enable the group in Swarm, confirming paused groups receive no response; use **Copy command for
     an existing group** to bind a group where the bot is already present;
-17. remove the bot from the group and refresh Swarm; confirm membership is shown as unavailable;
-18. confirm an unbound private user, an unenabled group, and ordinary unmentioned group messages receive no response;
-19. disconnect Telegram, then confirm Bot API `getWebhookInfo` no longer reports the Swarm webhook;
-20. connect a test X account from **X**, confirm the callback returns to Studio with only the username, and verify no token appears in the page or API response;
-21. mention the connected X account from another account, wait for the next one-minute poll, and confirm exactly one reply appears in the same conversation;
-22. repeat the poll and confirm the same mention is not processed twice; revoke X access and confirm Studio changes to **Reconnect** after the next check;
-23. reconnect, then disconnect X and confirm the encrypted X access-token rows and connector metadata are removed;
-24. disconnect OpenRouter and confirm the connected state clears;
-25. confirm that another wallet cannot read that avatar, connector, group list, job, history, or private artifact;
-26. import the downloaded artifact into a clean preview environment and confirm the revision ID is unchanged.
+20. remove the bot from the group and refresh Swarm; confirm membership is shown as unavailable;
+21. confirm an unbound private user, an unenabled group, and ordinary unmentioned group messages receive no response;
+22. disconnect Telegram, then confirm Bot API `getWebhookInfo` no longer reports the Swarm webhook;
+23. connect a test X account from **X**, confirm the callback returns to Studio with only the username, and verify no token appears in the page or API response;
+24. mention the connected X account from another account, wait for the next one-minute poll, and confirm exactly one reply appears in the same conversation;
+25. repeat the poll and confirm the same mention is not processed twice; revoke X access and confirm Studio changes to **Reconnect** after the next check;
+26. reconnect, then disconnect X and confirm the encrypted X access-token rows and connector metadata are removed;
+27. disconnect OpenRouter and confirm the connected state clears;
+28. confirm that another wallet cannot read that avatar, connector, group list, job, history, or private artifact;
+29. import the downloaded artifact into a clean preview environment and confirm the revision ID is unchanged.
 
-The hosted interface is chat-first. At desktop widths, account, provider, and avatar controls live in the workspace rail. At mobile widths, open **Manage** to reach those controls and confirm that closing it returns directly to the active conversation without horizontal overflow.
+The hosted interface is chat-first. Account, provider, channel, memory, follow-up, profile, and sharing controls appear as cards inside the conversation. Confirm the same flow on desktop and mobile with no horizontal overflow.
 
 The normal hosted flow is OAuth Authorization Code with PKCE S256. Do not ask a hosted user to paste an OpenRouter key. The callback exchanges the code inside the Worker, encrypts the resulting user credential for that account, and returns only connection status to the browser.
 

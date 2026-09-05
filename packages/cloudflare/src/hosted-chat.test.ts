@@ -30,7 +30,7 @@ type AvatarRow = {
   name: string;
   description: string | null;
   persona: string | null;
-  status: 'shell';
+  status: 'ready' | 'shell';
   created_by: string;
   created_at: number;
   updated_at: number;
@@ -45,6 +45,9 @@ type MessageRow = {
   role: 'user' | 'assistant';
   content: string;
   created_at: number;
+  source: 'owner-web' | 'assistant';
+  trust: 'owner' | 'system';
+  source_label: string | null;
 };
 
 type JobRow = {
@@ -62,6 +65,8 @@ type JobRow = {
   created_at: number;
   updated_at: number;
   completed_at: number | null;
+  summary: string;
+  delivery_state: 'pending' | 'processing' | 'completed' | 'failed';
 };
 
 function key(...parts: string[]): string {
@@ -133,7 +138,7 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
       return (job ?? null) as T | null;
     }
     if (this.query.startsWith('insert into swarm_hosted_chat_jobs')) {
-      const [accountId, avatarId, threadId, jobId, requestId, maxAttempts, createdAt, updatedAt] = this.values as [
+      const [accountId, avatarId, threadId, jobId, requestId, maxAttempts, createdAt, updatedAt, summary] = this.values as [
         string,
         string,
         string,
@@ -142,6 +147,7 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
         number,
         number,
         number,
+        string,
       ];
       const duplicate = [...this.db.jobs.values()].find(
         (value) => value.account_id === accountId
@@ -164,6 +170,8 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
         created_at: createdAt,
         updated_at: updatedAt,
         completed_at: null,
+        summary,
+        delivery_state: 'pending',
       };
       this.db.jobs.set(key(accountId, jobId), job);
       return job as T;
@@ -185,6 +193,7 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
         || job.attempts >= job.max_attempts
       ) return null;
       job.status = 'processing';
+      job.delivery_state = 'processing';
       job.attempts += 1;
       job.updated_at = now;
       return job as T;
@@ -202,6 +211,15 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
   }
 
   async all<T = unknown>(): Promise<{ success: boolean; results: T[] }> {
+    if (this.query.startsWith('select job_id from swarm_hosted_chat_jobs')) {
+      const [accountId, avatarId, limit] = this.values as [string, string, number];
+      const rows = [...this.db.jobs.values()]
+        .filter((job) => job.account_id === accountId && job.avatar_id === avatarId)
+        .sort((left, right) => right.created_at - left.created_at)
+        .slice(0, limit)
+        .map((job) => ({ job_id: job.job_id }));
+      return { success: true, results: rows as T[] };
+    }
     if (this.query.includes('from swarm_hosted_avatars where account_id = ?')) {
       const accountId = String(this.values[0]);
       return {
@@ -253,7 +271,7 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
         name,
         description,
         persona: null,
-        status: 'shell',
+        status: 'ready',
         created_by: createdBy,
         created_at: createdAt,
         updated_at: updatedAt,
@@ -272,6 +290,9 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
         number,
       ];
       const role = this.query.includes("'assistant'") ? 'assistant' : 'user';
+      const source = role === 'assistant' ? 'assistant' : String(this.values[7]) as 'owner-web';
+      const trust = role === 'assistant' ? 'system' : String(this.values[8]) as 'owner';
+      const sourceLabel = role === 'assistant' ? null : this.values[9] === null ? null : String(this.values[9]);
       const duplicate = this.db.messages.some(
         (message) => message.account_id === accountId
           && message.avatar_id === avatarId
@@ -288,6 +309,9 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
           role,
           content,
           created_at: createdAt,
+          source,
+          trust,
+          source_label: sourceLabel,
         });
       }
     } else if (this.query.includes("set status = 'completed'")) {
@@ -301,6 +325,7 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
       const job = this.db.jobs.get(key(accountId, jobId));
       if (job?.status === 'processing') {
         job.status = 'completed';
+        job.delivery_state = 'completed';
         job.response_message_id = responseMessageId;
         job.error_code = null;
         job.error_message = null;
@@ -319,14 +344,16 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
       const job = this.db.jobs.get(key(accountId, jobId));
       if (job?.status !== 'completed') {
         job.status = 'dead';
+        job.delivery_state = 'failed';
         job.error_code = errorCode;
         job.error_message = errorMessage;
         job.updated_at = updatedAt;
         job.completed_at = completedAt;
       }
     } else if (this.query.startsWith('update swarm_hosted_chat_jobs set status = ?')) {
-      const [status, errorCode, errorMessage, updatedAt, completedAt, accountId, jobId] = this.values as [
+      const [status, deliveryState, errorCode, errorMessage, updatedAt, completedAt, accountId, jobId] = this.values as [
         'retry' | 'dead',
+        'pending' | 'failed',
         string,
         string,
         number,
@@ -337,6 +364,7 @@ class ChatMemoryStatement implements CloudflareD1PreparedStatement {
       const job = this.db.jobs.get(key(accountId, jobId));
       if (job?.status === 'processing') {
         job.status = status;
+        job.delivery_state = deliveryState;
         job.error_code = errorCode;
         job.error_message = errorMessage;
         job.updated_at = updatedAt;
@@ -511,6 +539,13 @@ describe('Cloudflare hosted chat runtime', () => {
       env,
     );
     expect(await jobResponse.json()).toMatchObject({ status: 'completed', response: 'Hello back.' });
+    const jobsResponse = await worker.fetch(
+      new Request(`https://swarm.example/api/jobs?avatarId=${avatar.avatarId}`, { headers }),
+      env,
+    );
+    expect(await jobsResponse.json()).toMatchObject({
+      jobs: [{ status: 'completed', deliveryState: 'completed', prompt: 'Hello' }],
+    });
     const historyResponse = await worker.fetch(
       new Request(`https://swarm.example/api/chat?avatarId=${avatar.avatarId}`, { headers }),
       env,
@@ -555,7 +590,7 @@ describe('Cloudflare hosted chat runtime', () => {
       modelCalls += 1;
       authorization = new Headers(init?.headers).get('Authorization') ?? '';
       modelRequest = String(init?.body ?? '');
-      return Response.json({ choices: [{ message: { content: 'Hello from Ada.' } }] });
+      return Response.json({ choices: [{ message: { content: '<think>private chain of thought</think>Hello from Ada.' } }] });
     }) as typeof fetch;
     await expect(processHostedChatQueueMessage(env, sent[0], fetchImpl, 3_000)).resolves.toEqual({ action: 'ack' });
     await expect(processHostedChatQueueMessage(env, sent[0], fetchImpl, 3_001)).resolves.toEqual({ action: 'ack' });
@@ -573,14 +608,15 @@ describe('Cloudflare hosted chat runtime', () => {
       messages: Array<{ role: string; content: string }>;
     };
     expect(request.model).toBe('openrouter/free');
-    expect(request.messages).toEqual([
-      { role: 'system', content: 'Be curious, playful, and direct.' },
-      { role: 'user', content: 'Hello' },
-    ]);
+    expect(request.messages).toHaveLength(3);
+    expect(request.messages[0]).toEqual({ role: 'system', content: 'Be curious, playful, and direct.' });
+    expect(request.messages[1]).toMatchObject({ role: 'system' });
+    expect(request.messages[1]?.content).toContain('EXTERNAL MESSAGE');
+    expect(request.messages[2]).toEqual({ role: 'user', content: '[OWNER REQUEST via owner web]\nHello' });
     expect(JSON.stringify({ job, sent, db: [...db.jobs.values()] })).not.toContain('sk-secret-user-key');
   });
 
-  it('sends no system message when the avatar has no persona', async () => {
+  it('sends the trust boundary when the avatar has no persona', async () => {
     const db = new ChatMemoryD1();
     const sent: HostedChatQueueMessage[] = [];
     const env = testEnv(db, { send: async (message) => sent.push(message as HostedChatQueueMessage) });
@@ -600,7 +636,9 @@ describe('Cloudflare hosted chat runtime', () => {
     await expect(processHostedChatQueueMessage(env, sent[0], fetchImpl)).resolves.toEqual({ action: 'ack' });
 
     const request = JSON.parse(modelRequest) as { messages: Array<{ role: string; content: string }> };
-    expect(request.messages).toEqual([{ role: 'user', content: 'Hello' }]);
+    expect(request.messages).toHaveLength(2);
+    expect(request.messages[0]?.content).toContain('Keep private reasoning private.');
+    expect(request.messages[1]).toEqual({ role: 'user', content: '[OWNER REQUEST via owner web]\nHello' });
   });
 
   it('fails before enqueue when the account has no OpenRouter key', async () => {

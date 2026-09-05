@@ -30,6 +30,13 @@ vi.mock('./hosted-api', async () => {
     disconnectHostedTelegram: vi.fn(),
     disconnectHostedX: vi.fn(),
     listHostedAvatars: vi.fn(),
+    listHostedJobs: vi.fn(),
+    listHostedMemories: vi.fn(),
+    listHostedFollowUps: vi.fn(),
+    addHostedMemory: vi.fn(),
+    deleteHostedMemory: vi.fn(),
+    scheduleHostedFollowUp: vi.fn(),
+    cancelHostedFollowUp: vi.fn(),
     getHostedHistory: vi.fn(),
     getHostedTelegramStatus: vi.fn(),
     getHostedXStatus: vi.fn(),
@@ -72,15 +79,18 @@ beforeEach(() => {
   vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(disconnected);
   vi.mocked(hostedApi.disconnectHostedProvider).mockResolvedValue(disconnected);
   vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([]);
+  vi.mocked(hostedApi.listHostedJobs).mockResolvedValue([]);
+  vi.mocked(hostedApi.listHostedMemories).mockResolvedValue([]);
+  vi.mocked(hostedApi.listHostedFollowUps).mockResolvedValue([]);
   vi.mocked(hostedApi.createHostedAvatar).mockResolvedValue({
     avatarId: 'new-companion',
     name: 'Nova',
-    status: 'shell',
+    status: 'ready',
     createdAt: 1,
     updatedAt: 1,
     slug: 'nova-new',
-    visibility: 'public',
-    listed: true,
+    visibility: 'private',
+    listed: false,
     revisionId: `sha256:${'a'.repeat(64)}`,
   });
   vi.mocked(hostedApi.getHostedHistory).mockResolvedValue([]);
@@ -325,8 +335,8 @@ describe('HostedApp', () => {
     await waitFor(() =>
       expect(hostedApi.createHostedAvatar).toHaveBeenCalledWith({
         name: 'Nova',
-        visibility: 'public',
-        listed: true,
+        visibility: 'private',
+        listed: false,
       }),
     );
     expect(await screen.findByLabelText('Message')).toHaveAttribute('placeholder', 'Message Nova');
@@ -427,7 +437,7 @@ describe('HostedApp', () => {
     expect(window.location.search).toBe('');
   });
 
-  it('publishes a listed public portable avatar by default', async () => {
+  it('publishes a listed public portable avatar when chosen', async () => {
     authenticate();
     render(<HostedApp />);
 
@@ -438,6 +448,8 @@ describe('HostedApp', () => {
     fireEvent.click(screen.getByText(/^add details$/i));
     fireEvent.change(screen.getByLabelText(/public description/i), { target: { value: 'An open research mind.' } });
     fireEvent.change(screen.getByLabelText(/starting character/i), { target: { value: 'Think in public.' } });
+    fireEvent.change(screen.getByLabelText(/visibility/i), { target: { value: 'public' } });
+    fireEvent.click(await screen.findByRole('checkbox', { name: /show this companion in discover/i }));
     fireEvent.click(screen.getByRole('button', { name: /^create companion$/i }));
 
     await waitFor(() =>
@@ -514,11 +526,59 @@ describe('HostedApp', () => {
       { avatarId: 'jax', name: 'Jax', status: 'active', createdAt: 1, updatedAt: 1 },
     ]);
     render(<HostedApp />);
-    fireEvent.change(await screen.findByLabelText('Message'), { target: { value: 'connect Telegram' } });
+    fireEvent.change(await screen.findByLabelText('Message'), { target: { value: 'Can we configure Telegram?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
     expect(await screen.findByLabelText(/BotFather token/i)).toBeInTheDocument();
     expect(hostedApi.enqueueHostedMessage).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Message')).toHaveValue('');
+  });
+
+  it('prefills private memory from a natural chat request', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      { avatarId: 'jax', name: 'Jax', status: 'ready', createdAt: 1, updatedAt: 1 },
+    ]);
+    vi.mocked(hostedApi.addHostedMemory).mockResolvedValue({
+      memoryId: 'memory-1',
+      content: 'I prefer short answers',
+      source: 'owner-web',
+      shareable: false,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    render(<HostedApp />);
+
+    fireEvent.change(await screen.findByLabelText('Message'), {
+      target: { value: 'Remember that I prefer short answers' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await screen.findByLabelText(/what should this companion remember/i)).toHaveValue('I prefer short answers');
+    fireEvent.click(screen.getByRole('button', { name: /^remember$/i }));
+
+    await waitFor(() => expect(hostedApi.addHostedMemory).toHaveBeenCalledWith(
+      'jax',
+      'I prefer short answers',
+      false,
+    ));
+  });
+
+  it('removes a polite request prefix from the memory card', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      { avatarId: 'jax', name: 'Jax', status: 'ready', createdAt: 1, updatedAt: 1 },
+    ]);
+    render(<HostedApp />);
+
+    fireEvent.change(await screen.findByLabelText('Message'), {
+      target: { value: 'Can you remember that I prefer short weekly summaries?' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByLabelText(/what should this companion remember/i)).toHaveValue(
+      'I prefer short weekly summaries?',
+    );
   });
 
   it('sends ordinary messages and shows only the final answer', async () => {
@@ -530,7 +590,11 @@ describe('HostedApp', () => {
     vi.mocked(hostedApi.enqueueHostedMessage).mockResolvedValue({ jobId: 'job-1' });
     vi.mocked(hostedApi.waitForHostedJob).mockResolvedValue({
       jobId: 'job-1',
+      prompt: 'Help me make a plan',
       status: 'completed',
+      deliveryState: 'completed',
+      createdAt: 1,
+      updatedAt: 2,
       response: '<think>provider reasoning</think>Here is a simple plan.',
     });
     render(<HostedApp />);
@@ -539,7 +603,46 @@ describe('HostedApp', () => {
     expect(await screen.findByText('Here is a simple plan.')).toBeInTheDocument();
     expect(hostedApi.enqueueHostedMessage).toHaveBeenCalledWith('jax', 'Help me make a plan');
     expect(screen.queryByText(/provider reasoning/)).not.toBeInTheDocument();
+    expect(screen.getByText('Completed')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Choose companion' })).toBeEnabled();
+  });
+
+  it('resumes a durable chat receipt after reload', async () => {
+    authenticate();
+    vi.mocked(hostedApi.getHostedProviderStatus).mockResolvedValue(connected);
+    vi.mocked(hostedApi.listHostedAvatars).mockResolvedValue([
+      { avatarId: 'jax', name: 'Jax', status: 'ready', createdAt: 1, updatedAt: 1 },
+    ]);
+    vi.mocked(hostedApi.listHostedJobs).mockResolvedValue([{
+      jobId: 'job-resume',
+      prompt: 'Finish the plan',
+      status: 'processing',
+      deliveryState: 'processing',
+      createdAt: 1,
+      updatedAt: 2,
+    }]);
+    vi.mocked(hostedApi.waitForHostedJob).mockResolvedValue({
+      jobId: 'job-resume',
+      prompt: 'Finish the plan',
+      status: 'completed',
+      deliveryState: 'completed',
+      createdAt: 1,
+      updatedAt: 3,
+      response: 'Plan finished.',
+      history: [
+        { role: 'user', content: 'Finish the plan' },
+        { role: 'assistant', content: 'Plan finished.' },
+      ],
+    });
+
+    render(<HostedApp />);
+
+    expect(await screen.findByText('Plan finished.')).toBeInTheDocument();
+    expect(hostedApi.waitForHostedJob).toHaveBeenCalledWith(
+      'job-resume',
+      expect.objectContaining({ onStatus: expect.any(Function) }),
+    );
+    expect(screen.getByText('Completed')).toBeInTheDocument();
   });
 
   it.each([

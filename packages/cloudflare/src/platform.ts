@@ -149,12 +149,93 @@ export class CloudflareQueueService implements HostedQueueService {
 }
 
 export class CloudflareScheduler implements HostedScheduler {
-  async schedule<T extends JsonObject = JsonObject>(_job: Omit<HostedScheduledJob<T>, 'createdAt'>): Promise<void> {
-    throw new CloudflareFeatureNotImplementedError('Scheduler', 'Map scheduled jobs to D1 plus Cron/Workflows in the next migration slice.');
+  constructor(private readonly env: CloudflareHostedBindings) {}
+
+  async schedule<T extends JsonObject = JsonObject>(job: Omit<HostedScheduledJob<T>, 'createdAt'>): Promise<void> {
+    const accountId = typeof job.payload.accountId === 'string' ? job.payload.accountId : '';
+    const avatarId = typeof job.payload.avatarId === 'string' ? job.payload.avatarId : '';
+    const summary = typeof job.payload.summary === 'string' ? job.payload.summary : job.type;
+    if (!job.id.trim() || !job.type.trim() || !accountId || !avatarId || !Number.isFinite(job.runAt)) {
+      throw new Error('Scheduled job is invalid.');
+    }
+    const result = await this.env.SWARM_STATE.prepare(
+      `insert into swarm_hosted_scheduled_jobs
+         (id, account_id, avatar_id, type, payload_json, summary, run_at, created_at, status)
+       values (?, ?, ?, ?, ?, ?, ?, ?, 'queued')`,
+    ).bind(
+      job.id,
+      accountId,
+      avatarId,
+      job.type,
+      JSON.stringify(job.payload),
+      summary.slice(0, 160),
+      job.runAt,
+      Date.now(),
+    ).run();
+    if (!result.success) throw new Error(result.error ?? 'Unable to schedule hosted work.');
   }
 
-  async claimDueJobs(_now: number, _limit: number): Promise<Array<HostedScheduledJob>> {
-    throw new CloudflareFeatureNotImplementedError('Scheduler', 'Cron-triggered due job claiming is not wired yet.');
+  async claimDueJobs(now: number, limit: number): Promise<Array<HostedScheduledJob>> {
+    const recovered = await this.env.SWARM_STATE.prepare(
+      `update swarm_hosted_scheduled_jobs
+       set status = case when attempts >= max_attempts then 'failed' else 'queued' end,
+           claimed_at = null,
+           completed_at = case when attempts >= max_attempts then ? else completed_at end,
+           error = case when attempts >= max_attempts then 'Attempt limit reached.' else 'Dispatch lease expired.' end
+       where status = 'claimed' and claimed_at <= ?`,
+    ).bind(now, now - 5 * 60_000).run();
+    if (!recovered.success) throw new Error(recovered.error ?? 'Unable to recover scheduled work.');
+    const due = await this.env.SWARM_STATE.prepare(
+      `select id from swarm_hosted_scheduled_jobs
+       where status = 'queued' and run_at <= ? and attempts < max_attempts order by run_at asc limit ?`,
+    ).bind(now, Math.min(Math.max(limit, 1), 100)).all<{ id: string }>();
+    if (!due.success) throw new Error(due.error ?? 'Unable to find scheduled work.');
+    const claimed: HostedScheduledJob[] = [];
+    for (const row of due.results ?? []) {
+      const job = await this.env.SWARM_STATE.prepare(
+        `update swarm_hosted_scheduled_jobs set status = 'claimed', claimed_at = ?, attempts = attempts + 1
+         where id = ? and status = 'queued'
+         returning id, type, payload_json, run_at, created_at`,
+      ).bind(now, row.id).first<{
+        id: string;
+        type: string;
+        payload_json: string;
+        run_at: number;
+        created_at: number;
+      }>();
+      if (!job) continue;
+      try {
+        const payload = JSON.parse(job.payload_json) as JsonObject;
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('invalid');
+        claimed.push({ id: job.id, type: job.type, payload, runAt: job.run_at, createdAt: job.created_at });
+      } catch {
+        const failed = await this.env.SWARM_STATE.prepare(
+          `update swarm_hosted_scheduled_jobs
+           set status = 'failed', completed_at = ?, error = 'Scheduled payload is invalid.'
+           where id = ? and status = 'claimed'`,
+        ).bind(now, job.id).run();
+        if (!failed.success) throw new Error(failed.error ?? 'Unable to fail invalid scheduled work.');
+      }
+    }
+    return claimed;
+  }
+
+  async complete(id: string, now = Date.now()): Promise<void> {
+    const result = await this.env.SWARM_STATE.prepare(
+      `update swarm_hosted_scheduled_jobs
+       set status = 'completed', completed_at = ?, error = null where id = ? and status = 'claimed'`,
+    ).bind(now, id).run();
+    if (!result.success) throw new Error(result.error ?? 'Unable to complete scheduled work.');
+  }
+
+  async retry(id: string, error: string, runAt: number): Promise<void> {
+    const result = await this.env.SWARM_STATE.prepare(
+      `update swarm_hosted_scheduled_jobs
+       set status = case when attempts >= max_attempts then 'failed' else 'queued' end,
+           run_at = ?, claimed_at = null, completed_at = case when attempts >= max_attempts then ? else null end,
+           error = ? where id = ? and status = 'claimed'`,
+    ).bind(runAt, Date.now(), error.slice(0, 240), id).run();
+    if (!result.success) throw new Error(result.error ?? 'Unable to retry scheduled work.');
   }
 }
 
@@ -269,6 +350,7 @@ export function createCloudflareHostedPlatform(env: CloudflareHostedBindings): H
     'state',
     'blobs',
     'platform-secrets',
+    'cron',
   ];
   if (env.SWARM_QUEUE) capabilities.push('queues');
   if (isHostedSecretKeyValid(env.SWARM_USER_SECRET_KEK)) capabilities.push('encrypted-user-secrets');
@@ -282,7 +364,7 @@ export function createCloudflareHostedPlatform(env: CloudflareHostedBindings): H
     state: new CloudflareD1StateStore(env),
     blobs: new CloudflareR2BlobStore(env),
     queues: new CloudflareQueueService(env.SWARM_QUEUE),
-    scheduler: new CloudflareScheduler(),
+    scheduler: new CloudflareScheduler(env),
     coordinator: new CloudflareAvatarCoordinator(),
     secrets: new CloudflareSecretStore(env),
   };

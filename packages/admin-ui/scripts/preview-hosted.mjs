@@ -40,7 +40,7 @@ const seed = [
     name: 'Ada',
     description: 'A curious research companion. Clear answers, careful thinking.',
     persona: 'Be curious, clear, and kind.',
-    status: 'active',
+    status: 'ready',
   },
   {
     avatarId: 'penguinz-research',
@@ -48,7 +48,7 @@ const seed = [
     name: 'PENGUINZ',
     description: 'Research a topic and turn it into a clear brief.',
     persona: 'Help people explore creative ideas.',
-    status: 'shell',
+    status: 'ready',
   },
   {
     avatarId: 'penguinz-planning',
@@ -56,7 +56,7 @@ const seed = [
     name: 'PENGUINZ',
     description: 'Make a plan for your next project or busy week.',
     persona: 'Make the next step simple.',
-    status: 'active',
+    status: 'ready',
   },
 ].map((avatar) => ({
   ...avatar,
@@ -68,6 +68,8 @@ const seed = [
   updatedAt: 1,
 }));
 let avatars = [...seed];
+let memories = [];
+let followUps = [];
 const project = (avatar) => ({
   ...avatar,
   sha256: 'a'.repeat(64),
@@ -164,6 +166,45 @@ createServer(async (req, res) => {
       avatars = avatars.map((avatar) => (avatar.avatarId === id ? { ...avatar, ...input } : avatar));
       return send(avatars.find((avatar) => avatar.avatarId === id));
     }
+    const memoryMatch = path.match(/^\/avatars\/[^/]+\/memories(?:\/([^/]+))?$/u);
+    if (memoryMatch) {
+      if (req.method === 'POST') {
+        const memory = {
+          memoryId: 'sample-memory-' + (memories.length + 1),
+          content: input.content,
+          source: 'owner-web',
+          shareable: input.shareable === true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        memories.unshift(memory);
+        return send(memory, 201);
+      }
+      if (req.method === 'DELETE') {
+        memories = memories.filter((memory) => memory.memoryId !== memoryMatch[1]);
+        return send({ removed: true });
+      }
+      return send(memories);
+    }
+    const followUpMatch = path.match(/^\/avatars\/[^/]+\/follow-ups(?:\/([^/]+))?$/u);
+    if (followUpMatch) {
+      if (req.method === 'POST') {
+        const followUp = {
+          id: 'sample-follow-up-' + (followUps.length + 1),
+          summary: input.prompt,
+          runAt: input.runAt,
+          createdAt: Date.now(),
+          status: 'scheduled',
+        };
+        followUps.unshift(followUp);
+        return send(followUp, 201);
+      }
+      if (req.method === 'DELETE') {
+        followUps = followUps.filter((followUp) => followUp.id !== followUpMatch[1]);
+        return send({ cancelled: true });
+      }
+      return send(followUps);
+    }
     if (path === '/chat' && req.method === 'POST') return send({ jobId: 'sample-job' });
     if (path === '/chat')
       return send({
@@ -182,6 +223,7 @@ createServer(async (req, res) => {
         status: 'completed',
         response: 'Let’s start with one small step. What matters most to you?',
       });
+    if (path === '/jobs') return send({ jobs: [] });
     return send({ error: 'This action belongs to the local review only.' }, 404);
   }
   if (url.pathname === '/' || url.pathname === '/studio' || url.pathname.startsWith('/a/')) {
