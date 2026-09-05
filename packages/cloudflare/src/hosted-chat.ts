@@ -9,6 +9,13 @@ import type {
 import { createCloudflareHostedPlatform } from './platform.js';
 import { isHostedSecretKeyValid } from './secret-crypto.js';
 import { hostedModelWorkAllowed } from './hosted-lifecycle.js';
+import {
+  frameHostedConversationMessage,
+  HOSTED_TRUST_SYSTEM_PROMPT,
+  sanitizeHostedAssistantOutput,
+  type HostedMessageSource,
+  type HostedMessageTrust,
+} from '@swarm/core/hosted';
 
 const CHAT_RATE_WINDOW_MS = 60_000;
 const DEFAULT_CHAT_RATE_LIMIT = 20;
@@ -66,7 +73,7 @@ type HostedAvatarRow = {
   name: string;
   description: string | null;
   persona: string | null;
-  status: 'shell';
+  status: 'ready' | 'shell';
   created_by: string;
   created_at: number;
   updated_at: number;
@@ -82,6 +89,9 @@ type HostedChatMessageRow = {
   role: 'user' | 'assistant';
   content: string;
   created_at: number;
+  source: HostedMessageSource;
+  trust: HostedMessageTrust;
+  source_label: string | null;
 };
 
 type HostedChatJobRow = {
@@ -99,6 +109,8 @@ type HostedChatJobRow = {
   created_at: number;
   updated_at: number;
   completed_at: number | null;
+  summary: string;
+  delivery_state: 'pending' | 'processing' | 'completed' | 'failed';
 };
 
 export type HostedAvatar = {
@@ -106,7 +118,7 @@ export type HostedAvatar = {
   name: string;
   description?: string;
   persona?: string;
-  status: 'shell';
+  status: 'ready' | 'shell';
   createdAt: number;
   updatedAt: number;
   createdBy: string;
@@ -142,6 +154,7 @@ export type HostedChatJobStatus = {
   response?: string;
   history?: HostedChatHistoryMessage[];
   error?: string;
+  deliveryState: 'pending' | 'processing' | 'completed' | 'failed';
 };
 
 export class HostedChatRateLimitError extends Error {
@@ -225,7 +238,7 @@ export async function createHostedAvatar(
   const avatarStatement = env.SWARM_STATE.prepare(
     `insert into swarm_hosted_avatars
        (account_id, avatar_id, default_thread_id, name, description, persona, status, created_by, created_at, updated_at)
-     values (?, ?, ?, ?, ?, null, 'shell', ?, ?, ?)`,
+     values (?, ?, ?, ?, ?, null, 'ready', ?, ?, ?)`,
   ).bind(
     session.accountId,
     avatarId,
@@ -245,7 +258,7 @@ export async function createHostedAvatar(
     avatarId,
     name,
     ...(description ? { description } : {}),
-    status: 'shell',
+    status: 'ready',
     createdAt: now,
     updatedAt: now,
     createdBy: session.walletAddress,
@@ -298,7 +311,7 @@ export async function listHostedChatHistory(
   const avatar = await findHostedAvatarRow(env, session.accountId, avatarId);
   if (!avatar) return null;
   const result = await env.SWARM_STATE.prepare(
-    `select message_id, request_id, role, content, created_at
+    `select message_id, request_id, role, content, created_at, source, trust, source_label
      from swarm_hosted_chat_messages
      where account_id = ? and avatar_id = ? and thread_id = ?
      order by created_at asc, message_id asc limit 200`,
@@ -371,7 +384,8 @@ async function findJobByRequest(
 ): Promise<HostedChatJobRow | null> {
   return env.SWARM_STATE.prepare(
     `select account_id, avatar_id, thread_id, job_id, request_id, status, attempts, max_attempts,
-            error_code, error_message, response_message_id, created_at, updated_at, completed_at
+            error_code, error_message, response_message_id, created_at, updated_at, completed_at,
+            summary, delivery_state
      from swarm_hosted_chat_jobs where account_id = ? and avatar_id = ? and request_id = ?`,
   )
     .bind(accountId, avatarId, requestId)
@@ -395,7 +409,14 @@ async function sendQueueMessage(env: CloudflareHostedBindings, message: HostedCh
 export async function enqueueHostedChat(
   env: CloudflareHostedBindings,
   session: HostedSession,
-  input: { avatarId: string; message: string; requestId: string },
+  input: {
+    avatarId: string;
+    message: string;
+    requestId: string;
+    source?: HostedMessageSource;
+    trust?: HostedMessageTrust;
+    sourceLabel?: string;
+  },
   now = Date.now(),
 ): Promise<{ jobId: string; replayed: boolean }> {
   assertHostedChatRuntimeReady(env);
@@ -420,11 +441,13 @@ export async function enqueueHostedChat(
   const inserted = await env.SWARM_STATE.prepare(
     `insert into swarm_hosted_chat_jobs
        (account_id, avatar_id, thread_id, job_id, request_id, status, attempts, max_attempts,
-        error_code, error_message, response_message_id, created_at, updated_at, completed_at)
-     values (?, ?, ?, ?, ?, 'queued', 0, ?, null, null, null, ?, ?, null)
+        error_code, error_message, response_message_id, created_at, updated_at, completed_at,
+        summary, delivery_state)
+     values (?, ?, ?, ?, ?, 'queued', 0, ?, null, null, null, ?, ?, null, ?, 'pending')
      on conflict(account_id, avatar_id, request_id) do nothing
      returning account_id, avatar_id, thread_id, job_id, request_id, status, attempts, max_attempts,
-               error_code, error_message, response_message_id, created_at, updated_at, completed_at`,
+               error_code, error_message, response_message_id, created_at, updated_at, completed_at,
+               summary, delivery_state`,
   )
     .bind(
       session.accountId,
@@ -435,6 +458,7 @@ export async function enqueueHostedChat(
       MAX_MODEL_ATTEMPTS,
       now,
       now,
+      input.message.trim().slice(0, 160),
     )
     .first<HostedChatJobRow>();
 
@@ -446,8 +470,9 @@ export async function enqueueHostedChat(
 
   const messageResult = await env.SWARM_STATE.prepare(
     `insert into swarm_hosted_chat_messages
-       (account_id, avatar_id, thread_id, message_id, request_id, role, content, created_at)
-     values (?, ?, ?, ?, ?, 'user', ?, ?)`,
+       (account_id, avatar_id, thread_id, message_id, request_id, role, content, created_at,
+        source, trust, source_label)
+     values (?, ?, ?, ?, ?, 'user', ?, ?, ?, ?, ?)`,
   )
     .bind(
       session.accountId,
@@ -457,6 +482,9 @@ export async function enqueueHostedChat(
       input.requestId,
       input.message,
       now,
+      input.source ?? 'owner-web',
+      input.trust ?? 'owner',
+      input.sourceLabel ?? null,
     )
     .run();
   if (!messageResult.success) {
@@ -506,7 +534,8 @@ async function findJobById(
 ): Promise<HostedChatJobRow | null> {
   return env.SWARM_STATE.prepare(
     `select account_id, avatar_id, thread_id, job_id, request_id, status, attempts, max_attempts,
-            error_code, error_message, response_message_id, created_at, updated_at, completed_at
+            error_code, error_message, response_message_id, created_at, updated_at, completed_at,
+            summary, delivery_state
      from swarm_hosted_chat_jobs where account_id = ? and job_id = ?`,
   )
     .bind(accountId, jobId)
@@ -517,6 +546,7 @@ export async function getHostedChatJob(
   env: CloudflareHostedBindings,
   session: HostedSession,
   jobId: string,
+  includeHistory = true,
 ): Promise<HostedChatJobStatus | null> {
   const job = await findJobById(env, session.accountId, jobId);
   if (!job) return null;
@@ -536,21 +566,44 @@ export async function getHostedChatJob(
       .first<{ content: string }>();
     response = answer?.content;
   }
-  const history = status === 'completed'
+  const history = status === 'completed' && includeHistory
     ? await listHostedChatHistory(env, session, job.avatar_id) ?? undefined
     : undefined;
   return {
     jobId: job.job_id,
     type: 'chat',
     status,
-    prompt: '',
+    prompt: job.summary,
     createdAt: job.created_at,
     updatedAt: job.updated_at,
     ...(job.completed_at ? { completedAt: job.completed_at } : {}),
     ...(response !== undefined ? { response } : {}),
     ...(history ? { history } : {}),
     ...(status === 'failed' ? { error: job.error_message || SAFE_RUNTIME_ERROR } : {}),
+    deliveryState: job.delivery_state,
   };
+}
+
+export async function listHostedChatJobs(
+  env: CloudflareHostedBindings,
+  session: HostedSession,
+  avatarId: string,
+  limit = 12,
+): Promise<HostedChatJobStatus[] | null> {
+  const avatar = await findHostedAvatarRow(env, session.accountId, avatarId);
+  if (!avatar) return null;
+  const result = await env.SWARM_STATE.prepare(
+    `select job_id from swarm_hosted_chat_jobs
+     where account_id = ? and avatar_id = ?
+     order by created_at desc limit ?`,
+  ).bind(session.accountId, avatarId, Math.min(Math.max(limit, 1), 50)).all<{ job_id: string }>();
+  ensureD1Result(result.success, result.error, 'Unable to list hosted chat jobs.');
+  const jobs: HostedChatJobStatus[] = [];
+  for (const row of result.results ?? []) {
+    const job = await getHostedChatJob(env, session, row.job_id, false);
+    if (job) jobs.push(job);
+  }
+  return jobs;
 }
 
 function validQueueMessage(value: unknown): value is HostedChatQueueMessage {
@@ -601,11 +654,12 @@ async function claimJob(
 ): Promise<HostedChatJobRow | null> {
   return env.SWARM_STATE.prepare(
     `update swarm_hosted_chat_jobs
-     set status = 'processing', attempts = attempts + 1, updated_at = ?
+     set status = 'processing', delivery_state = 'processing', attempts = attempts + 1, updated_at = ?
      where account_id = ? and avatar_id = ? and job_id = ?
        and status in ('queued', 'retry') and attempts < max_attempts
      returning account_id, avatar_id, thread_id, job_id, request_id, status, attempts, max_attempts,
-               error_code, error_message, response_message_id, created_at, updated_at, completed_at`,
+               error_code, error_message, response_message_id, created_at, updated_at, completed_at,
+               summary, delivery_state`,
   )
     .bind(now, payload.accountId, payload.avatarId, payload.jobId)
     .first<HostedChatJobRow>();
@@ -621,7 +675,7 @@ async function markJobDead(
 ): Promise<void> {
   const result = await env.SWARM_STATE.prepare(
     `update swarm_hosted_chat_jobs
-     set status = 'dead', error_code = ?, error_message = ?, updated_at = ?, completed_at = ?
+     set status = 'dead', delivery_state = 'failed', error_code = ?, error_message = ?, updated_at = ?, completed_at = ?
      where account_id = ? and job_id = ? and status != 'completed'`,
   )
     .bind(errorCode, errorMessage, now, now, accountId, jobId)
@@ -641,11 +695,12 @@ async function recordProcessingFailure(
   const status = willRetry ? 'retry' : 'dead';
   const result = await env.SWARM_STATE.prepare(
     `update swarm_hosted_chat_jobs
-     set status = ?, error_code = ?, error_message = ?, updated_at = ?, completed_at = ?
+     set status = ?, delivery_state = ?, error_code = ?, error_message = ?, updated_at = ?, completed_at = ?
      where account_id = ? and job_id = ? and status = 'processing'`,
   )
     .bind(
       status,
+      willRetry ? 'pending' : 'failed',
       errorCode,
       errorMessage,
       now,
@@ -665,7 +720,7 @@ async function loadModelMessages(
   job: HostedChatJobRow,
 ): Promise<HostedChatMessageRow[]> {
   const result = await env.SWARM_STATE.prepare(
-    `select message_id, request_id, role, content, created_at
+    `select message_id, request_id, role, content, created_at, source, trust, source_label
      from swarm_hosted_chat_messages
      where account_id = ? and avatar_id = ? and thread_id = ?
        and (created_at < ? or request_id = ?)
@@ -681,7 +736,47 @@ async function loadModelMessages(
     )
     .all<HostedChatMessageRow>();
   ensureD1Result(result.success, result.error, 'Unable to load hosted chat context.');
-  return (result.results ?? []).reverse();
+  return scopeModelMessages((result.results ?? []).reverse(), job.request_id);
+}
+
+function sourceAllowsPrivateContext(source: HostedMessageSource): boolean {
+  return source === 'owner-web' || source === 'owner-telegram' || source === 'owner-follow-up';
+}
+
+async function loadHostedMemoryContext(
+  env: CloudflareHostedBindings,
+  accountId: string,
+  avatarId: string,
+  includePrivate: boolean,
+): Promise<string> {
+  const result = await env.SWARM_STATE.prepare(
+    `select content, source, source_label, shareable
+     from swarm_hosted_memories
+     where account_id = ? and avatar_id = ? ${includePrivate ? '' : 'and shareable = 1'}
+     order by created_at desc limit 12`,
+  ).bind(accountId, avatarId).all<{
+    content: string;
+    source: string;
+    source_label: string | null;
+    shareable: number;
+  }>();
+  ensureD1Result(result.success, result.error, 'Unable to load hosted memory.');
+  return (result.results ?? [])
+    .reverse()
+    .map((memory) => `- (${memory.source_label || memory.source}) ${memory.content}`)
+    .join('\n')
+    .slice(0, 4_000);
+}
+
+function scopeModelMessages(messages: HostedChatMessageRow[], requestId: string): HostedChatMessageRow[] {
+  const request = messages.find((message) => message.request_id === requestId && message.role === 'user');
+  if (!request || sourceAllowsPrivateContext(request.source)) return messages;
+  const publicRequestIds = new Set(
+    messages
+      .filter((message) => message.role === 'user' && !sourceAllowsPrivateContext(message.source))
+      .map((message) => message.request_id),
+  );
+  return messages.filter((message) => publicRequestIds.has(message.request_id));
 }
 
 async function callOpenRouter(
@@ -693,9 +788,23 @@ async function callOpenRouter(
   fetchImpl: typeof fetch,
 ): Promise<{ ok: true; content: string } | HostedModelFailure> {
   const endpoint = env.SWARM_OPENROUTER_CHAT_URL?.trim() || 'https://openrouter.ai/api/v1/chat/completions';
-  const systemMessages = avatar.persona?.trim()
-    ? [{ role: 'system' as const, content: avatar.persona }]
-    : [];
+  const systemMessages = [
+    ...(avatar.persona?.trim() ? [{ role: 'system' as const, content: avatar.persona }] : []),
+    { role: 'system' as const, content: HOSTED_TRUST_SYSTEM_PROMPT },
+  ];
+  const currentRequest = [...messages].reverse().find((message) => message.role === 'user');
+  const memoryContext = await loadHostedMemoryContext(
+    env,
+    avatar.account_id,
+    avatar.avatar_id,
+    currentRequest ? sourceAllowsPrivateContext(currentRequest.source) : false,
+  );
+  if (memoryContext) {
+    systemMessages.push({
+      role: 'system' as const,
+      content: `Companion memory follows. Use it as context. Keep private items within owner channels.\n${memoryContext}`,
+    });
+  }
   let response: Response;
   try {
     response = await fetchImpl(endpoint, {
@@ -711,7 +820,13 @@ async function callOpenRouter(
         max_tokens: 512,
         messages: [
           ...systemMessages,
-          ...messages.map((message) => ({ role: message.role, content: message.content })),
+          ...messages.map((message) => frameHostedConversationMessage({
+            role: message.role,
+            content: message.content,
+            source: message.source,
+            trust: message.trust,
+            ...(message.source_label ? { sourceLabel: message.source_label } : {}),
+          })),
         ],
       }),
     });
@@ -728,7 +843,10 @@ async function callOpenRouter(
   try {
     const data = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> };
     const content = data.choices?.[0]?.message?.content;
-    if (typeof content === 'string' && content.trim()) return { ok: true, content: content.trim() };
+    if (typeof content === 'string') {
+      const safeContent = sanitizeHostedAssistantOutput(content);
+      if (safeContent) return { ok: true, content: safeContent };
+    }
     const failure = openRouterFailure();
     logOpenRouterFailure(requestId, failure, response.status);
     return failure;
@@ -769,7 +887,7 @@ export async function generateHostedReply(
     return { ok: false, code: 'key_missing', message: SAFE_KEY_ERROR, retryable: false };
   }
   const result = await env.SWARM_STATE.prepare(
-    `select message_id, request_id, role, content, created_at
+    `select message_id, request_id, role, content, created_at, source, trust, source_label
      from swarm_hosted_chat_messages
      where account_id = ? and avatar_id = ? and thread_id = ?
      order by created_at desc, message_id desc limit ?`,
@@ -781,7 +899,7 @@ export async function generateHostedReply(
     env,
     apiKey,
     avatar,
-    (result.results ?? []).reverse(),
+    scopeModelMessages((result.results ?? []).reverse(), input.requestId),
     input.requestId,
     fetchImpl,
   );
@@ -798,10 +916,13 @@ export async function storeHostedAssistantMessage(
     createdAt: number;
   },
 ): Promise<void> {
+  const safeContent = sanitizeHostedAssistantOutput(input.content);
+  if (!safeContent) throw new Error('Hosted assistant response was empty.');
   const result = await env.SWARM_STATE.prepare(
     `insert into swarm_hosted_chat_messages
-       (account_id, avatar_id, thread_id, message_id, request_id, role, content, created_at)
-     values (?, ?, ?, ?, ?, 'assistant', ?, ?)
+       (account_id, avatar_id, thread_id, message_id, request_id, role, content, created_at,
+        source, trust, source_label)
+     values (?, ?, ?, ?, ?, 'assistant', ?, ?, 'assistant', 'system', null)
      on conflict(account_id, avatar_id, request_id, role) do nothing`,
   )
     .bind(
@@ -810,7 +931,7 @@ export async function storeHostedAssistantMessage(
       input.threadId,
       `message_${randomToken(18)}`,
       input.requestId,
-      input.content,
+      safeContent,
       input.createdAt,
     )
     .run();
@@ -823,12 +944,15 @@ async function completeJob(
   content: string,
   now: number,
 ): Promise<void> {
+  const safeContent = sanitizeHostedAssistantOutput(content);
+  if (!safeContent) throw new Error('Hosted assistant response was empty.');
   const responseMessageId = `message_${randomToken(18)}`;
   await runStatements(env, [
     env.SWARM_STATE.prepare(
       `insert into swarm_hosted_chat_messages
-         (account_id, avatar_id, thread_id, message_id, request_id, role, content, created_at)
-       values (?, ?, ?, ?, ?, 'assistant', ?, ?)
+         (account_id, avatar_id, thread_id, message_id, request_id, role, content, created_at,
+          source, trust, source_label)
+       values (?, ?, ?, ?, ?, 'assistant', ?, ?, 'assistant', 'system', null)
        on conflict(account_id, avatar_id, request_id, role) do nothing`,
     ).bind(
       job.account_id,
@@ -836,12 +960,12 @@ async function completeJob(
       job.thread_id,
       responseMessageId,
       job.request_id,
-      content,
+      safeContent,
       now,
     ),
     env.SWARM_STATE.prepare(
       `update swarm_hosted_chat_jobs
-       set status = 'completed', error_code = null, error_message = null,
+       set status = 'completed', delivery_state = 'completed', error_code = null, error_message = null,
            response_message_id = ?, updated_at = ?, completed_at = ?
        where account_id = ? and job_id = ? and status = 'processing'`,
     ).bind(responseMessageId, now, now, job.account_id, job.job_id),

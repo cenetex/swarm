@@ -4,6 +4,11 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@swarm/core/hosted': fileURLToPath(new URL('../core/src/hosted/index.ts', import.meta.url)),
+    },
+  },
   server: {
     port: 3000,
     proxy: {

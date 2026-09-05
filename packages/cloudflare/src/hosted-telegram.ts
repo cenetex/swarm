@@ -3,6 +3,7 @@ import { randomToken, sha256 } from './auth.js';
 import type { CloudflareHostedBindings } from './bindings.js';
 import { createCloudflareHostedPlatform } from './platform.js';
 import { generateHostedReply, getHostedAvatar, storeHostedAssistantMessage } from './hosted-chat.js';
+import { sanitizeHostedAssistantOutput, type HostedMessageSource, type HostedMessageTrust } from '@swarm/core/hosted';
 import { hostedModelWorkAllowed } from './hosted-lifecycle.js';
 
 const TELEGRAM_API = 'https://api.telegram.org';
@@ -798,6 +799,9 @@ async function queueTelegramUpdate(
     threadId?: string;
     sourceMessageId?: string;
     messageThreadId?: string;
+    source?: HostedMessageSource;
+    trust?: HostedMessageTrust;
+    sourceLabel?: string;
   },
   now: number,
 ): Promise<void> {
@@ -807,8 +811,9 @@ async function queueTelegramUpdate(
   if (input.prompt) {
     const result = await env.SWARM_STATE.prepare(
       `insert into swarm_hosted_chat_messages
-         (account_id, avatar_id, thread_id, message_id, request_id, role, content, created_at)
-       values (?, ?, ?, ?, ?, 'user', ?, ?)
+         (account_id, avatar_id, thread_id, message_id, request_id, role, content, created_at,
+          source, trust, source_label)
+       values (?, ?, ?, ?, ?, 'user', ?, ?, ?, ?, ?)
        on conflict(account_id, avatar_id, request_id, role) do nothing`,
     ).bind(
       row.account_id,
@@ -818,6 +823,9 @@ async function queueTelegramUpdate(
       requestId,
       input.prompt,
       now,
+      input.source ?? 'group-telegram',
+      input.trust ?? 'external',
+      input.sourceLabel ?? null,
     ).run();
     ensureWrite(result, 'Unable to store Telegram message.');
   }
@@ -1036,6 +1044,9 @@ export async function handleHostedTelegramWebhook(
     prompt,
     threadId,
     sourceMessageId,
+    source: chatType === 'private' ? 'owner-telegram' : 'group-telegram',
+    trust: fromId === row.owner_telegram_user_id ? 'owner' : 'external',
+    sourceLabel: chatType === 'private' ? 'private Telegram chat' : chat.title ?? 'Telegram group',
     ...(messageThreadId ? { messageThreadId } : {}),
   }, now);
   return { status: 'accepted' };
@@ -1228,7 +1239,7 @@ export async function processHostedTelegramQueueMessage(
     try {
       sent = await telegramApi<{ message_id?: unknown }>(token, 'sendMessage', {
         chat_id: job.chat_id,
-        text: content.slice(0, 4_000),
+        text: sanitizeHostedAssistantOutput(content).slice(0, 4_000),
         link_preview_options: { is_disabled: true },
         ...(numericTelegramId(job.message_thread_id) === null
           ? {}

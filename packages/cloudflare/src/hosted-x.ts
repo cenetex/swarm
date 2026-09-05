@@ -2,6 +2,7 @@ import type { HostedSession } from './auth.js';
 import { randomToken, sha256 } from './auth.js';
 import type { CloudflareHostedBindings } from './bindings.js';
 import { generateHostedReply, getHostedAvatar, storeHostedAssistantMessage } from './hosted-chat.js';
+import { sanitizeHostedAssistantOutput } from '@swarm/core/hosted';
 import { createCloudflareHostedPlatform } from './platform.js';
 import { hostedModelWorkAllowed } from './hosted-lifecycle.js';
 
@@ -752,11 +753,12 @@ async function storeMention(
   const jobId = `xjob_${randomToken(18)}`;
   const authorUsername = usernames.get(mention.author_id);
   const sourceText = mention.text.trim().slice(0, 4_000);
-  const userContent = `${authorUsername ? `@${authorUsername}` : 'Someone'} on X:\n${sourceText}`;
+  const sourceLabel = `${authorUsername ? `@${authorUsername}` : 'Someone'} on X`;
   const userMessage = await env.SWARM_STATE.prepare(
     `insert into swarm_hosted_chat_messages
-       (account_id, avatar_id, thread_id, message_id, request_id, role, content, created_at)
-     values (?, ?, ?, ?, ?, 'user', ?, ?)
+       (account_id, avatar_id, thread_id, message_id, request_id, role, content, created_at,
+        source, trust, source_label)
+     values (?, ?, ?, ?, ?, 'user', ?, ?, 'external-x', 'external', ?)
      on conflict(account_id, avatar_id, request_id, role) do nothing`,
   ).bind(
     row.account_id,
@@ -764,8 +766,9 @@ async function storeMention(
     threadId,
     `message_${randomToken(18)}`,
     requestId,
-    userContent,
+    sourceText,
     now,
+    sourceLabel,
   ).run();
   ensureWrite(userMessage, 'Unable to store an X mention.');
   const inserted = await env.SWARM_STATE.prepare(
@@ -967,7 +970,7 @@ async function retryOrFail(
 }
 
 function safeReplyText(content: string): string {
-  const points = Array.from(content.trim());
+  const points = Array.from(sanitizeHostedAssistantOutput(content));
   if (points.length <= MAX_REPLY_CODE_POINTS) return points.join('');
   return `${points.slice(0, MAX_REPLY_CODE_POINTS - 1).join('').trimEnd()}…`;
 }

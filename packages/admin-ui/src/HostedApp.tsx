@@ -5,6 +5,9 @@ import { HostedWalletSignIn } from './components/HostedWalletSignIn';
 import { HostedPasskeyAuth } from './components/HostedPasskeyAuth';
 import { HostedWalletLink } from './components/HostedWalletLink';
 import {
+  addHostedMemory,
+  cancelHostedFollowUp,
+  deleteHostedMemory,
   createHostedAvatar,
   connectHostedX,
   connectHostedTelegram,
@@ -21,17 +24,24 @@ import {
   hostedXAvatarId,
   hostedXResult,
   importHostedAvatar,
+  listHostedFollowUps,
+  listHostedJobs,
+  listHostedMemories,
   listHostedAvatars,
   openRouterConnectUrl,
   openRouterResult,
   ownedHostedAvatarBundleUrl,
   repairHostedTelegram,
+  scheduleHostedFollowUp,
   setHostedTelegramGroupEnabled,
   updateHostedAvatarProfile,
   updateHostedAvatarPublication,
   waitForHostedJob,
   type HostedAvatar,
   type HostedChatMessage,
+  type HostedChatJob,
+  type HostedFollowUp,
+  type HostedMemory,
   type HostedProviderStatus,
   type HostedTelegramStatus,
   type HostedXStatus,
@@ -105,14 +115,14 @@ function AvatarPortrait({ avatar, compact = false }: { avatar: HostedAvatar; com
 }
 
 function avatarStateCopy(status: string): string {
-  if (status === 'active' || status === 'configured') return 'Ready';
+  if (status === 'ready' || status === 'active' || status === 'configured') return 'Ready';
   if (status === 'error') return 'Needs attention';
   if (status === 'paused') return 'Paused';
   return 'Getting ready';
 }
 
 function avatarIsReady(status: string): boolean {
-  return status === 'active' || status === 'configured';
+  return status === 'ready' || status === 'active' || status === 'configured';
 }
 
 function shortAvatarId(avatarId: string): string {
@@ -215,13 +225,20 @@ export function HostedApp() {
   const [avatarName, setAvatarName] = useState('');
   const [avatarDescription, setAvatarDescription] = useState('');
   const [avatarPersona, setAvatarPersona] = useState('');
-  const [avatarVisibility, setAvatarVisibility] = useState<'public' | 'private'>('public');
-  const [avatarListed, setAvatarListed] = useState(true);
+  const [avatarVisibility, setAvatarVisibility] = useState<'public' | 'private'>('private');
+  const [avatarListed, setAvatarListed] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profileDescription, setProfileDescription] = useState('');
   const [profilePersona, setProfilePersona] = useState('');
   const [profileSaved, setProfileSaved] = useState(false);
   const [draft, setDraft] = useState('');
+  const [activeJob, setActiveJob] = useState<HostedChatJob | null>(null);
+  const [memories, setMemories] = useState<HostedMemory[]>([]);
+  const [memoryDraft, setMemoryDraft] = useState('');
+  const [memoryShareable, setMemoryShareable] = useState(false);
+  const [followUps, setFollowUps] = useState<HostedFollowUp[]>([]);
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
+  const [followUpAt, setFollowUpAt] = useState('');
   const [telegram, setTelegram] = useState<HostedTelegramStatus | null>(null);
   const [telegramToken, setTelegramToken] = useState('');
   const [telegramLoading, setTelegramLoading] = useState(false);
@@ -324,6 +341,9 @@ export function HostedApp() {
       setAvatars([]);
       setActiveAvatarId('');
       setMessages([]);
+      setActiveJob(null);
+      setMemories([]);
+      setFollowUps([]);
       setTelegram(null);
       setTelegramToken('');
       setTelegramLoading(false);
@@ -406,6 +426,45 @@ export function HostedApp() {
     };
   }, [activeAvatarId, provider?.connected]);
 
+  useEffect(() => {
+    if (!activeAvatarId) {
+      setActiveJob(null);
+      setMemories([]);
+      setFollowUps([]);
+      return;
+    }
+    let active = true;
+    Promise.all([
+      listHostedJobs(activeAvatarId),
+      listHostedMemories(activeAvatarId),
+      listHostedFollowUps(activeAvatarId),
+    ]).then(([jobs, nextMemories, nextFollowUps]) => {
+      if (!active) return;
+      const runningJob = jobs.find((job) => job.status === 'pending' || job.status === 'processing') ?? null;
+      setActiveJob(runningJob);
+      setMemories(nextMemories);
+      setFollowUps(nextFollowUps);
+      if (runningJob) {
+        void waitForHostedJob(runningJob.jobId, {
+          onStatus: (job) => {
+            if (active) setActiveJob(job);
+          },
+        }).then((job) => {
+          if (!active) return;
+          setActiveJob(job);
+          if (job.history) setMessages(job.history);
+        }).catch((reason) => {
+          if (active) setError(reason instanceof Error ? reason.message : 'Unable to refresh companion activity.');
+        });
+      }
+    }).catch((reason) => {
+      if (active) setError(reason instanceof Error ? reason.message : 'Unable to load companion activity.');
+    });
+    return () => {
+      active = false;
+    };
+  }, [activeAvatarId]);
+
   const handleDisconnect = async () => {
     if (!window.confirm('Disconnect OpenRouter from this account? Chat will pause until you reconnect it.')) return;
     setLoading(true);
@@ -440,8 +499,8 @@ export function HostedApp() {
       setAvatarName('');
       setAvatarDescription('');
       setAvatarPersona('');
-      setAvatarVisibility('public');
-      setAvatarListed(true);
+      setAvatarVisibility('private');
+      setAvatarListed(false);
       setActiveAction(null);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Unable to create the avatar.');
@@ -640,6 +699,20 @@ export function HostedApp() {
     if (!message || sending) return;
     const action = hostedActionForMessage(message);
     if (action) {
+      if (action === 'memory') {
+        const remembered = message.replace(
+          /^(?:please\s+)?(?:(?:can|could|would)\s+(?:we|you)\s+)?(?:remember(?:\s+that)?|save to memory|add to memory)\s*/iu,
+          '',
+        ).trim();
+        if (remembered) setMemoryDraft(remembered);
+      }
+      if (action === 'schedule') {
+        const followUp = message.replace(
+          /^(?:please\s+)?(?:(?:can|could|would)\s+(?:we|you)\s+)?(?:remind me to|schedule|follow up|check back)\s*/iu,
+          '',
+        ).trim();
+        if (followUp) setFollowUpPrompt(followUp);
+      }
       setActiveAction(action);
       setDraft('');
       return;
@@ -652,7 +725,16 @@ export function HostedApp() {
     setMessages((current) => [...current, { role: 'user', content: message }]);
     try {
       const queued = await enqueueHostedMessage(activeAvatarId, message);
-      const job = await waitForHostedJob(queued.jobId);
+      setActiveJob({
+        jobId: queued.jobId,
+        prompt: message,
+        status: 'pending',
+        deliveryState: 'pending',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const job = await waitForHostedJob(queued.jobId, { onStatus: setActiveJob });
+      setActiveJob(job);
       if (job.status !== 'completed' || !job.response) {
         throw new Error(job.error || 'The hosted model did not return a response.');
       }
@@ -666,10 +748,77 @@ export function HostedApp() {
     }
   };
 
+  const handleAddMemory = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!activeAvatarId || !memoryDraft.trim()) return;
+    setLoading(true);
+    setError('');
+    try {
+      const memory = await addHostedMemory(activeAvatarId, memoryDraft.trim(), memoryShareable);
+      setMemories((current) => [memory, ...current]);
+      setMemoryDraft('');
+      setMemoryShareable(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to save memory.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteMemory = async (memoryId: string) => {
+    if (!activeAvatarId) return;
+    setLoading(true);
+    setError('');
+    try {
+      await deleteHostedMemory(activeAvatarId, memoryId);
+      setMemories((current) => current.filter((memory) => memory.memoryId !== memoryId));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to forget memory.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleScheduleFollowUp = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!activeAvatarId || !followUpPrompt.trim() || !followUpAt) return;
+    setLoading(true);
+    setError('');
+    try {
+      const followUp = await scheduleHostedFollowUp(
+        activeAvatarId,
+        followUpPrompt.trim(),
+        new Date(followUpAt).getTime(),
+      );
+      setFollowUps((current) => [followUp, ...current]);
+      setFollowUpPrompt('');
+      setFollowUpAt('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to schedule the follow-up.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelFollowUp = async (followUpId: string) => {
+    if (!activeAvatarId) return;
+    setLoading(true);
+    setError('');
+    try {
+      await cancelHostedFollowUp(activeAvatarId, followUpId);
+      setFollowUps((current) => current.filter((followUp) => followUp.id !== followUpId));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to cancel the follow-up.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const selectAvatar = (avatarId: string) => {
     setProfileSaved(false);
     setActiveAvatarId(avatarId);
     setMessages([]);
+    setActiveJob(null);
     setActiveAction(null);
     setDraft('');
     setTelegramToken('');
@@ -920,10 +1069,29 @@ export function HostedApp() {
                   </article>
                 );
               })}
-              {sending && (
+              {sending && !activeJob && (
                 <p role="status" className="py-5 text-base text-[var(--color-text-secondary)]">
                   {activeName} is replying…
                 </p>
+              )}
+              {activeJob && (activeJob.status === 'pending' || activeJob.status === 'processing') && (
+                <div role="status" className="my-4 rounded-xl border border-brand-400/25 bg-brand-400/5 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="font-medium">{activeJob?.prompt || `${activeName} is replying`}</span>
+                    <span className="text-brand-300">
+                      {activeJob?.status === 'processing' ? 'Working' : 'Queued'}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">This task stays here while you move around.</p>
+                </div>
+              )}
+              {activeJob && (activeJob.status === 'completed' || activeJob.status === 'failed') && (
+                <div role="status" className="my-4 flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-sm">
+                  <span className="truncate">{activeJob.prompt || 'Conversation task'}</span>
+                  <span className={activeJob.status === 'completed' ? 'text-emerald-300' : 'text-red-300'}>
+                    {activeJob.status === 'completed' ? 'Completed' : 'Needs attention'}
+                  </span>
+                </div>
               )}
               {isAuthenticated && shownAction && (
                 <div ref={actionCard}>
@@ -949,8 +1117,8 @@ export function HostedApp() {
                               disabled={
                                 sending ||
                                 loading ||
-                                (['profile', 'telegram', 'x'].includes(action) && !activeAvatar) ||
-                                (['telegram', 'x'].includes(action) && !providerReady)
+                                (['profile', 'telegram', 'x', 'memory', 'schedule'].includes(action) && !activeAvatar) ||
+                                (['telegram', 'x', 'schedule'].includes(action) && !providerReady)
                               }
                               onClick={() => setActiveAction(action)}
                               className="rounded-xl border border-[var(--color-border-secondary)] px-4 py-3 text-left text-sm font-medium hover:bg-[var(--color-bg-tertiary)] disabled:opacity-40"
@@ -1011,8 +1179,8 @@ export function HostedApp() {
                               onChange={(event) => setAvatarVisibility(event.target.value as 'public' | 'private')}
                               className="w-full rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none focus:border-brand-400"
                             >
-                              <option value="public">Public</option>
                               <option value="private">Private</option>
+                              <option value="public">Public</option>
                             </select>
                             {avatarVisibility === 'public' && (
                               <label className="flex items-start gap-2 text-sm leading-5 text-[var(--color-text-secondary)]">
@@ -1458,6 +1626,130 @@ export function HostedApp() {
                                 </button>
                               </div>
                             </details>
+                          </div>
+                        )}
+                      </ActionSection>
+                    )}
+                    {shownAction === 'memory' && activeAvatar && (
+                      <ActionSection
+                        title="Memory"
+                        detail="Save clear facts for this companion. Each item keeps its source and sharing scope."
+                        state={`${memories.length}/100`}
+                        ready={memories.length > 0}
+                      >
+                        <form onSubmit={(event) => void handleAddMemory(event)} className="space-y-3">
+                          <label htmlFor="memory-content" className="block text-sm text-[var(--color-text-muted)]">
+                            What should this companion remember?
+                          </label>
+                          <textarea
+                            id="memory-content"
+                            value={memoryDraft}
+                            onChange={(event) => setMemoryDraft(event.target.value)}
+                            maxLength={1000}
+                            rows={3}
+                            placeholder="I prefer short weekly summaries."
+                            className="w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                          />
+                          <label className="flex items-start gap-2 text-sm leading-5 text-[var(--color-text-secondary)]">
+                            <input
+                              type="checkbox"
+                              checked={memoryShareable}
+                              onChange={(event) => setMemoryShareable(event.target.checked)}
+                              className="mt-1 accent-[var(--color-brand-light)]"
+                            />
+                            <span>
+                              Include this item in portable files and public channels.
+                              Published portable revisions stay available.
+                            </span>
+                          </label>
+                          <button
+                            type="submit"
+                            disabled={loading || !memoryDraft.trim()}
+                            className="w-full rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                          >
+                            Remember
+                          </button>
+                        </form>
+                        {memories.length > 0 && (
+                          <div className="mt-5 space-y-2 border-t border-[var(--color-border)] pt-4">
+                            {memories.map((memory) => (
+                              <div key={memory.memoryId} className="rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] p-3">
+                                <p className="text-sm leading-5 text-[var(--color-text-secondary)]">{memory.content}</p>
+                                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]">
+                                  <span>{memory.shareable ? 'Portable' : 'Private'}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDeleteMemory(memory.memoryId)}
+                                    disabled={loading}
+                                    className="text-red-300 underline underline-offset-4 disabled:opacity-50"
+                                  >
+                                    Forget
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </ActionSection>
+                    )}
+                    {shownAction === 'schedule' && providerReady && activeAvatar && (
+                      <ActionSection
+                        title="Follow up later"
+                        detail="Set one bounded follow-up. Swarm starts it through the same durable chat queue."
+                        state={followUps.some((followUp) => followUp.status === 'scheduled') ? 'Scheduled' : 'Ready'}
+                        ready={followUps.length > 0}
+                      >
+                        <form onSubmit={(event) => void handleScheduleFollowUp(event)} className="space-y-3">
+                          <label htmlFor="follow-up-prompt" className="block text-sm text-[var(--color-text-muted)]">
+                            Follow-up request
+                          </label>
+                          <textarea
+                            id="follow-up-prompt"
+                            value={followUpPrompt}
+                            onChange={(event) => setFollowUpPrompt(event.target.value)}
+                            maxLength={4000}
+                            rows={3}
+                            placeholder="Check in about the launch plan."
+                            className="w-full resize-y rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                          />
+                          <label htmlFor="follow-up-at" className="block text-sm text-[var(--color-text-muted)]">
+                            Date and time
+                          </label>
+                          <input
+                            id="follow-up-at"
+                            type="datetime-local"
+                            value={followUpAt}
+                            onChange={(event) => setFollowUpAt(event.target.value)}
+                            className="w-full rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] px-3 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
+                          />
+                          <button
+                            type="submit"
+                            disabled={loading || !followUpPrompt.trim() || !followUpAt}
+                            className="w-full rounded-xl bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                          >
+                            Schedule follow-up
+                          </button>
+                        </form>
+                        {followUps.length > 0 && (
+                          <div className="mt-5 space-y-2 border-t border-[var(--color-border)] pt-4">
+                            {followUps.map((followUp) => (
+                              <div key={followUp.id} className="rounded-xl border border-[var(--color-border-secondary)] bg-[var(--color-bg)] p-3">
+                                <p className="text-sm leading-5 text-[var(--color-text-secondary)]">{followUp.summary}</p>
+                                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]">
+                                  <span>{new Date(followUp.runAt).toLocaleString()} · {followUp.status}</span>
+                                  {followUp.status === 'scheduled' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleCancelFollowUp(followUp.id)}
+                                      disabled={loading}
+                                      className="text-red-300 underline underline-offset-4 disabled:opacity-50"
+                                    >
+                                      Cancel
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </ActionSection>

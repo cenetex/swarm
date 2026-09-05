@@ -4,7 +4,7 @@ This is the target architecture for the paid hosted tier. Users choose **Local**
 
 The hosted product is a hybrid dApp. Solana provides user identity and may provide entitlement or payment proofs. Secrets, messages, model calls, and always-on execution remain in a shared off-chain runtime. A browser-only or fully on-chain runtime cannot safely retain credentials or keep Telegram and Discord agents alive after the browser closes.
 
-An avatar is not a private runtime record. It is a public, portable project by default. Its content-addressed `swarm.avatar/v1` artifact can move between hosts, while the hosted runtime provides discovery, indexing, credentials, channels, and execution. See [Portable Public Avatars](./PORTABLE-PUBLIC-AVATARS.md).
+An avatar starts as a private, portable project. Its content-addressed `swarm.avatar/v1` artifact can move between hosts. The owner can publish it when it is ready. The hosted runtime provides discovery, indexing, credentials, channels, and execution. See [Portable Public Avatars](./PORTABLE-PUBLIC-AVATARS.md).
 
 ## Product Model
 
@@ -79,7 +79,22 @@ The dedicated hosted UI is served from the same Worker origin. Passkey sign-in i
 
 The hosted root is an anonymous public registry. Each public avatar has a shareable project page showing its public prompt, shared memory summary, capabilities, controller, revision, portable download, and NFT-ready metadata. Search engines receive a dynamic sitemap of listed avatars.
 
-The owner surface lives at `/studio`. On desktop, a narrow management rail holds account, runtime, provider, portability, and avatar controls beside one continuous conversation surface. On smaller screens, chat remains visible first and the same controls move behind one **Manage** action. Creation and restore do not require an AI provider connection; model-backed chat does.
+The owner surface lives at `/studio`. It is one continuous conversation. A direct request such as “Can we configure Telegram?” opens the matching card inside the chat. The **More** button is a compact action index. Creation and restore work before a model is connected.
+
+### Agent control plane
+
+The hosted agent uses one contract across Web, Telegram, and X:
+
+1. Every stored message has a source and a trust level.
+2. Owner requests can guide the companion. External messages stay conversation input.
+3. The model receives clear source markers and one shared trust prompt.
+4. One server-side filter removes private reasoning before storage or delivery.
+5. Browser tasks keep a short D1 receipt with queued, working, completed, or failed state.
+6. Memory belongs to one companion. It starts private. The owner can mark an item as portable.
+7. Public channels receive portable memory only. Owner channels can use private memory.
+8. Follow-ups live in D1. Cron claims each due item once and sends it through the normal chat queue.
+
+Migration `0013_hosted_agent_foundation.sql` adds message provenance, task summaries, memory, follow-ups, and ready avatar state.
 
 ## Hosted Telegram
 
@@ -130,14 +145,14 @@ The first hosted message path is now implemented for browser chat:
 2. `POST /api/chat` checks the feature flag, session, avatar owner, message limit, Queue and Durable Object bindings, and the user's OpenRouter key.
 3. D1 stores one user message and one job for the client request id. A replay returns the existing job instead of calling the model again.
 4. The Queue consumer asks the avatar's Durable Object for a short lease. Only one job for that account and avatar can hold the lease.
-5. The consumer decrypts the account's OpenRouter key only for the provider call. It loads recent D1 history, calls the configured model, and stores one assistant message.
-6. The admin UI polls `/api/jobs/{jobId}`. Completed jobs return the stored answer and history. Failed jobs return a short safe message with no provider response or credential data.
+5. The consumer decrypts the account's OpenRouter key only for the provider call. It loads source-scoped history and memory, calls the configured model, and filters the answer before storage.
+6. The admin UI polls `/api/jobs/{jobId}`. It can also restore current receipts through `/api/jobs?avatarId=...` after a reload.
 
 Model failures retry at most three times with increasing Queue delay. Initial Queue sends also stop after three attempts. Exhausted work enters the `dead` state instead of waiting forever. A request is limited to 4,000 characters, model context is capped at 20 stored messages, and the default account limit is 20 new messages per minute.
 
 Migration `0003_hosted_chat_runtime.sql` adds account-keyed avatars, threads, messages, jobs, and rate-limit rows. Every read and write includes the authenticated account id. The browser's supplied history and avatar text are not trusted as stored state.
 
-Migration `0006_portable_public_avatars.sql` adds public slugs, visibility, listing state, current revision pointers, and immutable revision rows. New avatars are public and listed by default. Private avatars remain owner-only. D1 and R2 are runtime mirrors; owners must keep or permanently anchor the canonical artifact outside the Cloudflare account for full disaster recovery.
+Migration `0006_portable_public_avatars.sql` adds public slugs, visibility, listing state, current revision pointers, and immutable revision rows. New avatars start private and unlisted. Publishing is an explicit owner action. D1 and R2 are runtime mirrors. Owners can keep or permanently anchor the canonical artifact outside the Cloudflare account for full disaster recovery.
 
 Required chat bindings:
 
@@ -209,12 +224,13 @@ Desktop wallet sign-in uses a short-lived cross-device pairing. The Worker retur
 2. **Hosted web app — implemented:** same-origin wallet sign-in, OAuth connect/status/disconnect, avatar creation, and Queue-backed browser chat without browser-visible AI credentials.
 3. **Web chat runtime — implemented:** tenant-owned avatars and history, idempotent Queue jobs, per-avatar serialization, bounded model retries, and safe failed jobs.
 4. **Webhook runtime — implemented:** Telegram ingress, owner/group binding, per-chat and per-topic history, direct replies, typing/reactions, group controls, safe delivery state, and Queue processing.
-5. **Portable public projects — implemented:** default-public registry, strict content-addressed artifacts, owner export/import, R2 mirrors, NFT-ready metadata, and blank-environment restore proof.
+5. **Portable projects — implemented:** private-first creation, explicit publication, strict content-addressed artifacts, owner export/import, R2 mirrors, NFT-ready metadata, and blank-environment restore proof.
 6. **Entitlement lifecycle — implemented:** provider-neutral billing, provisioning, health evidence, reconciliation, and model-work gating. A customer-facing checkout/portal adapter can now feed the signed billing webhook.
 7. **Persistent channels:** adapt the existing multi-tenant Discord gateway to encrypted credential lookup and Cloudflare Queue delivery.
-8. **Media and scheduling:** move blobs to R2 and scheduled jobs to D1 plus Cron/Workflows.
-9. **Operational hardening:** permanent artifact anchoring, owner-authorized NFT minting, KMS-backed root-key wrapping, secret re-encryption jobs, audit reporting, monitoring, and kill switches.
-10. **Burst compute:** use an external sandbox only for workloads that truly need a Linux computer.
+8. **Agent control plane — implemented:** shared output safety, source trust, private memory, portable memory choices, visible task receipts, and bounded D1 follow-ups.
+9. **Media and workflows:** expand R2 media work and use Workflows for longer multi-step tasks.
+10. **Operational hardening:** permanent artifact anchoring, owner-authorized NFT minting, KMS-backed root-key wrapping, secret re-encryption jobs, audit reporting, monitoring, and kill switches.
+11. **Burst compute:** use an external sandbox only for workloads that truly need a Linux computer.
 
 ## Cost Guardrails
 

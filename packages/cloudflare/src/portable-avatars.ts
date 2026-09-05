@@ -174,7 +174,7 @@ async function persistRevision(
         `insert into swarm_hosted_avatars
            (account_id, avatar_id, default_thread_id, name, description, persona, status, created_by, created_at,
             updated_at, slug, visibility, listed, current_revision_id, current_bundle_key)
-         values (?, ?, ?, ?, ?, ?, 'shell', ?, ?, ?, ?, ?, ?, ?, ?)`,
+         values (?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         session.accountId,
         bundle.identity.avatarId,
@@ -260,8 +260,8 @@ export async function createPortableHostedAvatar(
     name: input.name,
     ...(input.description ? { description: input.description } : {}),
   }, now);
-  const visibility = input.visibility ?? 'public';
-  const listed = visibility === 'public' ? input.listed ?? true : false;
+  const visibility = input.visibility ?? 'private';
+  const listed = visibility === 'public' ? input.listed ?? false : false;
   const slug = safeSlug(avatar.name, avatar.avatarId);
   const bundle: PortableAvatarBundleV1 = {
     schema: 'swarm.avatar/v1',
@@ -274,7 +274,7 @@ export async function createPortableHostedAvatar(
     },
     publication: { visibility, listed },
     prompts: {
-      system: input.persona?.trim() || `You are ${avatar.name}, a public Swarm avatar.`,
+      system: input.persona?.trim() || `You are ${avatar.name}, a private Swarm companion.`,
       starters: [],
     },
     capabilities: [{ id: 'conversation', name: 'Conversation' }],
@@ -374,7 +374,7 @@ export async function importPortableHostedAvatar(
     name: bundle.identity.name,
     ...(bundle.identity.description ? { description: bundle.identity.description } : {}),
     ...(bundle.prompts.system ? { persona: bundle.prompts.system } : {}),
-    status: 'shell',
+    status: 'ready',
     createdAt: now,
     updatedAt: now,
     createdBy: session.walletAddress,
@@ -463,6 +463,31 @@ export async function updatePortableAvatarPublication(
     revisionId: revision.revisionId,
     sha256: revision.sha256,
   };
+}
+
+export async function syncPortableAvatarSharedMemory(
+  env: CloudflareHostedBindings,
+  session: HostedSession,
+  avatarId: string,
+  entries: PortableAvatarBundleV1['sharedMemory']['entries'],
+  now = Date.now(),
+): Promise<void> {
+  const current = await getOwnedPortableRevision(env, session, avatarId);
+  if (!current) throw new PortableAvatarDataError();
+  const nextBundle: PortableAvatarBundleV1 = {
+    ...current.bundle,
+    sharedMemory: {
+      summary: entries.length === 0 ? '' : `${entries.length} shared memory ${entries.length === 1 ? 'item' : 'items'}.`,
+      entries,
+    },
+    lineage: {
+      ...current.bundle.lineage,
+      previousRevisionId: current.revisionId,
+    },
+    revision: { createdAt: new Date(now).toISOString() },
+  };
+  const revision = await portableAvatarRevision(nextBundle);
+  await persistRevision(env, session, revision, now, false);
 }
 
 export async function listPublicAvatars(env: CloudflareHostedBindings): Promise<PublicAvatarSummary[]> {

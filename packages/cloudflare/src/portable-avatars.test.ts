@@ -59,6 +59,7 @@ class SqliteD1 implements CloudflareD1Database {
       '0003_hosted_chat_runtime.sql',
       '0006_portable_public_avatars.sql',
       '0009_passkeys.sql',
+      '0013_hosted_agent_foundation.sql',
     ]) {
       this.db.exec(readFileSync(new URL(`../migrations/${migration}`, import.meta.url), 'utf8'));
     }
@@ -134,7 +135,7 @@ describe('portable public avatars', () => {
     database.close();
   });
 
-  it('creates a public listed project and immutable R2 mirror by default', async () => {
+  it('creates a private project and immutable R2 mirror by default', async () => {
     const { state, env, blobs } = setup();
     resources.push(state);
 
@@ -144,15 +145,13 @@ describe('portable public avatars', () => {
       persona: 'Think carefully in public.',
     }, Date.parse('2026-08-30T12:00:00.000Z'));
 
-    expect(created).toMatchObject({ visibility: 'public', listed: true });
+    expect(created).toMatchObject({ visibility: 'private', listed: false, status: 'ready' });
     expect(created.revisionId).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(blobs.size).toBe(1);
     const catalog = await listPublicAvatars(env);
-    expect(catalog).toHaveLength(1);
-    expect(catalog[0]).toMatchObject({ slug: created.slug, name: 'Ada Commons' });
+    expect(catalog).toHaveLength(0);
     const project = await getPublicAvatar(env, created.slug);
-    expect(project?.bundle.prompts.system).toBe('Think carefully in public.');
-    expect(JSON.stringify(project)).not.toContain('apiKey');
+    expect(project).toBeNull();
     const plan = state.db.query(
       `explain query plan select avatar_id from swarm_hosted_avatars
        where visibility = 'public' and listed = 1 order by updated_at desc limit 100`,
@@ -253,7 +252,11 @@ describe('portable public avatars', () => {
     const source = setup();
     const target = setup();
     resources.push(source.state, target.state);
-    const created = await createPortableHostedAvatar(source.env, owner, { name: 'Restorable Ada' }, 1_000);
+    const created = await createPortableHostedAvatar(source.env, owner, {
+      name: 'Restorable Ada',
+      visibility: 'public',
+      listed: true,
+    }, 1_000);
     const exported = await getOwnedPortableRevision(source.env, owner, created.avatarId);
     expect(exported).not.toBeNull();
 
@@ -334,7 +337,11 @@ describe('portable public avatars', () => {
   it('serves the catalog, portable download, NFT metadata, and sitemap without a session', async () => {
     const { state, env } = setup();
     resources.push(state);
-    const created = await createPortableHostedAvatar(env, owner, { name: 'Public Ada' }, 1_000);
+    const created = await createPortableHostedAvatar(env, owner, {
+      name: 'Public Ada',
+      visibility: 'public',
+      listed: true,
+    }, 1_000);
 
     const catalogResponse = await worker.fetch(new Request('https://next.swarm.rati.chat/api/public/avatars'), env);
     expect(catalogResponse.status).toBe(200);

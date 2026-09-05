@@ -47,7 +47,7 @@ import {
   disconnectOpenRouter,
   getOpenRouterConnectionStatus,
 } from './openrouter.js';
-import { createCloudflareHostedPlatform } from './platform.js';
+import { CloudflareScheduler, createCloudflareHostedPlatform } from './platform.js';
 import { isHostedSecretKeyValid } from './secret-crypto.js';
 import {
   clearHostedChatHistory,
@@ -63,8 +63,22 @@ import {
   HostedChatQueueError,
   HostedChatRateLimitError,
   listHostedChatHistory,
+  listHostedChatJobs,
   processHostedChatQueueMessage,
 } from './hosted-chat.js';
+import {
+  addHostedMemory,
+  deleteHostedMemory,
+  HostedMemoryNotFoundError,
+  listHostedMemories,
+} from './hosted-memory.js';
+import {
+  cancelHostedFollowUp,
+  isHostedFollowUpQueueMessage,
+  listHostedFollowUps,
+  processHostedFollowUpQueueMessage,
+  scheduleHostedFollowUp,
+} from './hosted-follow-ups.js';
 import {
   cleanupHostedTelegramRuntime,
   connectHostedTelegram,
@@ -1018,6 +1032,59 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     return avatar ? json(avatar) : json({ error: 'Portable avatar was not found.' }, { status: 404 });
   }
 
+  const memoryMatch = url.pathname.match(/^\/api\/avatars\/([^/]+)\/memories(?:\/([^/]+))?$/u);
+  if (memoryMatch) {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = decodeURIComponent(memoryMatch[1] ?? '');
+    const memoryId = memoryMatch[2] ? decodeURIComponent(memoryMatch[2]) : '';
+    if (!validResourceId(avatarId) || (memoryId && !validResourceId(memoryId))) {
+      return json({ error: 'Memory address is invalid.' }, { status: 400 });
+    }
+    if (request.method === 'GET' && !memoryId) return json(await listHostedMemories(env, session, avatarId));
+    assertSameOrigin(env, request);
+    if (request.method === 'POST' && !memoryId) {
+      const body = await readJsonObject(request);
+      return json(await addHostedMemory(env, session, {
+        avatarId,
+        content: stringField(body, 'content'),
+        ...(optionalBooleanField(body, 'shareable') === true ? { shareable: true } : {}),
+      }), { status: 201 });
+    }
+    if (request.method === 'DELETE' && memoryId) {
+      const removed = await deleteHostedMemory(env, session, avatarId, memoryId);
+      return removed ? json({ removed: true }) : json({ error: 'Memory was not found.' }, { status: 404 });
+    }
+    return json({ error: 'Method not allowed.' }, { status: 405 });
+  }
+
+  const followUpMatch = url.pathname.match(/^\/api\/avatars\/([^/]+)\/follow-ups(?:\/([^/]+))?$/u);
+  if (followUpMatch) {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = decodeURIComponent(followUpMatch[1] ?? '');
+    const followUpId = followUpMatch[2] ? decodeURIComponent(followUpMatch[2]) : '';
+    if (!validResourceId(avatarId) || (followUpId && !validResourceId(followUpId))) {
+      return json({ error: 'Follow-up address is invalid.' }, { status: 400 });
+    }
+    if (request.method === 'GET' && !followUpId) return json(await listHostedFollowUps(env, session, avatarId));
+    assertSameOrigin(env, request);
+    if (request.method === 'POST' && !followUpId) {
+      const body = await readJsonObject(request);
+      const runAt = Number(body.runAt);
+      return json(await scheduleHostedFollowUp(env, session, {
+        avatarId,
+        prompt: stringField(body, 'prompt'),
+        runAt,
+      }), { status: 201 });
+    }
+    if (request.method === 'DELETE' && followUpId) {
+      const cancelled = await cancelHostedFollowUp(env, session, avatarId, followUpId);
+      return cancelled ? json({ cancelled: true }) : json({ error: 'Scheduled follow-up was not found.' }, { status: 404 });
+    }
+    return json({ error: 'Method not allowed.' }, { status: 405 });
+  }
+
   const avatarMatch = url.pathname.match(/^\/api\/avatars\/([^/]+)$/u);
   if (avatarMatch && (request.method === 'GET' || request.method === 'PATCH')) {
     if (request.method === 'PATCH') assertSameOrigin(env, request);
@@ -1173,6 +1240,15 @@ async function handleRequest(request: Request, env: CloudflareHostedBindings): P
     );
   }
 
+  if (url.pathname === '/api/jobs' && request.method === 'GET') {
+    const session = await getHostedSession(env, request);
+    if (!session) return json({ error: 'Authentication required.' }, { status: 401 });
+    const avatarId = url.searchParams.get('avatarId')?.trim() ?? '';
+    if (!validResourceId(avatarId)) return json({ error: 'avatarId is required.' }, { status: 400 });
+    const jobs = await listHostedChatJobs(env, session, avatarId);
+    return jobs ? json({ jobs }) : json({ error: 'Hosted avatar was not found.' }, { status: 404 });
+  }
+
   const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/u);
   if (jobMatch && request.method === 'GET') {
     const session = await getHostedSession(env, request);
@@ -1281,13 +1357,14 @@ export default {
       if (error instanceof PortableAvatarAuthorizationError) return json({ error: detail }, { status: 403 });
       if (error instanceof PortableAvatarConflictError) return json({ error: detail }, { status: 409 });
       if (error instanceof PortableAvatarDataError) return json({ error: detail }, { status: 500 });
+      if (error instanceof HostedMemoryNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof HostedChatNotFoundError) return json({ error: detail }, { status: 404 });
       if (error instanceof HostedChatMissingKeyError) return json({ error: detail }, { status: 409 });
       if (error instanceof HostedLifecycleInactiveError) return json({ error: detail }, { status: 409 });
       if (error instanceof HostedChatQueueError || error instanceof HostedChatConfigurationError) {
         return json({ error: detail }, { status: 503 });
       }
-      const isClientError = /required|invalid|base58|32 bytes|too large|JSON object|Cross-origin/iu.test(detail);
+      const isClientError = /required|invalid|base58|32 bytes|too large|JSON object|Cross-origin|between 1 and|choose a follow-up time|memory is full/iu.test(detail);
       return json(
         {
           error: isClientError || env.SWARM_ENV !== 'production' ? detail : 'Hosted request failed.',
@@ -1305,6 +1382,25 @@ export default {
     await cleanupHostedXRuntime(env, controller.scheduledTime);
     await pollHostedXIntegrations(env, fetch, controller.scheduledTime);
     const platform = createCloudflareHostedPlatform(env);
+    const scheduler = new CloudflareScheduler(env);
+    const dueJobs = await scheduler.claimDueJobs(controller.scheduledTime, 50);
+    for (const job of dueJobs) {
+      try {
+        await platform.queues.send('default', {
+          type: job.type,
+          payload: {
+            ...job.payload,
+            scheduledJobId: job.id,
+          },
+        });
+      } catch (error) {
+        await scheduler.retry(
+          job.id,
+          error instanceof Error ? error.message : 'Scheduled dispatch failed.',
+          controller.scheduledTime + 60_000,
+        );
+      }
+    }
     await platform.queues.send('default', {
       type: 'swarm.cron.tick',
       payload: {
@@ -1324,6 +1420,8 @@ export default {
           ? await processHostedTelegramQueueMessage(env, message.body)
           : type === 'swarm.hosted.x.mention'
             ? await processHostedXQueueMessage(env, message.body)
+            : isHostedFollowUpQueueMessage(message.body)
+              ? await processHostedFollowUpQueueMessage(env, message.body)
           : await processHostedChatQueueMessage(env, message.body);
         if (disposition.action === 'retry') message.retry({ delaySeconds: disposition.delaySeconds });
         else message.ack();

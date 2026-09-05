@@ -45,9 +45,33 @@ export type HostedChatMessage = {
 
 export type HostedChatJob = {
   jobId: string;
+  prompt: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
+  deliveryState: 'pending' | 'processing' | 'completed' | 'failed';
+  createdAt: number;
+  updatedAt: number;
   response?: string;
   history?: HostedChatMessage[];
+  error?: string;
+};
+
+export type HostedMemory = {
+  memoryId: string;
+  content: string;
+  source: string;
+  sourceLabel?: string;
+  shareable: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type HostedFollowUp = {
+  id: string;
+  summary: string;
+  runAt: number;
+  createdAt: number;
+  status: 'scheduled' | 'starting' | 'started' | 'failed';
+  completedAt?: number;
   error?: string;
 };
 
@@ -296,17 +320,77 @@ export async function getHostedJob(jobId: string): Promise<HostedChatJob> {
   return requestJson<HostedChatJob>(`/jobs/${encodeURIComponent(jobId)}`);
 }
 
+export async function listHostedJobs(avatarId: string): Promise<HostedChatJob[]> {
+  const result = await requestJson<{ jobs: HostedChatJob[] }>(
+    `/jobs?avatarId=${encodeURIComponent(avatarId)}`,
+  );
+  return result.jobs;
+}
+
+export async function listHostedMemories(avatarId: string): Promise<HostedMemory[]> {
+  return requestJson<HostedMemory[]>(`/avatars/${encodeURIComponent(avatarId)}/memories`);
+}
+
+export async function addHostedMemory(
+  avatarId: string,
+  content: string,
+  shareable: boolean,
+): Promise<HostedMemory> {
+  return requestJson<HostedMemory>(`/avatars/${encodeURIComponent(avatarId)}/memories`, {
+    method: 'POST',
+    body: JSON.stringify({ content, shareable }),
+  });
+}
+
+export async function deleteHostedMemory(avatarId: string, memoryId: string): Promise<void> {
+  await requestJson<{ removed: true }>(
+    `/avatars/${encodeURIComponent(avatarId)}/memories/${encodeURIComponent(memoryId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function listHostedFollowUps(avatarId: string): Promise<HostedFollowUp[]> {
+  return requestJson<HostedFollowUp[]>(`/avatars/${encodeURIComponent(avatarId)}/follow-ups`);
+}
+
+export async function scheduleHostedFollowUp(
+  avatarId: string,
+  prompt: string,
+  runAt: number,
+): Promise<HostedFollowUp> {
+  return requestJson<HostedFollowUp>(`/avatars/${encodeURIComponent(avatarId)}/follow-ups`, {
+    method: 'POST',
+    body: JSON.stringify({ prompt, runAt }),
+  });
+}
+
+export async function cancelHostedFollowUp(avatarId: string, followUpId: string): Promise<void> {
+  await requestJson<{ cancelled: true }>(
+    `/avatars/${encodeURIComponent(avatarId)}/follow-ups/${encodeURIComponent(followUpId)}`,
+    { method: 'DELETE' },
+  );
+}
+
 export async function waitForHostedJob(
   jobId: string,
-  options: { timeoutMs?: number; intervalMs?: number } = {},
+  options: { timeoutMs?: number; intervalMs?: number; onStatus?: (job: HostedChatJob) => void } = {},
 ): Promise<HostedChatJob> {
   const timeoutMs = options.timeoutMs ?? 90_000;
   const intervalMs = options.intervalMs ?? 1_000;
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     const job = await getHostedJob(jobId);
+    options.onStatus?.(job);
     if (job.status === 'completed' || job.status === 'failed') return job;
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
-  return { jobId, status: 'failed', error: 'The hosted response timed out.' };
+  return {
+    jobId,
+    prompt: '',
+    status: 'failed',
+    deliveryState: 'failed',
+    createdAt: startedAt,
+    updatedAt: Date.now(),
+    error: 'The hosted response timed out.',
+  };
 }
