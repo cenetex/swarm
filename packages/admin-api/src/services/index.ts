@@ -58,6 +58,8 @@ export * from './usage-history.js';
 
 // GTM funnel events and reporting
 export * from './funnel-events.js';
+// Audit log service (resonance_changed / system actor live here)
+export * from './audit-log.js';
 export * from './funnel-emitter.js';
 export * from './funnel-report.js';
 
