@@ -24,7 +24,7 @@
     "@swarm/core": "workspace:*",
     "@tailwindcss/postcss": "^4.2.2",
     "bs58": "^6.0.0",
-    "i18next": "^25.10.10",
+    "i18next": "^26.3.4",
     "qrcode": "1.5.4",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
